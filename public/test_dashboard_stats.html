@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard Statistics Test</title>
+</head>
+<body>
+    <h1>Dashboard Statistics Test</h1>
+    
+    <div id="test-results">
+        <h2>API Test Results:</h2>
+        <div id="total-applications">Total Applications: Loading...</div>
+        <div id="pending-approvals">Pending Approvals: Loading...</div>
+        <div id="indexed-files">Indexed Files: Loading...</div>
+        <div id="blind-scans">Blind Scans: Loading...</div>
+        <div id="scan-uploads">Scan Uploads: Loading...</div>
+    </div>
+
+    <script>
+        // Test all dashboard API endpoints
+        async function testDashboardAPIs() {
+            const endpoints = [
+                { id: 'total-applications', url: '/api/dashboard/total-applications', name: 'Total Applications' },
+                { id: 'pending-approvals', url: '/api/dashboard/pending-approvals', name: 'Pending Approvals' },
+                { id: 'indexed-files', url: '/api/dashboard/indexed-files', name: 'Indexed Files' },
+                { id: 'blind-scans', url: '/api/dashboard/blind-scans', name: 'Blind Scans' },
+                { id: 'scan-uploads', url: '/api/dashboard/scan-uploads', name: 'Scan Uploads' }
+            ];
+
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await fetch(endpoint.url);
+                    const data = await response.json();
+                    
+                    document.getElementById(endpoint.id).innerHTML = 
+                        `${endpoint.name}: ${data.count} (Trend: ${data.trend}%)`;
+                    
+                    console.log(`${endpoint.name}:`, data);
+                } catch (error) {
+                    document.getElementById(endpoint.id).innerHTML = 
+                        `${endpoint.name}: Error - ${error.message}`;
+                    console.error(`Error fetching ${endpoint.name}:`, error);
+                }
+            }
+        }
+
+        // Run tests when page loads
+        document.addEventListener('DOMContentLoaded', testDashboardAPIs);
+    </script>
+</body>
+</html>

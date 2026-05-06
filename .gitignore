@@ -1,0 +1,21 @@
+/vendor/
+/vendor/srmklive
+/.idea
+/.vscode
+/.env
+/bootstrap/cache/
+/storage/framework/views/
+/storage/framework/sessions/
+storage/framework/views/*
+
+# Node.js dependencies
+/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+ 
+
+# Package manager files
+package-lock.json
+yarn.lock

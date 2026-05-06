@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Print Label Interface Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .issue { background-color: #fff3cd; border-color: #ffeaa7; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .btn-secondary { background: #6c757d; }
+        .btn-secondary:hover { background: #545b62; }
+    </style>
+</head>
+<body>
+    <h1>Print Label Interface Analysis</h1>
+    
+    <div class="test-section issue">
+        <h3>🔍 Issues Identified</h3>
+        <h4>1. Button Enabling Logic Issue</h4>
+        <p><strong>Problem:</strong> The "Continue to Label Settings" button requires exactly 30 files for ALL modes, but ST mode should allow up to 20 files.</p>
+        <pre>// Current code (PROBLEMATIC):
+const isValidSelection = selectedCount === 30;  // Always requires 30
+
+// Should be:
+const maxFiles = state.stFilterActive ? 20 : 30;
+const isValidSelection = selectedCount > 0 && selectedCount <= maxFiles;</pre>
+        
+        <h4>2. Tab Access Restrictions</h4>
+        <p><strong>Problem:</strong> Users cannot directly click on "Preview & Print" tab - they must go through the workflow.</p>
+        <p><strong>Expected:</strong> Tabs should be accessible based on current state and selections.</p>
+    </div>
+    
+    <div class="test-section">
+        <h3>🧪 Test Current Interface</h3>
+        <p>Test the current implementation to see the issues:</p>
+        
+        <div style="margin: 10px 0;">
+            <a href="http://127.0.0.1:8000/printlabel" target="_blank">
+                <button>Test Regular Mode (30 files limit)</button>
+            </a>
+        </div>
+        
+        <div style="margin: 10px 0;">
+            <a href="http://127.0.0.1:8000/printlabel?url=st" target="_blank">
+                <button>Test ST Mode (should be 20 files limit)</button>
+            </a>
+        </div>
+        
+        <h4>Steps to Reproduce Issues:</h4>
+        <ol>
+            <li>Open ST mode (second link above)</li>
+            <li>Select some files (less than 30, but more than 0)</li>
+            <li>Notice "Continue to Label Settings" button remains disabled</li>
+            <li>Try clicking on "Preview & Print" tab - notice it might not work as expected</li>
+        </ol>
+    </div>
+    
+    <div class="test-section">
+        <h3>🔧 Proposed Fixes</h3>
+        
+        <h4>Fix 1: Dynamic Button Enabling</h4>
+        <p>Update the button enabling logic to respect ST mode limits:</p>
+        <pre>function updateButtonStates() {
+    const selectedCount = state.selectedFiles.length;
+    const maxFiles = state.stFilterActive ? 20 : 30;
+    const isValidSelection = selectedCount > 0 && selectedCount <= maxFiles;
+    
+    // Update buttons based on dynamic limit
+    // ... rest of the logic
+}</pre>
+        
+        <h4>Fix 2: Enhanced Tab Accessibility</h4>
+        <p>Allow users to access tabs based on their current progress:</p>
+        <ul>
+            <li><strong>Files Tab:</strong> Always accessible</li>
+            <li><strong>Generated Batches:</strong> Always accessible</li>
+            <li><strong>Label Settings:</strong> Accessible when files are selected</li>
+            <li><strong>Preview & Print:</strong> Accessible when settings are configured</li>
+        </ul>
+        
+        <h4>Fix 3: Visual Feedback</h4>
+        <p>Add better visual feedback for tab states:</p>
+        <ul>
+            <li>Disabled tabs should be visually distinct</li>
+            <li>Show progress indicators</li>
+            <li>Display current limits clearly (e.g., "Select up to 20 files for ST mode")</li>
+        </ul>
+    </div>
+    
+    <div class="test-section">
+        <h3>🎯 Recommended Implementation</h3>
+        <button onclick="showFixCode()" class="btn-secondary">Show Fix Code</button>
+        <div id="fixCode" style="display: none; margin-top: 10px;">
+            <h4>Updated updateButtonStates function:</h4>
+            <pre>function updateButtonStates() {
+    const selectedCount = state.selectedFiles.length;
+    
+    // Dynamic limits based on mode
+    const maxFiles = state.stFilterActive ? 20 : 30;
+    const minFiles = 1;
+    
+    const isValidSelection = selectedCount >= minFiles && selectedCount <= maxFiles;
+    const printBtn = document.getElementById("printBtn");
+    const continueToSettingsBtn = document.getElementById("continueToSettingsBtn");
+    
+    // Update selection feedback
+    const feedbackElement = document.getElementById("selectionFeedback");
+    if (feedbackElement) {
+        if (state.stFilterActive) {
+            feedbackElement.textContent = `${selectedCount} of max ${maxFiles} ST files selected`;
+        } else {
+            feedbackElement.textContent = `${selectedCount} of max ${maxFiles} files selected`;
+        }
+    }
+    
+    // Enable/disable buttons
+    [printBtn, continueToSettingsBtn].forEach(btn => {
+        if (btn) {
+            btn.disabled = !isValidSelection;
+            if (isValidSelection) {
+                btn.classList.remove("opacity-50", "cursor-not-allowed");
+                btn.classList.add("hover:bg-blue-700");
+            } else {
+                btn.classList.add("opacity-50", "cursor-not-allowed");
+                btn.classList.remove("hover:bg-blue-700");
+            }
+        }
+    });
+    
+    // Update tab accessibility
+    updateTabAccessibility();
+}</pre>
+        </div>
+    </div>
+
+    <script>
+        function showFixCode() {
+            const codeDiv = document.getElementById('fixCode');
+            codeDiv.style.display = codeDiv.style.display === 'none' ? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>

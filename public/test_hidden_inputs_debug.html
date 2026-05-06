@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sub Application Hidden Inputs Debug Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .input-group { margin: 10px 0; padding: 10px; background: #f9f9f9; border-radius: 3px; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        .warning { color: orange; font-weight: bold; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        button { padding: 10px 20px; margin: 5px; background: #007cba; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #005a8b; }
+        input[type="text"] { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ddd; border-radius: 3px; }
+        .hidden-inputs { background: #e8f4fd; padding: 15px; border-radius: 5px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Sub Application Hidden Inputs Debug Test</h1>
+    
+    <div class="test-section">
+        <h3>Test: Load API Data and Populate All Hidden Inputs</h3>
+        <button onclick="testAllInputs()">Run Complete Test</button>
+        <div id="test-results"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Mock Form Elements</h3>
+        
+        <div class="hidden-inputs">
+            <h4>Early Form Inputs (Lines 876-877)</h4>
+            <div class="input-group">
+                <label>Unit File No Hidden:</label>
+                <input type="text" id="unitFileNoHidden" name="fileno" value="" placeholder="Should be populated by API">
+            </div>
+            <div class="input-group">
+                <label>Unit File No:</label>
+                <input type="text" id="unitFileNo" name="unit_file_no" value="" placeholder="Should be populated by API">
+            </div>
+        </div>
+
+        <div class="hidden-inputs">
+            <h4>Main Applicant Type (Line 1484)</h4>
+            <div class="input-group">
+                <label>Applicant Type (Main):</label>
+                <input type="text" id="mainApplicantTypeInput" name="applicant_type" value="" placeholder="Should be populated by API">
+            </div>
+        </div>
+
+        <div class="hidden-inputs">
+            <h4>SUA Hidden Fields (Lines 1115-1118)</h4>
+            <div class="input-group">
+                <label>SUA NP File No:</label>
+                <input type="text" id="hidden-sua-np-fileno" name="np_fileno" value="" placeholder="Should be populated by API">
+            </div>
+            <div class="input-group">
+                <label>SUA MLS File No:</label>
+                <input type="text" id="hidden-sua-mls-fileno" name="mls_fileno" value="" placeholder="Should be populated by API">
+            </div>
+            <div class="input-group">
+                <label>SUA File No:</label>
+                <input type="text" id="hidden-sua-fileno" name="fileno" value="" placeholder="Should be populated by API">
+            </div>
+            <div class="input-group">
+                <label>SUA File ID:</label>
+                <input type="text" id="hidden-sua-file-id" name="sua_file_id" value="" placeholder="Should be populated by API">
+            </div>
+        </div>
+
+        <div class="hidden-inputs">
+            <h4>Unit Hidden Fields (Lines 1290-1292)</h4>
+            <div class="input-group">
+                <label>Unit NP File No:</label>
+                <input type="text" id="hidden-unit-np-fileno" name="np_fileno" value="" placeholder="Should be populated by API">
+            </div>
+            <div class="input-group">
+                <label>Unit File No:</label>
+                <input type="text" id="hidden-unit-fileno" name="fileno" value="" placeholder="Should be populated by API">
+            </div>
+            <div class="input-group">
+                <label>Unit File ID:</label>
+                <input type="text" id="hidden-unit-file-id" name="unit_file_id" value="" placeholder="Should be populated by API">
+            </div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h3>Current Values</h3>
+        <button onclick="showCurrentValues()">Show All Current Values</button>
+        <div id="current-values"></div>
+    </div>
+
+    <script>
+        // Mock the Sub Application JavaScript functions
+        let allFileData = [];
+        
+        async function loadAPIData() {
+            try {
+                const response = await fetch('/api/file-numbers/st-all');
+                const data = await response.json();
+                
+                if (data.status === 'success' && data.data) {
+                    allFileData = data.data;
+                    return data.data;
+                } else {
+                    throw new Error('API response failed');
+                }
+            } catch (error) {
+                throw error;
+            }
+        }
+        
+        function autoFillApplicantInfo(fileData) {
+            console.log('🔄 Auto-filling applicant info with data:', fileData);
+            
+            if (fileData.applicant_type) {
+                const applicantType = fileData.applicant_type.toLowerCase();
+                const applicantTypeInput = document.getElementById('mainApplicantTypeInput');
+                if (applicantTypeInput) {
+                    applicantTypeInput.value = applicantType;
+                    console.log('✅ Applicant type set to:', applicantType);
+                    return true;
+                } else {
+                    console.warn('⚠️ Applicant type input not found');
+                    return false;
+                }
+            } else {
+                console.warn('⚠️ No applicant_type in file data');
+                return false;
+            }
+        }
+        
+        function handleSUAFileSelection(fileData) {
+            console.log('📋 Testing SUA File selection with:', fileData);
+            
+            // Update SUA hidden fields
+            const hiddenNpFileno = document.getElementById('hidden-sua-np-fileno');
+            const hiddenMlsFileno = document.getElementById('hidden-sua-mls-fileno');
+            const hiddenFileno = document.getElementById('hidden-sua-fileno');
+            const hiddenFileId = document.getElementById('hidden-sua-file-id');
+            
+            // Also update the early form unit file inputs
+            const unitFileNoHidden = document.getElementById('unitFileNoHidden');
+            const unitFileNo = document.getElementById('unitFileNo');
+            
+            if (hiddenNpFileno) hiddenNpFileno.value = fileData.np_fileno || '';
+            if (hiddenMlsFileno) hiddenMlsFileno.value = fileData.mls_fileno || '';
+            if (hiddenFileno) hiddenFileno.value = fileData.fileno || '';
+            if (hiddenFileId) hiddenFileId.value = fileData.id || '';
+            
+            // Update the early form inputs as well
+            if (unitFileNoHidden) unitFileNoHidden.value = fileData.fileno || '';
+            if (unitFileNo) unitFileNo.value = fileData.fileno || '';
+            
+            // Auto-fill applicant information
+            return autoFillApplicantInfo(fileData);
+        }
+        
+        function handleUnitFileSelection(fileData) {
+            console.log('🏠 Testing Unit File selection with:', fileData);
+            
+            // Update Unit hidden fields
+            const hiddenUnitNpFileno = document.getElementById('hidden-unit-np-fileno');
+            const hiddenUnitFileno = document.getElementById('hidden-unit-fileno');
+            const hiddenUnitFileId = document.getElementById('hidden-unit-file-id');
+            
+            // Also update the early form unit file inputs
+            const unitFileNoHidden = document.getElementById('unitFileNoHidden');
+            const unitFileNo = document.getElementById('unitFileNo');
+            
+            if (hiddenUnitNpFileno) hiddenUnitNpFileno.value = fileData.np_fileno || '';
+            if (hiddenUnitFileno) hiddenUnitFileno.value = fileData.fileno || '';
+            if (hiddenUnitFileId) hiddenUnitFileId.value = fileData.id || '';
+            
+            // Update the early form inputs as well
+            if (unitFileNoHidden) unitFileNoHidden.value = fileData.fileno || '';
+            if (unitFileNo) unitFileNo.value = fileData.fileno || '';
+            
+            // Auto-fill applicant information
+            return autoFillApplicantInfo(fileData);
+        }
+        
+        async function testAllInputs() {
+            const resultsDiv = document.getElementById('test-results');
+            resultsDiv.innerHTML = '<p class="warning">Running tests...</p>';
+            
+            try {
+                // Load API data
+                const apiData = await loadAPIData();
+                console.log('Loaded API data:', apiData);
+                
+                // Filter SUA and PUA files
+                const suaFiles = apiData.filter(file => file.file_no_type === 'SUA');
+                const puaFiles = apiData.filter(file => file.file_no_type === 'PUA');
+                
+                let results = `<h4 class="success">✅ API Data Loaded Successfully</h4>`;
+                results += `<p>Total Files: ${apiData.length}</p>`;
+                results += `<p>SUA Files: ${suaFiles.length}</p>`;
+                results += `<p>PUA Files: ${puaFiles.length}</p>`;
+                
+                // Test SUA file selection if available
+                if (suaFiles.length > 0) {
+                    const testSUA = suaFiles[0];
+                    console.log('Testing with SUA file:', testSUA);
+                    const suaSuccess = handleSUAFileSelection(testSUA);
+                    results += `<h5>SUA File Test:</h5>`;
+                    results += `<p class="${suaSuccess ? 'success' : 'error'}">${suaSuccess ? '✅' : '❌'} SUA file selection test</p>`;
+                    results += `<pre>${JSON.stringify(testSUA, null, 2)}</pre>`;
+                }
+                
+                // Test PUA file selection if available
+                if (puaFiles.length > 0) {
+                    const testPUA = puaFiles[0];
+                    console.log('Testing with PUA file:', testPUA);
+                    const puaSuccess = handleUnitFileSelection(testPUA);
+                    results += `<h5>PUA File Test:</h5>`;
+                    results += `<p class="${puaSuccess ? 'success' : 'error'}">${puaSuccess ? '✅' : '❌'} PUA file selection test</p>`;
+                    results += `<pre>${JSON.stringify(testPUA, null, 2)}</pre>`;
+                }
+                
+                resultsDiv.innerHTML = results;
+                
+                // Auto-show current values after test
+                setTimeout(showCurrentValues, 1000);
+                
+            } catch (error) {
+                console.error('Test failed:', error);
+                resultsDiv.innerHTML = `<p class="error">❌ Test failed: ${error.message}</p>`;
+            }
+        }
+        
+        function showCurrentValues() {
+            const valuesDiv = document.getElementById('current-values');
+            
+            const inputs = [
+                'unitFileNoHidden',
+                'unitFileNo', 
+                'mainApplicantTypeInput',
+                'hidden-sua-np-fileno',
+                'hidden-sua-mls-fileno', 
+                'hidden-sua-fileno',
+                'hidden-sua-file-id',
+                'hidden-unit-np-fileno',
+                'hidden-unit-fileno',
+                'hidden-unit-file-id'
+            ];
+            
+            let values = '<h4>Current Input Values:</h4>';
+            inputs.forEach(inputId => {
+                const element = document.getElementById(inputId);
+                const value = element ? element.value : 'ELEMENT NOT FOUND';
+                const status = element && element.value ? 'success' : (element ? 'warning' : 'error');
+                values += `<div class="input-group">`;
+                values += `<strong>${inputId}:</strong> `;
+                values += `<span class="${status}">${value || '(empty)'}</span>`;
+                values += `</div>`;
+            });
+            
+            valuesDiv.innerHTML = values;
+        }
+        
+        // Auto-run test on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Debug page loaded');
+            showCurrentValues(); // Show initial empty state
+        });
+    </script>
+</body>
+</html>

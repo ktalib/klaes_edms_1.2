@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inline Address Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .form-group { margin: 10px 0; }
+        label { display: block; margin: 5px 0; font-weight: bold; }
+        input, select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 250px; }
+        .address-display { 
+            padding: 10px; 
+            background: #f9f9f9; 
+            border: 1px solid #ddd; 
+            border-radius: 4px; 
+            margin: 10px 0; 
+            min-height: 40px;
+        }
+        .test-button { 
+            padding: 10px 20px; 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            margin: 10px 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 Inline Address Test (No External JS)</h1>
+    <p>This test uses inline JavaScript to bypass any loading issues:</p>
+
+    <div class="form-group">
+        <label>House Number:</label>
+        <input type="text" id="ownerHouseNo" oninput="inlineUpdateAddress()">
+    </div>
+
+    <div class="form-group">
+        <label>Street Name:</label>
+        <input type="text" id="ownerStreetName" oninput="inlineUpdateAddress()">
+    </div>
+
+    <div class="form-group">
+        <label>District:</label>
+        <input type="text" id="ownerDistrict" oninput="inlineUpdateAddress()">
+    </div>
+
+    <div class="form-group">
+        <label>State:</label>
+        <select id="ownerState" onchange="inlineUpdateAddress()">
+            <option value="">Select State</option>
+            <option value="Lagos">Lagos</option>
+            <option value="Abuja">Abuja</option>
+            <option value="Kano">Kano</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>LGA:</label>
+        <select id="ownerLga" onchange="inlineUpdateAddress()">
+            <option value="">Select LGA</option>
+            <option value="Ikeja">Ikeja</option>
+            <option value="Victoria Island">Victoria Island</option>
+            <option value="Surulere">Surulere</option>
+        </select>
+    </div>
+
+    <div class="address-display">
+        <strong>Address Preview:</strong><br>
+        <span id="fullContactAddress">Address will appear here...</span>
+    </div>
+
+    <input type="hidden" id="contactAddressDisplay">
+
+    <button class="test-button" onclick="fillTestData()">Fill Test Data</button>
+    <button class="test-button" onclick="showHiddenValue()">Show Hidden Value</button>
+    <button class="test-button" onclick="clearAll()">Clear All</button>
+
+    <div id="debug-info" style="background: #f0f0f0; padding: 15px; margin: 20px 0; border-radius: 5px;">
+        <strong>Debug Info:</strong><br>
+        <span id="debug-text">Ready to test...</span>
+    </div>
+
+    <script>
+        // Inline address update function - simplified version
+        function inlineUpdateAddress() {
+            console.log('🔄 inlineUpdateAddress called');
+            
+            // Get all the input values
+            const houseNo = document.getElementById('ownerHouseNo').value || '';
+            const streetName = document.getElementById('ownerStreetName').value || '';
+            const district = document.getElementById('ownerDistrict').value || '';
+            const state = document.getElementById('ownerState').value || '';
+            const lga = document.getElementById('ownerLga').value || '';
+            
+            console.log('Input values:', { houseNo, streetName, district, state, lga });
+            
+            // Create the full address
+            const addressParts = [houseNo, streetName, district, lga, state].filter(part => part.trim() !== '');
+            const fullAddress = addressParts.join(', ');
+            
+            console.log('Full address:', fullAddress);
+            
+            // Update the display elements
+            const displayElement = document.getElementById('fullContactAddress');
+            const hiddenElement = document.getElementById('contactAddressDisplay');
+            
+            if (displayElement) {
+                displayElement.textContent = fullAddress || 'Address will appear here...';
+            }
+            
+            if (hiddenElement) {
+                hiddenElement.value = fullAddress;
+            }
+            
+            // Update debug info
+            const debugElement = document.getElementById('debug-text');
+            if (debugElement) {
+                debugElement.innerHTML = `
+                    Last Update: ${new Date().toLocaleTimeString()}<br>
+                    Address Parts: ${addressParts.length}<br>
+                    Full Address: "${fullAddress}"<br>
+                    Hidden Input Value: "${hiddenElement ? hiddenElement.value : 'NOT FOUND'}"
+                `;
+            }
+        }
+        
+        function fillTestData() {
+            document.getElementById('ownerHouseNo').value = '123';
+            document.getElementById('ownerStreetName').value = 'Test Street';
+            document.getElementById('ownerDistrict').value = 'Test District';
+            document.getElementById('ownerState').value = 'Lagos';
+            document.getElementById('ownerLga').value = 'Ikeja';
+            
+            inlineUpdateAddress();
+        }
+        
+        function showHiddenValue() {
+            const hiddenValue = document.getElementById('contactAddressDisplay').value;
+            alert('Hidden Input Value: "' + hiddenValue + '"');
+        }
+        
+        function clearAll() {
+            document.getElementById('ownerHouseNo').value = '';
+            document.getElementById('ownerStreetName').value = '';
+            document.getElementById('ownerDistrict').value = '';
+            document.getElementById('ownerState').value = '';
+            document.getElementById('ownerLga').value = '';
+            
+            inlineUpdateAddress();
+        }
+        
+        // Test immediately when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Inline test page loaded');
+            inlineUpdateAddress(); // Initialize
+        });
+    </script>
+</body>
+</html>

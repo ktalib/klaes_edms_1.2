@@ -1,0 +1,2408 @@
+@extends('layouts.app')
+@section('page-title')
+    {{ __('MLS File Number Generator') }}
+@endsection
+ 
+@section('content') 
+    @push('styles')
+        <link rel="stylesheet" href="{{ asset('css/global-fileno-modal.css') }}">
+        <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+        <style>
+            .select2-container .select2-selection--single {
+                height: 42px !important;
+                display: flex;
+                align-items: center;
+                border-color: #d1d5db !important;
+            }
+            .select2-container--default .select2-selection--single .select2-selection__arrow {
+                height: 40px !important;
+            }
+        </style>
+    @endpush
+    <style>
+        /* Action Dropdown Styles */
+        .action-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .action-dropdown-menu {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: 100%;
+            z-index: 9999;
+            min-width: 200px;
+            padding: 0.5rem 0;
+            margin-top: 2px;
+            background-color: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            text-align: left;
+        }
+
+        .action-dropdown:hover .action-dropdown-menu {
+            display: block;
+        }
+
+        /* Ensure table doesn't clip dropdown */
+        #mlsfTable, #mlsfTable_wrapper {
+            overflow: visible !important;
+        }
+
+        .dataTables_scrollBody {
+            overflow: visible !important;
+        }
+
+        /* Responsive adjustment */
+        @media (max-width: 768px) {
+            .action-dropdown-menu {
+                right: auto;
+                left: 0;
+            }
+        }
+    </style>
+            <!-- Main Content -->
+            <div class="flex-1 overflow-auto">
+                <!-- Header -->
+                @include('admin.header', [
+                    'PageTitle' => 'MLS File Number Generator',
+                    'PageDescription' => 'Generate and manage MLS file numbers'])
+
+                <!-- Dashboard Content -->
+                <div class="p-6">
+                    <div class="container mx-auto py-6 space-y-6">
+
+                        <!-- Tab Navigation -->
+                        <div class="border-b-2 border-gray-200 mb-6">
+                            <nav class="flex space-x-1" aria-label="Tabs">
+                                <button 
+                                    id="tab-generator" 
+                                    onclick="switchTab('generator')"
+                                    class="tab-button group relative py-3 px-6 text-sm font-semibold rounded-t-lg transition-all duration-200">
+                                    <div class="flex items-center space-x-2">
+                                        <i data-lucide="file-text" class="w-5 h-5"></i>
+                                        <span>MLS File Number Generator</span>
+                                    </div>
+                                    <div class="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-t-sm transition-all duration-200"></div>
+                                </button>
+                                @if(Auth::user()->assign_role == 'Supper Admin')
+                                <button 
+                                    id="tab-serial-init" 
+                                    onclick="switchTab('serial-init')"
+                                    class="tab-button group relative py-3 px-6 text-sm font-semibold rounded-t-lg transition-all duration-200">
+                                    <div class="flex items-center space-x-2">
+                                        <i data-lucide="settings" class="w-5 h-5"></i>
+                                        <span>Serial Initialization</span>
+                                    </div>
+                                    <div class="absolute bottom-0 left-0 right-0 h-1 bg-transparent rounded-t-sm transition-all duration-200"></div>
+                                </button>
+                                @endif
+                                <button 
+                                    id="tab-consolidation" 
+                                    onclick="switchTab('consolidation')"
+                                    class="tab-button group relative py-3 px-6 text-sm font-semibold rounded-t-lg transition-all duration-200">
+                                    <div class="flex items-center space-x-2">
+                                        <i data-lucide="file-bar-chart" class="w-5 h-5"></i>
+                                        <span>Consolidation Report</span>
+                                    </div>
+                                    <div class="absolute bottom-0 left-0 right-0 h-1 bg-transparent rounded-t-sm transition-all duration-200"></div>
+                                </button>
+                            </nav>
+                        </div>
+
+                        <!-- Tab Content: File Generator -->
+                        <div id="content-generator" class="tab-content">
+
+                            <!-- Action Buttons -->
+                        <div class="flex justify-between items-center mb-6">
+                            <div class="flex space-x-4">
+                                <button 
+                                    onclick="openGeneratorModalMain()"
+                                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors">
+                                    <i data-lucide="plus" class="w-4 h-4"></i>
+                                    <span>Generate New  File Number</span>
+                                </button>
+
+                                <button 
+                                    onclick="openBatchPrintModal()"
+                                    class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors">
+                                    <i data-lucide="printer" class="w-4 h-4"></i>
+                                    <span>Print Batch Commissioning Sheet</span>
+                                </button>
+
+                                 <!-- <button 
+                                    onclick="openMigrationModal()"
+                                    class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors">
+                                    <i data-lucide="upload" class="w-4 h-4"></i>
+                                    <span>Migrate Data</span>
+                                </button>   -->
+                                <!-- <button 
+                                    onclick="testDatabaseConnection()"
+                                    class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors">
+                                    <i data-lucide="database" class="w-4 h-4"></i>
+                                    <span>Test Database</span>
+                                </button> -->
+                                <!-- <button 
+                                    onclick="debugTableData()"
+                                    class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors">
+                                    <i data-lucide="bug" class="w-4 h-4"></i>
+                                    <span>Debug Data</span>
+                                </button> -->
+                            </div>
+
+                            <!-- Reservation status indicators -->
+                            <div id="reservationIndicator" class="hidden mb-4"></div>
+                            <div id="reservationWarning" class="hidden mb-4"></div>
+                            <!-- Statistics Grid -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 ">
+                                <!-- Total Generated -->
+                                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex items-center space-x-4">
+                                    <div class="p-3 bg-blue-100 rounded-lg text-blue-600">
+                                        <i data-lucide="file-check" class="w-8 h-8"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Total Commissioned</p>
+                                        <h3 class="text-2xl font-bold text-gray-900" id="stat-total">{{ number_format($totalCount ?? 0) }}</h3>
+                                        <p class="text-xs text-green-600 flex items-center mt-1">
+                                            <i data-lucide="check-circle" class="w-3 h-3 mr-1"></i>
+                                            excludes legacy
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Generated Today -->
+                                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex items-center space-x-4">
+                                    <div class="p-3 bg-green-100 rounded-lg text-green-600">
+                                        <i data-lucide="calendar" class="w-8 h-8"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Commissioned Today</p>
+                                        <h3 class="text-2xl font-bold text-gray-900" id="stat-today">{{ number_format($todayCount ?? 0) }}</h3>
+                                        <p class="text-xs text-gray-400 mt-1">
+                                            {{ date('M j, Y') }}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Generated This Month -->
+                                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex items-center space-x-4">
+                                    <div class="p-3 bg-purple-100 rounded-lg text-purple-600">
+                                        <i data-lucide="bar-chart-2" class="w-8 h-8"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Commissioned This Month</p>
+                                        <h3 class="text-2xl font-bold text-gray-900" id="stat-month">{{ number_format($monthCount ?? 0) }}</h3>
+                                        <p class="text-xs text-gray-400 mt-1">
+                                            {{ date('F Y') }}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- DataTable -->
+                        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+                            <div class="p-6">
+                                <div class="overflow-x-auto">
+                                    <table id="mlsfTable" class="w-full table-auto">
+                                        <thead>
+                                            <tr class="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">S/N</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Customer Type</th>
+
+                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Source</th>
+
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">MLS File No</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">File Title</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Land Use</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">TP No</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Plot No</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">LGA</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Location</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Commissioned By</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Time Commissioned</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Date Commissioned</th>
+                                                <th class="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="bg-white divide-y divide-gray-100">
+                                            <!-- Data will be loaded via DataTables AJAX -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- End of File Generator Tab -->
+
+                    <!-- Tab Content: Serial Initialization -->
+                    <div id="content-serial-init" class="tab-content hidden">
+
+                        <!-- Warning Alert -->
+                        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <i data-lucide="alert-triangle" class="h-5 w-5 text-yellow-400"></i>
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm text-yellow-700">
+                                        <strong class="font-medium">Important:</strong> 
+                                        Serial initialization is a <strong>one-time</strong> operation. Once initialized and locked, 
+                                        values cannot be modified through the UI to prevent system errors and duplicate file numbers.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Serial Control Table -->
+                        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+                            <div class="p-6">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-lg font-semibold text-gray-900">Serial Number Control</h3>
+                                    <button 
+                                        onclick="refreshSerialTable()" 
+                                        class="text-blue-600 hover:text-blue-700 flex items-center space-x-1 text-sm">
+                                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                                        <span>Refresh</span>
+                                    </button>
+                                </div>
+
+                                <div class="overflow-x-auto">
+                                    <table class="w-full" id="serialControlTable">
+                                        <thead class="bg-gray-50">
+                                            <tr>
+                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Land Use</th>
+                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year</th>
+                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Serial</th>
+                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Initialized By</th>
+                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Initialized At</th>
+                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="bg-white divide-y divide-gray-200" id="serialTableBody">
+                                            <!-- Will be populated by JavaScript just  the  -->
+                                            <tr>
+                                                <td colspan="7" class="px-4 py-8 text-center text-gray-500">
+                                                    <i data-lucide="loader" class="w-6 h-6 inline-block animate-spin"></i>
+                                                    <p class="mt-2">Loading serial control data...</p>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                    <!-- End of Serial Initialization Tab -->
+
+                    <!-- Tab Content: Consolidation Report -->
+                    <div id="content-consolidation" class="tab-content hidden">
+
+                        <!-- Header Section -->
+                        <div class="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-5 mb-6">
+                            <div class="flex items-start space-x-4">
+                                <div class="bg-emerald-100 p-3 rounded-lg">
+                                    <i data-lucide="file-bar-chart" class="w-6 h-6 text-emerald-600"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-lg font-bold text-emerald-900">MLS File Number Consolidation Report</h3>
+                                    <p class="text-sm text-emerald-700 mt-1">
+                                        Generate and export consolidated reports from the <strong>mls_file_no</strong> source table.
+                                        Filter by date range, file number year, or land use prefix, then export to PDF or Excel.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Filter Controls -->
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
+                            <div class="px-6 py-4 border-b border-gray-100">
+                                <h4 class="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center space-x-2">
+                                    <i data-lucide="filter" class="w-4 h-4 text-gray-400"></i>
+                                    <span>Report Filters</span>
+                                </h4>
+                            </div>
+                            <div class="p-6">
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                                    <!-- Date From -->
+                                    <div>
+                                        <label for="crDateFrom" class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wider">Date From</label>
+                                        <input type="date" id="crDateFrom"
+                                            class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all">
+                                    </div>
+                                    <!-- Date To -->
+                                    <div>
+                                        <label for="crDateTo" class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wider">Date To</label>
+                                        <input type="date" id="crDateTo"
+                                            class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all">
+                                    </div>
+                                    <!-- File Year -->
+                                    <div>
+                                        <label for="crFileYear" class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wider">File Number Year</label>
+                                        <select id="crFileYear"
+                                            class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all">
+                                            <option value="">All Years</option>
+                                            @for ($y = date('Y'); $y >= 2020; $y--)
+                                                <option value="{{ $y }}" {{ $y == date('Y') ? 'selected' : '' }}>{{ $y }}</option>
+                                            @endfor
+                                        </select>
+                                    </div>
+                                    <!-- Land Use Prefix -->
+                                    <div>
+                                        <label for="crPrefix" class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wider">Land Use Prefix</label>
+                                        <select id="crPrefix"
+                                            class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all">
+                                            <option value="">All Prefixes</option>
+                                            @foreach($allPrefixes as $pfx)
+                                                <option value="{{ $pfx->prefix }}">{{ $pfx->prefix }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Action Row -->
+                                <div class="flex flex-wrap items-center justify-between mt-6 pt-4 border-t border-gray-100">
+                                    <div class="flex items-center space-x-3">
+                                        <button onclick="fetchConsolidationReport()"
+                                            class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg flex items-center space-x-2 text-sm font-semibold transition-all shadow-sm hover:shadow-md">
+                                            <i data-lucide="search" class="w-4 h-4"></i>
+                                            <span>Generate Report</span>
+                                        </button>
+                                        <button onclick="resetConsolidationFilters()"
+                                            class="bg-white hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-lg flex items-center space-x-2 text-sm font-medium border border-gray-300 transition-all">
+                                            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                                            <span>Reset</span>
+                                        </button>
+                                    </div>
+
+                                    <!-- Export Buttons (only visible after data is fetched) -->
+                                    <div id="crExportBtns" class="hidden flex items-center space-x-3 mt-3 lg:mt-0">
+                                        <span class="text-sm text-gray-500 font-medium" id="crRecordCount">0 records</span>
+                                        <button onclick="exportConsolidationPDF()"
+                                            class="bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg flex items-center space-x-2 text-sm font-semibold transition-all shadow-sm hover:shadow-md">
+                                            <i data-lucide="file-text" class="w-4 h-4"></i>
+                                            <span>Export PDF</span>
+                                        </button>
+                                        <button onclick="exportConsolidationExcel()"
+                                            class="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg flex items-center space-x-2 text-sm font-semibold transition-all shadow-sm hover:shadow-md">
+                                            <i data-lucide="sheet" class="w-4 h-4"></i>
+                                            <span>Export Excel</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Preview Table -->
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                            <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                                <h4 class="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center space-x-2">
+                                    <i data-lucide="table" class="w-4 h-4 text-gray-400"></i>
+                                    <span>Report Preview</span>
+                                </h4>
+                                <div id="crFilterSummary" class="hidden flex items-center gap-3 text-xs">
+                                    <span id="crSummaryBadge" class="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full font-bold border border-emerald-200"></span>
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto max-h-[550px]">
+                                <table class="min-w-full divide-y divide-gray-200" id="crPreviewTable">
+                                    <thead class="bg-gray-50 sticky top-0 z-10">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">SN</th>
+                                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">File Number</th>
+                                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">File Name</th>
+                                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Land Use</th>
+                                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Location</th>
+                                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">LGA</th>
+                                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200" id="crPreviewBody">
+                                        <tr>
+                                            <td colspan="7" class="px-6 py-16 text-center text-gray-400">
+                                                <div class="flex flex-col items-center gap-3">
+                                                    <i data-lucide="file-bar-chart" class="w-10 h-10 text-gray-300"></i>
+                                                    <span class="text-sm">Apply filters and click <strong>"Generate Report"</strong> to preview data</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                    </div>
+                    <!-- End of Consolidation Report Tab -->
+
+                </div>
+
+
+                <!-- Footer -->
+                @include('admin.footer')
+            </div>
+
+            <!-- Generate Modal with Alpine.js -->
+            <div id="generateModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+                <div class="relative top-5 mx-auto p-6 border w-[800px] max-w-4xl shadow-xl rounded-lg bg-white" 
+                     x-data="fileNumberGenerator()" x-init="console.log('X-INIT DIRECT LOG'); init()">
+                    <div class="mt-3">
+                        <!-- Modal Header -->
+                        <div class="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
+                            <div>
+                                <h3 id="modalTitle" class="text-xl font-semibold text-gray-900">Commission  New File Number</h3>
+                                <p class="text-sm text-gray-500 mt-1">Fill in the details to generate a new MLS file number</p>
+                            </div>
+                            <button onclick="closeGenerateModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                                <i data-lucide="x" class="w-6 h-6"></i>
+                            </button>
+                        </div>
+
+                        <!-- Modal Form -->
+                        <form id="generateForm" onsubmit="submitForm(event)" class="space-y-6">
+                            @csrf
+
+                            <!-- Hidden field for the generated file number that backend expects -->
+                            <input type="hidden" name="generated_file_number" x-model="preview" id="generatedFileNumber">
+                            <input type="hidden" name="tracking_id" id="trackingIdInput" value="">
+                            <input type="hidden" name="related_fileno" x-model="relatedFileNo">
+                            <input type="hidden" name="related_file_title" x-model="relatedFileTitle">
+                            <input type="hidden" name="related_file_indexing_id" x-model="relatedFileIndexingId">
+                            <input type="hidden" name="change_of_purpose_app_id" x-model="changeOfPurposeAppId">
+                            <input type="hidden" name="original_file_no" x-model="originalFileNo">
+                            <input type="hidden" name="new_purpose" x-model="newPurpose">
+                            <input type="hidden" name="subdivision_app_id" x-model="subdivisionAppId">
+                            <input type="hidden" name="merger_app_id" x-model="mergerAppId">
+
+                            <!-- Application Type Selection -->
+                            <div class="bg-gray-50 p-4 rounded-lg border border-gray-100">
+                                <label class="block text-sm font-semibold text-gray-700 mb-4">
+                                    <i data-lucide="info" class="w-4 h-4 inline mr-1 text-blue-500"></i>
+                                    Application Type
+                                </label>
+                                <div class="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-8">
+                                    <div class="flex items-center gap-8 shrink-0">
+                                        <label class="flex items-center group cursor-pointer">
+                                            <div class="relative flex items-center justify-center">
+                                                <input type="radio" name="application_type" value="new" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500" 
+                                                       x-model="applicationType" @change="updateApplicationType()" checked required>
+                                            </div>
+                                            <span class="ml-2 text-sm font-medium text-gray-700 group-hover:text-blue-600 transition-colors">Direct Allocation</span>
+                                        </label>
+                                        <label class="flex items-center group cursor-pointer">
+                                            <div class="relative flex items-center justify-center">
+                                                <input type="radio" name="application_type" value="conversion" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500" 
+                                                       x-model="applicationType" @change="updateApplicationType()" required>
+                                            </div>
+                                            <span class="ml-2 text-sm font-medium text-gray-700 group-hover:text-blue-600 transition-colors">Conversion</span>
+                                        </label>
+                                        <label class="hidden items-center group cursor-pointer">
+                                            <div class="relative flex items-center justify-center">
+                                                <input type="radio" name="application_type" value="change_of_purpose" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500" 
+                                                       x-model="applicationType" @change="updateApplicationType()" required>
+                                            </div>
+                                            <span class="ml-2 text-sm font-medium text-gray-700 group-hover:text-blue-600 transition-colors">
+                                                <i data-lucide="repeat" class="w-4 h-4 inline mr-1"></i>Change of Purpose
+                                            </span>
+                                        </label>
+                                    </div>
+
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex items-center gap-2 mb-2">
+                                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">File Type</span>
+                                        </div>
+                                        <select id="quickFileOption" name="quick_file_option"
+                                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm font-medium text-gray-700"
+                                                @change="
+                                                    let val = $event.target.value;
+                                                    if (val === 'change_of_purpose') {
+                                                        applicationType = 'change_of_purpose';
+                                                        fileOption = 'normal';
+                                                        updateApplicationType();
+                                                    } else {
+                                                        applicationType = 'new';
+                                                        fileOption = val;
+                                                        updateFileOption();
+                                                    }
+                                                ">
+                                                 <option  >Select File Type</option>
+                                            <option value="temporary">Temporary</option>
+                                            <option value="extension">Extension</option>
+                                            <option value="miscellaneous">Miscellaneous</option>
+                                            <option value="change_of_purpose">Change of Purpose</option>
+                                            <option value="subdivision">Subdivision</option>
+                                            <option value="merger">Merger</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Allocation Source (Direct Allocation only) -->
+                                <div x-show="applicationType === 'new'" class="mt-4 pt-4 border-t border-gray-200" x-transition>
+                                    <label class="block text-[10px] font-bold text-gray-400 uppercase mb-3">
+                                        <i data-lucide="filter" class="w-3 h-3 inline mr-1 text-blue-500"></i>
+                                        Allocation Source
+                                    </label>
+                                    
+                                    <!-- Allocation Options - Row 1 -->
+                                    <div class="grid grid-cols-3 gap-2 mb-2">
+                                        <!-- Default Radio -->
+                                        <label class="flex items-center justify-center p-2 rounded-md border border-gray-200 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors">
+                                            <input type="radio" name="allocation_source_type" value="default"
+                                                   class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500" checked
+                                                   @change="_currentAllocationSourceType = 'default'; hasCustomFileName = false; allocatedByFilter = ''; defaultAllocationType = ''">
+                                            <span class="ml-2 text-xs font-medium text-gray-700 whitespace-nowrap">Default</span>
+                                        </label>
+
+                                        <!-- Occupancy Permit (OP) -->
+                                        <label class="flex items-center justify-center p-2 rounded-md border border-blue-200 bg-blue-50/60 cursor-pointer hover:bg-blue-50 transition-colors">
+                                            <input type="radio" name="allocation_source_type" value="op"
+                                                   class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                                   @change="_currentAllocationSourceType = 'op'; allocatedByFilter = ''; handleAllocationFilterChange()">
+                                            <span class="ml-2 text-xs font-semibold text-gray-700 whitespace-nowrap">Occupancy Permit (OP)</span>
+                                        </label>
+
+                                        <!-- Allocation List -->
+                                        <label class="flex items-center justify-center p-2 rounded-md border border-gray-200 bg-white cursor-pointer hover:bg-gray-50 transition-colors">
+                                            <input type="radio" name="allocation_source_type" value="allocation_list"
+                                                   class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                                   @change="_currentAllocationSourceType = 'allocation_list'; allocatedByFilter = 'Allocation List'; handleAllocationFilterChange(); defaultAllocationType = ''">
+                                            <span class="ml-2 text-xs font-semibold text-gray-700 whitespace-nowrap">Allocation List</span>
+                                        </label>
+                                    </div>
+
+                                    <!-- Allocation Options - Row 2 (Hidden by default, shown only when OP is selected) -->
+                                    <div class="grid grid-cols-2 gap-2" x-show="_currentAllocationSourceType === 'op'" x-transition>
+                                        <!-- Resettlement -->
+                                        <label class="flex items-center justify-center p-2 rounded-md border border-gray-200 bg-white cursor-pointer hover:bg-gray-50 transition-colors">
+                                            <input type="radio" name="allocation_source_type" value="resettlement"
+                                                   class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                                   @change="_currentAllocationSourceType = 'resettlement'; allocatedByFilter = ''; defaultAllocationType = 'resettlement'; openCommissionOpCaptureModal('resettlement')">
+                                            <span class="ml-2 text-xs font-medium text-gray-700 whitespace-nowrap">Resettlement</span>
+                                        </label>
+
+                                        <!-- Direct Allocation -->
+                                        <label class="flex items-center justify-center p-2 rounded-md border border-gray-200 bg-white cursor-pointer hover:bg-gray-50 transition-colors">
+                                            <input type="radio" name="allocation_source_type" value="direct"
+                                                   class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                                   @change="_currentAllocationSourceType = 'direct'; allocatedByFilter = ''; defaultAllocationType = 'direct'; openCommissionOpCaptureModal('direct')">
+                                            <span class="ml-2 text-xs font-medium text-gray-700 whitespace-nowrap">Direct Allocation</span>
+                                        </label>
+                                    </div>
+
+                                    <input x-show="allocatedByFilter === 'Allocation List'" type="hidden" name="is_resettlement" value="0">
+                                    <input type="hidden" name="is_resettlement" :value="defaultAllocationType === 'resettlement' ? 1 : 0" x-show="allocatedByFilter === ''">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Sections hidden when OP source is selected but not yet captured -->
+                            <div x-show="!isOpFormHidden" x-transition.opacity.duration.200ms class="space-y-6">
+
+                            <!-- Batch / Multi-Mode Section -->
+                            <div class="bg-gradient-to-r p-4 rounded-lg border-2 transition-colors duration-300"
+                                 :class="applicationType === 'change_of_purpose' ? 'from-purple-50 to-pink-50 border-purple-200' : 'from-blue-50 to-indigo-50 border-blue-200'">
+                                <div class="flex items-center justify-between mb-3">
+                                    <div class="flex items-center space-x-2">
+                                        <i data-lucide="layers" class="w-5 h-5" :class="applicationType === 'change_of_purpose' ? 'text-purple-600' : 'text-blue-600'"></i>
+                                        <label class="text-sm font-semibold text-gray-700" x-text="applicationType === 'change_of_purpose' ? 'Change of Purpose Mode' : 'Batch Mode'"></label>
+                                        <span class="text-xs text-gray-500" x-text="applicationType === 'change_of_purpose' ? '(Generate file using selected CoP application)' : '(Generate multiple files at once)'"></span>
+                                    </div>
+                                    
+                                    <!-- Hide default batch switch when in Change of purpose mode -->
+                                    <label class="relative inline-flex items-center cursor-pointer" x-show="applicationType !== 'change_of_purpose'">
+                                        <input type="checkbox" x-model="batchMode" @change="toggleBatchMode()" class="sr-only peer">
+                                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                    </label>
+                                </div>
+
+                                <!-- Batch Quantity Input (shown when batch mode is active) -->
+                                <div x-show="batchMode" x-transition class="mt-3">
+                                    <label for="batchQuantity" class="block text-xs font-medium text-gray-600 mb-1">
+                                        Number of Files to Generate
+                                    </label>
+                                    <div class="flex items-center space-x-3">
+                                        <input type="number" id="batchQuantity" x-model="batchQuantity" @input="updateBatchPreview()"
+                                               min="2" max="100" 
+                                               class="w-32 px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <span class="text-sm text-gray-600">files (Max: 100)</span>
+                                        <div class="flex-1"></div>
+                                        <div class="text-xs text-blue-600 font-medium" x-show="batchQuantity > 1">
+                                            Serial Range: <span x-text="serialRangePreview"></span>
+                                        </div>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-2">
+                                        <i data-lucide="info" class="w-3 h-3 inline"></i>
+                                        All files will share the same File Name and Prefix. You'll add unique location details for each.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Main Form Grid -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <!-- Left Column -->
+                                <div class="space-y-4">
+                                    <!-- File Name -->
+
+
+                                      <!-- File Options -->
+
+                                    <!-- Middle Prefix Section -->
+                                    <div id="middlePrefixSection" class="hidden">
+                                        <label for="middlePrefix" class="block text-sm font-medium text-gray-700 mb-2">
+                                            <i data-lucide="tag" class="w-4 h-4 inline mr-1"></i>
+                                            Middle Prefix
+                                        </label>
+                                        <input type="text" id="middlePrefix" name="middle_prefix" x-model="middlePrefix"
+                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            placeholder="e.g., KN" value="KN">
+                                    </div>
+
+                                    <!-- This section has been moved to the right column with toggle functionality -->
+
+                                    <!-- File Options Section - 2x2 Grid -->
+                                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                        <label class="block text-sm font-semibold text-gray-700 mb-3">
+                                            <i data-lucide="settings" class="w-4 h-4 inline mr-1"></i>
+                                            File Options
+                                        </label>
+
+                                        <!-- 2x2 Grid Layout -->
+                                        <div class="grid grid-cols-2 gap-4">
+                                            <!-- Row 1, Col 1: File Type -->
+                                            <div>
+                                                <label for="fileOption" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    File Type
+                                                </label>
+                                                <select id="fileOption" name="file_option" x-model="fileOption" @change="updateFileOption()"
+                                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
+                                                    <option value="normal" selected>Normal File</option>
+                                                    <option value="temporary" hidden>Temporary File</option>
+                                                    <option value="extension" hidden>Extension</option>
+                                                    <option value="miscellaneous" hidden>Miscellaneous</option>
+                                                    <option value="old_mls">Old MLS</option>
+                                                    <option value="sltr">SLTR</option>
+                                                    <option value="sit" x-show="applicationType === 'new'">SIT</option>
+                                                </select>
+                                            </div>
+
+                                            <!-- Row 1, Col 2: File NameSelection -->
+                                            <div>
+                                                <label for="fileName" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    File Name
+                                                </label>
+                                                
+                                                <!-- Standard Text Input (Always shown when hasCustomFileName is checked) -->
+                                                <div x-show="hasCustomFileName || applicationType !== 'new' || allocatedByFilter === ''" x-cloak>
+                                                    <input type="text" id="fileName" name="file_name" x-model="fileName"
+                                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                           :class="{ 'bg-gray-100 opacity-75': isInherited }"
+                                                           :readonly="isInherited"
+                                                           placeholder="Enter file name">
+                                                </div>
+
+                                                <!-- Select2 Dropdown (Shown only when NOT using custom file name AND Direct Allocation + Allocation List) -->
+                                                <div x-show="!hasCustomFileName && applicationType === 'new' && allocatedByFilter === 'Allocation List'" wire:ignore x-cloak>
+                                                    <select id="allocationSelect" 
+                                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                            style="width: 100%">
+                                                        <option value="">Search and select an allottee</option>
+                                                        @foreach($unallocatedEntries as $entry)
+                                                            <option value="{{ $entry->id }}" 
+                                                                    data-full-name="{{ $entry->first_name }} {{ $entry->middle_name ? $entry->middle_name . ' ' : '' }}{{ $entry->last_name }}"
+                                                                    data-plot="{{ $entry->plot_number }}"
+                                                                    data-district="{{ $entry->district }}"
+                                                                    data-lga="{{ $entry->lga }}"
+                                                                    data-state="{{ $entry->state }}"
+                                                                    data-allocated-by="{{ $entry->allocated_by }}"
+                                                                    data-allottee-address="{{ $entry->allottee_address }}">
+                                                                {{ $entry->first_name }} {{ $entry->middle_name ? $entry->middle_name . ' ' : '' }}{{ $entry->last_name }}
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                    <!-- Hidden input for the allocation ID -->
+                                                    <input type="hidden" name="allocation_id" id="allocation_id" x-model="allocationId">
+                                                    <!-- Hidden input to submit the file_name when using select2 -->
+                                                    <input type="hidden" name="file_name" :value="fileName" :disabled="applicationType !== 'new'">
+                                                </div>
+                                            </div>
+
+                                            <!-- Row 2, Col 1: Prefix (Now First) -->
+                                            <div x-show="fileOption !== 'sit'" x-transition>
+                                                <label for="prefix" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    Prefix
+                                                </label>
+                                                <!-- Hidden input to ensure Prefix is submitted if select is disabled -->
+                                                <input type="hidden" name="prefix" :value="prefix" :disabled="!isInherited">
+                                                <select id="prefix" :name="isInherited ? '' : 'prefix'" x-model="prefix" @change="handlePrefixChange($event)"
+                                                        class="w-full px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                                                        :class="{ 'bg-gray-100 opacity-75 cursor-not-allowed': isInherited }"
+                                                        :disabled="isInherited">
+                                                    <option value="">Select Prefix</option>
+                                                    <template x-for="px in filteredPrefixes" :key="px.id">
+                                                        <option :value="px.prefix" :data-limit="px.land_use_id" x-text="px.prefix"></option>
+                                                    </template>
+                                                </select>
+                                            </div>
+
+                                            <!-- Row 2, Col 2: Land Use (Read-Only/Disabled) -->
+                                            <div x-show="fileOption !== 'sit'" x-transition>
+                                                <label for="landUse" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    Land Use
+                                                </label>
+                                                <!-- Hidden input to ensure value is submitted if select is disabled -->
+                                                <input type="hidden" name="land_use" x-model="landUse">
+                                                <select id="landUse" x-model="landUse" disabled
+                                                        class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-500 cursor-not-allowed">
+                                                    <option value="">(Auto-selected)</option>
+                                                    @foreach($landUses as $lu)
+                                                        @php
+                                                            $name = strtoupper($lu->landuse);
+                                                            $code = '';
+                                                            if (str_contains($name, 'RESIDENTIAL')) $code = 'RES';
+                                                            elseif (str_contains($name, 'COMMERCIAL')) $code = 'COM';
+                                                            elseif (str_contains($name, 'INDUSTRIAL')) $code = 'IND';
+                                                            elseif (str_contains($name, 'AGRICULTURAL')) $code = 'AG';
+                                                            else $code = substr($name, 0, 3);
+                                                        @endphp
+                                                        <option value="{{ $code }}" data-id="{{ $lu->id }}">{{ $name }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+
+                                            <!-- SIT info banner (shown when SIT file type is selected) -->
+                                            <div x-show="fileOption === 'sit'" x-transition class="col-span-2">
+                                                <div class="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md text-blue-700 text-sm">
+                                                    <i data-lucide="info" class="w-4 h-4 flex-shrink-0"></i>
+                                                    <span>SIT files do not have Land Use or Prefix. Serial is auto-generated.</span>
+                                                </div>
+                                            </div>
+
+                                            <!-- Row 3, Col 1: Purpose -->
+                                            <div>
+                                                <label for="purpose" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    Purpose
+                                                </label>
+                                                <select id="purpose" name="purpose_id" x-model="purpose" @change="updatePreview()"
+                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                                                        :disabled="!landUse && fileOption !== 'sit'" required>
+                                                    <option value="">Select Purpose</option>
+                                                    <template x-for="p in purposes" :key="p.id">
+                                                        <option :value="p.id" x-text="p.name"></option>
+                                                    </template>
+                                                </select>
+                                            </div>
+                                         
+                                            <div>
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                   Customer Type
+                                                </label>
+                                                <div class="flex items-center h-[42px]">
+                                                    <select id="customerType" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                                                        :class="{ 'bg-gray-100 opacity-75 cursor-not-allowed': fileOption === 'sit' }"
+                                                        name="customer_type" x-model="customerType" :disabled="fileOption === 'sit'" required>
+                                                        <option value="">Select Customer Type</option>
+                                                        <option value="Individual">Individual</option>
+                                                        <option value="Corporate">Corporate</option>
+                                                        <option value="Multiple">Multiple</option>
+                                                        <option value="Government">Government</option>
+                                                    </select>
+                                                    <!-- Hidden input to ensure Government is submitted when select is disabled -->
+                                                    <input type="hidden" x-show="fileOption === 'sit'" name="customer_type" :value="customerType" :disabled="fileOption !== 'sit'">
+                                                </div>
+                                            </div>
+
+                                            <!-- Row 4, Col 1: Phone Number -->
+                                            <div>
+                                                <label for="generatePhoneNo" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    Phone No of Applicant
+                                                </label>
+                                                <input type="text" id="generatePhoneNo" name="phone_no" x-model="phone_no"
+                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                       :class="{ 'bg-gray-100 opacity-75': isInherited }"
+                                                       :readonly="isInherited"
+                                                       placeholder="Enter Phone No">
+                                            </div>
+
+                                            <!-- Row 4, Col 2: Address -->
+                                            <div>
+                                                <label for="generateAddress" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    Address of Applicant
+                                                </label>
+                                                <input type="text" id="generateAddress" name="address" x-model="address"
+                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                                       :class="{ 'bg-gray-100 opacity-75': isInherited }"
+                                                       :readonly="isInherited"
+                                                       placeholder="Enter Address">
+                                            </div>
+                                        </div>
+
+                                        <!-- Local Rep Details (Shown only for Conversion) -->
+                                        <div x-show="applicationType === 'conversion'" class="mt-4 p-4 border border-blue-200 bg-blue-50 rounded-lg">
+                                            <h4 class="text-sm font-semibold text-blue-800 mb-3 border-b border-blue-200 pb-2">Details of Local Rep</h4>
+                                            
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label for="generateRepPhoneNo" class="block text-xs font-medium text-gray-700 mb-1">
+                                                        Phone No
+                                                    </label>
+                                                    <input type="text" id="generateRepPhoneNo" name="rep_phone_no" x-model="rep_phone_no"
+                                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                                           :class="{ 'bg-gray-100 opacity-75': isInherited }"
+                                                           :readonly="isInherited"
+                                                           placeholder="Rep Phone No">
+                                                </div>
+
+                                                <div>
+                                                    <label for="generateRepAddress" class="block text-xs font-medium text-gray-700 mb-1">
+                                                        Address
+                                                    </label>
+                                                    <input type="text" id="generateRepAddress" name="rep_address" x-model="rep_address"
+                                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm uppercase"
+                                                           :class="{ 'bg-gray-100 opacity-75': isInherited }"
+                                                           :readonly="isInherited"
+                                                           placeholder="Rep Address">
+                                                </div>
+                                            </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Right Column -->
+                                    <div class="space-y-4">
+                                        <!-- Extension File Selection -->
+                                        <div x-show="fileOption === 'extension'">
+                                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                                <i data-lucide="link" class="w-4 h-4 inline mr-1"></i>
+                                                Select Existing MLS File Number to Extend
+                                            </label>
+
+                                            <div class="flex space-x-2">
+                                                <div class="relative flex-grow">
+                                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                        <i data-lucide="file-text" class="h-4 w-4 text-gray-400"></i>
+                                                    </div>
+                                                    <input type="text" 
+                                                           id="displayExtensionFileNo"
+                                                           x-model="existingFileNo" 
+                                                           readonly
+                                                           placeholder="No file selected"
+                                                           class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-gray-50 text-gray-500 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                                </div>
+                                                <button type="button" 
+                                                        onclick="openExtensionFileSelector()"
+                                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                                    <i data-lucide="search" class="w-4 h-4 mr-2"></i>
+                                                    Select File
+                                                </button>
+                                            </div>
+                                            
+                                            <!-- Hidden input to store the actual value for form submission -->
+                                            <input type="hidden" id="extensionFileNo" name="existing_file_no" x-model="existingFileNo">
+
+                                            <p class="mt-2 text-xs text-gray-500">
+                                                <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
+                                                Search and select the file you wish to extend.
+                                            </p>
+                                        </div>
+
+                                        <!-- Temporary File Selection -->
+                                        <div x-show="fileOption === 'temporary'">
+                                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                                <i data-lucide="clock" class="w-4 h-4 inline mr-1"></i>
+                                                Select Existing File for Temporary Version
+                                            </label>
+
+                                            <div class="flex items-center space-x-3">
+                                                <div class="flex-grow">
+                                                    <input type="text" id="displayTemporaryFileNo" x-model="existingFileNo" readonly
+                                                           placeholder="No file selected"
+                                                           class="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md focus:outline-none cursor-not-allowed">
+                                                    <input type="hidden" id="temporaryFileNo" name="existing_file_no" x-model="existingFileNo">
+                                                </div>
+                                                <button type="button" onclick="openTemporaryFileSelector()"
+                                                        class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm font-medium whitespace-nowrap">
+                                                    <i data-lucide="search" class="w-4 h-4"></i>
+                                                    Select File
+                                                </button>
+                                            </div>
+                                            <p class="text-xs text-gray-500 mt-2">Select the main file number to fetch tracking ID and other details</p>
+                                        </div>
+
+                                        <!-- Change of Purpose Selection (Change of Purpose only) -->
+                                        <div id="change-of-purpose-section" x-show="applicationType === 'change_of_purpose'" 
+                                             class="mb-4 border border-blue-200 rounded-lg p-4 bg-blue-50/30 shadow-sm" x-transition x-cloak>
+                                            
+                                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                                <i data-lucide="repeat" class="w-4 h-4 inline mr-1 text-blue-600"></i>
+                                                Select Approved Change of Purpose Application
+                                            </label>
+                                            
+                                            <div class="flex items-center space-x-3">
+                                                <div class="flex-grow">
+                                                    <input type="text" id="displayCopFileNo" readonly
+                                                           placeholder="No application selected"
+                                                           :value="originalFileNo ? originalFileNo + ' - ' + copApplicantName : ''"
+                                                           class="w-full px-3 py-2 bg-white border border-gray-300 rounded-md focus:outline-none cursor-not-allowed">
+                                                </div>
+                                                <button type="button" @click="openCopFileSelector()"
+                                                        class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm font-medium whitespace-nowrap">
+                                                    <i data-lucide="search" class="w-4 h-4"></i>
+                                                    Select FileNo
+                                                </button>
+                                            </div>
+
+                                            <!-- Selected Application Details -->
+                                            <div id="selectedCopDetails" x-show="changeOfPurposeAppId" 
+                                                 class="p-4 rounded-lg bg-white border border-blue-100 shadow-sm space-y-2 relative mt-4">
+                                                <div class="text-sm font-semibold text-gray-700">Selected Details:</div>
+                                                
+                                                <div class="grid grid-cols-2 gap-4 mt-2">
+                                                    <div>
+                                                        <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Current File Number</div>
+                                                        <div class="font-mono font-bold text-gray-900" x-text="originalFileNo || '—'"></div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Applicant</div>
+                                                        <div class="font-semibold text-gray-900" x-text="copApplicantName || '—'"></div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Current Land Use</div>
+                                                        <div class="text-sm text-gray-700" x-text="copCurrentLandUse || '—'"></div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">New Purpose</div>
+                                                        <div class="font-semibold text-emerald-700" x-text="copNewPurpose || '—'"></div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="mt-4 pt-3 border-t border-gray-100 flex justify-end">
+                                                    <button type="button" @click="clearChangeOfPurposeSelection()"
+                                                            class="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-md hover:bg-red-100 transition">
+                                                        <i data-lucide="trash-2" class="w-3 h-3"></i>Clear App
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Related File Section (Recertification -RC file numbers) -->
+                                        <div x-show="isRecertificationPrefix" x-transition class="mb-4">
+                                            <div class="bg-amber-50 p-4 rounded-lg border border-amber-200 shadow-sm">
+                                                <label class="block text-sm font-semibold text-gray-700 mb-3">
+                                                    <i data-lucide="link-2" class="w-4 h-4 inline mr-1 text-amber-600"></i>
+                                                    Related File (Original File for Recertification)
+                                                </label>
+                                                <div class="grid grid-cols-1 gap-4">
+                                                    <div>
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">Related File Number</label>
+                                                        <div class="flex items-center gap-2">
+                                                            <input type="text" readonly
+                                                                x-model="relatedFileNo"
+                                                                class="flex-1 px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-mono cursor-not-allowed"
+                                                                placeholder="No file selected">
+                                                            <button type="button" @click="openRelatedFileModal()"
+                                                                    class="px-3 py-2 bg-amber-600 text-white text-xs font-semibold rounded-md hover:bg-amber-700 transition-colors flex items-center gap-1.5 whitespace-nowrap">
+                                                                <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                                                                Select
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Subdivision Related Section -->
+                                        <div x-show="fileOption === 'subdivision'" x-transition class="mb-4">
+                                            <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200 shadow-sm">
+                                                <div class="flex items-center justify-between mb-3">
+                                                    <label class="block text-sm font-semibold text-gray-700">
+                                                        <i data-lucide="split" class="w-4 h-4 inline mr-1 text-indigo-600"></i>
+                                                        Subdivision Selection
+                                                    </label>
+                                                    <button type="button" @click="openSubdivisionFileModal()"
+                                                            class="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-md hover:bg-indigo-700 transition-colors flex items-center gap-1.5">
+                                                        <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                                                        Select Subdivision File
+                                                    </button>
+                                                </div>
+                                                <div class="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">Source File Number</label>
+                                                        <input type="text" readonly x-model="subdivisionFileNo"
+                                                            class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-mono"
+                                                            placeholder="No file selected">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">No. of Plots (Batch Size)</label>
+                                                        <input type="text" readonly :value="subdivisionAppId ? batchQuantity : 'N/A'"
+                                                            class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-bold"
+                                                            placeholder="--">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Merger Related Section -->
+                                        <div x-show="fileOption === 'merger'" x-transition class="mb-4">
+                                            <div class="bg-orange-50 p-4 rounded-lg border border-orange-200 shadow-sm">
+                                                <div class="flex items-center justify-between mb-3">
+                                                    <label class="block text-sm font-semibold text-gray-700">
+                                                        <i data-lucide="merge" class="w-4 h-4 inline mr-1 text-orange-600"></i>
+                                                        Merger Selection
+                                                    </label>
+                                                    <button type="button" @click="openMergerFileModal()"
+                                                            class="px-3 py-1.5 bg-orange-600 text-white text-xs font-semibold rounded-md hover:bg-orange-700 transition-colors flex items-center gap-1.5">
+                                                        <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                                                        Select Merger File
+                                                    </button>
+                                                </div>
+                                                <div class="grid grid-cols-1 gap-4">
+                                                    <div>
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">Source File Number</label>
+                                                        <input type="text" readonly x-model="mergerFileNo"
+                                                            class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-mono"
+                                                            placeholder="No file selected">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                    <!-- Year and Serial Number Grid -->
+                                    <div class="grid grid-cols-2 gap-4 mb-4">
+                                        <!-- Year -->
+                                        <div x-show="showYearSection" x-cloak>
+                                            <label for="year" class="block text-sm font-medium text-gray-700 mb-2">
+                                                <i data-lucide="calendar" class="w-4 h-4 inline mr-1"></i>
+                                                Year
+                                            </label>
+                                            <input type="number" id="year" name="year" x-model="year" @input="updatePreview()"
+                                                   :class="yearFieldClass"
+                                                   min="2020" max="2050" :readonly="!isYearEditable">
+                                            <p class="text-xs text-gray-500 mt-1" x-text="yearDescription"></p>
+                                        </div>
+
+                                        <!-- Serial Number -->
+                                        <div>
+                                            <label for="serialNo" class="block text-sm font-medium text-gray-700 mb-2">
+                                                <i data-lucide="hash" class="w-4 h-4 inline mr-1"></i>
+                                                Serial No.
+                                            </label>
+                                            <input :type="serialFieldType" id="serialNo" name="serial_no" 
+                                                   x-model="serialNo" 
+                                                   x-on:input="serialFieldType === 'text' ? updatePreviewOnly() : updatePreview()"
+                                                   :class="serialFieldClass"
+                                                   :placeholder="serialPlaceholder" 
+                                                   :readonly="isSerialReadonly" 
+                                                   :disabled="isSerialDisabled"
+                                                   x-bind:min="serialFieldType === 'number' ? '1' : false"
+                                                   x-bind:max="serialFieldType === 'number' ? '9999' : false"
+                                                   :inputmode="serialFieldType === 'text' ? 'text' : 'numeric'"
+                                                   autocomplete="off"
+                                                   >
+                                            <p class="text-xs mt-1" :class="serialDescriptionClass" x-text="serialDescription"></p>
+                                        </div>
+                                    </div>
+
+                                        <!-- Full File Number Preview -->
+                                    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                                            <i data-lucide="eye" class="w-4 h-4 inline mr-1"></i>
+                                            Generated File Number Preview
+                                        </label>
+                                        <div id="mlsfPreview" class="w-full px-4 py-3 bg-white border border-blue-300 rounded-md text-lg font-mono text-center font-bold shadow-sm"
+                                             :class="previewClass" x-text="preview">
+                                        </div>
+                                    </div>
+                                    
+                                         <div class="bg-gray-100 px-4 py-2 rounded-md flex justify-between items-center max-w-xs mt-4">
+                                        <div class="text-gray-700 font-mono text-sm font-bold whitespace-nowrap">
+                                            <i data-lucide="file-search" class="inline h-4 w-4 mr-1"></i> 
+                                            Tracking ID: <span id="trackingIdDisplay" class="text-red-600 font-bold">--</span>
+                                        </div> 
+                                       </div>
+                                  <!-- Row 2, Col 2: Land Use Category Preview -->
+                                        <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                    Land Use (Purpose)
+                                                </label>
+                                                <div class="flex items-center h-[42px]">
+                                                    <span id="landUsePreview" 
+                                                          class="px-3 py-2 rounded-lg text-sm font-bold inline-flex items-center shadow-sm border transition-all duration-300 ease-in-out transform uppercase"
+                                                          :class="{
+                                                              'bg-blue-50 text-blue-700 border-blue-200 scale-105 shadow-blue-100': landUse && landUse.toUpperCase().includes('RES'),
+                                                              'bg-green-50 text-green-700 border-green-200 scale-105 shadow-green-100': landUse && landUse.toUpperCase().includes('COM'),
+                                                              'bg-amber-50 text-amber-700 border-amber-200 scale-105 shadow-amber-100': landUse && landUse.toUpperCase().includes('IND'),
+                                                              'bg-purple-50 text-purple-700 border-purple-200 scale-105 shadow-purple-100': landUse && landUse.toUpperCase().includes('AG'),
+                                                              'bg-gray-50 text-gray-400 border-gray-200': !landUse
+                                                          }"
+                                                          x-text="landUseFullText || 'Select prefix'">
+                                                    </span>
+                                                </div>
+                                            </div>
+
+
+                                </div>
+
+                                <!-- Right Column -->
+                                <div class="space-y-4">
+
+
+                                    <!-- Middle Prefix (for miscellaneous files) -->
+                                    <div x-show="fileOption === 'miscellaneous'">
+                                        <label for="middlePrefix" class="block text-sm font-medium text-gray-700 mb-2">
+                                            <i data-lucide="tag" class="w-4 h-4 inline mr-1"></i>
+                                            Middle Prefix
+                                        </label>
+                                        <input type="text" id="middlePrefix" name="middle_prefix" x-model="middlePrefix" @input="updatePreview()"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                               placeholder="e.g., KN" value="KN">
+                                    </div>
+
+
+                                </div><!-- end right column -->
+                            </div><!-- end main form grid -->
+
+
+                                    <!-- Location Details + Commissioning side-by-side -->
+                                    <div class="grid grid-cols-2 gap-4 mt-4">
+
+                                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                        <div class="flex items-center justify-between mb-3">
+                                            <div class="flex items-center space-x-2">
+                                                <i data-lucide="map" class="w-4 h-4 inline mr-1"></i>
+                                                <label class="block text-sm font-semibold text-gray-700">Location Details</label>
+                                                <!-- Entry Counter (shown in batch mode) -->
+                                                <span x-show="batchMode" class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
+                                                    Entry <span x-text="currentEntryIndex + 1"></span> of <span x-text="batchQuantity"></span>
+                                                </span>
+                                            </div>
+                                            <!-- Add/Remove Controls (shown in batch mode) -->
+                                            <div x-show="batchMode" class="flex items-center space-x-2">
+                                                <button type="button" @click="previousEntry()" 
+                                                        :disabled="currentEntryIndex === 0"
+                                                        :class="currentEntryIndex === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-100'"
+                                                        class="p-1 rounded-md text-blue-600 transition-colors">
+                                                    <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                                                </button>
+                                                <button type="button" @click="nextEntry()" 
+                                                        :disabled="currentEntryIndex >= batchQuantity - 1"
+                                                        :class="currentEntryIndex >= batchQuantity - 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-100'"
+                                                        class="p-1 rounded-md text-blue-600 transition-colors">
+                                                    <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <!-- Batch Location Sync Toggle (shown only in batch mode) -->
+                                        <div x-show="batchMode" class="flex items-center space-x-2 mb-3 pb-3 border-b border-gray-200">
+                                            <input type="checkbox" 
+                                                   id="applyToAllBatch" 
+                                                   x-model="applyLocationToAll" 
+                                                   class="rounded text-blue-600 focus:ring-blue-500">
+                                            <label for="applyToAllBatch" class="text-xs font-medium text-gray-600 cursor-pointer">
+                                                Apply Location to All Files in Batch
+                                            </label>
+                                        </div>
+
+                                        <!-- Apply to Batch Button (shown when toggle is enabled) -->
+                                        <div x-show="batchMode && applyLocationToAll" class="mb-3">
+                                            <button type="button" 
+                                                    @click="applyLocationToBatch()" 
+                                                    class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors flex items-center justify-center space-x-2">
+                                                <i data-lucide="copy" class="w-4 h-4"></i>
+                                                <span>Apply Current Location to All <span x-text="batchQuantity"></span> Files</span>
+                                            </button>
+                                        </div>
+
+                                        <!-- 2x2 Grid Layout -->
+                                        <div class="grid grid-cols-2 gap-4">
+                                            <!-- Row 1, Col 1: Plot Number -->
+                                            <div>
+                                                <label for="plotNo" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    Plot Number
+                                                </label>
+                                                <input type="text" id="plotNo" name="plot_no" 
+                                                       :value="batchMode ? locationEntries[currentEntryIndex]?.plotNo : plotNo"
+                                                       @input="batchMode ? updateLocationEntry('plotNo', $event.target.value) : plotNo = $event.target.value"
+                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                       :class="{ 'bg-gray-100 opacity-75': isInherited }"
+                                                       :readonly="isInherited"
+                                                       placeholder="Enter plot number">
+                                            </div>
+
+                                            <!-- Row 1, Col 2: TP Number -->
+                                            <div>
+                                                <label for="tpNo" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    TP Number
+                                                </label>
+                                                <input type="text" id="tpNo" name="tp_no" 
+                                                       :value="batchMode ? locationEntries[currentEntryIndex]?.tpNo : tpNo"
+                                                       @input="batchMode ? updateLocationEntry('tpNo', $event.target.value) : tpNo = $event.target.value"
+                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                       :class="{ 'bg-gray-100 opacity-75': isInherited }"
+                                                       :readonly="isInherited"
+                                                       placeholder="Enter TP number">
+                                            </div>
+
+                                            <!-- Row 2, Col 1: Location -->
+                                            <div>
+                                                <label for="location" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    Location
+                                                </label>
+                                                <input type="text" id="location" name="location" 
+                                                       :value="batchMode ? locationEntries[currentEntryIndex]?.location : location"
+                                                       @input="batchMode ? updateLocationEntry('location', $event.target.value) : location = $event.target.value"
+                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                       :class="{ 'bg-gray-100 opacity-75': isInherited }"
+                                                       :readonly="isInherited"
+                                                       placeholder="Enter location details" >
+                                            </div>
+
+                                            <!-- Row 2, Col 2: LGA -->
+                                            <div>
+                                                <label for="generator_lga" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    LGA
+                                                </label>
+                                                <!-- Hidden input to ensure LGA is submitted if select is disabled -->
+                                                <input type="hidden" name="lga" :value="lga" :disabled="!isInherited">
+                                                <select id="generator_lga" :name="isInherited ? '' : 'lga'" 
+                                                        :value="batchMode ? locationEntries[currentEntryIndex]?.lga : lga"
+                                                        @change="batchMode ? updateLocationEntry('lga', $event.target.value) : lga = $event.target.value"
+                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                                        :class="{ 'bg-gray-100 opacity-75 cursor-not-allowed': isInherited }"
+                                                        :disabled="isInherited">
+                                                    <option value="" >Select LGA</option>
+                                                    @foreach($lgas as $lga)
+                                                        <option value="{{ $lga->name }}">{{ $lga->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <!-- Entry Progress Indicator (shown in batch mode) -->
+                                        <div x-show="batchMode" class="mt-3 pt-3 border-t border-gray-300 hidden">
+                                            <div class="flex items-center justify-between text-xs text-gray-600">
+                                                <span>Progress: <span x-text="filledEntriesCount"></span> of <span x-text="batchQuantity"></span> entries filled</span>
+                                                <div class="flex items-center space-x-1">
+                                                    <template x-for="i in parseInt(batchQuantity)" :key="i">
+                                                        <div class="w-2 h-2 rounded-full" 
+                                                             :class="isEntryFilled(i-1) ? 'bg-green-500' : 'bg-gray-300'"></div>
+                                                    </template>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Commissioning Metadata Grid -->
+                                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                        <div class="space-y-4">
+                                            <!-- Top Row: Time and Date -->
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <!-- Commission Time -->
+                                                <div>
+                                                    <label for="commissionTime" class="block text-xs font-semibold text-gray-600 mb-1">
+                                                        <i data-lucide="clock" class="w-3.5 h-3.5 inline mr-1 text-blue-500"></i>
+                                                        Commissioning Time
+                                                    </label>
+                                                    <input type="time" id="commissionTime" name="commission_time"
+                                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent bg-gray-100 sync-time text-sm"
+                                                           placeholder="Auto-filled" value="{{ date('H:i') }}">
+                                                </div>
+
+                                                <!-- Commission Date -->
+                                                <div>
+                                                    <label for="commissionDate" class="block text-xs font-semibold text-gray-600 mb-1">
+                                                        <i data-lucide="calendar-check" class="w-3.5 h-3.5 inline mr-1 text-blue-500"></i>
+                                                        Commissioning Date
+                                                    </label>
+                                                    <input type="date" id="commissionDate" name="commission_date"                 
+                                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent bg-gray-100 sync-time text-sm"
+                                                           placeholder="Auto-filled" value="{{ date('Y-m-d') }}">
+                                                </div>
+                                            </div>
+
+                                            <!-- Bottom Row: Commissioned By -->
+                                            <div>
+                                                <label for="commissionedBy" class="block text-xs font-semibold text-gray-600 mb-1">
+                                                    <i data-lucide="user-check" class="w-3.5 h-3.5 inline mr-1 text-blue-500"></i>
+                                                    Commissioned By
+                                                </label>
+                                                <input type="text" id="commissionedBy" name="commissioned_by"  
+                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent bg-gray-100 text-sm"
+                                                       placeholder="Auto-filled" value="{{ Auth::user()->name }}">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    </div><!-- end location+commissioning grid -->
+
+                            <!-- Form Actions -->
+                            <div class="flex justify-between border-t border-gray-200 mt-4">
+                                <button type="button" onclick="showOverrideModal()" 
+                                        id="overrideButton"
+                                        disabled
+                                        class="px-4 py-2 bg-orange-600 text-white rounded-md transition-colors flex items-center space-x-2 opacity-50 cursor-not-allowed disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <i data-lucide="edit" class="w-4 h-4"></i>
+                                    <span>Override</span>
+                                </button>  
+                                <button type="button" onclick="closeGenerateModal()" 
+                                        class="px-6 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors">
+                                    Cancel
+                                </button>
+                                
+                                <button type="submit" 
+                                        id="generateButton"
+                                        disabled
+                                        class="px-6 py-2 bg-blue-600 text-white rounded-md transition-colors flex items-center space-x-2 opacity-50 cursor-not-allowed disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <i data-lucide="plus" class="w-4 h-4"></i>
+                                    <span>Generate</span>
+                                </button>
+                            </div>
+
+                            </div><!-- end x-show !isOpFormHidden wrapper -->
+
+                            <!-- OP capture pending message (shown when OP is selected but not yet captured) -->
+                            <div x-show="isOpFormHidden" x-transition.opacity.duration.200ms class="text-center py-10 px-6">
+                                <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-4">
+                                    <i data-lucide="file-search" class="w-8 h-8 text-blue-600"></i>
+                                </div>
+                                <h4 class="text-lg font-semibold text-gray-800 mb-2">Capture Occupancy Permit First</h4>
+                                <p class="text-sm text-gray-500 max-w-md mx-auto">Please select <strong>Direct Allocation</strong> or <strong>Resettlement</strong> above, then capture/select an Occupancy Permit (OP) record to continue with file commissioning.</p>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Batch Summary Modal -->
+            <div id="batchSummaryModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-[60]">
+                <div class="relative top-10 mx-auto p-6 border w-[700px] max-w-3xl shadow-2xl rounded-lg bg-white">
+                    <div class="mt-3">
+                        <!-- Modal Header -->
+                        <div class="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
+                            <div>
+                                <h3 class="text-xl font-semibold text-gray-900 flex items-center space-x-2">
+                                    <i data-lucide="layers" class="w-6 h-6 text-blue-600"></i>
+                                    <span>Batch Generation Summary</span>
+                                </h3>
+                                <p class="text-sm text-gray-500 mt-1">Review the details before generating files</p>
+                            </div>
+                            <button onclick="closeBatchSummaryModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                                <i data-lucide="x" class="w-6 h-6"></i>
+                            </button>
+                        </div>
+
+                        <!-- Summary Content -->
+                        <div class="space-y-4">
+                            <!-- Batch Overview -->
+                            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p class="text-xs text-gray-600 mb-1">Batch Size</p>
+                                        <p class="text-lg font-semibold text-gray-900" id="summaryBatchSize">-</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-600 mb-1">Serial Number Range</p>
+                                        <p class="text-lg font-semibold text-blue-600" id="summarySerialRange">-</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-600 mb-1 uppe">Land Use</p>
+                                        <p class="text-lg font-semibold text-gray-900" id="summaryLandUse">-</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-600 mb-1">File Name</p>
+                                        <p class="text-lg font-semibold text-gray-900" id="summaryFileName">-</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- File Number Preview -->
+                            <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <p class="text-xs text-gray-600 mb-2">File Numbers to be Generated</p>
+                                <p class="text-sm font-mono text-green-600" id="summaryFileNumbers">-</p>
+                            </div>
+
+                            <!-- Location Details List -->
+                            <div class="bg-white border border-gray-200 rounded-lg">
+                                <div class="px-4 py-3 bg-gray-50 border-b border-gray-200 rounded-t-lg">
+                                    <h4 class="text-sm font-semibold text-gray-700">Location Details</h4>
+                                </div>
+                                <div class="max-h-64 overflow-y-auto p-4" id="summaryLocationList">
+                                    <!-- Location entries will be populated here -->
+                                </div>
+                            </div>
+
+                            <!-- Warning Message -->
+                            <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                                <div class="flex">
+                                    <div class="flex-shrink-0">
+                                        <i data-lucide="alert-triangle" class="w-5 h-5 text-yellow-400"></i>
+                                    </div>
+                                    <div class="ml-3">
+                                        <p class="text-sm text-yellow-700">
+                                            This action will generate <strong id="summaryTotalFiles">0</strong> file numbers. 
+                                            Please review all details carefully before confirming.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Modal Actions -->
+                        <div class="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-200">
+                            <button type="button" onclick="closeBatchSummaryModal()" 
+                                    class="px-6 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors">
+                                Cancel
+                            </button>
+                            <button type="button" onclick="confirmBatchGeneration()" 
+                                    id="confirmBatchButton"
+                                    class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center space-x-2">
+                                <i data-lucide="check" class="w-4 h-4"></i>
+                                <span>Confirm & Generate</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Override Modal -->
+            <div id="overrideModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+                <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+                    <div class="mt-3">
+                        <!-- Modal Header -->
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-medium text-gray-900">Override File Number</h3>
+                            <button onclick="closeOverrideModal()" class="text-gray-400 hover:text-gray-600">
+                                <i data-lucide="x" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+
+                        <!-- Override Form -->
+                        <form id="overrideForm" onsubmit="submitOverrideForm(event)">
+                            @csrf
+
+                            <!-- Manual Year -->
+                            <div class="mb-4">
+                                <label for="overrideYear" class="block text-sm font-medium text-gray-700 mb-2">Year</label>
+                                <input type="number" id="overrideYear" name="override_year" 
+                                       value="{{ date('Y') }}"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       >
+                            </div>
+
+                            <!-- Manual Serial Number -->
+                            <div class="mb-4">
+                                <label for="overrideSerialNo" class="block text-sm font-medium text-gray-700 mb-2">Serial Number</label>
+                                <input type="number" id="overrideSerialNo" name="override_serial_no" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       min="1" max="9999">
+                            </div>
+
+                            <!-- Extension Option -->
+                            <div class="mb-4" style="display:none;">
+                                <label class="flex items-center">
+                                    <input type="checkbox" id="overrideExtension" name="override_extension" class="mr-2">
+                                    <span>File Extension</span>
+                                </label>
+                            </div>
+
+                            <!-- Form Actions -->
+                            <div class="flex justify-end space-x-3">
+                                <button type="button" onclick="closeOverrideModal()" 
+                                        class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
+                                    Cancel
+                                </button>
+                                <button type="submit" 
+                                        class="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700">
+                                    Apply Override
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Migration Modal -->
+            <div id="migrationModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+                <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+                    <div class="mt-3">
+                        <!-- Modal Header -->
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-medium text-gray-900">Migrate Data from Excel</h3>
+                            <button onclick="closeMigrationModal()" class="text-gray-400 hover:text-gray-600">
+                                <i data-lucide="x" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+
+                        <!-- Migration Form -->
+                        <form id="migrationForm" onsubmit="submitMigrationForm(event)" enctype="multipart/form-data">
+                            @csrf
+
+                            <!-- File Upload -->
+                            <div class="mb-4">
+                                <label for="excelFile" class="block text-sm font-medium text-gray-700 mb-2">CSV File</label>
+                                <input type="file" id="excelFile" name="excel_file" 
+                                       accept=".csv,.txt"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <p class="text-xs text-gray-500 mt-1">Upload CSV file with columns: mlsfNo, kangisFile, NewKANGISFileNo, FileName (ignore SN column)</p>
+                            </div>
+
+                            <!-- Form Actions -->
+                            <div class="flex justify-end space-x-3">
+                                <button type="button" onclick="closeMigrationModal()" 
+                                        class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
+                                    Cancel
+                                </button>
+                                <button type="submit" 
+                                        class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
+                                    Migrate Data
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Edit Modal -->
+            <div id="editModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-[80]">
+                <div class="relative top-20 mx-auto p-5 border w-[600px] shadow-lg rounded-md bg-white">
+                    <div class="mt-3">
+                        <!-- Modal Header -->
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-medium text-gray-900">Edit</h3>
+                            <button onclick="closeEditModal()" class="text-gray-400 hover:text-gray-600">
+                                <i data-lucide="x" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+
+                        <!-- Edit Form -->
+                        <form id="editForm" onsubmit="submitEditForm(event)">
+                            @csrf
+                            @method('PUT')
+                            <input type="hidden" id="editId" name="id">
+
+                            <!-- MLSF Number (Read-only) -->
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">MLSF Number</label>
+                                <input type="text" id="editMlsfNo" 
+                                       class="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md"
+                                       readonly>
+                            </div>
+
+
+                             <!-- Customer Type -->
+                              <div class="mb-4">
+                                 <label class="block text-sm font-medium text-gray-700 mb-2">Customer Type</label>
+                                 <select id="editCustomerType" name="customer_type" 
+                                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase">
+                                     <option value="">Select Customer Type</option>
+                                     <option value="Individual">Individual</option>
+                                     <option value="Corporate">Corporate</option>
+                                     <option value="Multiple">Multiple</option>
+                                 </select> 
+                              </div>
+
+                              <!-- Purpose -->
+                              <div class="mb-4">
+                                  <label for="editPurpose" class="block text-sm font-medium text-gray-700 mb-2">Purpose</label>
+                                  <select id="editPurpose" name="purpose_id" 
+                                          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase">
+                                      <option value="">Select Purpose</option>
+                                      @foreach(\App\Models\Purpose::all() as $p)
+                                          <option value="{{ $p->id }}">{{ $p->name }}</option>
+                                      @endforeach
+                                  </select>
+                              </div>
+
+                            <!-- File Name (Editable) -->
+                            <div class="mb-4">
+                                <label for="editFileName" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="file-text" class="w-4 h-4 inline mr-1"></i>
+                                    File Name
+                                </label>
+                                <input type="text" id="editFileName" name="file_name" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                       placeholder="Enter file name" required>
+                            </div>
+
+                            <!-- Plot Number -->
+                            <div class="mb-4">
+                                <label for="editPlotNo" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="map-pin" class="w-4 h-4 inline mr-1"></i>
+                                    Plot Number
+                                </label>
+                                <input type="text" id="editPlotNo" name="plot_no" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                       placeholder="Enter plot number">
+                            </div>
+
+                            <!-- TP Number -->
+                            <div class="mb-4">
+                                <label for="editTpNo" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="hash" class="w-4 h-4 inline mr-1"></i>
+                                    TP Number
+                                </label>
+                                <input type="text" id="editTpNo" name="tp_no" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                       placeholder="Enter TP number">
+                            </div>
+
+                            <!-- Location -->
+                            <div class="mb-4">
+                                <label for="editLocation" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="map" class="w-4 h-4 inline mr-1"></i>
+                                    Location
+                                </label>
+                                <input type="text" id="editLocation" name="location" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                       placeholder="Enter location" >
+                            </div>
+
+                            <!-- Location Details Grid (LGA & District) 
+  --> 
+                            <div class="grid grid-cols-2 gap-4 mb-4">
+                                <!-- LGA Dropdown -->
+                                <div>
+
+                            
+                                    <label for="editLga" class="block text-sm font-medium text-gray-700 mb-2">
+                                        LGA
+                                    </label>
+                                    <select id="editLga" name="lga" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
+                                        <option value="">Select LGA</option>
+                                        @foreach($lgas as $lga)
+                                            <option value="{{ $lga->name }}">{{ $lga->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <!-- District Dropdown -->
+                                <div>
+                                    <label for="editDistrict" class="block text-sm font-medium text-gray-700 mb-2">
+                                        District
+                                    </label>
+                                    <select id="editDistrict" name="district" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
+                                        <option value="">Select District</option>
+                                        @foreach($districts as $district)
+                                            <option value="{{ $district->name }}">{{ $district->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Phone Number of Applicant -->
+                            <div class="mb-4">
+                                <label for="editPhoneNo" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="phone" class="w-4 h-4 inline mr-1 text-blue-500"></i>
+                                    Phone No of Applicant
+                                </label>
+                                <input type="text" id="editPhoneNo" name="phone_no" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                       placeholder="Enter Applicant Phone No">
+                            </div>
+
+                            <!-- Address of Applicant -->
+                            <div class="mb-4">
+                                <label for="editAddress" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="home" class="w-4 h-4 inline mr-1 text-blue-500"></i>
+                                    Address of Applicant
+                                </label>
+                                <input type="text" id="editAddress" name="address" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                       placeholder="Enter Applicant Address">
+                            </div>
+
+                            <!-- Details of local Rep (section) -->
+                            <div id="editLocalRepSection" class="mb-4 p-4 border border-blue-200 bg-blue-50 rounded-lg hidden">
+                                <h4 class="text-sm font-semibold text-blue-800 mb-3 border-b border-blue-200 pb-2">Details of Local Rep</h4>
+                                
+                                <div class="space-y-3">
+                                    <!-- Rep Phone -->
+                                    <div>
+                                        <label for="editRepPhoneNo" class="block text-xs font-medium text-gray-700 mb-1">
+                                            <i data-lucide="phone" class="w-3.5 h-3.5 inline mr-1 text-blue-500"></i>
+                                            Phone No
+                                        </label>
+                                        <input type="text" id="editRepPhoneNo" name="rep_phone_no" 
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                               placeholder="Enter Local Rep Phone No">
+                                    </div>
+
+                                    <!-- Rep Address -->
+                                    <div>
+                                        <label for="editRepAddress" class="block text-xs font-medium text-gray-700 mb-1">
+                                            <i data-lucide="home" class="w-3.5 h-3.5 inline mr-1 text-blue-500"></i>
+                                            Address
+                                        </label>
+                                        <input type="text" id="editRepAddress" name="rep_address" 
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm uppercase"
+                                               placeholder="Enter Local Rep Address">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Form Actions -->
+                            <div class="flex justify-end space-x-3">
+                                <button type="button" onclick="closeEditModal()" 
+                                        class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
+                                    Cancel
+                                </button>
+                                <button type="submit" 
+                                        class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                                    Update
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Direct Allocation Modal -->
+            <div id="directAllocationModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-[80]">
+                <div class="relative top-20 mx-auto p-5 border w-[500px] shadow-lg rounded-md bg-white">
+                    <div class="mt-3">
+                        <!-- Modal Header -->
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-medium text-gray-900">Direct Allocation</h3>
+                            <button onclick="closeDirectAllocationModal()" class="text-gray-400 hover:text-gray-600">
+                                <i data-lucide="x" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+
+                        <!-- Form -->
+                        <form id="directAllocationForm" onsubmit="submitDirectAllocationForm(event)">
+                            @csrf
+                            @method('PUT')
+                            <input type="hidden" id="daEditId" name="id">
+
+                            <!-- Plot Number -->
+                            <div class="mb-4">
+                                <label for="daPlotNo" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="map-pin" class="w-4 h-4 inline mr-1"></i>
+                                    Plot Number
+                                </label>
+                                <input type="text" id="daPlotNo" name="plot_no" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent uppercase"
+                                       placeholder="Enter plot number">
+                            </div>
+
+
+                            <!-- Location Details Grid (LGA & District) -->
+                            <div class="grid grid-cols-2 gap-4 mb-4">
+                                <!-- LGA Dropdown -->
+                                <div>
+                                    <label for="daLga" class="block text-sm font-medium text-gray-700 mb-2">
+                                        LGA
+                                    </label>
+                                    <select id="daLga" name="lga" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 uppercase">
+                                        <option value="">Select LGA</option>
+                                        @foreach($lgas as $lga)
+                                            <option value="{{ $lga->name }}">{{ $lga->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <!-- District Dropdown -->
+                                <div>
+                                    <label for="daDistrict" class="block text-sm font-medium text-gray-700 mb-2">
+                                        District
+                                    </label>
+                                    <select id="daDistrict" name="district" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 uppercase">
+                                        <option value="">Select District</option>
+                                        @foreach($districts as $district)
+                                            <option value="{{ $district->name }}">{{ $district->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+
+
+                            
+                            <!-- Location -->
+                            <div class="mb-4">
+                                <label for="daLocation" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="map" class="w-4 h-4 inline mr-1"></i>
+                                    Location
+                                </label>
+                                <input type="text" id="daLocation" name="location" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent uppercase"
+                                       placeholder="Enter location">
+                            </div>
+
+                        
+
+                            <!-- District / Location after LGA -->
+                            <!-- <div class="mb-4">
+                                <label for="daDistrict" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="map-pin" class="w-4 h-4 inline mr-1"></i>
+                                    District
+                                </label>
+                                <input type="text" id="daDistrict" name="district"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent uppercase"
+                                       placeholder="Enter district">
+                            </div> -->
+
+                            <!-- Phone Number -->
+                            <div class="mb-4">
+                                <label for="daPhoneNo" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="phone" class="w-4 h-4 inline mr-1"></i>
+                                    Phone Number
+                                </label>
+                                <input type="text" id="daPhoneNo" name="phone_no" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                       placeholder="Enter phone number">
+                            </div>
+
+                            <!-- Form Actions -->
+                            <div class="flex justify-end space-x-3 mt-6">
+                                <button type="button" onclick="closeDirectAllocationModal()" 
+                                        class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
+                                    Cancel
+                                </button>
+                                <button type="submit" 
+                                        class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
+                                    Update Allocation
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- File Commissioning Sheet Modal -->
+            <div id="commissioningSheetModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+                <div class="relative top-10 mx-auto p-5 border w-full max-w-4xl shadow-lg rounded-md bg-white">
+                    <div class="mt-3">
+                        <!-- Modal Header -->
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-xl font-semibold text-gray-900">File Number Commissioning Sheet</h3>
+                            <button onclick="closeCommissioningSheetModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                                <i data-lucide="x" class="w-6 h-6"></i>
+                            </button>
+                        </div>
+
+                        <!-- Form Container -->
+                        <form id="commissioningSheetForm" onsubmit="submitCommissioningSheet(event)">
+                            @csrf
+
+                            <!-- Ministry Header -->
+                            <div class="text-center mb-6 border-b pb-4">
+                                <h2 class="text-lg font-bold text-gray-800">Ministry of Land & Physical Planning</h2>
+                                <h3 class="text-base font-medium text-gray-700">DEPARTMENT OF LAND</h3>
+                                <h4 class="text-base font-medium text-gray-600 mt-2">File Commissioning Sheet</h4>
+                            </div>
+
+                            <!-- Data Load Status -->
+                            <div id="dataLoadStatus" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md hidden">
+                                <div class="flex items-center">
+                                    <i data-lucide="info" class="w-4 h-4 text-blue-600 mr-2"></i>
+                                    <span class="text-sm text-blue-800">Data loaded from selected file number record</span>
+                                </div>
+                            </div>
+
+                            <!-- Form Fields Grid -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                <!-- File Number -->
+                                <div class="md:col-span-1">
+                                    <label for="cs_file_number" class="block text-sm font-medium text-gray-700 mb-2">
+                                        File No:
+                                    </label>
+                                    <input type="text" id="cs_file_number" name="file_number" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                           placeholder="Enter file number" >
+                                </div>
+
+                                <!-- File Name -->
+                                <div class="md:col-span-1">
+                                    <label for="cs_file_name" class="block text-sm font-medium text-gray-700 mb-2">
+                                        File Name:
+                                    </label>
+                                    <input type="text" id="cs_file_name" name="file_name" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                           placeholder="Enter file name"
+                                           oninput="document.getElementById('cs_name_allottee').value = this.value" required>
+                                </div>
+
+                                <!-- Allottee -->
+                                <div class="md:col-span-2">
+                                    <label for="cs_name_allottee" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Allottee:
+                                    </label>
+                                    <input type="text" id="cs_name_allottee" name="name_or_allottee" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                                           placeholder="Auto-filled from file name" readonly>
+                                </div>
+
+                                <!-- Plot Number -->
+                                <div class="md:col-span-1">
+                                    <label for="cs_plot_number" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Plot No:
+                                    </label>
+                                    <input type="text" id="cs_plot_number" name="plot_number" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                           placeholder="Enter plot number">
+                                </div>
+
+                                <!-- TP Number -->
+                                <div class="md:col-span-1">
+                                    <label for="cs_tp_number" class="block text-sm font-medium text-gray-700 mb-2">
+                                        TP No:
+                                    </label>
+                                    <input type="text" id="cs_tp_number" name="tp_number" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                           placeholder="Enter TP number">
+                                </div>
+
+
+
+                                <!-- Location -->
+                                <div class="md:col-span-2">
+                                    <label for="cs_location" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Location:
+                                    </label>
+                                    <textarea id="cs_location" name="location" rows="2"
+                                             class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                             placeholder="Enter location" ></textarea>
+                                </div>
+
+
+
+
+                                <!-- LGA input text -->
+                                <div class="md:col-span-2">
+                                    <label for="cs_lga" class="block text-sm font-medium text-gray-700 mb-2">
+                                        LGA:
+                                    </label>
+                                    <input type="text" id="cs_lga" name="lga" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                           placeholder="Enter LGA" >
+                                </div>
+         <!-- Time Commissioned -->
+                                <div class="md:col-span-1">
+                                    <label for="cs_time_created" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Time Commissioned:
+                                    </label>
+                                    <input type="time" id="cs_time_created" name="time_created" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 sync-time"
+                                           value="{{ date('H:i') }}">
+                                </div>
+
+                                <!-- Date Commissioned -->
+                                <div class="md:col-span-1">
+                                    <label for="cs_date_created" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Date Commissioned:
+                                    </label>
+                                    <input type="date" id="cs_date_created" name="date_created" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 sync-time"
+                                           value="{{ date('Y-m-d') }}">
+                                </div>
+
+
+
+                                <!-- Created By -->
+                                <div class="md:col-span-1">
+                                    <label for="cs_created_by" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Commissioned by:
+                                    </label>
+                                    <input type="text" id="cs_created_by" name="created_by" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                           placeholder="Enter creator name"
+                                           value="{{ Auth::user()->first_name }} {{ Auth::user()->last_name }}">
+                                </div>
+
+                                <!-- Tracking ID (Hidden) -->
+                                <input type="hidden" id="cs_tracking_id" name="tracking_id">
+                            </div>
+
+                            <!-- Signatures Section -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 border-t pt-6">
+                                <div class="text-center">
+                                    <label class="block text-sm font-medium text-gray-700 mb-4">
+                                        Created by Signature
+                                    </label>
+                                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 h-24 flex items-center justify-center">
+                                        <span class="text-gray-500 text-sm">Signature area</span>
+                                    </div>
+                                </div>
+                                <div class="text-center">
+                                    <label class="block text-sm font-medium text-gray-700 mb-4">
+                                        Approved by Signature
+                                    </label>
+                                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 h-24 flex items-center justify-center">
+                                        <span class="text-gray-500 text-sm">Signature area</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="flex justify-end space-x-3 border-t pt-6">
+                                <button type="button" onclick="closeCommissioningSheetModal()" 
+                                        class="px-6 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors">
+                                    <i data-lucide="x" class="w-4 h-4 mr-2"></i>
+                                    Cancel
+                                </button>
+                                <button type="button" onclick="generateAndPrintCommissioningSheet()" 
+                                        class="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                                    <i data-lucide="printer" class="w-4 h-4 mr-2"></i>
+                                    Generate & Print
+                                </button>
+                                <!-- <button type="submit" 
+                                        class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                                    <i data-lucide="save" class="w-4 h-4 mr-2"></i>
+                                    Save Draft
+                                </button> -->
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+
+        <style>
+            /* Tab Styling */
+            .tab-button {
+                background-color: transparent;
+                position: relative;
+                border: none;
+                outline: none;
+            }
+
+            .tab-button.active {
+                background-color: white;
+                color: #2563eb;
+                box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+            }
+
+            .tab-button.active .absolute {
+                background-color: #2563eb !important;
+            }
+
+            .tab-button:not(.active) {
+                color: #6b7280;
+                background-color: #f9fafb;
+            }
+
+            .tab-button:not(.active):hover {
+                color: #374151;
+                background-color: #f3f4f6;
+            }
+
+            .tab-button:not(.active) .absolute {
+                background-color: transparent !important;
+            }
+
+            .tab-content {
+                animation: fadeIn 0.3s ease-in;
+            }
+
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+
+            /* Table Cell Styling */
+            #mlsfTable td {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 200px;
+            }
+
+            #mlsfTable td:hover {
+                overflow: visible;
+                white-space: normal;
+            }
+
+            /* File Number Badge Styles */
+            .file-badge {
+                display: inline-flex;
+                align-items: center;
+                padding: 0.375rem 0.75rem;
+                border-radius: 0.5rem;
+                font-size: 0.813rem;
+                font-weight: 600;
+                font-family: 'Monaco', 'Courier New', monospace;
+                letter-spacing: -0.5px;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+                transition: all 0.2s;
+            }
+
+            .file-badge:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }
+
+            .badge-res {
+                background-color: #dbeafe;
+                color: #1e40af;
+                border: 1px solid #93c5fd;
+            }
+
+            .badge-com {
+                background-color: #d1fae5;
+                color: #065f46;
+                border: 1px solid #6ee7b7;
+            }
+
+            .badge-ind {
+                background-color: #fef3c7;
+                color: #92400e;
+                border: 1px solid #fcd34d;
+            }
+
+            .badge-ag {
+                background-color: #fce7f3;
+                color: #831843;
+                border: 1px solid #f9a8d4;
+            }
+
+            .badge-default {
+                background-color: #e5e7eb;
+                color: #374151;
+                border: 1px solid #d1d5db;
+            }
+
+
+        </style>
+
+
+     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+        @include('generate_fileno.mls_js')
+        @include('generate_fileno.view_batches')
+
+    <script>
+        async function syncInputsWithNetworkTime() {
+            try {
+                // Fetch current time based on User's IP address
+                const response = await fetch('http://worldtimeapi.org/api/timezone/Africa/Lagos');
+                const data = await response.json();
+
+                // networkDate is now independent of the local PC clock
+                const networkDate = new Date(data.datetime);
+
+                // Format components (ensure leading zeros for HTML compliance)
+                const yyyy = networkDate.getFullYear();
+                const mm = String(networkDate.getMonth() + 1).padStart(2, '0');
+                const dd = String(networkDate.getDate()).padStart(2, '0');
+                const hh = String(networkDate.getHours()).padStart(2, '0');
+                const min = String(networkDate.getMinutes()).padStart(2, '0');
+
+                const dateStr = `${yyyy}-${mm}-${dd}`; // YYYY-MM-DD
+                const timeStr = `${hh}:${min}`;        // HH:MM
+                const fullStr = `${dateStr}T${timeStr}`; // YYYY-MM-DDTHH:MM
+
+                // Find all inputs and apply the correct values
+                document.querySelectorAll('input.sync-time').forEach(input => {
+                    if (input.type === 'date') input.value = dateStr;
+                    if (input.type === 'time') input.value = timeStr;
+                    if (input.type === 'datetime-local') input.value = fullStr;
+                });
+
+                console.log("Inputs synchronized with network time.");
+            } catch (error) {
+                console.error("Network time fetch failed. Using local fallback.", error);
+            }
+        }
+
+        // Run sync on page load
+        window.addEventListener('load', syncInputsWithNetworkTime);
+    </script>
+
+    {{-- Reuse the same OP capture modal used in Lands One Stop Shop Applications page --}}
+    @include('instruments.partials.register_modal')
+    @include('components.global-fileno-modal')
+    <template id="template-occupancy-permit">@include('instruments.partials.types.occupancy-permit')</template>
+
+    <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+    <script src="{{ asset('js/instruments-capture.js') }}?v={{ time() }}"></script>
+
+    <!-- Printer Manager Modal (Moved to Root-ish Level) -->
+    <div id="printerManagerModal" class="fixed inset-0 bg-gray-900 bg-opacity-80 hidden overflow-y-auto h-full w-full z-50">
+        <!-- Modal Panel -->
+        <div id="pmModalCard" class="relative top-10 mx-auto p-6 border w-full max-w-md shadow-2xl rounded-xl bg-white mb-20 text-left border-gray-200">
+            
+            <!-- Close Button -->
+            <div class="absolute top-0 right-0 pt-4 pr-4">
+                <button type="button" onclick="closePrinterManager()" class="text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-lg hover:bg-gray-100">
+                    <span class="sr-only">Close</span>
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <!-- Modal Content -->
+            <div class="text-center">
+                <div class="flex items-center justify-center w-16 h-16 mx-auto bg-blue-100 rounded-full mb-4 border-4 border-white shadow-sm">
+                    <i data-lucide="printer" class="w-8 h-8 text-blue-600"></i>
+                </div>
+                <h3 class="text-2xl font-black text-gray-900 tracking-tight" id="modal-title" style="margin: 0;">Printer Manager</h3>
+                <div class="mt-3 px-4 py-2 bg-blue-50 rounded-xl inline-flex flex-col items-center">
+                    <p class="text-sm text-blue-800 m-0 font-medium">File No: <span id="pmRefDisplay" class="font-black text-blue-600">--</span></p>
+                    <p class="text-[10px] uppercase font-bold tracking-widest text-blue-500 mt-1" id="pmBatchContainer">Batch: <span id="pmBatchDisplay">--</span></p>
+                </div>
+            </div>
+
+            <div class="mt-8 space-y-6">
+                
+                <!-- Print Mode Selection -->
+                <div>
+                    <label class="block text-xs font-black uppercase tracking-widest text-gray-500 mb-3 ml-1">
+                        Select Printing Scope
+                    </label>
+                    <div class="flex p-1.5 bg-gray-100 rounded-2xl" role="group">
+                        <button type="button" id="pmModeIndividual" onclick="setPrintMode('Individual')"
+                            class="flex-1 px-4 py-3 text-sm font-black rounded-xl transition-all duration-200">
+                            <i data-lucide="file-text" class="w-4 h-4 inline mr-2"></i> Single
+                        </button>
+                        <button type="button" id="pmModeBatch" onclick="setPrintMode('Batch')"
+                            class="flex-1 px-4 py-3 text-sm font-black rounded-xl transition-all duration-200 ml-1">
+                            <i data-lucide="files" class="w-4 h-4 inline mr-2"></i> Whole Batch
+                        </button>
+                    </div>
+                </div>
+
+                <div id="pmBatchSelectorContainer" class="hidden">
+                    <label class="block text-xs font-black uppercase tracking-widest text-gray-500 mb-3 ml-1">
+                        Batch Section ID
+                    </label>
+                    <div class="relative">
+                        <select id="pmBatchSelect" onchange="onBatchSelectionChange()"
+                            class="block w-full py-4 pl-5 pr-12 text-sm font-bold border-gray-100 rounded-2xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 bg-white shadow-sm appearance-none cursor-pointer">
+                            <option value="">Select an unprinted batch...</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-400">
+                            <i data-lucide="chevron-down" class="w-5 h-5"></i>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mt-2">Printed batches are automatically removed from this list.</p>
+                </div>
+
+                <!-- Document Type Selection -->
+                <div>
+                    <label class="block text-xs font-black uppercase tracking-widest text-gray-500 mb-3 ml-1">
+                        Document to Generate
+                    </label>
+                    <div class="relative">
+                        <select id="pmDocType" onchange="checkPrintStatus()" 
+                            class="block w-full py-4 pl-5 pr-12 text-sm font-bold border-gray-100 rounded-2xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 bg-white shadow-sm appearance-none cursor-pointer">
+                            <option value="Commissioning Sheet">📄 Commissioning Sheet</option>
+                            <option value="Application for Conversion">🔄 Application for Conversion</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-400">
+                            <i data-lucide="chevron-down" class="w-5 h-5"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Display -->
+                <div class="p-5 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 hidden" id="pmStatusContainer">
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-tighter">Usage</span>
+                        <span class="text-sm font-black px-3 py-1 bg-white border border-gray-100 rounded-lg text-gray-900 shadow-sm" id="pmCountDisplay">--/2</span>
+                    </div>
+                    <div class="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-tighter">Availability</span>
+                        <span id="pmStatusBadge" class="inline-flex items-center px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm">
+                            Checking...
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <div class="mt-4 pt-2">
+                    <button type="button" id="pmExecuteBtn" onclick="executePrintProtocol()" disabled
+                        class="w-full py-5 px-6 bg-blue-600 text-white font-black text-base rounded-2xl hover:bg-blue-700 disabled:bg-gray-100 disabled:text-gray-300 transition-all shadow-xl shadow-blue-100 flex items-center justify-center gap-3 active:scale-95 border-b-4 border-blue-800">
+                        <i data-lucide="send" class="w-6 h-6"></i>
+                        <span id="pmBtnText">Verifying Protocol...</span>
+                    </button>
+                    <!--<div class="mt-6 flex items-center justify-center space-x-2">
+                        <i data-lucide="shield-check" class="w-4 h-4 text-green-500"></i>
+                        <span class="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">Secure Server Link Active</span>
+                    </div> -->
+                </div>
+            </div>
+        </div>
+    </div>
+    @include('components.global-fileno-modal')
+
+    <!-- ===== Batch Print Modal ===== -->
+    <div id="batchPrintModal" class="fixed inset-0 bg-gray-900 bg-opacity-80 hidden overflow-y-auto h-full w-full z-[60]">
+        <div class="relative top-16 mx-auto p-6 border w-full max-w-lg shadow-2xl rounded-xl bg-white mb-20 text-left border-gray-200">
+
+            <!-- Close -->
+            <div class="absolute top-0 right-0 pt-4 pr-4">
+                <button type="button" onclick="closeBatchPrintModal()" class="text-gray-400 hover:text-gray-600 p-2 rounded-lg hover:bg-gray-100 transition-colors">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <!-- Header -->
+            <div class="flex items-center space-x-3 mb-6">
+                <div class="flex items-center justify-center w-12 h-12 bg-emerald-100 rounded-full border-4 border-white shadow-sm">
+                    <i data-lucide="printer" class="w-6 h-6 text-emerald-600"></i>
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-gray-900">Batch Print — Commissioning Sheets</h3>
+                    <p class="text-sm text-gray-500">Select a date to generate a multi-page PDF of sheets</p>
+                </div>
+            </div>
+
+            <!-- Date Selector -->
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Commissioning Date</label>
+                    <div class="flex space-x-2">
+                        <input type="date" id="bpDateSelect" onchange="onBatchPrintDateChange()"
+                            class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                    </div>
+                </div>
+
+                <!-- Count info -->
+                <div id="bpCountInfo" class="hidden bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 flex items-center space-x-2">
+                    <i data-lucide="files" class="w-4 h-4 text-emerald-600 flex-shrink-0"></i>
+                    <span class="text-sm text-emerald-800">
+                        <strong id="bpCountText">0</strong> commissioning sheet(s) found on this date.
+                    </span>
+                </div>
+
+                <!-- No batches notice -->
+                <div id="bpNoBatchesNotice" class="hidden bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center space-x-2">
+                    <i data-lucide="info" class="w-4 h-4 text-amber-600 flex-shrink-0"></i>
+                    <span class="text-sm text-amber-800">No commissioning sheets found for the selected date.</span>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-100">
+                <button onclick="closeBatchPrintModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                    Cancel
+                </button>
+                <button id="bpPrintBtn" onclick="executeBatchPrint()" disabled
+                    class="px-5 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors">
+                    <i data-lucide="printer" class="w-4 h-4"></i>
+                    <span>Print All Commissioning Sheets</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    <!-- ===== /Batch Print Modal ===== -->
+
+    @push('scripts')
+        <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+        <script>
+            $(document).ready(function() {
+                if (typeof GlobalFileNoModal !== 'undefined') {
+                    GlobalFileNoModal.init();
+                } else {
+                    console.error('GlobalFileNoModal still undefined after script load attempt');
+                }
+            });
+        </script>
+    @endpush
+@endsection
+

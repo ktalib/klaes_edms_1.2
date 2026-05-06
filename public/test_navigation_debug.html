@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Primary Form Navigation Debug</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f3f4f6;
+        }
+        .debug-panel {
+            background: white;
+            border: 2px solid #3b82f6;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .debug-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #1e40af;
+            margin-bottom: 15px;
+        }
+        .step-section {
+            border: 2px solid #e5e7eb;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+            background: #f9fafb;
+        }
+        .step-section.active {
+            border-color: #10b981;
+            background: #ecfdf5;
+        }
+        .step-hidden {
+            display: none;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        button {
+            padding: 10px 20px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .log {
+            background: #1f2937;
+            color: #10b981;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        .log-entry {
+            margin: 2px 0;
+        }
+        .step-indicator {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #dbeafe;
+            color: #1e40af;
+            border-radius: 4px;
+            font-weight: 600;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="debug-panel">
+        <div class="debug-title">🔍 Primary Form Navigation Debug Tool</div>
+        <p>This page simulates the step navigation behavior to test CSS and JavaScript interaction.</p>
+        
+        <div class="controls">
+            <button onclick="testGoToStep(1)">Go to Step 1</button>
+            <button onclick="testGoToStep(2)">Go to Step 2</button>
+            <button onclick="testGoToStep(3)">Go to Step 3</button>
+            <button onclick="testGoToStep(4)">Go to Step 4</button>
+            <button onclick="testGoToStep(5)">Go to Step 5</button>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div class="step-indicator" id="currentStepDisplay">Current Step: 1 of 5</div>
+        
+        <div class="log" id="debugLog">
+            <div class="log-entry">📝 Debug console initialized...</div>
+        </div>
+    </div>
+
+    <!-- Simulated Step Sections -->
+    <div class="step-section active form-section" id="step1">
+        <h3>Step 1: Basic Information</h3>
+        <p>This is step 1 content. It should be visible by default.</p>
+    </div>
+
+    <div class="step-section form-section step-hidden" id="step2">
+        <h3>Step 2: Shared Areas</h3>
+        <p>This is step 2 content. It should be hidden by default.</p>
+    </div>
+
+    <div class="step-section form-section step-hidden" id="step3">
+        <h3>Step 3: Documents</h3>
+        <p>This is step 3 content. It should be hidden by default.</p>
+    </div>
+
+    <div class="step-section form-section step-hidden" id="step4">
+        <h3>Step 4: Buyers List</h3>
+        <p>This is step 4 content. It should be hidden by default.</p>
+    </div>
+
+    <div class="step-section form-section step-hidden" id="step5">
+        <h3>Step 5: Summary</h3>
+        <p>This is step 5 content. It should be hidden by default.</p>
+    </div>
+
+    <script>
+        let debugLog = [];
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const emoji = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warning' ? '⚠️' : '📝';
+            const entry = `[${timestamp}] ${emoji} ${message}`;
+            debugLog.push(entry);
+            
+            const logElement = document.getElementById('debugLog');
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.textContent = entry;
+            logElement.appendChild(logEntry);
+            logElement.scrollTop = logElement.scrollHeight;
+            
+            console.log(entry);
+        }
+
+        function clearLog() {
+            debugLog = [];
+            document.getElementById('debugLog').innerHTML = '<div class="log-entry">📝 Debug console cleared...</div>';
+        }
+
+        function testGoToStep(stepNumber) {
+            log(`🚀 Navigating to step ${stepNumber}`, 'info');
+            
+            // Find all step sections
+            const allSteps = document.querySelectorAll('.form-section');
+            log(`📋 Found ${allSteps.length} form sections`, 'info');
+            
+            // Hide all steps
+            allSteps.forEach((step, index) => {
+                step.classList.remove('active');
+                step.classList.add('step-hidden');
+                step.style.display = 'none';
+                log(`   Hiding ${step.id}`, 'info');
+            });
+            
+            // Show target step
+            const targetStep = document.getElementById(`step${stepNumber}`);
+            if (targetStep) {
+                targetStep.classList.add('active');
+                targetStep.classList.remove('step-hidden');
+                targetStep.style.display = 'block';
+                log(`✅ Activated ${targetStep.id}`, 'success');
+                
+                // Update indicator
+                document.getElementById('currentStepDisplay').textContent = `Current Step: ${stepNumber} of 5`;
+            } else {
+                log(`❌ Step ${stepNumber} not found!`, 'error');
+            }
+            
+            // Verify
+            setTimeout(() => {
+                const visibleSteps = document.querySelectorAll('.form-section:not(.step-hidden)');
+                log(`🔍 Verification: ${visibleSteps.length} step(s) visible`, visibleSteps.length === 1 ? 'success' : 'error');
+                
+                if (visibleSteps.length !== 1) {
+                    log(`⚠️ Expected 1 visible step, found ${visibleSteps.length}`, 'warning');
+                    visibleSteps.forEach(step => {
+                        log(`   Visible: ${step.id}`, 'warning');
+                    });
+                }
+            }, 100);
+        }
+
+        // Initialize
+        log('✅ Navigation debug tool loaded', 'success');
+        log('📌 Default state: Step 1 should be visible', 'info');
+    </script>
+</body>
+</html>

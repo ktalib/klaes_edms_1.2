@@ -1,0 +1,895 @@
+@php
+    $streetOptions = $streetNames->merge([(object)['name' => 'Other']]);
+@endphp
+<!-- Generate Consent Letter Modal -->
+<div id="generate-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
+    <!-- Background overlay -->
+    <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" aria-hidden="true"
+        id="modal-overlay"></div>
+
+    <div
+        class="relative bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-100 transform transition-all">
+        <!-- Header: Fixed -->
+        <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+            <div>
+                <h3 class="text-xl font-bold text-slate-900" id="modal-title">Generate Letter</h3>
+                <p class="text-xs text-slate-500 mt-1 uppercase tracking-widest font-semibold">File Selection & Metadata
+                </p>
+            </div>
+            <button type="button"
+                class="close-modal text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-50 rounded-xl transition">
+                <i data-lucide="x" class="h-6 w-6"></i>
+            </button>
+        </div>
+ 
+        <!-- Form Body: Scrollable -->
+        <form id="consent-form" class="flex-1 overflow-y-auto">
+            @csrf
+            <input type="hidden" name="application_id" id="application_id">
+            <input type="hidden" name="application_type" id="application_type">
+            <div class="px-8 py-8 space-y-8">
+                <div class="wizard-progress mb-2">
+                    <div class="flex items-center justify-between">
+                        @foreach([
+                            ['step' => 1, 'label' => 'Basic Info', 'icon' => 'file-text'],
+                            ['step' => 2, 'label' => 'Application', 'icon' => 'map'],
+                            ['step' => 3, 'label' => 'Parties', 'icon' => 'users'],
+                            ['step' => 4, 'label' => 'Payments', 'icon' => 'credit-card'],
+                        ] as $index => $s)
+                            @if($index > 0)
+                                <div class="flex-1 h-0.5 mx-2 wizard-connector" data-before-step="{{ $s['step'] }}">
+                                    <div class="h-full bg-slate-200 rounded transition-colors duration-300 connector-bar"></div>
+                                </div>
+                            @endif
+                            <div class="flex flex-col items-center wizard-step-indicator" data-step-indicator="{{ $s['step'] }}">
+                                <div
+                                    class="w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 {{ $s['step'] === 1 ? 'border-teal-500 bg-teal-500 text-white' : 'border-slate-300 bg-white text-slate-400' }}"
+                                    id="wizard-circle-{{ $s['step'] }}">
+                                    <i data-lucide="{{ $s['icon'] }}" class="w-4 h-4"></i>
+                                </div>
+                                <span
+                                    class="text-xs font-medium mt-2 transition-colors duration-300 {{ $s['step'] === 1 ? 'text-teal-600' : 'text-slate-400' }}"
+                                    id="wizard-label-{{ $s['step'] }}">{{ $s['label'] }}</span>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+
+                <div class="wizard-step" data-step="1">
+                <!-- File Selection -->
+                <div class="space-y-4">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+                            <i data-lucide="file-text" class="h-4 w-4"></i>
+                        </div>
+                        <h4 class="text-sm font-bold text-slate-700 uppercase tracking-wider">File & Consent Type</h4>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Consent
+                                Type <span class="text-red-500">*</span></label>
+                            <div class="relative">
+                                <select name="consent_type" id="consent_type" required
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-bold text-slate-700 appearance-none cursor-pointer">
+                                    <option value="Assignment">Assignment</option>
+                                    <option value="Gift">Gift </option>
+                                    <option value="Mortgage">Mortgage</option>
+                                </select>
+                                <div
+                                    class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                    <i data-lucide="chevron-down" class="h-4 w-4"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">File
+                                Number <span class="text-red-500">*</span></label>
+                            <div class="flex items-center gap-2">
+                                <div class="relative flex-1">
+                                    <input type="text" name="file_number" id="file_number" readonly required
+                                        class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold font-mono text-slate-700"
+                                        placeholder="Select file...">
+                                    <div id="file-selection-indicator"
+                                        class="hidden absolute right-3 top-1/2 -translate-y-1/2">
+                                        <i data-lucide="check-circle" class="h-5 w-5 text-emerald-500"></i>
+                                    </div>
+                                </div>
+                                <button type="button" id="select-fileno-btn"
+                                    class="p-3 rounded-xl bg-blue-50 text-blue-600 font-bold border border-blue-100 hover:bg-blue-100 transition flex items-center justify-center shrink-0"
+                                    title="Select File">
+                                    <i data-lucide="search" class="h-5 w-5"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+                </div>
+
+                <div class="wizard-step hidden" data-step="2">
+                <!-- Application Details (Application variant) -->
+                <div class="variant-application hidden pt-8 border-t-2 border-indigo-100">
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="w-10 h-10 rounded-2xl bg-slate-800 flex items-center justify-center text-white shadow-lg shadow-slate-200">
+                            <i data-lucide="file-text" class="h-5 w-5"></i>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-black text-slate-800 uppercase tracking-widest">Application Details</h4>
+                            <p class="text-[10px] text-slate-500 font-bold uppercase">Assignment or mortgage specifics</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div id="right-of-occupancy-number-wrapper">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Right of Occupancy Number</label>
+                            <input type="hidden" name="right_of_occupancy_number" id="right_of_occupancy_number">
+                            <input type="text" id="right_of_occupancy_number_display" disabled
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed text-sm font-medium"
+                                placeholder="Auto-filled from selected file number">
+                            <div id="applicant-name-preview-wrapper" class="mt-2 hidden flex items-center gap-2">
+                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Applicant:</span>
+                                <span id="applicant_name_preview"
+                                    class="inline-flex items-center px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100 text-xs font-semibold"></span>
+                            </div>
+                        </div>
+                        <div class="hidden">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Land Use</label>
+                            <select name="right_of_occupancy_landuse" id="right_of_occupancy_landuse"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium">
+                                <option value="">Select Land Use</option>
+                                @foreach(($landUseTypes ?? collect()) as $landUseType)
+                                    <option value="{{ $landUseType->name }}" data-landuse-id="{{ $landUseType->id }}">{{ $landUseType->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Purpose of Right of Occupancy</label>
+                            <select name="purpose_of_right_of_occupancy" id="purpose_of_right_of_occupancy"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium">
+                                <option value="">Select Land Use</option>
+                                <option value="Agricultural">Agricultural</option>
+                                <option value="Commercial">Commercial</option>
+                                <option value="Industrial">Industrial</option>
+                                <option value="Residential">Residential</option>
+                            </select>
+                        </div>
+                        <div class="assignment-only-field hidden">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Original Holder Name</label>
+                            <input type="text" name="original_holder_name"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="If different from applicant">
+                        </div>
+                        <div class="assignment-only-field hidden">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Postal Address / GSM</label>
+                            <input type="text" name="postal_address_gsm"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="Postal address or GSM">
+                        </div>
+                        <div class="assignment-only-field hidden">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Nationality</label>
+                            <input type="text" name="nationality" value="Nigeria"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="Nationality">
+                        </div>
+                        <div class="assignment-only-field hidden">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">State of Origin</label>
+                            <select name="state_of_origin"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium">
+                                <option value="">Select State</option>
+                                @foreach($states as $state)
+                                    <option value="{{ $state->StateName }}">{{ $state->StateName }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="assignment-only-field hidden">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Stage of Development</label>
+                            <input type="text" name="stage_of_development"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="Stage of development">
+                        </div>
+                        <div class=" hidden">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Location of Right of Occupancy</label>
+                            <select name="location_of_right_of_occupancy" id="location_rofo_district"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium">
+                                <option value="">Select District</option>
+                                @foreach($districts as $district)
+                                    <option value="{{ $district->name }}">{{ $district->name }}</option>
+                                @endforeach
+                                <option value="Other">Other</option>
+                            </select>
+                            <input type="text" id="location_rofo_district_other"
+                                class="hidden w-full mt-2 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="Specify district...">
+                        </div>
+                        <div class=" hidden">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Date of Grant</label>
+                            <input type="date" name="date_of_grant" id="date_of_grant"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium">
+                        </div>
+                        <div id="special-mortgage-terms-wrapper" class="md:col-span-2 hidden">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Special Mortgage Terms</label>
+                            <textarea name="special_mortgage_terms" id="special_mortgage_terms" rows="2"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="Special mortgage terms (if any)"></textarea>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Correspondence Address</label>
+                            <div class="space-y-3 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">House No</label>
+                                        <input type="text" id="correspondence_house_no"
+                                            class="address-component-correspondence w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                                            placeholder="e.g. 12">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Street</label>
+                                        <select id="correspondence_street" data-address-type="correspondence" data-manual-input="#correspondence_street_other"
+                                            class="address-component-correspondence street-dropdown w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                                            <option value="">Select Street</option>
+                                            @foreach($streetOptions as $street)
+                                                <option value="{{ $street->name }}">{{ $street->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        <input type="text" id="correspondence_street_other" data-address-type="correspondence"
+                                            class="manual-street-input hidden address-component-correspondence w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                                            placeholder="Specify street...">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">District</label>
+                                        <select id="correspondence_district"
+                                            class="address-component-correspondence w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                                            <option value="">Select District</option>
+                                            @foreach($districts as $district)
+                                                <option value="{{ $district->name }}">{{ $district->name }}</option>
+                                            @endforeach
+                                            <option value="Other">Other</option>
+                                        </select>
+                                        <input type="text" id="correspondence_district_other"
+                                            class="hidden address-component-correspondence w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                                            placeholder="Specify district...">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">LGA</label>
+                                        <select id="correspondence_lga"
+                                            class="address-component-correspondence w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                                            <option value="">Select LGA</option>
+                                            @foreach($lgas as $lga)
+                                                <option value="{{ $lga->LGAName }}">{{ $lga->LGAName }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">State</label>
+                                    <select id="correspondence_state"
+                                        class="address-component-correspondence w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                                        <option value="">Select State</option>
+                                        @foreach($states as $state)
+                                            <option value="{{ $state->StateName }}" {{ $state->StateName == 'Kano' ? 'selected' : '' }}>{{ $state->StateName }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+                            <input type="hidden" name="correspondence_address" id="correspondence_address_hidden">
+                            <div class="mt-3 p-3 bg-white rounded-xl border border-dashed border-slate-200 text-xs text-slate-500">
+                                <span class="font-bold text-slate-400 uppercase text-[10px] block mb-1">Full Address Preview:</span>
+                                <span id="correspondence_address_preview" class="italic">No address built yet...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Property Description Section -->
+                <div class="pt-8 border-t-2 border-indigo-100">
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                            <i data-lucide="map-pin" class="h-5 w-5"></i>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-black text-slate-800 uppercase tracking-widest">Property Description</h4>
+                            <p class="text-[10px] text-slate-500 font-bold uppercase">Location of the subject plot</p>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="space-y-3 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">House/Plot No</label>
+                                    <input type="text" id="property_house_no" class="address-component-property w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition" placeholder="e.g. 12">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Street</label>
+                                    <select id="property_street" data-address-type="property" data-manual-input="#property_street_other"
+                                        class="address-component-property street-dropdown w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                                        <option value="">Select Street</option>
+                                        @foreach($streetOptions as $street)
+                                            <option value="{{ $street->name }}">{{ $street->name }}</option>
+                                        @endforeach
+                                    </select>
+                                    <input type="text" id="property_street_other" data-address-type="property"
+                                        class="manual-street-input hidden address-component-property w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                                        placeholder="Specify street...">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">District</label>
+                                    <select id="property_district" class="address-component-property w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                                        <option value="">Select District</option>
+                                        @foreach($districts as $district)
+                                            <option value="{{ $district->name }}">{{ $district->name }}</option>
+                                        @endforeach
+                                        <option value="Other">Other</option>
+                                    </select>
+                                    <input type="text" id="property_district_other" class="hidden address-component-property w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition" placeholder="Specify district...">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">LGA <span class="text-red-500">*</span></label>
+                                    <select id="property_lga" required class="address-component-property w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                                        <option value="">Select LGA</option>
+                                        @foreach($lgas as $lga)
+                                            <option value="{{ $lga->LGAName }}">{{ $lga->LGAName }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">State <span class="text-red-500">*</span></label>
+                                <select id="property_state" required class="address-component-property w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                                    <option value="">Select State</option>
+                                    @foreach($states as $state)
+                                        <option value="{{ $state->StateName }}" {{ $state->StateName == 'Kano' ? 'selected' : '' }}>{{ $state->StateName }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+                        <input type="hidden" name="property_description" id="property_address_hidden">
+                        <div class="mt-3 p-3 bg-white rounded-xl border border-dashed border-slate-200 text-xs text-slate-500">
+                            <span class="font-bold text-slate-400 uppercase text-[10px] block mb-1">Full Description Preview:</span>
+                            <span id="property_address_preview" class="italic">No description built yet...</span>
+                        </div>
+                    </div>
+                </div>
+                </div>
+
+                <div class="wizard-step hidden" data-step="3">
+                <!-- Dynamic Detail Sections -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-10 pt-8 border-t-2 border-indigo-100 relative">
+                    <!-- Vertical Divider for Desktop -->
+                    <div class="hidden md:block absolute left-1/2 top-8 bottom-0 w-px bg-indigo-200 -ml-px">
+                    </div>
+
+                    <!-- Applicant -->
+                    <div class="space-y-4 relative">
+                        <div class="flex items-center gap-3 mb-6">
+                            <div
+                                class="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                                <i data-lucide="user" class="h-5 w-5"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-sm font-black text-slate-800 uppercase tracking-widest">Applicant
+                                    Details</h4>
+                                <p class="text-[10px] text-slate-500 font-bold uppercase">Person making the request</p>
+                            </div>
+                        </div>
+                        <div>
+                            <label id="applicant-name-label"
+                                class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Applicant
+                                Full Name <span class="text-red-500">*</span></label>
+                            <input type="text" name="applicant_name" required
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="e.g. Musa Ali">
+                        </div>
+                        <div>
+                            <label
+                                class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Applicant
+                                Address <span class="text-[10px] font-normal text-slate-400 normal-case">(auto-filled from Correspondence Address)</span></label>
+
+                            <div class="space-y-3 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label
+                                            class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">House
+                                            No</label>
+                                        <input type="text" id="applicant_house_no" disabled
+                                            class="address-component-applicant w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-sm font-medium text-slate-500 cursor-not-allowed"
+                                            placeholder="e.g. 12">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-500 uppercase
+                                            tracking-wider mb-1">Street</label>
+                                        <select id="applicant_street" data-address-type="applicant" data-manual-input="#applicant_street_other" disabled
+                                            class="address-component-applicant street-dropdown w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-sm font-medium text-slate-500 cursor-not-allowed">
+                                            <option value="">Select Street</option>
+                                            @foreach($streetOptions as $street)
+                                                <option value="{{ $street->name }}">{{ $street->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        <input type="text" id="applicant_street_other" data-address-type="applicant" disabled
+                                            class="manual-street-input hidden address-component-applicant w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-sm font-medium text-slate-500 cursor-not-allowed"
+                                            placeholder="Specify street...">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-500 uppercase
+                                            tracking-wider mb-1">District</label>
+                                        <select id="applicant_district" disabled
+                                            class="address-component-applicant w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-sm font-medium text-slate-500 cursor-not-allowed">
+                                            <option value="">Select District</option>
+                                            @foreach($districts as $district)
+                                                <option value="{{ $district->name }}">{{ $district->name }}</option>
+                                            @endforeach
+                                            <option value="Other">Other</option>
+                                        </select>
+                                        <input type="text" id="applicant_district_other" disabled
+                                            class="hidden address-component-applicant w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-sm font-medium text-slate-500 cursor-not-allowed"
+                                            placeholder="Specify district...">
+                                    </div>
+                                    <div>
+                                        <label
+                                            class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">LGA</label>
+                                        <select id="applicant_lga"
+                                            class="address-component-applicant w-full px-3 py-2 rounded-xl border
+                                        border-slate-200 bg-slate-100 text-sm font-medium text-slate-500 cursor-not-allowed" disabled>
+                                            <option value="">Select LGA</option>
+                                            @foreach($lgas as $lga)
+                                                <option value="{{ $lga->LGAName }}">{{ $lga->LGAName }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label
+                                        class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">State</label>
+                                    <select id="applicant_state"
+                                        class="address-component-applicant w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-sm font-medium text-slate-500 cursor-not-allowed" disabled>
+                                        <option value="">Select State</option>
+                                        @foreach($states as $state)
+                                            <option value="{{ $state->StateName }}" {{ $state->StateName == 'Kano' ? 'selected' : '' }}>{{ $state->StateName }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+                            <input type="hidden" name="applicant_address" id="applicant_address_hidden">
+                            <div
+                                class="mt-3 p-3 bg-white rounded-xl border border-dashed border-slate-200 text-xs text-slate-500">
+                                <span class="font-bold text-slate-400 uppercase text-[10px] block mb-1">Full Address
+                                    Preview:</span>
+                                <span id="applicant_address_preview" class="italic">No address built yet...</span>
+                            </div>
+                        </div>
+
+                        <div id="additional-applicants-container" class="space-y-6">
+                            <!-- Additional applicants cloned here -->
+                        </div>
+
+                        <!-- Add Applicant Action Container -->
+                        <div id="add-applicant-action-container" class="pt-2">
+                            <button type="button" id="add-applicant-btn" class="w-full py-3 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/30 text-blue-600 hover:bg-blue-50 hover:border-blue-300 transition flex items-center justify-center gap-2 text-xs font-bold uppercase">
+                                <i data-lucide="plus-circle" class="h-4 w-4"></i>
+                                <span>Add Another Applicant</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Other Party -->
+                    <div class="space-y-4 relative">
+                        <div class="flex items-center gap-3 mb-6">
+                            <div
+                                class="w-10 h-10 rounded-2xl bg-fuchsia-600 flex items-center justify-center text-white shadow-lg shadow-fuchsia-200">
+                                <i data-lucide="users" class="h-5 w-5"></i>
+                            </div>
+                            <div class="flex-1">
+                                <h4 class="text-sm font-black text-slate-800 uppercase tracking-widest"
+                                    id="party-role-label">Assignee Details</h4>
+                                <p class="text-[10px] text-slate-500 font-bold uppercase">Target recipient party</p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2"
+                                id="party-name-label">Assignee Full Name <span class="text-red-500">*</span></label>
+                            <input type="text" name="party_name" required
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="Full name of the party">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Party
+                                Address</label>
+
+                            <div class="space-y-3 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label
+                                            class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">House
+                                            No</label>
+                                        <input type="text" id="party_house_no"
+                                            class="address-component-party w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                                            placeholder="e.g. 12">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-500 uppercase
+                                            tracking-wider mb-1">Street</label>
+                                        <select id="party_street" data-address-type="party" data-manual-input="#party_street_other"
+                                            class="address-component-party street-dropdown w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                                            <option value="">Select Street</option>
+                                            @foreach($streetOptions as $street)
+                                                <option value="{{ $street->name }}">{{ $street->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        <input type="text" id="party_street_other" data-address-type="party"
+                                            class="manual-street-input hidden address-component-party w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                                            placeholder="Specify street...">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-500 uppercase
+                                            tracking-wider mb-1">District</label>
+                                        <select id="party_district"
+                                            class="address-component-party w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                                            <option value="">Select District</option>
+                                            @foreach($districts as $district)
+                                                <option value="{{ $district->name }}">{{ $district->name }}</option>
+                                            @endforeach
+                                            <option value="Other">Other</option>
+                                        </select>
+                                        <input type="text" id="party_district_other"
+                                            class="hidden address-component-party w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                                            placeholder="Specify district...">
+                                    </div>
+                                    <div>
+                                        <label
+                                            class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">LGA
+                                            <span class="text-red-500">*</span></label>
+                                        <select id="party_lga" required
+                                            class="address-component-party w-full px-3 py-2 rounded-xl border
+                                        border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                                            <option value="">Select LGA</option>
+                                            @foreach($lgas as $lga)
+                                                <option value="{{ $lga->LGAName }}">{{ $lga->LGAName }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label
+                                        class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">State
+                                        <span class="text-red-500">*</span></label>
+                                    <select id="party_state" required
+                                        class="address-component-party w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                                        <option value="">Select State</option>
+                                        @foreach($states as $state)
+                                            <option value="{{ $state->StateName }}" {{ $state->StateName == 'Kano' ? 'selected' : '' }}>{{ $state->StateName }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+                            <input type="hidden" name="party_address" id="party_address_hidden">
+                            <div
+                                class="mt-3 p-3 bg-white rounded-xl border border-dashed border-slate-200 text-xs text-slate-500">
+                                <span class="font-bold text-slate-400 uppercase text-[10px] block mb-1">Full Address
+                                    Preview:</span>
+                                <span id="party_address_preview" class="italic">No address built yet...</span>
+                            </div>
+                        </div>
+                        
+                        <div id="additional-parties-container" class="space-y-6">
+                            <!-- Additional parties cloned here -->
+                        </div>
+
+                        <!-- Add Party Action Container -->
+                        <div id="add-party-action-container" class="hidden pt-2">
+                            <button type="button" id="add-party-btn" class="w-full py-3 rounded-xl border-2 border-dashed border-emerald-200 bg-emerald-50/30 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-300 transition flex items-center justify-center gap-2 text-xs font-bold uppercase">
+                                <i data-lucide="plus-circle" class="h-4 w-4"></i>
+                                <span>Add Another Mortgagee</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                </div>
+
+                <div class="wizard-step hidden" data-step="4">
+                <!-- Financials and Date -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4 border-t border-slate-50">
+                    <div id="financial-section">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div
+                                class="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+                                <i data-lucide="banknote" class="h-4 w-4"></i>
+                            </div>
+                            <h4 class="text-sm font-bold text-slate-700 uppercase tracking-wider" id="financial-title">
+                                Consideration</h4>
+                        </div>
+                        <div class="space-y-4">
+                            <div>
+                                <label
+                                    class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Amount
+                                    in Figures (₦) <span class="text-red-500">*</span></label>
+                                <input type="text" name="consideration" required id="consideration_figures"
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium"
+                                    placeholder="e.g. 5,000,000">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2"
+                                    id="financial-label">Amount in Words</label>
+                                <input type="text" name="consideration_words" required id="consideration_words" readonly
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm font-medium cursor-not-allowed"
+                                    placeholder="e.g. Five Million Naira Only">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex items-center gap-3 mb-4">
+                                <div
+                                    class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-orange-600">
+                                    <i data-lucide="calendar" class="h-4 w-4"></i>
+                                </div>
+                                <h4 class="text-sm font-bold text-slate-700 uppercase tracking-wider">Date</h4>
+                            </div>
+                            <div class="variant-letter">
+                                <label
+                                    class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Letter
+                                    Date <span class="text-red-500">*</span></label>
+                                <input type="date" name="application_date" id="letter_date" value="{{ date('Y-m-d') }}"
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium">
+                            </div>
+                            <div class="variant-application hidden">
+                                <label
+                                    class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Application
+                                    Date <span class="text-red-500">*</span></label>
+                                <input type="date" name="application_submitted_date" id="application_submitted_date" value="{{ date('Y-m-d') }}"
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Time
+                                    Created</label>
+                                <div
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 text-[10px] font-bold flex items-center gap-2">
+                                    <i data-lucide="clock" class="h-3 w-3 text-emerald-500"></i>
+                                    {{ date('h:i A') }}
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Date
+                                    Created</label>
+                                <div
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 text-[10px] font-bold flex items-center gap-2">
+                                    <i data-lucide="calendar" class="h-3 w-3 text-emerald-500"></i>
+                                    {{ date('d-m-Y') }}
+                                </div>
+                            </div>
+                            <div>
+                                <label
+                                    class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Created
+                                    By</label>
+                                <div
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 text-[10px] font-bold flex items-center gap-2">
+                                    <i data-lucide="user-check" class="h-3 w-3 text-emerald-500"></i>
+                                    {{ auth()->user()->first_name }} {{ auth()->user()->last_name }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+            </div>
+        </form>
+
+        <!-- Footer: Fixed -->
+        <div
+            class="px-8 py-6 border-t border-slate-100 flex items-center justify-end gap-3 bg-white shrink-0 shadow-inner">
+            <button type="button" id="wizard-prev-btn"
+                class="hidden px-6 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition">
+                Previous
+            </button>
+            <button type="button"
+                class="close-modal px-6 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition">
+                Cancel
+            </button>
+            <button type="button" id="wizard-next-btn"
+                class="px-6 py-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 font-bold hover:bg-blue-100 transition">
+                Next
+            </button>
+            <button type="submit" form="consent-form" id="submit-btn"
+                class="hidden px-8 py-3 rounded-xl bg-blue-600 text-white font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition flex items-center gap-2">
+                <span>Generate Consent</span>
+                <i data-lucide="arrow-right" class="h-4 w-4"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Template for Additional Parties (Hidden) -->
+<template id="additional-party-template">
+    <div class="additional-party-block pt-8 border-t-2 border-slate-100 space-y-4">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-500">
+                <i data-lucide="users" class="h-5 w-5"></i>
+            </div>
+            <div class="flex-1">
+                <div class="flex items-center justify-between">
+                    <h4 class="text-sm font-black text-slate-800 uppercase tracking-widest party-header">Additional Mortgagee</h4>
+                    <button type="button" class="remove-party-btn p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition shadow-sm border border-red-100 flex items-center gap-1 text-[10px] font-bold uppercase">
+                        <i data-lucide="trash-2" class="h-3 w-3"></i>
+                        <span>Remove</span>
+                    </button>
+                </div>
+                <!-- <p class="text-[10px] text-slate-500 font-bold uppercase">Co-Lender details</p> -->
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Mortgagee Name <span class="text-red-500">*</span></label>
+            <input type="text" name="additional_party_name[]" required
+                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium"
+                placeholder="Full name of the party">
+        </div>
+        
+        <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Mortgagee Address</label>
+            <div class="space-y-3 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">House No</label>
+                        <input type="text" name="additional_party_house_no[]"
+                            class="address-component-additional w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                            placeholder="e.g. 12">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Street</label>
+                        <select name="additional_party_street[]" data-manual-input="next"
+                            class="address-component-additional street-dropdown w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                            <option value="">Select Street</option>
+                            @foreach($streetOptions as $street)
+                                <option value="{{ $street->name }}">{{ $street->name }}</option>
+                            @endforeach
+                        </select>
+                        <input type="text" name="additional_party_street_manual[]"
+                            class="manual-street-input hidden address-component-additional w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                            placeholder="Specify street...">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">District</label>
+                        <select name="additional_party_district[]"
+                            class="address-component-additional dist-select w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                            <option value="">Select District</option>
+                            @foreach($districts as $district)
+                                <option value="{{ $district->name }}">{{ $district->name }}</option>
+                            @endforeach
+                            <option value="Other">Other</option>
+                        </select>
+                        <input type="text" name="additional_party_district_other[]"
+                            class="hidden address-component-additional dist-other w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                            placeholder="Specify district...">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">LGA <span class="text-red-500">*</span></label>
+                        <select name="additional_party_lga[]" required
+                            class="address-component-additional w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                            <option value="">Select LGA</option>
+                            @foreach($lgas as $lga)
+                                <option value="{{ $lga->LGAName }}">{{ $lga->LGAName }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">State <span class="text-red-500">*</span></label>
+                    <select name="additional_party_state[]" required
+                        class="address-component-additional w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                        <option value="">Select State</option>
+                        @foreach($states as $state)
+                            <option value="{{ $state->StateName }}" {{ $state->StateName == 'Kano' ? 'selected' : '' }}>{{ $state->StateName }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            </div>
+            <!-- Built address for additional party will be stored in a hidden field during submission if needed, 
+                 but we can also build it in JS and store it in the JSON array. -->
+        </div>
+    </div>
+</template>
+
+<!-- Template for Additional Applicants (Hidden) -->
+<template id="additional-applicant-template">
+    <div class="additional-applicant-block pt-8 border-t-2 border-slate-100 space-y-4">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-500">
+                <i data-lucide="user" class="h-5 w-5"></i>
+            </div>
+            <div class="flex-1">
+                <div class="flex items-center justify-between">
+                    <h4 class="text-sm font-black text-slate-800 uppercase tracking-widest applicant-header">Additional Applicant</h4>
+                    <button type="button" class="remove-applicant-btn p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition shadow-sm border border-red-100 flex items-center gap-1 text-[10px] font-bold uppercase">
+                        <i data-lucide="trash-2" class="h-3 w-3"></i>
+                        <span>Remove</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Applicant Name <span class="text-red-500">*</span></label>
+            <input type="text" name="additional_applicant_name[]" required
+                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium"
+                placeholder="Full name of the party">
+        </div>
+        
+        <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Applicant Address</label>
+            <div class="space-y-3 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">House No</label>
+                        <input type="text" name="additional_applicant_house_no[]"
+                            class="address-component-additional-applicant w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                            placeholder="e.g. 12">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Street</label>
+                        <select name="additional_applicant_street[]" data-manual-input="next"
+                            class="address-component-additional-applicant street-dropdown w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                            <option value="">Select Street</option>
+                            @foreach($streetOptions as $street)
+                                <option value="{{ $street->name }}">{{ $street->name }}</option>
+                            @endforeach
+                        </select>
+                        <input type="text" name="additional_applicant_street_manual[]"
+                            class="manual-street-input hidden address-component-additional-applicant w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                            placeholder="Specify street...">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">District</label>
+                        <select name="additional_applicant_district[]"
+                            class="address-component-additional-applicant dist-select w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                            <option value="">Select District</option>
+                            @foreach($districts as $district)
+                                <option value="{{ $district->name }}">{{ $district->name }}</option>
+                            @endforeach
+                            <option value="Other">Other</option>
+                        </select>
+                        <input type="text" name="additional_applicant_district_other[]"
+                            class="hidden address-component-additional-applicant dist-other w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                            placeholder="Specify district...">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">LGA <span class="text-red-500">*</span></label>
+                        <select name="additional_applicant_lga[]" required
+                            class="address-component-additional-applicant w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                            <option value="">Select LGA</option>
+                            @foreach($lgas as $lga)
+                                <option value="{{ $lga->LGAName }}">{{ $lga->LGAName }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">State <span class="text-red-500">*</span></label>
+                    <select name="additional_applicant_state[]" required
+                        class="address-component-additional-applicant w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                        <option value="">Select State</option>
+                        @foreach($states as $state)
+                            <option value="{{ $state->StateName }}" {{ $state->StateName == 'Kano' ? 'selected' : '' }}>{{ $state->StateName }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>

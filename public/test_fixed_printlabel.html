@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Print Label Interface - Fixed Testing</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .fixed { background-color: #cff4fc; border-color: #b8daff; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .btn-test { background: #28a745; }
+        .btn-test:hover { background: #1e7e34; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; font-size: 12px; }
+        ul li { margin-bottom: 8px; }
+        .highlight { background-color: #fff3cd; padding: 2px 4px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>🎯 Print Label Interface - FIXED</h1>
+    
+    <div class="test-section fixed">
+        <h3>✅ Fixes Implemented</h3>
+        
+        <h4>1. Dynamic Button Enabling Logic</h4>
+        <ul>
+            <li><strong>ST Mode:</strong> Button enabled for 1-20 selected files</li>
+            <li><strong>Regular Mode:</strong> Button enabled for 1-30 selected files</li>
+            <li><strong>Visual Feedback:</strong> Clear error messages for limits exceeded</li>
+            <li><strong>Status Display:</strong> Shows "X of max Y files selected" with limit warnings</li>
+        </ul>
+        
+        <h4>2. Enhanced Tab Accessibility</h4>
+        <ul>
+            <li><strong>Settings Tab:</strong> Accessible when valid files are selected</li>
+            <li><strong>Preview Tab:</strong> Accessible when files selected AND settings configured</li>
+            <li><strong>Visual Indicators:</strong> Disabled tabs are grayed out with helpful tooltips</li>
+            <li><strong>Smart Navigation:</strong> Prevents accessing incomplete workflows</li>
+        </ul>
+        
+        <h4>3. Mode-Specific UI Enhancements</h4>
+        <ul>
+            <li><strong>Selection Limits:</strong> Clear notices about 20 vs 30 file limits</li>
+            <li><strong>Error Messages:</strong> Context-aware validation messages</li>
+            <li><strong>Status Updates:</strong> Real-time feedback on selection validity</li>
+        </ul>
+    </div>
+    
+    <div class="test-section">
+        <h3>🧪 Test the Fixed Interface</h3>
+        
+        <div style="margin: 15px 0;">
+            <a href="http://127.0.0.1:8000/printlabel" target="_blank">
+                <button class="btn-test">Test Regular Mode (1-30 files)</button>
+            </a>
+            <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">
+                Should show "Select up to 30 files" notice and enable button with any selection
+            </p>
+        </div>
+        
+        <div style="margin: 15px 0;">
+            <a href="http://127.0.0.1:8000/printlabel?url=st" target="_blank">
+                <button class="btn-test">Test ST Mode (1-20 files)</button>
+            </a>
+            <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">
+                Should show "Select up to 20 files" notice and enable button with any selection
+            </p>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h3>📋 Testing Checklist</h3>
+        
+        <h4>Button Enabling Tests:</h4>
+        <ol>
+            <li>Open ST mode → Select 1 file → <span class="highlight">Button should be enabled</span></li>
+            <li>Open ST mode → Select 15 files → <span class="highlight">Button should be enabled</span></li>
+            <li>Open ST mode → Select 21+ files → <span class="highlight">Button should be disabled with error</span></li>
+            <li>Open Regular mode → Select 1 file → <span class="highlight">Button should be enabled</span></li>
+            <li>Open Regular mode → Select 25 files → <span class="highlight">Button should be enabled</span></li>
+            <li>Open Regular mode → Select 31+ files → <span class="highlight">Button should be disabled with error</span></li>
+        </ol>
+        
+        <h4>Tab Accessibility Tests:</h4>
+        <ol>
+            <li>No files selected → <span class="highlight">Settings and Preview tabs should be disabled</span></li>
+            <li>Files selected → <span class="highlight">Settings tab should be accessible</span></li>
+            <li>Files selected + format chosen → <span class="highlight">Preview tab should be accessible</span></li>
+            <li>Hover over disabled tabs → <span class="highlight">Should show helpful tooltips</span></li>
+        </ol>
+        
+        <h4>Visual Feedback Tests:</h4>
+        <ol>
+            <li>Check selection status → <span class="highlight">Should show "X of max Y files selected"</span></li>
+            <li>Exceed limits → <span class="highlight">Status should turn red with warning</span></li>
+            <li>Mode notices → <span class="highlight">ST mode shows blue notice, Regular shows gray</span></li>
+        </ol>
+    </div>
+    
+    <div class="test-section success">
+        <h3>🔧 Technical Changes Summary</h3>
+        
+        <h4>JavaScript Updates (js.blade.php):</h4>
+        <pre>// Dynamic button validation
+const maxFiles = state.stFilterActive ? 20 : 30;
+const isValidSelection = selectedCount >= 1 && selectedCount <= maxFiles;
+
+// Enhanced error messages
+if (selectedCount > maxFiles) {
+    const fileType = state.stFilterActive ? 'ST files' : 'files';
+    showError(`Too many files selected. Maximum ${maxFiles} ${fileType} allowed.`);
+}
+
+// Tab accessibility management
+function updateTabAccessibility() {
+    // Enable/disable tabs based on current state
+    // Show helpful tooltips for disabled states
+}</pre>
+        
+        <h4>Blade Template Updates (index.blade.php):</h4>
+        <pre>@if(isset($showOnlyST) && $showOnlyST)
+    &lt;div class="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-md"&gt;
+        &lt;p class="text-sm text-blue-700"&gt;
+            &lt;strong&gt;ST Mode:&lt;/strong&gt; Select up to 20 files for Sectional Titling labels
+        &lt;/p&gt;
+    &lt;/div&gt;
+@else
+    &lt;div class="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-md"&gt;
+        &lt;p class="text-sm text-gray-700"&gt;
+            &lt;strong&gt;Regular Mode:&lt;/strong&gt; Select up to 30 files for standard labels
+        &lt;/p&gt;
+    &lt;/div&gt;
+@endif</pre>
+    </div>
+    
+    <div class="test-section">
+        <h3>🎯 Expected Behavior</h3>
+        <p><strong>The interface should now:</strong></p>
+        <ul>
+            <li>✅ Enable "Continue to Label Settings" button with appropriate file selections</li>
+            <li>✅ Show clear visual indicators for selection limits (20 for ST, 30 for regular)</li>
+            <li>✅ Allow tab navigation based on completion state</li>
+            <li>✅ Provide helpful error messages when limits are exceeded</li>
+            <li>✅ Display real-time feedback on selection status</li>
+            <li>✅ Prevent workflow progression without proper selections</li>
+        </ul>
+        
+        <p><strong>This resolves the user's concerns about:</strong></p>
+        <ul>
+            <li>🔧 "Continue to Label Settings" button not enabling properly</li>
+            <li>🔧 "Preview & Print" tab accessibility issues</li>
+            <li>🔧 ST mode file limit enforcement (20 instead of 30)</li>
+        </ul>
+    </div>
+
+</body>
+</html>

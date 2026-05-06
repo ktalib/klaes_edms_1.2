@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Archive Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 20px; border: 1px solid #ddd; }
+        .test-passed { color: green; }
+        .test-failed { color: red; }
+        img { max-width: 200px; max-height: 150px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>File Archive Implementation Test</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Check File Archive Page Loading</h2>
+        <p>Navigate to: <a href="/filearchive" target="_blank">/filearchive</a></p>
+        <p><strong>Expected:</strong> Page should load showing all files (not just CON-RES files)</p>
+        <p><strong>Check for:</strong></p>
+        <ul>
+            <li>Files with different file number patterns (not just CON-RES-198*)</li>
+            <li>Total count showing actual number of files</li>
+            <li>6 files per page (reduced from 12 for faster loading)</li>
+            <li>Images loading with lazy loading attribute</li>
+        </ul>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 2: Lazy Loading Verification</h2>
+        <p><strong>Instructions:</strong></p>
+        <ol>
+            <li>Open browser developer tools (F12)</li>
+            <li>Go to the file archive page</li>
+            <li>Look at the images in the DOM</li>
+            <li>Verify images have <code>loading="lazy"</code> attribute</li>
+            <li>Check Network tab - images should load only when they come into view</li>
+        </ol>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 3: Database Query Performance</h2>
+        <p><strong>Check:</strong></p>
+        <ul>
+            <li>Query should NOT include WHERE file_number LIKE 'CON-RES-198%'</li>
+            <li>Should use select() to limit columns loaded</li>
+            <li>Relationships should be eager loaded with selected fields only</li>
+        </ul>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 4: Search Functionality</h2>
+        <p>Test the search feature at: <a href="/filearchive/search" target="_blank">/filearchive/search</a></p>
+        <p><strong>Expected:</strong> Should work with all file types, not just CON-RES</p>
+    </div>
+    
+    <div class="test-section">
+        <h2>Browser Developer Tools Commands</h2>
+        <p>Run these in the browser console on the file archive page:</p>
+        <code>
+            // Check if lazy loading is applied<br>
+            document.querySelectorAll('img[loading="lazy"]').length<br><br>
+            
+            // Check file number diversity<br>
+            document.querySelectorAll('.file-card').forEach(card => {<br>
+            &nbsp;&nbsp;console.log(card.dataset.fileNumber);<br>
+            });<br><br>
+            
+            // Performance timing<br>
+            performance.getEntriesByType('navigation')[0].loadEventEnd
+        </code>
+    </div>
+    
+    <div class="test-section">
+        <h2>Expected Results</h2>
+        <ul>
+            <li class="test-passed">✅ All file types displayed (not filtered to CON-RES only)</li>
+            <li class="test-passed">✅ Images have loading="lazy" attribute</li>
+            <li class="test-passed">✅ Page loads faster with 6 items instead of 12</li>
+            <li class="test-passed">✅ Dynamic file count instead of hardcoded "2,864"</li>
+            <li class="test-passed">✅ Optimized database queries with selected fields</li>
+            <li class="test-passed">✅ Search works for all file types</li>
+        </ul>
+    </div>
+
+    <script>
+        // Auto test lazy loading when page loads
+        setTimeout(() => {
+            const lazyImages = document.querySelectorAll('img[loading="lazy"]').length;
+            console.log(`Found ${lazyImages} images with lazy loading`);
+        }, 1000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,558 @@
+warning: in the working copy of 'Readmes/DEED_OF_GIFT_IMPLEMENTATION.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Readmes/FILE_DECOMMISSIONING_IMPLEMENTATION.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Readmes/FILE_TRACKER_IMPLEMENTATION.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Helper/helper.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/ActivityMonitoringController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/Api/FileTrackerApiController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/Api/GroupingApiController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/Auth/AuthenticatedSessionController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/CaveatController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/CofoController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/FileDecommissioningController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/FileIndexViewController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/FileIndexingController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/FileNumberApiController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/FileNumberController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/FileSearchController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/FileTrackerController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/FileTrackerDashboardController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/FilearchiveController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/InstrumentController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/InstrumentRegistrationController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/InstrumentTypeController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/OnPremiseController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/PageTypingController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/PrintLabelController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/ProfileController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/ProgrammesController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/PropertyCardController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/PropertyIndexCardController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/PropertyRecordController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/RecertificationController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/ReferenceDataController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/SUAController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/ScanUploadsController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/SecondaryFormController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/SectionalTitlingController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Controllers/TestController.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Http/Middleware/VerifyCsrfToken.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Models/Caveat.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Models/FileIndexing.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Models/FileNumber.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Models/PageTyping.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Models/Scanning.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Models/User.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Providers/AppServiceProvider.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Providers/RouteServiceProvider.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Services/EdmsSchemaChecker.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Services/PropertyIdAllocationService.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Services/ScanUploads/BlindScanIngestionService.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/Support/PropertyRecordFormatter.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'config/services.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/factories/UserFactory.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/migrations/2025_10_02_040736_test_migration_functionality.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/migrations/2026_01_22_044507_add_registry_to_page_typings_table.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/migrations/2026_01_24_140354_create_registries_table.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/migrations/2026_01_25_172042_add_destination_to_file_tracker_table.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/sql/DATABASE_SCHEMA_CHECK.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/sql/caveat_system_database_setup.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/sql/create_file_trackings_table.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/sql/database_updates.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'phpunit.xml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/css/custom.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/batch_registration_handler_final.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/caveat-events.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/caveat-rendering.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/custom.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/instrument_registration.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/instrument_registration_updated.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/manual-file-number-modal.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/quick_batch_handler.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/js/quick_batch_handler_fixed.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/actions/JOINT-SITE-INSPECTION-REPORT.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/actions/recommendation/_variables.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/activity-monitoring/exports/summary.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/activity-monitoring/index.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/admin/footer.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/admin/menu.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/admin/menu/partials/modules/system_admin.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/caveat/assets/js_dynamic.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/caveat/assets/js_dynamic_backup.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/caveat/index.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/commissioning_sheet/pdf.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/components/District.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/components/StreetName2.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/create_file_tracker_page/index.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/edms/fileindexing.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/file_numbers/st_index.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/file_tracker_dashboard/index.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/filearchive/assets/js.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/filearchive/partials/files_grid.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/filearchive/partials/files_grid_content.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/filearchive/partials/search.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/filearchive/partials/stats.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/fileindexing/addons/partials/sections/form_actions.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/filetracker/create.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/generate_fileno/capture_existing.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/generate_fileno/mls_js.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/generate_fileno/mlsfno.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/indexed_files/index.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/instrument_registration/index_no_serial_main_table.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/instrument_registration/partials/batchregistermodal.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/instrument_registration/partials/batchregistermodal_final.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/instrument_registration/partials/css.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/instrument_registration/partials/quickbatchmodal.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/instruments/create.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/instruments/create/js.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/legal_search/js.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/legal_search/style.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/pagetyping/css/style.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/pagetyping/index.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/primaryform/archived_legacy/fileno.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/primaryform/fileno.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/primaryform/gis_fileno.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/printlabel/assets/js.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/printlabel/partials/page.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/programmes/bills.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/programmes/certificates.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/programmes/print_cofo_front_page.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/programmes/rofo.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/propertycard/cofo.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/propertycard/index.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/propertycard/js/cofo_javascript.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/propertycard/partials/add_property_record.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/propertycard/partials/cofo_details.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/propertycard/partials/edit_property_record.blade.php', LF will be replaced by CRLF the next time Git touches itwarning: in the working copy of 'resources/views/propertycard/partials/manual_fileno.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/propertycard/partials/property_details.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/propertycard/partials/property_form_sweetalert.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/propertycard_copy/js/javascript.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/propertycard_copy/partials/fileno.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/propertycard_copy/partials/manual_fileno.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/recertification/application_form.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/recertification/cori.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/recertification/index.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/recertification/js/js.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/scan_uploads/assets/scripts.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/scanning/ocr_functions.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/scanning/unindexed.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/sectionaltitling/action_menu/conveyance_action.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/sectionaltitling/conveyance.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/sectionaltitling/mother.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/sectionaltitling/primary.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/sectionaltitling/secondary.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/sectionaltitling/units.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/st_deeds/index.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/st_deeds/index_fixed.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'resources/views/st_deeds/partials/batchregistermodal.blade.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'routes/api.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'routes/apps.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'routes/apps2.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'routes/caveat.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'routes/file_numbers.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'routes/instrument_batch_fix.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'routes/web.php', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'storage/logs/laravel.log', LF will be replaced by CRLF the next time Git touches it
+M       .agent/skills/klaes/SKILL.md
+M       Readmes/DEED_OF_GIFT_IMPLEMENTATION.md
+M       Readmes/FILE_DECOMMISSIONING_IMPLEMENTATION.md
+M       Readmes/FILE_TRACKER_IMPLEMENTATION.md
+M       app/Console/Kernel.php
+M       app/Helper/helper.php
+M       app/Http/Controllers/ActivityLogAnalyticsController.php
+M       app/Http/Controllers/ActivityMonitoringController.php
+M       app/Http/Controllers/Api/FileNumberApiController.php
+M       app/Http/Controllers/Api/FileTrackerApiController.php
+M       app/Http/Controllers/Api/GroupingApiController.php
+M       app/Http/Controllers/Api/Pra/PraRecordController.php
+M       app/Http/Controllers/Api/ScanUploadsIndexedFilesController.php
+M       app/Http/Controllers/Auth/AuthenticatedSessionController.php
+M       app/Http/Controllers/CaveatController.php
+M       app/Http/Controllers/CofoController.php
+M       app/Http/Controllers/CommissionNewSTController.php
+M       app/Http/Controllers/CommissioningSheetController.php
+M       app/Http/Controllers/CoroiController.php
+M       app/Http/Controllers/CreateFileTrackerController.php
+M       app/Http/Controllers/EntityCustomerController.php
+M       app/Http/Controllers/FileDecommissioningController.php
+M       app/Http/Controllers/FileIndexController.php
+M       app/Http/Controllers/FileIndexCreatePageController.php
+M       app/Http/Controllers/FileIndexViewController.php
+M       app/Http/Controllers/FileIndexingController.php
+M       app/Http/Controllers/FileNumberApiController.php
+M       app/Http/Controllers/FileNumberController.php
+M       app/Http/Controllers/FileSearchController.php
+M       app/Http/Controllers/FileTrackerController.php
+M       app/Http/Controllers/FileTrackerDashboardController.php
+M       app/Http/Controllers/FileTrackingController.php
+M       app/Http/Controllers/FilearchiveController.php
+M       app/Http/Controllers/IndexedFileTableController.php
+M       app/Http/Controllers/InstrumentController.php
+M       app/Http/Controllers/InstrumentRegistrationController.php
+M       app/Http/Controllers/InstrumentTypeController.php
+M       app/Http/Controllers/LegalSearchController.php
+M       app/Http/Controllers/MlsFileNoController.php
+M       app/Http/Controllers/OnPremiseController.php
+M       app/Http/Controllers/PageTypingController.php
+M       app/Http/Controllers/PlanningRecommendationController.php
+M       app/Http/Controllers/PraPicAuditController.php
+M       app/Http/Controllers/PrimaryActionsController.php
+M       app/Http/Controllers/PrintLabelController.php
+M       app/Http/Controllers/ProfileController.php
+M       app/Http/Controllers/ProgrammesController.php
+M       app/Http/Controllers/PropertyCardController.php
+M       app/Http/Controllers/PropertyIndexCardController.php
+M       app/Http/Controllers/PropertyRecordController.php
+M       app/Http/Controllers/RDSController.php
+M       app/Http/Controllers/RecertificationController.php
+M       app/Http/Controllers/ReferenceDataController.php
+M       app/Http/Controllers/RofoController.php
+M       app/Http/Controllers/STFileNumberController.php
+M       app/Http/Controllers/SUAController.php
+M       app/Http/Controllers/ScanUploadsController.php
+M       app/Http/Controllers/SecondaryFormController.php
+M       app/Http/Controllers/SectionalTitlingController.php
+M       app/Http/Controllers/SubApplicationController.php
+M       app/Http/Controllers/TestController.php
+M       app/Http/Controllers/TrackFileArchiveController.php
+M       app/Http/Controllers/sync.ffs_db
+M       app/Http/Middleware/VerifyCsrfToken.php
+M       app/Http/Requests/Pra/PraStoreRequest.php
+M       app/Http/Requests/Pra/PraUpdateRequest.php
+M       app/Http/Resources/Pra/PraHistoryResource.php
+M       app/Http/Resources/Pra/PraRecordResource.php
+M       app/Http/Resources/sync.ffs_db
+M       app/Http/sync.ffs_db
+M       app/Models/Caveat.php
+M       app/Models/DcivGrouping.php
+M       app/Models/District.php
+M       app/Models/FileIndexing.php
+M       app/Models/FileIndexingLink.php
+M       app/Models/FileNumber.php
+M       app/Models/FileTracker.php
+M       app/Models/Instrument.php
+M       app/Models/InstrumentType.php
+M       app/Models/JointSiteInspectionReport.php
+M       app/Models/Lga.php
+M       app/Models/PageTyping.php
+M       app/Models/PrintLabelBatch.php
+M       app/Models/PropertyRecord.php
+M       app/Models/RackShelfLabel.php
+M       app/Models/Scanning.php
+M       app/Models/User.php
+M       app/Models/sync.ffs_db
+M       app/Providers/AppServiceProvider.php
+M       app/Providers/RouteServiceProvider.php
+M       app/Services/EdmsSchemaChecker.php
+M       app/Services/GroupingFileNumberService.php
+M       app/Services/Pra/PraRecordService.php
+M       app/Services/Pra/Repositories/PraRecordRepository.php
+M       app/Services/PropertyIdAllocationService.php
+M       app/Services/ScanUploads/BlindScanIngestionService.php
+M       app/Services/sync.ffs_db
+M       app/Support/PropertyRecordFormatter.php
+M       app/sync.ffs_db
+M       config/services.php
+M       config/sync.ffs_db
+M       database/factories/UserFactory.php
+M       database/migrations/2025_01_13_000002_add_application_type_to_st_file_numbers.php
+M       database/migrations/2025_10_02_040736_test_migration_functionality.php
+M       database/migrations/2025_10_04_000001_create_sub_application_draft_table.php
+M       database/migrations/2025_10_04_100000_create_fileindexing_batch_table.php
+M       database/migrations/2026_01_02_000000_create_workstation_payment_structures_tables.php
+M       database/migrations/2026_01_03_000100_create_manual_attendance_tables.php
+M       database/migrations/2026_01_04_001010_create_attendance_daily_snapshots_table.php
+M       database/migrations/2026_01_04_001020_create_user_absence_counters_table.php
+M       database/migrations/2026_01_04_001030_add_overtime_fields_to_payroll_rates_table.php
+M       database/migrations/2026_01_17_000001_add_category_to_duplicate_fileno_table.php
+M       database/migrations/2026_01_22_044507_add_registry_to_page_typings_table.php
+M       database/migrations/2026_01_24_140354_create_registries_table.php
+M       database/migrations/2026_01_25_000002_create_physical_registries_table.php
+M       database/migrations/2026_01_25_172042_add_destination_to_file_tracker_table.php
+M       database/migrations/2026_01_26_000001_create_file_indexing_links_table.php
+M       database/migrations/2026_01_26_160000_recreate_file_indexing_links.php
+M       database/sql/DATABASE_SCHEMA_CHECK.sql
+M       database/sql/caveat_system_database_setup.sql
+M       database/sql/create_commissioning_sheet_table.sql
+M       database/sql/create_file_trackings_table.sql
+M       database/sql/database_updates.sql
+M       database/sql/prop_id_master_table.sql
+M       database/sql/reset_rebuild_prop_id_system.sql
+M       docs/data/CSV_IMPORT_STATUS_REPORT.txt
+M       docs/guides/ACTIVITY_LOGS_TABLE_VISUAL_GUIDE.md
+M       docs/guides/API_REFERENCE_DOCUMENTATION.md
+M       docs/guides/CSV_IMPORT_USER_GUIDE.md
+M       docs/guides/CSV_USER_IMPORT_QUICK_REFERENCE.md
+M       docs/guides/RDS_GRANTEE_QUICK_REF.md
+M       docs/guides/RDS_PRINT_TEMPLATE_QUICK_REFERENCE.md
+M       docs/guides/USER_ACTIVITY_LOG_VISUAL_REFERENCE.md
+M       docs/guides/USER_DATATABLE_QUICK_REFERENCE.md
+M       docs/guides/USER_DATATABLE_VISUAL_GUIDE.md
+M       docs/plans/DOCUMENTATION_INDEX.md
+M       docs/prototypes/commissioning_sheet_alignment_test.html
+M       docs/prototypes/test_buyer_selection_refactor.html
+M       docs/prototypes/test_datatable_fix.html
+M       docs/prototypes/test_file_title_fix.html
+M       docs/prototypes/test_final_conveyance_dimensions.html
+M       docs/prototypes/test_final_conveyance_other_filter.html
+M       docs/prototypes/test_final_conveyance_sn_column.html
+M       docs/prototypes/test_grouping_table.html
+M       docs/prototypes/test_landuse_disable.html
+M       docs/prototypes/test_receipt_currency_fix.html
+M       docs/prototypes/test_sua_search.html
+M       docs/reports/BUYER_LIST_QUICK_START.md
+M       docs/reports/CARD_BEFORE_AFTER.md
+M       docs/reports/CSV_USER_IMPORT_DOCUMENTATION.md
+M       docs/reports/ENTITY_CUSTOMER_QUICK_START.md
+M       docs/reports/RDS_GRANTEE_AUTOPOP_UPDATE.md
+M       docs/reports/RDS_PRINT_TEMPLATE_TEST_CHECKLIST.md
+M       docs/reports/TRAINING_MATERIALS.md
+M       docs/reports/USER_IMPORT_BEFORE_AND_AFTER.md
+M       docs/scripts/applicant_type_test_summary.php
+M       phpunit.xml
+M       public/clear_opcache.php
+M       public/css/custom.css
+M       public/css/fileindexing/create-indexing-standalone.css
+M       public/css/sync.ffs_db
+M       public/js/batch_registration_handler_final.js
+M       public/js/caveat-data.js
+M       public/js/caveat-events.js
+M       public/js/caveat-rendering.js
+M       public/js/commission_new_st/file-modal-integration.js
+M       public/js/custom.js
+M       public/js/edms-pagetyping.js
+M       public/js/file-number-search.js
+M       public/js/file_search_db.js
+M       public/js/fileindexing/create-indexing-dialog.js
+M       public/js/fileindexing/indexed-files.js
+M       public/js/global-fileno-modal.js
+M       public/js/indexed-files/index.js
+M       public/js/instrument_registration.js
+M       public/js/instrument_registration_updated.js
+M       public/js/manual-file-number-modal.js
+M       public/js/pra/form-controller.js
+M       public/js/quick_batch_handler.js
+M       public/js/quick_batch_handler_fixed.js
+M       public/js/sync.ffs_db
+M       public/js/tailwind-modal.js
+M       resources/views/actions/JOINT-SITE-INSPECTION-REPORT.blade.php
+M       resources/views/actions/action_sheet.blade.php
+M       resources/views/actions/action_sheet_standalone.blade.php
+M       resources/views/actions/final_conveyance.blade.php
+M       resources/views/actions/parts/recomm_js.blade.php
+M       resources/views/actions/recommendation/_jsi-report-tab.blade.php
+M       resources/views/actions/recommendation/_variables.blade.php
+M       resources/views/activity-monitoring/exports/summary.blade.php
+M       resources/views/activity-monitoring/index.blade.php
+M       resources/views/admin/footer.blade.php
+M       resources/views/admin/menu.blade.php
+M       resources/views/admin/menu/partials/modules/cadastral.blade.php
+M       resources/views/admin/menu/partials/modules/deeds.blade.php
+M       resources/views/admin/menu/partials/modules/digital_archive.blade.php
+M       resources/views/admin/menu/partials/modules/edms.blade.php
+M       resources/views/admin/menu/partials/modules/information_products.blade.php
+M       resources/views/admin/menu/partials/modules/lands.blade.php
+M       resources/views/admin/menu/partials/modules/payroll.blade.php
+M       resources/views/admin/menu/partials/modules/physical_planning.blade.php
+M       resources/views/admin/menu/partials/modules/programmes.blade.php
+M       resources/views/admin/menu/partials/modules/search.blade.php
+M       resources/views/admin/menu/partials/modules/sectional_titling.blade.php
+M       resources/views/admin/menu/partials/modules/sltr.blade.php
+M       resources/views/admin/menu/partials/modules/survey.blade.php
+M       resources/views/admin/menu/partials/modules/system_admin.blade.php
+M       resources/views/admin/sync.ffs_db
+M       resources/views/application_mother/index.blade.php
+M       resources/views/audit/pra_pic/index.blade.php
+M       resources/views/caveat/assets/js_dynamic.blade.php
+M       resources/views/caveat/assets/js_dynamic_backup.blade.php
+M       resources/views/caveat/index.blade.php
+M       resources/views/caveat/partials/manual_file_number_modal.blade.php
+M       resources/views/caveat/sync.ffs_db
+M       resources/views/commission_new_st/index.blade.php
+M       resources/views/commission_new_st/sync.ffs_db
+M       resources/views/commissioning_sheet/pdf.blade.php
+M       resources/views/components/District.blade.php
+M       resources/views/components/StreetName2.blade.php
+M       resources/views/components/file_number_info.blade.php
+M       resources/views/components/global-fileno-modal.blade.php
+M       resources/views/components/sync.ffs_db
+M       resources/views/coroi/index.blade.php
+M       resources/views/create_file_tracker_page/index.blade.php
+M       resources/views/create_file_tracker_page/partials/js.blade.php
+M       resources/views/create_file_tracker_page/partials/quick-actions-js.blade.php
+M       resources/views/create_file_tracker_page/partials/quick-actions.blade.php
+M       resources/views/create_file_tracker_page/sync.ffs_db
+M       resources/views/customers/index.blade.php
+M       resources/views/customers/partials/action-menu.blade.php
+M       resources/views/customers/sync.ffs_db
+M       resources/views/edms/css/pagetyping_css.blade.php
+M       resources/views/edms/fileindexing.blade.php
+M       resources/views/edms/pagetyping.blade.php
+M       resources/views/edms/pagetyping/partials/workspace.blade.php
+M       resources/views/file_index_view/index.blade.php
+M       resources/views/file_index_view/sync.ffs_db
+M       resources/views/file_numbers/st_index.blade.php
+M       resources/views/file_numbers/sync.ffs_db
+M       resources/views/file_search_db/index.blade.php
+M       resources/views/file_tracker_dashboard/index.blade.php
+M       resources/views/file_tracker_dashboard/sync.ffs_db
+M       resources/views/filearchive/assets/js.blade.php
+M       resources/views/filearchive/index.blade.php
+M       resources/views/filearchive/partials/document_viewer_modal.blade.php
+M       resources/views/filearchive/partials/files_grid.blade.php
+M       resources/views/filearchive/partials/files_grid_content.blade.php
+M       resources/views/filearchive/partials/header.blade.php
+M       resources/views/filearchive/partials/search.blade.php
+M       resources/views/filearchive/partials/stats.blade.php
+M       resources/views/filearchive/sync.ffs_db
+M       resources/views/fileindexing/addons/create_indexing.blade.php
+M       resources/views/fileindexing/addons/create_indexing_new.blade.php
+M       resources/views/fileindexing/addons/partials/sections/cofo_details.blade.php
+M       resources/views/fileindexing/addons/partials/sections/contact_information.blade.php
+M       resources/views/fileindexing/addons/partials/sections/entity_customer.blade.php
+M       resources/views/fileindexing/addons/partials/sections/file_archive_details.blade.php
+M       resources/views/fileindexing/addons/partials/sections/file_identification.blade.php
+M       resources/views/fileindexing/addons/partials/sections/form_actions.blade.php
+M       resources/views/fileindexing/addons/partials/sections/property_details.blade.php
+M       resources/views/fileindexing/addons/partials/sections/related_fileno_details.blade.php
+M       resources/views/fileindexing/addons/property_details.blade.php
+M       resources/views/fileindexing/edit.blade.php
+M       resources/views/fileindexing/file-indexing.blade.php
+M       resources/views/fileindexing/index.blade.php
+M       resources/views/fileindexing/partial/file_number_info.blade.php
+M       resources/views/fileindexing/partial/property_transaction_modal.blade.php
+M       resources/views/fileindexing/partials/unindexed_ai_panel.blade.php
+M       resources/views/fileindexing/sync.ffs_db
+M       resources/views/fileindexing/tables/indexed_files_table.blade.php
+M       resources/views/filetracker/create.blade.php
+M       resources/views/generate_fileno/capture_existing.blade.php
+M       resources/views/generate_fileno/mls_js.blade.php
+M       resources/views/generate_fileno/mlsfno.blade.php
+M       resources/views/generate_fileno/sync.ffs_db
+M       resources/views/grouping/dashboard.blade.php
+M       resources/views/indexed_files/index.blade.php
+M       resources/views/indexed_files/sync.ffs_db
+M       resources/views/instrument_registration/index.blade.php
+M       resources/views/instrument_registration/index_no_serial_main_table.blade.php
+M       resources/views/instrument_registration/partials/batchregistermodal.blade.php
+M       resources/views/instrument_registration/partials/batchregistermodal_final.blade.php
+M       resources/views/instrument_registration/partials/css.blade.php
+M       resources/views/instrument_registration/partials/quickbatchmodal.blade.php
+M       resources/views/instrument_registration/partials/singleregistermodal.blade.php
+M       resources/views/instrument_registration/partials/statistic_card.blade.php
+M       resources/views/instrument_registration/rds/print.blade.php
+M       resources/views/instrument_registration/sync.ffs_db
+M       resources/views/instrument_registration/view.blade.php
+M       resources/views/instruments/create.blade.php
+M       resources/views/instruments/create/css.blade.php
+M       resources/views/instruments/create/js.blade.php
+M       resources/views/instruments/create_updated.blade.php
+M       resources/views/instruments/index.blade.php
+M       resources/views/instruments/partial/css.blade.php
+M       resources/views/instruments/partial/fileno.blade.php
+M       resources/views/instruments/partial/js.blade.php
+M       resources/views/instruments/partial/stats_cards.blade.php
+M       resources/views/instruments/sync.ffs_db
+M       resources/views/layouts/app.blade.php
+M       resources/views/legal_search/index.blade.php
+M       resources/views/legal_search/js.blade.php
+M       resources/views/legal_search/report.blade.php
+M       resources/views/legal_search/style.blade.php
+M       resources/views/legalsearchreports/index.blade.php
+M       resources/views/mls_fileno/sync.ffs_db
+M       resources/views/pagetyping/css/style.blade.php
+M       resources/views/pagetyping/index.blade.php
+M       resources/views/pagetyping/sync.ffs_db
+M       resources/views/partials/sync.ffs_db
+M       resources/views/primaryform/archived_legacy/fileno.blade.php
+M       resources/views/primaryform/fileno.blade.php
+M       resources/views/primaryform/gis_fileno.blade.php
+M       resources/views/printlabel/assets/js.blade.php
+M       resources/views/printlabel/partials/page.blade.php
+M       resources/views/printlabel/sync.ffs_db
+M       resources/views/profile/index.blade.php
+M       resources/views/profile/sync.ffs_db
+M       resources/views/programmes/approvals/planning_recomm.blade.php
+M       resources/views/programmes/bills.blade.php
+M       resources/views/programmes/certificates.blade.php
+M       resources/views/programmes/inspection/edit.blade.php
+M       resources/views/programmes/memo_content_primary.blade.php
+M       resources/views/programmes/memo_template_new.blade.php
+M       resources/views/programmes/partials/cofo_sua_units_modal.blade.php
+M       resources/views/programmes/partials/joint_site_inspection_form.blade.phpM       resources/views/programmes/partials/joint_site_inspection_js.blade.php
+M       resources/views/programmes/partials/joint_site_inspection_modal.blade.php
+M       resources/views/programmes/partials/rofo_pua_tables.blade.php
+M       resources/views/programmes/partials/rofo_pua_units_modal.blade.php
+M       resources/views/programmes/partials/rofo_sua_tables.blade.php
+M       resources/views/programmes/partials/rofo_sua_units_modal.blade.php
+M       resources/views/programmes/payments.blade.php
+M       resources/views/programmes/print_cofo_front_page.blade.php
+M       resources/views/programmes/rofo.blade.php
+M       resources/views/programmes/rofo_content.blade.php
+M       resources/views/programmes/sync.ffs_db
+M       resources/views/property_index_card/partials/property_details.blade.php
+M       resources/views/propertycard/cofo.blade.php
+M       resources/views/propertycard/index.blade.php
+M       resources/views/propertycard/js/cofo_javascript.blade.php
+M       resources/views/propertycard/js/javascript.blade.php
+M       resources/views/propertycard/partials/add_pra/instrument_section.blade.php
+M       resources/views/propertycard/partials/add_property_record.blade.php
+M       resources/views/propertycard/partials/cofo_details.blade.php
+M       resources/views/propertycard/partials/edit_property_record.blade.php
+M       resources/views/propertycard/partials/manual_fileno.blade.php
+M       resources/views/propertycard/partials/property_details.blade.php
+M       resources/views/propertycard/partials/property_form_sweetalert.blade.phpM       resources/views/propertycard/reuse.blade.php
+M       resources/views/propertycard/sync.ffs_db
+M       resources/views/propertycard_copy/js/javascript.blade.php
+M       resources/views/propertycard_copy/partials/fileno.blade.php
+M       resources/views/propertycard_copy/partials/manual_fileno.blade.php
+M       resources/views/propertycard_copy/reuse.blade.php
+M       resources/views/recertification/application_form.blade.php
+M       resources/views/recertification/cori.blade.php
+M       resources/views/recertification/index.blade.php
+M       resources/views/recertification/js/js.blade.php
+M       resources/views/scan_uploads/assets/scripts.blade.php
+M       resources/views/scan_uploads/assets/style.blade.php
+M       resources/views/scan_uploads/index.blade.php
+M       resources/views/scan_uploads/sync.ffs_db
+M       resources/views/scanning/ocr_functions.blade.php
+M       resources/views/scanning/unindexed.blade.php
+M       resources/views/sectionaltitling/action_menu/conveyance_action.blade.phpM       resources/views/sectionaltitling/action_menu/sub_action.blade.php
+M       resources/views/sectionaltitling/action_modals/rofo_details_modal.blade.php
+M       resources/views/sectionaltitling/conveyance.blade.php
+M       resources/views/sectionaltitling/mother.blade.php
+M       resources/views/sectionaltitling/primary.blade.php
+M       resources/views/sectionaltitling/secondary.blade.php
+M       resources/views/sectionaltitling/sub_application.blade.php
+M       resources/views/sectionaltitling/sync.ffs_db
+M       resources/views/sectionaltitling/units.blade.php
+M       resources/views/sectionaltitling/viewrecorddetail_sub.blade.php
+M       resources/views/settings/index.blade.php
+M       resources/views/sltr_application_form/residential.blade.php
+M       resources/views/sltr_approval/deeds.blade.php
+M       resources/views/sltr_approval/partial/deeds_js.blade.php
+M       resources/views/sltrapplication/assets/js.blade.php
+M       resources/views/sltrapplication/partial/table.blade.php
+M       resources/views/sltrdeedsreg/partial/deeds_js.blade.php
+M       resources/views/st_deeds/index.blade.php
+M       resources/views/st_deeds/index_fixed.blade.php
+M       resources/views/st_deeds/partials/batchregistermodal.blade.php
+M       resources/views/st_deeds/partials/singleregistermodal.blade.php
+M       resources/views/sua/action_menu.blade.php
+M       resources/views/system-admin/csv-import/file-indexing.blade.php
+M       resources/views/track_file_archive/index.blade.php
+M       resources/views/track_file_archive/sync.ffs_db
+M       resources/views/user/partials/users-table.blade.php
+M       resources/views/user/sync.ffs_db
+M       routes/api.php
+M       routes/app3.php
+M       routes/apps.php
+M       routes/apps2.php
+M       routes/caveat.php
+M       routes/console.php
+M       routes/file_numbers.php
+M       routes/instrument_batch_fix.php
+M       routes/mls_fileno.php
+M       routes/sync.ffs_db
+M       routes/web.php
+M       storage/logs/laravel.log
+M       tests/Feature/PraApiTest.php

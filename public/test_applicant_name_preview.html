@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Applicant Name Preview Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        .warning { color: orange; font-weight: bold; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        button { padding: 10px 20px; margin: 5px; background: #007cba; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #005a8b; }
+        input, select { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ddd; border-radius: 3px; }
+        .form-group { margin: 15px 0; }
+        .preview-display { background: #e8f4fd; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .individual-fields { background: #f0f8f0; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .corporate-fields { background: #fff8e1; padding: 15px; border-radius: 5px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Applicant Name Preview Test</h1>
+    
+    <div class="test-section">
+        <h3>Test API Data Integration</h3>
+        <button onclick="testWithAPIData()">Test with Real API Data</button>
+        <div id="api-test-results"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Mock Form Elements</h3>
+        
+        <div class="preview-display">
+            <h4>Name of Applicant (Preview)</h4>
+            <input type="text" id="applicantNamePreview" name="applicant_name_preview" class="w-full py-3 px-4 bg-gray-100 border border-gray-300 rounded-lg" disabled placeholder="Full name will appear here...">
+        </div>
+        
+        <div class="individual-fields">
+            <h4>Individual Applicant Fields</h4>
+            <div class="form-group">
+                <label>Title:</label>
+                <select id="applicantTitleSelect" onchange="updateTitle(); updateApplicantNamePreview();">
+                    <option value="">Select Title</option>
+                    <option value="Mr.">Mr.</option>
+                    <option value="Mrs.">Mrs.</option>
+                    <option value="Dr.">Dr.</option>
+                    <option value="Prof.">Prof.</option>
+                    <option value="Chief">Chief</option>
+                </select>
+                <input type="hidden" id="applicantTitle" name="applicant_title" value="">
+            </div>
+            
+            <div class="form-group">
+                <label>First Name:</label>
+                <input type="text" id="applicantName" name="first_name" oninput="updateApplicantNamePreview();" placeholder="Enter first name">
+            </div>
+            
+            <div class="form-group">
+                <label>Middle Name:</label>
+                <input type="text" id="applicantMiddleName" name="middle_name" oninput="updateApplicantNamePreview();" placeholder="Enter middle name">
+            </div>
+            
+            <div class="form-group">
+                <label>Surname:</label>
+                <input type="text" id="applicantSurname" name="surname" oninput="updateApplicantNamePreview();" placeholder="Enter surname">
+            </div>
+            
+            <button onclick="testIndividualFill()">Test Individual Auto-Fill</button>
+        </div>
+        
+        <div class="corporate-fields">
+            <h4>Corporate Applicant Fields</h4>
+            <div class="form-group">
+                <label>Corporate Name:</label>
+                <input type="text" id="corporateName" name="corporate_name" oninput="updateCorporatePreview();" placeholder="Enter corporate name">
+            </div>
+            
+            <div class="form-group">
+                <label>RC Number:</label>
+                <input type="text" id="rcNumber" name="rc_number" placeholder="Enter RC number">
+            </div>
+            
+            <button onclick="testCorporateFill()">Test Corporate Auto-Fill</button>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Manual Test</h3>
+        <button onclick="clearAllFields()">Clear All Fields</button>
+        <button onclick="testPreviewFunction()">Test Preview Function</button>
+        <div id="manual-test-results"></div>
+    </div>
+
+    <script>
+        // Implement the updateApplicantNamePreview function (copied from applicant.blade.php)
+        function updateApplicantNamePreview() {
+            const title = document.getElementById('applicantTitle').value;
+            const name = document.getElementById('applicantName').value;
+            const middleName = document.getElementById('applicantMiddleName').value;
+            const surname = document.getElementById('applicantSurname').value;
+            let applicantName = '';
+
+            if (title) {
+                applicantName += title + ' ';
+            }
+            if (name) {
+                applicantName += name + ' ';
+            }
+            if (middleName) {
+                applicantName += middleName + ' ';
+            }
+            if (surname) {
+                applicantName += surname;
+            }
+
+            const preview = document.getElementById('applicantNamePreview');
+            if (preview) {
+                preview.value = applicantName.trim();
+                console.log('✅ Preview updated to:', applicantName.trim());
+            }
+        }
+        
+        function updateTitle() {
+            const select = document.getElementById('applicantTitleSelect');
+            const hidden = document.getElementById('applicantTitle');
+            if (select && hidden) {
+                hidden.value = select.value;
+            }
+        }
+        
+        function updateCorporatePreview() {
+            const corporateName = document.getElementById('corporateName').value;
+            const preview = document.getElementById('applicantNamePreview');
+            if (preview) {
+                preview.value = corporateName;
+                console.log('✅ Corporate preview updated to:', corporateName);
+            }
+        }
+        
+        // Test functions from the sub_application.blade.php file
+        function fillIndividualFields(fileData) {
+            console.log('🔄 Filling individual fields with data:', fileData);
+            
+            setTimeout(() => {
+                // Fill title
+                if (fileData.applicant_title) {
+                    const titleSelectField = document.getElementById('applicantTitleSelect');
+                    const titleHiddenField = document.getElementById('applicantTitle');
+                    if (titleSelectField) {
+                        titleSelectField.value = fileData.applicant_title;
+                        if (titleHiddenField) titleHiddenField.value = fileData.applicant_title;
+                    }
+                    console.log('✅ Title set to:', fileData.applicant_title);
+                }
+                
+                // Fill first name
+                if (fileData.first_name) {
+                    const firstNameField = document.getElementById('applicantName');
+                    if (firstNameField) {
+                        firstNameField.value = fileData.first_name;
+                        console.log('✅ First name set to:', fileData.first_name);
+                    }
+                }
+                
+                // Fill middle name
+                if (fileData.middle_name) {
+                    const middleNameField = document.getElementById('applicantMiddleName');
+                    if (middleNameField) {
+                        middleNameField.value = fileData.middle_name;
+                        console.log('✅ Middle name set to:', fileData.middle_name);
+                    }
+                }
+                
+                // Fill surname
+                if (fileData.surname) {
+                    const surnameField = document.getElementById('applicantSurname');
+                    if (surnameField) {
+                        surnameField.value = fileData.surname;
+                        console.log('✅ Surname set to:', fileData.surname);
+                    }
+                }
+                
+                // Update the applicant name preview after filling all fields
+                updateApplicantNamePreview();
+                console.log('✅ Applicant name preview updated');
+            }, 100);
+        }
+        
+        function fillCorporateFields(fileData) {
+            console.log('🔄 Filling corporate fields with data:', fileData);
+            
+            setTimeout(() => {
+                if (fileData.corporate_name) {
+                    const corporateNameField = document.getElementById('corporateName');
+                    if (corporateNameField) {
+                        corporateNameField.value = fileData.corporate_name;
+                        console.log('✅ Corporate name set to:', fileData.corporate_name);
+                    }
+                    
+                    // For corporate applicants, show the corporate name in the preview
+                    const previewField = document.getElementById('applicantNamePreview');
+                    if (previewField) {
+                        previewField.value = fileData.corporate_name;
+                        console.log('✅ Corporate name preview updated');
+                    }
+                }
+                
+                if (fileData.rc_number) {
+                    const rcNumberField = document.getElementById('rcNumber');
+                    if (rcNumberField) {
+                        rcNumberField.value = fileData.rc_number;
+                        console.log('✅ RC number set to:', fileData.rc_number);
+                    }
+                }
+            }, 100);
+        }
+        
+        function testIndividualFill() {
+            const mockData = {
+                applicant_title: 'Dr.',
+                first_name: 'John',
+                middle_name: 'Michael',
+                surname: 'Smith'
+            };
+            fillIndividualFields(mockData);
+        }
+        
+        function testCorporateFill() {
+            const mockData = {
+                corporate_name: 'ACME Corporation Limited',
+                rc_number: 'RC123456'
+            };
+            fillCorporateFields(mockData);
+        }
+        
+        async function testWithAPIData() {
+            const resultsDiv = document.getElementById('api-test-results');
+            resultsDiv.innerHTML = '<p class="warning">Testing with real API data...</p>';
+            
+            try {
+                // Load API data
+                const response = await fetch('/api/file-numbers/st-all');
+                const data = await response.json();
+                
+                if (data.status === 'success' && data.data && data.data.length > 0) {
+                    // Find an individual applicant
+                    const individualFile = data.data.find(file => file.applicant_type === 'Individual');
+                    // Find a corporate applicant
+                    const corporateFile = data.data.find(file => file.applicant_type === 'Corporate');
+                    
+                    let results = '<h4 class="success">✅ API Data Loaded</h4>';
+                    
+                    if (individualFile) {
+                        results += '<h5>Testing Individual Applicant:</h5>';
+                        results += `<pre>${JSON.stringify(individualFile, null, 2)}</pre>`;
+                        fillIndividualFields(individualFile);
+                        results += '<p class="success">✅ Individual fields filled</p>';
+                    }
+                    
+                    if (corporateFile) {
+                        setTimeout(() => {
+                            document.getElementById('api-test-results').innerHTML += '<h5>Testing Corporate Applicant:</h5>';
+                            document.getElementById('api-test-results').innerHTML += `<pre>${JSON.stringify(corporateFile, null, 2)}</pre>`;
+                            fillCorporateFields(corporateFile);
+                            document.getElementById('api-test-results').innerHTML += '<p class="success">✅ Corporate fields filled</p>';
+                        }, 2000);
+                    }
+                    
+                    resultsDiv.innerHTML = results;
+                } else {
+                    resultsDiv.innerHTML = '<p class="error">❌ No API data available</p>';
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `<p class="error">❌ API test failed: ${error.message}</p>`;
+            }
+        }
+        
+        function clearAllFields() {
+            // Clear all input fields
+            document.getElementById('applicantTitleSelect').value = '';
+            document.getElementById('applicantTitle').value = '';
+            document.getElementById('applicantName').value = '';
+            document.getElementById('applicantMiddleName').value = '';
+            document.getElementById('applicantSurname').value = '';
+            document.getElementById('corporateName').value = '';
+            document.getElementById('rcNumber').value = '';
+            document.getElementById('applicantNamePreview').value = '';
+            
+            console.log('✅ All fields cleared');
+        }
+        
+        function testPreviewFunction() {
+            const resultsDiv = document.getElementById('manual-test-results');
+            
+            // Test the preview function exists
+            if (typeof updateApplicantNamePreview === 'function') {
+                resultsDiv.innerHTML = '<p class="success">✅ updateApplicantNamePreview function exists and is callable</p>';
+                
+                // Test with sample data
+                document.getElementById('applicantTitleSelect').value = 'Dr.';
+                updateTitle();
+                document.getElementById('applicantName').value = 'Jane';
+                document.getElementById('applicantMiddleName').value = 'Elizabeth';
+                document.getElementById('applicantSurname').value = 'Doe';
+                
+                updateApplicantNamePreview();
+                
+                const previewValue = document.getElementById('applicantNamePreview').value;
+                resultsDiv.innerHTML += `<p class="success">✅ Preview updated to: "${previewValue}"</p>`;
+                
+                if (previewValue === 'Dr. Jane Elizabeth Doe') {
+                    resultsDiv.innerHTML += '<p class="success">✅ Preview format is correct!</p>';
+                } else {
+                    resultsDiv.innerHTML += '<p class="warning">⚠️ Preview format might need adjustment</p>';
+                }
+            } else {
+                resultsDiv.innerHTML = '<p class="error">❌ updateApplicantNamePreview function not found</p>';
+            }
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Applicant Name Preview Test Page Loaded');
+        });
+    </script>
+</body>
+</html>

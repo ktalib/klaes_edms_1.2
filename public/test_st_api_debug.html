@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ST File Numbers API Test</title>
+    <meta name="csrf-token" content="debug-token">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 3px; overflow-x: auto; max-height: 400px; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        select { width: 100%; padding: 8px; margin: 10px 0; }
+        button { padding: 10px 20px; margin: 5px; background: #007cba; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #005a8b; }
+    </style>
+</head>
+<body>
+    <h1>ST File Numbers API Debug Test</h1>
+    
+    <div class="debug-section">
+        <h3>API Response Test</h3>
+        <button onclick="testAPI()">Test API Endpoint</button>
+        <div id="api-results"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h3>SUA File Numbers</h3>
+        <button onclick="loadSUAFiles()">Load SUA Files</button>
+        <select id="sua-dropdown">
+            <option value="">Select SUA File Number...</option>
+        </select>
+        <div id="sua-results"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h3>PUA File Numbers</h3>
+        <button onclick="loadPUAFiles()">Load PUA Files</button>
+        <select id="pua-dropdown">
+            <option value="">Select PUA File Number...</option>
+        </select>
+        <div id="pua-results"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h3>Selected File Data</h3>
+        <div id="selection-data"></div>
+    </div>
+
+    <script>
+        let allFileData = [];
+        
+        async function testAPI() {
+            const resultsDiv = document.getElementById('api-results');
+            resultsDiv.innerHTML = '<p class="info">Testing API endpoint...</p>';
+            
+            try {
+                const response = await fetch('/api/file-numbers/st-all');
+                const data = await response.json();
+                
+                resultsDiv.innerHTML = `
+                    <h4 class="success">✅ API Response Successful</h4>
+                    <p><strong>Status:</strong> ${data.status}</p>
+                    <p><strong>Message:</strong> ${data.message}</p>
+                    <p><strong>Count:</strong> ${data.count}</p>
+                    <p><strong>Data Length:</strong> ${data.data ? data.data.length : 0}</p>
+                    <h5>Raw Response:</h5>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+                
+                allFileData = data.data || [];
+                analyzeData(allFileData);
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `<p class="error">❌ API Error: ${error.message}</p>`;
+            }
+        }
+        
+        function analyzeData(data) {
+            const fileTypes = {};
+            const statuses = {};
+            
+            data.forEach(file => {
+                fileTypes[file.file_no_type] = (fileTypes[file.file_no_type] || 0) + 1;
+                statuses[file.status] = (statuses[file.status] || 0) + 1;
+            });
+            
+            console.log('File Type Distribution:', fileTypes);
+            console.log('Status Distribution:', statuses);
+            
+            document.getElementById('api-results').innerHTML += `
+                <h5>Data Analysis:</h5>
+                <p><strong>File Types:</strong> ${JSON.stringify(fileTypes, null, 2)}</p>
+                <p><strong>Statuses:</strong> ${JSON.stringify(statuses, null, 2)}</p>
+            `;
+        }
+        
+        function loadSUAFiles() {
+            const dropdown = document.getElementById('sua-dropdown');
+            const resultsDiv = document.getElementById('sua-results');
+            
+            if (!allFileData.length) {
+                resultsDiv.innerHTML = '<p class="error">Please test API first</p>';
+                return;
+            }
+            
+            const suaFiles = allFileData.filter(file => file.file_no_type === 'SUA');
+            
+            dropdown.innerHTML = '<option value="">Select SUA File Number...</option>';
+            
+            suaFiles.forEach(file => {
+                const option = document.createElement('option');
+                option.value = file.id;
+                option.textContent = `${file.full_file_number || file.fileno} - ${file.display_name || 'N/A'}`;
+                option.dataset.fileData = JSON.stringify(file);
+                dropdown.appendChild(option);
+            });
+            
+            resultsDiv.innerHTML = `
+                <p class="success">✅ Loaded ${suaFiles.length} SUA files</p>
+                <pre>${JSON.stringify(suaFiles, null, 2)}</pre>
+            `;
+            
+            // Add event listener
+            dropdown.onchange = function() {
+                showSelectedData('SUA', this);
+            };
+        }
+        
+        function loadPUAFiles() {
+            const dropdown = document.getElementById('pua-dropdown');
+            const resultsDiv = document.getElementById('pua-results');
+            
+            if (!allFileData.length) {
+                resultsDiv.innerHTML = '<p class="error">Please test API first</p>';
+                return;
+            }
+            
+            const puaFiles = allFileData.filter(file => file.file_no_type === 'PUA');
+            
+            dropdown.innerHTML = '<option value="">Select PUA File Number...</option>';
+            
+            puaFiles.forEach(file => {
+                const option = document.createElement('option');
+                option.value = file.id;
+                option.textContent = `${file.full_file_number || file.fileno} - ${file.display_name || 'N/A'}`;
+                option.dataset.fileData = JSON.stringify(file);
+                dropdown.appendChild(option);
+            });
+            
+            resultsDiv.innerHTML = `
+                <p class="success">✅ Loaded ${puaFiles.length} PUA files</p>
+                <pre>${JSON.stringify(puaFiles, null, 2)}</pre>
+            `;
+            
+            // Add event listener
+            dropdown.onchange = function() {
+                showSelectedData('PUA', this);
+            };
+        }
+        
+        function showSelectedData(type, selectElement) {
+            const selectionDiv = document.getElementById('selection-data');
+            
+            if (!selectElement.value) {
+                selectionDiv.innerHTML = '';
+                return;
+            }
+            
+            const selectedOption = selectElement.selectedOptions[0];
+            const fileData = JSON.parse(selectedOption.dataset.fileData);
+            
+            selectionDiv.innerHTML = `
+                <h4>${type} File Selected:</h4>
+                <p><strong>ID:</strong> ${fileData.id}</p>
+                <p><strong>NP File No:</strong> ${fileData.np_fileno}</p>
+                <p><strong>File No:</strong> ${fileData.fileno}</p>
+                <p><strong>MLS File No:</strong> ${fileData.mls_fileno}</p>
+                <p><strong>Full File Number:</strong> ${fileData.full_file_number}</p>
+                <p><strong>Display Name:</strong> ${fileData.display_name}</p>
+                <p><strong>Land Use:</strong> ${fileData.land_use}</p>
+                <p><strong>Applicant Type:</strong> ${fileData.applicant_type}</p>
+                <p><strong>Status:</strong> ${fileData.status}</p>
+                <h5>Complete File Data:</h5>
+                <pre>${JSON.stringify(fileData, null, 2)}</pre>
+            `;
+        }
+        
+        // Auto-run API test on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Debug page loaded');
+            testAPI();
+        });
+    </script>
+</body>
+</html>

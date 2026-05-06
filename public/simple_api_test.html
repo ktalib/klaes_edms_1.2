@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple API Test</title>
+</head>
+<body>
+    <h1>API Test</h1>
+    <div id="results"></div>
+    
+    <script>
+        const results = document.getElementById('results');
+        
+        function addResult(message, type = 'info') {
+            const div = document.createElement('div');
+            div.style.margin = '10px 0';
+            div.style.padding = '10px';
+            div.style.border = '1px solid #ccc';
+            div.style.backgroundColor = type === 'error' ? '#ffe6e6' : type === 'success' ? '#e6ffe6' : '#f0f0f0';
+            div.innerHTML = message;
+            results.appendChild(div);
+        }
+        
+        async function testEndpoint(url) {
+            addResult(`Testing: ${url}`, 'info');
+            
+            try {
+                const start = Date.now();
+                const response = await fetch(url);
+                const duration = Date.now() - start;
+                
+                if (response.ok) {
+                    const data = await response.text();
+                    addResult(`✅ Success in ${duration}ms: ${data.substring(0, 200)}...`, 'success');
+                } else {
+                    addResult(`❌ HTTP ${response.status} after ${duration}ms`, 'error');
+                }
+            } catch (error) {
+                addResult(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        // Test endpoints
+        window.onload = function() {
+            setTimeout(() => testEndpoint('/api/grouping-analytics/stats'), 100);
+            setTimeout(() => testEndpoint('/api/grouping-analytics/debug'), 2000);
+            setTimeout(() => testEndpoint('/api/grouping-analytics/preview'), 4000);
+        };
+    </script>
+</body>
+</html>

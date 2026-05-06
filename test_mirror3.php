@@ -1,0 +1,1 @@
+<?php require "vendor/autoload.php"; $app = require_once "bootstrap/app.php"; $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class); $kernel->bootstrap(); var_dump(App\Models\DcivFileNo::where("full_file_number", "DCIV-2026-3")->exists()); var_dump(App\Models\GknFileNo::where("full_file_number", "GKN-3")->exists()); 

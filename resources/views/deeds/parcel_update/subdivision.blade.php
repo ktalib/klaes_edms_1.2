@@ -1,0 +1,957 @@
+@extends('layouts.app')
+@section('styles')
+<style>
+    .swal2-container { z-index: 20000 !important; }
+    .section-box {
+        background: #fdfdfd;
+        padding: 20px 15px 15px 15px;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        position: relative;
+        margin-top: 10px;
+    }
+    .section-label {
+        position: absolute;
+        top: -12px;
+        left: 15px;
+        background: #fff;
+        padding: 0 10px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        color: #3498db;
+        text-transform: uppercase;
+    }
+    .total-box {
+        background-color: #f1f8ff;
+        border: 1px dashed #3498db;
+        padding: 10px;
+        margin-bottom: 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .readonly { background: #f9f9f9; color: #7f8c8d; font-weight: bold; cursor: not-allowed; }
+    .location-card {
+        display: none;
+    }
+    .location-card.active {
+        display: block;
+        animation: fadeIn 0.3s ease-out;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+@endsection
+
+@section('content')
+<div class="flex-1 overflow-auto bg-slate-50/60">
+    @include('admin.header', [
+        'PageTitle' => 'Plot Subdivision',
+        'PageDescription' => 'Manage Plot Subdivision applications.'
+    ])
+
+    <div class="py-10 bg-slate-50 min-h-screen">
+        <div class="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+            {{-- Header --}}
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                    <p class="text-[11px] font-black uppercase tracking-[0.4em] text-slate-400">{{ request('mode') === 'land' ? 'Land' : 'Deeds' }}</p>
+                    <h1 class="text-3xl font-extrabold text-slate-900 mt-1">Plot Subdivision</h1>
+                    <p class="text-slate-500 mt-1 text-sm">{{ number_format($records->total()) }} record(s) found</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <form action="{{ route('plot-subdivision.index') }}" method="GET" class="relative">
+                        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                        <input type="text" name="search" value="{{ request('search') }}" placeholder="Search..."
+                            class="w-72 bg-white border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                    </form>
+                    @if(request('mode') !== 'land')
+                    <button type="button" onclick="openCreateModal()"
+                        class="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-blue-700 transition">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        New Subdivision
+                    </button>
+                    @endif
+                </div>
+            </div>
+
+            {{-- Table --}}
+            <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-50/80">
+                                <th class="px-4 py-3 text-left">#</th>
+                                <th class="px-4 py-3 text-left">Applicant</th>
+                                <th class="px-4 py-3 text-left">File No</th>
+                                <th class="px-4 py-3 text-left">File Title</th>
+                                <th class="px-4 py-3 text-left">Plots</th>
+                                <th class="px-4 py-3 text-left">Location</th>
+                                <th class="px-4 py-3 text-left">Date</th>
+                                @if(request('mode') !== 'land')
+                                <th class="px-4 py-3 text-center">Actions</th>
+                                @endif
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @forelse($records as $record)
+                                <tr>
+                                    <td class="px-4 py-3 font-mono text-xs text-slate-400">{{ $record->id }}</td>
+                                    <td class="px-4 py-3 text-slate-700 font-bold">{{ $record->applicant_name ?: '—' }}</td>
+                                    <td class="px-4 py-3 font-bold text-slate-700">{{ $record->file_no }}</td>
+                                    <td class="px-4 py-3 text-slate-600">{{ $record->file_title }}</td>
+                                    <td class="px-4 py-3 text-slate-600">{{ $record->num_plots }}</td>
+                                    <td class="px-4 py-3 text-slate-600 text-xs">
+                                        {{ implode(', ', array_filter([
+                                            $record->plot_no ? 'Plot '.$record->plot_no : null,
+                                            $record->street_name,
+                                            $record->district,
+                                            $record->lga,
+                                            $record->state
+                                        ])) }}
+                                    </td>
+                                    <td class="px-4 py-3 text-slate-500 text-xs">{{ $record->created_at->format('M d, Y') }}</td>
+                                    @if(request('mode') !== 'land')
+                                    <td class="px-4 py-3 text-center">
+
+                                            <div class="relative inline-block text-left" id="dropdown-{{ $record->id }}">
+                                                <button type="button" onclick="toggleDropdown({{ $record->id }})" class="p-2 hover:bg-slate-100 text-slate-600 rounded-full transition">
+                                                    <i data-lucide="more-vertical" class="w-5 h-5"></i>
+                                                </button>
+                                                
+                                                <div id="menu-{{ $record->id }}" class="hidden fixed z-[999] mt-2 w-max origin-top-right rounded-xl bg-white shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none divide-y divide-slate-100 whitespace-nowrap">
+                                                    <div class="py-1">
+                                                        <button onclick="viewRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                            <i data-lucide="eye" class="w-4 h-4 text-blue-500"></i> View Details
+                                                        </button>
+                                                        <button onclick="openKnupdaModal({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                            <i data-lucide="handshake" class="w-4 h-4 text-purple-500"></i> KNUPDA Handshake
+                                                        </button>
+                                                        @if($record->knupda_status === 'Approved' && $record->status !== 'approved')
+                                                            <button onclick="approveRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 gap-2 font-bold border-t border-slate-50 mt-1">
+                                                                <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i> Approval
+                                                            </button>
+                                                        @endif
+                                                    </div>
+                                                    <div class="py-1">
+                                                        @if($record->knupda_status === 'Approved')
+                                                            @if(!$record->application_generated_at)
+                                                                <button onclick="generateApplication({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                    <i data-lucide="file-plus" class="w-4 h-4 text-orange-500"></i> Generate Application
+                                                                </button>
+                                                            @else
+                                                                <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Application already generated">
+                                                                    <i data-lucide="check-circle-2" class="w-4 h-4 text-slate-300"></i> Generate Application
+                                                                </button>
+                                                            @endif
+
+                                                            @if($record->application_generated_at)
+                                                                <a href="{{ route('plot-subdivision.print-application', $record->id) }}" target="_blank" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                    <i data-lucide="printer" class="w-4 h-4 text-slate-500"></i> Print Application
+                                                                </a>
+                                                            @else
+                                                                <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Generate application first">
+                                                                    <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
+                                                                </button>
+                                                            @endif
+                                                        @else
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                                <i data-lucide="file-plus" class="w-4 h-4 text-slate-300"></i> Generate Application
+                                                            </button>
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                                <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
+                                                            </button>
+                                                        @endif
+                                                    </div>
+                                                    <div class="py-1">
+                                                        @if($record->knupda_status === 'Approved')
+                                                            @if(!$record->recommendation_generated_at)
+                                                                <button onclick="generateRecommendation({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                    <i data-lucide="file-check" class="w-4 h-4 text-emerald-500"></i> Generate Recommendation
+                                                                </button>
+                                                            @else
+                                                                <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Recommendation already generated">
+                                                                    <i data-lucide="check-circle-2" class="w-4 h-4 text-slate-300"></i> Generate Recommendation
+                                                                </button>
+                                                            @endif
+
+                                                            @if($record->recommendation_generated_at)
+                                                                <a href="{{ route('plot-subdivision.print-recommendation', $record->id) }}" target="_blank" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                    <i data-lucide="file-text" class="w-4 h-4 text-indigo-500"></i> Print Recommendation
+                                                                </a>
+                                                            @else
+                                                                <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Generate recommendation first">
+                                                                    <i data-lucide="file-text" class="w-4 h-4 text-slate-300"></i> Print Recommendation
+                                                                </button>
+                                                            @endif
+                                                        @else
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                                <i data-lucide="file-check" class="w-4 h-4 text-slate-300"></i> Generate Recommendation
+                                                            </button>
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                                <i data-lucide="file-text" class="w-4 h-4 text-slate-300"></i> Print Recommendation
+                                                            </button>
+                                                        @endif
+                                                    </div>
+                                                    <div class="py-1">
+                                                        <button onclick="deleteRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 gap-2">
+                                                            <i data-lucide="trash-2" class="w-4 h-4"></i> Delete
+                                                        </button>
+                                                    </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    @endif
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="8" class="px-4 py-10 text-center text-slate-400">No records found.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+                @if($records->hasPages())
+                    <div class="px-4 py-3 bg-slate-50/50 border-t border-slate-100">
+                        {{ $records->links() }}
+                    </div>
+                @endif
+            </div>
+        </div>
+    </div>
+
+    {{-- Create Modal --}}
+    <div id="create-modal" class="fixed inset-0 z-[9999] hidden flex items-center justify-center p-4">
+        <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onclick="closeModal()"></div>
+        <div class="relative bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
+            <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                    <h3 class="text-xl font-bold text-slate-900">New Subdivision</h3>
+                    <p class="text-xs text-slate-500 mt-1 uppercase tracking-widest font-semibold">Deeds / Parcel Update</p>
+                </div>
+                <button type="button" class="text-slate-400 hover:text-slate-600 transition" onclick="closeModal()">
+                    <i data-lucide="x" class="h-6 w-6"></i>
+                </button>
+            </div>
+
+            <form id="create-form" class="flex-1 overflow-y-auto p-8">
+                @csrf
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="md:col-span-1">
+                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">File No <span class="text-red-500">*</span></label>
+                        <div class="flex gap-2">
+                            <input type="text" name="file_no" id="file_no" readonly class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold font-mono">
+                            <button type="button" onclick="openFileSelector()" class="p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 hover:bg-blue-100 transition">
+                                <i data-lucide="search" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="md:col-span-1">
+                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">File Title <span class="text-red-500">*</span></label>
+                        <input type="text" name="file_title" id="file_title" readonly class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-600">
+                    </div>
+                    <div class="md:col-span-1">
+                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Applicant Name</label>
+                        <input type="text" name="applicant_name" id="applicant_name" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">No. of Plots <span class="text-red-500">*</span></label>
+                        <input type="number" name="num_plots" id="num_plots" min="1" max="50" oninput="generateFragments()" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
+                    </div>
+
+
+                    <div class="md:col-span-3 section-box">
+                        <span class="section-label">Subdivided Plots Details</span>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Land Value (NGN) <span class="text-red-500">*</span></label>
+                                <input type="number" name="land_value" id="land_value_input" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm" placeholder="Enter land value" oninput="calculateSubdivisionFee()">
+                            </div>
+                            <div class="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                                <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Application Fee (0.25%)</label>
+                                <input type="text" id="knupda_fee_display" class="w-full bg-transparent border-none text-sm font-bold text-blue-700 p-0" value="0.00" readonly>
+                                <input type="hidden" name="knupda_fee" id="knupda_fee_hidden" value="0">
+                            </div>
+                        </div>
+
+                        <div id="fragmentsContainer" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                            <p class="col-span-full text-slate-400 text-xs italic">Enter "No. of Plots" above to define subdivided plot sizes.</p>
+                        </div>
+                        <div class="total-box">
+                            <label class="text-sm font-semibold text-slate-700">Total Subdivision Area:</label>
+                            <input type="text" id="totalSize" class="readonly w-32 text-right border-none bg-transparent text-orange-700 font-bold" value="0.00 Sqm" readonly>
+                        </div>
+                    </div>
+
+
+
+                    <div class="md:col-span-3 section-box mt-6">
+                        <div class="flex items-center justify-between mb-6">
+                            <span class="section-label">Mother Plot Location Details</span>
+                        </div>
+
+                        <div id="location_cards_container">
+                            <!-- Initial card for Plot 1 -->
+                            <div id="location_card_1" class="location-card active">
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Plot No</label>
+                                        <input type="text" name="location_details[1][plot_no]" id="loc_plot_no" oninput="updateLocationPreview(1)" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">House No</label>
+                                        <input type="text" name="location_details[1][house_no]" id="loc_house_no" oninput="updateLocationPreview(1)" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Street Name</label>
+                                        <select name="location_details[1][street_name]" id="loc_street_name" onchange="updateLocationPreview(1)" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm loc-street">
+                                            <option value="">Select Street</option>
+                                            @foreach($streetNames as $street)
+                                                <option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">District</label>
+                                        <select name="location_details[1][district]" id="loc_district" onchange="updateLocationPreview(1)" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm loc-district">
+                                            <option value="">Select District</option>
+                                            @foreach($districts as $district)
+                                                <option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">LGA</label>
+                                        <select name="location_details[1][lga]" id="loc_lga" onchange="updateLocationPreview(1)" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm loc-lga">
+                                            <option value="">Select LGA</option>
+                                            @foreach($lgas as $lga)
+                                                <option value="{{ $lga->name }}">{{ strtoupper($lga->name) }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">State</label>
+                                        <select name="location_details[1][state]" id="loc_state" onchange="updateLocationPreview(1)" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm loc-state">
+                                            @foreach($states as $state)
+                                                <option value="{{ $state->StateName }}" @selected($state->StateName == 'Kano')>{{ strtoupper($state->StateName) }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div class="md:col-span-3">
+                                        <div class="bg-slate-100/50 p-4 rounded-xl border border-dashed border-slate-300">
+                                            <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Full Property Location Preview</p>
+                                            <p id="location_preview_1" class="text-sm font-bold text-slate-700 italic">No location details entered yet.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="md:col-span-3">
+                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Upload Site Plan</label>
+                        <div class="flex flex-col gap-4">
+                            <input type="file" name="site_plan" id="site_plan_input" accept=".pdf,.png,.jpg,.jpeg" 
+                                class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm bg-white"
+                                onchange="previewSitePlan(this)">
+                            
+                            <div id="site_plan_preview_container" class="hidden relative w-full aspect-video rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center group">
+                                <img id="site_plan_preview_img" src="#" alt="Site Plan Preview" class="max-h-full max-w-full object-contain">
+                                <div id="pdf_preview_placeholder" class="hidden flex-col items-center gap-2 text-slate-400">
+                                    <i data-lucide="file-text" class="w-12 h-12"></i>
+                                    <span class="text-xs font-bold uppercase tracking-wider">PDF Selected</span>
+                                </div>
+                                <button type="button" onclick="clearSitePlan()" class="absolute top-4 right-4 p-2 bg-red-100 text-red-600 rounded-full opacity-0 group-hover:opacity-100 transition shadow-lg">
+                                    <i data-lucide="x" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                            
+                            <p class="text-[10px] text-slate-400 mt-1 italic uppercase tracking-wider font-semibold">Accepted formats: PDF, PNG, JPG</p>
+                        </div>
+                    </div>
+                </div>
+            </form>
+
+            <div class="px-8 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+                <button type="button" onclick="closeModal()" class="px-6 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-100 transition">Cancel</button>
+                <button type="button" onclick="submitForm()" class="px-6 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition">Submit</button>
+            </div>
+        </div>
+    </div>
+
+    @include('components.global-fileno-modal')
+    @include('admin.footer')
+</div>
+@endsection
+
+@section('footer-scripts')
+<script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+<script>
+    let currentLocationStep = 1;
+
+    function openCreateModal() {
+        document.getElementById('create-form').reset();
+        document.getElementById('fragmentsContainer').innerHTML = '<p class="col-span-full text-slate-400 text-xs italic">Enter "No. of Plots" above to define fragment sizes.</p>';
+        document.getElementById('totalSize').value = "0.00 Sqm";
+        
+        // Reset location navigation
+        currentLocationStep = 1;
+        
+        // Clear site plan preview
+        clearSitePlan();
+        
+        document.getElementById('create-modal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+        document.getElementById('create-modal').classList.add('hidden');
+    }
+
+    function navLocation(dir) {
+        const num = parseInt(document.getElementById('num_plots').value) || 1;
+        let next = currentLocationStep + dir;
+        
+        if (next < 1) next = 1;
+        if (next > num) next = num;
+        
+        if (next === currentLocationStep) return;
+        
+        // Hide current
+        const currentCard = document.getElementById(`location_card_${currentLocationStep}`);
+        if (currentCard) currentCard.classList.remove('active');
+        
+        // Show next
+        currentLocationStep = next;
+        const nextCard = document.getElementById(`location_card_${currentLocationStep}`);
+        if (nextCard) nextCard.classList.add('active');
+        
+        // Update labels
+        document.getElementById('current_plot_label').innerText = currentLocationStep;
+    }
+
+    function calculateSubdivisionFee() {
+        const val = parseFloat(document.getElementById('land_value_input').value) || 0;
+        const fee = val * 0.0025;
+        
+        const display = document.getElementById('knupda_fee_display');
+        if (display) {
+            display.value = '₦' + fee.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        }
+        
+        const hidden = document.getElementById('knupda_fee_hidden');
+        if (hidden) {
+            hidden.value = fee;
+        }
+    }
+
+    window.calculateViewSubdivisionFee = function(inputElem) {
+        const val = parseFloat(inputElem.value) || 0;
+        const fee = val * 0.0025;
+        const feeInput = document.getElementById('view_knupda_fee_input');
+        if (feeInput) {
+            feeInput.value = fee.toFixed(2);
+        }
+    };
+
+    // Pre-store options to avoid losing them when clearing container
+    const streetOpts = `<option value="">Select Street</option>@foreach($streetNames as $street)<option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>@endforeach`;
+    const districtOpts = `<option value="">Select District</option>@foreach($districts as $district)<option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>@endforeach`;
+    const lgaOpts = `<option value="">Select LGA</option>@foreach($lgas as $lga)<option value="{{ $lga->name }}">{{ strtoupper($lga->name) }}</option>@endforeach`;
+    const stateOpts = `@foreach($states as $state)<option value="{{ $state->StateName }}" @selected($state->StateName == 'Kano')>{{ strtoupper($state->StateName) }}</option>@endforeach`;
+
+    function generateFragments() {
+        const sizeContainer = document.getElementById('fragmentsContainer');
+        const num = parseInt(document.getElementById('num_plots').value) || 0;
+        
+        sizeContainer.innerHTML = '';
+        
+        if (num > 0) {
+            for (let i = 1; i <= num; i++) {
+                const sizeDiv = document.createElement('div');
+                sizeDiv.innerHTML = `
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Plot ${i} Size</label>
+                    <input type="number" name="plot_sizes[]" class="fragment-input w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" step="0.01" placeholder="0.00" oninput="calculateTotal()">
+                `;
+                sizeContainer.appendChild(sizeDiv);
+            }
+        } else {
+            sizeContainer.innerHTML = '<p class="col-span-full text-slate-400 text-xs italic">Enter "No. of Plots" above to define fragment sizes.</p>';
+            document.getElementById('totalSize').value = "0.00 Sqm";
+        }
+    }
+
+    function calculateTotal() {
+        const inputs = document.querySelectorAll('.fragment-input');
+        let total = 0;
+        inputs.forEach(input => {
+            const val = parseFloat(input.value);
+            if (!isNaN(val)) total += val;
+        });
+        document.getElementById('totalSize').value = total.toFixed(2) + " Sqm";
+    }
+
+    function openFileSelector() {
+        if (window.GlobalFileNoModal) {
+            GlobalFileNoModal.open({
+                callback: function(data) {
+                    if (data.fileNumber) {
+                        document.getElementById('file_no').value = data.fileNumber;
+                        if (data.record) {
+                            if (data.record.file_name) document.getElementById('file_title').value = data.record.file_name;
+                            if (data.record.applicant_name) document.getElementById('applicant_name').value = data.record.applicant_name;
+                            
+                            // Backfill location details
+                            if (data.record.plot_no) document.getElementById('loc_plot_no').value = data.record.plot_no;
+                            if (data.record.house_no) document.getElementById('loc_house_no').value = data.record.house_no;
+                            if (data.record.street_name) document.getElementById('loc_street_name').value = data.record.street_name;
+                            if (data.record.district) document.getElementById('loc_district').value = data.record.district;
+                            if (data.record.lga) document.getElementById('loc_lga').value = data.record.lga;
+                            if (data.record.state) document.getElementById('loc_state').value = data.record.state;
+                            
+                            updateLocationPreview(1);
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    async function submitForm() {
+        const form = document.getElementById('create-form');
+        const formData = new FormData(form);
+        
+        // Collect single location card data into JSON array for backend compatibility
+        const locationDetails = [{
+            plot_no: document.getElementById('loc_plot_no')?.value || '',
+            house_no: document.getElementById('loc_house_no')?.value || '',
+            street_name: document.getElementById('loc_street_name')?.value || '',
+            district: document.getElementById('loc_district')?.value || '',
+            lga: document.getElementById('loc_lga')?.value || '',
+            state: document.getElementById('loc_state')?.value || '',
+        }];
+        formData.append('location_details_json', JSON.stringify(locationDetails));
+
+        try {
+            const response = await fetch('{{ route("plot-subdivision.store") }}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json'
+                },
+                body: formData
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                Swal.fire({ icon: 'success', title: 'Success', text: result.message, timer: 1500, showConfirmButton: false });
+                location.reload();
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: result.message || 'Something went wrong' });
+            }
+        } catch (error) {
+            Swal.fire({ icon: 'error', title: 'Error', text: 'An unexpected error occurred' });
+        }
+    }
+
+    function updateLocationPreview(index) {
+        const card = document.getElementById(`location_card_${index}`);
+        if (!card) return;
+        
+        const plot = card.querySelector(`[name="location_details[${index}][plot_no]"]`)?.value || '';
+        const house = card.querySelector(`[name="location_details[${index}][house_no]"]`)?.value || '';
+        const street = card.querySelector(`[name="location_details[${index}][street_name]"]`)?.value || '';
+        const district = card.querySelector(`[name="location_details[${index}][district]"]`)?.value || '';
+        const lga = card.querySelector(`[name="location_details[${index}][lga]"]`)?.value || '';
+        const state = card.querySelector(`[name="location_details[${index}][state]"]`)?.value || '';
+        
+        let parts = [];
+        if (plot) parts.push(`Plot ${plot}`);
+        if (house) parts.push(`House No. ${house}`);
+        if (street) parts.push(street);
+        if (district) parts.push(district);
+        if (lga) parts.push(lga);
+        if (state) parts.push(state);
+        
+        const preview = document.getElementById(`location_preview_${index}`);
+        if (preview) {
+            preview.innerText = parts.length > 0 ? parts.join(', ') : 'No location details entered yet.';
+        }
+    }
+
+
+    function toggleDropdown(id) {
+        const button = document.querySelector(`#dropdown-${id} button`);
+        const menu = document.getElementById(`menu-${id}`);
+        const allMenus = document.querySelectorAll('[id^="menu-"]');
+        
+        // Close others
+        allMenus.forEach(m => { if(m.id !== `menu-${id}`) m.classList.add('hidden'); });
+        
+        const isHidden = menu.classList.contains('hidden');
+        if (isHidden) {
+            menu.classList.remove('hidden');
+            const rect = button.getBoundingClientRect();
+            
+            // Positioning logic for fixed menu
+            menu.style.top = (rect.bottom + window.scrollY + 5) + 'px'; // Default below
+            menu.style.left = (rect.right - menu.offsetWidth) + 'px';
+            
+            // Check if it goes off bottom
+            if (rect.bottom + menu.offsetHeight > window.innerHeight) {
+                menu.style.top = (rect.top + window.scrollY - menu.offsetHeight - 5) + 'px';
+            }
+
+            // Sync with scroll to prevent floating
+            const syncPos = () => {
+                if (menu.classList.contains('hidden')) return;
+                const newRect = button.getBoundingClientRect();
+                menu.style.top = (newRect.bottom + 5) + 'px';
+                menu.style.left = (newRect.right - menu.offsetWidth) + 'px';
+            };
+
+            // Use fixed coordinates relative to viewport for the element itself
+            menu.style.position = 'fixed';
+            menu.style.top = (rect.bottom + 5) + 'px';
+            menu.style.left = (rect.right - menu.offsetWidth) + 'px';
+            
+            if (rect.bottom + menu.offsetHeight > window.innerHeight) {
+                menu.style.top = (rect.top - menu.offsetHeight - 5) + 'px';
+            }
+        } else {
+            menu.classList.add('hidden');
+        }
+        
+        // Close on click outside
+        const closeDropdown = (e) => {
+            if (!document.getElementById(`dropdown-${id}`).contains(e.target) && !menu.contains(e.target)) {
+                menu.classList.add('hidden');
+                document.removeEventListener('click', closeDropdown);
+            }
+        };
+        if (!menu.classList.contains('hidden')) {
+            setTimeout(() => document.addEventListener('click', closeDropdown), 0);
+        }
+    }
+
+    async function viewRecord(id) {
+        try {
+            const response = await fetch(`{{ url('plot-subdivision') }}/${id}`);
+            const result = await response.json();
+            if (result.success) {
+                const data = result.data;
+                let plotSizesHtml = data.plot_sizes.map(p => `<li>${p.plot_number}: <strong>${p.plot_size} Sqm</strong></li>`).join('');
+                
+                Swal.fire({
+                    title: 'Subdivision Details',
+                    html: `
+                        <div class="text-left text-sm space-y-3 p-2">
+                            <div class="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                <div>
+                                    <p class="text-[10px] font-black text-slate-400 uppercase">Applicant</p>
+                                    <p class="font-bold text-slate-800">${data.applicant_name || '—'}</p>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-black text-slate-400 uppercase">File No</p>
+                                    <p class="font-bold text-slate-800">${data.file_no}</p>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-black text-slate-400 uppercase">Status</p>
+                                    <span class="inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase ${data.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}">${data.status}</span>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-black text-slate-400 uppercase">No. of Plots</p>
+                                    <p class="font-bold text-slate-800">${data.num_plots}</p>
+                                </div>
+                                <div class="bg-blue-50 p-2 rounded-lg border border-blue-100 col-span-2">
+                                    <p class="text-[10px] font-black text-blue-600 uppercase">Application Fee (NGN)</p>
+                                    <p class="font-bold text-blue-700">₦${new Intl.NumberFormat('en-NG').format(data.knupda_fee || 0)}</p>
+                                </div>
+                            </div>
+
+                            <div class="space-y-1">
+                                <p class="text-[10px] font-black text-slate-400 uppercase">File Title</p>
+                                <p class="text-slate-600">${data.file_title}</p>
+                            </div>
+
+                            <div class="space-y-1">
+                                <p class="text-[10px] font-black text-slate-400 uppercase">Fragment Sizes</p>
+                                <ul class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-600 list-disc ml-4">
+                                    ${plotSizesHtml}
+                                </ul>
+                            </div>
+
+
+
+                            </div>
+
+                            <div class="mt-4 pt-4 border-t border-slate-100">
+                                <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Property Location</p>
+                                <p class="text-sm font-bold text-slate-700">${data.plot_no ? 'Plot ' + data.plot_no + ', ' : ''}${data.street_name || ''}, ${data.district || ''}, ${data.lga || ''}, ${data.state || ''}</p>
+                            </div>
+                        </div>
+                    `,
+                    width: 600,
+                    showConfirmButton: false,
+                    showCloseButton: true
+                });
+            }
+        } catch (error) {
+            Swal.fire('Error!', 'Failed to fetch details.', 'error');
+        }
+    }
+
+    async function openKnupdaModal(id) {
+        try {
+            const response = await fetch(`{{ url('plot-subdivision') }}/${id}`);
+            const result = await response.json();
+            if (result.success) {
+                const data = result.data;
+                Swal.fire({
+                    title: 'KNUPDA Handshake',
+                    html: `
+                        <div class="text-left text-sm space-y-4 p-2">
+                            <div class="bg-blue-50/50 rounded-2xl p-4 border border-blue-100 space-y-4">
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Land Value (NGN)</label>
+                                        <input type="number" id="view_land_value_input" class="w-full px-3 py-2 rounded-lg border border-blue-200 text-sm bg-white" value="${data.land_value || '0'}" oninput="calculateViewSubdivisionFee(this)">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Application Fee (NGN)</label>
+                                        <input type="text" id="view_knupda_fee_input" class="w-full px-3 py-2 rounded-lg border border-blue-200 text-sm font-bold bg-white" value="${data.knupda_fee || '0.00'}" readonly>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">KNUPDA Approval</label>
+                                    <div class="flex items-center gap-4 mt-2">
+                                        <label class="flex items-center gap-2 cursor-pointer">
+                                            <input type="radio" name="knupda_status" value="Approved" ${data.knupda_status === 'Approved' ? 'checked' : ''} class="w-4 h-4 text-emerald-600">
+                                            <span class="text-xs font-medium text-slate-700">Approve</span>
+                                        </label>
+                                        <label class="flex items-center gap-2 cursor-pointer">
+                                            <input type="radio" name="knupda_status" value="Declined" ${data.knupda_status === 'Declined' ? 'checked' : ''} class="w-4 h-4 text-red-600">
+                                            <span class="text-xs font-medium text-slate-700">Decline</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Remarks</label>
+                                    <textarea id="knupda_remarks_input" class="w-full px-3 py-2 rounded-lg border border-blue-200 text-sm bg-white" rows="2" placeholder="KNUPDA feedback...">${data.knupda_remarks || ''}</textarea>
+                                </div>
+                                <button onclick="saveKnupda(${data.id})" class="w-full py-2.5 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-blue-700 transition shadow-lg shadow-blue-500/20">
+                                    Update KNUPDA Status
+                                </button>
+                            </div>
+                        </div>
+                    `,
+                    width: 500,
+                    showConfirmButton: false,
+                    showCloseButton: true
+                });
+            }
+        } catch (error) {
+            Swal.fire('Error!', 'Failed to fetch details.', 'error');
+        }
+    }
+
+    async function saveKnupda(id) {
+        const landValue = document.getElementById('view_land_value_input').value;
+        const fee = document.getElementById('view_knupda_fee_input').value;
+        const status = document.querySelector('input[name="knupda_status"]:checked')?.value || 'Pending';
+        const remarks = document.getElementById('knupda_remarks_input').value;
+
+        try {
+            const response = await fetch(`{{ url('plot-subdivision') }}/${id}/knupda`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ land_value: landValue, knupda_fee: fee, knupda_status: status, knupda_remarks: remarks })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                await Swal.fire({ icon: 'success', title: 'Updated', text: 'KNUPDA status updated successfully.', timer: 1500, showConfirmButton: false });
+                location.reload();
+            } else {
+                Swal.fire('Error', 'Failed to update KNUPDA status', 'error');
+            }
+        } catch (error) {
+            Swal.fire('Error', 'An error occurred', 'error');
+        }
+    }
+
+    async function generateApplication(id) {
+        const confirm = await Swal.fire({
+            title: 'Generate Application?',
+            text: "Are you sure you want to generate the application document?",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Generate',
+            confirmButtonColor: '#f97316'
+        });
+
+        if (!confirm.isConfirmed) return;
+
+        try {
+            const response = await fetch(`{{ url('plot-subdivision') }}/${id}/generate-application`, {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }
+            });
+            const res = await response.json();
+            if (res.success) {
+                await Swal.fire('Success', 'Application generated. You can now print it.', 'success');
+                location.reload();
+            }
+        } catch (error) {
+            Swal.fire('Error', 'Failed to generate application', 'error');
+        }
+    }
+
+    async function generateRecommendation(id) {
+        const confirm = await Swal.fire({
+            title: 'Generate Recommendation?',
+            text: "Are you sure you want to generate the recommendation document?",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Generate',
+            confirmButtonColor: '#10b981'
+        });
+
+        if (!confirm.isConfirmed) return;
+
+        try {
+            const response = await fetch(`{{ url('plot-subdivision') }}/${id}/generate-recommendation`, {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }
+            });
+            const res = await response.json();
+            if (res.success) {
+                await Swal.fire('Success', 'Recommendation generated. You can now print it.', 'success');
+                location.reload();
+            } else {
+                Swal.fire('Error', 'Recommendation can only be generated for Approved applications.', 'error');
+            }
+        } catch (error) {
+            Swal.fire('Error', 'Failed to generate recommendation', 'error');
+        }
+    }
+
+    async function approveRecord(id) {
+        const result = await Swal.fire({
+            title: 'Approve Application?',
+            text: "Are you sure you want to approve this subdivision application?",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#10b981',
+            confirmButtonText: 'Yes, approve'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                const response = await fetch(`{{ url('plot-subdivision') }}/${id}/approve`, {
+                    method: 'POST',
+                    headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }
+                });
+                const res = await response.json();
+                if (res.success) {
+                    Swal.fire('Approved!', res.message, 'success');
+                    location.reload();
+                }
+            } catch (error) {
+                Swal.fire('Error!', 'Failed to approve record.', 'error');
+            }
+        }
+    }
+
+    async function rejectRecord(id) {
+        const { value: reason } = await Swal.fire({
+            title: 'Reject Application',
+            input: 'textarea',
+            inputLabel: 'Reason for rejection',
+            inputPlaceholder: 'Enter reason here...',
+            showCancelButton: true,
+            confirmButtonColor: '#f97316',
+            confirmButtonText: 'Reject'
+        });
+
+        if (reason !== undefined) {
+            try {
+                const response = await fetch(`{{ url('plot-subdivision') }}/${id}/reject`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ reason })
+                });
+                const res = await response.json();
+                if (res.success) {
+                    Swal.fire('Rejected!', res.message, 'success');
+                    location.reload();
+                }
+            } catch (error) {
+                Swal.fire('Error!', 'Failed to reject record.', 'error');
+            }
+        }
+    }
+
+    function previewSitePlan(input) {
+        const container = document.getElementById('site_plan_preview_container');
+        const img = document.getElementById('site_plan_preview_img');
+        const pdfPlaceholder = document.getElementById('pdf_preview_placeholder');
+        
+        if (input.files && input.files[0]) {
+            const file = input.files[0];
+            const reader = new FileReader();
+            
+            container.classList.remove('hidden');
+            
+            if (file.type === 'application/pdf') {
+                img.classList.add('hidden');
+                pdfPlaceholder.classList.remove('hidden');
+            } else if (file.type.startsWith('image/')) {
+                pdfPlaceholder.classList.add('hidden');
+                img.classList.remove('hidden');
+                
+                reader.onload = function(e) {
+                    img.src = e.target.result;
+                }
+                reader.readAsDataURL(file);
+            } else {
+                img.classList.add('hidden');
+                pdfPlaceholder.classList.remove('hidden');
+            }
+            
+            if (window.lucide) window.lucide.createIcons();
+        } else {
+            clearSitePlan();
+        }
+    }
+
+    function clearSitePlan() {
+        const input = document.getElementById('site_plan_input');
+        const container = document.getElementById('site_plan_preview_container');
+        const img = document.getElementById('site_plan_preview_img');
+        const pdfPlaceholder = document.getElementById('pdf_preview_placeholder');
+        
+        if (input) input.value = '';
+        if (container) container.classList.add('hidden');
+        if (img) {
+            img.src = '#';
+            img.classList.add('hidden');
+        }
+        if (pdfPlaceholder) pdfPlaceholder.classList.add('hidden');
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        if (window.GlobalFileNoModal) GlobalFileNoModal.init();
+    });
+</script>
+@endsection

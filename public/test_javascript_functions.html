@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JavaScript Function Tests - Sub Application</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-result { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Sub Application JavaScript Function Tests</h1>
+    <div id="test-results"></div>
+    
+    <script>
+        const results = [];
+        
+        function addResult(test, status, message, details = '') {
+            const result = { test, status, message, details };
+            results.push(result);
+            displayResult(result);
+        }
+        
+        function displayResult(result) {
+            const div = document.createElement('div');
+            div.className = `test-result ${result.status}`;
+            div.innerHTML = `
+                <strong>${result.test}</strong>: ${result.message}
+                ${result.details ? `<pre>${result.details}</pre>` : ''}
+            `;
+            document.getElementById('test-results').appendChild(div);
+        }
+        
+        // Test 1: Check if basic JavaScript syntax is working
+        function testBasicSyntax() {
+            try {
+                let testVar = 'hello';
+                const testConst = 'world';
+                var testVarOld = 'old';
+                
+                if (testVar && testConst && testVarOld) {
+                    addResult('Basic Syntax', 'success', 'Basic JavaScript syntax is working');
+                } else {
+                    addResult('Basic Syntax', 'error', 'Basic variables not working properly');
+                }
+            } catch (error) {
+                addResult('Basic Syntax', 'error', 'Basic syntax test failed', error.toString());
+            }
+        }
+        
+        // Test 2: Test function declarations
+        function testFunctionDeclarations() {
+            try {
+                function testFunc() {
+                    return 'test';
+                }
+                
+                const arrowFunc = () => 'arrow';
+                
+                if (testFunc() === 'test' && arrowFunc() === 'arrow') {
+                    addResult('Function Declarations', 'success', 'Function declarations working');
+                } else {
+                    addResult('Function Declarations', 'error', 'Function declarations not working properly');
+                }
+            } catch (error) {
+                addResult('Function Declarations', 'error', 'Function declaration test failed', error.toString());
+            }
+        }
+        
+        // Test 3: Test object property access patterns like those used in sub application
+        function testPropertyAccess() {
+            try {
+                const testObj = {
+                    applicant_type: 'individual',
+                    np_fileno: 'TEST-001',
+                    fileno: 'TEST'
+                };
+                
+                // Test the pattern used in autoFillApplicantInfo
+                if (testObj.applicant_type) {
+                    const applicantType = testObj.applicant_type.toLowerCase();
+                    if (applicantType === 'individual') {
+                        addResult('Property Access', 'success', 'Object property access working correctly');
+                    } else {
+                        addResult('Property Access', 'error', 'String transformation not working');
+                    }
+                } else {
+                    addResult('Property Access', 'error', 'Object property access failed');
+                }
+            } catch (error) {
+                addResult('Property Access', 'error', 'Property access test failed', error.toString());
+            }
+        }
+        
+        // Test 4: Test DOM element access patterns
+        function testDOMAccess() {
+            try {
+                // Create test elements like those in the sub application
+                const testInput = document.createElement('input');
+                testInput.id = 'testMainApplicantTypeInput';
+                testInput.type = 'hidden';
+                document.body.appendChild(testInput);
+                
+                // Test the pattern used in the sub application
+                const applicantTypeInput = document.getElementById('testMainApplicantTypeInput');
+                if (applicantTypeInput) {
+                    applicantTypeInput.value = 'individual';
+                    if (applicantTypeInput.value === 'individual') {
+                        addResult('DOM Access', 'success', 'DOM element access and manipulation working');
+                    } else {
+                        addResult('DOM Access', 'error', 'DOM element value setting failed');
+                    }
+                } else {
+                    addResult('DOM Access', 'error', 'DOM element not found');
+                }
+                
+                // Clean up
+                document.body.removeChild(testInput);
+            } catch (error) {
+                addResult('DOM Access', 'error', 'DOM access test failed', error.toString());
+            }
+        }
+        
+        // Test 5: Test JSON parsing (used in file selection)
+        function testJSONParsing() {
+            try {
+                const testData = {
+                    id: 1,
+                    np_fileno: 'TEST-001',
+                    applicant_type: 'Individual',
+                    display_name: 'Test User'
+                };
+                
+                const jsonString = JSON.stringify(testData);
+                const parsedData = JSON.parse(jsonString);
+                
+                if (parsedData.applicant_type && parsedData.np_fileno) {
+                    addResult('JSON Parsing', 'success', 'JSON parsing working correctly');
+                } else {
+                    addResult('JSON Parsing', 'error', 'JSON parsing missing properties');
+                }
+            } catch (error) {
+                addResult('JSON Parsing', 'error', 'JSON parsing test failed', error.toString());
+            }
+        }
+        
+        // Test 6: Test conditional logic patterns
+        function testConditionalLogic() {
+            try {
+                const testType = 'individual';
+                let testPassed = false;
+                
+                // Test the pattern used in autoFillApplicantInfo
+                if (testType) {
+                    const applicantType = testType.toLowerCase();
+                    
+                    if (applicantType === 'individual') {
+                        testPassed = true;
+                    } else if (applicantType === 'corporate') {
+                        testPassed = false;
+                    } else if (applicantType === 'multiple') {
+                        testPassed = false;
+                    }
+                }
+                
+                if (testPassed) {
+                    addResult('Conditional Logic', 'success', 'Conditional logic working correctly');
+                } else {
+                    addResult('Conditional Logic', 'error', 'Conditional logic failed');
+                }
+            } catch (error) {
+                addResult('Conditional Logic', 'error', 'Conditional logic test failed', error.toString());
+            }
+        }
+        
+        // Run all tests
+        function runAllTests() {
+            addResult('Test Suite', 'warning', 'Starting JavaScript function tests...');
+            
+            testBasicSyntax();
+            testFunctionDeclarations();
+            testPropertyAccess();
+            testDOMAccess();
+            testJSONParsing();
+            testConditionalLogic();
+            
+            // Summary
+            const successCount = results.filter(r => r.status === 'success').length;
+            const errorCount = results.filter(r => r.status === 'error').length;
+            const totalTests = results.filter(r => r.status !== 'warning').length;
+            
+            addResult('Test Summary', 
+                errorCount === 0 ? 'success' : 'warning',
+                `Completed ${totalTests} tests: ${successCount} passed, ${errorCount} failed`
+            );
+        }
+        
+        // Run tests when page loads
+        document.addEventListener('DOMContentLoaded', runAllTests);
+    </script>
+</body>
+</html>

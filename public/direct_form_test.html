@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Direct Form Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .mb-4 { margin-bottom: 1rem; }
+        .grid { display: grid; gap: 1rem; }
+        .grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
+        input, select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        label { display: block; font-size: 0.875rem; margin-bottom: 0.25rem; font-weight: 500; }
+        .p-2 { padding: 8px; }
+        .bg-white { background-color: white; }
+        .border { border: 1px solid #ccc; }
+        .rounded-md { border-radius: 6px; }
+        .min-h-40 { min-height: 40px; }
+        .opacity-50 { opacity: 0.5; }
+        .text-red-500 { color: #ef4444; }
+        .address-preview { 
+            padding: 8px; 
+            background: white; 
+            border: 1px solid #ccc; 
+            border-radius: 6px; 
+            min-height: 40px; 
+            margin: 10px 0;
+            font-style: italic;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Direct Form Structure Test</h1>
+    <p>This replicates the exact HTML structure from your primary form:</p>
+
+    <h3>Contact Address Section</h3>
+    <div class="grid grid-cols-2 gap-4 mb-4">
+        <div>
+            <label class="block text-sm mb-1">House No.</label>
+            <input type="text" id="ownerHouseNo" class="w-full p-2 border border-gray-300 rounded-md" placeholder="HOUSE NO." name="address_house_no" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updateAddressDisplay();">
+        </div>
+        <div>
+            <label class="block text-sm mb-1">Street Name</label>
+            <input type="text" id="ownerStreetName" class="w-full p-2 border border-gray-300 rounded-md" placeholder="STREET NAME" name="owner_street_name" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updateAddressDisplay();">
+        </div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-4 mb-4">
+        <div>
+            <label class="block text-sm mb-1">District</label>
+            <input type="text" id="ownerDistrict" class="w-full p-2 border border-gray-300 rounded-md" placeholder="DISTRICT" name="owner_district" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updateAddressDisplay();">
+        </div>
+        <div>
+            <label class="block text-sm mb-1">LGA <span class="text-red-500">*</span></label>
+            <select id="ownerLga" class="w-full p-2 border border-gray-300 rounded-md opacity-50" name="owner_lga" onchange="updateAddressDisplay();" disabled>
+                <option value="">SELECT LGA</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm mb-1">State <span class="text-red-500">*</span></label>
+            <select id="ownerState" class="w-full p-2 border border-gray-300 rounded-md" name="owner_state" onchange="selectOwnerLGA(this); updateAddressDisplay();">
+                <option value="">SELECT STATE</option>
+                <option value="Lagos">Lagos</option>
+                <option value="Abuja">Abuja</option>
+            </select>
+        </div>
+    </div>
+    
+    <div class="mb-4">
+        <label class="block text-sm mb-1">Contact Address:</label>
+        <div id="contactAddressPreview" class="address-preview">
+            <span id="fullContactAddress" style="display: block; padding: 4px; text-transform: uppercase;">Address will appear here when you fill the fields above</span>
+        </div>
+        <input type="hidden" name="address" id="contactAddressDisplay">
+    </div>
+
+    <hr style="margin: 30px 0;">
+
+    <h3>Property Address Section</h3>
+    <div class="grid grid-cols-3 gap-4 mb-4">
+        <div>
+            <label class="block text-sm mb-1">House No</label>
+            <input type="text" id="propertyHouseNo" class="w-full p-2 border border-gray-300 rounded-md" placeholder="ENTER HOUSE NUMBER" name="property_house_no" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();">
+        </div>
+        <div>
+            <label class="block text-sm mb-1">Plot No</label>
+            <input type="text" id="propertyPlotNo" class="w-full p-2 border border-gray-300 rounded-md" placeholder="ENTER PLOT NUMBER" name="property_plot_no" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();">
+        </div>
+        <div>
+            <label class="block text-sm mb-1">Street Name</label>
+            <input type="text" id="propertyStreetName" class="w-full p-2 border border-gray-300 rounded-md" placeholder="ENTER STREET NAME" name="property_street_name" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();">
+        </div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-4 mb-4">
+        <div>
+            <label class="block text-sm mb-1">District</label>
+            <input type="text" id="propertyDistrict" class="w-full p-2 border border-gray-300 rounded-md" placeholder="ENTER DISTRICT" name="property_district" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();">
+        </div>
+        <div>
+            <label class="block text-sm mb-1">LGA <span class="text-red-500">*</span></label>
+            <select id="propertyLga" name="property_lga" class="w-full p-2 border border-gray-300 rounded-md opacity-50" onchange="updatePropertyAddressDisplay();" disabled>
+                <option value="">Select LGA</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm mb-1">State <span class="text-red-500">*</span></label>
+            <select id="propertyState" class="w-full p-2 border border-gray-300 rounded-md" name="property_state" onchange="selectPropertyLGA(this); updatePropertyAddressDisplay();">
+                <option value="">Select State</option>
+                <option value="Lagos">Lagos</option>
+                <option value="Abuja">Abuja</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="mb-4">
+        <label class="block text-sm mb-1">Property Address:</label>
+        <div id="propertyAddressPreview" class="address-preview">
+            <span id="fullPropertyAddress" style="display: block; padding: 4px; text-transform: uppercase;">Property address will appear here when you fill the fields above</span>
+        </div>
+        <input type="hidden" name="property_address" id="propertyAddressDisplay">
+    </div>
+
+    <div style="background: #f0f0f0; padding: 15px; border-radius: 5px; margin-top: 20px;">
+        <h4>Debug Info:</h4>
+        <p><strong>Functions available:</strong> <span id="functions-status">Checking...</span></p>
+        <p><strong>Contact Address Value:</strong> <span id="contact-value">Empty</span></p>
+        <p><strong>Property Address Value:</strong> <span id="property-value">Empty</span></p>
+        <button onclick="showDebugInfo()" style="padding: 8px 16px; margin: 5px;">Show Debug Info</button>
+        <button onclick="testBothAddresses()" style="padding: 8px 16px; margin: 5px;">Fill Test Data</button>
+    </div>
+
+    <!-- Load all required scripts in correct order -->
+    <script src="/js/primaryform/utilities.js"></script>
+    <script src="/js/primaryform/states-lga.js"></script>
+
+    <script>
+        function showDebugInfo() {
+            console.log('=== DEBUG INFO ===');
+            console.log('updateAddressDisplay available:', typeof updateAddressDisplay);
+            console.log('updatePropertyAddressDisplay available:', typeof updatePropertyAddressDisplay);
+            console.log('selectOwnerLGA available:', typeof selectOwnerLGA);
+            console.log('selectPropertyLGA available:', typeof selectPropertyLGA);
+            
+            // Show element presence
+            const contactElements = {
+                ownerHouseNo: !!document.getElementById('ownerHouseNo'),
+                ownerStreetName: !!document.getElementById('ownerStreetName'),
+                ownerDistrict: !!document.getElementById('ownerDistrict'),
+                ownerLga: !!document.getElementById('ownerLga'),
+                ownerState: !!document.getElementById('ownerState'),
+                fullContactAddress: !!document.getElementById('fullContactAddress'),
+                contactAddressDisplay: !!document.getElementById('contactAddressDisplay')
+            };
+            
+            console.log('Contact Elements:', contactElements);
+            
+            const propertyElements = {
+                propertyHouseNo: !!document.getElementById('propertyHouseNo'),
+                propertyPlotNo: !!document.getElementById('propertyPlotNo'),
+                propertyStreetName: !!document.getElementById('propertyStreetName'),
+                propertyDistrict: !!document.getElementById('propertyDistrict'),
+                propertyLga: !!document.getElementById('propertyLga'),
+                propertyState: !!document.getElementById('propertyState'),
+                fullPropertyAddress: !!document.getElementById('fullPropertyAddress'),
+                propertyAddressDisplay: !!document.getElementById('propertyAddressDisplay')
+            };
+            
+            console.log('Property Elements:', propertyElements);
+            
+            // Update status display
+            const functionsAvailable = typeof updateAddressDisplay === 'function' && 
+                                     typeof updatePropertyAddressDisplay === 'function';
+            document.getElementById('functions-status').textContent = functionsAvailable ? 'Available ✅' : 'Missing ❌';
+        }
+
+        function testBothAddresses() {
+            console.log('Filling test data...');
+            
+            // Fill contact address
+            document.getElementById('ownerHouseNo').value = '123';
+            document.getElementById('ownerStreetName').value = 'TEST STREET';
+            document.getElementById('ownerDistrict').value = 'TEST DISTRICT';
+            document.getElementById('ownerState').value = 'Lagos';
+            
+            // Fill property address
+            document.getElementById('propertyHouseNo').value = '456';
+            document.getElementById('propertyPlotNo').value = 'PLOT 789';
+            document.getElementById('propertyStreetName').value = 'PROPERTY AVENUE';
+            document.getElementById('propertyDistrict').value = 'BUSINESS DISTRICT';
+            document.getElementById('propertyState').value = 'Lagos';
+            
+            // Trigger updates
+            if (typeof updateAddressDisplay === 'function') {
+                updateAddressDisplay();
+            }
+            if (typeof updatePropertyAddressDisplay === 'function') {
+                updatePropertyAddressDisplay();
+            }
+            
+            // Update debug display
+            setTimeout(() => {
+                document.getElementById('contact-value').textContent = 
+                    document.getElementById('contactAddressDisplay').value || 'Still empty';
+                document.getElementById('property-value').textContent = 
+                    document.getElementById('propertyAddressDisplay').value || 'Still empty';
+            }, 100);
+        }
+
+        // Watch for changes and update debug info
+        setInterval(() => {
+            const contactValue = document.getElementById('contactAddressDisplay')?.value || '';
+            const propertyValue = document.getElementById('propertyAddressDisplay')?.value || '';
+            
+            document.getElementById('contact-value').textContent = contactValue || 'Empty';
+            document.getElementById('property-value').textContent = propertyValue || 'Empty';
+        }, 1000);
+
+        // Initialize when loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Direct form test loaded');
+            setTimeout(() => {
+                showDebugInfo();
+            }, 500);
+        });
+    </script>
+</body>
+</html>

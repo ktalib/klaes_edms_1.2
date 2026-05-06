@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test States and LGA Functionality</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto bg-white rounded-lg shadow p-6">
+        <h1 class="text-2xl font-bold mb-6">Nigerian States and LGA Selection Test</h1>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+                <h3 class="text-lg font-semibold mb-4">Owner Address</h3>
+                <div class="grid grid-cols-1 gap-4">
+                    <div>
+                        <label class="block text-sm mb-1">State <span class="text-red-500">*</span></label>
+                        <select id="ownerState" class="w-full p-2 border border-gray-300 rounded-md" name="owner_state" onchange="selectOwnerLGA(this);">
+                            <option value="">SELECT STATE</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="flex items-center justify-between text-sm mb-1">
+                            <span>LGA <span class="text-red-500">*</span></span>
+                            <button type="button" onclick="showStatesLGAReference()" class="text-xs text-blue-600 hover:text-blue-800 underline" title="View States & LGAs Reference">
+                                View Reference
+                            </button>
+                        </label>
+                        <select id="ownerLga" class="w-full p-2 border border-gray-300 rounded-md opacity-50" name="owner_lga" disabled>
+                            <option value="">SELECT LGA</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div>
+                <h3 class="text-lg font-semibold mb-4">Property Address</h3>
+                <div class="grid grid-cols-1 gap-4">
+                    <div>
+                        <label class="block text-sm mb-1">State <span class="text-red-500">*</span></label>
+                        <select id="propertyState" class="w-full p-2 border border-gray-300 rounded-md" name="property_state" onchange="selectPropertyLGA(this);">
+                            <option value="">Select State</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="flex items-center justify-between text-sm mb-1">
+                            <span>LGA <span class="text-red-500">*</span></span>
+                            <button type="button" onclick="showStatesLGAReference()" class="text-xs text-blue-600 hover:text-blue-800 underline" title="View States & LGAs Reference">
+                                View Reference
+                            </button>
+                        </label>
+                        <select id="propertyLga" name="property_lga" class="w-full p-2 border border-gray-300 rounded-md opacity-50" disabled>
+                            <option value="">Select LGA</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 class="font-semibold mb-2">Test Instructions:</h4>
+            <ol class="list-decimal list-inside text-sm space-y-1">
+                <li>Select a state from either dropdown</li>
+                <li>Watch as the LGA dropdown gets populated with relevant LGAs</li>
+                <li>Click "View Reference" to see the complete states and LGAs table</li>
+                <li>Check browser console for any errors</li>
+            </ol>
+        </div>
+        
+        <div class="mt-6 p-4 bg-gray-50 rounded-lg">
+            <h4 class="font-semibold mb-2">Debug Information:</h4>
+            <div id="debugInfo" class="text-sm text-gray-600">
+                Loading...
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/primaryform/states-lga.js"></script>
+    <script>
+        // Additional debug information
+        setTimeout(() => {
+            const debugInfo = document.getElementById('debugInfo');
+            if (debugInfo) {
+                debugInfo.innerHTML = `
+                    <strong>States Data Loaded:</strong> ${nigerianStatesData ? nigerianStatesData.length : 0} states<br>
+                    <strong>Functions Available:</strong> 
+                    selectOwnerLGA: ${typeof selectOwnerLGA}, 
+                    selectPropertyLGA: ${typeof selectPropertyLGA}, 
+                    showStatesLGAReference: ${typeof showStatesLGAReference}<br>
+                    <strong>Elements Found:</strong> 
+                    ownerState: ${document.getElementById('ownerState') ? 'Yes' : 'No'}, 
+                    ownerLga: ${document.getElementById('ownerLga') ? 'Yes' : 'No'}, 
+                    propertyState: ${document.getElementById('propertyState') ? 'Yes' : 'No'}, 
+                    propertyLga: ${document.getElementById('propertyLga') ? 'Yes' : 'No'}
+                `;
+            }
+        }, 2000);
+    </script>
+</body>
+</html>

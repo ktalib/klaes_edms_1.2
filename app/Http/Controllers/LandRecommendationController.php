@@ -1,0 +1,375 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\LandRecommendation;
+use App\Models\LandUse;
+use App\Models\Purpose;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use App\Models\PrintLog;
+
+class LandRecommendationController extends Controller
+{
+    public function index(Request $request)
+    {
+        $viewType = strtoupper(trim((string) $request->query('type', '')));
+        if (!in_array($viewType, ['OSS', 'ROFO'], true)) {
+            return redirect()->route('home');
+        }
+
+        $ossHasIsDeleted = false;
+        try {
+            $ossHasIsDeleted = Schema::connection('sqlsrv')->hasColumn('oss_applications', 'is_deleted');
+        } catch (\Throwable $e) {
+            $ossHasIsDeleted = false;
+        }
+
+        $applyOssChangeOfNameOriginFilter = function ($builder) use ($ossHasIsDeleted) {
+            $builder->whereExists(function ($subQuery) use ($ossHasIsDeleted) {
+                $subQuery->select(DB::raw('1'))
+                    ->from('oss_applications as oa')
+                    ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(oa.file_no, '')))) = UPPER(LTRIM(RTRIM(ISNULL(land_recommendations.file_number, ''))))")
+                    ->where('oa.system_source', 'OSSOPCHANGEOFNAME');
+
+                if ($ossHasIsDeleted) {
+                    $subQuery->where(function ($q) {
+                        $q->whereNull('oa.is_deleted')
+                          ->orWhere('oa.is_deleted', 0);
+                    });
+                }
+            });
+        };
+
+        $query = LandRecommendation::with('creator');
+        $isOssView = $viewType === 'OSS';
+
+        if ($isOssView) {
+            $ossAddressSubSql = "(
+                SELECT
+                    file_no,
+                    address,
+                    residential_address,
+                    correspondence_address,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY UPPER(LTRIM(RTRIM(ISNULL(file_no, ''))))
+                        ORDER BY id DESC
+                    ) as rn
+                FROM oss_applications
+                WHERE system_source = 'OSSOPCHANGEOFNAME'";
+
+            if ($ossHasIsDeleted) {
+                $ossAddressSubSql .= " AND (is_deleted IS NULL OR is_deleted = 0)";
+            }
+
+            $ossAddressSubSql .= "
+            ) as oa_addr";
+
+            $query->leftJoin(DB::raw($ossAddressSubSql), function ($join) {
+                $join->whereRaw("oa_addr.rn = 1")
+                    ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(oa_addr.file_no, '')))) = UPPER(LTRIM(RTRIM(ISNULL(land_recommendations.file_number, ''))))");
+            });
+
+            $query->select('land_recommendations.*')
+                ->selectRaw("COALESCE(
+                    NULLIF(LTRIM(RTRIM(ISNULL(land_recommendations.applicant_address, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(oa_addr.address, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(oa_addr.residential_address, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(oa_addr.correspondence_address, ''))), '')
+                ) as resolved_applicant_address");
+
+            $query->whereRaw("UPPER(ISNULL(type, '')) = ?", ['OSS']);
+            $applyOssChangeOfNameOriginFilter($query);
+        } else {
+            $query->where(function ($q) {
+                $q->whereNull('type')
+                  ->orWhereRaw("UPPER(ISNULL(type, '')) <> ?", ['OSS']);
+            });
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('file_number', 'LIKE', "%{$search}%")
+                  ->orWhere('applicant_name', 'LIKE', "%{$search}%")
+                  ->orWhere('location', 'LIKE', "%{$search}%");
+            });
+        }
+
+        $recommendations = $query->latest()->paginate(20)->withQueryString();
+        $PageTitle ='Recommendation For Grant Of Statutory Right Of Occupancy';
+
+        $statsQuery = LandRecommendation::query();
+        if ($isOssView) {
+            $statsQuery->whereRaw("UPPER(ISNULL(type, '')) = ?", ['OSS']);
+            $applyOssChangeOfNameOriginFilter($statsQuery);
+        } else {
+            $statsQuery->where(function ($q) {
+                $q->whereNull('type')
+                  ->orWhereRaw("UPPER(ISNULL(type, '')) <> ?", ['OSS']);
+            });
+        }
+
+        $stats = [
+            'total' => (clone $statsQuery)->count(),
+            'pending' => (clone $statsQuery)->where('status', LandRecommendation::STATUS_PENDING)->count(),
+            'approved' => (clone $statsQuery)->where('status', LandRecommendation::STATUS_APPROVED)->count(),
+            'total_ground_rent' => (clone $statsQuery)->sum('ground_rent')
+        ];
+
+        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'isOssView'));
+    }
+
+    public function create()
+    {
+        $PageTitle ='Recommendation For Grant Of Statutory Right Of Occupancy';
+        $landUses = LandUse::orderBy('landuse')->get();
+        return view('land_recommendations.form', compact('PageTitle', 'landUses'));
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'file_number' => 'required|string',
+            'applicant_name' => 'nullable|string',
+            'purpose_of_clause' => 'nullable|string',
+            'purpose_id' => 'required|exists:sqlsrv.purposes,id',
+            'location' => 'nullable|string',
+            'term' => 'nullable|string',
+            'ground_rent' => 'nullable|numeric',
+            'effective_date' => 'nullable|date',
+            'premium' => 'nullable|numeric',
+            'development_period' => 'nullable|string',
+            'survey_fees' => 'nullable|numeric',
+            'land_use' => 'nullable|string',
+            'land_use_id' => 'required|exists:sqlsrv.land_uses,id',
+            'meeting_date' => 'nullable|date',
+            'recommendation' => 'nullable|string',
+            'plot_number' => 'nullable|string',
+            'layout_plan_no' => 'nullable|string',
+            'development_value' => 'nullable|numeric',
+            'development_charge' => 'nullable|numeric',
+            'tracking_id' => 'nullable|string',
+            'application_date' => 'nullable|date',
+            'applicant_address' => 'nullable|string',
+            'type' => 'nullable|string',
+            'page' => 'nullable|string',
+            'page_survey_report' => 'nullable|string',
+            'survey_report' => 'nullable|string',
+            'improvement' => 'nullable|string',
+            'revision_period' => 'nullable|string',
+            'time_of_erection' => 'nullable|string',
+        ]);
+
+        if ($request->filled('land_use_id')) {
+            $lu = LandUse::find($request->land_use_id);
+            if ($lu) $validated['land_use'] = $lu->landuse;
+        }
+
+        if ($request->filled('purpose_id')) {
+            $p = Purpose::find($request->purpose_id);
+            if ($p) $validated['purpose_of_clause'] = $p->name;
+        }
+
+        $validated['created_by'] = Auth::id();
+        $validated['updated_by'] = Auth::id();
+
+        $recommendation = LandRecommendation::create($validated);
+
+        return redirect()->route('land-recommendations.index', ['type' => 'ROFO'])
+            ->with('success', 'Recommendation created successfully.');
+    }
+
+    public function show($id)
+    {
+        $recommendation = LandRecommendation::findOrFail($id);
+        return view('land_recommendations.show', compact('recommendation'));
+    }
+
+    public function edit($id)
+    {
+        $recommendation = LandRecommendation::findOrFail($id);
+        $PageTitle ='Recommendation For Grant Of Statutory Right Of Occupancy';
+        $landUses = LandUse::orderBy('landuse')->get();
+        $purposes = [];
+        if ($recommendation->land_use_id) {
+            $purposes = Purpose::where('landuseid', $recommendation->land_use_id)->orderBy('name')->get();
+        }
+        return view('land_recommendations.form', compact('recommendation', 'PageTitle', 'landUses', 'purposes'));
+    }
+
+    public function update(Request $request, $id)
+    {
+        $recommendation = LandRecommendation::findOrFail($id);
+
+        $validated = $request->validate([
+            'file_number' => 'required|string',
+            'applicant_name' => 'nullable|string',
+            'purpose_of_clause' => 'nullable|string',
+            'purpose_id' => 'required|exists:sqlsrv.purposes,id',
+            'location' => 'nullable|string',
+            'term' => 'nullable|string',
+            'ground_rent' => 'nullable|numeric',
+            'effective_date' => 'nullable|date',
+            'premium' => 'nullable|numeric',
+            'development_period' => 'nullable|string',
+            'survey_fees' => 'nullable|numeric',
+            'land_use' => 'nullable|string',
+            'land_use_id' => 'required|exists:sqlsrv.land_uses,id',
+            'meeting_date' => 'nullable|date',
+            'recommendation' => 'nullable|string',
+            'plot_number' => 'nullable|string',
+            'layout_plan_no' => 'nullable|string',
+            'development_value' => 'nullable|numeric',
+            'development_charge' => 'nullable|numeric',
+            'tracking_id' => 'nullable|string',
+            'application_date' => 'nullable|date',
+            'applicant_address' => 'nullable|string',
+            'edit_reason' => 'nullable|string',
+            'type' => 'nullable|string',
+            'page' => 'nullable|string',
+            'page_survey_report' => 'nullable|string',
+            'survey_report' => 'nullable|string',
+            'improvement' => 'nullable|string',
+            'revision_period' => 'nullable|string',
+            'time_of_erection' => 'nullable|string',
+        ]);
+
+        if ($request->filled('land_use_id')) {
+            $lu = LandUse::find($request->land_use_id);
+            if ($lu) $validated['land_use'] = $lu->landuse;
+        }
+
+        if ($request->filled('purpose_id')) {
+            $p = Purpose::find($request->purpose_id);
+            if ($p) $validated['purpose_of_clause'] = $p->name;
+        }
+
+        $validated['updated_by'] = Auth::id();
+
+        $recommendation->update($validated);
+
+        return redirect()->route('land-recommendations.index', ['type' => 'ROFO'])
+            ->with('success', 'Recommendation updated successfully.');
+    }
+
+    public function approve($id)
+    {
+        $recommendation = LandRecommendation::findOrFail($id);
+        $recommendation->update([
+            'status' => LandRecommendation::STATUS_APPROVED,
+            'approved_at' => now()
+        ]);
+
+        return response()->json(['success' => true]);
+    }
+
+    public function print(Request $request, $id)
+    {
+        $recommendation = LandRecommendation::findOrFail($id);
+        $isOssRecommendation = strtoupper((string) ($recommendation->type ?? '')) === 'OSS';
+
+        if ($isOssRecommendation) {
+            $formatNaira = static function ($value): string {
+                if ($value === null || $value === '') {
+                    return '';
+                }
+
+                $number = is_numeric($value)
+                    ? (float) $value
+                    : (float) preg_replace('/[^0-9.\-]/', '', (string) $value);
+
+                return 'N' . number_format($number, 2);
+            };
+
+            $record = (object) [
+                'applicant_name'    => strtoupper((string) ($recommendation->applicant_name ?? '')),
+                'file_ref'          => (string) ($recommendation->file_number ?? ''),
+                'purpose'           => strtoupper((string) ($recommendation->purpose_of_clause ?? $recommendation->land_use ?? '')),
+                'location'          => (string) ($recommendation->location ?? ''),
+                'plot_no'           => strtoupper((string) ($recommendation->plot_number ?? '')),
+                'plan_no'           => strtoupper((string) ($recommendation->layout_plan_no ?? '')),
+                'term'              => (string) ($recommendation->term ?? ''),
+                'dev_value'         => $formatNaira($recommendation->development_value ?? null),
+                'completion_time'   => (string) ($recommendation->development_period ?? ''),
+                'ground_rent'       => $formatNaira($recommendation->ground_rent ?? null),
+                'dev_charge'        => $formatNaira($recommendation->development_charge ?? null),
+                'survey_charges'    => $formatNaira($recommendation->survey_fees ?? null),
+                'director_reasons'  => (string) ($recommendation->recommendation ?? ''),
+                'director_sign'     => '',
+                'director_date'     => '',
+                'ps_plot'           => strtoupper((string) ($recommendation->plot_number ?? '')),
+                'ps_location'       => strtoupper((string) ($recommendation->location ?? '')),
+                'ps_sign'           => '',
+                'ps_date'           => '',
+                'commissioner_name' => '',
+                'commissioner_date' => '',
+                'approval_status'   => '',
+                'tracking_id'       => (string) ($recommendation->tracking_id ?? ''),
+                'rofo_serial_no'    => (string) ($recommendation->land_rofo_serial_no ?? ''),
+            ];
+
+            return view('lands_one_stop_shop.partials.print_recommendation', compact('record'));
+        }
+
+        if (!$isOssRecommendation && $recommendation->status !== LandRecommendation::STATUS_APPROVED) {
+            abort(403, 'Document must be approved before printing.');
+        }
+
+        // Bypass limit check for Certified True Copy
+        $isCTC = $request->query('status') === 'CTC' || $request->query('isCTC') == 1;
+        if (!$isCTC && $recommendation->print_count >= 2) {
+            abort(403, 'Maximum print limit reached.');
+        }
+
+        if ($recommendation->type === 'Conversion') {
+            return view('land_recommendations.templates.conversion_print', compact('recommendation'));
+        }
+
+        return view('land_recommendations.templates.standalone_print', compact('recommendation'));
+    }
+
+    public function logPrint(Request $request, $id)
+    {
+        $recommendation = LandRecommendation::findOrFail($id);
+
+        $status = $request->query('status', 'Original');
+        $isCTC = $status === 'CTC' || $request->query('isCTC') == 1;
+
+        // Only enforce limits for non-CTC prints
+        if (!$isCTC && $recommendation->print_count >= 2) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Maximum print limit reached.'
+            ], 403);
+        }
+
+        DB::beginTransaction();
+        try {
+            PrintLog::create([
+                'reference_number' => $recommendation->file_number,
+                'document_type' => 'Land Recommendation',
+                'print_type' => 'Individual',
+                'status' => $status,
+                'user_id' => Auth::id()
+            ]);
+
+            // Only increment count for non-CTC prints
+            if ($status !== 'CTC') {
+                $recommendation->increment('print_count');
+            }
+
+            DB::commit();
+
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Error logging print: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+}

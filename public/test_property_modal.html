@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Property Transaction Modal Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-2xl mx-auto">
+        <h1 class="text-2xl font-bold mb-4">Property Transaction Modal Test</h1>
+        
+        <div class="bg-white p-6 rounded-lg shadow-md mb-4">
+            <h2 class="text-lg font-semibold mb-4">Test Data</h2>
+            <pre id="test-data" class="bg-gray-100 p-4 rounded text-xs overflow-auto"></pre>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-lg font-semibold mb-4">Actions</h2>
+            <button onclick="testModal()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                Open Property Transaction Modal
+            </button>
+            
+            <button onclick="checkModal()" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded ml-2">
+                Check Modal Element
+            </button>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-md mt-4">
+            <h2 class="text-lg font-semibold mb-4">Console Output</h2>
+            <div id="console-output" class="bg-gray-900 text-green-400 p-4 rounded text-xs font-mono h-64 overflow-auto"></div>
+        </div>
+    </div>
+
+    <!-- Include the modal -->
+    <div id="property-transaction-dialog" class="dialog-overlay hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999; display: none; align-items: center; justify-content: center; background-color: rgba(0, 0, 0, 0.5);">
+        <div class="dialog-content property-form-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto; background: white; border-radius: 0.5rem; padding: 1.5rem;">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Add Property Transaction Details (TEST)</h2>
+                <button onclick="closePropertyTransactionModal()" class="text-gray-500 hover:text-gray-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4 bg-blue-50 rounded">
+                <p class="text-sm">Modal is working! This is a test version.</p>
+                <button onclick="closePropertyTransactionModal()" class="mt-4 bg-blue-500 text-white px-4 py-2 rounded">
+                    Close Modal
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Log override
+        const originalLog = console.log;
+        const originalError = console.error;
+        const outputDiv = document.getElementById('console-output');
+        
+        function addToConsole(message, type = 'log') {
+            const color = type === 'error' ? 'text-red-400' : 'text-green-400';
+            const timestamp = new Date().toLocaleTimeString();
+            outputDiv.innerHTML += `<div class="${color}">[${timestamp}] ${message}</div>`;
+            outputDiv.scrollTop = outputDiv.scrollHeight;
+        }
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addToConsole(args.join(' '), 'log');
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addToConsole(args.join(' '), 'error');
+        };
+
+        // Test data
+        const testFileIndexingData = {
+            id: 999,
+            file_number: 'TEST-2025-001',
+            file_title: 'Test Property File',
+            plot_number: 'PLOT-123',
+            tp_no: 'TP-456',
+            lpkn_no: 'LPKN-789',
+            lga: 'Kano Municipal',
+            district: 'Test District',
+            location: 'Test Location, Test Street, Kano',
+            land_use_type: 'RESIDENTIAL'
+        };
+
+        document.getElementById('test-data').textContent = JSON.stringify(testFileIndexingData, null, 2);
+
+        function testModal() {
+            console.log('=== Testing Property Transaction Modal ===');
+            console.log('Test data:', testFileIndexingData);
+            
+            if (typeof openPropertyTransactionModal === 'function') {
+                console.log('openPropertyTransactionModal function found');
+                openPropertyTransactionModal(testFileIndexingData);
+            } else {
+                console.error('openPropertyTransactionModal function NOT found');
+                console.log('Trying direct modal open...');
+                const modal = document.getElementById('property-transaction-dialog');
+                if (modal) {
+                    console.log('Modal element found, showing...');
+                    modal.classList.remove('hidden');
+                    modal.style.display = 'flex';
+                } else {
+                    console.error('Modal element NOT found!');
+                }
+            }
+        }
+
+        function checkModal() {
+            console.log('=== Checking Modal Element ===');
+            const modal = document.getElementById('property-transaction-dialog');
+            console.log('Modal element:', modal);
+            console.log('Modal classes:', modal?.className);
+            console.log('Modal style.display:', modal?.style.display);
+            console.log('Modal offsetHeight:', modal?.offsetHeight);
+            console.log('Modal offsetWidth:', modal?.offsetWidth);
+            
+            if (modal) {
+                console.log('Modal IS in the DOM');
+                console.log('Is hidden?', modal.classList.contains('hidden'));
+            } else {
+                console.error('Modal NOT in the DOM!');
+            }
+        }
+
+        function openPropertyTransactionModal(fileIndexingData) {
+            console.log('Opening property transaction modal with data:', fileIndexingData);
+            
+            const modal = document.getElementById('property-transaction-dialog');
+            if (!modal) {
+                console.error('Property transaction modal not found!');
+                return;
+            }
+            
+            console.log('Modal element found');
+            
+            // Show the modal
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+            console.log('Modal display set to flex, hidden class removed');
+            console.log('Modal should now be visible');
+        }
+
+        function closePropertyTransactionModal() {
+            console.log('Closing modal...');
+            const modal = document.getElementById('property-transaction-dialog');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.style.display = 'none';
+                console.log('Modal closed');
+            }
+        }
+
+        // Test on page load
+        window.addEventListener('load', function() {
+            console.log('Page loaded');
+            console.log('jQuery version:', $.fn.jquery);
+            console.log('Alpine available:', typeof Alpine !== 'undefined');
+            checkModal();
+        });
+    </script>
+</body>
+</html>

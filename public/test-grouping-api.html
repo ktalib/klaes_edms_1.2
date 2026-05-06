@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grouping Analytics API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2rem; background: #f5f7fa; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .test-card { background: white; padding: 1.5rem; margin: 1rem 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .test-result { padding: 1rem; margin: 0.5rem 0; border-radius: 4px; font-family: monospace; }
+        .success { background: #d4edda; border-left: 4px solid #28a745; }
+        .error { background: #f8d7da; border-left: 4px solid #dc3545; }
+        .info { background: #d1ecf1; border-left: 4px solid #17a2b8; }
+        .warning { background: #fff3cd; border-left: 4px solid #ffc107; }
+        .timing { font-weight: bold; color: #007bff; }
+        button { padding: 0.75rem 1.5rem; margin: 0.5rem; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #0056b3; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+        pre { background: #f8f9fa; padding: 1rem; border-radius: 4px; overflow-x: auto; font-size: 0.9rem; }
+        .status-indicator { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; }
+        .status-success { background: #28a745; }
+        .status-error { background: #dc3545; }
+        .status-pending { background: #ffc107; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Grouping Analytics API Testing Suite</h1>
+        <p>Test all API endpoints before implementing the full dashboard to ensure performance.</p>
+
+        <div class="test-card">
+            <h2>🚀 Quick Tests</h2>
+            <button onclick="runAllTests()">Run All Tests</button>
+            <button onclick="clearResults()">Clear Results</button>
+            <button onclick="testApiStats()">Test API Stats Only</button>
+        </div>
+
+        <div class="grid">
+            <div class="test-card">
+                <h3>📊 Individual API Tests</h3>
+                <button onclick="testBasicStats()">Basic Stats API</button>
+                <button onclick="testLandUseStats()">Land Use Stats</button>
+                <button onclick="testRecentActivity()">Recent Activity</button>
+                <button onclick="testTablePreview()">Table Preview</button>
+                <button onclick="testSearch()">Search API</button>
+            </div>
+
+            <div class="test-card">
+                <h3>⚡ Performance Tests</h3>
+                <button onclick="testConcurrentRequests()">Concurrent Requests</button>
+                <button onclick="testCachePerformance()">Cache Performance</button>
+                <button onclick="testLargeDatasets()">Large Dataset Handling</button>
+                <button onclick="measureMemoryUsage()">Memory Usage</button>
+            </div>
+        </div>
+
+        <div class="test-card">
+            <h2>📈 Test Results</h2>
+            <div id="results"></div>
+        </div>
+
+        <div class="test-card">
+            <h2>📋 API Endpoints Status</h2>
+            <div id="endpoint-status">
+                <div><span class="status-indicator status-pending"></span>/api/grouping-analytics/stats</div>
+                <div><span class="status-indicator status-pending"></span>/api/grouping-analytics/debug</div>
+                <div><span class="status-indicator status-pending"></span>/api/grouping-analytics/preview</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let testResults = [];
+        
+        async function runAllTests() {
+            addResult('🚀 Starting comprehensive API testing suite...', 'info');
+            clearEndpointStatus();
+            
+            const tests = [
+                { name: 'API Stats', fn: testApiStats },
+                { name: 'Debug Performance', fn: testDebugEndpoint },
+                { name: 'Basic Stats', fn: testBasicStats },
+                { name: 'Cache Performance', fn: testCachePerformance },
+                { name: 'Concurrent Requests', fn: testConcurrentRequests }
+            ];
+
+            for (const test of tests) {
+                addResult(`Running ${test.name}...`, 'info');
+                try {
+                    await test.fn();
+                    await new Promise(resolve => setTimeout(resolve, 500)); // Brief pause between tests
+                } catch (error) {
+                    addResult(`❌ ${test.name} failed: ${error.message}`, 'error');
+                }
+            }
+            
+            addResult('✅ All tests completed!', 'success');
+            generateSummary();
+        }
+
+        async function testApiStats() {
+            return testEndpoint('/api/grouping-analytics/stats', 'GET', 'API Stats');
+        }
+
+        async function testDebugEndpoint() {
+            return testEndpoint('/api/grouping-analytics/debug', 'GET', 'Debug Performance');
+        }
+
+        async function testBasicStats() {
+            addResult('Testing basic statistics endpoint...', 'info');
+            const start = Date.now();
+            
+            try {
+                const response = await fetch('/api/grouping-analytics/stats');
+                const data = await response.json();
+                const duration = Date.now() - start;
+                
+                if (response.ok && data.success) {
+                    addResult(`✅ Basic stats loaded in ${duration}ms`, 'success');
+                    addResult(`Data structure: ${JSON.stringify(Object.keys(data.data || {}), null, 2)}`, 'info');
+                    updateEndpointStatus('/api/grouping-analytics/stats', 'success');
+                    return { success: true, duration, data };
+                } else {
+                    addResult(`❌ Basic stats failed: ${data.message || 'Unknown error'}`, 'error');
+                    updateEndpointStatus('/api/grouping-analytics/stats', 'error');
+                    return { success: false, duration, error: data.message };
+                }
+            } catch (error) {
+                const duration = Date.now() - start;
+                addResult(`❌ Basic stats error after ${duration}ms: ${error.message}`, 'error');
+                updateEndpointStatus('/api/grouping-analytics/stats', 'error');
+                return { success: false, duration, error: error.message };
+            }
+        }
+
+        async function testLandUseStats() {
+            addResult('Testing land use statistics...', 'info');
+            // This would be part of the main stats API
+            return testApiStats();
+        }
+
+        async function testRecentActivity() {
+            addResult('Testing recent activity data...', 'info');
+            // This would be part of the main stats API
+            return testApiStats();
+        }
+
+        async function testTablePreview() {
+            addResult('Testing table preview endpoint...', 'info');
+            const start = Date.now();
+            
+            try {
+                const response = await fetch('/api/grouping-analytics/preview?limit=10');
+                const duration = Date.now() - start;
+                
+                if (response.ok) {
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('text/csv')) {
+                        addResult(`✅ Table preview (CSV) generated in ${duration}ms`, 'success');
+                        return { success: true, duration, type: 'csv' };
+                    } else {
+                        const text = await response.text();
+                        addResult(`⚠️ Unexpected response type: ${contentType}`, 'warning');
+                        return { success: false, duration, error: 'Wrong content type' };
+                    }
+                } else {
+                    addResult(`❌ Table preview failed with status ${response.status}`, 'error');
+                    return { success: false, duration, error: `HTTP ${response.status}` };
+                }
+            } catch (error) {
+                const duration = Date.now() - start;
+                addResult(`❌ Table preview error after ${duration}ms: ${error.message}`, 'error');
+                return { success: false, duration, error: error.message };
+            }
+        }
+
+        async function testSearch() {
+            addResult('Testing search functionality...', 'info');
+            const start = Date.now();
+            
+            try {
+                const response = await fetch('/api/grouping-analytics/preview?limit=5');
+                const duration = Date.now() - start;
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult(`✅ Search completed in ${duration}ms`, 'success');
+                    addResult(`Results: ${data.count || 0} items found`, 'info');
+                    return { success: true, duration, results: data.count };
+                } else {
+                    addResult(`❌ Search failed with status ${response.status}`, 'error');
+                    return { success: false, duration };
+                }
+            } catch (error) {
+                const duration = Date.now() - start;
+                addResult(`❌ Search error after ${duration}ms: ${error.message}`, 'error');
+                return { success: false, duration, error: error.message };
+            }
+        }
+
+        async function testConcurrentRequests() {
+            addResult('Testing concurrent request handling...', 'info');
+            const start = Date.now();
+            
+            const requests = Array.from({length: 5}, (_, i) => 
+                fetch('/api/grouping-analytics/stats').then(r => ({id: i, ok: r.ok, status: r.status}))
+            );
+            
+            try {
+                const results = await Promise.all(requests);
+                const duration = Date.now() - start;
+                const successCount = results.filter(r => r.ok).length;
+                
+                addResult(`✅ Concurrent test: ${successCount}/5 requests succeeded in ${duration}ms`, 'success');
+                return { success: true, duration, successCount };
+            } catch (error) {
+                const duration = Date.now() - start;
+                addResult(`❌ Concurrent test failed after ${duration}ms: ${error.message}`, 'error');
+                return { success: false, duration, error: error.message };
+            }
+        }
+
+        async function testCachePerformance() {
+            addResult('Testing cache performance (2 requests)...', 'info');
+            
+            // First request (should populate cache)
+            const start1 = Date.now();
+            const response1 = await fetch('/api/grouping-analytics/stats');
+            const duration1 = Date.now() - start1;
+            
+            // Second request (should hit cache)
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const start2 = Date.now();
+            const response2 = await fetch('/api/grouping-analytics/stats');
+            const duration2 = Date.now() - start2;
+            
+            if (response1.ok && response2.ok) {
+                const improvement = duration1 > duration2 ? Math.round(((duration1 - duration2) / duration1) * 100) : 0;
+                addResult(`✅ Cache test: First=${duration1}ms, Second=${duration2}ms (${improvement}% improvement)`, 'success');
+                return { success: true, first: duration1, second: duration2, improvement };
+            } else {
+                addResult(`❌ Cache test failed`, 'error');
+                return { success: false };
+            }
+        }
+
+        async function testLargeDatasets() {
+            addResult('Testing large dataset handling...', 'info');
+            return testEndpoint('/api/grouping-analytics/preview?limit=1000', 'GET', 'Large Dataset');
+        }
+
+        async function measureMemoryUsage() {
+            addResult('Measuring memory usage...', 'info');
+            
+            if (performance.memory) {
+                const memory = performance.memory;
+                addResult(`📊 Memory: Used=${Math.round(memory.usedJSHeapSize/1024/1024)}MB, Total=${Math.round(memory.totalJSHeapSize/1024/1024)}MB`, 'info');
+                return { success: true, memory: memory.usedJSHeapSize };
+            } else {
+                addResult(`⚠️ Memory API not available in this browser`, 'warning');
+                return { success: false, error: 'Memory API unavailable' };
+            }
+        }
+
+        async function testEndpoint(url, method = 'GET', name = 'Endpoint') {
+            const start = Date.now();
+            
+            try {
+                const response = await fetch(url, { method });
+                const duration = Date.now() - start;
+                
+                if (response.ok) {
+                    addResult(`✅ ${name} responded in ${duration}ms (${response.status})`, 'success');
+                    updateEndpointStatus(url, 'success');
+                    return { success: true, duration, status: response.status };
+                } else {
+                    addResult(`❌ ${name} failed with status ${response.status} in ${duration}ms`, 'error');
+                    updateEndpointStatus(url, 'error');
+                    return { success: false, duration, status: response.status };
+                }
+            } catch (error) {
+                const duration = Date.now() - start;
+                addResult(`❌ ${name} error after ${duration}ms: ${error.message}`, 'error');
+                updateEndpointStatus(url, 'error');
+                return { success: false, duration, error: error.message };
+            }
+        }
+
+        function addResult(message, type = 'info') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = `<span class="timing">[${new Date().toLocaleTimeString()}]</span> ${message}`;
+            results.insertBefore(div, results.firstChild);
+            
+            testResults.push({ timestamp: Date.now(), message, type });
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            testResults = [];
+            addResult('Results cleared', 'info');
+        }
+
+        function updateEndpointStatus(endpoint, status) {
+            const statusDiv = document.getElementById('endpoint-status');
+            const indicators = statusDiv.querySelectorAll('div');
+            
+            indicators.forEach(div => {
+                if (div.textContent.includes(endpoint)) {
+                    const indicator = div.querySelector('.status-indicator');
+                    indicator.className = `status-indicator status-${status}`;
+                }
+            });
+        }
+
+        function clearEndpointStatus() {
+            const indicators = document.querySelectorAll('.status-indicator');
+            indicators.forEach(indicator => {
+                indicator.className = 'status-indicator status-pending';
+            });
+        }
+
+        function generateSummary() {
+            const successCount = testResults.filter(r => r.message.includes('✅')).length;
+            const errorCount = testResults.filter(r => r.message.includes('❌')).length;
+            const warningCount = testResults.filter(r => r.message.includes('⚠️')).length;
+            
+            addResult(`📊 Test Summary: ${successCount} passed, ${errorCount} failed, ${warningCount} warnings`, 
+                errorCount > 0 ? 'error' : 'success');
+        }
+
+        // Auto-start basic test on load
+        window.addEventListener('load', () => {
+            addResult('🔧 API Testing Suite Ready', 'info');
+            addResult('Click "Run All Tests" to start comprehensive testing', 'info');
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sub Application JavaScript Debug</title>
+    <meta name="csrf-token" content="debug-token">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .error { color: red; }
+        .success { color: green; }
+        .warning { color: orange; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        #console-output { height: 300px; overflow-y: auto; background: #000; color: #0f0; padding: 10px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>Sub Application JavaScript Debug</h1>
+    
+    <div class="debug-section">
+        <h3>Console Output</h3>
+        <div id="console-output"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h3>Test Elements</h3>
+        <!-- Mock elements that the sub application JS expects -->
+        <select id="sua-file-select" style="display: none;">
+            <option value="">Select SUA File</option>
+        </select>
+        
+        <select id="unit-file-select" style="display: none;">
+            <option value="">Select Unit File</option>
+        </select>
+        
+        <input type="hidden" id="mainApplicantTypeInput" value="">
+        <input type="hidden" id="hidden-sua-np-fileno" value="">
+        <input type="hidden" id="hidden-sua-mls-fileno" value="">
+        <input type="hidden" id="hidden-sua-fileno" value="">
+        <input type="hidden" id="hidden-sua-file-id" value="">
+        <input type="hidden" id="hidden-unit-np-fileno" value="">
+        <input type="hidden" id="hidden-unit-fileno" value="">
+        <input type="hidden" id="hidden-unit-file-id" value="">
+        
+        <div id="sua-file-loading" class="hidden">Loading SUA files...</div>
+        <div id="unit-file-loading" class="hidden">Loading unit files...</div>
+        <div id="sua-selection-preview" class="hidden">SUA Preview</div>
+        <div id="unit-selection-preview" class="hidden">Unit Preview</div>
+    </div>
+    
+    <div class="debug-section">
+        <h3>Function Tests</h3>
+        <button onclick="testFunctions()">Test JavaScript Functions</button>
+        <div id="function-test-results"></div>
+    </div>
+
+    <script>
+        // Capture console output
+        const originalConsole = {
+            log: console.log,
+            error: console.error,
+            warn: console.warn
+        };
+        
+        const consoleOutput = document.getElementById('console-output');
+        
+        function addToConsole(type, ...args) {
+            const timestamp = new Date().toLocaleTimeString();
+            const message = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            
+            consoleOutput.innerHTML += `<div>[${timestamp}] ${type.toUpperCase()}: ${message}</div>`;
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            
+            // Call original console method
+            originalConsole[type](...args);
+        }
+        
+        console.log = (...args) => addToConsole('log', ...args);
+        console.error = (...args) => addToConsole('error', ...args);
+        console.warn = (...args) => addToConsole('warn', ...args);
+        
+        // Now include the sub application JavaScript functions
+        console.log('🔧 Starting Sub Application JavaScript Debug');
+        
+        // Copy the exact JavaScript from sub_application.blade.php
+        let suaFileNumbers = [];
+        let unitFileNumbers = [];
+        
+        function initSubApplicationFileNumberAPI() {
+            console.log('🚀 Initializing Sub Application File Number API...');
+            
+            const suaElement = document.getElementById('sua-file-select');
+            const unitElement = document.getElementById('unit-file-select');
+            const isSUA = suaElement !== null;
+            const isUnit = unitElement !== null;
+            
+            console.log('🔍 Element detection:', { 
+                suaElement: !!suaElement, 
+                unitElement: !!unitElement, 
+                isSUA, 
+                isUnit 
+            });
+            
+            if (isSUA) {
+                console.log('📋 SUA mode detected - would load SUA file numbers');
+            } else if (isUnit) {
+                console.log('🏠 Unit mode detected - would load Unit file numbers');
+            } else {
+                console.warn('⚠️ No file select elements found');
+            }
+        }
+        
+        function autoFillApplicantInfo(fileData) {
+            console.log('🔄 Auto-filling applicant info with data:', fileData);
+            
+            if (fileData.applicant_type) {
+                const applicantType = fileData.applicant_type.toLowerCase();
+                const applicantTypeInput = document.getElementById('mainApplicantTypeInput');
+                if (applicantTypeInput) {
+                    applicantTypeInput.value = applicantType;
+                    console.log('✅ Applicant type set to:', applicantType);
+                } else {
+                    console.warn('⚠️ Applicant type input not found');
+                }
+                
+                if (applicantType === 'individual') {
+                    console.log('👤 Would fill individual fields');
+                } else if (applicantType === 'corporate') {
+                    console.log('🏢 Would fill corporate fields');
+                } else if (applicantType === 'multiple') {
+                    console.log('👥 Would fill multiple fields');
+                }
+            } else {
+                console.warn('⚠️ No applicant_type in file data:', Object.keys(fileData));
+            }
+        }
+        
+        function testFunctions() {
+            const results = document.getElementById('function-test-results');
+            results.innerHTML = '<h4>Function Test Results:</h4>';
+            
+            try {
+                // Test 1: Basic function call
+                console.log('🧪 Testing initSubApplicationFileNumberAPI...');
+                initSubApplicationFileNumberAPI();
+                results.innerHTML += '<p class="success">✅ initSubApplicationFileNumberAPI - OK</p>';
+                
+                // Test 2: Auto-fill function with mock data
+                console.log('🧪 Testing autoFillApplicantInfo...');
+                const mockData = {
+                    applicant_type: 'Individual',
+                    np_fileno: 'TEST-001',
+                    display_name: 'Test User'
+                };
+                autoFillApplicantInfo(mockData);
+                results.innerHTML += '<p class="success">✅ autoFillApplicantInfo - OK</p>';
+                
+                // Test 3: Check if hidden input was updated
+                const applicantTypeInput = document.getElementById('mainApplicantTypeInput');
+                if (applicantTypeInput && applicantTypeInput.value === 'individual') {
+                    results.innerHTML += '<p class="success">✅ Hidden input update - OK</p>';
+                } else {
+                    results.innerHTML += '<p class="error">❌ Hidden input update - Failed</p>';
+                }
+                
+            } catch (error) {
+                console.error('❌ Function test error:', error);
+                results.innerHTML += `<p class="error">❌ Function test error: ${error.message}</p>`;
+            }
+        }
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔧 Debug page loaded - running initial tests');
+            initSubApplicationFileNumberAPI();
+        });
+    </script>
+</body>
+</html>

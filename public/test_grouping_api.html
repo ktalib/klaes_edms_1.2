@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grouping API Test Suite</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .endpoint {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+        .endpoint h3 {
+            color: #34495e;
+            margin-top: 0;
+        }
+        .method {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 12px;
+            margin-right: 10px;
+        }
+        .get { background-color: #5cb85c; color: white; }
+        .post { background-color: #5bc0de; color: white; }
+        .put { background-color: #f0ad4e; color: white; }
+        .delete { background-color: #d9534f; color: white; }
+        
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .loading {
+            background-color: #95a5a6 !important;
+            cursor: not-allowed;
+        }
+        
+        .response {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        input, select {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Grouping API Test Suite</h1>
+        <p>Comprehensive testing interface for the Grouping API endpoints.</p>
+
+        <!-- Statistics Dashboard -->
+        <div class="endpoint">
+            <h3><span class="method get">GET</span> Get Totals & Statistics</h3>
+            <p><strong>Endpoint:</strong> <code>/api/grouping/totals</code></p>
+            <button onclick="getTotals()">Get Statistics</button>
+            <div id="stats-display" class="stats-grid" style="display: none;"></div>
+            <div id="totals-response" class="response" style="display: none;"></div>
+        </div>
+
+        <!-- List All Records -->
+        <div class="endpoint">
+            <h3><span class="method get">GET</span> List All Records (Paginated)</h3>
+            <p><strong>Endpoint:</strong> <code>/api/grouping</code></p>
+            <div>
+                <input type="number" id="list-page" placeholder="Page (default: 1)" value="1">
+                <input type="number" id="list-per-page" placeholder="Per page (default: 25)" value="25">
+                <select id="list-landuse">
+                    <option value="">All Land Uses</option>
+                    <option value="COMMERCIAL">Commercial</option>
+                    <option value="RESIDENTIAL">Residential</option>
+                    <option value="AGRICULTURE">Agriculture</option>
+                </select>
+                <input type="text" id="list-search" placeholder="Search query">
+                <select id="list-sort">
+                    <option value="created_at">Created At</option>
+                    <option value="awaiting_fileno">File Number</option>
+                    <option value="landuse">Land Use</option>
+                    <option value="year">Year</option>
+                </select>
+                <select id="list-order">
+                    <option value="desc">Descending</option>
+                    <option value="asc">Ascending</option>
+                </select>
+            </div>
+            <button onclick="listRecords()">List Records</button>
+            <div id="list-response" class="response" style="display: none;"></div>
+        </div>
+
+        <!-- Get by Land Use -->
+        <div class="endpoint">
+            <h3><span class="method get">GET</span> Get Records by Land Use</h3>
+            <p><strong>Endpoint:</strong> <code>/api/grouping/land-use/{landuse}</code></p>
+            <div>
+                <select id="landuse-filter">
+                    <option value="COMMERCIAL">Commercial</option>
+                    <option value="RESIDENTIAL">Residential</option>
+                    <option value="AGRICULTURE">Agriculture</option>
+                </select>
+                <input type="number" id="landuse-per-page" placeholder="Per page" value="10">
+            </div>
+            <button onclick="getByLandUse()">Get by Land Use</button>
+            <div id="landuse-response" class="response" style="display: none;"></div>
+        </div>
+
+        <!-- Search -->
+        <div class="endpoint">
+            <h3><span class="method get">GET</span> Search Records</h3>
+            <p><strong>Endpoint:</strong> <code>/api/grouping/search</code></p>
+            <div>
+                <input type="text" id="search-query" placeholder="Search query (min 2 chars)" value="CON-COM">
+                <input type="number" id="search-per-page" placeholder="Per page" value="10">
+            </div>
+            <button onclick="searchRecords()">Search</button>
+            <div id="search-response" class="response" style="display: none;"></div>
+        </div>
+
+        <!-- Get Single Record -->
+        <div class="endpoint">
+            <h3><span class="method get">GET</span> Get Single Record</h3>
+            <p><strong>Endpoint:</strong> <code>/api/grouping/{id}</code></p>
+            <div>
+                <input type="number" id="single-id" placeholder="Record ID" value="1">
+            </div>
+            <button onclick="getSingleRecord()">Get Record</button>
+            <div id="single-response" class="response" style="display: none;"></div>
+        </div>
+
+        <!-- Create Record -->
+        <div class="endpoint">
+            <h3><span class="method post">POST</span> Create New Record</h3>
+            <p><strong>Endpoint:</strong> <code>/api/grouping</code></p>
+            <div>
+                <input type="text" id="create-fileno" placeholder="Awaiting File No" value="TEST-API-2025-001">
+                <input type="text" id="create-mls" placeholder="MLS File No (optional)">
+                <select id="create-landuse">
+                    <option value="COMMERCIAL">Commercial</option>
+                    <option value="RESIDENTIAL">Residential</option>
+                    <option value="AGRICULTURE">Agriculture</option>
+                </select>
+                <input type="number" id="create-year" placeholder="Year" value="2025">
+                <input type="text" id="create-batch" placeholder="Batch No (optional)">
+            </div>
+            <button onclick="createRecord()">Create Record</button>
+            <div id="create-response" class="response" style="display: none;"></div>
+        </div>
+
+        <!-- Update Record -->
+        <div class="endpoint">
+            <h3><span class="method put">PUT</span> Update Record</h3>
+            <p><strong>Endpoint:</strong> <code>/api/grouping/{id}</code></p>
+            <div>
+                <input type="number" id="update-id" placeholder="Record ID to update">
+                <select id="update-landuse">
+                    <option value="">Keep current</option>
+                    <option value="COMMERCIAL">Commercial</option>  
+                    <option value="RESIDENTIAL">Residential</option>
+                    <option value="AGRICULTURE">Agriculture</option>
+                    <option value="MIXED_USE">Mixed Use</option>
+                </select>
+                <select id="update-mapping">
+                    <option value="">Keep current</option>
+                    <option value="0">Unmapped (0)</option>
+                    <option value="1">Mapped (1)</option>
+                </select>
+                <input type="text" id="update-shelf" placeholder="Shelf Rack (optional)">
+            </div>
+            <button onclick="updateRecord()">Update Record</button>
+            <div id="update-response" class="response" style="display: none;"></div>
+        </div>
+
+        <!-- Delete Record -->
+        <div class="endpoint">
+            <h3><span class="method delete">DELETE</span> Delete Record</h3>
+            <p><strong>Endpoint:</strong> <code>/api/grouping/{id}</code></p>
+            <div>
+                <input type="number" id="delete-id" placeholder="Record ID to delete">
+            </div>
+            <button onclick="deleteRecord()" style="background-color: #e74c3c;">Delete Record</button>
+            <div id="delete-response" class="response" style="display: none;"></div>
+        </div>
+
+        <!-- Utility Endpoints -->
+        <div class="endpoint">
+            <h3><span class="method get">GET</span> Utility Endpoints</h3>
+            <button onclick="getLandUseTypes()">Get Land Use Types</button>
+            <button onclick="getAvailableYears()">Get Available Years</button>
+            <div id="utility-response" class="response" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/grouping';
+
+        function showResponse(elementId, data, isSuccess = true) {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            element.className = `response ${isSuccess ? 'success' : 'error'}`;
+            element.textContent = JSON.stringify(data, null, 2);
+        }
+
+        function setButtonLoading(button, loading = true) {
+            if (loading) {
+                button.classList.add('loading');
+                button.disabled = true;
+                button.textContent = 'Loading...';
+            } else {
+                button.classList.remove('loading');
+                button.disabled = false;
+            }
+        }
+
+        async function makeRequest(url, options = {}) {
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                
+                const data = await response.json();
+                return { data, isSuccess: response.ok };
+            } catch (error) {
+                return { 
+                    data: { success: false, message: 'Network error', error: error.message }, 
+                    isSuccess: false 
+                };
+            }
+        }
+
+        async function getTotals() {
+            const button = event.target;
+            const originalText = button.textContent;
+            setButtonLoading(button);
+
+            const { data, isSuccess } = await makeRequest(`${API_BASE}/totals`);
+            
+            if (isSuccess && data.success) {
+                // Display stats in cards
+                const statsDisplay = document.getElementById('stats-display');
+                const breakdown = data.data.land_use_breakdown;
+                
+                let statsHTML = `
+                    <div class="stat-card">
+                        <div class="stat-value">${data.data.total_records.toLocaleString()}</div>
+                        <div class="stat-label">Total Records</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${data.data.summary.unique_land_uses}</div>
+                        <div class="stat-label">Land Use Types</div>
+                    </div>
+                `;
+                
+                breakdown.forEach(item => {
+                    statsHTML += `
+                        <div class="stat-card">
+                            <div class="stat-value">${item.count.toLocaleString()}</div>
+                            <div class="stat-label">${item.landuse} (${item.percentage}%)</div>
+                        </div>
+                    `;
+                });
+                
+                statsDisplay.innerHTML = statsHTML;
+                statsDisplay.style.display = 'grid';
+            }
+            
+            showResponse('totals-response', data, isSuccess);
+            button.textContent = originalText;
+            setButtonLoading(button, false);
+        }
+
+        async function listRecords() {
+            const button = event.target;
+            const originalText = button.textContent;
+            setButtonLoading(button);
+
+            const params = new URLSearchParams({
+                page: document.getElementById('list-page').value || 1,
+                per_page: document.getElementById('list-per-page').value || 25,
+                sort_by: document.getElementById('list-sort').value,
+                sort_order: document.getElementById('list-order').value
+            });
+
+            const landuse = document.getElementById('list-landuse').value;
+            const search = document.getElementById('list-search').value;
+
+            if (landuse) params.append('landuse', landuse);
+            if (search) params.append('search', search);
+
+            const { data, isSuccess } = await makeRequest(`${API_BASE}?${params}`);
+            showResponse('list-response', data, isSuccess);
+            
+            button.textContent = originalText;
+            setButtonLoading(button, false);
+        }
+
+        async function getByLandUse() {
+            const button = event.target;
+            const originalText = button.textContent;
+            setButtonLoading(button);
+
+            const landuse = document.getElementById('landuse-filter').value;
+            const perPage = document.getElementById('landuse-per-page').value || 10;
+
+            const { data, isSuccess } = await makeRequest(
+                `${API_BASE}/land-use/${landuse}?per_page=${perPage}`
+            );
+            showResponse('landuse-response', data, isSuccess);
+            
+            button.textContent = originalText;
+            setButtonLoading(button, false);
+        }
+
+        async function searchRecords() {
+            const button = event.target;
+            const originalText = button.textContent;
+            setButtonLoading(button);
+
+            const query = document.getElementById('search-query').value;
+            const perPage = document.getElementById('search-per-page').value || 10;
+
+            if (!query || query.length < 2) {
+                showResponse('search-response', { 
+                    success: false, 
+                    message: 'Search query must be at least 2 characters' 
+                }, false);
+                button.textContent = originalText;
+                setButtonLoading(button, false);
+                return;
+            }
+
+            const params = new URLSearchParams({ query, per_page: perPage });
+            const { data, isSuccess } = await makeRequest(`${API_BASE}/search?${params}`);
+            showResponse('search-response', data, isSuccess);
+            
+            button.textContent = originalText;
+            setButtonLoading(button, false);
+        }
+
+        async function getSingleRecord() {
+            const button = event.target;
+            const originalText = button.textContent;
+            setButtonLoading(button);
+
+            const id = document.getElementById('single-id').value;
+            if (!id) {
+                showResponse('single-response', { 
+                    success: false, 
+                    message: 'Record ID is required' 
+                }, false);
+                button.textContent = originalText;
+                setButtonLoading(button, false);
+                return;
+            }
+
+            const { data, isSuccess } = await makeRequest(`${API_BASE}/${id}`);
+            showResponse('single-response', data, isSuccess);
+            
+            button.textContent = originalText;
+            setButtonLoading(button, false);
+        }
+
+        async function createRecord() {
+            const button = event.target;
+            const originalText = button.textContent;
+            setButtonLoading(button);
+
+            const requestData = {
+                awaiting_fileno: document.getElementById('create-fileno').value,
+                landuse: document.getElementById('create-landuse').value,
+                year: parseInt(document.getElementById('create-year').value),
+                mapping: 0
+            };
+
+            const mlsFileno = document.getElementById('create-mls').value;
+            const batchNo = document.getElementById('create-batch').value;
+
+            if (mlsFileno) requestData.mls_fileno = mlsFileno;
+            if (batchNo) requestData.batch_no = batchNo;
+
+            const { data, isSuccess } = await makeRequest(`${API_BASE}`, {
+                method: 'POST',
+                body: JSON.stringify(requestData)
+            });
+            
+            showResponse('create-response', data, isSuccess);
+            
+            button.textContent = originalText;
+            setButtonLoading(button, false);
+        }
+
+        async function updateRecord() {
+            const button = event.target;
+            const originalText = button.textContent;
+            setButtonLoading(button);
+
+            const id = document.getElementById('update-id').value;
+            if (!id) {
+                showResponse('update-response', { 
+                    success: false, 
+                    message: 'Record ID is required' 
+                }, false);
+                button.textContent = originalText;
+                setButtonLoading(button, false);
+                return;
+            }
+
+            const requestData = {};
+            const landuse = document.getElementById('update-landuse').value;
+            const mapping = document.getElementById('update-mapping').value;
+            const shelf = document.getElementById('update-shelf').value;
+
+            if (landuse) requestData.landuse = landuse;
+            if (mapping !== '') requestData.mapping = parseInt(mapping);
+            if (shelf) requestData.shelf_rack = shelf;
+
+            const { data, isSuccess } = await makeRequest(`${API_BASE}/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(requestData)
+            });
+            
+            showResponse('update-response', data, isSuccess);
+            
+            button.textContent = originalText;
+            setButtonLoading(button, false);
+        }
+
+        async function deleteRecord() {
+            const button = event.target;
+            const originalText = button.textContent;
+
+            const id = document.getElementById('delete-id').value;
+            if (!id) {
+                showResponse('delete-response', { 
+                    success: false, 
+                    message: 'Record ID is required' 
+                }, false);
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to delete record #${id}? This action cannot be undone.`)) {
+                return;
+            }
+
+            setButtonLoading(button);
+
+            const { data, isSuccess } = await makeRequest(`${API_BASE}/${id}`, {
+                method: 'DELETE'
+            });
+            
+            showResponse('delete-response', data, isSuccess);
+            
+            button.textContent = originalText;
+            setButtonLoading(button, false);
+        }
+
+        async function getLandUseTypes() {
+            const button = event.target;
+            const originalText = button.textContent;
+            setButtonLoading(button);
+
+            const { data, isSuccess } = await makeRequest(`${API_BASE}/land-use-types`);
+            showResponse('utility-response', data, isSuccess);
+            
+            button.textContent = originalText;
+            setButtonLoading(button, false);
+        }
+
+        async function getAvailableYears() {
+            const button = event.target;
+            const originalText = button.textContent;
+            setButtonLoading(button);
+
+            const { data, isSuccess } = await makeRequest(`${API_BASE}/available-years`);
+            showResponse('utility-response', data, isSuccess);
+            
+            button.textContent = originalText;
+            setButtonLoading(button, false);
+        }
+
+        // Load initial statistics on page load
+        window.addEventListener('load', getTotals);
+    </script>
+</body>
+</html>

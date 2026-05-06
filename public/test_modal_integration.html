@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Global File Number Modal</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .btn-primary { 
+            background: #3b82f6; 
+            color: white; 
+            padding: 10px 20px; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+        }
+        .test-container { margin: 20px 0; }
+        .form-input-clean { 
+            padding: 8px 12px; 
+            border: 1px solid #ddd; 
+            border-radius: 4px; 
+            width: 300px; 
+            margin-right: 10px;
+        }
+        .flex { display: flex; align-items: center; }
+    </style>
+</head>
+<body>
+    <h1>Test Global File Number Modal</h1>
+    
+    <div class="test-container">
+        <h3>Test File Number Selection</h3>
+        <div class="flex">
+            <input type="text" 
+                   id="file-number-display" 
+                   class="form-input-clean" 
+                   placeholder="No file number selected" 
+                   readonly 
+                   style="background-color: #f3f4f6;">
+            
+            <input type="hidden" id="file_number" name="file_number" value="">
+            
+            <button type="button" 
+                    id="select-file-number-btn" 
+                    class="btn-primary">
+                Select File Number
+            </button>
+        </div>
+        
+        <div style="margin-top: 10px;">
+            <strong>Selected File Number:</strong> <span id="selected-value">None</span>
+        </div>
+    </div>
+
+    <!-- Check if modal component exists -->
+    <div class="test-container">
+        <h3>Modal Component Status</h3>
+        <div id="modal-status">Checking...</div>
+        <button onclick="testModalDirectly()" class="btn-primary">Test Modal Direct Open</button>
+    </div>
+
+    <!-- Include the modal component (simulating Laravel include) -->
+    <iframe src="/components/global-fileno-modal" style="display: none;" onload="checkModalLoaded()"></iframe>
+
+    <script>
+        // Test if modal exists and JavaScript is loaded
+        function checkModalStatus() {
+            const modalElement = document.getElementById('global-fileno-modal');
+            const modalScript = typeof GlobalFileNoModal !== 'undefined';
+            
+            let status = '';
+            status += 'Modal Element: ' + (modalElement ? '✓ Found' : '✗ Not Found') + '<br>';
+            status += 'Modal Script: ' + (modalScript ? '✓ Loaded' : '✗ Not Loaded') + '<br>';
+            
+            if (modalScript) {
+                status += 'GlobalFileNoModal Type: ' + typeof GlobalFileNoModal + '<br>';
+                status += 'GlobalFileNoModal.open: ' + (typeof GlobalFileNoModal.open === 'function' ? '✓ Available' : '✗ Not Available') + '<br>';
+            }
+            
+            document.getElementById('modal-status').innerHTML = status;
+            
+            return modalElement && modalScript;
+        }
+
+        function testModalDirectly() {
+            if (typeof GlobalFileNoModal !== 'undefined' && typeof GlobalFileNoModal.open === 'function') {
+                GlobalFileNoModal.open({
+                    onSelect: function(fileData) {
+                        console.log('File selected:', fileData);
+                        if (fileData && fileData.file_number) {
+                            document.getElementById('file-number-display').value = fileData.file_number;
+                            document.getElementById('file_number').value = fileData.file_number;
+                            document.getElementById('selected-value').textContent = fileData.file_number;
+                        }
+                    }
+                });
+            } else {
+                alert('GlobalFileNoModal is not available!');
+            }
+        }
+
+        // Initialize the test
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(checkModalStatus, 500);
+            
+            const selectBtn = document.getElementById('select-file-number-btn');
+            if (selectBtn) {
+                selectBtn.addEventListener('click', function() {
+                    console.log('Select button clicked');
+                    testModalDirectly();
+                });
+            }
+        });
+
+        function checkModalLoaded() {
+            console.log('Iframe loaded');
+            setTimeout(checkModalStatus, 1000);
+        }
+    </script>
+
+    <!-- Try to load the modal script directly -->
+    <script src="/js/global-fileno-modal.js"></script>
+</body>
+</html>

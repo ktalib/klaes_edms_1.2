@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Print Label API Performance Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .result { margin: 10px 0; padding: 10px; border-radius: 3px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button { padding: 8px 16px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Print Label API Performance Test</h1>
+    <p>Test the optimized print label endpoints for performance and functionality.</p>
+
+    <div class="test-section">
+        <h3>1. Available Files API Test</h3>
+        <button onclick="testAvailableFiles()">Test Available Files</button>
+        <button onclick="testAvailableFilesWithST()">Test ST Filter</button>
+        <button onclick="testAvailableFilesWithSearch()">Test Search</button>
+        <div id="filesResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>2. Grouping Preview API Test</h3>
+        <input type="text" id="sysBatchInput" placeholder="Enter sys_batch_no (default: 1)" value="1">
+        <button onclick="testGroupingPreview()">Test Grouping Preview</button>
+        <div id="groupingResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>3. Statistics API Test</h3>
+        <button onclick="testStatistics()">Test Statistics</button>
+        <button onclick="testStatisticsWithST()">Test ST Statistics</button>
+        <div id="statsResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>4. Performance Monitor</h3>
+        <button onclick="performanceTest()">Run Performance Test</button>
+        <div id="performanceResult" class="result"></div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin + '/printlabel/api';
+        
+        function showResult(containerId, type, message, data = null) {
+            const container = document.getElementById(containerId);
+            container.className = `result ${type}`;
+            container.innerHTML = `<strong>${message}</strong>`;
+            if (data) {
+                container.innerHTML += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            }
+        }
+
+        async function apiRequest(url, options = {}) {
+            const startTime = performance.now();
+            try {
+                const response = await fetch(url, options);
+                const endTime = performance.now();
+                const data = await response.json();
+                
+                return {
+                    success: response.ok,
+                    status: response.status,
+                    data: data,
+                    responseTime: Math.round(endTime - startTime)
+                };
+            } catch (error) {
+                const endTime = performance.now();
+                return {
+                    success: false,
+                    status: 0,
+                    error: error.message,
+                    responseTime: Math.round(endTime - startTime)
+                };
+            }
+        }
+
+        async function testAvailableFiles() {
+            showResult('filesResult', 'info', 'Testing available files API...');
+            
+            const result = await apiRequest(`${API_BASE}/files?per_page=10`);
+            
+            if (result.success) {
+                const summary = {
+                    responseTime: result.responseTime + 'ms',
+                    recordCount: result.data?.data?.length || 0,
+                    hasShelfData: result.data?.data?.some(f => f.shelf_location || f.grouping_shelf_rack) || false
+                };
+                showResult('filesResult', 'success', `Available Files API working (${result.responseTime}ms)`, summary);
+            } else {
+                showResult('filesResult', 'error', `API Error: ${result.status} - ${result.error || result.data?.message}`);
+            }
+        }
+
+        async function testAvailableFilesWithST() {
+            showResult('filesResult', 'info', 'Testing ST filter...');
+            
+            const result = await apiRequest(`${API_BASE}/files?st_filter=true&per_page=10`);
+            
+            if (result.success) {
+                const summary = {
+                    responseTime: result.responseTime + 'ms',
+                    recordCount: result.data?.data?.length || 0,
+                    stRecords: result.data?.data?.filter(f => f.main_application_id || f.subapplication_id).length || 0
+                };
+                showResult('filesResult', 'success', `ST Filter working (${result.responseTime}ms)`, summary);
+            } else {
+                showResult('filesResult', 'error', `ST Filter Error: ${result.status} - ${result.error || result.data?.message}`);
+            }
+        }
+
+        async function testAvailableFilesWithSearch() {
+            showResult('filesResult', 'info', 'Testing search functionality...');
+            
+            const result = await apiRequest(`${API_BASE}/files?search=ST&per_page=5`);
+            
+            if (result.success) {
+                const summary = {
+                    responseTime: result.responseTime + 'ms',
+                    recordCount: result.data?.data?.length || 0,
+                    searchTerm: 'ST'
+                };
+                showResult('filesResult', 'success', `Search working (${result.responseTime}ms)`, summary);
+            } else {
+                showResult('filesResult', 'error', `Search Error: ${result.status} - ${result.error || result.data?.message}`);
+            }
+        }
+
+        async function testGroupingPreview() {
+            const sysBatchNo = document.getElementById('sysBatchInput').value || '1';
+            showResult('groupingResult', 'info', 'Testing grouping preview API...');
+            
+            const result = await apiRequest(`${API_BASE}/grouping/preview?sys_batch_no=${sysBatchNo}&limit=5`);
+            
+            if (result.success) {
+                const records = result.data?.data?.records || [];
+                const summary = {
+                    responseTime: result.responseTime + 'ms',
+                    recordCount: records.length,
+                    sysBatchNo: sysBatchNo,
+                    hasShelfData: records.some(r => r.shelf_label && r.shelf_label !== 'N/A')
+                };
+                showResult('groupingResult', 'success', `Grouping Preview working (${result.responseTime}ms)`, summary);
+            } else {
+                showResult('groupingResult', 'error', `Grouping Error: ${result.status} - ${result.error || result.data?.message}`);
+            }
+        }
+
+        async function testStatistics() {
+            showResult('statsResult', 'info', 'Testing statistics API...');
+            
+            const result = await apiRequest(`${API_BASE}/statistics`);
+            
+            if (result.success) {
+                const stats = result.data?.data || {};
+                const summary = {
+                    responseTime: result.responseTime + 'ms',
+                    availableFiles: stats.available_files || 0,
+                    totalBatches: stats.total_batches || 0
+                };
+                showResult('statsResult', 'success', `Statistics working (${result.responseTime}ms)`, summary);
+            } else {
+                showResult('statsResult', 'error', `Statistics Error: ${result.status} - ${result.error || result.data?.message}`);
+            }
+        }
+
+        async function testStatisticsWithST() {
+            showResult('statsResult', 'info', 'Testing ST statistics...');
+            
+            const result = await apiRequest(`${API_BASE}/statistics?st_filter=true`);
+            
+            if (result.success) {
+                const stats = result.data?.data || {};
+                const summary = {
+                    responseTime: result.responseTime + 'ms',
+                    stAvailableFiles: stats.available_files || 0,
+                    totalBatches: stats.total_batches || 0
+                };
+                showResult('statsResult', 'success', `ST Statistics working (${result.responseTime}ms)`, summary);
+            } else {
+                showResult('statsResult', 'error', `ST Statistics Error: ${result.status} - ${result.error || result.data?.message}`);
+            }
+        }
+
+        async function performanceTest() {
+            showResult('performanceResult', 'info', 'Running performance tests...');
+            
+            const tests = [
+                { name: 'Files API', url: `${API_BASE}/files?per_page=30` },
+                { name: 'ST Files', url: `${API_BASE}/files?st_filter=true&per_page=30` },
+                { name: 'Statistics', url: `${API_BASE}/statistics` },
+                { name: 'Grouping Preview', url: `${API_BASE}/grouping/preview?sys_batch_no=1&limit=30` }
+            ];
+            
+            const results = {};
+            
+            for (const test of tests) {
+                const result = await apiRequest(test.url);
+                results[test.name] = {
+                    success: result.success,
+                    responseTime: result.responseTime,
+                    status: result.status
+                };
+            }
+            
+            const avgTime = Object.values(results).reduce((sum, r) => sum + r.responseTime, 0) / tests.length;
+            const allPassed = Object.values(results).every(r => r.success);
+            
+            const summary = {
+                averageResponseTime: Math.round(avgTime) + 'ms',
+                allTestsPassed: allPassed,
+                results: results
+            };
+            
+            const resultType = allPassed && avgTime < 5000 ? 'success' : 'error';
+            const message = allPassed 
+                ? `Performance test passed (avg: ${Math.round(avgTime)}ms)`
+                : 'Performance test failed - check results';
+                
+            showResult('performanceResult', resultType, message, summary);
+        }
+
+        // Auto-run basic test on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(testAvailableFiles, 500);
+        });
+    </script>
+</body>
+</html>

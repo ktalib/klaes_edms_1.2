@@ -1,0 +1,11 @@
+*** Begin Patch
+*** Update File: c:\wamp64\www\klaes\app\Http\Controllers\LandsOneStopShop\OpResettlementApplicationController.php
+@@
+     public function index(Request $request): View
+     {
+         $limit = (int) $request->input('limit', 25);
+         $limit = max(10, min($limit, 200));
++        $isChangeOfName = trim((string) $request->query('type')) === 'change-of-name';
+@@
+         $query = DB::connection('sqlsrv')
+             ->table(DB::raw(

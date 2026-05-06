@@ -1,0 +1,513 @@
+@extends('layouts.app')
+
+@section('page-title')
+    {{ $PageTitle ?? __('KLAES') }}
+@endsection
+
+@section('content')
+    <style>
+        /* Minimal, clean table styles */
+        .wrap {
+            padding: 16px;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .controls-main {
+            padding: 14px 18px;
+            background: #f3f4f6;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .controls-sub {
+            padding: 10px 14px;
+            background: #f9fafb;
+            border-radius: 10px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            position: relative;
+        }
+
+        .tab-btn {
+            position: relative;
+            padding: 10px 16px;
+            border: none;
+            background: #fff;
+            color: #374151;
+            border-radius: 9999px;
+            cursor: pointer;
+            font-weight: 600;
+            box-shadow: inset 0 0 0 1px #d1d5db;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn:hover {
+            box-shadow: inset 0 0 0 1px #2563eb;
+            color: #1d4ed8;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: #fff;
+            box-shadow: none;
+        }
+
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            bottom: -8px;
+            transform: translateX(-50%);
+            width: 36px;
+            height: 3px;
+            background: #1d4ed8;
+            border-radius: 9999px;
+        }
+
+        .search {
+            max-width: 320px;
+            flex: 1;
+        }
+
+        .search input {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+        }
+
+        .card {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+
+        .card-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e5e7eb;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table.simple {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        thead th {
+            background: #f9fafb;
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #e5e7eb;
+            white-space: nowrap;
+        }
+
+        tbody td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #f3f4f6;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+
+        tr:hover td {
+            background: #fafafa;
+        }
+
+        .actions a {
+            color: #2563eb;
+            text-decoration: none;
+            margin-right: 10px;
+        }
+
+        .actions a:last-child {
+            margin-right: 0;
+        }
+
+        .muted {
+            color: #6b7280;
+        }
+
+        /* Simple dropdown */
+        .dd {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dd-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+            border: 1px solid #d1d5db;
+            background: #fff;
+            color: #374151;
+            border-radius: 6px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 13px;
+            transition: all 0.2s;
+            min-width: 85px;
+        }
+
+        .dd-btn:hover {
+            background: #f3f4f6;
+        }
+
+        .dd-menu {
+            display: none;
+            position: fixed;
+            min-width: 180px;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+            z-index: 9999;
+            overflow: hidden;
+        }
+
+        .dd-menu.show {
+            display: block;
+        }
+
+        .dd-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            color: #4b5563;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .dd-item i, .dd-item svg {
+            flex-shrink: 0;
+        }
+
+        .dd-item:hover {
+            background: #f3f4f6;
+        }
+
+        .dd-item.disabled {
+            color: #9ca3af;
+            pointer-events: none;
+        }
+
+        @media (max-width: 640px) {
+            .search {
+                max-width: none;
+                width: 100%;
+            }
+        }
+    </style>
+
+    <div class="flex-1 overflow-auto">
+        @include($headerPartial ?? 'admin.header')
+
+        <div class="wrap">
+            <div class="card">
+                <div class="card-header">RoFO Applications</div>
+                <div class="controls controls-main">
+                    <div class="tabs">
+                        <button id="btn-main-pua" class="tab-btn active" onclick="setMainTab('pua')">PuA</button>
+                        <button id="btn-main-sua" class="tab-btn" onclick="setMainTab('sua')">SuA</button>
+                    </div>
+                    <div class="search">
+                        <input id="search" type="text" placeholder="Search..." oninput="applySearch()" />
+                    </div>
+                </div>
+
+                <div id="main-pua" class="main-section">
+                    <div class="controls controls-sub">
+                        <div class="tabs">
+                            <button id="btn-pua-not" class="tab-btn active" onclick="setSubTab('pua', 'not')">Not
+                                Generated</button>
+                            <button id="btn-pua-gen" class="tab-btn" onclick="setSubTab('pua', 'gen')">Generated</button>
+                        </div>
+                    </div>
+                    @include('programmes.partials.rofo_pua_tables', ['primaries' => $puaPrimaries])
+                </div>
+
+                <div id="main-sua" class="main-section" style="display:none;">
+                    <div class="controls controls-sub">
+                        <div class="tabs">
+                            <button id="btn-sua-not" class="tab-btn active" onclick="setSubTab('sua', 'not')">Not
+                                Generated</button>
+                            <button id="btn-sua-gen" class="tab-btn" onclick="setSubTab('sua', 'gen')">Generated</button>
+                        </div>
+                    </div>
+                    @include('programmes.partials.rofo_sua_tables', ['applications' => $suaSubapplications])
+                </div>
+            </div>
+        </div>
+
+        @include($footerPartial ?? 'admin.footer')
+    </div>
+
+    <script>
+        let currentMainTab = 'pua';
+        const subTabState = { pua: 'not', sua: 'not' };
+
+        function setMainTab(tab) {
+            if (!['pua', 'sua'].includes(tab)) {
+                return;
+            }
+
+            currentMainTab = tab;
+            document.getElementById('btn-main-pua').classList.toggle('active', tab === 'pua');
+            document.getElementById('btn-main-sua').classList.toggle('active', tab === 'sua');
+            document.getElementById('main-pua').style.display = tab === 'pua' ? 'block' : 'none';
+            document.getElementById('main-sua').style.display = tab === 'sua' ? 'block' : 'none';
+            applySearch();
+            closeAllDD();
+        }
+
+        function setSubTab(group, tab) {
+            if (!['pua', 'sua'].includes(group) || !['not', 'gen'].includes(tab)) {
+                return;
+            }
+
+            subTabState[group] = tab;
+
+            const notButton = document.getElementById(`btn-${group}-not`);
+            const genButton = document.getElementById(`btn-${group}-gen`);
+            const notWrap = document.getElementById(`wrap-${group}-not`);
+            const genWrap = document.getElementById(`wrap-${group}-gen`);
+
+            if (notButton && genButton) {
+                notButton.classList.toggle('active', tab === 'not');
+                genButton.classList.toggle('active', tab === 'gen');
+            }
+
+            if (notWrap && genWrap) {
+                notWrap.style.display = tab === 'not' ? 'block' : 'none';
+                genWrap.style.display = tab === 'gen' ? 'block' : 'none';
+            }
+
+            if (group === currentMainTab) {
+                applySearch();
+            }
+
+            closeAllDD();
+        }
+
+        function getActiveTableId() {
+            const activeGroup = currentMainTab;
+            const activeTab = subTabState[activeGroup] || 'not';
+            return `table-${activeGroup}-${activeTab}`;
+        }
+
+        function applySearch() {
+            const q = (document.getElementById('search').value || '').toLowerCase();
+            const tableId = getActiveTableId();
+            const table = document.getElementById(tableId);
+            if (!table) {
+                return;
+            }
+
+            const rows = table.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                const text = row.innerText.toLowerCase();
+                row.style.display = text.includes(q) ? '' : 'none';
+            });
+        }
+
+        setSubTab('pua', 'not');
+        setSubTab('sua', 'not');
+        setMainTab('pua');
+
+        function showOwners(owners) {
+            alert('Owners:\n\n' + owners.join('\n'));
+        }
+
+        function closeAllDD() {
+            document.querySelectorAll('.dd-menu.show').forEach(m => m.classList.remove('show'));
+        }
+
+        function toggleDD(btn) {
+            const menu = btn.nextElementSibling;
+            if (!menu) return;
+
+            const wasOpen = menu.classList.contains('show');
+            closeAllDD();
+            if (wasOpen) return;
+
+            // Temporarily show menu to measure width/height accurately
+            menu.style.visibility = 'hidden';
+            menu.classList.add('show');
+            const menuWidth = menu.offsetWidth || 180;
+            const menuHeight = menu.offsetHeight || 150;
+            menu.classList.remove('show');
+            menu.style.visibility = '';
+
+            const rect = btn.getBoundingClientRect();
+            const modalContent = btn.closest('#modal-content');
+            
+            let topOffset = 0;
+            let leftOffset = 0;
+            
+            if (modalContent) {
+                const modalRect = modalContent.getBoundingClientRect();
+                topOffset = modalRect.top;
+                leftOffset = modalRect.left;
+            }
+
+            // Calculate Left
+            let left = rect.right - menuWidth - leftOffset;
+            if (left < 8) {
+                left = (rect.left - leftOffset);
+            }
+            const maxLeft = (window.innerWidth - menuWidth - 8) - leftOffset;
+            if (left > maxLeft) {
+                left = maxLeft;
+            }
+
+            // Calculate Top (Smart positioning: open upward if not enough space below)
+            let top = (rect.bottom + 6) - topOffset;
+            const spaceBelow = window.innerHeight - rect.bottom;
+            if (spaceBelow < menuHeight + 10) {
+                top = (rect.top - menuHeight - 6) - topOffset;
+            }
+
+            menu.style.left = left + 'px';
+            menu.style.top = top + 'px';
+            menu.classList.add('show');
+        }
+
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('.dd')) closeAllDD();
+        });
+        window.addEventListener('scroll', closeAllDD, true);
+        window.addEventListener('resize', closeAllDD);
+
+        document.querySelectorAll('[data-batch-rofo="1"]').forEach(function (button) {
+            button.addEventListener('click', function (event) {
+                event.preventDefault();
+                closeAllDD();
+
+                var url = this.getAttribute('data-url');
+                if (!url) {
+                    return;
+                }
+
+                var totalUnits = parseInt(this.getAttribute('data-total-units') || '0', 10);
+                var primaryId = this.getAttribute('data-primary');
+                var promptMessage = totalUnits > 1
+                    ? 'Generate RoFO documents for ' + totalUnits + ' units under this primary application?'
+                    : 'Generate RoFO for this unit?';
+
+                if (primaryId) {
+                    promptMessage += '\n\nPrimary ID: ' + primaryId;
+                }
+
+                if (window.Swal && typeof window.Swal.fire === 'function') {
+                    window.Swal.fire({
+                        title: 'Generate RoFO documents?',
+                        text: promptMessage,
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, proceed',
+                        cancelButtonText: 'Cancel',
+                        reverseButtons: true,
+                    }).then(function (result) {
+                        if (result.isConfirmed) {
+                            window.location.href = url;
+                        }
+                    });
+                } else if (confirm(promptMessage)) {
+                    window.location.href = url;
+                }
+            });
+        });
+        
+        // Security Paper Assignment Logic
+        function openSecurityPaperModal(id, fileno, currentCode) {
+            const availablePapers = @json($availableSecurityPapers);
+            
+            let optionsHtml = '<option value="">-- Enter Security Paper Code --</option>';
+            availablePapers.forEach(paper => {
+                const selected = (paper.paper_code === currentCode) ? 'selected' : '';
+                optionsHtml += `<option value="${paper.paper_code}" ${selected}>${paper.paper_code}</option>`;
+            });
+
+            if (currentCode && !availablePapers.find(p => p.paper_code === currentCode)) {
+                 optionsHtml = `<option value="${currentCode}" selected>${currentCode} (Current)</option>` + optionsHtml;
+            }
+
+            Swal.fire({
+                title: 'Enter Security Paper Code',
+                html: `
+                    <div class="text-left mb-4">
+                        <p class="text-sm text-gray-600 mb-2">Enter physical security paper code for file: <strong>${fileno}</strong></p>
+                        <select id="swal-paper-code" class="swal2-select w-full" style="display: flex; margin: 1em auto; border: 1px solid #d9d9d9; border-radius: 5px; padding: 0.75em;">
+                            ${optionsHtml}
+                        </select>
+                        <p class="text-xs text-gray-500 mt-2">Note: This code is on the physical paper and will not be printed on the template.</p>
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Assign Code',
+                showLoaderOnConfirm: true,
+                preConfirm: () => {
+                    const paperCode = document.getElementById('swal-paper-code').value;
+                    if (!paperCode) {
+                        Swal.showValidationMessage('Please enter a security paper code');
+                        return false;
+                    }
+                    return fetch(`{{ url('programmes/rofo/assign-security-paper') }}/${id}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        },
+                        body: JSON.stringify({ security_paper_code: paperCode })
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            return response.json().then(error => { throw new Error(error.message || 'Failed to assign code') });
+                        }
+                        return response.json();
+                    })
+                    .catch(error => {
+                        Swal.showValidationMessage(`Request failed: ${error.message}`);
+                    });
+                },
+                allowOutsideClick: () => !Swal.isLoading()
+            }).then((result) => {
+                if (result.isConfirmed && result.value.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Assigned!',
+                        text: result.value.message || 'Security paper code assigned successfully.'
+                    }).then(() => {
+                        window.location.reload();
+                    });
+                }
+            });
+        }
+        // goet setTab has_idapplications ? 'gen' : 'not';
+        // if(getISnone) sys.name = 'not';
+        // {
+        //     public function p []
+        // }
+    </script>
+@endsection

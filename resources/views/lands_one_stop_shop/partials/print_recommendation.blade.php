@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kano State - Recommendation Form</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        background-color: #f0f0f0;
+        display: flex;
+        justify-content: center;
+        padding: 20px;
+        color: #000;
+      }
+
+      .form-container {
+        width: 210mm;
+        min-height: 297mm;
+        background: white;
+        padding: 10mm 15mm;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        position: relative;
+      }
+
+      /* Branding Elements */
+      .qr-block {
+        position: absolute;
+        top: 10mm;
+        left: 15mm;
+        text-align: center;
+      }
+      .qr-block canvas,
+      .qr-block img {
+        width: 50px;
+        height: 50px;
+        display: block;
+      }
+      .qr-label {
+        font-size: 8px;
+        font-weight: bold;
+        margin-top: 2px;
+        color: #444;
+      }
+
+      .serial-block {
+        position: absolute;
+        top: 18mm;
+        right: 15mm;
+        text-align: right;
+        font-family: "Courier New", Courier, monospace;
+        font-size: 12px;
+        font-weight: bold;
+      }
+
+      .header-logo {
+        text-align: center;
+        margin-bottom: 5px;
+      }
+      .header-logo img {
+        width: 80px;
+        height: auto;
+      }
+
+      /* Header Box */
+       .main-heading {
+            text-align: center;
+            border: 2px solid #050505;
+            padding: 4px;
+            margin-bottom: 8px;
+        }
+
+        .main-heading h1 {
+            font-size: 15px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #333;
+        }
+      
+      .ministry-box h1 {
+        font-size: 16px;
+        text-transform: uppercase;
+        margin: 0;
+      }
+      .oss-label {
+        font-size: 11px;
+        font-weight: bold;
+        color: #ea1b1b;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+      }
+      .document-title {
+        border: 1.5px solid #000;
+        padding: 12px 20px;
+        font-size: 19px;
+        font-weight: 900;
+        text-transform: uppercase;
+        line-height: 1.2;
+      }
+
+      .sub-heading {
+        text-align: center;
+        font-size: 15px;
+        font-weight: bold;
+        text-transform: uppercase;
+        text-decoration: underline;
+        margin: 15px 0;
+      }
+
+      /* Form Layout */
+      .form-content {
+        font-size: 13.5px;
+        line-height: 1.5;
+      }
+      .field-row {
+        display: flex;
+        margin-bottom: 8px;
+        align-items: baseline;
+      }
+      .field-label {
+        font-weight: bold;
+        margin-right: 8px;
+        white-space: nowrap;
+      }
+      .field-value {
+        flex-grow: 1;
+        text-transform: uppercase;
+        padding-left: 5px;
+      }
+
+      .info-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 40px;
+        width: 100%;
+      }
+
+      /* Recommendation Sections */
+      .section-block {
+        margin-top: 15px;
+      }
+      .section-title {
+        font-weight: bold;
+        text-transform: uppercase;
+        font-size: 13px;
+        margin-bottom: 5px;
+      }
+      .reason-text {
+        margin-left: 25px;
+        margin-bottom: 15px;
+      }
+
+      .signature-row {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 10px;
+      }
+      .sig-line-container {
+        width: 45%;
+      }
+      .sig-line {
+        border-bottom: 1px solid #000;
+        height: 20px;
+        margin-bottom: 5px;
+      }
+      .sig-label {
+        text-align: center;
+        font-weight: bold;
+        font-size: 12px;
+      }
+
+      /* Final Approval Row Fix */
+      .approval-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-top: 15px;
+      }
+
+      .status-options {
+        font-weight: bold;
+        font-size: 14px;
+        line-height: 2.8; 
+      }
+
+      .commissioner-block {
+        width: 300px;
+        text-align: center;
+      }
+
+      /* Footer */
+      .footer-banner {
+        text-align: center;
+        font-size: 14px;
+        font-weight: bold;
+        border: 1px solid #000;
+        padding: 6px;
+        margin-top: 25px;
+      }
+      .footer-logos {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 10px;
+      }
+      .footer-logos img {
+        height: 35px;
+        width: auto;
+      }
+
+      @media print {
+        body {
+          background: white;
+          padding: 0;
+        }
+        .form-container {
+          box-shadow: none;
+          width: 100%;
+          border: none;
+        }
+        @page {
+          size: A4;
+          margin: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="form-container">
+      @php
+          // Extract middle part of location: "PLOT 3004, BEHIND AIRPORT, UNGOGO, KANO" → "BEHIND AIRPORT"
+          $cleanLocation = function($loc) {
+              if (!$loc) return '';
+              $parts = array_map('trim', explode(',', $loc));
+              // Remove first part if it starts with PLOT/plot
+              if (count($parts) > 1 && preg_match('/^PLOT\s/i', $parts[0])) {
+                  array_shift($parts);
+              }
+              // Remove last two parts (LGA, STATE) if enough parts remain
+              while (count($parts) > 1) {
+                  array_pop($parts);
+              }
+              return implode(', ', $parts);
+          };
+      @endphp
+      @if(!empty($record->tracking_id))
+      <div class="qr-block">
+        <div id="qr-code"></div>
+      </div>
+      @endif
+
+      @if(!empty($record->rofo_serial_no))
+      <div class="serial-block" style="color: #b91c1c;">Serial No: {{ $record->rofo_serial_no }}</div>
+      @endif
+
+      <div class="header-logo">
+        <img
+          src="https://upload.wikimedia.org/wikipedia/commons/b/bc/Coat_of_arms_of_Nigeria.svg"
+          alt="Coat of Arms"
+        />
+      </div>
+
+      <div class="main-heading">
+            <h1>KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</h1>
+            <h2 style="font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #333;">
+                RECOMMENDATION FOR GRANT OF STATUTORY<br>RIGHT OF OCCUPANCY
+            </h2>
+            <br>
+            <p class="oss-label" style="color:#ea1b1b">LAND ONE STOP SHOP</p>
+        </div>
+
+
+      <div class="sub-heading">Conditions for Application</div>
+
+      <div class="form-content">
+        <div class="field-row">
+          <span class="field-label">1. Name Of Applicant:</span>
+          <span class="field-value">{{ $record->applicant_name }}</span>
+        </div>
+
+        <div class="info-grid">
+          <div>
+            <div class="field-row">
+              <span class="field-label">2. (a) File Ref No:</span>
+              <span class="field-value">{{ $record->file_ref }}</span>
+            </div>
+            <div class="field-row" style="padding-left: 17px">
+              <span class="field-label">(c) Location:</span>
+              <span class="field-value">{{ $cleanLocation($record->location) }}</span>
+            </div>
+          </div>
+          <div>
+            <div class="field-row">
+              <span class="field-label">(b) Purpose Of Clause:</span>
+              <span class="field-value">{{ $record->purpose }}</span>
+            </div>
+            <div class="field-row">
+              <span class="field-label">(d) Plot No:</span>
+              <span class="field-value">{{ $record->plot_no }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-row" style="padding-left: 17px">
+          <span class="field-label">(e) Layout Plan No.:</span>
+          <span class="field-value">{{ $record->plan_no }}</span>
+        </div>
+
+        <div class="field-row">
+          <span class="field-label">3. Term:</span>
+          <span class="field-value">{{ $record->term }} years</span>
+        </div>
+        <div class="field-row">
+          <span class="field-label">4. Value For Proposed Development:</span>
+          <span class="field-value">{{ $record->dev_value }}</span>
+        </div>
+        <div class="field-row">
+          <span class="field-label"
+            >5. Time for the Completion of proposed development:</span
+          >
+          <span class="field-value">{{ $record->completion_time }}</span>
+        </div>
+        <div class="field-row">
+          <span class="field-label">6. Annual Ground Rent(phpa):</span>
+          <span class="field-value">{{ $record->ground_rent }}</span>
+        </div>
+        <div class="field-row">
+          <span class="field-label">7. Development Charge (If any):</span>
+          <span class="field-value">{{ $record->dev_charge }}</span>
+        </div>
+        <div class="field-row">
+          <span class="field-label">8. Survey And Processing Charges:</span>
+          <span class="field-value">{{ $record->survey_charges }}</span>
+        </div>
+
+        <div class="section-block">
+          <div class="section-title">
+            9. The Director of Land recommends/does not recommend the
+            application for the following reasons,
+          </div>
+          <div class="reason-text">
+            {{ $record->director_reasons }}
+          </div>
+          <div class="signature-row">
+            <div class="sig-line-container">
+              <div style="margin-top: 10px; text-align: left">
+                Sign: ________________________________
+              </div>
+              <div class="sig-label">Director Land</div>
+            </div>
+            <div style="width: 40%">
+             <div style="margin-top: 10px; text-align: left">
+                Date: {{ $record->director_date ?: '________________________' }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-title">
+            10. RECOMMENDATION BY THE PERMANENT SECRETARY
+          </div>
+          <div class="reason-text">
+            I recommend/do not recommend the Application for a Grant of Right of
+            Occupancy over Plot No: {{ $record->ps_plot ?: $record->plot_no }} Location: {{ $cleanLocation($record->ps_location ?: $record->location) }}
+          </div>
+          <div class="signature-row">
+            <div class="sig-line-container">
+              <div style="margin-top: 10px; text-align: left">
+                Sign: ________________________________
+              </div>
+              <div class="sig-label">Permanent Secretary</div>
+            </div>
+            <div style="width: 40%">
+              <div style="margin-top: 10px; text-align: left">
+                Date: {{ $record->ps_date ?: '________________________' }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-title">
+            11. APPROVAL BY THE HONOURABLE COMMISSIONER
+          </div>
+          <p style="font-weight: bold; margin-bottom: 10px">
+            The Grant of Right of Occupancy is hereby
+          </p>
+
+          <div class="approval-container">
+            <div class="status-options">
+              @if($record->approval_status === 'approved')
+                <div><strong><u>APPROVED</u></strong></div>
+                <div style="margin-top: 10px; color: #999;">NOT APPROVED</div>
+              @elseif($record->approval_status === 'not_approved')
+                <div style="color: #999;">APPROVED</div>
+                <div style="margin-top: 10px"><strong><u>NOT APPROVED</u></strong></div>
+              @else
+                <div>APPROVED</div>
+                <div style="margin-top: 10px">NOT APPROVED</div>
+              @endif
+            </div>
+
+            <div class="commissioner-block">
+              <div class="sig-line"></div>
+              <div><strong>The Honourable</strong></div>
+              <div><strong>Commissioner of Land</strong></div>
+              @if(!empty($record->commissioner_name))
+                <div style="margin-top: 4px;">{{ $record->commissioner_name }}</div>
+              @endif
+              <div style="margin-top: 10px; padding-left: 27px; text-align: left">
+                Date: {{ $record->commissioner_date ?: '________________________' }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-banner">
+        Kano State Ministry of Land and Physical Planning
+      </div>
+      <div class="footer-logos">
+        <img
+          src="http://app.klaes.ng/storage/upload/logo/logo.png"
+          alt="KLAES Logo"
+        />
+        <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="LAS Logo" />
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script>
+      window.onload = function () {
+        var trackingId = @json($record->tracking_id ?? '');
+        if (trackingId) {
+          new QRCode(document.getElementById("qr-code"), {
+            text: trackingId,
+            width: 50,
+            height: 50,
+            correctLevel: QRCode.CorrectLevel.M
+          });
+        }
+        setTimeout(function () { window.print(); }, 600);
+      };
+    </script>
+  </body>
+</html>

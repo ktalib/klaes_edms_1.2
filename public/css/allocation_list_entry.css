@@ -1,0 +1,116 @@
+/* ============================================================
+   Allocation List Entry – Styles (Tailwind Integrated)
+   ============================================================ */
+
+/* ── DataTables layout (Tailwind spacing) ──────────────────── */
+.dt-top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 0;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+.dt-bottom-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.5rem 0 1rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+/* ── DataTable Overrides ────────────────────────────────────── */
+table.dataTable.no-footer { border-bottom: 1px solid #e5e7eb !important; }
+table.ale-table thead th {
+    background-color: #f9fafb;
+    color: #4b5563;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    padding: 1rem 0.75rem !important;
+}
+table.ale-table tbody td {
+    padding: 1rem 0.75rem !important;
+    border-top: 1px solid #f3f4f6;
+    color: #374151;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+}
+
+/* ── Search Input ───────────────────────────────────────────── */
+div.dataTables_filter input {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    outline: none;
+    transition: all 0.2s;
+    text-transform: uppercase;
+}
+div.dataTables_filter input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* ── Badges ─────────────────────────────────────────────────── */
+.badge-governor    { background: #eff6ff; color: #1e40af; border: 1px solid #dbeafe; }
+.badge-commissioner{ background: #fdf2f8; color: #9d174d; border: 1px solid #fce7f3; }
+
+/* ── Statistics Icons ───────────────────────────────────────── */
+.ale-stat-card {
+    transition: transform 0.2s;
+}
+.ale-stat-card:hover {
+    transform: translateY(-2px);
+}
+
+/* ── Modal Animation ────────────────────────────────────────── */
+@keyframes ale-scale-in {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+.animate-scale-in {
+    animation: ale-scale-in 0.25s ease-out forwards;
+}
+
+/* ── Action Buttons & Dropdowns ─────────────────────────────── */
+.ale-btn-edit, .ale-btn-delete {
+    transition: all 0.2s;
+}
+.ale-btn-edit:hover { background: #eff6ff; border-radius: 0.5rem; }
+.ale-btn-delete:hover { background: #fef2f2; border-radius: 0.5rem; }
+
+.ale-dropdown-menu {
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    z-index: 50;
+    min-width: 120px;
+    animation: ale-scale-in 0.15s ease-out;
+}
+
+/* Ensure table container allows overflow for dropdowns */
+.ale-table-container {
+    overflow: visible !important;
+}
+
+/* ── Address Preview ───────────────────────────────────────── */
+#ale-address-preview {
+    transition: border-color 0.3s, background-color 0.3s;
+}
+#ale-address-preview:not(:empty):not(:contains('—')) {
+    border-color: #dbeafe;
+    background-color: #f0f9ff;
+    color: #1e40af;
+}
+
+/* ── Select & Input Fix ────────────────────────────────────── */
+select.w-full, input.form-control, select.form-select {
+    color: #111827 !important; /* Force dark text */
+    text-transform: uppercase;
+}
+select.w-full option, select.form-select option {
+    color: #111827 !important;
+    text-transform: uppercase;
+}

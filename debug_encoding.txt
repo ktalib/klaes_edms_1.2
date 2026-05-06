@@ -1,0 +1,8 @@
+﻿32731
+First E2 at: 26
+26 : decimal=226 hex=00E2
+27 : decimal=8364 hex=20AC
+28 : decimal=8221 hex=201D
+29 : decimal=32 hex=0020
+30 : decimal=102 hex=0066
+31 : decimal=117 hex=0075

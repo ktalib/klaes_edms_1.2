@@ -1,0 +1,503 @@
+{
+  "file_number_system": {
+    "total_types": 720,
+    "total_catalogs": 3,
+    "total_categories": 16,
+    "year_span": "1981-2025",
+    
+    "catalogs": [
+      {
+        "catalog_id": "1",
+        "name": "Catalog 1 - Standard",
+        "year_range": "1981-1991",
+        "total_years": 11,
+        "total_types": 88,
+        "categories": [
+          {
+            "code": "RES",
+            "name": "Residential",
+            "samples": ["RES-1981-1", "RES-1985-5000", "RES-1991-10000"]
+          },
+          {
+            "code": "COM",
+            "name": "Commercial",
+            "samples": ["COM-1981-1", "COM-1985-5000", "COM-1991-10000"]
+          },
+          {
+            "code":   "IND",
+            "name": "Industrial",
+            "samples": ["IND-1981-1", "IND-1985-5000", "IND-1991-10000"]
+          },
+          {
+            "code": "AG",
+            "name": "Agriculture",
+            "samples": ["AG-1981-1", "AG-1985-5000", "AG-1991-10000"]
+          },
+          {
+            "code":  "RES-RC",
+            "name": "Residential Recertification",
+            "samples": ["RES-RC-1981-1", "RES-RC-1985-5000", "RES-RC-1991-10000"]
+          },
+          {
+            "code": "COM-RC",
+            "name":  "Commercial Recertification",
+            "samples": ["COM-RC-1981-1", "COM-RC-1985-5000", "COM-RC-1991-10000"]
+          },
+          {
+            "code": "IND-RC",
+            "name": "Industrial Recertification",
+            "samples": ["IND-RC-1981-1", "IND-RC-1985-5000", "IND-RC-1991-10000"]
+          },
+          {
+            "code": "AG-RC",
+            "name": "Agriculture Recertification",
+            "samples": ["AG-RC-1981-1", "AG-RC-1985-5000", "AG-RC-1991-10000"]
+          }
+        ]
+      },
+      {
+        "catalog_id":  "2",
+        "name":  "Catalog 2 - Standard",
+        "year_range":   "1992-2025",
+        "total_years": 34,
+        "total_types":   272,
+        "categories": [
+          {
+            "code": "RES",
+            "name":   "Residential",
+            "samples": ["RES-1992-1", "RES-2000-5000", "RES-2025-10000"]
+          },
+          {
+            "code": "COM",
+            "name": "Commercial",
+            "samples": ["COM-1992-1", "COM-2000-5000", "COM-2025-10000"]
+          },
+          {
+            "code": "IND",
+            "name":   "Industrial",
+            "samples":   ["IND-1992-1", "IND-2000-5000", "IND-2025-10000"]
+          },
+          {
+            "code":   "AG",
+            "name":   "Agriculture",
+            "samples":   ["AG-1992-1", "AG-2000-5000", "AG-2025-10000"]
+          },
+          {
+            "code": "RES-RC",
+            "name":   "Residential Recertification",
+            "samples": ["RES-RC-1992-1", "RES-RC-2000-5000", "RES-RC-2025-10000"]
+          },
+          {
+            "code": "COM-RC",
+            "name": "Commercial Recertification",
+            "samples": ["COM-RC-1992-1", "COM-RC-2000-5000", "COM-RC-2025-10000"]
+          },
+          {
+            "code": "IND-RC",
+            "name":  "Industrial Recertification",
+            "samples": ["IND-RC-1992-1", "IND-RC-2000-5000", "IND-RC-2025-10000"]
+          },
+          {
+            "code": "AG-RC",
+            "name": "Agriculture Recertification",
+            "samples":  ["AG-RC-1992-1", "AG-RC-2000-5000", "AG-RC-2025-10000"]
+          }
+        ]
+      },
+      {
+        "catalog_id": "3",
+        "name":  "Catalog 3 - Conversion",
+        "year_range":  "1981-2025",
+        "total_years": 45,
+        "total_types":  360,
+        "categories":  [
+          {
+            "code": "CON-RES",
+            "name":   "Conversion to Residential",
+            "samples":  ["CON-RES-1981-1", "CON-RES-2000-5000", "CON-RES-2025-10000"]
+          },
+          {
+            "code": "CON-COM",
+            "name":   "Conversion to Commercial",
+            "samples": ["CON-COM-1981-1", "CON-COM-2000-5000", "CON-COM-2025-10000"]
+          },
+          {
+            "code": "CON-IND",
+            "name":  "Conversion to Industrial",
+            "samples":   ["CON-IND-1981-1", "CON-IND-2000-5000", "CON-IND-2025-10000"]
+          },
+          {
+            "code": "CON-AG",
+            "name": "Conversion to Agriculture",
+            "samples":  ["CON-AG-1981-1", "CON-AG-2000-5000", "CON-AG-2025-10000"]
+          },
+          {
+            "code": "CON-RES-RC",
+            "name":  "Conversion to Residential + Recertification",
+            "samples": ["CON-RES-RC-1981-1", "CON-RES-RC-2000-5000", "CON-RES-RC-2025-10000"]
+          },
+          {
+            "code": "CON-COM-RC",
+            "name": "Conversion to Commercial + Recertification",
+            "samples": ["CON-COM-RC-1981-1", "CON-COM-RC-2000-5000", "CON-COM-RC-2025-10000"]
+          },
+          {
+            "code": "CON-IND-RC",
+            "name":   "Conversion to Industrial + Recertification",
+            "samples":   ["CON-IND-RC-1981-1", "CON-IND-RC-2000-5000", "CON-IND-RC-2025-10000"]
+          },
+          {
+            "code":  "CON-AG-RC",
+            "name":  "Conversion to Agriculture + Recertification",
+            "samples":  ["CON-AG-RC-1981-1", "CON-AG-RC-2000-5000", "CON-AG-RC-2025-10000"]
+          }
+        ]
+      }
+    ]
+  },
+  
+  "user_input_variations": {
+    "description": "Common file number input variations users might enter",
+    "note": "System should normalize these to standard format:   {CATEGORY}-{FULL_YEAR}-{NUMBER}",
+    
+    "variations": [
+      {
+        "category": "OCR Errors - Zero (0) vs Letter O",
+        "description": "Common mistakes when scanning or manually typing file numbers",
+        "examples":  [
+          {
+            "user_input": "C0N-RES-2025-1",
+            "issue":  "Zero instead of letter O in CON",
+            "correct_format": "CON-RES-2025-1",
+            "normalization_rule": "Replace C0N with CON (zero to letter O)"
+          },
+          {
+            "user_input":  "C0M-2024-100",
+            "issue": "Zero instead of letter O in COM",
+            "correct_format":  "COM-2024-100",
+            "normalization_rule":  "Replace C0M with COM (zero to letter O)"
+          },
+          {
+            "user_input": "C0M-RC-2020-50",
+            "issue": "Zero instead of letter O in COM-RC",
+            "correct_format": "COM-RC-2020-50",
+            "normalization_rule": "Replace C0M with COM (zero to letter O)"
+          },
+          {
+            "user_input": "C0N-C0M-2025-1",
+            "issue":  "Multiple zeros instead of letter O",
+            "correct_format": "CON-COM-2025-1",
+            "normalization_rule": "Replace all C0N and C0M patterns"
+          },
+          {
+            "user_input": "C0N-C0M-RC-2024-500",
+            "issue": "Multiple zeros in conversion commercial recertification",
+            "correct_format": "CON-COM-RC-2024-500",
+            "normalization_rule": "Replace C0N with CON and C0M with COM"
+          },
+          {
+            "user_input": "C0N-IND-1995-250",
+            "issue": "Zero in CON prefix",
+            "correct_format":  "CON-IND-1995-250",
+            "normalization_rule": "Replace C0N with CON"
+          },
+          {
+            "user_input": "C0N-AG-RC-2010-1000",
+            "issue": "Zero in CON for agriculture conversion",
+            "correct_format":  "CON-AG-RC-2010-1000",
+            "normalization_rule": "Replace C0N with CON"
+          }
+        ]
+      },
+      {
+        "category":  "Spelling Errors - Missing Letters",
+        "description": "Typos where letters are omitted",
+        "examples": [
+          {
+            "user_input": "CM-2025-1",
+            "issue":  "Missing O in COM",
+            "correct_format":  "COM-2025-1",
+            "normalization_rule":  "Replace CM with COM when not followed by other letters"
+          },
+          {
+            "user_input": "CM-RC-2024-100",
+            "issue": "Missing O in COM-RC",
+            "correct_format": "COM-RC-2024-100",
+            "normalization_rule": "Replace CM-RC with COM-RC"
+          },
+          {
+            "user_input": "CN-RES-2025-50",
+            "issue": "Missing O in CON",
+            "correct_format": "CON-RES-2025-50",
+            "normalization_rule":  "Replace CN-RES with CON-RES, CN-COM with CON-COM, etc."
+          },
+          {
+            "user_input": "CON-CM-2020-1",
+            "issue": "Missing O in COM within conversion",
+            "correct_format":  "CON-COM-2020-1",
+            "normalization_rule": "Replace CON-CM with CON-COM"
+          },
+          {
+            "user_input": "RRES-2025-1",
+            "issue": "Double R in RES",
+            "correct_format": "RES-2025-1",
+            "normalization_rule": "Replace RRES with RES"
+          },
+          {
+            "user_input": "RRES-RC-2024-100",
+            "issue": "Double R in RES-RC",
+            "correct_format": "RES-RC-2024-100",
+            "normalization_rule":  "Replace RRES with RES"
+          },
+          {
+            "user_input": "CON-RRES-2025-1",
+            "issue":  "Double R in conversion residential",
+            "correct_format": "CON-RES-2025-1",
+            "normalization_rule": "Replace RRES with RES"
+          }
+        ]
+      },
+      {
+        "category": "Combined OCR & Spelling Errors",
+        "description": "Multiple errors in same file number",
+        "examples": [
+          {
+            "user_input": "C0N-RRES-2025-1",
+            "issue": "Zero instead of O AND double R",
+            "correct_format": "CON-RES-2025-1",
+            "normalization_rule": "Replace C0N with CON AND RRES with RES"
+          },
+          {
+            "user_input": "C0M-RC-25-100",
+            "issue": "Zero instead of O AND two-digit year",
+            "correct_format": "COM-RC-2025-100",
+            "normalization_rule": "Replace C0M with COM AND expand year"
+          },
+          {
+            "user_input": "cn-cm-2024-50",
+            "issue": "Lowercase AND missing Os",
+            "correct_format":  "CON-COM-2024-50",
+            "normalization_rule": "Convert to uppercase, then fix CN→CON and CM→COM"
+          },
+          {
+            "user_input": "C0N-C0M-RC-24-1",
+            "issue": "Multiple zeros AND two-digit year",
+            "correct_format": "CON-COM-RC-2024-1",
+            "normalization_rule": "Replace C0N with CON, C0M with COM, expand year"
+          }
+        ]
+      },
+      {
+        "category":  "Year Format Variations",
+        "examples": [
+          {
+            "user_input": "CON-RES-25-1",
+            "issue":  "Two-digit year instead of four-digit",
+            "correct_format": "CON-RES-2025-1",
+            "normalization_rule": "If year < 100, assume 20XX for 00-25, 19XX for 81-99"
+          },
+          {
+            "user_input":   "RES-85-100",
+            "issue": "Two-digit year",
+            "correct_format": "RES-1985-100",
+            "normalization_rule": "85 → 1985"
+          },
+          {
+            "user_input": "COM-RC-92-5000",
+            "issue": "Two-digit year",
+            "correct_format": "COM-RC-1992-5000",
+            "normalization_rule": "92 → 1992"
+          },
+          {
+            "user_input": "AG-00-1",
+            "issue": "Two-digit year (2000)",
+            "correct_format": "AG-2000-1",
+            "normalization_rule": "00 → 2000"
+          }
+        ]
+      },
+      {
+        "category":  "Missing Components",
+        "examples": [
+          {
+            "user_input": "RES-2025",
+            "issue": "Missing sequence number",
+            "correct_format": "RES-2025-1",
+            "normalization_rule": "Default to sequence number 1 if missing"
+          },
+          {
+            "user_input": "CON-RES-1995",
+            "issue": "Missing sequence number",
+            "correct_format": "CON-RES-1995-1",
+            "normalization_rule": "Default to sequence number 1 if missing"
+          }
+        ]
+      },
+      {
+        "category":   "Extra Spaces",
+        "examples":  [
+          {
+            "user_input": "RES - 2025 - 100",
+            "issue": "Spaces around delimiters",
+            "correct_format": "RES-2025-100",
+            "normalization_rule": "Remove all spaces"
+          },
+          {
+            "user_input": " CON-RES-2024-50 ",
+            "issue": "Leading/trailing spaces",
+            "correct_format": "CON-RES-2024-50",
+            "normalization_rule": "Trim leading/trailing spaces"
+          }
+        ]
+      },
+      {
+        "category":   "Case Variations",
+        "examples":   [
+          {
+            "user_input": "res-2025-1",
+            "issue": "Lowercase category",
+            "correct_format":   "RES-2025-1",
+            "normalization_rule": "Convert category codes to uppercase"
+          },
+          {
+            "user_input":   "Con-Res-2024-100",
+            "issue": "Mixed case",
+            "correct_format":  "CON-RES-2024-100",
+            "normalization_rule": "Convert category codes to uppercase"
+          },
+          {
+            "user_input": "com-rc-1999-500",
+            "issue": "All lowercase",
+            "correct_format": "COM-RC-1999-500",
+            "normalization_rule": "Convert category codes to uppercase"
+          }
+        ]
+      },
+      {
+        "category":   "Delimiter Variations",
+        "examples":   [
+          {
+            "user_input": "RES/2025/1",
+            "issue": "Slash delimiter instead of hyphen",
+            "correct_format": "RES-2025-1",
+            "normalization_rule": "Replace / with -"
+          },
+          {
+            "user_input": "CON_RES_2024_50",
+            "issue": "Underscore delimiter",
+            "correct_format": "CON-RES-2024-50",
+            "normalization_rule": "Replace _ with -"
+          },
+          {
+            "user_input": "COM. RC.2020.100",
+            "issue": "Dot delimiter",
+            "correct_format":  "COM-RC-2020-100",
+            "normalization_rule": "Replace . with -"
+          }
+        ]
+      },
+      {
+        "category":   "Leading Zeros",
+        "examples":  [
+          {
+            "user_input": "RES-2025-0001",
+            "issue": "Leading zeros in sequence number",
+            "correct_format":   "RES-2025-1",
+            "normalization_rule": "Remove leading zeros from sequence number"
+          },
+          {
+            "user_input": "CON-AG-2024-00050",
+            "issue": "Leading zeros in sequence number",
+            "correct_format": "CON-AG-2024-50",
+            "normalization_rule":  "Remove leading zeros from sequence number"
+          }
+        ]
+      },
+      {
+        "category":  "Invalid/Ambiguous Inputs",
+        "examples":  [
+          {
+            "user_input": "RES-50-1",
+            "issue":   "Ambiguous: Could be 1950 or 2050",
+            "correct_format":  "Requires clarification",
+            "normalization_rule": "Year 50 is outside valid range (1981-2025). Prompt user for clarification."
+          },
+          {
+            "user_input": "CON-2025-1",
+            "issue":   "Missing land use type after CON",
+            "correct_format": "Requires clarification",
+            "normalization_rule": "CON must be followed by RES, COM, IND, or AG. Prompt user."
+          },
+          {
+            "user_input": "RES-2030-1",
+            "issue":   "Year outside valid range",
+            "correct_format": "Invalid",
+            "normalization_rule":  "Year must be between 1981-2025. Show error."
+          }
+        ]
+      }
+    ],
+    
+    "normalization_algorithm": {
+      "step_1": "Trim leading/trailing whitespace",
+      "step_2": "Convert to uppercase",
+      "step_3":  "Fix OCR errors:  Replace C0N→CON, C0M→COM (zero to letter O)",
+      "step_4": "Fix spelling errors: Replace RRES→RES, CM→COM, CN→CON",
+      "step_5": "Replace non-hyphen delimiters (/, _, .) with hyphens",
+      "step_6":  "Remove spaces around hyphens",
+      "step_7": "Parse components (category, year, sequence)",
+      "step_8": "Normalize year:  if < 100, convert (00-25 → 2000-2025, 81-99 → 1981-1999)",
+      "step_9": "Remove leading zeros from sequence number",
+      "step_10": "Validate:  year in range 1981-2025, category is valid, sequence > 0",
+      "step_11": "Reconstruct as {CATEGORY}-{YEAR}-{SEQUENCE}"
+    },
+    
+    "ocr_character_substitutions": {
+      "description": "Common character substitutions for OCR error correction",
+      "substitutions": [
+        {
+          "pattern": "C0N",
+          "replacement": "CON",
+          "reason": "Zero (0) misread as letter O"
+        },
+        {
+          "pattern":  "C0M",
+          "replacement": "COM",
+          "reason": "Zero (0) misread as letter O"
+        },
+        {
+          "pattern":  "RRES",
+          "replacement": "RES",
+          "reason": "Double R typo"
+        },
+        {
+          "pattern": "CM-",
+          "replacement": "COM-",
+          "reason": "Missing O in COM",
+          "context": "When followed by hyphen or RC"
+        },
+        {
+          "pattern": "CN-",
+          "replacement": "CON-",
+          "reason": "Missing O in CON",
+          "context": "When followed by land use type"
+        },
+        {
+          "pattern": "AV-",
+          "replacement": "AG-",
+          "reason": "Letter V mistaken for G in AG prefixes"
+        },
+        {
+          "pattern": "AV-RC",
+          "replacement": "AG-RC",
+          "reason": "Letter V mistaken for G in AG-RC prefixes"
+        },
+        {
+          "pattern": "OPCON-",
+          "replacement": "CON-",
+          "reason": "Extraneous characters inserted before CON prefix"
+        }
+      ]
+    }
+  }
+}

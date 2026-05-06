@@ -1,0 +1,3 @@
+.swal2-container-highest-z {
+    z-index: 999999 !important;
+}

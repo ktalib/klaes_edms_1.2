@@ -1,0 +1,188 @@
+﻿ 
+================================================================================
+1A. FILENUMBER (BY MLSFNO)
+================================================================================
+Count: 1
+
+--- Row 1 ---
+  id                             : 95882
+  application_id                 : NULL
+  kangisFileNo                   : NULL
+  mlsfNo                         : RES-2023-969
+  NewKANGISFileNo                : NULL
+  FileName                       : ABDUSSALAM NASIR KABARA
+  created_at                     : 2026-04-22 12:31:03.190
+  updated_at                     : 2026-04-28 10:28:56.040
+  location                       : PLOT 4064, WESTERN BY PASS , KUMBOTSO
+  created_by                     : 50522
+  updated_by                     : 50522
+  type                           : indexing
+  is_deleted                     : 0
+  SOURCE                         : indexing
+  commissioning_date             : NULL
+  decommissioning_date           : NULL
+  decommissioning_reason         : NULL
+  is_decommissioned              : 0
+  temp_fileno                    : NULL
+  plot_no                        : 4064
+  tp_no                          : TP/K/328C
+  sub_application_id             : NULL
+  st_file_no                     : NULL
+  tracking_id                    : TRK-X2Y47H77-8R3ZN
+  date_migrated                  : NULL
+  migrated_by                    : NULL
+  migration_source               : NULL
+  test_control                   : PRO1.2
+  lga                            : Kumbotso
+  commissioning_time             : NULL
+  gkn_fileno                     : NULL
+  dciv_fileno                    : NULL
+  csf                            : NULL
+  phone_no                       : NULL
+  address                        : NULL
+  rep_phone_no                   : NULL
+  rep_address                    : NULL
+  district                       : NULL
+  cad_lands_matching             : 0
+  cad_st_matching                : 0
+  cad_sltr_matching              : 0
+  pp_lands_matching              : 0
+  pp_st_matching                 : 0
+  pp_sltr_matching               : 0
+  pp_lands_date_matched          : NULL
+  pp_lands_time_matched          : NULL
+  pp_st_date_matched             : NULL
+  pp_st_time_matched             : NULL
+  pp_sltr_date_matched           : NULL
+  pp_sltr_time_matched           : NULL
+  has_temp_file                  : 0
+  temp_file_no                   : NULL
+  kangis_fileno_placeholder      : NULL
+  kangis_fileno_resolved         : NULL
+
+
+================================================================================
+1B. MLS_FILE_NO (BY FULL_FILE_NUMBER)
+================================================================================
+(no rows)
+
+================================================================================
+2. INSTRUMENT_CAPTURE (KEY FIELDS)
+================================================================================
+(no rows)
+
+================================================================================
+3. PRA (KEY FIELDS)
+================================================================================
+Count: 5
+
+--- Row 1 ---
+  id                             : 132549
+  fileno                         : RES-2023-969
+  mlsFNo                         : RES-2023-969
+  prop_id                        : 69576339
+  instrument_type                : Occupancy Permit (OP)
+  transaction_type               : Occupancy Permit (OP)
+  party_1                        : KANO STATE GOVERNMENT
+  party_2                        : L MUSTAPHA MUHAMMAD
+  Grantor                        : KANO STATE GOVERNMENT
+  Grantee                        : L MUSTAPHA MUHAMMAD
+  plot_no                        : 4064
+  land_use                       : RESIDENTIAL
+  system_source                  : OSSOPCHANGEOFNAME
+  instrument_capture_id          : NULL
+  temp_fileno                    : TEMP-31840
+  created_at                     : 2026-04-22 12:32:26.642
+  created_by                     : 50522
+  is_deleted                     : 0
+
+--- Row 2 ---
+  id                             : 135139
+  fileno                         : RES-2023-969
+  mlsFNo                         : RES-2023-969
+  prop_id                        : 69576339
+  instrument_type                : Transfer of Title (OP)
+  transaction_type               : Transfer of Title (OP)
+  party_1                        : L MUSTAPHA MUHAMMAD
+  party_2                        : ABDUSSALAM NASIR KABARA
+  Grantor                        : L MUSTAPHA MUHAMMAD
+  Grantee                        : ABDUSSALAM NASIR KABARA
+  plot_no                        : 4064
+  land_use                       : RESIDENTIAL
+  system_source                  : OSSOPCHANGEOFNAME
+  instrument_capture_id          : NULL
+  temp_fileno                    : TEMP-31840
+  created_at                     : 2026-04-27 11:07:01.318
+  created_by                     : 101524
+  is_deleted                     : 1
+
+--- Row 3 ---
+  id                             : 135917
+  fileno                         : RES-2023-969
+  mlsFNo                         : RES-2023-969
+  prop_id                        : 69576339
+  instrument_type                : Transfer of Title (OP)
+  transaction_type               : Transfer of Title (OP)
+  party_1                        : L MUSTAPHA MUHAMMAD
+  party_2                        : ABDUSSALAM NASIR KABARA
+  Grantor                        : L MUSTAPHA MUHAMMAD
+  Grantee                        : ABDUSSALAM NASIR KABARA
+  plot_no                        : 4064
+  land_use                       : RESIDENTIAL
+  system_source                  : OSSOPCHANGEOFNAME
+  instrument_capture_id          : NULL
+  temp_fileno                    : NULL
+  created_at                     : 2026-04-28 10:27:45.923
+  created_by                     : 101524
+  is_deleted                     : 0
+
+--- Row 4 ---
+  id                             : 135918
+  fileno                         : RES-2023-969
+  mlsFNo                         : RES-2023-969
+  prop_id                        : 69576339
+  instrument_type                : Transfer of Title (OP)
+  transaction_type               : Transfer of Title (OP)
+  party_1                        : L MUSTAPHA MUHAMMAD
+  party_2                        : ABDUSSALAM NASIR KABARA
+  Grantor                        : L MUSTAPHA MUHAMMAD
+  Grantee                        : ABDUSSALAM NASIR KABARA
+  plot_no                        : 4064
+  land_use                       : RESIDENTIAL
+  system_source                  : OSSOPCHANGEOFNAME
+  instrument_capture_id          : NULL
+  temp_fileno                    : NULL
+  created_at                     : 2026-04-28 10:27:49.506
+  created_by                     : 101524
+  is_deleted                     : 1
+
+--- Row 5 ---
+  id                             : 135923
+  fileno                         : RES-2023-969
+  mlsFNo                         : RES-2023-969
+  prop_id                        : 69576339
+  instrument_type                : Transfer of Title (OP)
+  transaction_type               : Transfer of Title (OP)
+  party_1                        : L MUSTAPHA MUHAMMAD
+  party_2                        : ABDUSSALAM NASIR KABARA
+  Grantor                        : L MUSTAPHA MUHAMMAD
+  Grantee                        : ABDUSSALAM NASIR KABARA
+  plot_no                        : 4064
+  land_use                       : RESIDENTIAL
+  system_source                  : OSSOPCHANGEOFNAME
+  instrument_capture_id          : NULL
+  temp_fileno                    : NULL
+  created_at                     : 2026-04-28 10:28:55.997
+  created_by                     : 101524
+  is_deleted                     : 1
+
+
+================================================================================
+5. SUMMARY DIAGNOSIS
+================================================================================
+instrument_capture rows : 0  (OP-ish: 0, ToT-ish: 0)
+pra rows                : 5
+mlsf_file_numbers rows  : 1
+
+
+Done.

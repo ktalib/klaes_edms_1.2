@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Print Labels</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <style>
+        @media print {
+            body * { visibility: hidden; }
+            #printSection, #printSection * { visibility: visible !important; }
+            #printSection { 
+                position: absolute; 
+                left: 0; 
+                top: 0; 
+                width: 297mm; 
+                height: 210mm; 
+                display: block !important;
+            }
+            .print-30-in-1 {
+                display: grid;
+                grid-template-columns: repeat(3, 99mm);
+                grid-auto-rows: 21mm;
+                gap: 0mm;
+                width: 297mm;
+                height: 210mm;
+                padding: 0;
+                margin: 0;
+                background-color: white;
+            }
+            .print-label {
+                box-sizing: border-box;
+                width: 99mm;
+                height: 21mm;
+                padding: 1.5mm;
+                border: 0.3mm solid #333;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background-color: white;
+            }
+        }
+    </style>
+</head>
+<body class="p-8">
+    <h1>Debug Print Labels</h1>
+    
+    <button id="testPrint" class="px-4 py-2 bg-blue-600 text-white rounded">Test Print</button>
+    <button id="showContent" class="px-4 py-2 bg-green-600 text-white rounded ml-2">Show Print Content</button>
+    
+    <div id="printSection" style="display: none; border: 2px solid red; margin-top: 20px;">
+        <!-- Content will be added here -->
+    </div>
+    
+    <div id="debug" class="mt-4 p-4 bg-gray-100 text-sm">
+        <h3>Debug Info:</h3>
+        <div id="debugInfo"></div>
+    </div>
+
+    <script>
+        function createTestLabels() {
+            const printSection = document.getElementById("printSection");
+            printSection.innerHTML = "";
+            
+            console.log('Creating test labels...');
+            
+            const printContainer = document.createElement("div");
+            printContainer.className = "print-page";
+            
+            const gridContainer = document.createElement("div");
+            gridContainer.className = "print-30-in-1";
+            
+            // Create 6 test labels
+            for (let i = 0; i < 6; i++) {
+                const fileNumber = `TEST-${(i + 1).toString().padStart(3, '0')}`;
+                const location = `Shelf/Rack-A${(i + 1).toString().padStart(2, '0')}`;
+                const trackingId = `TRK-${fileNumber}`;
+                
+                console.log(`Creating label ${i + 1}: ${fileNumber}`);
+                
+                const labelDiv = document.createElement("div");
+                labelDiv.className = "print-label";
+                
+                const labelInner = document.createElement("div");
+                labelInner.style.cssText = "display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%;";
+                
+                const qrContainer = document.createElement("div");
+                qrContainer.style.cssText = "width: 16mm; height: 16mm; display: flex; align-items: center; justify-content: center; margin-bottom: 1mm;";
+                
+                const canvas = document.createElement("canvas");
+                canvas.id = `print-qr-${i}`;
+                canvas.width = 100;
+                canvas.height = 100;
+                canvas.style.cssText = "width: 16mm !important; height: 16mm !important;";
+                
+                qrContainer.appendChild(canvas);
+                labelInner.appendChild(qrContainer);
+                
+                const textContainer = document.createElement("div");
+                textContainer.style.cssText = "width: 100%; text-align: center;";
+                
+                const fileNumberP = document.createElement("p");
+                fileNumberP.textContent = fileNumber;
+                fileNumberP.style.cssText = "margin: 0.5mm 0; font-weight: bold; font-size: 9pt; color: #000;";
+                
+                const locationP = document.createElement("p");
+                locationP.textContent = location;
+                locationP.style.cssText = "margin: 0.5mm 0; font-size: 8pt; color: #000;";
+                
+                textContainer.appendChild(fileNumberP);
+                textContainer.appendChild(locationP);
+                labelInner.appendChild(textContainer);
+                
+                labelDiv.appendChild(labelInner);
+                gridContainer.appendChild(labelDiv);
+                
+                // Generate QR code
+                setTimeout(() => {
+                    console.log(`Generating QR for ${fileNumber}`);
+                    const qrCanvas = document.getElementById(`print-qr-${i}`);
+                    if (qrCanvas && typeof QRious !== "undefined") {
+                        try {
+                            const qrData = JSON.stringify({
+                                fileNumber: fileNumber,
+                                shelf: location.replace("Shelf/Rack-", ""),
+                                trackingId: trackingId,
+                                timestamp: new Date().toISOString().split("T")[0],
+                            });
+
+                            const qr = new QRious({
+                                element: qrCanvas,
+                                value: qrData,
+                                size: 100,
+                                level: "H",
+                                background: "#ffffff",
+                                foreground: "#000000",
+                            });
+                            
+                            console.log(`QR generated successfully for ${fileNumber}`);
+                        } catch (error) {
+                            console.error(`QR error for ${fileNumber}:`, error);
+                        }
+                    } else {
+                        console.error(`Canvas or QRious missing for ${fileNumber}`);
+                    }
+                }, 100 + (i * 50));
+            }
+            
+            printContainer.appendChild(gridContainer);
+            printSection.appendChild(printContainer);
+            
+            console.log('Test labels created. Print section HTML length:', printSection.innerHTML.length);
+            document.getElementById('debugInfo').innerHTML = `
+                <p>Labels created: 6</p>
+                <p>Print section HTML length: ${printSection.innerHTML.length}</p>
+                <p>Grid container children: ${gridContainer.children.length}</p>
+            `;
+        }
+        
+        document.getElementById('testPrint').addEventListener('click', function() {
+            console.log('Test print button clicked');
+            createTestLabels();
+            
+            setTimeout(() => {
+                const printSection = document.getElementById("printSection");
+                printSection.style.display = 'block';
+                
+                setTimeout(() => {
+                    console.log('Triggering print...');
+                    window.print();
+                    
+                    setTimeout(() => {
+                        printSection.style.display = 'none';
+                    }, 1000);
+                }, 1000);
+            }, 600);
+        });
+        
+        document.getElementById('showContent').addEventListener('click', function() {
+            createTestLabels();
+            const printSection = document.getElementById("printSection");
+            printSection.style.display = 'block';
+            printSection.style.border = '2px solid red';
+        });
+    </script>
+</body>
+</html>

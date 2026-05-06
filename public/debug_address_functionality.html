@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Address Debug - Step by Step</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .section { margin: 20px 0; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .field { margin: 10px 0; }
+        .field label { display: block; font-weight: bold; margin-bottom: 5px; }
+        .field input, .field select { width: 100%; max-width: 300px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .address-display { padding: 15px; background: #f8f9fa; border: 2px dashed #dee2e6; border-radius: 6px; margin: 15px 0; min-height: 60px; }
+        .log { background: #000; color: #0f0; padding: 15px; border-radius: 6px; font-family: monospace; font-size: 12px; height: 200px; overflow-y: auto; }
+        .button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin: 5px; }
+        .button:hover { background: #0056b3; }
+        .status { padding: 10px; border-radius: 4px; margin: 10px 0; }
+        .status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .status.warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Address Functionality Debug Tool</h1>
+    
+    <div id="status" class="status warning">
+        <strong>Status:</strong> Initializing diagnostics...
+    </div>
+
+    <div class="section">
+        <h3>📋 Step 1: Function Availability Check</h3>
+        <div id="function-check">Checking...</div>
+        <button class="button" onclick="checkFunctions()">Re-check Functions</button>
+    </div>
+
+    <div class="section">
+        <h3>🏠 Step 2: Contact Address Test</h3>
+        <div class="field">
+            <label>House Number:</label>
+            <input type="text" id="ownerHouseNo" placeholder="Enter house number" oninput="manualAddressUpdate()">
+        </div>
+        <div class="field">
+            <label>Street Name:</label>
+            <input type="text" id="ownerStreetName" placeholder="Enter street name" oninput="manualAddressUpdate()">
+        </div>
+        <div class="field">
+            <label>District:</label>
+            <input type="text" id="ownerDistrict" placeholder="Enter district" oninput="manualAddressUpdate()">
+        </div>
+        <div class="field">
+            <label>State:</label>
+            <select id="ownerState" onchange="manualAddressUpdate()">
+                <option value="">Select State</option>
+                <option value="Lagos">Lagos</option>
+                <option value="Abuja">Abuja</option>
+                <option value="Kano">Kano</option>
+            </select>
+        </div>
+        <div class="field">
+            <label>LGA:</label>
+            <select id="ownerLga" onchange="manualAddressUpdate()">
+                <option value="">Select LGA</option>
+                <option value="Ikeja">Ikeja</option>
+                <option value="Victoria Island">Victoria Island</option>
+                <option value="Surulere">Surulere</option>
+            </select>
+        </div>
+        
+        <div class="address-display">
+            <strong>Contact Address Preview:</strong><br>
+            <span id="fullContactAddress" style="color: #666;">Address will appear here...</span>
+        </div>
+        
+        <input type="hidden" id="contactAddressDisplay">
+        
+        <button class="button" onclick="testContactAddress()">🧪 Test Contact Address</button>
+        <button class="button" onclick="logContactAddressValues()">📊 Log Values</button>
+    </div>
+
+    <div class="section">
+        <h3>🏢 Step 3: Property Address Test</h3>
+        <div class="field">
+            <label>House Number:</label>
+            <input type="text" id="propertyHouseNo" placeholder="Enter property house number" oninput="manualPropertyUpdate()">
+        </div>
+        <div class="field">
+            <label>Plot Number:</label>
+            <input type="text" id="propertyPlotNo" placeholder="Enter plot number" oninput="manualPropertyUpdate()">
+        </div>
+        <div class="field">
+            <label>Street Name:</label>
+            <input type="text" id="propertyStreetName" placeholder="Enter property street name" oninput="manualPropertyUpdate()">
+        </div>
+        <div class="field">
+            <label>District:</label>
+            <input type="text" id="propertyDistrict" placeholder="Enter property district" oninput="manualPropertyUpdate()">
+        </div>
+        <div class="field">
+            <label>State:</label>
+            <select id="propertyState" onchange="manualPropertyUpdate()">
+                <option value="">Select State</option>
+                <option value="Lagos">Lagos</option>
+                <option value="Abuja">Abuja</option>
+                <option value="Kano">Kano</option>
+            </select>
+        </div>
+        <div class="field">
+            <label>LGA:</label>
+            <select id="propertyLga" onchange="manualPropertyUpdate()">
+                <option value="">Select LGA</option>
+                <option value="Ikeja">Ikeja</option>
+                <option value="Victoria Island">Victoria Island</option>
+                <option value="Surulere">Surulere</option>
+            </select>
+        </div>
+        
+        <div class="address-display">
+            <strong>Property Address Preview:</strong><br>
+            <span id="fullPropertyAddress" style="color: #666;">Property address will appear here...</span>
+        </div>
+        
+        <input type="hidden" id="propertyAddressDisplay">
+        
+        <button class="button" onclick="testPropertyAddress()">🧪 Test Property Address</button>
+        <button class="button" onclick="logPropertyAddressValues()">📊 Log Values</button>
+    </div>
+
+    <div class="section">
+        <h3>📝 Console Log Output</h3>
+        <div id="console-log" class="log">Console output will appear here...\n</div>
+        <button class="button" onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <!-- Load the utilities script -->
+    <script src="/js/primaryform/utilities.js"></script>
+    
+    <script>
+        // Override console.log to display in our custom console
+        const originalLog = console.log;
+        const originalWarn = console.warn;
+        const originalError = console.error;
+        
+        function addToLog(message, type = 'log') {
+            const logDiv = document.getElementById('console-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#ff6b6b' : type === 'warn' ? '#ffd93d' : '#0f0';
+            logDiv.innerHTML += `<span style="color: ${color}">[${timestamp}] ${message}</span>\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addToLog(args.join(' '), 'log');
+        };
+        
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            addToLog('⚠️ ' + args.join(' '), 'warn');
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addToLog('❌ ' + args.join(' '), 'error');
+        };
+        
+        function updateStatus(message, type = 'warning') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${type}`;
+            statusDiv.innerHTML = `<strong>Status:</strong> ${message}`;
+        }
+        
+        function checkFunctions() {
+            console.log('🔍 Checking function availability...');
+            
+            const functions = [
+                'updateAddressDisplay',
+                'updatePropertyAddressDisplay',
+                'initializeAddressHandlers',
+                'initializeLucideIcons'
+            ];
+            
+            let results = [];
+            
+            functions.forEach(funcName => {
+                const exists = typeof window[funcName] === 'function';
+                results.push(`${funcName}: ${exists ? '✅ Available' : '❌ Missing'}`);
+                console.log(`${funcName}: ${exists ? 'Available' : 'Missing'}`);
+            });
+            
+            document.getElementById('function-check').innerHTML = results.join('<br>');
+            
+            if (results.every(r => r.includes('✅'))) {
+                updateStatus('All functions available! 🎉', 'success');
+            } else {
+                updateStatus('Some functions are missing! 😱', 'error');
+            }
+        }
+        
+        function manualAddressUpdate() {
+            console.log('🔄 Manual address update triggered...');
+            if (typeof updateAddressDisplay === 'function') {
+                updateAddressDisplay();
+            } else {
+                console.error('updateAddressDisplay function not available!');
+            }
+        }
+        
+        function manualPropertyUpdate() {
+            console.log('🔄 Manual property address update triggered...');
+            if (typeof updatePropertyAddressDisplay === 'function') {
+                updatePropertyAddressDisplay();
+            } else {
+                console.error('updatePropertyAddressDisplay function not available!');
+            }
+        }
+        
+        function testContactAddress() {
+            console.log('🧪 Testing contact address with sample data...');
+            
+            document.getElementById('ownerHouseNo').value = '123';
+            document.getElementById('ownerStreetName').value = 'Main Street';
+            document.getElementById('ownerDistrict').value = 'Central District';
+            document.getElementById('ownerState').value = 'Lagos';
+            document.getElementById('ownerLga').value = 'Ikeja';
+            
+            manualAddressUpdate();
+            
+            const result = document.getElementById('contactAddressDisplay').value;
+            console.log('Contact address result:', result);
+        }
+        
+        function testPropertyAddress() {
+            console.log('🧪 Testing property address with sample data...');
+            
+            document.getElementById('propertyHouseNo').value = '456';
+            document.getElementById('propertyPlotNo').value = 'Plot 789';
+            document.getElementById('propertyStreetName').value = 'Property Avenue';
+            document.getElementById('propertyDistrict').value = 'Business District';
+            document.getElementById('propertyState').value = 'Lagos';
+            document.getElementById('propertyLga').value = 'Victoria Island';
+            
+            manualPropertyUpdate();
+            
+            const result = document.getElementById('propertyAddressDisplay').value;
+            console.log('Property address result:', result);
+        }
+        
+        function logContactAddressValues() {
+            console.log('📊 Contact Address Field Values:');
+            console.log('House No:', document.getElementById('ownerHouseNo')?.value || 'EMPTY');
+            console.log('Street:', document.getElementById('ownerStreetName')?.value || 'EMPTY');
+            console.log('District:', document.getElementById('ownerDistrict')?.value || 'EMPTY');
+            console.log('State:', document.getElementById('ownerState')?.value || 'EMPTY');
+            console.log('LGA:', document.getElementById('ownerLga')?.value || 'EMPTY');
+            console.log('Hidden Input:', document.getElementById('contactAddressDisplay')?.value || 'EMPTY');
+            console.log('Display Span:', document.getElementById('fullContactAddress')?.textContent || 'EMPTY');
+        }
+        
+        function logPropertyAddressValues() {
+            console.log('📊 Property Address Field Values:');
+            console.log('House No:', document.getElementById('propertyHouseNo')?.value || 'EMPTY');
+            console.log('Plot No:', document.getElementById('propertyPlotNo')?.value || 'EMPTY');
+            console.log('Street:', document.getElementById('propertyStreetName')?.value || 'EMPTY');
+            console.log('District:', document.getElementById('propertyDistrict')?.value || 'EMPTY');
+            console.log('State:', document.getElementById('propertyState')?.value || 'EMPTY');
+            console.log('LGA:', document.getElementById('propertyLga')?.value || 'EMPTY');
+            console.log('Hidden Input:', document.getElementById('propertyAddressDisplay')?.value || 'EMPTY');
+            console.log('Display Span:', document.getElementById('fullPropertyAddress')?.textContent || 'EMPTY');
+        }
+        
+        function clearLog() {
+            document.getElementById('console-log').innerHTML = 'Log cleared...\n';
+        }
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Address Debug Tool loaded');
+            updateStatus('Debug tool loaded. Checking functions...', 'warning');
+            
+            setTimeout(() => {
+                checkFunctions();
+                
+                // Test if initialization works
+                if (typeof initializeAddressHandlers === 'function') {
+                    console.log('🎯 Running initializeAddressHandlers...');
+                    initializeAddressHandlers();
+                } else {
+                    console.error('initializeAddressHandlers not found!');
+                }
+                
+            }, 500);
+        });
+    </script>
+</body>
+</html>

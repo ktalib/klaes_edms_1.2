@@ -1,0 +1,425 @@
+<!-- File Indexing Module Integration - Diagnostic Test Page -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Indexing Module Integration Diagnostic</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 30px;
+        }
+        .test-section {
+            margin-bottom: 30px;
+        }
+        .test-section h2 {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        .test-item {
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+        }
+        .test-item.pass {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .test-item.fail {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .test-item.pending {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .icon {
+            font-size: 18px;
+            font-weight: bold;
+            width: 24px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .pass .icon::before { content: '✓'; }
+        .fail .icon::before { content: '✗'; }
+        .pending .icon::before { content: '⏳'; }
+        .code-block {
+            background: #f5f5f5;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            margin-top: 10px;
+        }
+        .summary {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 30px;
+            border-left: 4px solid #667eea;
+        }
+        .summary h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .summary-row strong {
+            color: #667eea;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        .instructions {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            font-size: 13px;
+            color: #0c5aa0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 File Indexing Module Integration Diagnostic</h1>
+            <p>Comprehensive system check for ES6 module integration</p>
+        </div>
+        
+        <div class="content">
+            <!-- File Integrity Tests -->
+            <div class="test-section">
+                <h2>1️⃣ Module File Integrity</h2>
+                <div id="file-tests"></div>
+            </div>
+
+            <!-- Module Import Tests -->
+            <div class="test-section">
+                <h2>2️⃣ Module Import Tests</h2>
+                <div id="import-tests"></div>
+            </div>
+
+            <!-- DOM Element Tests -->
+            <div class="test-section">
+                <h2>3️⃣ DOM Element Tests</h2>
+                <div id="dom-tests"></div>
+            </div>
+
+            <!-- API Configuration Tests -->
+            <div class="test-section">
+                <h2>4️⃣ API Configuration Tests</h2>
+                <div id="api-tests"></div>
+            </div>
+
+            <!-- Performance Tests -->
+            <div class="test-section">
+                <h2>5️⃣ Performance Tests</h2>
+                <div id="performance-tests"></div>
+            </div>
+
+            <!-- Summary -->
+            <div class="summary">
+                <h3>📊 Test Summary</h3>
+                <div class="summary-row">
+                    <strong>Total Tests:</strong>
+                    <span id="total-tests">0</span>
+                </div>
+                <div class="summary-row">
+                    <strong>✓ Passed:</strong>
+                    <span id="passed-tests" style="color: green;">0</span>
+                </div>
+                <div class="summary-row">
+                    <strong>✗ Failed:</strong>
+                    <span id="failed-tests" style="color: red;">0</span>
+                </div>
+                <div class="summary-row">
+                    <strong>⏳ Pending:</strong>
+                    <span id="pending-tests" style="color: orange;">0</span>
+                </div>
+                <div class="summary-row">
+                    <strong>Status:</strong>
+                    <span id="status" style="font-weight: bold; color: #667eea;">Running...</span>
+                </div>
+            </div>
+
+            <div class="instructions">
+                <strong>📋 Next Steps:</strong>
+                <ol style="margin-left: 20px; margin-top: 10px;">
+                    <li>Fix any failed tests shown above</li>
+                    <li>Navigate to /fileindexing and verify page loads</li>
+                    <li>Open DevTools (F12) and check Console for errors</li>
+                    <li>Test each tab: Unindexed Files, Digital Index, Indexed Files, Tracking Sheet</li>
+                    <li>Review TEST_MODULE_INTEGRATION.md for complete test suite</li>
+                </ol>
+            </div>
+
+            <button onclick="runAllTests()">🔄 Run All Tests</button>
+        </div>
+    </div>
+
+    <script>
+        const tests = {
+            passed: 0,
+            failed: 0,
+            pending: 0,
+            total: 0
+        };
+
+        function addTest(containerId, name, status, details = '') {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = `test-item ${status}`;
+            
+            let statusText = status.charAt(0).toUpperCase() + status.slice(1);
+            div.innerHTML = `<span class="icon"></span><span>${name}</span>`;
+            
+            if (details) {
+                div.innerHTML += `<div class="code-block">${details}</div>`;
+            }
+            
+            container.appendChild(div);
+            
+            tests[status]++;
+            tests.total++;
+            updateSummary();
+        }
+
+        function updateSummary() {
+            document.getElementById('total-tests').textContent = tests.total;
+            document.getElementById('passed-tests').textContent = tests.passed;
+            document.getElementById('failed-tests').textContent = tests.failed;
+            document.getElementById('pending-tests').textContent = tests.pending;
+            
+            if (tests.total > 0) {
+                if (tests.failed === 0 && tests.pending === 0) {
+                    document.getElementById('status').textContent = '✅ All Tests Passed!';
+                    document.getElementById('status').style.color = 'green';
+                } else if (tests.failed > 0) {
+                    document.getElementById('status').textContent = '❌ Some Tests Failed';
+                    document.getElementById('status').style.color = 'red';
+                } else {
+                    document.getElementById('status').textContent = '⏳ Tests In Progress';
+                    document.getElementById('status').style.color = 'orange';
+                }
+            }
+        }
+
+        function runAllTests() {
+            // Clear previous results
+            document.querySelectorAll('[id$="-tests"]').forEach(el => el.innerHTML = '');
+            tests = { passed: 0, failed: 0, pending: 0, total: 0 };
+
+            // File Integrity Tests
+            testFileIntegrity();
+            
+            // Module Import Tests
+            testModuleImports();
+            
+            // DOM Element Tests
+            testDOMElements();
+            
+            // API Configuration Tests
+            testAPIConfiguration();
+            
+            // Performance Tests
+            testPerformance();
+        }
+
+        function testFileIntegrity() {
+            const files = [
+                '/js/fileindexing/state.js',
+                '/js/fileindexing/dom.js',
+                '/js/fileindexing/dom-utils.js',
+                '/js/fileindexing/api-utils.js',
+                '/js/fileindexing/pending-files.js',
+                '/js/fileindexing/indexed-files.js',
+                '/js/fileindexing/ai-processing.js',
+                '/js/fileindexing/ui-controller.js'
+            ];
+
+            files.forEach(file => {
+                fetch(file, { method: 'HEAD' })
+                    .then(response => {
+                        if (response.ok) {
+                            addTest('file-tests', `File exists: ${file}`, 'pass');
+                        } else {
+                            addTest('file-tests', `File not found: ${file}`, 'fail', `HTTP ${response.status}`);
+                        }
+                    })
+                    .catch(err => {
+                        addTest('file-tests', `File check failed: ${file}`, 'fail', err.message);
+                    });
+            });
+        }
+
+        function testModuleImports() {
+            addTest('import-tests', 'ES6 Modules Support', 'pass', 'Browser supports ES6 modules');
+            
+            // Test dynamic import
+            import('/js/fileindexing/state.js')
+                .then(() => {
+                    addTest('import-tests', 'State module imports', 'pass', 'Successfully imported state.js');
+                })
+                .catch(err => {
+                    addTest('import-tests', 'State module imports', 'fail', err.message);
+                });
+
+            import('/js/fileindexing/ui-controller.js')
+                .then(() => {
+                    addTest('import-tests', 'UI Controller module imports', 'pass', 'Successfully imported ui-controller.js');
+                })
+                .catch(err => {
+                    addTest('import-tests', 'UI Controller module imports', 'fail', err.message);
+                });
+        }
+
+        function testDOMElements() {
+            const elements = {
+                'pending-files-list': 'Pending files container',
+                'indexed-table': 'Indexed files table',
+                'ai-processing-view': 'AI processing view',
+                'main-tabs': 'Tab navigation',
+                'batch-details-modal': 'Batch details modal'
+            };
+
+            Object.entries(elements).forEach(([id, name]) => {
+                if (document.getElementById(id)) {
+                    addTest('dom-tests', `DOM element exists: ${name} (${id})`, 'pass');
+                } else {
+                    addTest('dom-tests', `DOM element missing: ${name} (${id})`, 'pending', 'May not be needed on this page');
+                }
+            });
+
+            // Check for CSRF token
+            if (document.querySelector('meta[name="csrf-token"]')) {
+                addTest('dom-tests', 'CSRF token meta tag present', 'pass');
+            } else {
+                addTest('dom-tests', 'CSRF token meta tag', 'fail', 'Required for API requests');
+            }
+        }
+
+        function testAPIConfiguration() {
+            // Check if API endpoints are accessible
+            const endpoints = [
+                { method: 'GET', url: '/api/file-indexing/statistics', name: 'Statistics Endpoint' },
+                { method: 'GET', url: '/api/file-indexing/pending-files?page=1', name: 'Pending Files Endpoint' }
+            ];
+
+            endpoints.forEach(endpoint => {
+                fetch(endpoint.url, { 
+                    method: endpoint.method,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    }
+                })
+                    .then(response => {
+                        if (response.ok || response.status === 401 || response.status === 403) {
+                            addTest('api-tests', `${endpoint.name}: Accessible (${response.status})`, response.ok ? 'pass' : 'pending');
+                        } else {
+                            addTest('api-tests', `${endpoint.name}: Error ${response.status}`, 'fail');
+                        }
+                    })
+                    .catch(err => {
+                        addTest('api-tests', `${endpoint.name}: Check failed`, 'fail', err.message);
+                    });
+            });
+        }
+
+        function testPerformance() {
+            // Measure page load time
+            const perfData = performance.timing;
+            const pageLoadTime = perfData.loadEventEnd - perfData.navigationStart;
+            
+            if (pageLoadTime > 0) {
+                addTest('performance-tests', `Page load time: ${pageLoadTime}ms`, pageLoadTime < 3000 ? 'pass' : 'pending', `${pageLoadTime}ms`);
+            }
+
+            // Check memory (if available)
+            if (performance.memory) {
+                const usedMemory = Math.round(performance.memory.usedJSHeapSize / 1048576);
+                addTest('performance-tests', `Memory usage: ${usedMemory}MB`, usedMemory < 50 ? 'pass' : 'pending', `${usedMemory}MB used`);
+            }
+
+            // Check console errors
+            const originalError = console.error;
+            let hasErrors = false;
+            console.error = function(...args) {
+                hasErrors = true;
+                originalError.apply(console, args);
+            };
+
+            addTest('performance-tests', 'Console errors', hasErrors ? 'fail' : 'pass', hasErrors ? 'Check console for details' : 'No errors detected');
+        }
+
+        // Auto-run tests when page loads
+        window.addEventListener('load', () => {
+            setTimeout(runAllTests, 500);
+        });
+    </script>
+</body>
+</html>

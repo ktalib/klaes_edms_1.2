@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Summary Functionality</title>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        .summary-item { margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <h1>Primary Form Summary Test</h1>
+    
+    <div class="test-section">
+        <h3>Test Form Fields</h3>
+        <input type="radio" name="applicantType" value="individual" id="individual"> <label for="individual">Individual</label><br>
+        <input type="text" name="first_name" placeholder="First Name" value="John"><br>
+        <input type="text" name="surname" placeholder="Surname" value="Doe"><br>
+        <input type="email" name="owner_email" placeholder="Email" value="john.doe@example.com"><br>
+        <input type="text" name="phone_number" placeholder="Phone" value="08012345678"><br>
+        
+        <select name="owner_state">
+            <option value="">Select State</option>
+            <option value="Lagos" selected>Lagos</option>
+        </select><br>
+        
+        <select name="owner_lga">
+            <option value="">Select LGA</option>
+            <option value="Ikeja" selected>Ikeja</option>
+        </select><br>
+        
+        <button onclick="testSummaryUpdate()">Test Summary Update</button>
+    </div>
+    
+    <div class="test-section">
+        <h3>Summary Output</h3>
+        <div class="summary-item">Applicant Type: <span id="summary-applicant-type">-</span></div>
+        <div class="summary-item">Name: <span id="summary-name">-</span></div>
+        <div class="summary-item">Email: <span id="summary-email">-</span></div>
+        <div class="summary-item">Phone: <span id="summary-phone">-</span></div>
+        <div class="summary-item">LGA: <span id="summary-lga">-</span></div>
+        <div class="summary-item">State: <span id="summary-state">-</span></div>
+    </div>
+
+    <script src="/js/primaryform/utilities.js"></script>
+    <script src="/js/primaryform/summary.js"></script>
+    
+    <script>
+        function testSummaryUpdate() {
+            console.log('🧪 Testing summary update...');
+            
+            // Select the individual radio button
+            document.getElementById('individual').checked = true;
+            
+            // Call the summary update function
+            if (typeof updateApplicationSummary === 'function') {
+                updateApplicationSummary();
+                console.log('✅ Summary update function called');
+            } else {
+                console.error('❌ updateApplicationSummary function not found');
+            }
+        }
+        
+        // Auto-run test when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(testSummaryUpdate, 1000);
+        });
+    </script>
+</body>
+</html>

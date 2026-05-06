@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indexed Files Checkbox Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .bg-blue-50 { background-color: #eff6ff; }
+        .btn { padding: 8px 16px; margin: 5px; border: none; cursor: pointer; }
+        .btn-primary { background-color: #3b82f6; color: white; }
+        .btn-disabled { background-color: #d1d5db; color: #6b7280; cursor: not-allowed; }
+        .indeterminate { opacity: 0.5; }
+        .selection-info { margin: 10px 0; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Indexed Files Checkbox Selection Test</h1>
+    
+    <div class="selection-info">
+        <span id="selected-indexed-files-count">0 selected</span>
+    </div>
+    
+    <button id="export-selected-files-btn" class="btn btn-disabled" disabled>Export Selected Files</button>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>
+                    <input type="checkbox" id="select-all-indexed-checkbox" />
+                    Select All
+                </th>
+                <th>ID</th>
+                <th>File Number</th>
+                <th>Name</th>
+            </tr>
+        </thead>
+        <tbody id="indexed-files-table-body">
+            <!-- Will be populated by JavaScript -->
+        </tbody>
+    </table>
+
+    <div id="test-output"></div>
+
+    <script>
+        // Test data
+        let indexedFiles = [
+            {id: 1, fileNumber: 'F001', name: 'Test File 1'},
+            {id: 2, fileNumber: 'F002', name: 'Test File 2'},
+            {id: 3, fileNumber: 'F003', name: 'Test File 3'},
+            {id: 4, fileNumber: 'F004', name: 'Test File 4'}
+        ];
+        
+        let selectedIndexedFiles = [];
+
+        // Helper functions (copied from main JavaScript)
+        function updateSelectedIndexedFilesCount() {
+            const selectedCountElement = document.getElementById('selected-indexed-files-count');
+            if (selectedCountElement) {
+                selectedCountElement.textContent = `${selectedIndexedFiles.length} selected`;
+            }
+        }
+
+        function updateExportSelectedButton() {
+            const exportBtn = document.getElementById('export-selected-files-btn');
+            if (exportBtn) {
+                if (selectedIndexedFiles.length > 0) {
+                    exportBtn.disabled = false;
+                    exportBtn.classList.remove('btn-disabled');
+                    exportBtn.classList.add('btn-primary');
+                } else {
+                    exportBtn.disabled = true;
+                    exportBtn.classList.remove('btn-primary');
+                    exportBtn.classList.add('btn-disabled');
+                }
+            }
+        }
+
+        function updateSelectAllIndexedCheckbox() {
+            const selectAllCheckbox = document.getElementById('select-all-indexed-checkbox');
+            if (selectAllCheckbox && indexedFiles.length > 0) {
+                const allSelected = selectedIndexedFiles.length === indexedFiles.length;
+                const noneSelected = selectedIndexedFiles.length === 0;
+                
+                selectAllCheckbox.checked = allSelected;
+                selectAllCheckbox.indeterminate = !allSelected && !noneSelected;
+                
+                if (selectAllCheckbox.indeterminate) {
+                    selectAllCheckbox.classList.add('indeterminate');
+                } else {
+                    selectAllCheckbox.classList.remove('indeterminate');
+                }
+            }
+        }
+
+        function renderIndexedFiles() {
+            const tableBody = document.getElementById('indexed-files-table-body');
+            
+            tableBody.innerHTML = '';
+            
+            indexedFiles.forEach(file => {
+                const fileIdStr = String(file.id);
+                const isSelected = selectedIndexedFiles.includes(fileIdStr);
+                const tr = document.createElement('tr');
+                tr.setAttribute('data-id', fileIdStr);
+                tr.className = `${isSelected ? 'bg-blue-50' : ''}`;
+                
+                tr.innerHTML = `
+                    <td>
+                        <input type="checkbox" class="indexed-file-checkbox" value="${fileIdStr}" ${isSelected ? 'checked' : ''} />
+                    </td>
+                    <td>${file.id}</td>
+                    <td>${file.fileNumber}</td>
+                    <td>${file.name}</td>
+                `;
+                
+                tableBody.appendChild(tr);
+            });
+
+            // Add event listeners to checkboxes
+            tableBody.querySelectorAll('.indexed-file-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', function(e) {
+                    e.stopPropagation();
+                    const fileId = this.value;
+                    
+                    if (this.checked) {
+                        if (!selectedIndexedFiles.includes(fileId)) {
+                            selectedIndexedFiles.push(fileId);
+                        }
+                    } else {
+                        const index = selectedIndexedFiles.indexOf(fileId);
+                        if (index > -1) {
+                            selectedIndexedFiles.splice(index, 1);
+                        }
+                    }
+                    
+                    // Update row styling
+                    const row = this.closest('tr');
+                    if (this.checked) {
+                        row.classList.add('bg-blue-50');
+                    } else {
+                        row.classList.remove('bg-blue-50');
+                    }
+                    
+                    updateSelectedIndexedFilesCount();
+                    updateExportSelectedButton();
+                    updateSelectAllIndexedCheckbox();
+                    
+                    // Output test results
+                    document.getElementById('test-output').innerHTML = `
+                        <h3>Test Results:</h3>
+                        <p>Selected Files: ${JSON.stringify(selectedIndexedFiles)}</p>
+                        <p>Select All Checked: ${document.getElementById('select-all-indexed-checkbox').checked}</p>
+                        <p>Select All Indeterminate: ${document.getElementById('select-all-indexed-checkbox').indeterminate}</p>
+                        <p>Export Button Disabled: ${document.getElementById('export-selected-files-btn').disabled}</p>
+                    `;
+                });
+            });
+
+            updateSelectedIndexedFilesCount();
+            updateExportSelectedButton();
+            updateSelectAllIndexedCheckbox();
+        }
+
+        // Initialize when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Select all checkbox
+            const selectAllIndexedCheckbox = document.getElementById('select-all-indexed-checkbox');
+            if (selectAllIndexedCheckbox) {
+                selectAllIndexedCheckbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        selectedIndexedFiles = indexedFiles.map(file => String(file.id));
+                    } else {
+                        selectedIndexedFiles = [];
+                    }
+                    renderIndexedFiles();
+                    updateSelectedIndexedFilesCount();
+                    updateExportSelectedButton();
+                    
+                    // Output test results
+                    document.getElementById('test-output').innerHTML = `
+                        <h3>Test Results (Select All):</h3>
+                        <p>Selected Files: ${JSON.stringify(selectedIndexedFiles)}</p>
+                        <p>Select All Checked: ${this.checked}</p>
+                        <p>Export Button Disabled: ${document.getElementById('export-selected-files-btn').disabled}</p>
+                    `;
+                });
+            }
+
+            // Export button
+            const exportSelectedBtn = document.getElementById('export-selected-files-btn');
+            if (exportSelectedBtn) {
+                exportSelectedBtn.addEventListener('click', function() {
+                    if (selectedIndexedFiles.length === 0) {
+                        alert('Please select at least one file to export.');
+                        return;
+                    }
+                    alert(`Export functionality would export files: ${selectedIndexedFiles.join(', ')}`);
+                });
+            }
+
+            // Initial render
+            renderIndexedFiles();
+        });
+    </script>
+</body>
+</html>

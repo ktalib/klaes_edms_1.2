@@ -1,0 +1,8567 @@
+<script>
+    // CSRF Token for Laravel
+    const csrfToken = '{{ csrf_token() }}';
+
+    // Set up default headers for AJAX requests
+    $.ajaxSetup({
+        headers: {
+            'X-CSRF-TOKEN': csrfToken,
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    });
+
+    // Office data no longer needed via AJAX
+    let officeData = {};
+    window.officeData = officeData;
+
+    let receivingDirectory = { offices: [], users: [] };
+    let receivingDirectoryPromise = null;
+    const receivingOfficerMap = new Map();
+    const receivingOfficerSelect = $('#receiving-officer');
+    const receivingOfficerInfo = $('#receiving-officer-info');
+    const receivingOfficerName = $('#receiving-officer-name');
+    const receivingOfficerLevel = $('#receiving-officer-level');
+    const receivingOfficerDepartment = $('#receiving-officer-department');
+    const receivingOfficerRoles = $('#receiving-officer-roles');
+    const receivingOfficerHint = $('#receiving-officer-hint');
+    let receivingOfficerOptionsCache = [];
+    const originOfficeSelect = $('#origin-office');
+    const destinationOfficeSelect = $('#current-office');
+    const originOfficeIdInput = document.getElementById('origin-office-id');
+    const originOfficeInfoPanel = document.getElementById('origin-office-info');
+    const originOfficeBadge = document.getElementById('origin-office-badge');
+    const originOfficeCodeBadge = document.getElementById('origin-office-code-badge');
+    const originOfficeDepartment = document.getElementById('origin-office-department');
+    const toastContainer = $('#page-toast-container');
+    const originOfficeSelectElement = document.getElementById('origin-office');
+    const destinationOfficeSelectElement = document.getElementById('current-office');
+    const receivingOfficeSelectElement = document.getElementById('receiving-office');
+    const receivingDetailsLockNote = document.getElementById('receiving-details-lock-note');
+    const saveFileLogButton = document.getElementById('saveFileLogBtn');
+    const movementDialog = document.getElementById('notes-dialog');
+    const movementOfficerSelect = $('#movement-receiving-officer');
+    const movementOverrideToggle = document.getElementById('movement-override-toggle');
+    const movementDestinationLabel = document.getElementById('movement-destination-label');
+    const movementErrorBox = document.getElementById('movement-error');
+    const movementNotesField = document.getElementById('new-log-notes');
+    const updateLogDialog = document.getElementById('update-log-dialog');
+    const updateLogOfficeSelect = $('#update-log-office');
+    const updateLogOfficerSelect = $('#update-log-receiving-officer');
+    const updateLogErrorBox = document.getElementById('update-log-error');
+    const updateLogFileLabel = document.getElementById('update-log-file-label');
+    const updateLogEntryLabel = document.getElementById('update-log-entry-label');
+    let updateLogContext = null;
+    let defaultOriginOfficeCode = null;
+    const currentUserId = window.currentUser?.id ? Number(window.currentUser.id) : null;
+    let assignmentActionsBound = false;
+    const trackerMetadataFallbackCache = new Map();
+    const rackShelfCache = new Map();
+    let currentRackShelfValue = null;
+    const CUSTOM_RECEIVING_OFFICER_VALUE = '__custom_officer__';
+    const CUSTOM_DESTINATION_OPTION_VALUE = '__custom_destination__';
+    const DESTINATION_FIELD_NAME = 'receiving_office_name';
+    const customDestinationWrapper = document.getElementById('custom-destination-office-wrapper');
+    const customDestinationInput = document.getElementById('custom-destination-office-name');
+    const destinationOfficeIdInput = document.getElementById('current-office-id');
+    const destinationOfficeInfoPanel = document.getElementById('office-info');
+    const destinationOfficeBadge = document.getElementById('office-badge');
+    const destinationOfficeCodeBadge = document.getElementById('office-code-badge');
+    const destinationOfficeDepartment = document.getElementById('office-department');
+    const newOfficerDialog = document.getElementById('new-officer-dialog');
+    const newOfficerForm = document.getElementById('new-officer-form');
+    const newOfficerFirstNameInput = document.getElementById('new-officer-first-name');
+    const newOfficerLastNameInput = document.getElementById('new-officer-last-name');
+    const newOfficerUsernameInput = document.getElementById('new-officer-username');
+    const newOfficerErrorBox = document.getElementById('new-officer-error');
+    const newOfficerCloseBtn = document.getElementById('new-officer-close');
+    const newOfficerCancelBtn = document.getElementById('new-officer-cancel');
+    const newOfficerSubmitButton = document.getElementById('new-officer-submit');
+    
+    // New form elements for other officers
+    const officerTypeSystemRadio = document.getElementById('officer-type-system');
+    const officerTypeOtherRadio = document.getElementById('officer-type-other');
+    const systemUserFields = document.getElementById('system-user-fields');
+    const otherOfficerFields = document.getElementById('other-officer-fields');
+    const newOfficerPhoneInput = document.getElementById('new-officer-phone');
+    const newOfficerEmailInput = document.getElementById('new-officer-email');
+    const newOfficerOfficeInput = document.getElementById('new-officer-office');
+    const newOfficerDesignationInput = document.getElementById('new-officer-designation');
+    const newOfficerNotesInput = document.getElementById('new-officer-notes');
+    
+    let pendingOfficerSelectTarget = null;
+    let customDestinationOfficeDetails = null;
+    const KANGIS_APPROVAL_ROUTE = {
+        officeCode: 'DGIS',
+        officeName: 'Director GIS'
+    };
+
+    // Cross-module request flag — set when user confirms sending a request to the other module
+    let _crossModuleRequestMode = false;
+    const crossRequestPreviewPanel = document.getElementById('cross-request-preview-panel');
+    const crossRequestPreviewEmpty = document.getElementById('cross-request-preview-empty');
+    const crossRequestPreviewLoading = document.getElementById('cross-request-preview-loading');
+    const crossRequestPreviewGrid = document.getElementById('cross-request-preview-grid');
+    const crossRequestPropertyDetails = document.getElementById('cross-request-property-details');
+    const crossRequestFolderPath = document.getElementById('cross-request-folder-path');
+    const crossRequestFilesList = document.getElementById('cross-request-files-list');
+    const crossRequestFilesAccess = document.getElementById('cross-request-files-access');
+    const crossRequestPreviewEndpoint = '{{ route("create-file-tracker.request-preview") }}';
+    let crossRequestPreviewXhr = null;
+    let lastCrossRequestPreviewKey = null;
+
+
+    
+    /**
+     * Detect whether a department/office name represents a cross-module destination.
+     * From KANGIS view: Land/Ministry-type keywords = cross-module.
+     * From Land view: KANGIS-type keywords = cross-module.
+     */
+    /**
+     * Detect a cross-module request condition.
+     *
+     * For /create-file-tracker (Land view, currentModule != 'kangis'):
+     *   origin registry = "KANGIS Registry"  AND  destination = "Lands" / "Land"
+     *
+     * For /create-file-tracker?url=kangis (KANGIS view, currentModule === 'kangis'):
+     *   origin registry contains "Land" (e.g. "Registry 1 - Land")  AND  destination = "KANGIS"
+     */
+    function detectCrossModuleDestination(departmentValue, originValue) {
+        const dest   = (departmentValue || '').toLowerCase().trim();
+        const origin = (originValue || '').toLowerCase().trim();
+        if (!dest || !origin) return false;
+
+        const currentModule = (window.currentModule || '').toLowerCase();
+
+        if (currentModule === 'kangis') {
+            // KANGIS view: origin must be a Land registry (contains 'land') AND destination must be 'kangis'
+            return origin.includes('land') && dest.includes('kangis');
+        } else {
+            // Land view: origin must be KANGIS Registry AND destination must contain 'land'
+            return origin.includes('kangis') && dest.includes('land');
+        }
+    }
+
+    function applyCrossModuleFieldLabels(isRequestMode) {
+        const originLabel = document.querySelector('label[for="origin-office"]');
+        const destinationLabel = document.querySelector('label[for="current-office"]');
+
+        if (originLabel) {
+            originLabel.textContent = isRequestMode ? 'Supply (Origin)' : 'Registry (Origin)';
+        }
+
+        if (destinationLabel) {
+            destinationLabel.textContent = isRequestMode ? 'Requester *' : 'Destination Office (Departments) *';
+        }
+
+        // Morph the action button label to reflect the cross-registry
+        // initial routing target. For KANGIS requesting from Lands, the
+        // first hop is the Land Registry (recommendation). For Lands
+        // requesting from KANGIS, the first hop is the KANGIS Registry.
+        const saveBtn = document.getElementById('saveFileLogBtn');
+        if (saveBtn) {
+            const modKey = (window.currentModule || '').toLowerCase();
+            if (isRequestMode) {
+                const target = (modKey === 'kangis' || modKey === 'new_kangis')
+                    ? 'Registry 1 - Land'
+                    : 'KANGIS Registry';
+                saveBtn.innerHTML = `<i data-lucide="send" class="h-4 w-4 mr-2"></i>Send to ${target}`;
+            } else if (modKey === 'kangis') {
+                saveBtn.innerHTML = '<i data-lucide="send" class="h-4 w-4 mr-2"></i>Send to Director GIS';
+            } else {
+                saveBtn.innerHTML = '<i data-lucide="save" class="h-4 w-4 mr-2"></i>Save File Log';
+            }
+            if (window.lucide) window.lucide.createIcons();
+        }
+
+        // Morph the KANGIS Office Details Step 2 / Step 3 / Step 4 panels to
+        // reflect the Cross-Registry approval chain when KANGIS is requesting
+        // a file from Lands. Per docs/file_reqest, workflow.md:
+        //   1. Land Registry  -> Recommendation
+        //   2. Director (Land) -> Approval
+        //   3. File routes to KANGIS (no DG KANGIS, no Step 4 receiving officer)
+        const mod = (window.currentModule || '').toLowerCase();
+        if (mod !== 'kangis') return;
+
+        const recForApproval = document.getElementById('recommendation-for-approval');
+        const step2Sub       = document.getElementById('kangis-step2-subtitle');
+        const step2Rec       = document.getElementById('kangis-step2-recommended');
+        const step2RecFor    = document.getElementById('kangis-step2-recommended-for');
+        const step3Block     = document.getElementById('kangis-step3-block');
+        const step4Block     = document.getElementById('kangis-step4-block');
+        const step2DestText  = document.getElementById('step2-destination-text');
+
+        const setText = (el, text) => { if (el) el.innerHTML = text; };
+        const restoreDefault = (el, attr = 'data-default-text') => {
+            if (!el) return;
+            const def = el.getAttribute(attr);
+            if (def !== null) el.innerHTML = def;
+        };
+
+        if (isRequestMode) {
+            if (recForApproval) recForApproval.value = 'Registry 1 - Land';
+            setText(step2Sub, '&mdash; handled by Registry 1 - Land, display only');
+            setText(step2Rec, 'Registry 1 - Land');
+            setText(step2RecFor, 'Director of Lands');
+            if (step2DestText) {
+                step2DestText.classList.remove('italic', 'text-gray-400');
+                step2DestText.classList.add('text-gray-700');
+                step2DestText.textContent = 'KANGIS';
+            }
+            if (step3Block) step3Block.classList.add('hidden');
+            if (step4Block) step4Block.classList.add('hidden');
+        } else {
+            if (recForApproval) {
+                const def = recForApproval.getAttribute('data-default-value') || 'Director GIS';
+                recForApproval.value = def;
+            }
+            restoreDefault(step2Sub);
+            restoreDefault(step2Rec);
+            restoreDefault(step2RecFor);
+            if (step2DestText) {
+                step2DestText.classList.add('italic', 'text-gray-400');
+                step2DestText.classList.remove('text-gray-700');
+                step2DestText.textContent = 'Destination (Dept)';
+            }
+            if (step3Block) step3Block.classList.remove('hidden');
+            if (step4Block) step4Block.classList.remove('hidden');
+        }
+    }
+
+    function selectPreferredOption(selectElement, preferredValues = [], fallbackKeywords = []) {
+        if (!selectElement) {
+            return null;
+        }
+
+        const options = Array.from(selectElement.options || []);
+
+        const exactMatch = preferredValues
+            .map(value => (value || '').toLowerCase().trim())
+            .filter(Boolean)
+            .map(preferred => options.find(option => {
+                const optionValue = (option.value || '').toLowerCase().trim();
+                const optionText = (option.text || '').toLowerCase().trim();
+                return optionValue === preferred || optionText === preferred;
+            }))
+            .find(Boolean);
+
+        const keywordMatch = exactMatch || fallbackKeywords
+            .map(value => (value || '').toLowerCase().trim())
+            .filter(Boolean)
+            .map(keyword => options.find(option => {
+                const optionValue = (option.value || '').toLowerCase();
+                const optionText = (option.text || '').toLowerCase();
+                return optionValue.includes(keyword) || optionText.includes(keyword);
+            }))
+            .find(Boolean);
+
+        if (!keywordMatch || !keywordMatch.value) {
+            return null;
+        }
+
+        selectElement.value = keywordMatch.value;
+        selectElement.dispatchEvent(new Event('change'));
+
+        return keywordMatch.value;
+    }
+
+    // Pagination state for File Tracker Log tab
+    let currentPage = 1;
+    let itemsPerPage = 20;
+    let totalPages = 1;
+    let filteredTrackers = [];
+
+    activateSelectDestinationFieldName();
+
+    function toNormalizedString(value) {
+        return (value ?? '').toString().trim().toLowerCase();
+    }
+
+    function officeMatchesRegistry(code, office = {}) {
+        const candidates = [
+            code,
+            office.code,
+            office.name,
+            office.displayName,
+            office.department
+        ]
+            .map(toNormalizedString)
+            .filter(Boolean);
+
+        if (!candidates.length) {
+            return false;
+        }
+
+        const exactCodes = new Set(['reg', 'rg', 'registry']);
+        if (candidates.some((token) => exactCodes.has(token))) {
+            return true;
+        }
+
+        return candidates.some((token) => token.includes('registry'));
+    }
+
+    function getSelectedOriginOfficeCode() {
+        const domValue = originOfficeSelectElement
+            ? toNormalizedString(originOfficeSelectElement.value).toUpperCase()
+            : '';
+        if (domValue) {
+            return domValue;
+        }
+
+        if (originOfficeSelect && typeof originOfficeSelect.val === 'function') {
+            const jqValue = originOfficeSelect.val();
+            if (jqValue !== undefined && jqValue !== null) {
+                const normalized = toNormalizedString(jqValue).toUpperCase();
+                if (normalized) {
+                    return normalized;
+                }
+            }
+        }
+
+        if (originOfficeIdInput && originOfficeIdInput.value) {
+            const hiddenValue = toNormalizedString(originOfficeIdInput.value).toUpperCase();
+            if (hiddenValue) {
+                return hiddenValue;
+            }
+        }
+
+        return '';
+    }
+
+    function activateSelectDestinationFieldName() {
+        if (destinationOfficeSelectElement) {
+            destinationOfficeSelectElement.setAttribute('name', DESTINATION_FIELD_NAME);
+        }
+        if (customDestinationInput) {
+            customDestinationInput.removeAttribute('name');
+        }
+    }
+
+    function activateCustomDestinationFieldName() {
+        if (destinationOfficeSelectElement) {
+            destinationOfficeSelectElement.removeAttribute('name');
+        }
+        if (customDestinationInput) {
+            customDestinationInput.setAttribute('name', DESTINATION_FIELD_NAME);
+        }
+    }
+
+    function buildCustomOfficeCode(label = '') {
+        const normalized = label
+            .toString()
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+
+        if (!normalized) {
+            return 'CUSTOM';
+        }
+
+        const truncated = normalized.length > 20
+            ? normalized.substring(0, 20)
+            : normalized;
+
+        return truncated.startsWith('CUSTOM') ? truncated : `CUSTOM-${truncated}`;
+    }
+
+    function isKangisWorkflowSubmissionMode() {
+        const currentModule = (window.currentModule || '').toLowerCase();
+        if (currentModule !== 'kangis') {
+            return false;
+        }
+
+        const workflowToggle = document.getElementById('workflow-3step-toggle');
+        return Boolean(workflowToggle && workflowToggle.checked);
+    }
+
+    function getDefaultReceivingOfficerHint() {
+        if (receivingDirectory.users.length) {
+            return 'Select the colleague receiving this file.';
+        }
+        if (receivingDirectoryPromise) {
+            return 'Directory loading...';
+        }
+        return 'No receiving officers available. Refresh to retry.';
+    }
+
+    function setSelectLockState(selectEl, disabled) {
+        if (!selectEl) {
+            return;
+        }
+
+        selectEl.disabled = disabled;
+        selectEl.classList.toggle('bg-gray-100', disabled);
+        selectEl.classList.toggle('text-gray-500', disabled);
+        selectEl.classList.toggle('cursor-not-allowed', disabled);
+    }
+
+    function applyKangisOfficeWorkflowGate() {
+        const lockReceivingDetails = isKangisWorkflowSubmissionMode();
+
+        // Lock/unlock Receiving Office field group via CSS (immune to select2 reinitialization)
+        const receivingOfficeGroup = document.getElementById('receiving-office-group');
+        if (receivingOfficeGroup) {
+            receivingOfficeGroup.classList.toggle('opacity-50', lockReceivingDetails);
+            receivingOfficeGroup.classList.toggle('pointer-events-none', lockReceivingDetails);
+        }
+
+        // Lock/unlock Receiving Officer field group via CSS
+        const receivingOfficerGroup = document.getElementById('receiving-officer-group');
+        if (receivingOfficerGroup) {
+            receivingOfficerGroup.classList.toggle('opacity-50', lockReceivingDetails);
+            receivingOfficerGroup.classList.toggle('pointer-events-none', lockReceivingDetails);
+        }
+
+        // Show/hide the amber lock note (sits outside the dimmed groups)
+        if (receivingDetailsLockNote) {
+            receivingDetailsLockNote.classList.toggle('hidden', !lockReceivingDetails);
+        }
+    }
+
+    // Expose globally so workflow-3step-js can call it after toggle init
+    window.applyKangisOfficeWorkflowGate = applyKangisOfficeWorkflowGate;
+
+    /**
+     * Apply button state based on an existing KANGIS workflow tracker.
+     * - Steps 1–3 (pending): disable button, show amber "Pending Approval" label.
+     * - Step 4+ (approved/processing): enable button, switch to blue "Save Log" (final record mode).
+     * - null / no workflow: reset to the default KANGIS send-mode state.
+     */
+    function applyKangisWorkflowButtonGate(data) {
+        const btn = document.getElementById('saveFileLogBtn');
+        if (!btn) return;
+
+        const isKangisModule = (window.currentModule || '').toLowerCase() === 'kangis';
+        if (!isKangisModule) return;
+
+        // In Cross-Registry Request mode the button label is owned by
+        // applyCrossModuleFieldLabels() (e.g. "Send to Registry 1 - Land").
+        // Skip the KANGIS workflow gate so it doesn't overwrite the label
+        // back to "Send to Director GIS" after metadata lookups.
+        if (_crossModuleRequestMode) return;
+
+        const wfType = data && (data.workflow_type || data.workflowType);
+        const wfStep = data ? Number(data.workflow_step ?? data.workflowStep ?? 0) : 0;
+        const isKangisWorkflow = wfType === 'kangis_3step' || wfType === 'kangis_approval_flow';
+
+        if (isKangisWorkflow && wfStep >= 1 && wfStep < 4) {
+            // Pending approval — disable the button
+            btn.disabled = true;
+            btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700', 'bg-blue-600', 'hover:bg-blue-700');
+            btn.classList.add('bg-amber-500', 'cursor-not-allowed', 'opacity-75');
+            btn.innerHTML = '<i data-lucide="clock" class="h-4 w-4 mr-2"></i>Pending Approval';
+            if (window.lucide) window.lucide.createIcons();
+
+            // Also lock receiving fields while pending
+            const receivingOfficeGroup = document.getElementById('receiving-office-group');
+            const receivingOfficerGroup = document.getElementById('receiving-officer-group');
+            if (receivingOfficeGroup) { receivingOfficeGroup.classList.add('opacity-50', 'pointer-events-none'); }
+            if (receivingOfficerGroup) { receivingOfficerGroup.classList.add('opacity-50', 'pointer-events-none'); }
+            const lockNote = document.getElementById('receiving-details-lock-note');
+            if (lockNote) lockNote.classList.remove('hidden');
+
+        } else if (isKangisWorkflow && wfStep >= 4) {
+            // Workflow complete — unlock for final save
+            btn.disabled = false;
+            btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700', 'bg-amber-500', 'cursor-not-allowed', 'opacity-75');
+            btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+            btn.innerHTML = '<i data-lucide="save" class="h-4 w-4 mr-2"></i>Save Log';
+            if (window.lucide) window.lucide.createIcons();
+
+            // Unlock receiving fields for final record
+            const receivingOfficeGroup = document.getElementById('receiving-office-group');
+            const receivingOfficerGroup = document.getElementById('receiving-officer-group');
+            if (receivingOfficeGroup) { receivingOfficeGroup.classList.remove('opacity-50', 'pointer-events-none'); }
+            if (receivingOfficerGroup) { receivingOfficerGroup.classList.remove('opacity-50', 'pointer-events-none'); }
+            const lockNote = document.getElementById('receiving-details-lock-note');
+            if (lockNote) lockNote.classList.add('hidden');
+
+        } else {
+            // No existing workflow — restore to default KANGIS send mode
+            btn.disabled = false;
+            btn.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'bg-amber-500', 'cursor-not-allowed', 'opacity-75');
+            btn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+            btn.innerHTML = '<i data-lucide="send" class="h-4 w-4 mr-2"></i>Send to Director GIS';
+            if (window.lucide) window.lucide.createIcons();
+        }
+    }
+    window.applyKangisWorkflowButtonGate = applyKangisWorkflowButtonGate;
+
+    function getCustomDestinationOfficeDetails() {
+        if (!customDestinationInput) {
+            return null;
+        }
+
+        const name = customDestinationInput.value.trim();
+        if (!name) {
+            return null;
+        }
+
+        return {
+            id: null,
+            name,
+            displayName: name,
+            code: buildCustomOfficeCode(name),
+            department: 'Custom Entry'
+        };
+    }
+
+    function renderDestinationOfficeInfo(office, selectedKey = '') {
+        if (!destinationOfficeInfoPanel || !destinationOfficeBadge || !destinationOfficeCodeBadge || !destinationOfficeDepartment) {
+            return;
+        }
+
+        if (!office) {
+            destinationOfficeInfoPanel.classList.add('hidden');
+            destinationOfficeBadge.textContent = '';
+            destinationOfficeCodeBadge.textContent = '';
+            destinationOfficeDepartment.textContent = '';
+            return;
+        }
+
+        const resolvedCode = office.code || office.officeCode || selectedKey || 'CUSTOM';
+        const resolvedBadge = selectedKey && selectedKey !== CUSTOM_DESTINATION_OPTION_VALUE
+            ? selectedKey
+            : resolvedCode;
+
+        destinationOfficeBadge.textContent = resolvedBadge;
+        destinationOfficeCodeBadge.textContent = resolvedCode;
+        destinationOfficeDepartment.textContent = `Department: ${office.department || 'N/A'}`;
+        destinationOfficeInfoPanel.classList.remove('hidden');
+    }
+
+    function enableCustomDestinationMode() {
+        if (!customDestinationWrapper || !customDestinationInput) {
+            return;
+        }
+
+        customDestinationWrapper.classList.remove('hidden');
+        customDestinationInput.disabled = false;
+        activateCustomDestinationFieldName();
+        customDestinationInput.focus();
+
+        customDestinationOfficeDetails = getCustomDestinationOfficeDetails();
+        if (destinationOfficeIdInput) {
+            destinationOfficeIdInput.value = customDestinationOfficeDetails?.code || '';
+        }
+
+        renderDestinationOfficeInfo(customDestinationOfficeDetails, CUSTOM_DESTINATION_OPTION_VALUE);
+    }
+
+    function disableCustomDestinationMode() {
+        if (!customDestinationWrapper || !customDestinationInput) {
+            return;
+        }
+
+        customDestinationWrapper.classList.add('hidden');
+        customDestinationInput.value = '';
+        customDestinationInput.disabled = true;
+        customDestinationOfficeDetails = null;
+        activateSelectDestinationFieldName();
+        if (destinationOfficeIdInput) {
+            destinationOfficeIdInput.value = '';
+        }
+
+        renderDestinationOfficeInfo(null);
+    }
+
+    function normalizeNumericId(value) {
+        if (value === undefined || value === null || value === '') {
+            return null;
+        }
+        // Preserve ro_ prefixed IDs from other_receiving_officers
+        if (typeof value === 'string' && value.startsWith('ro_')) {
+            return value;
+        }
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    /**
+     * Check whether a raw officer ID is valid (either a positive integer or an ro_ prefixed string).
+     */
+    function isValidOfficerId(value) {
+        if (typeof value === 'string' && value.startsWith('ro_')) {
+            return true;
+        }
+        const n = Number(value);
+        return Number.isFinite(n) && n > 0;
+    }
+
+    function entryBelongsToCurrentUser(entry, tracker = null) {
+        if (!entry || !currentUserId) {
+            return false;
+        }
+
+        const targetId = Number(currentUserId);
+        const trackerAssigneeId = tracker?.assignedToId ?? tracker?.receivingOfficer?.id ?? null;
+
+        return [
+            entry?.acceptedById,
+            entry?.receivingOfficerId,
+            trackerAssigneeId
+        ].some(candidate => {
+            const parsed = normalizeNumericId(candidate);
+            return parsed !== null && parsed === targetId;
+        });
+    }
+
+    function getActiveMovementEntry(tracker) {
+        return (tracker?.logEntries || []).find(
+            entry => (entry.status || '').toLowerCase() === 'active'
+        ) || null;
+    }
+
+    function getPendingMovementEntry(tracker) {
+        return (tracker?.logEntries || []).find(
+            entry => (entry.status || '').toLowerCase() === 'pending_acceptance'
+        ) || null;
+    }
+
+    function resolveTransferEligibility(tracker) {
+        if (!tracker) {
+            return { allowed: false, reason: 'Tracker details unavailable.' };
+        }
+
+        const activeEntry = getActiveMovementEntry(tracker);
+
+        if (!activeEntry) {
+            return {
+                allowed: false,
+                reason: 'You have already logged this file out. It must be reassigned to you before the next transfer.',
+                code: 'no-active'
+            };
+        }
+
+        if (!entryBelongsToCurrentUser(activeEntry, tracker)) {
+            const holderName = activeEntry.receivingOfficerName
+                || tracker.receivingOfficerName
+                || 'another officer';
+            return {
+                allowed: false,
+                reason: `Only ${holderName} can move this file right now.`,
+                code: 'not-owner'
+            };
+        }
+
+        return {
+            allowed: true,
+            entry: activeEntry
+        };
+    }
+
+    function setMovementError(message) {
+        if (!movementErrorBox) {
+            return;
+        }
+        if (!message) {
+            movementErrorBox.classList.add('hidden');
+            movementErrorBox.textContent = '';
+            return;
+        }
+        movementErrorBox.textContent = message;
+        movementErrorBox.classList.remove('hidden');
+    }
+
+    function resetMovementDialog() {
+        if (movementNotesField) {
+            movementNotesField.value = '';
+        }
+        if (movementOfficerSelect && movementOfficerSelect.length) {
+            movementOfficerSelect.val('');
+            if ($.fn.select2 && movementOfficerSelect.data('select2')) {
+                movementOfficerSelect.trigger('change');
+            }
+        }
+        if (movementOverrideToggle) {
+            movementOverrideToggle.checked = false;
+        }
+        if (movementDestinationLabel) {
+            movementDestinationLabel.textContent = 'Select a destination office to continue.';
+        }
+        setMovementError('');
+    }
+
+    function updateMovementDestinationSummary(tracker, officeId) {
+        if (!movementDestinationLabel) {
+            return;
+        }
+        const office = officeData && officeData[officeId]
+            ? officeData[officeId]
+            : null;
+        const officeLabel = office
+            ? `${office.name} (${office.code})`
+            : officeId || 'selected office';
+        const fileLabel = tracker?.fileName
+            || tracker?.fileNo
+            || tracker?.trackingId
+            || 'this file';
+        movementDestinationLabel.textContent = `File "${fileLabel}" will be logged into ${officeLabel}.`;
+    }
+
+    function openMovementDialogFor(tracker, officeId) {
+        if (!movementDialog) {
+            Swal.fire({ icon: 'error', title: 'Unavailable', text: 'Movement dialog is unavailable.' }); return;
+            return;
+        }
+
+        resetMovementDialog();
+        updateMovementDestinationSummary(tracker, officeId);
+        movementDialog.classList.add('show');
+
+        ensureReceivingDirectoryReady()
+            .then(() => {
+                if (movementOfficerSelect && movementOfficerSelect.length) {
+                    populateReceivingOfficerOptionsForElement(movementOfficerSelect, '', {
+                        includeCustomOption: (window.currentModule === 'kangis' || window.currentModule === 'new_kangis'),
+                        placeholder: 'Select receiving officer',
+                        dropdownParent: movementOfficerSelect.closest('.dialog-content')
+                    });
+                }
+                setMovementError('');
+                if (movementNotesField) {
+                    movementNotesField.focus();
+                }
+            })
+            .catch(() => {
+                setMovementError('Unable to load the receiving officer directory. Please refresh and try again.');
+            });
+    }
+
+    function loadOfficeData({ force = false } = {}) {
+        return loadReceivingDirectory({ force });
+    }
+
+    function getStoredOriginOfficeCode() {
+        try {
+            return window.sessionStorage ? window.sessionStorage.getItem('createFileTracker.originOfficeCode') : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function storeOriginOfficeCode(code) {
+        try {
+            if (!window.sessionStorage) {
+                return;
+            }
+
+            const normalized = (code || '').toString().trim().toUpperCase();
+
+            if (normalized) {
+                window.sessionStorage.setItem('createFileTracker.originOfficeCode', normalized);
+            } else {
+                window.sessionStorage.removeItem('createFileTracker.originOfficeCode');
+            }
+        } catch (error) {
+            console.warn('Unable to persist origin office selection', error);
+        }
+    }
+
+    function resolveOfficeKey(candidate) {
+        if (!candidate) {
+            return null;
+        }
+
+        const normalized = candidate.toString().trim().toUpperCase();
+        return normalized && officeData && officeData[normalized] ? normalized : null;
+    }
+
+    function determineDefaultOriginOffice() {
+        if (!officeData || Object.keys(officeData).length === 0) {
+            return null;
+        }
+
+        const datasetDefault = originOfficeSelect && typeof originOfficeSelect.data === 'function'
+            ? originOfficeSelect.data('default')
+            : null;
+
+        const resolvedDatasetDefault = resolveOfficeKey(datasetDefault);
+        if (resolvedDatasetDefault) {
+            return resolvedDatasetDefault;
+        }
+
+        const stored = getStoredOriginOfficeCode();
+        const resolvedStored = resolveOfficeKey(stored);
+        if (resolvedStored) {
+            return resolvedStored;
+        }
+
+        const preloadedCandidates = [
+            window.PageContext?.defaultRegistryCode,
+            window.PageContext?.originOfficeCode,
+            window.PageContext?.defaultRegistry,
+            window.PageDefaults?.originOfficeCode,
+            window.AppDefaults?.originOfficeCode,
+            window.AppDefaults?.registryOriginCode
+        ].filter(Boolean);
+
+        for (const candidate of preloadedCandidates) {
+            const resolvedCandidate = resolveOfficeKey(candidate);
+            if (resolvedCandidate) {
+                return resolvedCandidate;
+            }
+        }
+
+        const entries = Object.entries(officeData);
+
+        const registryMatch = entries.find(([code, office]) => officeMatchesRegistry(code, office));
+        if (registryMatch) {
+            return registryMatch[0];
+        }
+
+        entries.sort((a, b) => {
+            const aPriority = officeMatchesRegistry(a[0], a[1]) ? 0 : 1;
+            const bPriority = officeMatchesRegistry(b[0], b[1]) ? 0 : 1;
+            if (aPriority !== bPriority) {
+                return aPriority - bPriority;
+            }
+
+            const labelA = (a[1].name || a[1].displayName || a[0] || '').toString().toLowerCase();
+            const labelB = (b[1].name || b[1].displayName || b[0] || '').toString().toLowerCase();
+            return labelA.localeCompare(labelB);
+        });
+
+        return entries.length > 0 ? entries[0][0] : null;
+    }
+
+    function updateOriginOfficeInfo(officeId) {
+        if (!originOfficeIdInput || !originOfficeInfoPanel) {
+            return;
+        }
+
+        const office = officeId && officeData && officeData[officeId]
+            ? officeData[officeId]
+            : null;
+
+        if (office) {
+            originOfficeIdInput.value = officeId;
+            defaultOriginOfficeCode = officeId;
+
+            if (originOfficeBadge) {
+                originOfficeBadge.textContent = officeId;
+            }
+
+            if (originOfficeCodeBadge) {
+                originOfficeCodeBadge.textContent = office.code || officeId;
+            }
+
+            if (originOfficeDepartment) {
+                const label = office.department ? `Department: ${office.department}` : 'Department: N/A';
+                originOfficeDepartment.textContent = label;
+            }
+
+            originOfficeInfoPanel.classList.remove('hidden');
+            storeOriginOfficeCode(officeId);
+        } else {
+            originOfficeIdInput.value = '';
+
+            if (originOfficeBadge) {
+                originOfficeBadge.textContent = '';
+            }
+
+            if (originOfficeCodeBadge) {
+                originOfficeCodeBadge.textContent = '';
+            }
+
+            if (originOfficeDepartment) {
+                originOfficeDepartment.textContent = '';
+            }
+
+            originOfficeInfoPanel.classList.add('hidden');
+            storeOriginOfficeCode(null);
+        }
+    }
+
+    function applyDefaultOriginSelection({ force = false } = {}) {
+        if (!originOfficeSelect || originOfficeSelect.length === 0) {
+            return null;
+        }
+
+        const currentValueRaw = originOfficeSelect.val();
+        const currentValue = resolveOfficeKey(currentValueRaw);
+        if (!force && currentValue) {
+            updateOriginOfficeInfo(currentValue);
+            return currentValue;
+        }
+
+        // Check data-default attribute directly against available select options
+        const datasetDefault = typeof originOfficeSelect.data === 'function'
+            ? originOfficeSelect.data('default')
+            : null;
+        if (datasetDefault) {
+            const matchOption = originOfficeSelect.find('option').filter(function() {
+                return $(this).val() === datasetDefault;
+            });
+            if (matchOption.length > 0) {
+                originOfficeSelect.val(datasetDefault);
+                originOfficeSelect.trigger('change');
+                return datasetDefault;
+            }
+        }
+        const resolvedDataset = resolveOfficeKey(datasetDefault);
+        if (resolvedDataset) {
+            originOfficeSelect.val(resolvedDataset);
+            originOfficeSelect.trigger('change');
+            return resolvedDataset;
+        }
+
+        const stored = getStoredOriginOfficeCode();
+        const resolvedStored = resolveOfficeKey(stored);
+        if (resolvedStored) {
+            originOfficeSelect.val(resolvedStored);
+            originOfficeSelect.trigger('change');
+            return resolvedStored;
+        }
+
+        const defaultCandidate = determineDefaultOriginOffice();
+        if (defaultCandidate) {
+            originOfficeSelect.val(defaultCandidate);
+            originOfficeSelect.trigger('change');
+            return defaultCandidate;
+        }
+
+        originOfficeSelect.val('');
+        originOfficeSelect.trigger('change');
+        return null;
+    }
+
+    function populateOfficesUI() {
+        // Legacy function - UI is now populated server-side
+        updateFileTrackersTable();
+        updateRecentActivity();
+        updateQuickStats();
+    }
+
+    function populateOfficeSelect($select, options = {}) {
+        if (!$select || $select.length === 0) {
+            return;
+        }
+
+        const settings = Object.assign({
+            placeholder: 'Select office',
+            includeCustomOption: false,
+            autoSelectDefault: false
+        }, options);
+
+        const htmlOptions = [`<option value="">${escapeHtml(settings.placeholder)}</option>`];
+
+        // Use receivingDirectory.offices as the source of truth if officeData is empty
+        const offices = (receivingDirectory && receivingDirectory.offices && receivingDirectory.offices.length > 0)
+            ? receivingDirectory.offices
+            : Object.values(officeData || {});
+
+        if (offices && offices.length > 0) {
+            offices.forEach(office => {
+                const code = office.code || office.office_code || office.id;
+                const name = office.name || office.office_name || office.displayName || code;
+                const department = office.department || '';
+
+                htmlOptions.push(`<option value="${escapeHtml(code)}" data-name="${escapeHtml(name)}" data-department="${escapeHtml(department)}">${escapeHtml(name)}</option>`);
+
+                // Also ensure officeData is updated
+                if (code && (!officeData[code] || !officeData[code].name)) {
+                    officeData[code] = {
+                        id: office.id,
+                        code: code,
+                        name: name,
+                        displayName: name,
+                        department: department
+                    };
+                }
+            });
+        }
+
+        $select.html(htmlOptions.join(''));
+
+        if (settings.includeCustomOption) {
+            $select.append(`<option value="${CUSTOM_DESTINATION_OPTION_VALUE}">Other</option>`);
+        }
+
+        if (settings.autoSelectDefault) {
+            const defaultCode = determineDefaultOriginOffice();
+            if (defaultCode) {
+                $select.val(defaultCode);
+            }
+        }
+    }
+
+    function normalizeReceivingDirectory(raw) {
+        if (!raw || typeof raw !== 'object') {
+            return { offices: [], users: [] };
+        }
+
+        const source = raw.offices || raw.users ? raw : (raw.data || {});
+
+        return {
+            offices: Array.isArray(source.offices) ? source.offices : [],
+            users: Array.isArray(source.users) ? source.users : []
+        };
+    }
+
+    function updateReceivingOfficerHint(message) {
+        if (!receivingOfficerHint || receivingOfficerHint.length === 0) {
+            return;
+        }
+
+        receivingOfficerHint.text(message);
+    }
+
+    function resolveOfficerName(officer) {
+        if (!officer) {
+            return '';
+        }
+        if (officer.name && officer.name.trim() !== '') {
+            return officer.name;
+        }
+        const first = officer.first_name || '';
+        const last = officer.last_name || '';
+        const combined = `${first} ${last}`.trim();
+        if (combined !== '') {
+            return combined;
+        }
+        return officer.username ? officer.username : `User #${officer.id ?? ''}`.trim();
+    }
+
+    function deriveReceivingOfficerDepartment(officer) {
+        const selectedOfficeId = $('#current-office').val();
+        if (selectedOfficeId === CUSTOM_DESTINATION_OPTION_VALUE) {
+            return customDestinationOfficeDetails?.department || 'Custom Entry';
+        }
+
+        const officeDepartment = selectedOfficeId && officeData[selectedOfficeId]
+            ? (officeData[selectedOfficeId].department || null)
+            : null;
+
+        if (officeDepartment) {
+            return officeDepartment;
+        }
+
+        return 'N/A';
+    }
+
+    function receivingOfficerMatcher(params, data) {
+        if ($.trim(params.term) === '') {
+            return data;
+        }
+
+        if (!data.element) {
+            return null;
+        }
+
+        const term = params.term.toLowerCase();
+        const element = data.element;
+        const searchTokens = (element.getAttribute('data-search-term') || '').toLowerCase();
+
+        if (searchTokens.includes(term)) {
+            return data;
+        }
+
+        return null;
+    }
+
+    function rebuildReceivingOfficerOptionsCache() {
+        const users = Array.isArray(receivingDirectory.users)
+            ? receivingDirectory.users.slice().sort((a, b) => (resolveOfficerName(a) || '').localeCompare(resolveOfficerName(b) || ''))
+            : [];
+
+        receivingOfficerMap.clear();
+
+        receivingOfficerOptionsCache = users
+            .map((user) => {
+                if (!user || user.id === undefined || user.id === null) {
+                    return null;
+                }
+
+                const id = String(user.id);
+                const resolvedName = resolveOfficerName(user);
+                const normalizedUser = Object.assign({}, user, {
+                    name: resolvedName,
+                });
+
+                receivingOfficerMap.set(id, normalizedUser);
+
+                const searchTokens = [
+                    resolvedName,
+                    user.first_name,
+                    user.last_name,
+                    user.username,
+                    id
+                ].filter(Boolean).join(' ').toLowerCase();
+
+                return {
+                    id,
+                    label: resolvedName,
+                    searchTerm: searchTokens
+                };
+            })
+            .filter(Boolean);
+    }
+
+    function populateReceivingOfficerOptionsForElement($select, selectedValue = '', config = {}) {
+        if (!$select || $select.length === 0) {
+            return;
+        }
+
+        if (!receivingOfficerOptionsCache.length) {
+            rebuildReceivingOfficerOptionsCache();
+        }
+
+        const settings = Object.assign({
+            placeholder: 'Select receiving officer',
+            dropdownParent: null,
+            includeCustomOption: true
+        }, config);
+
+        const options = [`<option value="">${escapeHtml(settings.placeholder)}</option>`];
+
+        receivingOfficerOptionsCache.forEach(option => {
+            const isSelected = selectedValue && String(selectedValue) === option.id;
+            const selectedAttr = isSelected ? ' selected' : '';
+            options.push(
+                `<option value="${escapeHtml(option.id)}"${selectedAttr} data-search-term="${escapeHtml(option.searchTerm)}">${escapeHtml(option.label)}</option>`
+            );
+        });
+
+        if (settings.includeCustomOption) {
+            options.push(`<option value="${CUSTOM_RECEIVING_OFFICER_VALUE}" data-search-term="other">+ Add Other Officer...</option>`);
+        }
+
+        $select.html(options.join(''));
+
+        if (selectedValue) {
+            $select.val(String(selectedValue));
+        } else {
+            $select.val('');
+        }
+
+        if ($select === receivingOfficerSelect) {
+            $select.trigger('change');
+        }
+
+        if ($.fn.select2) {
+            if ($select.data('select2')) {
+                $select.select2('destroy');
+            }
+
+            let dropdownParent = settings.dropdownParent;
+            if (!dropdownParent || !dropdownParent.length) {
+                dropdownParent = $select.closest('.dialog-content');
+            }
+            if (!dropdownParent || !dropdownParent.length) {
+                dropdownParent = $select.closest('.space-y-2');
+            }
+
+            $select.select2({
+                placeholder: settings.placeholder,
+                allowClear: true,
+                width: '100%',
+                dropdownParent: dropdownParent && dropdownParent.length ? dropdownParent : undefined,
+                matcher: receivingOfficerMatcher
+            });
+        }
+    }
+
+    function populateReceivingOfficerSelect() {
+        if (!receivingOfficerSelect || receivingOfficerSelect.length === 0) {
+            return;
+        }
+
+        const previousValue = receivingOfficerSelect.val();
+        rebuildReceivingOfficerOptionsCache();
+        populateReceivingOfficerOptionsForElement(receivingOfficerSelect, previousValue, {
+            placeholder: 'Select receiving officer'
+        });
+
+        updateReceivingOfficerHint(getDefaultReceivingOfficerHint());
+
+        receivingOfficerSelect.trigger('change');
+        applyKangisOfficeWorkflowGate();
+    }
+
+    function ensureOfficeDirectory() {
+        if (officeData && Object.keys(officeData).length) {
+            return Promise.resolve();
+        }
+
+        return loadOfficeData();
+    }
+
+    function ensureReceivingDirectoryReady() {
+        if (Array.isArray(receivingDirectory.users) && receivingDirectory.users.length) {
+            return Promise.resolve(receivingDirectory);
+        }
+
+        return loadReceivingDirectory();
+    }
+
+    function updateReceivingOfficerInfo(officerId) {
+        // UI element removed per user request
+    }
+
+    function loadReceivingDirectory({ force = false } = {}) {
+        if (receivingDirectoryPromise && !force) {
+            return receivingDirectoryPromise;
+        }
+
+        updateReceivingOfficerHint('Directory loading...');
+
+        const tryAssignmentWorkflow = () => {
+            try {
+                if (window.AssignmentWorkflow && typeof window.AssignmentWorkflow.fetchOptions === 'function') {
+                    return window.AssignmentWorkflow.fetchOptions();
+                }
+            } catch (error) {
+                console.warn('AssignmentWorkflow fetchOptions failed', error);
+            }
+
+            return null;
+        };
+
+        const fallbackFetch = () => $.ajax({
+            url: '/api/file-trackings/assignment/options',
+            method: 'GET',
+            dataType: 'json'
+        }).then((response) => {
+            if (response && response.success && response.data) {
+                return response.data;
+            }
+
+            const message = response?.message || 'Unable to load receiving directory.';
+            throw new Error(message);
+        });
+
+        const assignmentPromise = tryAssignmentWorkflow();
+
+        receivingDirectoryPromise = (assignmentPromise || fallbackFetch())
+            .then((options) => {
+                receivingDirectory = normalizeReceivingDirectory(options);
+
+                // Populate officeData from receivingDirectory
+                if (receivingDirectory.offices && receivingDirectory.offices.length > 0) {
+                    receivingDirectory.offices.forEach(office => {
+                        const code = office.code || office.office_code || office.id;
+                        if (code) {
+                            officeData[code] = {
+                                id: office.id,
+                                code: code,
+                                name: office.name || office.office_name,
+                                displayName: office.name || office.office_name,
+                                department: office.department || ''
+                            };
+                        }
+                    });
+                }
+
+                populateReceivingOfficerSelect();
+                applyKangisOfficeWorkflowGate();
+                return receivingDirectory;
+            })
+            .catch((error) => {
+                console.error('Failed to load receiving directory', error);
+                updateReceivingOfficerHint('Unable to load directory. Refresh to retry.');
+                receivingDirectoryPromise = null;
+                return Promise.reject(error);
+            });
+
+        return receivingDirectoryPromise;
+    }
+
+    function resetNewOfficerForm() {
+        if (newOfficerForm) {
+            newOfficerForm.reset();
+        } else {
+            if (newOfficerFirstNameInput) {
+                newOfficerFirstNameInput.value = '';
+            }
+            if (newOfficerLastNameInput) {
+                newOfficerLastNameInput.value = '';
+            }
+        }
+
+        // Reset optional fields
+        if (newOfficerPhoneInput) newOfficerPhoneInput.value = '';
+        if (newOfficerEmailInput) newOfficerEmailInput.value = '';
+        if (newOfficerOfficeInput) newOfficerOfficeInput.value = '';
+        if (newOfficerDesignationInput) newOfficerDesignationInput.value = '';
+        if (newOfficerNotesInput) newOfficerNotesInput.value = '';
+
+        setNewOfficerError('');
+    }
+
+    // toggleOfficerTypeFields - no longer needed, kept as no-op for any residual callers
+    function toggleOfficerTypeFields() { }
+
+    // updateNewOfficerUsernamePreview - no longer needed, kept as no-op
+    function updateNewOfficerUsernamePreview() { }
+
+    function setNewOfficerError(message = '') {
+        if (!newOfficerErrorBox) {
+            if (message) {
+                Swal.fire({ icon: 'error', title: 'Error', text: message });
+            }
+            return;
+        }
+
+        if (message) {
+            newOfficerErrorBox.textContent = message;
+            newOfficerErrorBox.classList.remove('hidden');
+        } else {
+            newOfficerErrorBox.textContent = '';
+            newOfficerErrorBox.classList.add('hidden');
+        }
+    }
+
+    function setNewOfficerSubmitting(state) {
+        if (!newOfficerSubmitButton) {
+            return;
+        }
+        const isBusy = Boolean(state);
+        newOfficerSubmitButton.disabled = isBusy;
+        if (isBusy) {
+            if (!newOfficerSubmitButton.dataset.originalLabel) {
+                newOfficerSubmitButton.dataset.originalLabel = newOfficerSubmitButton.innerHTML;
+            }
+            newOfficerSubmitButton.innerHTML = '<i data-lucide="loader" class="mr-2 h-4 w-4 animate-spin"></i>Creating...';
+        } else if (newOfficerSubmitButton.dataset.originalLabel) {
+            newOfficerSubmitButton.innerHTML = newOfficerSubmitButton.dataset.originalLabel;
+            delete newOfficerSubmitButton.dataset.originalLabel;
+            if (window.lucide?.createIcons) {
+                window.lucide.createIcons();
+            }
+        }
+    }
+
+    function updateNewOfficerUsernamePreview() {
+        if (!newOfficerUsernameInput) {
+            return;
+        }
+        const first = (newOfficerFirstNameInput?.value || '').trim().toLowerCase();
+        const last = (newOfficerLastNameInput?.value || '').trim().toLowerCase();
+        const base = [first, last].filter(Boolean).join('.');
+        const sanitized = base.replace(/[^a-z0-9.]/g, '');
+        newOfficerUsernameInput.value = sanitized || 'officer';
+    }
+
+    function openNewOfficerDialog(targetSelect = null) {
+        pendingOfficerSelectTarget = targetSelect || receivingOfficerSelect;
+        resetNewOfficerForm();
+        if (newOfficerDialog) {
+            newOfficerDialog.classList.add('show');
+        }
+        if (newOfficerFirstNameInput) {
+            newOfficerFirstNameInput.focus();
+        }
+    }
+
+    function closeNewOfficerDialog() {
+        if (newOfficerDialog) {
+            newOfficerDialog.classList.remove('show');
+        }
+        pendingOfficerSelectTarget = null;
+    }
+
+    function submitNewOfficerForm() {
+        if (!newOfficerForm) {
+            return;
+        }
+        const firstName = (newOfficerFirstNameInput?.value || '').trim();
+        const lastName = (newOfficerLastNameInput?.value || '').trim();
+
+        if (!firstName || !lastName) {
+            setNewOfficerError('First name and last name are required.');
+            return;
+        }
+
+        setNewOfficerError('');
+        setNewOfficerSubmitting(true);
+
+        const url = '/create-file-tracker/receiving-officers';
+        const data = {
+            first_name: firstName,
+            last_name: lastName,
+            phone_number: (newOfficerPhoneInput?.value || '').trim(),
+            email: (newOfficerEmailInput?.value || '').trim(),
+            office_name: (newOfficerOfficeInput?.value || '').trim(),
+            designation: (newOfficerDesignationInput?.value || '').trim(),
+            notes: (newOfficerNotesInput?.value || '').trim(),
+        };
+
+        $.ajax({
+            url: url,
+            method: 'POST',
+            dataType: 'json',
+            data: data
+        })
+            .done(function (response) {
+                if (!response || !response.success || !response.data) {
+                    const fallbackMessage = response?.message || 'Unable to create receiving officer.';
+                    setNewOfficerError(fallbackMessage);
+                    return;
+                }
+
+                const officer = response.data;
+                const normalizedName = officer.name
+                    || [officer.first_name, officer.last_name].filter(Boolean).join(' ').trim()
+                    || `Officer #${officer.id}`;
+
+                if (!Array.isArray(receivingDirectory.users)) {
+                    receivingDirectory.users = [];
+                }
+
+                receivingDirectory.users = receivingDirectory.users.filter((user) => {
+                    return String(user.id) !== String(officer.id);
+                });
+
+                receivingDirectory.users.push({
+                    id: officer.id,
+                    name: normalizedName,
+                    first_name: officer.first_name,
+                    last_name: officer.last_name,
+                    username: null,
+                    source: 'receiving_officers'
+                });
+
+                receivingDirectoryPromise = Promise.resolve(receivingDirectory);
+                rebuildReceivingOfficerOptionsCache();
+                populateReceivingOfficerSelect();
+
+                if (window.AssignmentWorkflow?.state?.options?.users) {
+                    window.AssignmentWorkflow.state.options.users.push({
+                        id: officer.id,
+                        name: normalizedName,
+                        first_name: officer.first_name,
+                        last_name: officer.last_name,
+                        username: null,
+                        source: 'receiving_officers'
+                    });
+                }
+
+                const officerIdValue = officer.id ? String(officer.id) : '';
+
+                if (pendingOfficerSelectTarget && pendingOfficerSelectTarget.length) {
+                    const dropdownParent = pendingOfficerSelectTarget.closest('.dialog-content');
+                    populateReceivingOfficerOptionsForElement(
+                        pendingOfficerSelectTarget,
+                        officerIdValue,
+                        {
+                            placeholder: 'Select receiving officer',
+                            dropdownParent
+                        }
+                    );
+                } else if (receivingOfficerSelect && receivingOfficerSelect.length) {
+                    receivingOfficerSelect.val(officerIdValue).trigger('change');
+                }
+
+                if (receivingOfficerSelect && receivingOfficerSelect.length) {
+                    receivingOfficerSelect.val(officerIdValue).trigger('change');
+                }
+
+                showNotification(`Receiving officer "${normalizedName}" created successfully.`, 'success');
+                closeNewOfficerDialog();
+            })
+            .fail(function (xhr) {
+                const errors = xhr?.responseJSON?.errors;
+                if (errors) {
+                    const errorMessages = Object.values(errors)
+                        .reduce((all, messages) => {
+                            if (Array.isArray(messages)) {
+                                return all.concat(messages);
+                            }
+                            if (messages) {
+                                all.push(messages);
+                            }
+                            return all;
+                        }, [])
+                        .join(' ');
+                    setNewOfficerError(errorMessages || 'Unable to create receiving officer.');
+                    return;
+                }
+                const message = xhr?.responseJSON?.message || 'Unable to create receiving officer.';
+                setNewOfficerError(message);
+            })
+            .always(function () {
+                setNewOfficerSubmitting(false);
+            });
+    }
+
+    if (receivingOfficerSelect && receivingOfficerSelect.length) {
+        receivingOfficerSelect.on('change', function () {
+            const value = $(this).val();
+            if (value === CUSTOM_RECEIVING_OFFICER_VALUE) {
+                if ($.fn.select2 && $(this).data('select2')) {
+                    $(this).val(null).trigger('change.select2');
+                } else {
+                    $(this).val('');
+                }
+                updateReceivingOfficerInfo('');
+                openNewOfficerDialog(receivingOfficerSelect);
+                return;
+            }
+            updateReceivingOfficerInfo(value);
+        });
+    }
+
+    if (updateLogOfficerSelect && updateLogOfficerSelect.length) {
+        updateLogOfficerSelect.on('change', function () {
+            const value = $(this).val();
+            if (value === CUSTOM_RECEIVING_OFFICER_VALUE) {
+                if ($.fn.select2 && $(this).data('select2')) {
+                    $(this).val(null).trigger('change.select2');
+                } else {
+                    $(this).val('');
+                }
+                openNewOfficerDialog(updateLogOfficerSelect);
+            }
+        });
+    }
+
+
+    let fileTrackers = [];
+    const expandedTrackerHistory = new Set();
+    let currentTracker = null;
+    let pendingLogEntry = null; // Store pending log entry while waiting for notes
+    let currentDetailsTracker = null; // Store the tracker being viewed in details
+
+    // Global variables exposed to window for debugging and external access
+    window.fileTrackers = fileTrackers;
+    window.officeData = officeData;
+
+    function setUpdateLogError(message = '') {
+        if (!updateLogErrorBox) {
+            return;
+        }
+
+        if (message) {
+            updateLogErrorBox.textContent = message;
+            updateLogErrorBox.classList.remove('hidden');
+        } else {
+            updateLogErrorBox.textContent = '';
+            updateLogErrorBox.classList.add('hidden');
+        }
+    }
+
+    function findTrackerForUpdate(identifier) {
+        if (!identifier) {
+            return null;
+        }
+
+        const normalized = identifier.toString().toLowerCase();
+
+        return fileTrackers.find(tracker => {
+            if (tracker.trackingId && tracker.trackingId.toString().toLowerCase() === normalized) {
+                return true;
+            }
+            if (tracker.id !== undefined && tracker.id !== null) {
+                if (tracker.id.toString().toLowerCase() === normalized) {
+                    return true;
+                }
+            }
+            return false;
+        }) || null;
+    }
+
+    function openUpdateLogDialog(trackerIdentifier, logId) {
+        if (!updateLogDialog) {
+            return;
+        }
+
+        const tracker = findTrackerForUpdate(trackerIdentifier);
+
+        if (!tracker) {
+            Swal.fire({ icon: 'error', title: 'Not Found', text: 'Unable to locate this tracker. Please refresh and try again.' });
+            return;
+        }
+
+        if (!tracker.id) {
+            Swal.fire({ icon: 'warning', title: 'Unsaved Tracker', text: 'Please save this tracker before updating its movements.' });
+            return;
+        }
+
+        const logEntries = Array.isArray(tracker.logEntries) ? tracker.logEntries : [];
+        const logEntry = logEntries.find(entry => entry.logId === logId);
+
+        if (!logEntry) {
+            Swal.fire({ icon: 'error', title: 'Not Found', text: 'Log entry could not be found for this tracker.' });
+            return;
+        }
+
+        if ((logEntry.status || '').toLowerCase() !== 'pending_acceptance') {
+            Swal.fire({ icon: 'info', title: 'Already Processed', text: 'This log entry has already been processed and can no longer be updated.' });
+            return;
+        }
+
+        const sessionKey = `${tracker.id}-${logId}-${Date.now()}`;
+
+        updateLogContext = {
+            trackerId: tracker.id,
+            trackerTrackingId: tracker.trackingId,
+            logId,
+            tracker,
+            entry: logEntry,
+            sessionKey
+        };
+
+        if (updateLogFileLabel) {
+            updateLogFileLabel.textContent = tracker.fileNo || tracker.trackingId || `#${tracker.id}`;
+        }
+
+        if (updateLogEntryLabel) {
+            updateLogEntryLabel.textContent = logId || '-';
+        }
+
+        setUpdateLogError('');
+
+        if (updateLogOfficeSelect && updateLogOfficeSelect.length) {
+            updateLogOfficeSelect.prop('disabled', true);
+        }
+
+        if (updateLogOfficerSelect && updateLogOfficerSelect.length) {
+            updateLogOfficerSelect.prop('disabled', true);
+        }
+
+        updateLogDialog.classList.add('show');
+
+        const dialogContent = $('#update-log-dialog .dialog-content');
+
+        Promise.all([
+            Promise.resolve(ensureOfficeDirectory()),
+            Promise.resolve(ensureReceivingDirectoryReady())
+        ])
+            .then(() => {
+                if (!updateLogContext || updateLogContext.sessionKey !== sessionKey) {
+                    return;
+                }
+
+                if (updateLogOfficeSelect && updateLogOfficeSelect.length) {
+                    populateOfficeSelect(updateLogOfficeSelect, {
+                        placeholder: 'Select office',
+                        autoSelectDefault: false
+                    });
+
+                    const officeCode = logEntry.officeId
+                        || logEntry.receivingOfficeCode
+                        || tracker.currentOfficeId
+                        || tracker.currentOfficeCode
+                        || '';
+
+                    if (officeCode) {
+                        const hasOption = updateLogOfficeSelect.find('option').toArray().some(option => option.value === officeCode);
+                        if (!hasOption) {
+                            const fallbackLabel = logEntry.officeName
+                                || logEntry.receivingOfficeName
+                                || officeData[officeCode]?.name
+                                || officeCode;
+                            updateLogOfficeSelect.append(`<option value="${escapeHtml(officeCode)}">${escapeHtml(fallbackLabel)}</option>`);
+                        }
+                        updateLogOfficeSelect.val(officeCode);
+                    } else {
+                        updateLogOfficeSelect.val('');
+                    }
+
+                    updateLogOfficeSelect.prop('disabled', false).trigger('change');
+                }
+
+                if (updateLogOfficerSelect && updateLogOfficerSelect.length) {
+                    const preselectedOfficerId = logEntry.receivingOfficerId
+                        ?? (tracker.receivingOfficer && tracker.receivingOfficer.id)
+                        ?? null;
+
+                    populateReceivingOfficerOptionsForElement(updateLogOfficerSelect, preselectedOfficerId ? String(preselectedOfficerId) : '', {
+                        placeholder: 'Select receiving officer',
+                        dropdownParent: dialogContent
+                    });
+
+                    updateLogOfficerSelect.prop('disabled', false);
+                }
+            })
+            .catch((error) => {
+                console.error('Unable to load update log dependencies', error);
+                setUpdateLogError('Unable to load office directory or receiving officers. Please refresh and try again.');
+                if (updateLogOfficeSelect && updateLogOfficeSelect.length) {
+                    updateLogOfficeSelect.prop('disabled', false);
+                }
+                if (updateLogOfficerSelect && updateLogOfficerSelect.length) {
+                    updateLogOfficerSelect.prop('disabled', false);
+                }
+            });
+    }
+
+    function closeUpdateLogDialog() {
+        if (updateLogDialog) {
+            updateLogDialog.classList.remove('show');
+        }
+
+        setUpdateLogError('');
+
+        if (updateLogOfficeSelect && updateLogOfficeSelect.length) {
+            updateLogOfficeSelect.prop('disabled', false).val('').trigger('change');
+        }
+
+        if (updateLogOfficerSelect && updateLogOfficerSelect.length) {
+            updateLogOfficerSelect.prop('disabled', false);
+            if ($.fn.select2 && updateLogOfficerSelect.data('select2')) {
+                updateLogOfficerSelect.val(null).trigger('change');
+            } else {
+                updateLogOfficerSelect.val('').trigger('change');
+            }
+        }
+
+        updateLogContext = null;
+    }
+
+    function submitUpdateLogForm() {
+        if (!updateLogContext || !updateLogContext.trackerId || !updateLogContext.logId) {
+            Swal.fire({ icon: 'warning', title: 'No Entry Selected', text: 'No log entry selected for update.' });
+            return;
+        }
+
+        if (!updateLogOfficeSelect || !updateLogOfficerSelect) {
+            return;
+        }
+
+        const officeCodeRaw = (updateLogOfficeSelect.val() || '').toString().trim();
+        if (!officeCodeRaw) {
+            setUpdateLogError('Select the office that should own this log entry.');
+            return;
+        }
+
+        const officerIdRaw = updateLogOfficerSelect.val();
+        if (!officerIdRaw) {
+            setUpdateLogError('Select the receiving officer who should be tied to this log entry.');
+            return;
+        }
+
+        if (!isValidOfficerId(officerIdRaw)) {
+            setUpdateLogError('Invalid receiving officer selected.');
+            return;
+        }
+
+        const officerId = officerIdRaw; // Keep as-is (string for ro_, numeric string for users)
+
+        const office = officeData[officeCodeRaw] || null;
+        const officer = receivingOfficerMap.get(String(officerIdRaw));
+
+        if (!officer) {
+            setUpdateLogError('Selected officer could not be found in the current directory.');
+            return;
+        }
+
+        setUpdateLogError('');
+
+        const officeLabel = office?.name || office?.displayName || updateLogOfficeSelect.find('option:selected').text() || officeCodeRaw;
+        const officerName = officer.name || resolveOfficerName(officer) || `Officer ${officerId}`;
+
+        const payload = {
+            office_code: officeCodeRaw,
+            office_name: officeLabel,
+            receiving_officer_id: officerId,
+            receiving_officer_name: officerName
+        };
+
+        const saveButton = updateLogSaveButton;
+        let originalButtonHtml = '';
+
+        if (saveButton) {
+            originalButtonHtml = saveButton.innerHTML;
+            saveButton.disabled = true;
+            saveButton.innerHTML = '<i data-lucide="loader" class="mr-2 h-4 w-4 animate-spin"></i>Updating...';
+            lucide.createIcons();
+        }
+
+        $.ajax({
+            url: `/api/file-trackers/${updateLogContext.trackerId}/logs/${encodeURIComponent(updateLogContext.logId)}`,
+            method: 'PUT',
+            data: JSON.stringify(payload),
+            contentType: 'application/json',
+            processData: false
+        })
+            .done(function (response) {
+                if (response && response.success && response.data) {
+                    const normalizedTracker = transformApiTracker(response.data);
+                    upsertLocalTracker(normalizedTracker);
+                    showNotification('Log entry updated successfully.', 'success');
+                    closeUpdateLogDialog();
+                } else {
+                    const message = response?.message || 'Unable to update this log entry.';
+                    setUpdateLogError(message);
+                }
+            })
+            .fail(function (xhr) {
+                let message = 'Unable to update this log entry.';
+                if (xhr?.responseJSON) {
+                    if (xhr.responseJSON.errors) {
+                        const parts = Object.values(xhr.responseJSON.errors)
+                            .flat()
+                            .filter(Boolean);
+                        if (parts.length) {
+                            message = parts.join(' ');
+                        }
+                    } else if (xhr.responseJSON.message) {
+                        message = xhr.responseJSON.message;
+                    }
+                }
+                setUpdateLogError(message);
+            })
+            .always(function () {
+                if (saveButton) {
+                    saveButton.disabled = false;
+                    saveButton.innerHTML = originalButtonHtml || '<i data-lucide="save" class="mr-2 h-4 w-4"></i>Update Log';
+                    lucide.createIcons();
+                }
+            });
+    }
+    let lastMetadataLookup = null;
+    let activeMetadataRequest = null;
+    let resolvedFileIndexingId = null;
+    let forceNextMetadataLookup = false;
+    let resolvedWorkflowState = null; // { type, step, trackerId } for KANGIS workflow
+    const metadataSourceMessages = {
+        'file-number-registry': 'File metadata loaded from File Number registry.',
+        'file-indexing': 'File metadata loaded from File Indexing.',
+    };
+    const metadataSourceToastTypes = {
+        'file-number-registry': 'success',
+        'file-indexing': 'success',
+    };
+    let archiveSearchRequest = null;
+    let archiveLookupTimeout = null;
+    let lastArchiveSearchTerm = null;
+
+    function clearCrossRequestPreview() {
+        if (crossRequestPreviewXhr) {
+            crossRequestPreviewXhr.abort();
+            crossRequestPreviewXhr = null;
+        }
+
+        lastCrossRequestPreviewKey = null;
+
+        if (crossRequestPreviewPanel) {
+            crossRequestPreviewPanel.classList.add('hidden');
+        }
+
+        if (crossRequestPreviewEmpty) {
+            crossRequestPreviewEmpty.classList.remove('hidden');
+        }
+
+        if (crossRequestPreviewLoading) {
+            crossRequestPreviewLoading.classList.add('hidden');
+        }
+
+        if (crossRequestPreviewGrid) {
+            crossRequestPreviewGrid.classList.add('hidden');
+        }
+
+        if (crossRequestPropertyDetails) {
+            crossRequestPropertyDetails.innerHTML = '';
+        }
+
+        if (crossRequestFolderPath) {
+            crossRequestFolderPath.textContent = '';
+        }
+
+        if (crossRequestFilesList) {
+            crossRequestFilesList.innerHTML = '';
+        }
+    }
+
+    function formatCrossPreviewSize(bytes) {
+        const value = Number(bytes || 0);
+        if (!Number.isFinite(value) || value <= 0) {
+            return '0 B';
+        }
+        if (value < 1024) {
+            return `${value} B`;
+        }
+        if (value < (1024 * 1024)) {
+            return `${(value / 1024).toFixed(1)} KB`;
+        }
+        return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function getCrossPreviewIconPath(name) {
+        const paths = {
+            'hash':         '<line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/>',
+            'file-text':    '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+            'map-pin':      '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+            'navigation':   '<path d="m3 11 19-9-9 19-2-8-8-2z"/>',
+            'tag':          '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
+            'image':        '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+            'lock':         '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+            'file':         '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+            'external-link':'<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+        };
+        return paths[name] || '';
+    }
+
+    function renderCrossRequestPreview(payload, fileNumber) {
+        if (!crossRequestPreviewPanel) {
+            return;
+        }
+
+        crossRequestPreviewPanel.classList.remove('hidden');
+        crossRequestPreviewLoading?.classList.add('hidden');
+        crossRequestPreviewEmpty?.classList.add('hidden');
+        crossRequestPreviewGrid?.classList.remove('hidden');
+
+        const property = payload?.property || null;
+        const folder = payload?.folder || {};
+        const files = Array.isArray(folder.files) ? folder.files : [];
+        const canViewAll = Boolean(payload?.can_view_all_files);
+
+        if (crossRequestFilesAccess) {
+            if (canViewAll) {
+                crossRequestFilesAccess.innerHTML = `<svg class="inline h-3 w-3 mr-1 -mt-0.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>Approved: Full Access`;
+                crossRequestFilesAccess.className = 'text-xs px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold';
+            } else {
+                crossRequestFilesAccess.innerHTML = `<svg class="inline h-3 w-3 mr-1 -mt-0.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Restricted: First File Only`;
+                crossRequestFilesAccess.className = 'text-xs px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold';
+            }
+        }
+
+        if (crossRequestPropertyDetails) {
+            if (!property) {
+                crossRequestPropertyDetails.innerHTML = `
+                    <div class="flex flex-col items-center justify-center gap-2 py-6 text-gray-400">
+                        <svg class="h-8 w-8 text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
+                        <p class="text-sm">No file indexing record found for this file number.</p>
+                    </div>`;
+            } else {
+                const rowDefs = [
+                    ['hash',       'indigo',  'File Number',      property.file_number || fileNumber || '-'],
+                    ['file-text',  'blue',    'Title',            property.file_title || property.file_name || '-'],
+                    ['map-pin',    'rose',    'District/LGA',     [property.district, property.lga].filter(Boolean).join(' / ') || '-'],
+                    ['navigation', 'emerald', 'Location',         property.location || '-'],
+                    
+                ];
+                const iconColors = {
+                    indigo: 'text-indigo-500 bg-indigo-50',
+                    blue: 'text-blue-500 bg-blue-50',
+                    rose: 'text-rose-500 bg-rose-50',
+                    emerald: 'text-emerald-500 bg-emerald-50',
+                    violet: 'text-violet-500 bg-violet-50',
+                };
+
+                crossRequestPropertyDetails.innerHTML = rowDefs
+                    .map(([icon, color, label, value]) => `
+                        <div class="flex items-start gap-3 pb-3 border-b border-gray-50 last:border-0 last:pb-0">
+                            <span class="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${iconColors[color]}">
+                                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    ${getCrossPreviewIconPath(icon)}
+                                </svg>
+                            </span>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400 leading-none mb-0.5">${escapeHtml(label)}</p>
+                                <p class="text-sm font-semibold text-gray-800 break-words">${escapeHtml((value || '-').toString())}</p>
+                            </div>
+                        </div>
+                    `)
+                    .join('');
+
+                // Re-run lucide after render
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+        }
+
+        if (crossRequestFolderPath) {
+            const folderText = folder.exists
+                ? `· ${folder.file_count || 0} file(s)`
+                : '· Folder not found';
+            crossRequestFolderPath.textContent = folderText;
+        }
+
+        const svgIcon = (iconName, cls) => `<svg class="${cls}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">${getCrossPreviewIconPath(iconName)}</svg>`;
+
+        if (crossRequestFilesList) {
+            if (!files.length) {
+                crossRequestFilesList.innerHTML = `
+                    <div class="flex flex-col items-center gap-2 py-6 text-gray-400">
+                        ${svgIcon('image', 'h-8 w-8 text-gray-300')}
+                        <p class="text-sm">No files in folder.</p>
+                    </div>`;
+            } else {
+                crossRequestFilesList.innerHTML = files.map((entry, index) => {
+                    const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(entry.name);
+                    const label = `${index + 1}. ${entry.name}`;
+                    
+                    if (!isImage) {
+                        // Non-image files: show as text link
+                        if (entry.can_open && entry.open_url) {
+                            return `
+                                <li class="flex items-center gap-2 p-2.5 rounded-lg border border-blue-100 bg-blue-50 hover:bg-blue-100 transition">
+                                    <span class="w-7 h-7 flex-shrink-0 rounded-md bg-blue-500 flex items-center justify-center">
+                                        ${svgIcon('file', 'h-3.5 w-3.5 text-white')}
+                                    </span>
+                                    <a href="${escapeHtml(entry.open_url)}" target="_blank" rel="noopener" class="text-blue-700 hover:text-blue-900 text-sm truncate flex-1 font-medium">${escapeHtml(label)}</a>
+                                    <span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-500 text-white font-semibold whitespace-nowrap">${entry.is_first ? '1st' : 'Open'}</span>
+                                </li>
+                            `;
+                        }
+                        return `
+                            <li class="flex items-center gap-2 p-2.5 rounded-lg border border-gray-200 bg-gray-50">
+                                <span class="w-7 h-7 flex-shrink-0 rounded-md bg-gray-400 flex items-center justify-center">
+                                    ${svgIcon('lock', 'h-3.5 w-3.5 text-white')}
+                                </span>
+                                <span class="text-gray-500 text-sm truncate flex-1">${escapeHtml(label)}</span>
+                                <span class="text-[10px] px-2 py-0.5 rounded-full bg-gray-300 text-gray-700 font-semibold">Locked</span>
+                            </li>
+                        `;
+                    }
+
+                    // Image files: show as thumbnail
+                    if (entry.can_open && entry.open_url) {
+                        const badgeColor = entry.is_first ? 'bg-emerald-500' : 'bg-blue-500';
+                        return `
+                            <li class="group relative overflow-hidden rounded-xl border-2 border-transparent hover:border-blue-400 shadow-sm hover:shadow-lg transition-all cursor-pointer bg-white h-36">
+                                <a href="${escapeHtml(entry.open_url)}" target="_blank" rel="noopener" class="block w-full h-full">
+                                    <img src="${escapeHtml(entry.open_url)}" alt="${escapeHtml(entry.name)}" class="w-full h-full object-cover">
+                                </a>
+                                <div class="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent p-2">
+                                    <p class="text-xs font-semibold text-white truncate leading-tight">${escapeHtml(label)}</p>
+                                </div>
+                                <div class="absolute bottom-2 left-2 flex items-center gap-1">
+                                    <span class="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full ${badgeColor} text-white font-bold shadow">
+                                        ${svgIcon('image', 'h-2.5 w-2.5')}
+                                        ${entry.is_first ? 'First' : 'Open'}
+                                    </span>
+                                </div>
+                                <div class="absolute inset-0 bg-black/0 group-hover:bg-blue-900/10 transition flex items-center justify-center">
+                                    <span class="opacity-0 group-hover:opacity-100 transition bg-white/90 rounded-full p-2 shadow">
+                                        ${svgIcon('external-link', 'h-4 w-4 text-blue-700')}
+                                    </span>
+                                </div>
+                            </li>
+                        `;
+                    }
+
+                    // Locked image
+                    return `
+                        <li class="relative overflow-hidden rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 h-36 flex items-center justify-center">
+                            <div class="text-center px-2">
+                                <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-2">
+                                    ${svgIcon('lock', 'h-5 w-5 text-gray-500')}
+                                </div>
+                                <p class="text-xs text-gray-500 font-medium truncate">${escapeHtml(label)}</p>
+                                <span class="inline-block text-[10px] mt-1 px-2 py-1 rounded-full bg-red-100 text-red-600 font-bold border border-red-200">Locked</span>
+                            </div>
+                        </li>
+                    `;
+                }).join('');
+                
+                // Switch file list to image grid
+                if (crossRequestFilesList.parentElement) {
+                    crossRequestFilesList.className = 'grid grid-cols-2 gap-3';
+                }
+            }
+        }
+    }
+
+    function loadCrossRequestPreview(fileNumber, options = {}) {
+        const normalizedFileNo = (fileNumber || '').toString().trim();
+        if (!_crossModuleRequestMode || normalizedFileNo === '') {
+            clearCrossRequestPreview();
+            return;
+        }
+
+        const trackerId = options.trackerId ?? resolvedWorkflowState?.trackerId ?? null;
+        const requestKey = `${normalizeFileNumberForLookup(normalizedFileNo)}::${trackerId || ''}`;
+        if (!options.force && requestKey === lastCrossRequestPreviewKey) {
+            return;
+        }
+
+        if (crossRequestPreviewXhr) {
+            crossRequestPreviewXhr.abort();
+            crossRequestPreviewXhr = null;
+        }
+
+        lastCrossRequestPreviewKey = requestKey;
+
+        crossRequestPreviewPanel?.classList.remove('hidden');
+        crossRequestPreviewEmpty?.classList.add('hidden');
+        crossRequestPreviewGrid?.classList.add('hidden');
+        crossRequestPreviewLoading?.classList.remove('hidden');
+
+        crossRequestPreviewXhr = $.ajax({
+            url: crossRequestPreviewEndpoint,
+            method: 'GET',
+            dataType: 'json',
+            data: {
+                file_number: normalizedFileNo,
+                tracker_id: trackerId,
+            }
+        })
+        .done(function (response) {
+            if (response && response.success && response.data) {
+                renderCrossRequestPreview(response.data, normalizedFileNo);
+                return;
+            }
+
+            crossRequestPreviewLoading?.classList.add('hidden');
+            crossRequestPreviewEmpty?.classList.remove('hidden');
+            if (crossRequestPreviewEmpty) {
+                crossRequestPreviewEmpty.textContent = response?.message || 'Unable to load request preview.';
+            }
+        })
+        .fail(function () {
+            crossRequestPreviewLoading?.classList.add('hidden');
+            crossRequestPreviewEmpty?.classList.remove('hidden');
+            if (crossRequestPreviewEmpty) {
+                crossRequestPreviewEmpty.textContent = 'Unable to load request preview at the moment.';
+            }
+        })
+        .always(function () {
+            crossRequestPreviewXhr = null;
+        });
+    }
+
+    function normalizeFileNumberForLookup(value) {
+        return (value || '').toString().trim().toUpperCase();
+    }
+
+    function resolveFileNumberFromMetadata(data, fallback = '') {
+        const candidates = [
+            data?.file_number,
+            data?.fileNumber,
+            data?.st_file_number,
+            data?.st_file_no,
+            data?.stFileNo,
+            data?.mls_file_number,
+            data?.mlsf_file_number,
+            data?.mlsf_no,
+            data?.mlsfNo,
+            data?.kangis_file_number,
+            data?.kangis_file_no,
+            data?.kangisFileNo,
+            data?.new_kangis_file_number,
+            data?.new_kangis_file_no,
+            data?.newKangisFileNumber,
+            data?.NewKANGISFileNo,
+            fallback
+        ];
+
+        for (const candidate of candidates) {
+            if (typeof candidate === 'string') {
+                const trimmed = candidate.trim();
+                if (trimmed !== '') {
+                    return trimmed;
+                }
+            }
+        }
+
+        return '';
+    }
+
+    function resetMetadataFields() {
+        if (activeMetadataRequest) {
+            activeMetadataRequest.abort();
+            activeMetadataRequest = null;
+        }
+
+        clearCrossRequestPreview();
+
+        const trackingField = $('#tracking-id');
+        const fileNameField = $('#file-name');
+
+        trackingField.removeClass('metadata-loading tracking-id-locked')
+            .prop('disabled', false)
+            .val('');
+        trackingField.removeData('prevValue');
+
+        fileNameField.removeClass('metadata-loading metadata-locked')
+            .prop('disabled', false)
+            .val('');
+        fileNameField.removeData('prevValue');
+
+        $('#sidebar-tracking-id').text('-');
+        lastMetadataLookup = null;
+        resolvedFileIndexingId = null;
+        resolvedWorkflowState = null;
+        forceNextMetadataLookup = false;
+        currentRackShelfValue = null;
+    }
+
+    function startMetadataFetch() {
+        const trackingField = $('#tracking-id');
+        const fileNameField = $('#file-name');
+
+        if (!trackingField.hasClass('metadata-loading')) {
+            trackingField.data('prevValue', trackingField.val() || '');
+        }
+
+        if (!fileNameField.hasClass('metadata-loading')) {
+            fileNameField.data('prevValue', fileNameField.val() || '');
+        }
+
+        trackingField.addClass('metadata-loading').prop('disabled', true).val('Fetching...');
+        fileNameField.addClass('metadata-loading metadata-locked').prop('disabled', true);
+    }
+
+    function applyMetadataResult(data, context = {}) {
+        const trackingField = $('#tracking-id');
+        const fileNameField = $('#file-name');
+        const resolvedFileNumber = resolveFileNumberFromMetadata(data, context.originalFileNumber || '');
+        const trackingValue = (data.tracking_id || '').toString().trim();
+        const currentModule = (window.currentModule || '').toLowerCase();
+        const workflowType = data && (data.workflow_type || data.workflowType);
+        const workflowStep = data ? Number(data.workflow_step ?? data.workflowStep ?? 0) : 0;
+        const hasWorkflowState = Boolean(workflowType) || Number.isFinite(workflowStep) && workflowStep > 0;
+
+        trackingField.removeClass('metadata-loading');
+        if (trackingValue !== '') {
+            trackingField
+                .val(trackingValue)
+                .prop('disabled', true)
+                .addClass('tracking-id-locked');
+        } else {
+            trackingField
+                .val('')
+                .prop('disabled', false)
+                .removeClass('tracking-id-locked');
+        }
+        trackingField.removeData('prevValue');
+
+        const resolvedName = (data.file_name || '').trim();
+        fileNameField.removeClass('metadata-loading');
+
+        if (resolvedName !== '') {
+            fileNameField
+                .val(resolvedName)
+                .prop('disabled', true)
+                .addClass('metadata-locked');
+        } else {
+            fileNameField
+                .val('')
+                .prop('disabled', false)
+                .removeClass('metadata-locked');
+        }
+
+        fileNameField.removeData('prevValue');
+
+        if (resolvedFileNumber) {
+            $('#file-no').val(resolvedFileNumber);
+            $('#sidebar-file-no').text(resolvedFileNumber);
+        }
+
+        $('#sidebar-tracking-id').text(data.tracking_id || '-');
+
+        // Display registry information when file number returns data
+        displayRegistryInformation(data);
+        if (resolvedFileNumber) {
+            fetchRackShelfLocation(resolvedFileNumber, { silent: true });
+        }
+
+        resolvedFileIndexingId = data.id ?? null;
+        lastMetadataLookup = normalizeFileNumberForLookup(resolvedFileNumber);
+        forceNextMetadataLookup = false;
+
+        // Track workflow state so Step 4 can POST to the existing tracker instead of creating a new one
+        if (workflowType || workflowStep > 0) {
+            resolvedWorkflowState = {
+                type: workflowType || null,
+                step: workflowStep,
+                trackerId: data.id ?? null,
+            };
+        } else {
+            resolvedWorkflowState = null;
+        }
+
+        if (!context.silent) {
+            const sourceKey = context.source || 'file-indexing';
+            const toastMessage = metadataSourceMessages[sourceKey];
+            if (toastMessage) {
+                const toastType = metadataSourceToastTypes[sourceKey] || 'success';
+                showNotification(toastMessage, toastType);
+            }
+        }
+
+        loadCrossRequestPreview(resolvedFileNumber, {
+            trackerId: resolvedWorkflowState?.trackerId ?? data?.id ?? null,
+            force: true,
+        });
+
+        // Apply KANGIS workflow button state based on existing tracker's workflow progress
+        applyKangisWorkflowButtonGate(data);
+
+        // Backfill: when this is a KANGIS workflow tracker (any step),
+        // pre-populate the Destination Office (Departments) field from workflow_config or the department column.
+        const isKangisWorkflow = workflowType === 'kangis_3step' || workflowType === 'kangis_approval_flow';
+        if (currentModule === 'kangis' && isKangisWorkflow && workflowStep >= 1) {
+            let wfConfig = data.workflow_config ?? data.workflowConfig ?? null;
+            if (typeof wfConfig === 'string') {
+                try { wfConfig = JSON.parse(wfConfig); } catch (e) { wfConfig = null; }
+            }
+            const QUEUE_NAME = 'Department Queue';
+            const savedDept = (wfConfig && typeof wfConfig === 'object')
+                ? (
+                    wfConfig.original_destination_office_name ||
+                    (wfConfig.destination_office_name !== QUEUE_NAME ? wfConfig.destination_office_name : '') ||
+                    (data.department !== QUEUE_NAME ? data.department : '') ||
+                    wfConfig.destination_office_name ||
+                    data.department || ''
+                )
+                : ((data.department !== QUEUE_NAME ? data.department : '') || data.department || '');
+            if (savedDept) {
+                const officeSelect = document.getElementById('current-office');
+                if (officeSelect) {
+                    // Try to match an existing option (case-insensitive)
+                    const savedLower = savedDept.trim().toLowerCase();
+                    let matched = false;
+                    for (const opt of officeSelect.options) {
+                        if (opt.value.trim().toLowerCase() === savedLower) {
+                            officeSelect.value = opt.value;
+                            matched = true;
+                            break;
+                        }
+                    }
+                    // If no option matches, inject one dynamically
+                    if (!matched) {
+                        const newOpt = document.createElement('option');
+                        newOpt.value = savedDept.trim();
+                        newOpt.textContent = savedDept.trim();
+                        officeSelect.appendChild(newOpt);
+                        officeSelect.value = savedDept.trim();
+                    }
+                    officeSelect.dispatchEvent(new Event('change'));
+                }
+            }
+        }
+
+        // Some metadata sources return tracking details without workflow fields.
+        // Enrich from tracker history so pending approvals lock the button reliably.
+        if (
+            currentModule === 'kangis' &&
+            trackingValue !== '' &&
+            !hasWorkflowState &&
+            !context.skipTrackerWorkflowEnrichment
+        ) {
+            const lookupNumber = resolvedFileNumber || (data.file_number || data.fileNumber || '').toString().trim();
+            if (lookupNumber) {
+                fetchTrackerMetadataFallback(lookupNumber, Object.assign({}, context, {
+                    silent: true,
+                    source: 'tracker-history',
+                    skipTrackerWorkflowEnrichment: true,
+                }));
+            }
+        }
+    }
+
+    function displayRegistryInformation(data) {
+        // In Cross-Registry Request mode the user has already chosen the
+        // Supply (Origin) explicitly (e.g. Land Registry). Resolving the
+        // file's stored registry would overwrite that choice and break the
+        // approval chain — skip it.
+        if (_crossModuleRequestMode) {
+            return;
+        }
+
+        // Extract registry information from the returned data
+        const registryInfo = {
+            code: data.registry_code || data.registryCode || data.origin_office_code || data.originOfficeCode || null,
+            name: data.registry_name || data.registryName || data.origin_office_name || data.originOfficeName || null,
+            department: data.registry_department || data.registryDepartment || data.origin_office_department || data.originOfficeDepartment || null
+        };
+
+        // If we have registry information from the data, use it
+        if (registryInfo.code || registryInfo.name) {
+            // Set the origin office dropdown value if we have a code
+            if (registryInfo.code && originOfficeSelect && originOfficeSelect.length) {
+                const normalizedCode = registryInfo.code.toString().trim().toUpperCase();
+
+                // Check if this option exists in the dropdown
+                const existingOption = originOfficeSelect.find(`option[value="${normalizedCode}"]`);
+                if (existingOption.length > 0) {
+                    originOfficeSelect.val(normalizedCode).trigger('change');
+                } else {
+                    // If option doesn't exist, add it dynamically
+                    const displayName = registryInfo.name || registryInfo.code;
+                    originOfficeSelect.append(`<option value="${escapeHtml(normalizedCode)}">${escapeHtml(displayName)}</option>`);
+                    originOfficeSelect.val(normalizedCode).trigger('change');
+                }
+            }
+
+            // Update the registry information panel
+            updateOriginOfficeInfo(registryInfo.code);
+
+            // Show additional registry details if available
+            if (registryInfo.name || registryInfo.department) {
+                showNotification(
+                    `Registry information loaded: ${registryInfo.name || registryInfo.code}${registryInfo.department ? ` (${registryInfo.department})` : ''}`,
+                    'info'
+                );
+            }
+        } else {
+            // Fallback to default registry if metadata did not specify one
+            applyDefaultOriginSelection({ force: false });
+        }
+    }
+
+    function handleMetadataFailure(message, { suppressToast = false } = {}) {
+        const trackingField = $('#tracking-id');
+        const fileNameField = $('#file-name');
+
+        const previousTracking = trackingField.data('prevValue') || '';
+        const previousName = fileNameField.data('prevValue') || '';
+
+        trackingField.removeClass('metadata-loading tracking-id-locked')
+            .prop('disabled', false)
+            .val(previousTracking);
+        trackingField.removeData('prevValue');
+
+        fileNameField.removeClass('metadata-loading metadata-locked')
+            .prop('disabled', false)
+            .val(previousName);
+        fileNameField.removeData('prevValue');
+
+        $('#sidebar-tracking-id').text(previousTracking || '-');
+
+        if (!suppressToast && message) {
+            showNotification(message, 'error');
+        }
+
+        lastMetadataLookup = null;
+        resolvedFileIndexingId = null;
+        forceNextMetadataLookup = false;
+
+        if (_crossModuleRequestMode) {
+            const activeFileNo = ($('#file-no').val() || '').toString().trim();
+            if (activeFileNo) {
+                loadCrossRequestPreview(activeFileNo, { force: true });
+            }
+        } else {
+            clearCrossRequestPreview();
+        }
+    }
+
+    function fetchTrackerMetadataFallback(fileNumber, context = {}) {
+        return new Promise((resolve) => {
+            const normalizedKey = normalizeFileNumberForLookup(fileNumber);
+            if (!normalizedKey) {
+                resolve(false);
+                return;
+            }
+
+            const cached = trackerMetadataFallbackCache.get(normalizedKey);
+            if (cached !== undefined) {
+                if (cached) {
+                    applyMetadataResult(cached, Object.assign({}, context, { originalFileNumber: fileNumber, silent: true }));
+                    if (!context.silent) {
+                        showNotification('Loaded tracker data from File Tracker history.', 'info');
+                    }
+                    resolve(true);
+                    return;
+                }
+                resolve(false);
+                return;
+            }
+
+            const params = new URLSearchParams({
+                search: fileNumber,
+                per_page: '5',
+                sort_by: 'updated_at',
+                sort_order: 'desc'
+            });
+
+            fetch(`/api/file-trackers?${params.toString()}`, {
+                headers: { Accept: 'application/json' },
+                credentials: 'same-origin'
+            })
+                .then(async (response) => {
+                    let payload = null;
+                    try {
+                        payload = await response.json();
+                    } catch (error) {
+                        /* ignore */
+                    }
+
+                    if (!response.ok || !payload?.success) {
+                        trackerMetadataFallbackCache.set(normalizedKey, null);
+                        resolve(false);
+                        return;
+                    }
+
+                    const collection = Array.isArray(payload.data?.data)
+                        ? payload.data.data
+                        : [];
+
+                    if (!collection.length) {
+                        trackerMetadataFallbackCache.set(normalizedKey, null);
+                        resolve(false);
+                        return;
+                    }
+
+                    const upperTarget = normalizedKey.toUpperCase();
+                    const matchedTracker = collection.find((record) => {
+                        const candidate = normalizeFileNumberForLookup(record?.file_number || '').toUpperCase();
+                        return candidate === upperTarget;
+                    }) || collection[0];
+
+                    if (!matchedTracker || !matchedTracker.tracking_id) {
+                        trackerMetadataFallbackCache.set(normalizedKey, null);
+                        resolve(false);
+                        return;
+                    }
+
+                    const metadataPayload = {
+                        id: matchedTracker.id ?? matchedTracker.tracking_id ?? null,
+                        file_number: matchedTracker.file_number || fileNumber,
+                        file_name: matchedTracker.file_title || matchedTracker.file_name || '',
+                        tracking_id: matchedTracker.tracking_id,
+                        workflow_type: matchedTracker.workflow_type ?? matchedTracker.workflowType ?? null,
+                        workflow_step: matchedTracker.workflow_step ?? matchedTracker.workflowStep ?? null,
+                        workflow_config: matchedTracker.workflow_config ?? matchedTracker.workflowConfig ?? null,
+                        department: matchedTracker.department || null,
+                    };
+
+                    trackerMetadataFallbackCache.set(normalizedKey, metadataPayload);
+                    applyMetadataResult(metadataPayload, Object.assign({}, context, { originalFileNumber: fileNumber, silent: true }));
+                    if (!context.silent) {
+                        showNotification('Loaded tracker data from File Tracker history.', 'info');
+                    }
+                    resolve(true);
+                })
+                .catch(() => {
+                    trackerMetadataFallbackCache.set(normalizedKey, null);
+                    resolve(false);
+                });
+        });
+    }
+
+    function fallbackToTrackerOrFail(fileNumber, message, context = {}) {
+        fetchTrackerMetadataFallback(fileNumber, context)
+            .then((didApply) => {
+                if (!didApply) {
+                    if (window.isNewKangisMode) {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'File Not Yet Indexed',
+                            html: 'This file has not been indexed yet. Please index the file first before creating a tracker.<br><br>Click <b>Go to Indexing</b> to open the Create File Index page in a new tab.',
+                            showCancelButton: true,
+                            confirmButtonText: 'Go to Indexing',
+                            cancelButtonText: 'Cancel',
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                const returnTo = encodeURIComponent(window.location.href);
+                                const fileNo = encodeURIComponent(fileNumber);
+                                window.open(
+                                    '{{ route("fileindexing.create") }}?url=new_kn&file_number=' + fileNo + '&return_to=' + returnTo,
+                                    '_blank'
+                                );
+                            }
+                            // Always reset the loading state and clear the file number field
+                            handleMetadataFailure(null, { suppressToast: true });
+                            $('#file-no').val('').trigger('change');
+                            $('#sidebar-file-no').text('-');
+                        });
+                    } else {
+                        handleMetadataFailure(message);
+                    }
+                }
+            })
+            .catch(() => {
+                handleMetadataFailure(message);
+            });
+    }
+
+    function fetchFileMetadata(fileNumber, context = {}) {
+        if (!fileNumber) {
+            resetMetadataFields();
+            return;
+        }
+
+        startMetadataFetch();
+
+        if (activeMetadataRequest) {
+            activeMetadataRequest.abort();
+            activeMetadataRequest = null;
+        }
+
+        fetchFileNumberRegistryMetadata(fileNumber, context);
+    }
+
+    function fetchFileNumberRegistryMetadata(fileNumber, context = {}) {
+        const request = $.ajax({
+            url: '/api/file-numbers/lookup',
+            method: 'GET',
+            data: {
+                file_number: fileNumber,
+                module: window.currentModule || ''
+            },
+            dataType: 'json',
+            timeout: 10000
+        })
+            .done(function (response) {
+                if (response && response.success && response.data) {
+                    const nextContext = Object.assign({}, context, {
+                        originalFileNumber: fileNumber,
+                        source: 'file-number-registry'
+                    });
+                    applyMetadataResult(response.data, nextContext);
+                } else {
+                    const message = response?.message || 'No file number record was found for this value.';
+                    const fallbackContext = Object.assign({}, context, {
+                        originalFileNumber: fileNumber,
+                        source: 'file-indexing',
+                        upstreamMessage: message
+                    });
+                    fetchFileIndexingMetadata(fileNumber, fallbackContext);
+                }
+            })
+            .fail(function (xhr, status) {
+                if (status === 'abort') {
+                    return;
+                }
+
+                const message = xhr?.responseJSON?.message || 'Unable to reach the File Number registry.';
+                const fallbackContext = Object.assign({}, context, {
+                    originalFileNumber: fileNumber,
+                    source: 'file-indexing',
+                    upstreamMessage: message
+                });
+                fetchFileIndexingMetadata(fileNumber, fallbackContext);
+            })
+            .always(function () {
+                if (activeMetadataRequest === request) {
+                    activeMetadataRequest = null;
+                }
+            });
+
+        activeMetadataRequest = request;
+    }
+
+    function fetchFileIndexingMetadata(fileNumber, context = {}) {
+        const request = $.ajax({
+            url: '/api/file-indexings/lookup-by-number',
+            method: 'GET',
+            data: { file_number: fileNumber },
+            dataType: 'json',
+            timeout: 7000
+        })
+            .done(function (response) {
+                if (response && response.success && response.data && response.data.tracking_id) {
+                    const nextContext = Object.assign({}, context, {
+                        originalFileNumber: fileNumber,
+                        source: 'file-indexing'
+                    });
+                    delete nextContext.upstreamMessage;
+                    applyMetadataResult(response.data, nextContext);
+                } else {
+                    const message = response?.message || context.upstreamMessage || 'No indexing record with a tracking ID was found for this file number.';
+                    fallbackToTrackerOrFail(fileNumber, message, context);
+                }
+            })
+            .fail(function (xhr, status) {
+                if (status === 'abort') {
+                    return;
+                }
+
+                let message = context.upstreamMessage || 'Unable to fetch file metadata at this time.';
+                if (xhr?.responseJSON?.message) {
+                    message = xhr.responseJSON.message;
+                }
+                fallbackToTrackerOrFail(fileNumber, message, context);
+            })
+            .always(function () {
+                if (activeMetadataRequest === request) {
+                    activeMetadataRequest = null;
+                }
+            });
+
+        activeMetadataRequest = request;
+    }
+
+    function fetchRackShelfLocation(fileNumber, { silent = true } = {}) {
+        const normalized = normalizeFileNumberForLookup(fileNumber);
+        if (!normalized) {
+            currentRackShelfValue = null;
+            return Promise.resolve(null);
+        }
+
+        if (rackShelfCache.has(normalized)) {
+            currentRackShelfValue = rackShelfCache.get(normalized);
+            return Promise.resolve(currentRackShelfValue);
+        }
+
+        return $.ajax({
+            url: '/create-file-tracker/shelf-location',
+            method: 'GET',
+            data: { file_number: normalized },
+            dataType: 'json'
+        })
+            .then(function (response) {
+                const location = response?.data?.shelf_location
+                    ?? response?.data?.rack_shelf_location
+                    ?? null;
+
+                rackShelfCache.set(normalized, location);
+                currentRackShelfValue = location;
+                return location;
+            })
+            .catch(function (error) {
+                rackShelfCache.set(normalized, null);
+                currentRackShelfValue = null;
+                if (!silent) {
+                    console.warn('Unable to fetch rack/shelf location:', error);
+                }
+                return null;
+            });
+    }
+
+    function triggerMetadataLookup(rawValue, context = {}) {
+        const normalized = normalizeFileNumberForLookup(rawValue);
+
+        if (!normalized) {
+            resetMetadataFields();
+            return;
+        }
+
+        if (!context.force && normalized === lastMetadataLookup) {
+            return;
+        }
+
+        lastMetadataLookup = normalized;
+        fetchFileMetadata(rawValue, context);
+    }
+
+    // Initialize File Number Modal Integration
+    function initializeFileNoModal() {
+        console.log('Initializing File Number Modal...');
+
+        // Check if modal element exists in DOM
+        const modalElement = $('#global-fileno-modal');
+        console.log('Modal element found:', modalElement.length > 0);
+        if (modalElement.length > 0) {
+            console.log('Modal element classes:', modalElement.attr('class'));
+            console.log('Modal element display:', modalElement.css('display'));
+        }
+
+        // Initialize the global file number modal
+        if (typeof GlobalFileNoModal !== 'undefined') {
+            console.log('GlobalFileNoModal object available');
+            GlobalFileNoModal.init();
+
+            // Set up the file number selector button
+            $('#fileno-selector-btn').on('click', function () {
+                console.log('File number selector button clicked');
+
+                // Additional debug before opening
+                const modal = $('#global-fileno-modal');
+                console.log('Before open - Modal element:', modal.length);
+                console.log('Before open - Modal classes:', modal.attr('class'));
+                console.log('Before open - Modal display:', modal.css('display'));
+
+                const result = GlobalFileNoModal.open({
+                    targetFields: ['file_number'], // Target our file number field
+                    callback: function (data) {
+                        // This callback is executed when user clicks Apply
+                        console.log('File number selected:', data.fileNumber);
+
+                        const selectedFileNumber = (data.fileNumber || '').toString().trim();
+
+                        // In new_kangis tracker mode, the user picks an existing
+                        // file (typically MLS) and the system needs to route them
+                        // through File Indexing first to (a) load/edit the
+                        // indexed record and (b) capture the new KANGIS (KN)
+                        // number. Already-issued KN files skip this and resolve
+                        // metadata normally.
+                        const isAlreadyKn = /^KN[\s-]*\d/i.test(selectedFileNumber.replace(/[\s_]/g, ''));
+                        if (window.isNewKangisMode && selectedFileNumber && !isAlreadyKn) {
+                            const returnTo = encodeURIComponent(window.location.href);
+                            const fileNoParam = encodeURIComponent(selectedFileNumber);
+                            const indexingUrl = '{{ route("fileindexing.create") }}'
+                                + '?url=new_kn'
+                                + '&file_number=' + fileNoParam
+                                + '&return_to=' + returnTo;
+
+                            showNotification(`Opening File Indexing for ${selectedFileNumber}...`, 'info');
+                            window.location.href = indexingUrl;
+                            return;
+                        }
+
+                        // Update the file number field
+                        forceNextMetadataLookup = true;
+                        $('#file-no').val(selectedFileNumber).trigger('change');
+
+                        // Inform user that metadata will be resolved
+                        showNotification(`File number ${selectedFileNumber} selected. Resolving metadata...`, 'info');
+                    }
+                });
+
+                console.log('Modal open result:', result);
+
+                // Check modal state after opening attempt
+                setTimeout(() => {
+                    const modalAfter = $('#global-fileno-modal');
+                    console.log('After open - Modal classes:', modalAfter.attr('class'));
+                    console.log('After open - Modal display:', modalAfter.css('display'));
+                    console.log('After open - Modal z-index:', modalAfter.css('z-index'));
+                    console.log('After open - Modal visibility:', modalAfter.css('visibility'));
+                }, 100);
+            });
+
+            // Listen for the global modal apply event
+            $(document).on('fileno-modal:applied', function (event, data) {
+                console.log('File number modal applied:', data);
+            });
+        } else {
+            console.warn('GlobalFileNoModal not available');
+        }
+    }
+
+    // Notification function
+    function showNotification(message, type = 'info') {
+        let container = (toastContainer && toastContainer.length) ? toastContainer : $('#fallback-toast-container');
+
+        if (!container || container.length === 0) {
+            container = $('<div id="fallback-toast-container" class="fixed inset-x-0 top-4 z-50 flex flex-col items-center gap-2 pointer-events-none"></div>');
+            $('body').append(container);
+        }
+
+        const palette = {
+            success: {
+                accent: 'bg-green-500',
+                border: 'border-green-200',
+                text: 'text-green-800',
+                icon: 'check-circle'
+            },
+            error: {
+                accent: 'bg-red-500',
+                border: 'border-red-200',
+                text: 'text-red-800',
+                icon: 'alert-octagon'
+            },
+            warning: {
+                accent: 'bg-amber-500',
+                border: 'border-amber-200',
+                text: 'text-amber-800',
+                icon: 'alert-triangle'
+            },
+            info: {
+                accent: 'bg-blue-500',
+                border: 'border-blue-200',
+                text: 'text-blue-800',
+                icon: 'info'
+            }
+        };
+
+        const paletteKey = palette[type] ? type : 'info';
+        const swatch = palette[paletteKey];
+        const toastId = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const safeMessage = escapeHtml(message);
+
+        const toast = $(`
+                <div id="${toastId}" class="toast pointer-events-auto w-full max-w-xl transition ease-out duration-200">
+                    <div class="flex items-start gap-3 rounded-lg border ${swatch.border} bg-white px-4 py-3 shadow-lg ring-1 ring-black/5">
+                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${swatch.accent}">
+                            <i data-lucide="${swatch.icon}" class="h-4 w-4 text-white"></i>
+                        </div>
+                        <div class="flex-1 text-sm ${swatch.text}">${safeMessage}</div>
+                        <button type="button" class="toast-close text-gray-400 hover:text-gray-600">
+                            <i data-lucide="x" class="h-4 w-4"></i>
+                        </button>
+                    </div>
+                </div>
+            `);
+
+        container.append(toast);
+        lucide.createIcons();
+
+        const handleRemoval = () => {
+            toast.addClass('opacity-0 translate-y-2');
+            setTimeout(() => toast.remove(), 200);
+        };
+
+        toast.find('.toast-close').on('click', handleRemoval);
+
+        setTimeout(handleRemoval, 3200);
+    }
+
+    function getTrackerKey(tracker) {
+        if (!tracker) {
+            return null;
+        }
+        if (tracker.trackingId) {
+            return tracker.trackingId;
+        }
+        if (tracker.id !== undefined && tracker.id !== null) {
+            return `id-${tracker.id}`;
+        }
+        return null;
+    }
+
+    function resolveStatusDisplay(entry, fallbackStatus = '') {
+        const toTrimmed = (value) => typeof value === 'string' ? value.trim() : '';
+        const overrideRaw = entry
+            ? toTrimmed(entry.statusLabelOverride) || toTrimmed(entry.newStatus)
+            : '';
+
+        if (overrideRaw) {
+            const normalizedOverride = overrideRaw.toLowerCase();
+
+            if (normalizedOverride === 'log-in' || normalizedOverride === 'log in') {
+                return {
+                    label: 'Log-in',
+                    badgeClass: 'bg-emerald-100 text-emerald-800 border border-emerald-200',
+                    dotClass: 'bg-emerald-500'
+                };
+            }
+
+            if (normalizedOverride === 'cancelled' || normalizedOverride === 'canceled') {
+                return {
+                    label: 'Cancelled',
+                    badgeClass: 'bg-gray-100 text-gray-700 border border-gray-200',
+                    dotClass: 'bg-gray-400'
+                };
+            }
+
+            return {
+                label: overrideRaw,
+                badgeClass: 'bg-blue-100 text-blue-800 border border-blue-200',
+                dotClass: 'bg-blue-500'
+            };
+        }
+
+        const normalizedStatus = (entry && entry.status
+            ? entry.status
+            : fallbackStatus || ''
+        ).toString().toLowerCase();
+
+        if (normalizedStatus === 'pending_acceptance') {
+            return {
+                label: 'In-Transit',
+                badgeClass: 'bg-amber-100 text-amber-800 border border-amber-200',
+                dotClass: 'bg-amber-500'
+            };
+        }
+
+        if (normalizedStatus === 'rejected') {
+            return {
+                label: 'Rejected',
+                badgeClass: 'bg-red-50 text-red-600 border border-red-200',
+                dotClass: 'bg-red-500'
+            };
+        }
+
+        if (normalizedStatus === 'active') {
+            return {
+                label: 'Log-out',
+                badgeClass: 'bg-emerald-100 text-emerald-800 border border-emerald-200',
+                dotClass: 'bg-emerald-500'
+            };
+        }
+
+        return {
+            label: 'Log-out',
+            badgeClass: 'bg-gray-100 text-gray-700 border border-gray-200',
+            dotClass: 'bg-gray-400'
+        };
+    }
+
+    function transformApiTracker(tracker) {
+        if (!tracker) {
+            return null;
+        }
+
+        const movementLog = Array.isArray(tracker.movement_log) ? tracker.movement_log : [];
+        const normalizeId = normalizeNumericId;
+
+        const convertedEntries = movementLog.map(log => {
+            const rawNewStatus = typeof log.new_status === 'string' && log.new_status.trim() !== ''
+                ? log.new_status.trim()
+                : (typeof log.newStatus === 'string' && log.newStatus.trim() !== ''
+                    ? log.newStatus.trim()
+                    : null);
+            const rawStatusLabel = typeof log.status_label === 'string' && log.status_label.trim() !== ''
+                ? log.status_label.trim()
+                : (typeof log.statusLabel === 'string' && log.statusLabel.trim() !== ''
+                    ? log.statusLabel.trim()
+                    : null);
+            const statusLabelOverride = rawStatusLabel ?? rawNewStatus ?? null;
+
+            return {
+                logId: log.log_id,
+                officeId: log.office_code,
+                officeName: log.office_name,
+                logInTime: log.log_in_time,
+                logInDate: log.log_in_date,
+                logOutTime: log.log_out_time || '',
+                logOutDate: log.log_out_date || '',
+                notes: log.notes || '',
+                status: (log.status || 'completed').toLowerCase(),
+                statusLabelOverride,
+                newStatus: rawNewStatus,
+                oldStatus: log.old_status ?? log.oldStatus ?? null,
+                actionType: log.action ?? log.action_type ?? null,
+                createdAt: log.timestamp || null,
+                receivingOfficerId: normalizeId(log.receiving_officer_id ?? log.receivingOfficerId ?? null),
+                receivingOfficerName: log.receiving_officer_name ?? log.receivingOfficerName ?? null,
+                receivingOfficeCode: log.receiving_office_code ?? log.receivingOfficeCode ?? log.office_code ?? null,
+                receivingOfficeName: log.receiving_office_name ?? log.receivingOfficeName ?? log.office_name ?? null,
+                originOfficeCode: log.origin_office_code ?? log.originOfficeCode ?? null,
+                originOfficeName: log.origin_office_name ?? log.originOfficeName ?? null,
+                originOfficeDepartment: log.origin_office_department ?? log.originOfficeDepartment ?? null,
+                manualUpdate: Boolean(log.manual_update),
+                manualUpdateBy: log.manual_update_by ?? null,
+                manualUpdateAt: log.manual_update_at ?? null,
+                createdById: normalizeId(log.user_id ?? log.userId ?? log.created_by ?? log.createdBy ?? null),
+                createdByName: log.user_name ?? log.userName ?? log.created_by_name ?? log.createdByName ?? null,
+                acceptedById: normalizeId(log.accepted_by ?? log.acceptedBy ?? null),
+                acceptedByName: log.accepted_by_name ?? log.acceptedByName ?? null,
+                rejectedById: normalizeId(log.rejected_by ?? log.rejectedBy ?? null),
+                rejectedByName: log.rejected_by_name ?? log.rejectedByName ?? null,
+                purpose: log.purpose ?? null
+            };
+        });
+
+        const assignedOfficeSource = (() => {
+            const relation = tracker.assigned_office && typeof tracker.assigned_office === 'object' && !Array.isArray(tracker.assigned_office)
+                ? tracker.assigned_office
+                : (tracker.assignedOffice && typeof tracker.assignedOffice === 'object' ? tracker.assignedOffice : null);
+
+            if (relation) {
+                return {
+                    id: normalizeId(relation.id),
+                    code: relation.office_code || relation.code || null,
+                    name: relation.office_name || relation.name || null,
+                    department: relation.department || relation.office_department || null,
+                };
+            }
+
+            const fallbackId = normalizeId(tracker.assigned_office ?? tracker.assignedOffice);
+            const fallbackName = tracker.assigned_office_name ?? tracker.assignedOfficeName ?? null;
+            const fallbackCode = tracker.assigned_office_code ?? tracker.assignedOfficeCode ?? null;
+            const fallbackDepartment = tracker.assigned_office_department ?? tracker.assignedOfficeDepartment ?? null;
+
+            if (!fallbackId && !fallbackName && !fallbackCode) {
+                return null;
+            }
+
+            return {
+                id: fallbackId,
+                code: fallbackCode,
+                name: fallbackName,
+                department: fallbackDepartment,
+            };
+        })();
+
+        const assignedUserRelation = tracker.assigned_user && typeof tracker.assigned_user === 'object' && !Array.isArray(tracker.assigned_user)
+            ? tracker.assigned_user
+            : (tracker.assignedUser && typeof tracker.assignedUser === 'object' ? tracker.assignedUser : null);
+
+        const receivingOfficerFallbackId = normalizeId(
+            tracker.receiving_officer_id
+            ?? tracker.receivingOfficerId
+            ?? (tracker.receivingOfficer ? tracker.receivingOfficer.id : null)
+        );
+
+        const assignedToId = normalizeId(
+            tracker.assigned_to
+            ?? tracker.assignedTo
+            ?? (assignedUserRelation ? assignedUserRelation.id : null)
+            ?? receivingOfficerFallbackId
+        );
+
+        const assignedToName = assignedUserRelation?.name
+            || tracker.assigned_user_name
+            || tracker.assignedUserName
+            || tracker.receiving_officer_name
+            || tracker.receivingOfficerName
+            || (tracker.receivingOfficer ? tracker.receivingOfficer.name : null)
+            || null;
+
+        const assignedByRelation = tracker.assigned_by_user && typeof tracker.assigned_by_user === 'object' && !Array.isArray(tracker.assigned_by_user)
+            ? tracker.assigned_by_user
+            : (tracker.assignedByUser && typeof tracker.assignedByUser === 'object' ? tracker.assignedByUser : null);
+
+        const assignedById = normalizeId(
+            tracker.assigned_by
+            ?? tracker.assignedBy
+            ?? (assignedByRelation ? assignedByRelation.id : null)
+        );
+
+        const assignedByName = assignedByRelation?.name
+            || tracker.assigned_by_name
+            || tracker.assignedByName
+            || null;
+
+        const rawAssignmentStatus = tracker.assignment_status ?? tracker.assignmentStatus ?? null;
+        const assignmentStatus = rawAssignmentStatus ? String(rawAssignmentStatus).toUpperCase() : null;
+        const assignedAt = tracker.assigned_at ?? tracker.assignedAt ?? null;
+        const acceptedAt = tracker.accepted_at ?? tracker.acceptedAt ?? null;
+        const rejectedAt = tracker.rejected_at ?? tracker.rejectedAt ?? null;
+        const rejectNote = tracker.reject_note ?? tracker.rejectNote ?? null;
+        const receivingOfficeCode = tracker.receiving_office_code ?? tracker.receivingOfficeCode ?? null;
+        const receivingOfficeName = tracker.receiving_office_name ?? tracker.receivingOfficeName ?? null;
+        const receivingOfficerIdRaw = tracker.receiving_officer_id ?? tracker.receivingOfficerId ?? null;
+        const receivingOfficerName = tracker.receiving_officer_name ?? tracker.receivingOfficerName ?? null;
+        const receivingOfficerDepartment = tracker.receiving_officer_department ?? tracker.receivingOfficerDepartment ?? null;
+        const receivingOfficerRolesRaw = tracker.receiving_officer_roles ?? tracker.receivingOfficerRoles ?? null;
+        const receivingOfficerLevel = tracker.receiving_officer_level
+            ?? tracker.receivingOfficerLevel
+            ?? tracker.receiving_officer_type
+            ?? tracker.receivingOfficerType
+            ?? null;
+        const receivingOfficerId = normalizeId(receivingOfficerIdRaw);
+        const receivingOfficerRoles = Array.isArray(receivingOfficerRolesRaw)
+            ? receivingOfficerRolesRaw
+            : typeof receivingOfficerRolesRaw === 'string'
+                ? receivingOfficerRolesRaw.split(',').map(part => part.trim()).filter(Boolean)
+                : [];
+        const originOfficeCode = tracker.origin_office_code
+            ?? tracker.originOfficeCode
+            ?? tracker.origin_registry_code
+            ?? tracker.originRegistryCode
+            ?? null;
+        const originOfficeName = tracker.origin_office_name
+            ?? tracker.originOfficeName
+            ?? tracker.origin_registry
+            ?? tracker.originRegistry
+            ?? null;
+        const originOfficeDepartment = tracker.origin_office_department
+            ?? tracker.originOfficeDepartment
+            ?? tracker.origin_registry_department
+            ?? tracker.originRegistryDepartment
+            ?? null;
+        const rackShelfLocation = tracker.rack_shelf_location
+            ?? tracker.rackShelfLocation
+            ?? tracker.shelf_location
+            ?? tracker.rack_shelf
+            ?? null;
+
+        if (rackShelfLocation) {
+            const normalizedRackKey = normalizeFileNumberForLookup(tracker.file_number ?? tracker.fileNo ?? '');
+            if (normalizedRackKey) {
+                rackShelfCache.set(normalizedRackKey, rackShelfLocation);
+            }
+        }
+
+        return {
+            id: tracker.id,
+            trackingId: tracker.tracking_id,
+            fileNo: tracker.file_number,
+            fileName: tracker.file_title,
+            fileType: tracker.file_type,
+            priority: tracker.priority || 'MEDIUM',
+            currentOffice: tracker.current_office_name,
+            currentOfficeId: tracker.current_office_code,
+            office: tracker.current_office_name && tracker.current_office_code ? {
+                name: tracker.current_office_name,
+                code: tracker.current_office_code,
+                department: tracker.department || ''
+            } : null,
+            logEntries: convertedEntries,
+            notes: tracker.notes,
+            createdAt: tracker.created_at,
+            department: tracker.department,
+            description: tracker.description,
+            totalOffices: tracker.total_offices,
+            completedOffices: tracker.completed_offices,
+            assignedOfficeId: assignedOfficeSource?.id ?? null,
+            assignedOfficeCode: assignedOfficeSource?.code ?? null,
+            assignedOfficeName: assignedOfficeSource?.name ?? null,
+            assignedOfficeDepartment: assignedOfficeSource?.department ?? null,
+            assignedToId,
+            assignedToName,
+            assignedById,
+            assignedByName,
+            assignmentStatus,
+            assignmentStatusLower: assignmentStatus ? assignmentStatus.toLowerCase() : null,
+            assignedAt,
+            acceptedAt,
+            rejectedAt,
+            rejectNote,
+            assignment: {
+                status: assignmentStatus,
+                office: assignedOfficeSource,
+                assignedToId,
+                assignedToName,
+                assignedById,
+                assignedByName,
+                assignedAt,
+                acceptedAt,
+                rejectedAt,
+                rejectNote,
+            },
+            receivingOfficeCode,
+            receivingOfficeName,
+            receivingOfficer: receivingOfficerId ? {
+                id: receivingOfficerId,
+                name: receivingOfficerName || null,
+                departmentLabel: receivingOfficerDepartment || null,
+                roles: receivingOfficerRoles,
+                level: receivingOfficerLevel || null,
+                user_level: receivingOfficerLevel || null,
+                type: tracker.receiving_officer_type
+                    ?? tracker.receivingOfficerType
+                    ?? receivingOfficerLevel
+                    ?? null
+            } : null,
+            receivingOffice: receivingOfficeCode || receivingOfficeName ? {
+                code: receivingOfficeCode || null,
+                name: receivingOfficeName || null
+            } : null,
+            originOffice: originOfficeCode || originOfficeName ? {
+                code: originOfficeCode || null,
+                name: originOfficeName || null,
+                department: originOfficeDepartment || null
+            } : null,
+            originOfficeCode,
+            originOfficeName,
+            originOfficeDepartment,
+            originRegistry: tracker.origin_registry ?? tracker.originRegistry ?? null,
+            receivingOfficerName: receivingOfficerName || null,
+            rackShelfLocation,
+            // Workflow fields
+            workflowType: tracker.workflow_type ?? tracker.workflowType ?? null,
+            workflowStep: tracker.workflow_step ?? tracker.workflowStep ?? null,
+            workflowConfig: tracker.workflow_config ?? tracker.workflowConfig ?? null,
+            workflowProgress: tracker.workflow_progress ?? tracker.workflowProgress ?? null,
+            nextStep: tracker.next_step ?? tracker.nextStep ?? null,
+            currentStep: tracker.current_step ?? tracker.currentStep ?? null,
+        };
+    }
+
+    function requestCompleteMovement(tracker, payload = {}) {
+        if (!tracker || !tracker.id) {
+            return $.Deferred().reject({
+                responseJSON: { message: 'Tracker reference is required to log out.' }
+            }).promise();
+        }
+
+        return $.ajax({
+            url: `/api/file-trackers/${tracker.id}/complete-movement`,
+            method: 'POST',
+            data: JSON.stringify(payload || {}),
+            contentType: 'application/json',
+            processData: false
+        });
+    }
+
+    function requestAssignment(tracker, payload = {}) {
+        if (!tracker || !tracker.id) {
+            return $.Deferred().reject({
+                responseJSON: { message: 'Tracker reference is required to assign.' }
+            }).promise();
+        }
+
+        return $.ajax({
+            url: `/api/file-trackings/${tracker.id}/assign`,
+            method: 'POST',
+            data: JSON.stringify(payload || {}),
+            contentType: 'application/json',
+            processData: false
+        });
+    }
+
+    function requestAcceptAssignment(trackerId, payload = {}) {
+        if (!trackerId) {
+            return $.Deferred().reject({
+                responseJSON: { message: 'Tracker reference is required to accept.' }
+            }).promise();
+        }
+
+        return $.ajax({
+            url: `/api/file-trackers/${trackerId}/accept`,
+            method: 'POST',
+            data: JSON.stringify(payload || {}),
+            contentType: 'application/json',
+            processData: false
+        });
+    }
+
+    function requestRejectAssignment(trackerId, payload = {}) {
+        if (!trackerId) {
+            return $.Deferred().reject({
+                responseJSON: { message: 'Tracker reference is required to reject.' }
+            }).promise();
+        }
+
+        return $.ajax({
+            url: `/api/file-trackers/${trackerId}/reject`,
+            method: 'POST',
+            data: JSON.stringify(payload || {}),
+            contentType: 'application/json',
+            processData: false
+        });
+    }
+
+    window.requestCompleteMovement = requestCompleteMovement;
+    window.requestAssignment = requestAssignment;
+    window.requestAcceptAssignment = requestAcceptAssignment;
+    window.requestRejectAssignment = requestRejectAssignment;
+
+    function upsertLocalTracker(updatedTracker, options = {}) {
+        if (!updatedTracker) {
+            return;
+        }
+
+        const { render = true } = options;
+        const matchIndex = fileTrackers.findIndex(existing => {
+            if (existing.id && updatedTracker.id) {
+                return existing.id === updatedTracker.id;
+            }
+            return existing.trackingId === updatedTracker.trackingId;
+        });
+
+        if (matchIndex !== -1) {
+            fileTrackers[matchIndex] = updatedTracker;
+        } else {
+            fileTrackers.push(updatedTracker);
+        }
+
+        window.fileTrackers = fileTrackers;
+
+        if (render) {
+            updateFileTrackersTable();
+        }
+    }
+
+    // Generate unique IDs
+    function generateLogId() {
+        const now = new Date();
+        const timestamp = now.toISOString().replace(/[-:T]/g, '').split('.')[0];
+        const random = Math.floor(Math.random() * 999).toString().padStart(3, '0');
+        return `LOG-${timestamp}-${random}`;
+    }
+
+    // Update current date and time
+    function updateDateTime() {
+        const now = new Date();
+        const date = now.toISOString().split('T')[0];
+        const time = now.toTimeString().split(' ')[0].substring(0, 8);
+        const timeShort = time.substring(0, 5);
+
+        const currentTimeEl = document.getElementById('current-time');
+        const currentDateEl = document.getElementById('current-date');
+        if (currentTimeEl) currentTimeEl.textContent = time;
+        if (currentDateEl) currentDateEl.textContent = date;
+
+        const logInTimeInput = document.getElementById('log-in-time');
+        const logInDateInput = document.getElementById('log-in-date');
+        const logOutTimeInput = document.getElementById('log-out-time');
+        const logOutDateInput = document.getElementById('log-out-date');
+
+        if (logInTimeInput) {
+            logInTimeInput.value = '';
+        }
+        if (logInDateInput) {
+            logInDateInput.value = '';
+        }
+        if (logOutTimeInput) {
+            logOutTimeInput.value = timeShort;
+        }
+        if (logOutDateInput) {
+            logOutDateInput.value = date;
+        }
+    }
+
+    // Initialize IDs
+    function initializeIds() {
+        resetMetadataFields();
+
+        const logId = generateLogId();
+        const logIdEl = document.getElementById('log-id');
+        if (logIdEl) logIdEl.value = logId;
+        const sidebarLogIdEl = document.getElementById('sidebar-log-id');
+        if (sidebarLogIdEl) sidebarLogIdEl.textContent = logId;
+    }
+
+    // Receiving Office Selection Handler
+    if (document.getElementById('receiving-office')) {
+        $('#receiving-office').on('change', function () {
+            const selectedOption = $(this).find('option:selected');
+            const officeName = selectedOption.data('name') || selectedOption.text();
+
+            // We need to ensure there is a hidden input for receiving_office_name if the form expects it
+            // However, the controller uses the code to look up or store, and we passed receiving_office_name hidden input in blade?
+            // Actually, in blade we have: <input type="hidden" name="receiving_office_name" id="receiving_office_name"> if it exists.
+            // Let's create/update it.
+
+            let nameInput = document.getElementById('receiving-office-name-hidden');
+            if (!nameInput) {
+                nameInput = document.createElement('input');
+                nameInput.type = 'hidden';
+                nameInput.id = 'receiving-office-name-hidden';
+                nameInput.name = 'receiving_office_name';
+                document.getElementById('create-file-tracker-form').appendChild(nameInput);
+            }
+            nameInput.value = officeName;
+        });
+    }
+
+    // Handle office selection (Legacy Destination / Current Office)
+    if (destinationOfficeSelectElement) {
+        destinationOfficeSelectElement.addEventListener('change', function () {
+            // ... (rest of logic for destination/current office if still needed for display)
+        });
+    }
+
+
+
+    if (originOfficeSelectElement) {
+        originOfficeSelectElement.addEventListener('change', function () {
+            updateOriginOfficeInfo(this.value);
+        });
+    }
+
+    // Create file tracker
+    function createFileTracker() {
+        const fileNo = document.getElementById('file-no').value;
+        const fileName = document.getElementById('file-name').value;
+        const trackingId = document.getElementById('tracking-id').value.trim();
+        const fileIndexingId = resolvedFileIndexingId;
+        const workflowSubmissionMode = isKangisWorkflowSubmissionMode();
+
+        // Origin
+        const originOfficeId = document.getElementById('origin-office')?.value || '';
+        const originOfficeName = originOfficeId;
+
+        // Destination (Department)
+        const destinationSelection = document.getElementById('current-office').value;
+
+        // Receiving Office
+        const receivingOfficeCode = document.getElementById('receiving-office').value;
+        const receivingOfficeName = $('#receiving-office').find('option:selected').data('name') || $('#receiving-office').find('option:selected').text();
+
+        const priority = document.getElementById('file-priority').value;
+        const notes = document.getElementById('office-notes').value;
+
+        const receivingOfficerIdRaw = receivingOfficerSelect ? receivingOfficerSelect.val() : '';
+        const receivingOfficerKey = receivingOfficerIdRaw;
+        const $officerOption = $('#receiving-officer option:selected');
+
+        const selectedDestinationOption = $('#current-office').find('option:selected');
+        const finalDestinationCode = destinationSelection === CUSTOM_DESTINATION_OPTION_VALUE
+            ? (customDestinationOfficeDetails?.code || '')
+            : destinationSelection;
+        const finalDestinationName = destinationSelection === CUSTOM_DESTINATION_OPTION_VALUE
+            ? (customDestinationOfficeDetails?.name || customDestinationInput?.value?.trim() || '')
+            : (selectedDestinationOption.data('name') || selectedDestinationOption.text() || destinationSelection);
+
+        let effectiveReceivingOfficeCode = receivingOfficeCode;
+        let effectiveReceivingOfficeName = receivingOfficeName;
+        let effectiveReceivingOfficerId = receivingOfficerIdRaw;
+        let effectiveReceivingOfficerName = $officerOption.text();
+
+        // Cross-Registry Request mode overrides the standard KANGIS workflow
+        // routing. Per docs/file_reqest, workflow.md the first hop is the
+        // Supply registry (Land Registry when KANGIS requests; KANGIS Registry
+        // when Lands requests) for *Recommendation*, NOT Director GIS.
+        let effectiveOriginCode = originOfficeId;
+        let effectiveOriginName = originOfficeName;
+        let crossRegistryNote = '';
+        if (_crossModuleRequestMode) {
+            const modKey = (window.currentModule || '').toLowerCase();
+            const requesterRegistry = (modKey === 'kangis' || modKey === 'new_kangis')
+                ? 'KANGIS Registry'
+                : 'Registry 1 - Land';
+            // Friendly display name for the supply registry — normalize the
+            // legacy plural "Registry 1 - Lands" to the canonical singular form.
+            const supplyDisplay = (originOfficeId === 'Registry 1 - Lands')
+                ? 'Registry 1 - Land'
+                : (originOfficeName || originOfficeId);
+
+            // First movement: requester → supply registry (for recommendation)
+            effectiveOriginCode = requesterRegistry;
+            effectiveOriginName = requesterRegistry;
+            effectiveReceivingOfficeCode = originOfficeId;
+            effectiveReceivingOfficeName = supplyDisplay;
+            effectiveReceivingOfficerId = null;
+            effectiveReceivingOfficerName = supplyDisplay;
+            crossRegistryNote = `Cross-registry request: ${requesterRegistry} requesting file from ${supplyDisplay}. Pending ${supplyDisplay} recommendation.`;
+        } else if (workflowSubmissionMode) {
+            effectiveReceivingOfficeCode = KANGIS_APPROVAL_ROUTE.officeCode;
+            effectiveReceivingOfficeName = KANGIS_APPROVAL_ROUTE.officeName;
+            effectiveReceivingOfficerId = null;
+            effectiveReceivingOfficerName = KANGIS_APPROVAL_ROUTE.officeName;
+        }
+
+        const rackShelfLookupKey = normalizeFileNumberForLookup(fileNo);
+        const rackShelfValue = rackShelfLookupKey && rackShelfCache.has(rackShelfLookupKey)
+            ? rackShelfCache.get(rackShelfLookupKey)
+            : currentRackShelfValue;
+
+        // Validation
+        if (!fileNo || !fileName || !destinationSelection) {
+            Swal.fire({ icon: 'warning', title: 'Required Fields', text: 'Please fill in all required fields.' }); return;
+            return;
+        }
+
+        if (!workflowSubmissionMode && !_crossModuleRequestMode && !effectiveReceivingOfficeCode) {
+            Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Please select a Receiving Office.' }); return;
+            return;
+        }
+
+        if (!originOfficeId) {
+            Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Select the registry (origin) that dispatched this file.' }); return;
+            return;
+        }
+
+        if (!workflowSubmissionMode && !_crossModuleRequestMode && !receivingOfficerKey) {
+            Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Select the receiving officer.' }); return;
+            return;
+        }
+
+        // Officer Construction from DOM
+        const receivingOfficer = {
+            id: effectiveReceivingOfficerId,
+            name: effectiveReceivingOfficerName,
+            departmentLabel: workflowSubmissionMode ? KANGIS_APPROVAL_ROUTE.officeName : destinationSelection,
+            roles: [],
+            user_level: null,
+            type: null
+        };
+
+        const receivingOfficerNameResolved = receivingOfficer.name || KANGIS_APPROVAL_ROUTE.officeName;
+        const receivingOfficerId = effectiveReceivingOfficerId;
+
+        const now = new Date();
+        const logId = document.getElementById('log-id').value;
+        const currentDateStr = now.toISOString().split('T')[0];
+        const currentTimeStr = now.toTimeString().split(' ')[0].substring(0, 5);
+
+        // Construct objects for Preview
+        const originOfficeObj = {
+            code: effectiveOriginCode,
+            name: effectiveOriginName,
+            department: 'Registry'
+        };
+
+        const receivingOfficeObj = {
+            code: effectiveReceivingOfficeCode,
+            name: effectiveReceivingOfficeName,
+            department: _crossModuleRequestMode ? effectiveReceivingOfficeName : destinationSelection
+        };
+
+        currentTracker = {
+            fileNo,
+            fileName,
+            trackingId,
+            fileIndexingId,
+            priority,
+            originOffice: originOfficeObj,
+            originOfficeId,
+            currentOffice: effectiveReceivingOfficeName,
+            currentOfficeId: effectiveReceivingOfficeCode,
+            office: receivingOfficeObj,
+            receivingOffice: receivingOfficeObj,
+            finalDestinationCode,
+            finalDestinationName,
+            workflowSubmissionMode,
+            workflowStep: resolvedWorkflowState?.step ?? 0,
+            workflowType: resolvedWorkflowState?.type ?? null,
+            existingTrackerId: resolvedWorkflowState?.trackerId ?? null,
+            destinationDepartment: destinationSelection,
+            receivingOfficer: {
+                id: receivingOfficerId,
+                name: receivingOfficerNameResolved,
+                departmentLabel: destinationSelection,
+                roles: [],
+                level: null,
+                user_level: null,
+                type: null
+            },
+            rackShelfLocation: rackShelfValue,
+            logEntries: [{
+                logId,
+                logInTime: document.getElementById('log-in-time')?.value || currentTimeStr,
+                logInDate: document.getElementById('log-in-date')?.value || currentDateStr,
+                logOutTime: document.getElementById('log-out-time')?.value || currentTimeStr,
+                logOutDate: document.getElementById('log-out-date')?.value || currentDateStr,
+                officeId: effectiveReceivingOfficeCode,
+                officeName: effectiveReceivingOfficeName,
+                notes: notes || (
+                    _crossModuleRequestMode
+                        ? crossRegistryNote
+                        : (workflowSubmissionMode ? 'Submitted to Director GIS for recommendation.' : '')
+                ),
+                status: 'active',
+                createdAt: now.toISOString(),
+                origin_office_code: effectiveOriginCode,
+                origin_office_name: effectiveOriginName,
+                origin_office_department: 'Registry',
+                receiving_officer_id: receivingOfficerId,
+                receiving_officer_name: receivingOfficerNameResolved,
+                receiving_office_code: effectiveReceivingOfficeCode,
+                receiving_office_name: effectiveReceivingOfficeName
+            }],
+            notes,
+            createdAt: now.toISOString()
+        };
+
+        showPreview();
+    }
+
+    // Show preview dialog
+    function showPreview() {
+        if (!currentTracker) return;
+
+        const priorityClass = `priority-${currentTracker.priority}`;
+        const priorityColors = {
+            LOW: 'bg-green-50 border-green-200 text-green-800',
+            MEDIUM: 'bg-amber-50 border-amber-200 text-amber-800',
+            HIGH: 'bg-red-50 border-red-200 text-red-800'
+        };
+        const priorityText = currentTracker.priority.charAt(0) + currentTracker.priority.slice(1).toLowerCase();
+        const priorityBg = priorityColors[currentTracker.priority] || priorityColors.MEDIUM;
+        const receivingOfficer = currentTracker.receivingOfficer || {};
+        const receivingOfficerName = escapeHtml(receivingOfficer.name || '—');
+        const receivingOfficerIdLabel = receivingOfficer.id !== undefined && receivingOfficer.id !== null
+            ? escapeHtml(String(receivingOfficer.id))
+            : '—';
+        const receivingOfficerDepartment = escapeHtml(receivingOfficer.departmentLabel || (currentTracker.office?.department || 'N/A'));
+        const receivingOfficerRoles = Array.isArray(receivingOfficer.roles) && receivingOfficer.roles.length
+            ? escapeHtml(receivingOfficer.roles.join(', '))
+            : '—';
+        const receivingOfficerLevel = receivingOfficer.level || receivingOfficer.user_level || receivingOfficer.type || '';
+        const receivingOfficerLevelLabel = receivingOfficerLevel ? escapeHtml(receivingOfficerLevel) : '';
+        const receivingOfficeName = escapeHtml(currentTracker.receivingOffice?.name || currentTracker.currentOffice || '—');
+        const receivingOfficeCode = escapeHtml(currentTracker.receivingOffice?.code || currentTracker.currentOfficeId || '—');
+        const originOffice = currentTracker.originOffice || {};
+        const originOfficeName = escapeHtml(originOffice.name || '—');
+        const originOfficeCode = escapeHtml(originOffice.code || '—');
+        const originOfficeDepartment = escapeHtml(originOffice.department || 'N/A');
+        const fileNoSafe = escapeHtml(currentTracker.fileNo || '—');
+        const trackingIdSafe = escapeHtml(currentTracker.trackingId || '—');
+        const fileNameSafe = escapeHtml(currentTracker.fileName || '—');
+
+        const previewContent = document.getElementById('preview-content');
+        previewContent.innerHTML = `
+                <div class="space-y-3">
+                    <!-- Main File Header Card (Landscape) -->
+                    <div class="bg-blue-600 border border-blue-700 rounded-xl p-4 shadow-lg text-white">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <div class="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
+                                        <i data-lucide="file-text" class="h-5 w-5 text-white"></i>
+                                    </div>
+                                    <h3 class="text-2xl font-extrabold tracking-tight">${fileNameSafe}</h3>
+                                </div>
+                                <div class="flex items-center gap-4 flex-wrap mt-2">
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold uppercase tracking-wider text-blue-100">File Number</span>
+                                        <span class="inline-flex items-center px-3 py-1 rounded-lg text-base font-mono font-bold bg-white/10 backdrop-blur-md border border-white/20 whitespace-nowrap">${fileNoSafe}</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold uppercase tracking-wider text-red-100">Tracking ID</span>
+                                        <span class="inline-flex items-center px-3 py-1 rounded-lg text-base font-mono font-bold bg-white text-red-600 shadow-xl border border-red-200 whitespace-nowrap">${trackingIdSafe}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-2 items-start md:items-end justify-center min-w-[200px]">
+                                <div class="flex flex-col items-start md:items-end w-full">
+                                    <span class="text-[9px] font-bold uppercase tracking-wider text-blue-100 mb-1">Priority Level</span>
+                                    <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-blue-900 shadow-xl border border-white whitespace-nowrap">
+                                        <span class="h-2 w-2 rounded-full mr-2 ${currentTracker.priority === 'HIGH' ? 'bg-red-500' : currentTracker.priority === 'MEDIUM' ? 'bg-amber-500' : 'bg-green-500'} animate-pulse"></span>
+                                        ${priorityText}
+                                    </span>
+                                </div>
+                                <div class="flex items-center gap-2 px-2 py-1 rounded-lg bg-white/10 border border-white/10">
+                                    <i data-lucide="activity" class="h-3 w-3 text-green-400"></i>
+                                    <span class="text-[10px] font-semibold">Live Tracking Ready</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3-Column Grid for Details (Landscape Optimization) -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <!-- Column 1: File & Origin -->
+                        <div class="space-y-3">
+                            <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm h-full">
+                                <h4 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2 pb-2 border-b border-gray-50">
+                                    <i data-lucide="info" class="h-3.5 w-3.5 text-blue-600"></i>
+                                    File & Origin
+                                </h4>
+                                <div class="space-y-2">
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold text-gray-400 uppercase">File Title</span>
+                                        <span class="text-xs font-bold text-gray-900 leading-snug">${fileNameSafe}</span>
+                                    </div>
+                                    <div class="grid grid-cols-1 gap-2 pt-1">
+                                        <div class="flex flex-col">
+                                            <span class="text-[9px] font-bold text-gray-400 uppercase">Origin Registry</span>
+                                            <span class="text-xs font-semibold text-gray-900">${originOfficeName}</span>
+                                        </div>
+                                        <div class="flex flex-col">
+                                            <span class="text-[9px] font-bold text-gray-400 uppercase">Registry Code</span>
+                                            <span class="text-xs font-mono font-bold text-purple-700">${originOfficeCode}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Column 2: Destination & Officer -->
+                        <div class="space-y-3">
+                            <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm h-full">
+                                <h4 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2 pb-2 border-b border-gray-50">
+                                    <i data-lucide="map-pin" class="h-3.5 w-3.5 text-purple-600"></i>
+                                    Move Destination
+                                </h4>
+                                <div class="space-y-2">
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold text-gray-400 uppercase">Destination Office</span>
+                                        <span class="text-xs font-bold text-gray-900">${receivingOfficeName}</span>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 pt-1">
+                                        <div class="flex flex-col">
+                                            <span class="text-[9px] font-bold text-gray-400 uppercase">Office Code</span>
+                                            <span class="text-xs font-mono font-bold text-purple-700">${receivingOfficeCode}</span>
+                                        </div>
+                                        <div class="flex flex-col">
+                                            <span class="text-[9px] font-bold text-gray-400 uppercase">Officer ID</span>
+                                            <span class="text-xs font-mono font-bold text-blue-700">${receivingOfficerIdLabel}</span>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col py-1 border-t border-gray-50">
+                                        <span class="text-[9px] font-bold text-gray-400 uppercase">Receiving Officer</span>
+                                        <div class="flex items-center gap-2 mt-1">
+                                            <div class="h-6 w-6 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200">
+                                                <i data-lucide="user" class="h-3 w-3 text-gray-600"></i>
+                                            </div>
+                                            <span class="text-xs font-bold text-gray-900">${receivingOfficerName}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Column 3: Audit & Intent -->
+                        <div class="space-y-3">
+                            <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm h-full">
+                                <h4 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2 pb-2 border-b border-gray-50">
+                                    <i data-lucide="shield-check" class="h-3.5 w-3.5 text-green-600"></i>
+                                    Entry Validation
+                                </h4>
+                                <div class="space-y-3">
+                                    <div class="bg-green-50 border border-green-100 rounded-lg p-2.5">
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <div class="h-1.5 w-1.5 rounded-full bg-green-500"></div>
+                                            <span class="text-[9px] font-bold text-green-700 uppercase">System Log</span>
+                                        </div>
+                                        <div class="text-xs font-mono font-bold text-green-900">${currentTracker.logEntries[0].logId}</div>
+                                    </div>
+                                    <div class="grid grid-cols-1 gap-1.5 text-[11px] pt-1">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-gray-500 font-bold uppercase text-[9px]">Date:</span>
+                                            <span class="font-bold text-gray-700">${currentTracker.logEntries[0].logInDate || '—'}</span>
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-gray-500 font-bold uppercase text-[9px]">Time:</span>
+                                            <span class="font-bold text-gray-700">${currentTracker.logEntries[0].logInTime || '—'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Bar: Notes (Full Width) -->
+                    <div class="bg-gray-50 border border-gray-200 rounded-xl p-3">
+                        <h4 class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                            <i data-lucide="message-square" class="h-3.5 w-3.5 text-amber-600"></i>
+                            Notes & Instructions
+                        </h4>
+                        <div class="bg-white border border-gray-100 rounded-lg p-3 text-[12px] text-gray-700 leading-snug min-h-[40px]">
+                            ${currentTracker.logEntries[0].notes || '<span class="italic text-gray-400 text-[11px]">No instructions...</span>'}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+        document.getElementById('preview-dialog').classList.add('show');
+        lucide.createIcons();
+    }
+
+    // Save file tracker
+    function saveFileTracker() {
+        console.log('Save function called, currentTracker:', currentTracker);
+
+        if (!currentTracker) {
+            Swal.fire({ icon: 'warning', title: 'No Data', text: 'No tracker data to save.' }); return;
+            return;
+        }
+
+        // Ensure office data is available
+        const office = currentTracker.office || officeData[currentTracker.currentOfficeId] || {};
+        const department = office.department || 'Unknown Department';
+
+        console.log('Office data:', office);
+        console.log('Department:', department);
+
+        const receivingOfficeCode = currentTracker.receivingOffice?.code || currentTracker.currentOfficeId;
+        const receivingOfficeName = currentTracker.receivingOffice?.name || office.name || currentTracker.currentOffice || 'Unknown Office';
+        const receivingOfficerId = currentTracker.receivingOfficer?.id ?? null;
+        const receivingOfficerName = currentTracker.receivingOfficer?.name ?? null;
+        const originOfficeCode = currentTracker.originOffice?.code || currentTracker.originOfficeId || null;
+        const originOfficeName = currentTracker.originOffice?.name || null;
+        const originOfficeDepartment = currentTracker.originOffice?.department || null;
+
+        // Prepare data for API
+        const apiData = {
+            file_number: currentTracker.fileNo,
+            file_title: currentTracker.fileName,
+            file_type: 'Application', // Can be made dynamic later
+            priority: currentTracker.priority,
+            department: department,
+            description: `File tracked in ${office.name || currentTracker.currentOffice || 'Unknown Office'}`,
+            deadline: null, // Can be added later
+            movement_log: [{
+                office_code: currentTracker.currentOfficeId,
+                office_name: office.name || currentTracker.currentOffice || 'Unknown Office',
+                log_in_time: currentTracker.logEntries?.[0]?.logInTime || '',
+                log_in_date: currentTracker.logEntries?.[0]?.logInDate || '',
+                log_out_time: currentTracker.logEntries?.[0]?.logOutTime || '',
+                log_out_date: currentTracker.logEntries?.[0]?.logOutDate || '',
+                notes: currentTracker.notes || currentTracker.logEntries?.[0]?.notes || 'Initial file tracking entry',
+                origin_office_code: originOfficeCode,
+                origin_office_name: originOfficeName,
+                origin_office_department: originOfficeDepartment,
+                receiving_officer_id: receivingOfficerId,
+                receiving_officer_name: receivingOfficerName,
+                receiving_office_code: receivingOfficeCode,
+                receiving_office_name: receivingOfficeName
+            }], 
+            notes: currentTracker.notes || '',
+            origin_office_code: originOfficeCode,
+            origin_office_name: originOfficeName,
+            origin_office_department: originOfficeDepartment,
+            receiving_office_code: receivingOfficeCode,
+            receiving_office_name: receivingOfficeName,
+            receiving_officer_id: receivingOfficerId,
+            receiving_officer_name: receivingOfficerName,
+            module: window.currentModule || null
+        };
+
+        // Show loading state
+        const saveButton = document.getElementById('save-tracker-btn');
+        const originalText = saveButton.innerHTML;
+        saveButton.innerHTML = '<i data-lucide="loader" class="h-4 w-4 mr-2 animate-spin"></i>Saving...';
+        saveButton.disabled = true;
+
+        // ── Step 4 (processing): add a movement to the existing approved tracker ──
+        const isStep4Processing = currentTracker.workflowType === 'kangis_approval_flow'
+            && currentTracker.workflowStep >= 4
+            && currentTracker.existingTrackerId;
+
+        if (isStep4Processing) {
+            const now = new Date();
+            const logInTime = currentTracker.logEntries?.[0]?.logInTime || now.toTimeString().split(' ')[0].substring(0, 5);
+            const logInDate = currentTracker.logEntries?.[0]?.logInDate || now.toISOString().split('T')[0];
+
+            const movementData = {
+                office_code: receivingOfficeCode,
+                office_name: receivingOfficeName,
+                log_in_time: logInTime,
+                log_in_date: logInDate,
+                notes: currentTracker.notes || currentTracker.logEntries?.[0]?.notes || 'File received at department.',
+                receiving_officer_id: currentTracker.receivingOfficer?.id != null ? String(currentTracker.receivingOfficer.id) : null,
+                receiving_officer_name: currentTracker.receivingOfficer?.name || receivingOfficerName || null,
+                auto_accept: true,
+                purpose: 'processing',
+                department: currentTracker.destinationDepartment || currentTracker.finalDestinationName || receivingOfficeName,
+            };
+
+            $.ajax({
+                url: `/api/file-trackers/${currentTracker.existingTrackerId}/movements`,
+                method: 'POST',
+                data: JSON.stringify(movementData),
+                contentType: 'application/json',
+                processData: false,
+                success: function (response) {
+                    if (response.success && response.data) {
+                        const normalizedTracker = transformApiTracker(response.data);
+                        upsertLocalTracker(normalizedTracker);
+                        document.getElementById('preview-dialog').classList.remove('show');
+                        showNotification(`File logged to department successfully. Tracking ID: ${response.data.tracking_id}`, 'success');
+                        resetForm();
+                        currentTracker = null;
+                    } else {
+                        Swal.fire({ icon: 'error', title: 'Save Failed', text: response.message || 'Error logging Step 4 movement.' });
+                    }
+                },
+                error: function (xhr) {
+                    const resp = xhr.responseJSON || {};
+                    const msg = resp.message || 'Error logging Step 4 movement.';
+                    const errors = resp.errors ? Object.values(resp.errors).flat().join('\n') : '';
+                    Swal.fire({ icon: 'error', title: 'Error', text: errors ? msg + '\n' + errors : msg });
+                },
+                complete: function () {
+                    saveButton.innerHTML = originalText;
+                    saveButton.disabled = false;
+                    lucide.createIcons();
+                }
+            });
+            return;
+        }
+
+        // ── New tracker creation (Step 1 / non-workflow) ──
+        const workflowToggle = document.getElementById('workflow-3step-toggle');
+        const isKangisCreateModule = (window.currentModule || '').toLowerCase() === 'kangis';
+        const isWorkflowEnabled = workflowToggle
+            ? workflowToggle.checked
+            : isKangisCreateModule;
+        if (_crossModuleRequestMode) {
+            // Cross-module bilateral request — receiver must approve before sender can print
+            apiData.workflow_type   = 'cross_module_request';
+            apiData.sender_module   = window.currentModule || 'land';
+            apiData.receiver_module = isKangisCreateModule ? 'land' : 'kangis';
+            apiData.final_destination_name = currentTracker.finalDestinationName || office.name || currentTracker.currentOffice || '';
+        } else if (isWorkflowEnabled) {
+            apiData.workflow_type = 'kangis_approval_flow';
+            // The final destination is what the user selected as destination
+            apiData.final_destination_code = currentTracker.finalDestinationCode || currentTracker.currentOfficeId;
+            apiData.final_destination_name = currentTracker.finalDestinationName || office.name || currentTracker.currentOffice || '';
+        }
+
+        // Send to API
+        $.ajax({
+            url: '/api/file-trackers',
+            method: 'POST',
+            data: JSON.stringify(apiData),
+            contentType: 'application/json',
+            processData: false,
+            success: function (response) {
+                if (response.success && response.data) {
+                    const normalizedTracker = transformApiTracker(response.data);
+                    upsertLocalTracker(normalizedTracker);
+                    document.getElementById('preview-dialog').classList.remove('show');
+                    const wasKangisWorkflow = currentTracker?.workflowSubmissionMode;
+                    const wasCrossModule = _crossModuleRequestMode;
+                    _crossModuleRequestMode = false;
+                    applyCrossModuleFieldLabels(false);
+                    if (wasCrossModule) {
+                        showNotification(`File request sent — awaiting approval. Tracking ID: ${response.data.tracking_id}`, 'success');
+                    } else if (wasKangisWorkflow) {
+                        showNotification(`Sent to Director GIS for recommendation. Tracking ID: ${response.data.tracking_id}`, 'success');
+                    } else {
+                        showNotification(`File tracker created successfully. Tracking ID: ${response.data.tracking_id}`, 'success');
+                    }
+                    resetForm();
+                    currentTracker = null;
+                    // After KANGIS workflow submission, lock button to Pending state
+                    if (wasKangisWorkflow) {
+                        applyKangisWorkflowButtonGate(response.data);
+                    }
+                } else {
+                    const message = response.message || 'Error creating file tracker';
+                    Swal.fire({ icon: 'error', title: 'Save Failed', text: message });
+                }
+            },
+            error: function (xhr) {
+                let errorMessage = 'Error creating file tracker';
+                if (xhr.responseJSON && xhr.responseJSON.message) {
+                    errorMessage = xhr.responseJSON.message;
+                } else if (xhr.responseText) {
+                    errorMessage = xhr.responseText;
+                }
+                Swal.fire({ icon: 'error', title: 'Error', text: errorMessage });
+            },
+            complete: function () {
+                // Restore button state
+                saveButton.innerHTML = originalText;
+                saveButton.disabled = false;
+                lucide.createIcons(); // Reinitialize icons
+            }
+        });
+    }
+
+    // Update file trackers table with pagination
+    function updateFileTrackersTable(page = null) {
+        const container = document.getElementById('trackers-container');
+        if (!container) {
+            return;
+        }
+
+        if (page !== null) {
+            currentPage = page;
+        }
+
+        // Trigger asynchronous load from server
+        loadFileTrackers(currentPage);
+    }
+
+    function renderFileTrackersTable(paginatedTrackers) {
+        const container = document.getElementById('trackers-container');
+        if (!container) {
+            return;
+        }
+
+        const trackerCountEl = document.getElementById('tracker-count');
+        const totalItems = parseInt(trackerCountEl ? trackerCountEl.textContent : '0') || 0;
+
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        const endIndex = startIndex + paginatedTrackers.length;
+
+        if (paginatedTrackers.length === 0) {
+            container.innerHTML = `
+                    <div class="rounded-xl border border-dashed border-gray-300 bg-white p-12 text-center shadow-sm">
+                        <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+                            <i data-lucide="file-x" class="h-8 w-8 text-gray-400"></i>
+                        </div>
+                        <h3 class="mt-6 text-lg font-semibold text-gray-900">No trackers found</h3>
+                        <p class="mt-2 text-sm text-gray-600">Try adjusting your filters or search terms to see more trackers.</p>
+                            <button id="create-first-tracker" class="mt-6 inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700">
+                                <i data-lucide="plus" class="mr-2 h-4 w-4"></i>
+                                Create New Tracker
+                            </button>
+                    </div>
+                `;
+            lucide.createIcons();
+
+            const createFirstButton = document.getElementById('create-first-tracker');
+            if (createFirstButton) {
+                createFirstButton.addEventListener('click', function () {
+                    switchMainTab('create');
+                });
+            }
+
+            renderPaginationControls(container, 0, 0);
+            return;
+        }
+
+        const sanitize = (value) => {
+            return (value || '').toString()
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        };
+
+        const cards = paginatedTrackers.map(tracker => {
+            const trackerKey = getTrackerKey(tracker);
+            const isExpanded = trackerKey ? expandedTrackerHistory.has(trackerKey) : false;
+            const historyTargetIdBase = trackerKey || `temp-${Math.random().toString(36).slice(2, 9)}`;
+            const historyTargetId = `history-${historyTargetIdBase.replace(/[^A-Za-z0-9]/g, '-')}`;
+            const safeTrackingId = sanitize(tracker.trackingId || '');
+            const priority = (tracker.priority || 'MEDIUM').toUpperCase();
+            const priorityLabel = priority.charAt(0) + priority.slice(1).toLowerCase();
+            const priorityBadge = {
+                LOW: 'bg-green-100 text-green-800 border border-green-200',
+                MEDIUM: 'bg-amber-100 text-amber-800 border border-amber-200',
+                HIGH: 'bg-red-100 text-red-800 border border-red-200'
+            }[priority] || 'bg-amber-100 text-amber-800 border border-amber-200';
+            const receivingOfficerName = tracker.receivingOfficer?.name || tracker.receivingOfficerName || '';
+            const safeReceivingOfficerName = receivingOfficerName ? sanitize(receivingOfficerName) : '';
+            const originOfficeName = tracker.originOffice?.name || tracker.originOfficeName || tracker.originRegistry || '';
+            const originOfficeCode = tracker.originOffice?.code || tracker.originOfficeCode || '';
+            const safeOriginOfficeName = originOfficeName ? sanitize(originOfficeName) : '—';
+            const safeOriginOfficeCode = originOfficeCode ? sanitize(originOfficeCode) : '—';
+            const originSummary = safeOriginOfficeName !== '—'
+                ? `${safeOriginOfficeName}${safeOriginOfficeCode !== '—' ? ` (${safeOriginOfficeCode})` : ''}`
+                : '—';
+            const assignedToId = tracker.assignedToId ?? null;
+            const assignmentStatusLower = (tracker.assignmentStatusLower || tracker.assignmentStatus || tracker.assignment_status || '').toLowerCase();
+
+            const isOwnedByCurrentUser = Boolean(
+                currentUserId &&
+                assignedToId &&
+                Number(assignedToId) === Number(currentUserId)
+            );
+
+            const movements = tracker.logEntries || [];
+            const approvalPurposes = ['recommendation', 'approval'];
+            const approvalEntries = movements.filter(e => approvalPurposes.includes((e.purpose || '').toLowerCase()));
+            const physicalMovements = movements.filter(e => !approvalPurposes.includes((e.purpose || '').toLowerCase()));
+            const totalMovements = physicalMovements.length;
+            const activeMovements = physicalMovements.filter(entry => (entry.status || '').toLowerCase() === 'active');
+            const activeEntry = activeMovements.length ? activeMovements[0] : null;
+            const latestEntry = physicalMovements.length ? physicalMovements[0] : null;
+            const pendingMovement = getPendingMovementEntry(tracker);
+            const hasActiveMovement = Boolean(activeEntry);
+            let statusLabel;
+            let statusBadge;
+            if (assignmentStatusLower === 'pending' || pendingMovement) {
+                statusLabel = 'Pending acceptance';
+                statusBadge = 'bg-amber-100 text-amber-800 border border-amber-200';
+            } else if (assignmentStatusLower === 'rejected') {
+                statusLabel = 'Assignment rejected';
+                statusBadge = 'bg-red-100 text-red-700 border border-red-200';
+            } else if (hasActiveMovement) {
+                const displayMeta = resolveStatusDisplay(activeEntry, 'active');
+                statusLabel = displayMeta.label;
+                statusBadge = displayMeta.badgeClass;
+            } else if (latestEntry && (latestEntry.statusLabelOverride || latestEntry.newStatus)) {
+                const displayMeta = resolveStatusDisplay(latestEntry, latestEntry.status || 'logged_out');
+                statusLabel = displayMeta.label;
+                statusBadge = displayMeta.badgeClass;
+            } else {
+                const displayMeta = resolveStatusDisplay(null, 'logged_out');
+                statusLabel = displayMeta.label;
+                statusBadge = displayMeta.badgeClass;
+            }
+
+            const lastMovement = physicalMovements[physicalMovements.length - 1] || null;
+            const lastMovementDate = lastMovement ? `${lastMovement.logInDate || ''} ${lastMovement.logInTime || ''}`.trim() || '—' : '—';
+            const lastMovementDuration = lastMovement
+                ? calculateDuration(lastMovement.logInDate, lastMovement.logInTime, lastMovement.logOutDate, lastMovement.logOutTime)
+                : '—';
+
+            const currentOfficeName = tracker.currentOffice
+                || lastMovement?.officeName
+                || lastMovement?.office
+                || officeData[tracker.currentOfficeId]?.name
+                || officeData[lastMovement?.officeId]?.name
+                || '—';
+
+            const currentOfficeCode = tracker.currentOfficeId
+                || lastMovement?.officeId
+                || '—';
+
+            const transferEligibility = resolveTransferEligibility(tracker);
+
+            const _kangisUrlParam = new URLSearchParams(window.location.search).get('url');
+            const isKangisView = _kangisUrlParam === 'kangis' || _kangisUrlParam === 'dgis' || _kangisUrlParam === 'dg';
+
+            const rows = totalMovements > 0
+                ? (isKangisView ? (() => {
+                    // KANGIS view: Aggregate all physical movements into ONE summary row
+                    const firstEntry = physicalMovements[0];
+                    const lastEntry = physicalMovements[physicalMovements.length - 1];
+                    const entryStatus = (firstEntry.status || 'completed').toLowerCase();
+                    const safeNotes = sanitize(firstEntry.notes);
+
+                    // Admin check (for actions button)
+                    let isSupperAdmin = false;
+                    if (window.currentUser) {
+                        const assignRole = String(window.currentUser.assign_role || '').toLowerCase();
+                        const typeStr = String(window.currentUser.type || '').toLowerCase();
+                        isSupperAdmin = assignRole.includes('super admin') || assignRole.includes('supper admin')
+                            || typeStr === 'super admin' || typeStr === 'supper admin'
+                            || (Array.isArray(window.currentUser.roles) && window.currentUser.roles.some(r => String(r).toLowerCase().includes('super admin')));
+                    }
+                    const standardItemClass = isSupperAdmin
+                        ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100'
+                        : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-50';
+                    const deleteItemClass = isSupperAdmin
+                        ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-red-600 transition hover:bg-gray-100'
+                        : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-50';
+                    const commonDisabledAttr = isSupperAdmin ? '' : 'disabled="true"';
+
+                    // Direct GIS — DGIS recommendation
+                    let dgisRecCell = '—';
+                    const recEntry = approvalEntries.find(e => (e.purpose || '').toLowerCase() === 'recommendation');
+                    if (recEntry) {
+                        const recWho = sanitize(recEntry.acceptedByName || recEntry.receivingOfficerName || '');
+                        const recDate = sanitize(recEntry.logInDate || '');
+                        const recTime = sanitize(toAmPm(recEntry.logInTime || ''));
+                        dgisRecCell = `<div class="text-xs font-medium text-indigo-700">Recommended for Approval</div>${recDate ? `<div class="text-xs text-gray-500 mt-0.5">${recDate}${recTime ? ' @ ' + recTime : ''}${recWho ? ' · ' + recWho : ''}</div>` : ''}`;
+                    }
+
+                    // Director GIS — DG approval
+                    let dgisAppCell = '—';
+                    const appEntry = approvalEntries.find(e => (e.purpose || '').toLowerCase() === 'approval');
+                    if (appEntry) {
+                        const appWho = sanitize(appEntry.acceptedByName || appEntry.receivingOfficerName || '');
+                        const appDate = sanitize(appEntry.logInDate || '');
+                        const appTime = sanitize(toAmPm(appEntry.logInTime || ''));
+                        dgisAppCell = `<div class="text-xs font-medium text-emerald-700">Approved for Logging</div>${appDate ? `<div class="text-xs text-gray-500 mt-0.5">${appDate}${appTime ? ' @ ' + appTime : ''}${appWho ? ' · ' + appWho : ''}</div>` : ''}`;
+                    }
+
+                    // Origin — always the KANGIS registry origin
+                    const originLabel = originSummary || sanitize(firstEntry.officeName || '—');
+                    const originSubText = firstEntry.logInDate
+                        ? `Logged to Dir GIS on ${sanitize(firstEntry.logInDate)}${firstEntry.logInTime ? ' @ ' + sanitize(toAmPm(firstEntry.logInTime)) : ''}`
+                        : '';
+
+                    // Destination — prefer tracker.department / workflow config over last movement's origin office
+                    const wfCfg = tracker.workflowConfig || tracker.workflow_config || {};
+                    const destDeptName = sanitize(tracker.department || wfCfg.destination_office_name || '');
+                    const lastOfficeFallback = sanitize(lastEntry.officeName || lastEntry.office || officeData[lastEntry.officeId]?.name || '');
+                    const destinationLabel = destDeptName || lastOfficeFallback || '—';
+
+                    const statusMeta = resolveStatusDisplay(firstEntry, entryStatus);
+                    const isLoginEntry = statusMeta.label === 'Log-in';
+
+                    return `
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-3 py-3 whitespace-nowrap text-sm font-medium text-center text-gray-500">1</td>
+                                <td class="px-3 py-3 text-sm">
+                                    <div class="font-medium text-gray-800">${originLabel}</div>
+                                    ${originSubText ? `<div class="text-xs text-gray-500 mt-0.5">${originSubText}</div>` : ''}
+                                </td>
+                                <td class="px-3 py-3 text-sm">${dgisRecCell}</td>
+                                <td class="px-3 py-3 text-sm">${dgisAppCell}</td>
+                                <td class="px-3 py-3 text-sm">
+                                    <div class="font-medium text-gray-800">${destinationLabel}</div>
+                                </td>
+                                <td class="px-3 py-3 text-sm text-gray-600">
+                                    ${safeNotes ? `<div class="max-w-xs truncate" title="${safeNotes}">${safeNotes}</div>` : '—'}
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap text-right">
+                                    ${(_kangisUrlParam === 'dgis' || _kangisUrlParam === 'dg') ? '' : `
+                                    <div class="relative inline-block text-left">
+                                        <button type="button"
+                                            class="${isLoginEntry ? 'dropdown-trigger inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-gray-50 cursor-not-allowed opacity-50' : 'dropdown-trigger inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'}"
+                                            data-tracker-id="${sanitize(tracker.trackingId)}"
+                                            data-log-id="${sanitize(firstEntry.logId)}"
+                                            data-status="${entryStatus}"
+                                            ${isLoginEntry ? 'disabled="true"' : ''}>
+                                            <i data-lucide="more-horizontal" class="h-4 w-4 text-gray-500"></i>
+                                        </button>
+                                        <div class="dropdown-menu hidden absolute right-0 bottom-full z-50 mb-2 w-56 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5">
+                                            <div class="py-1">
+                                                <button class="${standardItemClass}" data-action="generate-log" ${commonDisabledAttr}>
+                                                    <i data-lucide="file-down" class="mr-2 h-4 w-4"></i>
+                                                    <span>Generate Log Sheet</span>
+                                                </button>
+                                                ${(tracker.workflowType === 'cross_module_request' && (tracker.status || '').toLowerCase() !== 'cross_approved') ? `
+                                                <button class="w-full flex items-center px-4 py-2 text-sm text-gray-400 bg-gray-50 cursor-not-allowed opacity-60" disabled title="Awaiting cross-registry approval before printing">
+                                                    <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
+                                                    <span>Print Log Sheet</span>
+                                                    <span class="ml-1 text-xs">(Pending)</span>
+                                                </button>
+                                                ` : `
+                                                <button class="${standardItemClass}" data-action="print-log" ${commonDisabledAttr}>
+                                                    <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
+                                                    <span>Print Log Sheet</span>
+                                                </button>
+                                                `}
+                                                <hr class="my-1 border-gray-200">
+                                                <button class="${deleteItemClass}" data-action="delete-log" ${commonDisabledAttr}>
+                                                    <i data-lucide="trash-2" class="mr-2 h-4 w-4"></i>
+                                                    <span>Delete Log Entry</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    `}
+                                </td>
+                            </tr>
+                        `;
+                })() : movements.map(entry => {
+                    // General view: one row per log entry
+                    const entryStatus = (entry.status || 'completed').toLowerCase();
+                    const entryOwnedByViewer = entryBelongsToCurrentUser(entry, tracker);
+                    const canUpdateEntry = entryStatus === 'pending_acceptance';
+                    const canCompleteLog = entryStatus === 'active';
+                    const statusMeta = resolveStatusDisplay(entry, entryStatus);
+                    const entryStatusLabel = statusMeta.label;
+                    const statusClass = statusMeta.badgeClass;
+                    const statusDotClass = statusMeta.dotClass;
+                    const officeLabel = entry.officeName
+                        || entry.office
+                        || officeData[entry.officeId]?.name
+                        || entry.officeId
+                        || '—';
+                    const safeNotes = sanitize(entry.notes);
+                    const updateButtonAttrs = canUpdateEntry ? '' : 'data-disabled="true" aria-disabled="true" tabindex="-1"';
+                    const updateButtonClasses = canUpdateEntry
+                        ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100'
+                        : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-60';
+                    const updateButtonIconTone = canUpdateEntry ? 'text-gray-600' : 'text-gray-400';
+                    const updateButton = `
+                        <button class="${updateButtonClasses}" data-action="update-log" ${updateButtonAttrs}>
+                            <i data-lucide="edit-3" class="mr-2 h-4 w-4 ${updateButtonIconTone}"></i>
+                            <span>Update Log Entry</span>
+                        </button>
+                    `;
+                    const completeLogClasses = canCompleteLog
+                        ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-emerald-700 transition hover:bg-emerald-50'
+                        : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-60';
+                    const completeLogAttrs = canCompleteLog ? '' : 'data-disabled="true" aria-disabled="true" tabindex="-1"';
+                    const completeLogButton = `
+                        <button class="${completeLogClasses}" data-action="log-out" ${completeLogAttrs}>
+                            <i data-lucide="log-out" class="mr-2 h-4 w-4"></i>
+                            <span>Complete Log-out</span>
+                        </button>
+                    `;
+                    return `
+                        <tr class="hover:bg-gray-50">
+                            <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-gray-700">${sanitize(entry.logId)}</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
+                                <div class="flex items-center gap-2">
+                                    <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">${sanitize(entry.officeId)}</span>
+                                    <span>${sanitize(officeLabel)}</span>
+                                </div>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
+                                ${(() => {
+                                    const officerName = entry.receivingOfficerName || tracker.receivingOfficer?.name || '';
+                                    const officerId = entry.receivingOfficerId ?? tracker.receivingOfficer?.id ?? null;
+                                    const displayName = officerName ? sanitize(officerName) : 'N/A';
+                                    const badge = officerId ? sanitize(String(officerId)) : null;
+                                    return '<div class="flex items-center gap-2"><span>' + displayName + '</span>' + (badge ? '<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">' + badge + '</span>' : '') + '</div>';
+                                })()}
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
+                                <div>${sanitize(entry.logInDate || '—')}</div>
+                                <div class="text-xs text-gray-500">${sanitize(entry.logInTime || '—')}</div>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
+                                <div>${sanitize(entry.logOutDate || '—')}</div>
+                                <div class="text-xs text-gray-500">${sanitize(entry.logOutTime || '—')}</div>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm">
+                                <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusClass}">
+                                    <span class="mr-1 inline-flex h-2 w-2 rounded-full ${statusDotClass}"></span>
+                                    ${entryStatusLabel}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-600">
+                                ${safeNotes ? '<span class="line-clamp-2" title="' + safeNotes + '">' + safeNotes + '</span>' : '—'}
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-right text-sm">
+                                <div class="relative inline-block text-left">
+                                    <button type="button" class="dropdown-trigger inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                                        data-tracker-id="${sanitize(tracker.trackingId)}"
+                                        data-log-id="${sanitize(entry.logId)}"
+                                        data-status="${entryStatus}">
+                                        <i data-lucide="more-horizontal" class="h-4 w-4 text-gray-500"></i>
+                                    </button>
+                                    <div class="dropdown-menu hidden absolute right-0 bottom-full z-50 mb-2 w-56 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5">
+                                        <div class="py-1">
+                                            <button class="dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100" data-action="generate-log">
+                                                <i data-lucide="file-down" class="mr-2 h-4 w-4"></i>
+                                                <span>Generate Log Sheet</span>
+                                            </button>
+                                            <button class="dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100" data-action="print-log">
+                                                <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
+                                                <span>Print Log Sheet</span>
+                                            </button>
+                                            ${completeLogButton}
+                                            ${updateButton}
+                                            <hr class="my-1 border-gray-200">
+                                            <button class="dropdown-item flex w-full items-center px-4 py-2 text-sm text-red-600 transition hover:bg-gray-100" data-action="delete-log">
+                                                <i data-lucide="trash-2" class="mr-2 h-4 w-4"></i>
+                                                <span>Delete Log Entry</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join(''))
+                : `
+                        <tr>
+                            <td colspan="${isKangisView ? ((_kangisUrlParam === 'dgis' || _kangisUrlParam === 'dg') ? 6 : 7) : 8}" class="px-6 py-6 text-center text-sm text-gray-600">
+                                No office movements recorded for this tracker yet.
+                            </td>
+                    </tr>
+                `;
+
+            const currentModuleCode = (window.currentModule || '').toLowerCase();
+            const isWorkflowGateModuleView = ['kangis', 'dgis', 'dg'].includes(currentModuleCode);
+            const isKangisWorkflowTracker = tracker.workflowType === 'kangis_3step'
+                || tracker.workflowType === 'kangis_approval_flow';
+            const workflowStepNumber = Number(tracker.workflowStep || 0);
+            const isKangisWorkflowCompleted = workflowStepNumber >= 4;
+            const disableViewDetailsForKangis = isWorkflowGateModuleView
+                && isKangisWorkflowTracker
+                && !isKangisWorkflowCompleted;
+
+            const viewDetailsHeaderClass = disableViewDetailsForKangis
+                ? 'view-details-btn inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-400 bg-gray-100 cursor-not-allowed opacity-70'
+                : 'view-details-btn inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors';
+            const viewDetailsCompactClass = disableViewDetailsForKangis
+                ? 'view-details-btn inline-flex items-center gap-1 text-xs font-semibold text-gray-400 cursor-not-allowed no-underline opacity-80'
+                : 'view-details-btn inline-flex items-center gap-1 text-xs font-semibold text-amber-800 underline decoration-dotted';
+            const viewDetailsHistoryClass = disableViewDetailsForKangis
+                ? 'view-details-btn inline-flex items-center gap-1 text-sm font-semibold text-gray-400 cursor-not-allowed opacity-80'
+                : 'view-details-btn inline-flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-700';
+            const viewDetailsDisabledAttr = disableViewDetailsForKangis
+                ? 'disabled title="View Details is available after KANGIS workflow completion"'
+                : '';
+
+            const transferFooterHtml = (() => {
+                const isDgisOrDgView = ['dgis', 'dg'].includes(currentModuleCode);
+                if (transferEligibility.allowed) {
+                    // Build workflow-aware hint if this is a KANGIS approval tracker
+                    const wfNext = typeof window.getWorkflowNextStep === 'function' ? window.getWorkflowNextStep(tracker) : null;
+                    const wfHint = wfNext
+                        ? `<div class="mt-2 flex items-center gap-2 text-xs"><span class="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200"><i data-lucide="git-branch" class="h-3 w-3 mr-1"></i>Next step: ${sanitize(wfNext.label)}</span>${wfNext.toName ? '<span class="text-amber-700">→ ' + sanitize(wfNext.toName) + '</span>' : ''}</div>`
+                        : '';
+
+                    // For workflow trackers with a known next destination, pre-select it
+                    const preSelectedCode = wfNext && wfNext.toCode ? wfNext.toCode : '';
+
+                    if (isDgisOrDgView) {
+                        return `
+                            <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3 opacity-60 cursor-not-allowed">
+                                <div class="flex flex-col gap-2 md:flex-row md:items-center">
+                                    <div class="flex items-center gap-2 text-sm font-semibold text-gray-400">
+                                        <i data-lucide="send" class="h-4 w-4"></i>
+                                        <span>Move file to:</span>
+                                    </div>
+                                    <select class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm shadow-sm bg-gray-100 text-gray-400 md:w-64" disabled>
+                                        <option>Not available on this page</option>
+                                    </select>
+                                </div>
+                                <p class="text-xs text-gray-400">File movement is handled via the Recommend &amp; Forward / Approve &amp; Forward actions above.</p>
+                            </div>
+                        `;
+                    }
+
+                    return `
+                            <div class="space-y-2 rounded-lg border border-blue-100 bg-blue-50 p-3">
+                                <div class="flex flex-col gap-2 md:flex-row md:items-center">
+                                    <div class="flex items-center gap-2 text-sm font-semibold text-blue-900">
+                                        <i data-lucide="send" class="h-4 w-4"></i>
+                                        <span>Move file to:</span>
+                                    </div>
+                                    <select class="add-log-select w-full rounded-md border border-blue-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 md:w-64" data-tracker-id="${sanitize(tracker.trackingId)}">
+                                        <option value="">Select office...</option>
+                                        ${Object.entries(officeData).map(([officeId, office]) => `
+                                            <option value="${officeId}" ${officeId === preSelectedCode ? 'selected' : ''}>${office.name} (${office.code})</option>
+                                        `).join('')}
+                                    </select>
+                                </div>
+                                ${wfHint}
+                                <p class="text-xs text-blue-700">After selecting a destination you'll choose the receiving officer and optionally mark an in-person acceptance.</p>
+                            </div>
+                        `;
+                }
+
+                if (pendingMovement) {
+                    const awaitingOfficer = sanitize(pendingMovement.receivingOfficerName || 'the assigned officer');
+                    return `
+                            <div class="flex flex-col gap-2 rounded-lg border border-amber-100 bg-amber-50 p-3 text-amber-800">
+                                <div class="flex items-center gap-2 text-sm font-semibold">
+                                    <i data-lucide="clock-3" class="h-4 w-4"></i>
+                                    <span>Waiting for ${awaitingOfficer} to accept this file.</span>
+                                </div>
+                                <p class="text-xs text-amber-700">Transfers unlock once acceptance is confirmed.</p>
+                                <button class="${viewDetailsCompactClass}" data-tracking-id="${sanitize(tracker.trackingId)}" ${viewDetailsDisabledAttr}>
+                                    <span>View full history</span>
+                                    <i data-lucide="arrow-up-right" class="h-3.5 w-3.5"></i>
+                                </button>
+                            </div>
+                        `;
+                }
+
+                const lastCompleted = [...movements].reverse().find(entry => (entry.status || '').toLowerCase() === 'completed')
+                    || movements[movements.length - 1]
+                    || null;
+                const destinationName = sanitize(
+                    lastCompleted?.receivingOfficeName
+                    || lastCompleted?.officeName
+                    || tracker.currentOffice
+                    || 'the next office'
+                );
+
+                return `
+                        <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-3 text-gray-700">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="log-out" class="h-4 w-4 text-gray-500"></i>
+                                <span>This file was moved to <span class="font-semibold">${destinationName}</span>.</span>
+                            </div>
+                            <button class="${viewDetailsHistoryClass}" data-tracking-id="${sanitize(tracker.trackingId)}" ${viewDetailsDisabledAttr}>
+                                <span>View full history</span>
+                                <i data-lucide="arrow-up-right" class="h-4 w-4"></i>
+                            </button>
+                        </div>
+                    `;
+            })();
+
+            const showAssignmentActions = isOwnedByCurrentUser && assignmentStatusLower === 'pending';
+
+            // For approval modules (dgis/dg), show approve/reject/print buttons
+            // for any KANGIS approval tracker visible in this module.
+            const showApprovalActions = window.isApprovalModule
+                && (tracker.workflowType === 'kangis_3step' || tracker.workflowType === 'kangis_approval_flow');
+
+            // Determine whether the current module has already issued its decision on this file.
+            //  - DGIS issues a 'recommendation' (Recommend & Forward OR Not Recommend)
+            //  - DG    issues an 'approval'       (Approve & Forward OR Reject)
+            // Once recorded, BOTH paired buttons are disabled.
+            const _approvalLogEntries = Array.isArray(tracker.logEntries) ? tracker.logEntries : [];
+            const hasRecommendationDecision = _approvalLogEntries.some(e => (e.purpose || '').toLowerCase() === 'recommendation');
+            const hasApprovalDecision       = _approvalLogEntries.some(e => (e.purpose || '').toLowerCase() === 'approval');
+            const isDgisView = window.currentModule === 'dgis';
+            const decisionAlreadyRecorded = isDgisView ? hasRecommendationDecision : hasApprovalDecision;
+
+            // Cross-module request: show Approve/Reject to the RECEIVER module.
+            // The receiver is determined by workflow_config.receiver_module.
+            const _crossWfConfig = tracker.workflowConfig || {};
+            const _crossReceiverModule = (_crossWfConfig.receiver_module || '').toLowerCase();
+            const _crossStatus = (tracker.status || '').toLowerCase();
+            const _thisModule = (window.currentModule || 'land').toLowerCase();
+            const showCrossModuleApproveActions = tracker.workflowType === 'cross_module_request'
+                && _crossStatus === 'pending_cross_approval'
+                && _crossReceiverModule === _thisModule;
+            // Show "Pending approval" badge to the SENDER module for cross-module requests
+            const showCrossModulePendingBadge = tracker.workflowType === 'cross_module_request'
+                && _crossStatus === 'pending_cross_approval'
+                && isOwnedByCurrentUser
+                && !showCrossModuleApproveActions;
+
+            const cardHeaderClass = `tracker-card-header ${isOwnedByCurrentUser ? 'tracker-card-header--owned' : 'tracker-card-header--other'}`;
+
+            return `
+                    <div class="tracker-card border rounded-lg p-4 mb-6 hover:shadow-md transition-shadow duration-200 ${isOwnedByCurrentUser ? 'border-l-4 border-l-blue-500' : (pendingMovement ? 'border-l-4 border-l-green-500 bg-green-50/30' : 'border-l-4 border-l-red-500 bg-red-50/30')}" data-tracking-id="${safeTrackingId}">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-3">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <h3 class="font-semibold text-lg text-gray-900">${sanitize(tracker.fileName || 'Unnamed File')}</h3>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge}">${statusLabel}</span>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-3 mt-1">
+                                    <p class="text-sm text-gray-600">File No: ${sanitize(tracker.fileNo || '—')}</p>
+                                    <span class="text-xs text-gray-400">|</span>
+                                    <div class="flex items-center gap-1">
+                                        <i data-lucide="user" class="h-3 w-3 ${isOwnedByCurrentUser ? 'text-blue-500' : 'text-gray-400'}"></i>
+                                        <span class="text-sm ${isOwnedByCurrentUser ? 'text-blue-600 font-medium' : 'text-gray-600'}">
+                                            ${safeReceivingOfficerName || '—'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${priorityBadge}">${priorityLabel}</span>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">${sanitize(currentOfficeCode)}</span>
+                                ${showAssignmentActions ? `
+                                    <button type="button" class="tracker-card-action-accept inline-flex items-center px-3 py-1.5 border border-green-300 rounded-md text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 transition-colors" data-assignment-action="accept" data-tracking-id="${tracker.id || ''}">
+                                        <i data-lucide="check" class="h-4 w-4 mr-2"></i>
+                                        Accept File
+                                    </button>
+                                ` : ''}
+                                ${showApprovalActions ? `
+                                    <button type="button"
+                                        class="inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium transition-colors ${decisionAlreadyRecorded ? 'border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed opacity-60' : 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'}"
+                                        data-workflow-action="approve-forward"
+                                        data-tracker-id="${tracker.id || ''}"
+                                        ${decisionAlreadyRecorded ? 'disabled aria-disabled="true" title="Decision already recorded for this file"' : ''}>
+                                        <i data-lucide="send" class="h-4 w-4 mr-2"></i>
+                                        ${isDgisView ? 'Recommend & Forward' : 'Approve & Forward'}
+                                    </button>
+                                    <button type="button"
+                                        class="inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium transition-colors ${decisionAlreadyRecorded ? 'border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed opacity-60' : 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100'}"
+                                        data-workflow-action="reject-workflow"
+                                        data-tracker-id="${tracker.id || ''}"
+                                        ${decisionAlreadyRecorded ? 'disabled aria-disabled="true" title="Decision already recorded for this file"' : ''}>
+                                        <i data-lucide="x" class="h-4 w-4 mr-2"></i>
+                                        ${isDgisView ? 'Not Recommend' : 'Reject'}
+                                    </button>
+                                    <button type="button"
+                                        class="inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-400 bg-gray-100 cursor-not-allowed opacity-60 transition-colors"
+                                        data-workflow-action="print-approval"
+                                        data-tracker-id="${tracker.id || ''}"
+                                        disabled aria-disabled="true" title="Printing temporarily disabled">
+                                        <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
+                                        ${isDgisView ? 'Print Recommendation' : 'Print Approval'}
+                                    </button>
+                                ` : ''}
+                                ${showCrossModuleApproveActions ? `
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                                        <i data-lucide="inbox" class="h-3 w-3 mr-1"></i> Incoming Request
+                                    </span>
+                                    <button type="button" class="inline-flex items-center px-3 py-1.5 border border-green-300 rounded-md text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 transition-colors" data-cross-action="approve" data-tracker-id="${tracker.id || ''}">
+                                        <i data-lucide="check-circle" class="h-4 w-4 mr-2"></i>
+                                        Approve Request
+                                    </button>
+                                    <button type="button" class="inline-flex items-center px-3 py-1.5 border border-red-300 rounded-md text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors" data-cross-action="reject" data-tracker-id="${tracker.id || ''}">
+                                        <i data-lucide="x-circle" class="h-4 w-4 mr-2"></i>
+                                        Reject Request
+                                    </button>
+                                ` : ''}
+                                ${showCrossModulePendingBadge ? `
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                        <i data-lucide="clock" class="h-3 w-3 mr-1"></i> Pending Approval
+                                    </span>
+                                ` : ''}
+                                <button class="${viewDetailsHeaderClass}" data-tracking-id="${sanitize(tracker.trackingId)}" ${viewDetailsDisabledAttr}>
+                                    <i data-lucide="eye" class="h-4 w-4 mr-2"></i>
+                                    View Details
+                                </button>
+                            </div>
+                        </div>
+
+                        ${(() => {
+                            const moduleKey = (window.currentModule || '').toLowerCase();
+                            if (moduleKey === 'new_kangis' && typeof window.renderNewKangisWorkflowStepper === 'function') {
+                                return '<div class="mb-4">' + window.renderNewKangisWorkflowStepper(tracker.logEntries || []) + '</div>';
+                            }
+                            if ((tracker.workflowType === 'kangis_3step' || tracker.workflowType === 'kangis_approval_flow') && tracker.workflowProgress && typeof window.renderWorkflowStepper === 'function') {
+                                return '<div class="mb-4">' + window.renderWorkflowStepper(tracker.workflowProgress) + '</div>';
+                            }
+                            return '';
+                        })()}
+
+                        ${approvalEntries.length ? `
+                        <div class="mb-3 flex flex-wrap gap-2 items-center">
+                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide mr-1">Approvals:</span>
+                            ${approvalEntries.map(e => {
+                                const p = (e.purpose || '').toLowerCase();
+                                const cfg = p === 'recommendation'
+                                    ? { label: 'DGIS Recommended', icon: '👤', cls: 'bg-indigo-50 border-indigo-200 text-indigo-700' }
+                                    : { label: 'DG Approved', icon: '✅', cls: 'bg-emerald-50 border-emerald-200 text-emerald-700' };
+                                const who = sanitize(e.acceptedByName || e.receivingOfficerName || '');
+                                const when = sanitize(e.logInDate || '');
+                                return `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${cfg.cls}">
+                                    ${cfg.icon} ${cfg.label}${who ? ` · ${who}` : ''}${when ? ` · ${when}` : ''}
+                                </span>`;
+                            }).join('')}
+                        </div>` : ''}
+
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        ${isKangisView ? `
+                                        <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-10">S/N</th>
+                                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Origin</th>
+                                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Director GIS</th>
+                                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Director General</th>
+                                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destination</th>
+                                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comment</th>
+                                        ${(_kangisUrlParam === 'dgis' || _kangisUrlParam === 'dg') ? '' : '<th class="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>'}
+                                        ` : `
+                                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Log ID</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Office</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Receiving Officer</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Log In</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Log Out</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Notes</th>
+                                        <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Actions</th>
+                                        `}
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    ${rows}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="mt-3 flex justify-end">
+                            <button type="button"
+                                class="tracker-delete-row-btn inline-flex items-center px-3 py-1.5 border border-red-300 rounded-md text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+                                data-tracking-id="${sanitize(tracker.trackingId)}"
+                                title="Delete this entire file tracker (all log entries)">
+                                <i data-lucide="trash" class="h-4 w-4 mr-2"></i>
+                                Delete Entire Record
+                            </button>
+                        </div>
+
+                        ${transferFooterHtml}
+                    </div>
+                `;
+        }).join('');
+
+        container.innerHTML = cards;
+        renderPaginationControls(container, totalItems, paginatedTrackers.length);
+        setupDropdownMenus();
+        setupAddLogSelects();
+        setupViewDetailsButtons();
+        setupHistoryToggles();
+        setupTrackerDeleteButtons();
+        lucide.createIcons();
+    }
+
+    function setupTrackerDeleteButtons() {
+        document.querySelectorAll('.tracker-delete-row-btn').forEach(btn => {
+            if (btn.dataset.deleteBound === '1') return;
+            btn.dataset.deleteBound = '1';
+            btn.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                const trackingId = this.dataset.trackingId || this.getAttribute('data-tracking-id');
+                handleDeleteTracker(trackingId);
+            });
+        });
+    }
+
+    // Render pagination controls
+    function renderPaginationControls(container, totalItems, displayedItems) {
+        if (!container) return;
+
+        // Remove existing pagination if any
+        const existingPagination = document.getElementById('pagination-controls');
+        if (existingPagination) {
+            existingPagination.remove();
+        }
+
+        if (totalItems === 0) {
+            return;
+        }
+
+        const startItem = totalItems > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0;
+        const endItem = startItem + displayedItems - 1;
+
+        const paginationHtml = `
+                <div id="pagination-controls" class="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6 mt-6 rounded-b-lg">
+                    <div class="flex flex-1 justify-between sm:hidden">
+                        <button ${currentPage === 1 ? 'disabled' : ''} class="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" data-page="prev">
+                            Previous
+                        </button>
+                        <button ${currentPage === totalPages ? 'disabled' : ''} class="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" data-page="next">
+                            Next
+                        </button>
+                    </div>
+                    <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                        <div>
+                            <p class="text-sm text-gray-700">
+                                Showing <span class="font-medium">${startItem}</span> to <span class="font-medium">${endItem}</span> of <span class="font-medium">${totalItems}</span> results
+                            </p>
+                        </div>
+                        <div>
+                            <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                                <button ${currentPage === 1 ? 'disabled' : ''} class="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed" data-page="prev">
+                                    <span class="sr-only">Previous</span>
+                                    <i data-lucide="chevron-left" class="h-5 w-5"></i>
+                                </button>
+                                ${generatePageNumbers()}
+                                <button ${currentPage === totalPages ? 'disabled' : ''} class="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed" data-page="next">
+                                    <span class="sr-only">Next</span>
+                                    <i data-lucide="chevron-right" class="h-5 w-5"></i>
+                                </button>
+                            </nav>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+        container.insertAdjacentHTML('afterend', paginationHtml);
+        lucide.createIcons();
+
+        // Attach event listeners
+        document.querySelectorAll('#pagination-controls button[data-page]').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const pageAction = this.dataset.page;
+                if (pageAction === 'prev' && currentPage > 1) {
+                    updateFileTrackersTable(currentPage - 1);
+                } else if (pageAction === 'next' && currentPage < totalPages) {
+                    updateFileTrackersTable(currentPage + 1);
+                } else if (!isNaN(pageAction)) {
+                    updateFileTrackersTable(parseInt(pageAction));
+                }
+
+                // Scroll to top of tracker list
+                const trackersContainer = document.getElementById('trackers-container');
+                if (trackersContainer) {
+                    trackersContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+    }
+
+    // Generate page number buttons
+    function generatePageNumbers() {
+        const maxVisible = 7;
+        let pages = [];
+
+        if (totalPages <= maxVisible) {
+            // Show all pages
+            for (let i = 1; i <= totalPages; i++) {
+                pages.push(i);
+            }
+        } else {
+            // Smart pagination with ellipsis
+            if (currentPage <= 4) {
+                pages = [1, 2, 3, 4, 5, '...', totalPages];
+            } else if (currentPage >= totalPages - 3) {
+                pages = [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+            } else {
+                pages = [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
+            }
+        }
+
+        return pages.map(page => {
+            if (page === '...') {
+                return `<span class="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 focus:outline-offset-0">...</span>`;
+            }
+
+            const isCurrent = page === currentPage;
+            return `
+                    <button data-page="${page}" class="relative inline-flex items-center px-4 py-2 text-sm font-semibold ${isCurrent
+                    ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
+                    : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'
+                }">
+                        ${page}
+                    </button>
+                `;
+        }).join('');
+    }
+
+    // Setup view details buttons
+    function setupViewDetailsButtons() {
+        document.querySelectorAll('.view-details-btn').forEach(button => {
+            button.addEventListener('click', function () {
+                const trackingId = this.dataset.trackingId;
+                showTrackerDetails(trackingId);
+            });
+        });
+    }
+
+    function setupHistoryToggles() {
+        document.querySelectorAll('.history-toggle').forEach(button => {
+            button.addEventListener('click', function () {
+                const trackerKey = this.dataset.trackerKey || this.dataset.historyTarget;
+                const targetId = this.dataset.historyTarget;
+                if (!targetId) {
+                    return;
+                }
+
+                const historySection = document.getElementById(targetId);
+                if (!historySection) {
+                    return;
+                }
+
+                const isExpanded = trackerKey && expandedTrackerHistory.has(trackerKey);
+
+                if (isExpanded) {
+                    if (trackerKey) {
+                        expandedTrackerHistory.delete(trackerKey);
+                    }
+                    historySection.classList.add('hidden');
+                    this.dataset.expanded = 'false';
+                } else {
+                    if (trackerKey) {
+                        expandedTrackerHistory.add(trackerKey);
+                    }
+                    historySection.classList.remove('hidden');
+                    this.dataset.expanded = 'true';
+                }
+
+                const icon = this.querySelector('[data-lucide="chevron-down"]');
+                if (icon) {
+                    icon.classList.toggle('rotate-180', !isExpanded);
+                }
+
+                const label = this.querySelector('span');
+                if (label) {
+                    label.textContent = !isExpanded ? 'Hide history' : 'Show history';
+                }
+            });
+        });
+    }
+
+    function handleTrackerAssignmentAction(action, trackerId, button) {
+        if (!trackerId || !action) {
+            return;
+        }
+
+        let note = null;
+        if (action === 'reject') {
+            note = window.prompt('Enter a reason for rejection (optional):', '');
+            if (note === null) {
+                return;
+            }
+        }
+
+        const originalHtml = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<span class="inline-flex items-center gap-1"><span class="h-4 w-4 border-2 border-white/40 border-t-transparent rounded-full animate-spin"></span>Processing...</span>';
+
+        const request = action === 'accept'
+            ? requestAcceptAssignment(trackerId, {})
+            : requestRejectAssignment(trackerId, { note: note || null });
+
+        request.done((response) => {
+            if (response?.success && response.data) {
+                const normalized = transformApiTracker(response.data);
+                if (normalized) {
+                    upsertLocalTracker(normalized);
+                } else {
+                    updateFileTrackersTable();
+                }
+                if (typeof showNotification === 'function') {
+                    showNotification(
+                        `Assignment ${action === 'accept' ? 'accepted' : 'rejected'} successfully.`,
+                        action === 'accept' ? 'success' : 'warning'
+                    );
+                }
+                if (window.FileTrackerNotificationCenter?.refresh) {
+                    window.FileTrackerNotificationCenter.refresh();
+                }
+            } else {
+                const message = response?.message || `Unable to ${action} this assignment.`;
+                Swal.fire({ icon: 'error', title: 'Action Failed', text: message });
+            }
+        }).fail((xhr) => {
+            const message = xhr?.responseJSON?.message || `Unable to ${action} this assignment.`;
+            Swal.fire({ icon: 'error', title: 'Error', text: message });
+        }).always(() => {
+            button.disabled = false;
+            button.innerHTML = originalHtml;
+            updateFileTrackersTable();
+        });
+    }
+
+    function bindAssignmentActionEvents() {
+        if (assignmentActionsBound) {
+            return;
+        }
+        assignmentActionsBound = true;
+
+        document.addEventListener('click', function (event) {
+            const button = event.target.closest('[data-assignment-action]');
+            if (!button) {
+                return;
+            }
+
+            const trackerCard = button.closest('#trackers-container');
+            if (!trackerCard) {
+                return;
+            }
+
+            const trackerId = Number(button.dataset.trackingId || '');
+            const action = button.dataset.assignmentAction;
+            if (!trackerId || !action) {
+                return;
+            }
+
+            handleTrackerAssignmentAction(action, trackerId, button);
+        });
+
+        // Recommend & Forward (DGIS) / Approve & Forward (DG) — direct workflow approval, no movement dialog
+        document.addEventListener('click', async function (event) {
+            const button = event.target.closest('[data-workflow-action="approve-forward"]');
+            if (!button) return;
+            if (button.disabled || button.getAttribute('aria-disabled') === 'true') return;
+
+            const trackerId = Number(button.dataset.trackerId || '');
+            if (!trackerId) return;
+
+            const tracker = (window.fileTrackers || []).find(t => t.id === trackerId);
+            if (!tracker) {
+                Swal.fire({ icon: 'error', title: 'Not Found', text: 'Tracker not found.' });
+                return;
+            }
+
+            const isDGIS = window.currentModule === 'dgis';
+            const purpose = isDGIS ? 'recommendation' : 'approval';
+            const actionLabel = isDGIS ? 'Recommend' : 'Approve';
+            const forwardTo = isDGIS ? 'Director General, KANGIS' : 'KANGIS Registry for Step 4';
+
+            const confirmResult = await Swal.fire({
+                title: `${actionLabel} File?`,
+                text: `${actionLabel} this file and forward to ${forwardTo}?`,
+                icon: isDGIS ? 'question' : 'question',
+                showCancelButton: true,
+                confirmButtonText: `Yes, ${actionLabel}`,
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: isDGIS ? '#4f46e5' : '#16a34a',
+                cancelButtonColor: '#6b7280',
+                reverseButtons: true,
+            });
+            if (!confirmResult.isConfirmed) return;
+
+            const originalHtml = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span class="inline-flex items-center gap-1"><span class="h-4 w-4 border-2 border-blue-400/40 border-t-transparent rounded-full animate-spin"></span>Processing...</span>';
+
+            const now = new Date();
+            const logInTime = now.toTimeString().split(' ')[0].substring(0, 5);
+            const logInDate = now.toISOString().split('T')[0];
+
+            const currentUser = window.currentUser || {};
+            const officerName = [currentUser.first_name, currentUser.last_name].filter(Boolean).join(' ').trim()
+                || currentUser.name
+                || 'Officer';
+            const officerId = currentUser.id ? String(currentUser.id) : '';
+
+            const movementData = {
+                office_code: tracker.currentOfficeId || (isDGIS ? 'DGIS' : 'DG'),
+                office_name: tracker.currentOffice || (isDGIS ? 'Director GIS' : 'Director General, KANGIS'),
+                log_in_time: logInTime,
+                log_in_date: logInDate,
+                notes: isDGIS ? 'Recommended by Director GIS — forwarding to DG KANGIS.' : 'Approved by DG KANGIS — file ready for Step 4.',
+                receiving_officer_id: officerId,
+                receiving_officer_name: officerName,
+                auto_accept: true,
+                purpose: purpose,
+                decision: isDGIS ? 'recommend' : 'approve',
+            };
+
+            $.ajax({
+                url: `/api/file-trackers/${trackerId}/movements`,
+                method: 'POST',
+                data: JSON.stringify(movementData),
+                contentType: 'application/json',
+                processData: false,
+                success: function (response) {
+                    if (response?.success && response.data) {
+                        const normalized = transformApiTracker(response.data);
+                        if (normalized) upsertLocalTracker(normalized, { render: false });
+                        if (typeof showNotification === 'function') {
+                            showNotification(
+                                isDGIS
+                                    ? 'Recommended successfully. Forwarded to Director General, KANGIS.'
+                                    : 'Approved. KANGIS can now complete Step 4.',
+                                'success'
+                            );
+                        }
+                    } else {
+                        Swal.fire({ icon: 'error', title: 'Action Failed', text: response?.message || `Unable to ${actionLabel.toLowerCase()} this file.` });
+                    }
+                },
+                error: function (xhr) {
+                    Swal.fire({ icon: 'error', title: 'Error', text: xhr?.responseJSON?.message || `Unable to ${actionLabel.toLowerCase()} this file.` });
+                },
+                complete: function () {
+                    button.disabled = false;
+                    button.innerHTML = originalHtml;
+                    updateFileTrackersTable();
+                }
+            });
+        });
+
+        // Reject workflow action for dgis/dg modules
+        document.addEventListener('click', async function (event) {
+            const button = event.target.closest('[data-workflow-action="reject-workflow"]');
+            if (!button) return;
+            if (button.disabled || button.getAttribute('aria-disabled') === 'true') return;
+
+            const trackerId = Number(button.dataset.trackerId || '');
+            if (!trackerId) return;
+
+            const tracker = (window.fileTrackers || []).find(t => t.id === trackerId);
+            if (!tracker) {
+                Swal.fire({ icon: 'error', title: 'Not Found', text: 'Tracker not found.' });
+                return;
+            }
+
+            const isDGIS = window.currentModule === 'dgis';
+            const purpose = isDGIS ? 'recommendation' : 'approval';
+            const decision = isDGIS ? 'not_recommend' : 'reject';
+            const actionLabel = isDGIS ? 'Not Recommended' : 'Rejected';
+
+            const noteResult = await Swal.fire({
+                title: `${actionLabel} — Enter Reason`,
+                input: 'textarea',
+                inputLabel: 'Reason (optional)',
+                inputPlaceholder: `Enter reason for ${actionLabel.toLowerCase()}...`,
+                showCancelButton: true,
+                confirmButtonText: `Yes, ${actionLabel}`,
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#dc2626',
+                cancelButtonColor: '#6b7280',
+                reverseButtons: true,
+            });
+            if (noteResult.isDismissed) return;
+            const note = noteResult.value || '';
+
+            const originalHtml = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span class="inline-flex items-center gap-1"><span class="h-4 w-4 border-2 border-red-400/40 border-t-transparent rounded-full animate-spin"></span>Processing...</span>';
+
+            const now = new Date();
+            const logInTime = now.toTimeString().split(' ')[0].substring(0, 5);
+            const logInDate = now.toISOString().split('T')[0];
+
+            const receivingOfficerId = tracker.receivingOfficer?.id
+                || normalizeNumericId(window.currentUser?.id)
+                || null;
+
+            const receivingOfficerName = tracker.receivingOfficer?.name
+                || [window.currentUser?.first_name, window.currentUser?.last_name].filter(Boolean).join(' ').trim()
+                || window.currentUser?.name
+                || 'Approving Officer';
+
+            const movementData = {
+                office_code: tracker.currentOfficeId || 'DGIS',
+                office_name: tracker.currentOffice || 'Current Office',
+                log_in_time: logInTime,
+                log_in_date: logInDate,
+                notes: note || `${actionLabel} by ${window.currentModule === 'dgis' ? 'DGIS' : 'DG'}`,
+                receiving_officer_id: String(receivingOfficerId || ''),
+                receiving_officer_name: receivingOfficerName,
+                auto_accept: true,
+                purpose,
+                decision,
+            };
+
+            const executeDecision = () => {
+                $.ajax({
+                    url: `/api/file-trackers/${tracker.id}/movements`,
+                    method: 'POST',
+                    data: JSON.stringify(movementData),
+                    contentType: 'application/json',
+                    processData: false,
+                    success: function (response) {
+                        if (response?.success && response.data) {
+                            const normalized = transformApiTracker(response.data);
+                            if (normalized) {
+                                upsertLocalTracker(normalized, { render: false });
+                            }
+                            if (typeof showNotification === 'function') {
+                                showNotification(`${actionLabel} successfully and returned to registry.`, 'success');
+                            }
+                        } else {
+                            Swal.fire({ icon: 'error', title: 'Action Failed', text: response?.message || `Unable to mark as ${actionLabel.toLowerCase()}.` });
+                        }
+                    },
+                    error: function (xhr) {
+                        Swal.fire({ icon: 'error', title: 'Error', text: xhr?.responseJSON?.message || `Unable to mark as ${actionLabel.toLowerCase()}.` });
+                    },
+                    complete: function () {
+                        button.disabled = false;
+                        button.innerHTML = originalHtml;
+                        updateFileTrackersTable();
+                    }
+                });
+            };
+
+            const hasActiveEntry = Boolean(getActiveMovementEntry(tracker));
+            if (!hasActiveEntry) {
+                executeDecision();
+                return;
+            }
+
+            requestCompleteMovement(tracker, { log_out_time: logInTime })
+                .done(function () {
+                    executeDecision();
+                })
+                .fail(function (xhr) {
+                    button.disabled = false;
+                    button.innerHTML = originalHtml;
+                    Swal.fire({ icon: 'error', title: 'Error', text: xhr?.responseJSON?.message || 'Unable to complete the current movement.' });
+                });
+        });
+
+        // Print Recommendation / Approval action
+        document.addEventListener('click', function (event) {
+            const button = event.target.closest('[data-workflow-action="print-approval"]');
+            if (!button) return;
+            if (button.disabled || button.getAttribute('aria-disabled') === 'true') return;
+
+            const trackerId = Number(button.dataset.trackerId || '');
+            if (!trackerId) return;
+
+            const tracker = (window.fileTrackers || []).find(t => t.id === trackerId);
+            if (!tracker) {
+                Swal.fire({ icon: 'error', title: 'Not Found', text: 'Tracker not found.' });
+                return;
+            }
+
+            printWorkflowApproval(tracker);
+        });
+
+        // Cross-module Approve / Reject actions
+        document.addEventListener('click', function (event) {
+            const button = event.target.closest('[data-cross-action]');
+            if (!button) return;
+
+            const action = button.dataset.crossAction; // 'approve' or 'reject'
+            const trackerId = Number(button.dataset.trackerId || '');
+            if (!trackerId || !action) return;
+
+            const tracker = (window.fileTrackers || []).find(t => t.id === trackerId);
+            if (!tracker) {
+                Swal.fire({ icon: 'error', title: 'Not Found', text: 'Tracker not found.' });
+                return;
+            }
+
+            const isApprove = action === 'approve';
+            Swal.fire({
+                title: isApprove ? 'Approve File Request?' : 'Reject File Request?',
+                html: isApprove
+                    ? `Approving will allow the sender to print the tracking sheet for <strong>${sanitize(tracker.fileName || tracker.trackingId)}</strong>.`
+                    : `Rejecting will notify the sender that the request was not approved.`,
+                icon: isApprove ? 'question' : 'warning',
+                showCancelButton: true,
+                confirmButtonText: isApprove ? 'Approve' : 'Reject',
+                confirmButtonColor: isApprove ? '#16a34a' : '#dc2626',
+                input: 'textarea',
+                inputLabel: 'Notes (optional)',
+                inputPlaceholder: 'Add a note for the sender...',
+                inputAttributes: { maxlength: 500 },
+            }).then(function (result) {
+                if (!result.isConfirmed) return;
+                const notes = result.value || '';
+                const originalHtml = button.innerHTML;
+                button.disabled = true;
+                button.innerHTML = '<i data-lucide="loader" class="h-4 w-4 animate-spin mr-1"></i> Processing...';
+                lucide.createIcons();
+
+                $.ajax({
+                    url: `/api/file-trackers/${trackerId}/cross-module-action`,
+                    method: 'POST',
+                    data: JSON.stringify({ action, notes }),
+                    contentType: 'application/json',
+                    processData: false,
+                    success: function (response) {
+                        if (response?.success && response.data) {
+                            const normalized = transformApiTracker(response.data);
+                            if (normalized) upsertLocalTracker(normalized);
+                            showNotification(isApprove ? 'Request approved — sender can now print.' : 'Request rejected — sender notified.', isApprove ? 'success' : 'info');
+                        } else {
+                            Swal.fire({ icon: 'error', title: 'Failed', text: response?.message || 'Action failed.' });
+                            button.disabled = false;
+                            button.innerHTML = originalHtml;
+                            lucide.createIcons();
+                        }
+                    },
+                    error: function (xhr) {
+                        Swal.fire({ icon: 'error', title: 'Error', text: xhr?.responseJSON?.message || 'Unable to process action.' });
+                        button.disabled = false;
+                        button.innerHTML = originalHtml;
+                        lucide.createIcons();
+                    }
+                });
+            });
+        });
+    }
+
+    function highlightTrackerCard(trackingId) {
+        if (!trackingId) {
+            return;
+        }
+
+        const normalized = trackingId.toString().toLowerCase();
+        let targetCard = null;
+
+        document.querySelectorAll('#trackers-container .tracker-card').forEach(card => {
+            const value = (card.getAttribute('data-tracking-id') || '').toLowerCase();
+            if (!targetCard && value === normalized) {
+                targetCard = card;
+            }
+        });
+
+        if (!targetCard) {
+            return;
+        }
+
+        targetCard.classList.add('tracker-highlight');
+        targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        setTimeout(() => {
+            targetCard.classList.remove('tracker-highlight');
+        }, 1800);
+    }
+
+    // Show tracker details
+    function showTrackerDetails(trackingId) {
+        const tracker = fileTrackers.find(t => t.trackingId === trackingId);
+        if (!tracker) return;
+
+        currentDetailsTracker = tracker;
+
+        const priorityClass = `priority-${tracker.priority}`;
+        const priorityText = tracker.priority.charAt(0) + tracker.priority.slice(1).toLowerCase();
+        const receivingOfficer = tracker.receivingOfficer || {};
+        const receivingOfficerName = receivingOfficer.name || tracker.receivingOfficerName || '—';
+        const receivingOfficerId = receivingOfficer.id !== undefined && receivingOfficer.id !== null ? receivingOfficer.id : '—';
+        const receivingOfficerDepartment = receivingOfficer.departmentLabel || tracker.office?.department || 'N/A';
+        const receivingOfficerRoles = Array.isArray(receivingOfficer.roles) && receivingOfficer.roles.length
+            ? receivingOfficer.roles.join(', ')
+            : 'No roles captured';
+        const receivingOfficerLevel = receivingOfficer.level || receivingOfficer.user_level || receivingOfficer.type || '';
+        const receivingOfficeName = tracker.receivingOfficeName || tracker.currentOffice || '—';
+        const receivingOfficeCode = tracker.receivingOfficeCode || tracker.currentOfficeId || '—';
+        const originOffice = tracker.originOffice || {};
+        const originOfficeName = originOffice.name || tracker.originOfficeName || tracker.originRegistry || '—';
+        const originOfficeCode = originOffice.code || tracker.originOfficeCode || '—';
+        const originOfficeDepartment = originOffice.department || tracker.originOfficeDepartment || tracker.originRegistryDepartment || 'N/A';
+        const receivingOfficerNameSafe = escapeHtml(receivingOfficerName);
+        const receivingOfficerIdSafe = escapeHtml(String(receivingOfficerId));
+        const receivingOfficerDepartmentSafe = escapeHtml(receivingOfficerDepartment);
+        const receivingOfficerRolesSafe = escapeHtml(receivingOfficerRoles);
+        const receivingOfficerLevelSafe = escapeHtml(receivingOfficerLevel);
+        const receivingOfficeNameSafe = escapeHtml(receivingOfficeName);
+        const receivingOfficeCodeSafe = escapeHtml(String(receivingOfficeCode));
+        const originOfficeNameSafe = escapeHtml(originOfficeName);
+        const originOfficeCodeSafe = escapeHtml(String(originOfficeCode));
+        const originOfficeDepartmentSafe = escapeHtml(originOfficeDepartment);
+
+        const rackShelfSafe = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '—');
+        const trackerFileNameSafe = escapeHtml(tracker.fileName || '—');
+        const trackerFileNoSafe = escapeHtml(tracker.fileNo || '—');
+        const trackerTrackingIdSafe = escapeHtml(tracker.trackingId || '—');
+
+        const pendingEntry = (typeof getPendingMovementEntry === 'function') ? getPendingMovementEntry(tracker) : null;
+        const assignmentStatusStr = (tracker.assignmentStatusLower || tracker.assignmentStatus || '').toLowerCase();
+        const isPendingAcceptance = assignmentStatusStr === 'pending' || !!pendingEntry;
+
+        /* Commented out as requested: Quick Acceptance is not working properly 
+        const quickAcceptSection = isPendingAcceptance ? `
+            <div class="mt-4 p-4 bg-blue-50 border-2 border-dashed border-blue-400 rounded-xl" id="modal-quick-accept-wrapper">
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" id="modal-quick-accept-check" class="mt-1 w-5 h-5 rounded border-blue-300 text-blue-600 focus:ring-blue-500">
+                    <div class="flex-1">
+                        <p class="font-bold text-blue-900">Receiver is beside me — mark this file as accepted immediately.</p>
+                        <p class="text-xs text-blue-600 mt-1">Status will be updated to Log-Out before you print.</p>
+                    </div>
+                </label>
+                <div id="modal-quick-accept-status" class="hidden mt-3 p-2 bg-blue-100/50 rounded-lg text-center text-sm font-semibold text-blue-700 animate-pulse">
+                    Processing handover and logging out...
+                </div>
+            </div>
+        ` : '';
+        */
+        const quickAcceptSection = '';
+
+        const detailsContent = document.getElementById('details-content');
+        detailsContent.innerHTML = `
+                <div class="py-4 space-y-6">
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <div>
+                            <h3 class="text-xl font-semibold">${trackerFileNameSafe}</h3>
+                            <div class="flex items-center gap-3 mt-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm font-medium text-gray-600">File No:</span>
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 font-mono whitespace-nowrap">${trackerFileNoSafe}</span>
+                                </div>
+
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${priorityClass}">${priorityText}</span>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">${tracker.currentOfficeId}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="space-y-4">
+                            <div>
+                                <h4 class="text-sm font-medium text-gray-700 mb-2">File Information</h4>
+                                <div class="flex items-center justify-between gap-4">
+                                    <span class="text-xs font-semibold text-gray-500 uppercase">File Name:</span>
+                                    <span class="text-sm font-semibold text-gray-900 text-right whitespace-pre-line break-words max-w-[220px]">
+                                        ${trackerFileNameSafe}
+                                    </span>
+                                </div>
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">File No:</span>
+                                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 font-mono whitespace-nowrap">${trackerFileNoSafe}</span>
+                                    </div>
+
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Priority:</span>
+                                        <span class="font-medium ${priorityClass} px-2 py-0.5 rounded text-xs whitespace-nowrap">${priorityText}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Origin Registry:</span>
+                                        <span class="text-sm font-semibold text-gray-900 text-right whitespace-nowrap">${originOfficeNameSafe}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Origin Code:</span>
+                                        <span class="text-sm font-mono font-semibold text-purple-600 text-right whitespace-nowrap">${originOfficeCodeSafe}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Rack/Shelf:</span>
+                                        <span class="text-sm font-semibold text-gray-900 text-right whitespace-nowrap">${rackShelfSafe}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Created:</span>
+                                        <span class="text-sm font-semibold text-gray-900 text-right whitespace-nowrap">${new Date(tracker.createdAt).toLocaleString()}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <h4 class="text-sm font-medium text-gray-700 mb-2">Current Location</h4>
+                                <div class="space-y-2 text-[13px]">
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Office:</span>
+                                        <span class="text-sm font-semibold text-gray-900 text-right whitespace-nowrap">${escapeHtml(tracker.currentOffice || '—')}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Office ID:</span>
+                                        <span class="text-sm font-mono font-semibold text-purple-600 text-right whitespace-nowrap">${escapeHtml(tracker.currentOfficeId || '—')}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Receiving Officer:</span>
+                                        <span class="text-sm font-semibold text-gray-900 text-right whitespace-nowrap">${receivingOfficerNameSafe}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Officer ID:</span>
+                                        <span class="text-sm font-mono font-semibold text-purple-600 text-right whitespace-nowrap">${receivingOfficerIdSafe}</span>
+                                    </div>
+                                    ${receivingOfficerLevel ? `
+                                        <div class="flex items-center justify-between gap-4">
+                                            <span class="text-xs font-semibold text-gray-500 uppercase">Officer Level:</span>
+                                            <span class="text-sm font-semibold text-gray-900 text-right whitespace-nowrap">${receivingOfficerLevelSafe}</span>
+                                        </div>
+                                    ` : ''}
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Officer Department:</span>
+                                        <span class="text-sm font-semibold text-gray-900 text-right whitespace-nowrap">${receivingOfficerDepartmentSafe}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Officer Roles:</span>
+                                        <span class="text-sm font-semibold text-gray-900 text-right">${receivingOfficerRolesSafe}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Receiving Office:</span>
+                                        <span class="text-sm font-semibold text-gray-900 text-right whitespace-nowrap">${receivingOfficeNameSafe}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Receiving Code:</span>
+                                        <span class="text-sm font-mono font-semibold text-purple-600 text-right whitespace-nowrap">${receivingOfficeCodeSafe}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        ${quickAcceptSection}
+
+                        ${(() => {
+                            const approvalPurposes = ['recommendation', 'approval'];
+                            const approvalEntries = tracker.logEntries.filter(e => approvalPurposes.includes((e.purpose || '').toLowerCase()));
+                            const movementEntries = tracker.logEntries.filter(e => !approvalPurposes.includes((e.purpose || '').toLowerCase()));
+
+                            const purposeConfig = {
+                                recommendation: { label: 'DGIS Recommendation', icon: '👤', color: 'indigo' },
+                                approval: { label: 'DG KANGIS Approval', icon: '✅', color: 'emerald' },
+                            };
+
+                            const approvalHtml = approvalEntries.length ? `
+                                <div class="mb-4">
+                                    <h4 class="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                                        <span class="inline-block w-2 h-2 rounded-full bg-indigo-500"></span>
+                                        Workflow Approvals
+                                    </h4>
+                                    <div class="space-y-2">
+                                        ${approvalEntries.map(entry => {
+                                            const p = (entry.purpose || '').toLowerCase();
+                                            const cfg = purposeConfig[p] || { label: p, icon: '🔷', color: 'gray' };
+                                            const colorMap = {
+                                                indigo: 'bg-indigo-50 border-indigo-200 text-indigo-800',
+                                                emerald: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+                                                gray: 'bg-gray-50 border-gray-200 text-gray-700',
+                                            };
+                                            const badgeColor = colorMap[cfg.color] || colorMap.gray;
+                                            const officerName = escapeHtml(entry.receivingOfficerName || entry.acceptedByName || 'N/A');
+                                            const dateStr = [entry.logInDate, entry.logInTime].filter(Boolean).join(' at ');
+                                            return `
+                                                <div class="flex items-start gap-3 p-3 rounded-lg border ${badgeColor}">
+                                                    <span class="text-lg leading-none mt-0.5">${cfg.icon}</span>
+                                                    <div class="flex-1 min-w-0">
+                                                        <div class="flex items-center justify-between gap-2 flex-wrap">
+                                                            <span class="text-xs font-bold uppercase tracking-wide">${cfg.label}</span>
+                                                            <span class="text-xs opacity-70">${dateStr}</span>
+                                                        </div>
+                                                        <div class="text-xs mt-1 opacity-80">${escapeHtml(entry.notes || '')}</div>
+                                                        <div class="text-xs mt-0.5 opacity-60">By: ${officerName}</div>
+                                                    </div>
+                                                </div>`;
+                                        }).join('')}
+                                    </div>
+                                </div>` : '';
+
+                            const movementHtml = `
+                                <div>
+                                    <h4 class="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                                        <span class="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+                                        Movement History
+                                    </h4>
+                                    <div class="space-y-3">
+                                        ${movementEntries.length ? movementEntries.map((entry, index) => {
+                                            const entryStatus = (entry.status || '').toLowerCase();
+                                            const isActive = entryStatus === 'active';
+                                            const entryClass = isActive ? 'log-entry log-entry-active' : 'log-entry log-entry-completed';
+                                            const statusMeta = resolveStatusDisplay(entry, entryStatus);
+                                            const statusLabel = statusMeta.label;
+                                            const statusBadge = statusMeta.badgeClass;
+                                            const entryOfficerName = escapeHtml(entry.receivingOfficerName || tracker.receivingOfficer?.name || 'N/A');
+                                            const entryOfficerId = entry.receivingOfficerId ? escapeHtml(String(entry.receivingOfficerId)) : '';
+                                            return `
+                                                <div class="${entryClass} p-3 rounded">
+                                                    <div class="flex items-center justify-between mb-1">
+                                                        <span class="text-sm font-medium">${entry.officeName}</span>
+                                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadge}">${statusLabel}</span>
+                                                    </div>
+                                                    <div class="text-xs text-gray-600 space-y-1">
+                                                        <div>Log ID: <span class="font-mono">${entry.logId}</span></div>
+                                                        <div>Logged In: ${entry.logInDate} at ${entry.logInTime}</div>
+                                                        ${entry.logOutDate ? `<div>Logged Out: ${entry.logOutDate} at ${entry.logOutTime}</div>` : ''}
+                                                        <div>Receiving Officer: ${entryOfficerName}${entryOfficerId ? ` (<span class="font-mono">${entryOfficerId}</span>)` : ''}</div>
+                                                        ${entry.notes ? `<div class="mt-1"><strong>Notes:</strong> ${escapeHtml(entry.notes)}</div>` : ''}
+                                                    </div>
+                                                </div>`;
+                                        }).join('') : '<p class="text-xs text-gray-400 italic">No physical movements yet.</p>'}
+                                    </div>
+                                </div>`;
+
+                            return approvalHtml + movementHtml;
+                        })()}
+                    </div>
+                </div>
+            `;
+
+        document.getElementById('details-dialog').classList.add('show');
+        lucide.createIcons();
+
+        /* 
+        // Attach Quick Accept Listener
+        const quickAcceptCheck = document.getElementById('modal-quick-accept-check');
+        if (quickAcceptCheck) {
+            quickAcceptCheck.addEventListener('change', function() {
+                if (this.checked) {
+                    if (confirm('Are you sure you want to mark this file as accepted and log it out immediately?')) {
+                        this.disabled = true;
+                        document.getElementById('modal-quick-accept-status').classList.remove('hidden');
+                        window.handleQuickAccept(tracker.trackingId);
+                    } else {
+                        this.checked = false;
+                    }
+                }
+            });
+        }
+        */
+
+        // Bind print button after content is loaded
+    }
+
+    // Print workflow recommendation / approval sheet
+    function printWorkflowApproval(tracker) {
+        const module = window.currentModule || '';
+        const isDGIS = module === 'dgis';
+        const isDG = module === 'dg';
+        const docTitle = isDGIS ? 'Recommendation Sheet' : (isDG ? 'Approval Acknowledgment' : 'Workflow Document');
+        const accentColor = isDGIS ? '#4f46e5' : '#059669'; // indigo for DGIS, emerald for DG
+        const stepLabel = isDGIS ? 'Recommendation' : (isDG ? 'Approval' : 'Workflow');
+        const signatureHeaderLeft = isDGIS ? 'Director GIS' : (isDG ? 'Director General, KANGIS' : 'Approving Officer');
+        const signatureHeaderRight = 'Receiving Office';
+
+        const now = new Date();
+        const currentDateTime = now.toLocaleString();
+        const generatedDateText = now.toLocaleDateString();
+        const generatedByName = [window.currentUser?.first_name, window.currentUser?.last_name]
+            .filter(Boolean).join(' ').trim() || window.currentUser?.name || 'System';
+        const generatedBySafe = escapeHtml(generatedByName);
+        const generatedDateSafe = escapeHtml(generatedDateText);
+
+        const fileNoValue = escapeHtml(tracker.fileNo || '-');
+        const fileNameValue = escapeHtml(tracker.fileName || '-');
+        const trackingId = escapeHtml(tracker.trackingId || '-');
+        const priorityText = (tracker.priority || 'NORMAL').charAt(0) + (tracker.priority || 'NORMAL').slice(1).toLowerCase();
+        const priorityValue = escapeHtml(tracker.priority || '-');
+        const currentOfficeValue = escapeHtml(tracker.currentOffice || '-');
+        const originOffice = tracker.originOffice || {};
+        const originOfficeName = originOffice.name || tracker.originOfficeName || tracker.originRegistry || '-';
+        const originRegistryValue = escapeHtml(originOfficeName);
+        const createdValue = tracker.createdAt ? escapeHtml(new Date(tracker.createdAt).toLocaleString()) : '-';
+        const rackShelfValue = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '-');
+        const trackingQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(tracker.trackingId || '')}`;
+        const baseUrl = (document.querySelector('meta[name="app-base-url"]')?.content || '').replace(/\/$/, '');
+
+        // Workflow step info
+        const workflowProgress = tracker.workflowProgress || {};
+        const steps = workflowProgress.steps || [];
+
+        // Build workflow steps HTML
+        let stepsHtml = '';
+        if (steps.length > 0) {
+            stepsHtml = steps.map((s, idx) => {
+                const stepNum = idx + 1;
+                let statusIcon = '&#9675;'; // empty circle
+                let statusColor = '#9ca3af';
+                if (s.status === 'completed') {
+                    statusIcon = '&#10003;'; // checkmark
+                    statusColor = '#16a34a';
+                } else if (s.status === 'active') {
+                    statusIcon = '&#9679;'; // filled circle
+                    statusColor = accentColor;
+                }
+                return `<tr>
+                    <td style="text-align:center;font-weight:bold;color:${statusColor};font-size:1.1em;">${statusIcon}</td>
+                    <td>Step ${stepNum}</td>
+                    <td><strong>${escapeHtml(s.label || '')}</strong></td>
+                    <td>${escapeHtml(s.from_name || '-')}</td>
+                    <td>${escapeHtml(s.to_name || 'Destination Office')}</td>
+                    <td style="color:${statusColor};font-weight:600;">${(s.status || 'pending').charAt(0).toUpperCase() + (s.status || 'pending').slice(1)}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // Build new-style movement log table (S/N | Origin | Direct GIS | Director GIS | Destination | Comment)
+        const allEntries = tracker.logEntries || [];
+        const printApprovalPurposes = ['recommendation', 'approval'];
+        const printApprovalEntries = allEntries.filter(e => printApprovalPurposes.includes((e.purpose || '').toLowerCase()));
+        const printPhysicalMovements = allEntries.filter(e => !printApprovalPurposes.includes((e.purpose || '').toLowerCase()));
+        const printRecEntry = printApprovalEntries.find(e => (e.purpose || '').toLowerCase() === 'recommendation');
+        const printAppEntry = printApprovalEntries.find(e => (e.purpose || '').toLowerCase() === 'approval');
+
+        // Single aggregated row — origin from first movement, destination from last movement
+        const movementHtml = (() => {
+            if (!printPhysicalMovements.length) {
+                return '<tr><td colspan="6" style="text-align:center;color:#9ca3af;">No movement history available</td></tr>';
+            }
+            const firstPM = printPhysicalMovements[0];
+            const lastPM = printPhysicalMovements[printPhysicalMovements.length - 1];
+
+            const originName = escapeHtml(tracker.originOfficeName || tracker.originRegistry || firstPM.officeName || '-');
+            const originLogText = firstPM.logInDate
+                ? `Logged to Dir GIS on ${firstPM.logInDate}${firstPM.logInTime ? ' @ ' + firstPM.logInTime : ''}`
+                : '';
+
+            let directGisHtml = '—';
+            if (printRecEntry) {
+                const who = escapeHtml(printRecEntry.acceptedByName || printRecEntry.receivingOfficerName || '');
+                const dt = printRecEntry.logInDate ? `${printRecEntry.logInDate}${printRecEntry.logInTime ? ' @ ' + printRecEntry.logInTime : ''}` : '';
+                directGisHtml = `<strong style="color:#4338ca;">Recommended for Approval</strong>${dt ? '<br><span style="font-size:0.75rem;color:#6b7280;">' + escapeHtml(dt) + (who ? ' &middot; ' + who : '') + '</span>' : ''}`;
+            }
+
+            let directorGisHtml = '—';
+            if (printAppEntry) {
+                const who = escapeHtml(printAppEntry.acceptedByName || printAppEntry.receivingOfficerName || '');
+                const dt = printAppEntry.logInDate ? `${printAppEntry.logInDate}${printAppEntry.logInTime ? ' @ ' + printAppEntry.logInTime : ''}` : '';
+                directorGisHtml = `<strong style="color:#059669;">Approved for Logging</strong>${dt ? '<br><span style="font-size:0.75rem;color:#6b7280;">' + escapeHtml(dt) + (who ? ' &middot; ' + who : '') + '</span>' : ''}`;
+            }
+
+            const wfCfgPrint = tracker.workflowConfig || {};
+            const destName = escapeHtml(tracker.department || wfCfgPrint.destination_office_name || lastPM.officeName || '-');
+
+            return `<tr>
+                <td style="text-align:center;font-weight:bold;">1</td>
+                <td><strong>${originName}</strong>${originLogText ? '<br><span style="font-size:0.75rem;color:#6b7280;">' + escapeHtml(originLogText) + '</span>' : ''}</td>
+                <td>${directGisHtml}</td>
+                <td>${directorGisHtml}</td>
+                <td><strong>${destName}</strong></td>
+                <td style="color:#4b5563;">${escapeHtml(firstPM.notes || '')}</td>
+            </tr>`;
+        })();
+
+        const printContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>${docTitle} - ${trackingId}</title>
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    @page { size: A4 landscape; margin: 0; }
+                    body { background-color: #525659; font-family: 'Roboto', Arial, sans-serif; color: #1f2937; line-height: 1.3; font-size: 11px; padding: 12px; }
+                    .paper { width: 297mm; min-height: 210mm; margin: 0 auto; padding: 10mm 14mm; background: #fff; box-shadow: 0 0 10px rgba(0,0,0,0.45); position: relative; }
+                    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.6rem; border-bottom: 2px solid #111; padding-bottom: 0.4rem; }
+                    .logo-wrap { width: 58px; height: 58px; display: flex; align-items: center; justify-content: center; }
+                    .logo-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+                    .header-center { text-align: center; flex: 1; padding: 2px 10px 0; }
+                    .header-center h1 { font-size: 0.75rem; margin-bottom: 0.1rem; color: #111827; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+                    .header-center h2 { font-size: 0.68rem; margin-bottom: 0.2rem; color: #374151; text-transform: uppercase; letter-spacing: 0.9px; font-weight: 700; }
+                    .header-center h3 { font-size: 0.88rem; color: #111827; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 800; }
+                    .header-meta { display: flex; gap: 2rem; align-items: center; margin: 0 0 0.6rem; font-size: 0.78rem; color: #4b5563; }
+                    .header-meta .file-meta div { margin: 0.08rem 0; }
+                    .qr-wrapper img { width: 55px; height: 55px; display: block; }
+                    .section { margin-bottom: 0.65rem; page-break-inside: avoid; }
+                    .section-title { font-size: 0.8rem; font-weight: bold; color: #1f2937; background: #f3f4f6; padding: 0.25rem 0.4rem; margin-bottom: 0.4rem; border-left: 4px solid ${accentColor}; text-transform: uppercase; letter-spacing: 0.4px; }
+                    .info-row { display: grid; grid-template-columns: 120px minmax(0,1fr); gap: 0.2rem; padding: 0.12rem 0; border-bottom: 1px solid #e5e7eb; font-size: 0.78rem; align-items: center; }
+                    .info-row:last-child { border-bottom: none; }
+                    .info-label { font-weight: 600; color: #6b7280; text-transform: uppercase; font-size: 0.63rem; letter-spacing: 0.03em; }
+                    .info-value { color: #111827; font-weight: 600; font-size: 0.75rem; }
+                    table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+                    table th { background: #f3f4f6; border: 1px solid #d1d5db; padding: 0.25rem 0.35rem; text-align: left; font-weight: bold; color: #1f2937; }
+                    table td { border: 1px solid #e5e7eb; padding: 0.25rem 0.35rem; vertical-align: top; }
+                    table tr:nth-child(even) { background: #f9fafb; }
+                    .priority-HIGH { color: #dc2626; font-weight: bold; }
+                    .priority-MEDIUM { color: #f59e0b; font-weight: bold; }
+                    .priority-LOW { color: #10b981; font-weight: bold; }
+                    .remarks-box { margin-top: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px; padding: 0.4rem 0.6rem; }
+                    .remarks-box h4 { font-size: 0.78rem; color: ${accentColor}; margin-bottom: 0.25rem; }
+                    .remarks-lines { border-bottom: 1px dotted #d1d5db; height: 1.2rem; }
+                    .bottom-strip { margin-top: 0.75rem; border-top: 1.5px solid #e5e7eb; padding-top: 0.5rem; display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; }
+                    .sig-block { flex: 1; }
+                    .sig-block .sig-header { font-weight: 700; font-size: 0.72rem; color: #111827; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 0.25rem; }
+                    .sig-block .sig-field { font-size: 0.7rem; color: #374151; margin-top: 0.3rem; }
+                    .signature-grid { margin-top: 0.75rem; display: flex; justify-content: space-around; align-items: flex-start; gap: 2rem; }
+                    .signature-box { flex: 1; text-align: center; padding: 0.1rem 0; }
+                    .sig-field { margin-top: 0.3rem; font-size: 0.72rem; color: #374151; }
+                    .footer { margin-top: 0.6rem; border-top: 1.5px solid #e5e7eb; padding-top: 0.35rem; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+                    .footer .footer-logo { width: 30px; height: 30px; object-fit: contain; }
+                    .footer .footer-logo-las { width: 56px; height: 56px; object-fit: contain; }
+                    .footer .footer-meta { text-align: center; flex: 1; padding: 0 0.4rem; }
+                    .footer .footer-meta p { font-size: 8px; color: #9ca3af; margin: 0; }
+                    .footer .generated-meta { font-size: 8px !important; color: #9ca3af !important; }
+                    .footer-center { text-align: center; flex: 1; }
+                    .footer-center p { font-size: 8px; color: #9ca3af; margin: 0; line-height: 1.4; }
+                    .footer-logo { width: 32px; height: 32px; object-fit: contain; }
+                    @media print {
+                        body { margin: 0; padding: 0; background: none; }
+                        .paper { box-shadow: none; margin: 0; width: 100%; min-height: auto; padding: 8mm 12mm; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="paper">
+                    <div class="header">
+                        <div class="logo-wrap">
+                            <img src="${baseUrl}/assets/logo/logo1.jpg" alt="Left Logo" onerror="this.style.display='none'">
+                        </div>
+                        <div class="header-center">
+                            <h1>Kano State Geographic Information Service</h1>
+                            <h2>KANGIS Registry</h2>
+                            <h3>${docTitle}</h3>
+                        </div>
+                        <div style="display:flex;align-items:flex-start;gap:8px;">
+                            <div class="qr-wrapper">
+                                <img src="${trackingQrUrl}" alt="Tracking QR Code">
+                            </div>
+                            <div class="logo-wrap">
+                                <img src="${baseUrl}/assets/logo/kangis.jpg" alt="Right Logo" onerror="this.style.display='none'">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="header-meta">
+                        <div class="file-meta">
+                            <div><strong>Tracking ID:</strong> ${trackingId}</div>
+                            <div><strong>File No:</strong> ${fileNoValue}</div>
+                            <div><strong>Print Date:</strong> ${currentDateTime}</div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-title">File Information</div>
+                        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:1.5rem;">
+                            <div>
+                                <div class="info-row">
+                                    <span class="info-label">File No:</span>
+                                    <span class="info-value">${fileNoValue}</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">File Name:</span>
+                                    <span class="info-value" style="white-space:pre-line;word-break:break-word;">${fileNameValue}</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Rack / Shelf:</span>
+                                    <span class="info-value">${rackShelfValue}</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Date Created:</span>
+                                    <span class="info-value">${createdValue}</span>
+                                </div>
+                            </div>
+                            <div style="width:2px;background:linear-gradient(to bottom,#e5e7eb,${accentColor},#e5e7eb);"></div>
+                            <div>
+                                <div class="info-row">
+                                    <span class="info-label">Origin Registry:</span>
+                                    <span class="info-value">${originRegistryValue}</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Current Office:</span>
+                                    <span class="info-value">${currentOfficeValue}</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Priority:</span>
+                                    <span class="info-value priority-${priorityValue}">${priorityText}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${stepsHtml ? `
+                    <div class="section">
+                        <div class="section-title">Workflow Progress</div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width:30px;"></th>
+                                    <th>Step</th>
+                                    <th>Action</th>
+                                    <th>From</th>
+                                    <th>To</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>${stepsHtml}</tbody>
+                        </table>
+                    </div>
+                    ` : ''}
+
+                    <div class="section">
+                        <div class="section-title">Movement History</div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width:35px;text-align:center;">S/N</th>
+                                    <th>Origin</th>
+                                    <th>Director GIS</th>
+                                    <th>Director General</th>
+                                    <th>Destination</th>
+                                    <th>Comment</th>
+                                </tr>
+                            </thead>
+                            <tbody>${movementHtml}</tbody>
+                        </table>
+                    </div>
+
+                    ${isDGIS ? `<div class="remarks-box">
+                        <h4>Recommendation Remarks</h4>
+                        <div class="remarks-lines"></div>
+                        <div class="remarks-lines"></div>
+                        <div class="remarks-lines"></div>
+                        <div class="remarks-lines"></div>
+                    </div>` : ''}
+
+                    <div class="signature-grid">
+                        <div class="signature-box">
+                            <div style="font-weight:700;font-size:0.72rem;color:#111827;margin-bottom:0.2rem;text-transform:uppercase;letter-spacing:0.3px;">${signatureHeaderLeft}</div>
+                            <div class="sig-field">Name: ____________________________</div>
+                            <div class="sig-field">Sign: &nbsp;____________________________</div>
+                            <div class="sig-field">Date: &nbsp;____________________________</div>
+                        </div>
+                        <div class="signature-box">
+                            <div style="font-weight:700;font-size:0.72rem;color:#111827;margin-bottom:0.2rem;text-transform:uppercase;letter-spacing:0.3px;">${signatureHeaderRight}</div>
+                            <div class="sig-field">Name: ____________________________</div>
+                            <div class="sig-field">Sign: &nbsp;____________________________</div>
+                            <div class="sig-field">Date: &nbsp;____________________________</div>
+                        </div>
+                    </div>
+
+                    <div class="footer">
+                        <img class="footer-logo" src="${baseUrl}/assets/logo/klaes.png" alt="KLAES" onerror="this.style.display='none'">
+                        <div class="footer-meta">
+                            <p>Kano State Geographic Information Service &bull; KANGIS Registry</p>
+                            <p class="generated-meta">Generated on ${generatedDateSafe} by ${generatedBySafe}</p>
+                        </div>
+                        <img class="footer-logo footer-logo-las" src="${baseUrl}/assets/logo/las.jpg" alt="LAS" onerror="this.style.display='none'">
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            Swal.fire({ icon: 'warning', title: 'Popup Blocked', text: 'Unable to open print preview. Please allow popups for this site.' });
+            return;
+        }
+        printWindow.document.write(printContent);
+        printWindow.document.close();
+
+        const invokePrint = () => {
+            try { printWindow.focus(); printWindow.print(); }
+            catch (e) { console.error('Print failed:', e); }
+        };
+        const waitForQrAndPrint = () => {
+            const qrImg = printWindow.document.querySelector('.qr-wrapper img');
+            if (qrImg && !qrImg.complete) {
+                const onReady = () => setTimeout(invokePrint, 100);
+                qrImg.addEventListener('load', onReady, { once: true });
+                qrImg.addEventListener('error', onReady, { once: true });
+            } else {
+                setTimeout(invokePrint, 100);
+            }
+        };
+        if (printWindow.document.readyState === 'complete') {
+            waitForQrAndPrint();
+        } else {
+            printWindow.addEventListener('load', waitForQrAndPrint, { once: true });
+        }
+    }
+
+    // Print tracker details - routes to KANGIS landscape version for ?url=kangis, otherwise uses general portrait format
+    function printFileTrackerDetails(tracker) {
+        const urlView = new URLSearchParams(window.location.search).get('url');
+        if (urlView === 'kangis') {
+            printFileTrackerDetailsKangis(tracker);
+            return;
+        }
+
+        // General portrait File Request Sheet
+        const priorityText = tracker.priority.charAt(0) + tracker.priority.slice(1).toLowerCase();
+        const now = new Date();
+        const currentDateTime = now.toLocaleString();
+        const generatedDateText = now.toLocaleDateString();
+        const generatedByName = [window.currentUser?.first_name, window.currentUser?.last_name]
+            .filter(Boolean)
+            .join(' ')
+            .trim() || window.currentUser?.name || 'System';
+        const generatedBySafe = escapeHtml(generatedByName);
+        const generatedDateSafe = escapeHtml(generatedDateText);
+        const originOffice = tracker.originOffice || {};
+        const originOfficeName = originOffice.name || tracker.originOfficeName || tracker.originRegistry || '-';
+        const originOfficeDepartment = originOffice.department || tracker.originOfficeDepartment || tracker.originRegistryDepartment || '-';
+        const trackingQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(tracker.trackingId || '')}`;
+        const officeNameForPrint = escapeHtml(tracker.currentOffice || tracker.office?.name || tracker.currentOfficeId || '-');
+        const fileNameValue = escapeHtml(tracker.fileName || '-');
+        const fileNoValue = escapeHtml(tracker.fileNo || '-');
+        const priorityValue = escapeHtml(tracker.priority || '-');
+        const createdValue = tracker.createdAt ? escapeHtml(new Date(tracker.createdAt).toLocaleString()) : '-';
+        const currentOfficeValue = escapeHtml(tracker.currentOffice || '-');
+        const receivingOfficerValue = escapeHtml(tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name || tracker.handler || '-');
+        const originRegistryValue = escapeHtml(originOfficeName || '-');
+        const rackShelfValue = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '-');
+
+        const printContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>File Request Sheet - ${tracker.trackingId}</title>
+                    <style>
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        @page { size: A4; margin: 0.3in; }
+                        body { font-family: Arial, sans-serif; color: #333; line-height: 1.4; background: white; font-size: 12px; }
+                        .print-container { max-width: 8.2in; margin: 0 auto; padding: 0.35in; background: white; }
+                        .header { text-align: center; margin-bottom: 1.2rem; padding-bottom: 0.75rem; border-bottom: 3px solid #2563eb; }
+                        .header .logo { width: 120px; height: auto; margin: 0 auto 0.75rem auto; display: block; }
+                        .header h1 { font-size: 1.25rem; margin-bottom: 0.5rem; color: #1f2937; }
+                        .header-meta { display: grid; grid-template-columns: 1fr auto; gap: 1.25rem; align-items: center; justify-items: start; margin-top: 1rem; font-size: 0.9rem; color: #666; }
+                        .header-meta .file-meta { text-align: left; }
+                        .header-meta .file-meta div { margin: 0.15rem 0; }
+                        .qr-wrapper { text-align: center; justify-self: end; }
+                        .qr-wrapper img { width: 65px; height: 65px; display: block; margin: 0 auto; }
+                        .section { margin-bottom: 1.1rem; page-break-inside: avoid; }
+                        .section-title { font-size: 0.95rem; font-weight: bold; color: #1f2937; background: #f3f4f6; padding: 0.4rem; margin-bottom: 0.75rem; border-left: 4px solid #2563eb; }
+                        .section-content { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+                        .info-group { page-break-inside: avoid; padding: 0.35rem 0.4rem; }
+                        .info-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 0.25rem; padding: 0.2rem 0; border-bottom: 1px solid #e5e7eb; font-size: 0.85rem; align-items: center; }
+                        .info-row:last-child { border-bottom: none; }
+                        .info-row.compact { grid-template-columns: 150px minmax(0, 1fr); }
+                        .info-label { font-weight: 600; color: #6b7280; letter-spacing: 0.03em; text-transform: uppercase; font-family: Arial, sans-serif; font-size: 0.68rem; }
+                        .info-value { color: #111827; font-family: Arial, sans-serif; word-break: normal; font-weight: 600; font-size: 0.8rem; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; justify-self: start; }
+                        .info-value.data-value { font-weight: 700; color: #111; }
+                        .info-value.placeholder { font-weight: 400; color: #9ca3af; }
+                        .table-section { grid-column: 1 / -1; }
+                        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+                        table th { background: #f3f4f6; border: 1px solid #d1d5db; padding: 0.35rem; text-align: left; font-weight: bold; color: #1f2937; }
+                        table td { border: 1px solid #e5e7eb; padding: 0.35rem; vertical-align: top; }
+                        table tr:nth-child(even) { background: #f9fafb; }
+                        .status-in-transit { color: #2563eb; font-weight: bold; }
+                        .status-archive { color: #f59e0b; font-weight: bold; }
+                        .status-archived { color: #16a34a; font-weight: bold; }
+                        .priority-HIGH { color: #dc2626; font-weight: bold; }
+                        .priority-MEDIUM { color: #f59e0b; font-weight: bold; }
+                        .priority-LOW { color: #10b981; font-weight: bold; }
+                        .footer { text-align: center; font-size: 0.8rem; color: #999; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; }
+                        .footer .generated-meta { margin-top: 0.3rem; font-size: 0.75rem; font-style: italic; color: #6b7280; }
+                        .signatories { margin-top: 2rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+                        .signatory { text-align: center; }
+                        .signatory .line { margin-top: 2.5rem; border-top: 1px solid #999; padding-top: 0.35rem; font-weight: 600; }
+                        @media print {
+                            body { margin: 0; padding: 0; font-size: 10px; }
+                            .print-container { max-width: 100%; margin: 0; padding: 0.5in; }
+                            table th, table td { padding: 0.3rem; }
+                            .footer { position: relative; page-break-after: always; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="print-container">
+                        <div class="header">
+                            <img class="logo" src="/assets/logo/logo.png" alt="Organization Logo">
+                            <h1>File Request Sheet</h1>
+                            <div class="header-meta">
+                                <div class="file-meta">
+                                    <div><strong>File No:</strong> ${fileNoValue}</div>
+                                    <div><strong>Print Date:</strong> ${currentDateTime}</div>
+                                </div>
+                                <div class="qr-wrapper">
+                                    <img src="${trackingQrUrl}" alt="Tracking ID QR">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section">
+                            <div class="section-title">File Information</div>
+                            <div class="section-content" style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 1.5rem; position: relative;">
+                                <div class="info-group">
+                                    <div class="info-row">
+                                        <span class="info-label">FILE NO:</span>
+                                        <span class="info-value ${fileNoValue === '-' ? 'placeholder' : 'data-value'}">${fileNoValue}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">FILE NAME:</span>
+                                        <span class="info-value ${fileNameValue === '-' ? 'placeholder' : 'data-value'}" style="white-space:pre-line;word-break:break-word;max-width:320px;display:inline-block;">
+                                            ${fileNameValue.replace(/(.{40,}?)(\s|$)/g, '$1\n')}
+                                        </span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">RACK/SHELF:</span>
+                                        <span class="info-value ${rackShelfValue === '-' ? 'placeholder' : 'data-value'}">${rackShelfValue}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">DATE CREATED:</span>
+                                        <span class="info-value ${createdValue === '-' ? 'placeholder' : 'data-value'}">${createdValue}</span>
+                                    </div>
+                                </div>
+                                <div style="width: 2px; background: linear-gradient(to bottom, #e5e7eb, #3b82f6, #e5e7eb); height: 100%; position: relative;"></div>
+                                <div class="info-group">
+                                    <div class="info-row">
+                                        <span class="info-label">ORIGIN REGISTRY:</span>
+                                        <span class="info-value ${originRegistryValue === '-' ? 'placeholder' : 'data-value'}">${originRegistryValue}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">CURRENT OFFICE:</span>
+                                        <span class="info-value ${currentOfficeValue === '-' ? 'placeholder' : 'data-value'}">${currentOfficeValue}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">DESTINATION (OFFICE):</span>
+                                        <span class="info-value ${officeNameForPrint === '-' ? 'placeholder' : 'data-value'}">${officeNameForPrint}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">RECEIVING OFFICER:</span>
+                                        <span class="info-value ${receivingOfficerValue === '-' ? 'placeholder' : 'data-value'}">${receivingOfficerValue}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="display: flex; justify-content: center; align-items: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+                                <div class="info-row" style="display: flex; justify-content: center; align-items: center; gap: 1rem;">
+                                    <span class="info-label" style="color: #6b7280;">PRIORITY:</span>
+                                    <span class="info-value ${priorityValue === '-' ? 'placeholder' : 'data-value'} priority-${tracker.priority}" style="font-weight: 700; font-size: 1.1em;">${priorityText}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section table-section">
+                            <div class="section-title">Movement History</div>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Date &amp; Time</th>
+                                        <th>Office</th>
+                                        <th>Receiving Officer</th>
+                                        <th>Log Out</th>
+                                        <th>Log In</th>
+                                        <th>Status</th>
+                                        <th>Notes</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${tracker.logEntries && tracker.logEntries.length > 0 ? tracker.logEntries.map(entry => {
+                                        const formatDateTime = (value) => {
+                                            if (!value) return '-';
+                                            const date = new Date(value);
+                                            if (Number.isNaN(date.getTime())) return value;
+                                            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+                                        };
+                                        const createdAtRaw = entry.created_at || entry.createdAt || tracker.createdAt || tracker.created_at || '';
+                                        const dateTimeRaw = entry.logInDate && entry.logInTime
+                                            ? entry.logInDate + ' ' + entry.logInTime
+                                            : (createdAtRaw || entry.logInDate || entry.logInTime || '-');
+                                        const dateTime = formatDateTime(dateTimeRaw);
+                                        const logOut = entry.logOutDate && entry.logOutTime
+                                            ? entry.logOutDate + ' ' + entry.logOutTime
+                                            : '-';
+                                        const logIn = entry.logInDate && entry.logInTime
+                                            ? entry.logInDate + ' ' + entry.logInTime
+                                            : (entry.logInDate || entry.logInTime || '-');
+                                        const hasLogIn = Boolean(entry.logInDate || entry.logInTime);
+                                        const statusRaw = (entry.status || '').toLowerCase();
+                                        const statusLabel = !hasLogIn ? 'In Transit'
+                                            : statusRaw === 'active' ? 'In Transit'
+                                            : statusRaw === 'archive' ? 'Archive'
+                                            : 'Archived (Completed)';
+                                        const statusClass = !hasLogIn ? 'status-in-transit'
+                                            : statusRaw === 'active' ? 'status-in-transit'
+                                            : statusRaw === 'archive' ? 'status-archive'
+                                            : 'status-archived';
+                                        return '<tr>'
+                                            + '<td>' + dateTime + '</td>'
+                                            + '<td>' + (entry.officeName || '-') + '</td>'
+                                            + '<td>' + (entry.receivingOfficerName || tracker.receivingOfficer?.name || 'N/A') + '</td>'
+                                            + '<td>' + logOut + '</td>'
+                                            + '<td>' + logIn + '</td>'
+                                            + '<td><span class="' + statusClass + '">' + statusLabel + '</span></td>'
+                                            + '<td>' + (entry.notes || '-') + '</td>'
+                                            + '</tr>';
+                                    }).join('') : '<tr><td colspan="7" style="text-align:center;">No movement history available</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="footer">
+                            <div class="signatories">
+                                <div class="signatory"><div class="line">Director Lands</div></div>
+                                <div class="signatory"><div class="line">Permanent Secretary</div></div>
+                                <div class="signatory"><div class="line">Honorable Commissioner</div></div>
+                            </div>
+                            <p style="font-style: italic; margin-top: 0.5rem;">This file is now being tracked!</p>
+                            <p class="generated-meta">Generated on ${generatedDateSafe} by ${generatedBySafe}</p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `;
+
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            Swal.fire({ icon: 'warning', title: 'Popup Blocked', text: 'Unable to open print preview. Please allow popups for this site.' });
+            return;
+        }
+        printWindow.document.write(printContent);
+        printWindow.document.close();
+        const invokePrint = () => { try { printWindow.focus(); printWindow.print(); } catch (e) { console.error('Print failed:', e); } };
+        const waitForQrAndPrint = () => {
+            const qrImg = printWindow.document.querySelector('.qr-wrapper img');
+            if (qrImg && !qrImg.complete) {
+                const onReady = () => setTimeout(invokePrint, 100);
+                qrImg.addEventListener('load', onReady, { once: true });
+                qrImg.addEventListener('error', onReady, { once: true });
+            } else {
+                setTimeout(invokePrint, 100);
+            }
+        };
+        if (printWindow.document.readyState === 'complete') {
+            waitForQrAndPrint();
+        } else {
+            printWindow.addEventListener('load', waitForQrAndPrint, { once: true });
+        }
+    }
+
+    // KANGIS-specific landscape File Request Sheet (?url=kangis only)
+    function printFileTrackerDetailsKangis(tracker) {
+        const baseUrl = (document.querySelector('meta[name="app-base-url"]')?.content || '').replace(/\/$/, '');
+        const priorityText = tracker.priority.charAt(0) + tracker.priority.slice(1).toLowerCase();
+        const now = new Date();
+        const currentDateTime = now.toLocaleString();
+        const generatedDateText = now.toLocaleDateString();
+        const generatedByName = [window.currentUser?.first_name, window.currentUser?.last_name]
+            .filter(Boolean)
+            .join(' ')
+            .trim() || window.currentUser?.name || 'System';
+        const generatedBySafe = escapeHtml(generatedByName);
+        const generatedDateSafe = escapeHtml(generatedDateText);
+        const originOffice = tracker.originOffice || {};
+        const originOfficeName = originOffice.name || tracker.originOfficeName || tracker.originRegistry || '-';
+        const originOfficeDepartment = originOffice.department || tracker.originOfficeDepartment || tracker.originRegistryDepartment || '-';
+        const trackingQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(tracker.trackingId || '')}`;
+        const officeNameForPrint = escapeHtml(tracker.department || '-');
+        const fileNameValue = escapeHtml(tracker.fileName || '-');
+        const fileNoValue = escapeHtml(tracker.fileNo || '-');
+        const priorityValue = escapeHtml(tracker.priority || '-');
+        const createdValue = tracker.createdAt ? escapeHtml(new Date(tracker.createdAt).toLocaleString()) : '-';
+        const wfCfgKangis = tracker.workflowConfig || tracker.workflow_config || {};
+        const QUEUE_LABEL = 'Department Queue';
+        const resolvedCurrentOffice = wfCfgKangis.original_destination_office_name
+            || (wfCfgKangis.destination_office_name && wfCfgKangis.destination_office_name !== QUEUE_LABEL ? wfCfgKangis.destination_office_name : '')
+            || (tracker.currentOffice && tracker.currentOffice !== QUEUE_LABEL ? tracker.currentOffice : '')
+            || (tracker.department && tracker.department !== QUEUE_LABEL ? tracker.department : '')
+            || '-';
+        const currentOfficeValue = escapeHtml(resolvedCurrentOffice);
+        const receivingOfficerValue = escapeHtml(tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name || tracker.handler || '-');
+        const originRegistryValue = escapeHtml(originOfficeName || '-');
+        const rackShelfValue = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '-');
+
+        const printContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>File Request Sheet - ${tracker.trackingId}</title>
+                    <style>
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        @page { size: A4 landscape; margin: 0; }
+                        body { background: #525659; font-family: Arial, sans-serif; color: #1f2937; font-size: 11px; padding: 12px; }
+                        .paper { width: 297mm; min-height: 210mm; height: 210mm; margin: 0 auto; padding: 10mm 14mm; background: #fff; box-shadow: 0 0 10px rgba(0,0,0,0.45); display: flex; flex-direction: column; }
+                        .paper-body { flex: 1; }
+
+                        /* Header */
+                        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.6rem; border-bottom: 2px solid #111; padding-bottom: 0.4rem; }
+                        .logo-wrap { width: 58px; height: 58px; display: flex; align-items: center; justify-content: center; }
+                        .logo-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+                        .header-center { text-align: center; flex: 1; padding: 2px 10px 0; }
+                        .header-center h1 { font-size: 0.72rem; color: #111827; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; margin-bottom: 0.1rem; }
+                        .header-center h2 { font-size: 0.65rem; color: #374151; text-transform: uppercase; letter-spacing: 0.9px; font-weight: 700; margin-bottom: 0.2rem; }
+                        .header-center h3 { font-size: 0.85rem; color: #111827; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 800; }
+                        .header-right { display: flex; align-items: flex-start; gap: 8px; }
+                        .qr-wrap img { width: 55px; height: 55px; display: block; }
+
+                        /* Meta bar */
+                        .meta-bar { display: flex; gap: 2rem; font-size: 0.78rem; color: #4b5563; margin-bottom: 0.6rem; padding-bottom: 0.4rem; border-bottom: 1px solid #e5e7eb; }
+                        .meta-bar span { display: flex; gap: 0.3rem; }
+                        .meta-bar strong { color: #111; }
+
+                        /* Info grid */
+                        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 2rem; margin-bottom: 0.7rem; }
+                        .info-row { display: grid; grid-template-columns: 140px 1fr; gap: 0.3rem; padding: 0.2rem 0; border-bottom: 1px solid #f3f4f6; font-size: 0.8rem; align-items: start; }
+                        .info-row:last-child { border-bottom: none; }
+                        .info-label { font-weight: 600; color: #6b7280; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.03em; padding-top: 0.05rem; }
+                        .info-value { color: #111827; font-weight: 700; word-break: break-word; }
+                        .info-value.muted { color: #9ca3af; font-weight: 400; }
+
+                        /* Priority badge */
+                        .priority-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-weight: 700; font-size: 0.8rem; }
+                        .priority-HIGH { background: #fee2e2; color: #dc2626; }
+                        .priority-MEDIUM { background: #fef3c7; color: #d97706; }
+                        .priority-LOW { background: #d1fae5; color: #059669; }
+
+                        /* Movement table */
+                        .section-title { font-size: 0.78rem; font-weight: bold; color: #1f2937; background: #f3f4f6; padding: 0.3rem 0.5rem; margin-bottom: 0.4rem; border-left: 3px solid #2563eb; }
+                        table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+                        table th { background: #f3f4f6; border: 1px solid #d1d5db; padding: 0.3rem 0.4rem; text-align: left; font-weight: bold; color: #1f2937; }
+                        table td { border: 1px solid #e5e7eb; padding: 0.3rem 0.4rem; vertical-align: top; }
+                        table tr:nth-child(even) td { background: #f9fafb; }
+
+                        /* Signatures */
+                        .sig-grid { display: flex; justify-content: space-around; margin-top: 3.5rem; }
+                        .sig-box { flex: 1; text-align: center; padding: 0 0.5rem; }
+                        .sig-line { margin-top: 2rem; border-top: 1px solid #374151; padding-top: 0.3rem; font-size: 0.75rem; font-weight: 700; color: #111827; text-transform: uppercase; letter-spacing: 0.05em; }
+                        .sig-sub { font-size: 0.68rem; font-weight: 400; color: #6b7280; margin-top: 0.1rem; }
+
+                        /* Footer */
+                        .footer { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding-top: 0.5rem; border-top: 1px solid #e5e7eb; font-size: 0.68rem; color: #9ca3af; margin-top: auto; }
+                        .footer-logo { width: 80px; height: 80px; object-fit: contain; }
+                        .footer-logo-las { width: 110px; height: 110px; object-fit: contain; }
+                        .footer-center { text-align: center; }
+                        .footer-right { text-align: right; }
+
+                        @media print {
+                            body { background: none; padding: 0; }
+                            .paper { box-shadow: none; margin: 0; width: 100%; height: 210mm; min-height: auto; padding: 8mm 12mm; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="paper">
+                        <!-- Header -->
+                        <div class="header">
+                            <div class="logo-wrap">
+                                <img src="${baseUrl}/assets/logo/logo1.jpg" alt="Ministry Logo" onerror="this.style.display='none'">
+                            </div>
+                            <div class="header-center">
+                                <h1>Kano State Geographic Information Service</h1>
+                                <h2>KANGIS Registry</h2>
+                                <h3>File Request Sheet</h3>
+                            </div>
+                            <div class="header-right">
+                                <div class="qr-wrap">
+                                    <img src="${trackingQrUrl}" alt="Tracking QR">
+                                </div>
+                                <div class="logo-wrap">
+                                    <img src="${baseUrl}/assets/logo/kangis.jpg" alt="KANGIS Logo" onerror="this.style.display='none'">
+                                </div>
+                            </div>
+                        </div>
+
+
+                        <!-- File info -->
+                        <div class="info-grid">
+                            <div class="info-row">
+                                <span class="info-label">File Name</span>
+                                <span class="info-value ${fileNameValue === '-' ? 'muted' : ''}">${fileNameValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Origin Registry</span>
+                                <span class="info-value ${originRegistryValue === '-' ? 'muted' : ''}">${originRegistryValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">File No</span>
+                                <span class="info-value ${fileNoValue === '-' ? 'muted' : ''}">${fileNoValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Current Office</span>
+                                <span class="info-value ${currentOfficeValue === '-' ? 'muted' : ''}">${currentOfficeValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Date Created</span>
+                                <span class="info-value ${createdValue === '-' ? 'muted' : ''}">${createdValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Destination Dept</span>
+                                <span class="info-value ${officeNameForPrint === '-' ? 'muted' : ''}">${officeNameForPrint}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Receiving Officer</span>
+                                <span class="info-value ${receivingOfficerValue === '-' ? 'muted' : ''}">${receivingOfficerValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Rack / Shelf</span>
+                                <span class="info-value ${rackShelfValue === '-' ? 'muted' : ''}">${rackShelfValue}</span>
+                            </div>
+                        </div>
+
+                        <!-- Movement history — single aggregated row -->
+                        <div class="section-title">
+                            Movement History &mdash; <span style="font-weight:600;">(PRIORITY: <span class="priority-${escapeHtml(tracker.priority || '')}">${priorityText}</span>)</span>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>S/N</th>
+                                    <th>Origin</th>
+                                    <th>Director GIS</th>
+                                    <th>Director General</th>
+                                    <th>Destination</th>
+                                    <th>Receiving Officer</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${(() => {
+                                    const allE = tracker.logEntries || [];
+                                    const approvalPurposes = ['recommendation', 'approval'];
+                                    const physE = allE.filter(e => !approvalPurposes.includes((e.purpose || '').toLowerCase()));
+                                    const appE  = allE.filter(e => approvalPurposes.includes((e.purpose || '').toLowerCase()));
+                                    if (!physE.length) return '<tr><td colspan="7" style="text-align:center;color:#9ca3af;">No movement history available</td></tr>';
+
+                                    const first = physE[0];
+                                    const wfCfgFRS = tracker.workflowConfig || {};
+                                    const destFRS = escapeHtml(tracker.department || wfCfgFRS.destination_office_name || '-');
+
+                                    const recE = appE.find(e => (e.purpose || '').toLowerCase() === 'recommendation');
+                                    const appAE = appE.find(e => (e.purpose || '').toLowerCase() === 'approval');
+
+                                    const directGis = recE
+                                        ? `<span style="font-weight:700;color:#4338ca;">Recommended</span><br><span style="font-size:0.72rem;color:#6b7280;">${escapeHtml(recE.logInDate || '')}${recE.logInTime ? ' @ ' + escapeHtml(toAmPm(recE.logInTime)) : ''}</span>`
+                                        : '—';
+                                    const directorGis = appAE
+                                        ? `<span style="font-weight:700;color:#059669;">Approved</span><br><span style="font-size:0.72rem;color:#6b7280;">${escapeHtml(appAE.logInDate || '')}${appAE.logInTime ? ' @ ' + escapeHtml(toAmPm(appAE.logInTime)) : ''}</span>`
+                                        : '—';
+
+                                    const logIn = first.logInDate ? `${escapeHtml(first.logInDate)}${first.logInTime ? ' @ ' + escapeHtml(toAmPm(first.logInTime)) : ''}` : '';
+                                    return `<tr>
+                                        <td>1</td>
+                                        <td><strong>${escapeHtml(tracker.originOfficeName || tracker.originRegistry || first.officeName || '-')}</strong></td>
+                                        <td>${directGis}</td>
+                                        <td>${directorGis}</td>
+                                        <td><strong>${destFRS}</strong>${logIn ? `<br><span style="font-size:0.72rem;color:#6b7280;">${logIn}</span>` : ''}</td>
+                                        <td>${escapeHtml(tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name || '-')}</td>
+                                        <td><span style="font-weight:700;color:#16a34a;">Log-out</span></td>
+                                    </tr>`;
+                                })()}
+                            </tbody>
+                        </table>
+
+                        <!-- Signatures -->
+                        <div class="sig-grid">
+                            <div class="sig-box">
+                                <div class="sig-line">Registry Staff</div>
+                            </div>
+                            <div class="sig-box">
+                                <div class="sig-line">Director GIS</div>
+                            </div>
+                            <div class="sig-box">
+                                <div class="sig-line">DG</div>
+                            </div>
+                        </div>
+
+                        <!-- Footer -->
+                        <div class="footer">
+                            <img class="footer-logo" src="${baseUrl}/assets/logo/klaes.png" alt="KLAES" onerror="this.style.display='none'">
+                            <span class="footer-center">KLAES — Kano Land Administration Enterprise System<br><span style="font-size:0.62rem;">Generated on ${generatedDateSafe} by ${generatedBySafe}</span></span>
+                            <img class="footer-logo footer-logo-las" src="${baseUrl}/assets/logo/las.jpg" alt="LAS" style="margin-left:auto;" onerror="this.style.display='none'">
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `;
+
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            Swal.fire({ icon: 'warning', title: 'Popup Blocked', text: 'Unable to open print preview. Please allow popups for this site.' });
+            return;
+        }
+
+        printWindow.document.write(printContent);
+        printWindow.document.close();
+
+        const invokePrint = () => {
+            try {
+                printWindow.focus();
+                printWindow.print();
+            } catch (error) {
+                console.error('Print invocation failed:', error);
+            }
+        };
+
+        const waitForQrAndPrint = () => {
+            const qrImg = printWindow.document.querySelector('.qr-wrap img, .qr-wrapper img');
+            if (qrImg && !qrImg.complete) {
+                const onReady = () => setTimeout(invokePrint, 100);
+                qrImg.addEventListener('load', onReady, { once: true });
+                qrImg.addEventListener('error', onReady, { once: true });
+            } else {
+                setTimeout(invokePrint, 100);
+            }
+        };
+
+        if (printWindow.document.readyState === 'complete') {
+            waitForQrAndPrint();
+        } else {
+            printWindow.onload = waitForQrAndPrint;
+        }
+    }
+
+    function setupAddLogSelects() {
+        document.querySelectorAll('.add-log-select').forEach(select => {
+            select.addEventListener('change', function () {
+                const trackerIdentifier = this.dataset.trackerId;
+                const officeId = this.value;
+                this.value = '';
+
+                if (!officeId) {
+                    return;
+                }
+
+                const tracker = findTrackerForUpdate(trackerIdentifier);
+
+                if (!tracker) {
+                    Swal.fire({ icon: 'error', title: 'Not Found', text: 'Unable to locate this tracker. Please refresh and try again.' });
+                    return;
+                }
+
+                const eligibility = resolveTransferEligibility(tracker);
+                if (!eligibility.allowed) {
+                    const reason = eligibility.reason || 'You cannot move this file right now.';
+                    showNotification(reason, 'info');
+                    return;
+                }
+
+                pendingLogEntry = {
+                    trackerId: tracker.trackingId || tracker.id,
+                    officeId,
+                    tracker,
+                    activeEntry: eligibility.entry || null
+                };
+
+                openMovementDialogFor(tracker, officeId);
+            });
+        });
+    }
+
+    function handleAddLogEntry(trackerId, officeId, movementPayload = {}) {
+        const tracker = fileTrackers.find(t => t.trackingId === trackerId);
+        const office = officeData[officeId];
+
+        if (!tracker) {
+            Swal.fire({ icon: 'error', title: 'Not Found', text: 'Unable to locate this tracker. Please refresh and try again.' });
+            return;
+        }
+
+        if (!tracker.id) {
+            Swal.fire({ icon: 'warning', title: 'Unsaved Tracker', text: 'Please save this tracker before logging movements.' });
+            return;
+        }
+
+        if (!office) {
+            Swal.fire({ icon: 'warning', title: 'Invalid Office', text: 'Invalid office selected.' });
+            return;
+        }
+
+        const receivingOfficerIdRaw = movementPayload.receivingOfficerId;
+        if (!receivingOfficerIdRaw) {
+            Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Select the receiving officer for this transfer.' });
+            return;
+        }
+
+        if (!isValidOfficerId(receivingOfficerIdRaw)) {
+            Swal.fire({ icon: 'warning', title: 'Invalid Officer', text: 'Invalid receiving officer selected.' });
+            return;
+        }
+
+        const receivingOfficerId = receivingOfficerIdRaw; // Keep as-is (ro_ string or numeric string)
+        const receivingOfficerName = movementPayload.receivingOfficerName
+            || (receivingOfficerMap.get(String(receivingOfficerIdRaw))?.name)
+            || 'Receiving officer';
+        const autoAccept = Boolean(movementPayload.autoAccept);
+        const overrideNote = movementPayload.overrideNote || null;
+        const notes = (movementPayload.notes || '').trim();
+
+        const now = new Date();
+        const logInTime = now.toTimeString().split(' ')[0].substring(0, 5);
+        const logInDate = now.toISOString().split('T')[0];
+        const hasActiveEntry = Boolean(getActiveMovementEntry(tracker));
+
+        const performAddMovement = () => {
+            const movementData = {
+                    office_code: officeId,
+                    office_name: office.name,
+                    log_in_time: logInTime,
+                    log_in_date: logInDate,
+                    notes: notes || null,
+                    receiving_officer_id: receivingOfficerId,
+                    receiving_officer_name: receivingOfficerName,
+                    auto_accept: autoAccept,
+                    override_note: overrideNote
+            };
+
+            // Inject workflow purpose if this tracker uses the KANGIS approval workflow
+            if (typeof window.injectWorkflowPurpose === 'function') {
+                window.injectWorkflowPurpose(tracker, movementData);
+            }
+
+            // Processing stage requires explicit department routing context.
+            if (movementData.purpose === 'processing' && !movementData.department) {
+                movementData.department = office.name;
+            }
+
+            $.ajax({
+                url: `/api/file-trackers/${tracker.id}/movements`,
+                method: 'POST',
+                data: JSON.stringify(movementData),
+                contentType: 'application/json',
+                processData: false,
+                success: function (response) {
+                    if (response.success && response.data) {
+                        const updatedTracker = transformApiTracker(response.data);
+                        upsertLocalTracker(updatedTracker);
+                        showNotification(`File moved to ${office.name} for ${receivingOfficerName}`, 'success');
+                    } else {
+                        const message = response.message || 'Unable to move file to the selected office.';
+                        Swal.fire({ icon: 'error', title: 'Move Failed', text: message });
+                    }
+                },
+                error: function (xhr) {
+                    const message = xhr.responseJSON?.message || 'Unable to move file at this time.';
+                    Swal.fire({ icon: 'error', title: 'Error', text: message });
+                }
+            });
+        };
+
+        if (!hasActiveEntry) {
+            performAddMovement();
+            return;
+        }
+
+        requestCompleteMovement(tracker, { log_out_time: logInTime })
+            .done(function (response) {
+                if (response && response.success && response.data) {
+                    const updatedTracker = transformApiTracker(response.data);
+                    upsertLocalTracker(updatedTracker);
+                    performAddMovement();
+                } else {
+                    const message = response?.message || 'Unable to complete the current movement.';
+                    Swal.fire({ icon: 'error', title: 'Move Failed', text: message });
+                }
+            })
+            .fail(function (xhr) {
+                const message = xhr?.responseJSON?.message || 'Unable to complete the current movement.';
+                Swal.fire({ icon: 'error', title: 'Error', text: message });
+            });
+    }
+
+    // Reset form
+    function resetForm() {
+        document.getElementById('file-no').value = '';
+        document.getElementById('file-name').value = '';
+        document.getElementById('file-priority').value = 'MEDIUM';
+        document.getElementById('current-office').value = '';
+        if (receivingOfficeSelectElement) {
+            receivingOfficeSelectElement.value = '';
+            $('#receiving-office').trigger('change');
+        }
+        if (destinationOfficeIdInput) {
+            destinationOfficeIdInput.value = '';
+        }
+        document.getElementById('office-notes').value = '';
+        if (destinationOfficeInfoPanel) {
+            destinationOfficeInfoPanel.classList.add('hidden');
+        }
+        disableCustomDestinationMode();
+        if (originOfficeSelect && originOfficeSelect.length) {
+            storeOriginOfficeCode(null);
+            originOfficeSelect.val('');
+            originOfficeSelect.trigger('change');
+            applyDefaultOriginSelection({ force: true });
+        } else {
+            if (originOfficeIdInput) {
+                originOfficeIdInput.value = '';
+            }
+            if (originOfficeInfoPanel) {
+                originOfficeInfoPanel.classList.add('hidden');
+            }
+        }
+        if (receivingOfficerSelect && receivingOfficerSelect.length) {
+            if ($.fn.select2 && receivingOfficerSelect.data('select2')) {
+                receivingOfficerSelect.val(null).trigger('change');
+            } else {
+                receivingOfficerSelect.val('');
+                receivingOfficerSelect.trigger('change');
+            }
+        }
+        updateReceivingOfficerHint(getDefaultReceivingOfficerHint());
+        updateReceivingOfficerInfo('');
+        document.getElementById('sidebar-file-no').textContent = '-';
+        currentTracker = null;
+        clearCrossRequestPreview();
+        initializeIds();
+        applyKangisOfficeWorkflowGate();
+        applyKangisWorkflowButtonGate(null); // Reset button to Send to Director GIS
+    }
+
+    if (newOfficerForm) {
+        newOfficerForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            submitNewOfficerForm();
+        });
+    }
+
+    if (newOfficerCloseBtn) {
+        newOfficerCloseBtn.addEventListener('click', closeNewOfficerDialog);
+    }
+
+    if (newOfficerCancelBtn) {
+        newOfficerCancelBtn.addEventListener('click', closeNewOfficerDialog);
+    }
+
+    if (newOfficerDialog) {
+        newOfficerDialog.addEventListener('click', function (event) {
+            if (event.target === newOfficerDialog) {
+                closeNewOfficerDialog();
+            }
+        });
+    }
+
+    if (newOfficerFirstNameInput) {
+        newOfficerFirstNameInput.addEventListener('input', function() {});
+    }
+
+    if (newOfficerLastNameInput) {
+        newOfficerLastNameInput.addEventListener('input', function() {});
+    }
+
+    // Officer type radio buttons removed — no-op listeners kept for safety
+    if (officerTypeSystemRadio) {
+        officerTypeSystemRadio.addEventListener('change', toggleOfficerTypeFields);
+    }
+    if (officerTypeOtherRadio) {
+        officerTypeOtherRadio.addEventListener('change', toggleOfficerTypeFields);
+    }
+
+    // Handle "Add Other Officer" option in receiving officer dropdown
+    receivingOfficerSelect.on('change', function() {
+        const selectedValue = $(this).val();
+        if (selectedValue === '__ADD_OTHER__') {
+            $(this).val('').trigger('change');
+            openNewOfficerDialog();
+        }
+    });
+
+    // Event listeners (form buttons only exist when Create tab is present)
+    document.getElementById('resetBtn')?.addEventListener('click', resetForm);
+    document.getElementById('resetFormBtn')?.addEventListener('click', resetForm);
+    document.getElementById('previewBtn')?.addEventListener('click', createFileTracker);
+    document.getElementById('saveFileLogBtn')?.addEventListener('click', createFileTracker);
+    document.getElementById('close-preview')?.addEventListener('click', () => {
+        document.getElementById('preview-dialog')?.classList.remove('show');
+    });
+    document.getElementById('close-preview-btn')?.addEventListener('click', () => {
+        document.getElementById('preview-dialog')?.classList.remove('show');
+    });
+    document.getElementById('save-tracker-btn')?.addEventListener('click', saveFileTracker);
+
+    // Notes dialog event listeners
+    document.getElementById('close-notes')?.addEventListener('click', () => {
+        if (movementDialog) {
+            movementDialog.classList.remove('show');
+        }
+        pendingLogEntry = null;
+        resetMovementDialog();
+    });
+    document.getElementById('cancel-notes')?.addEventListener('click', () => {
+        if (movementDialog) {
+            movementDialog.classList.remove('show');
+        }
+        pendingLogEntry = null;
+        resetMovementDialog();
+    });
+    document.getElementById('confirm-notes')?.addEventListener('click', () => {
+        if (!pendingLogEntry) {
+            setMovementError('Select a destination office before submitting.');
+            return;
+        }
+
+        const notes = movementNotesField ? movementNotesField.value.trim() : '';
+        const receivingOfficerValue = movementOfficerSelect ? movementOfficerSelect.val() : '';
+
+        if (!receivingOfficerValue) {
+            setMovementError('Select the receiving officer for this transfer.');
+            return;
+        }
+
+        const officer = receivingOfficerMap.get(String(receivingOfficerValue));
+        const receivingOfficerName = resolveOfficerName(officer)
+            || (movementOfficerSelect ? movementOfficerSelect.find('option:selected').text() : 'Selected officer');
+        const autoAccept = movementOverrideToggle ? Boolean(movementOverrideToggle.checked) : false;
+
+        setMovementError('');
+        handleAddLogEntry(pendingLogEntry.trackerId, pendingLogEntry.officeId, {
+            notes,
+            receivingOfficerId: receivingOfficerValue,
+            receivingOfficerName,
+            autoAccept
+        });
+        if (movementDialog) {
+            movementDialog.classList.remove('show');
+        }
+        pendingLogEntry = null;
+        resetMovementDialog();
+    });
+
+    const updateLogCloseButton = document.getElementById('update-log-close');
+    if (updateLogCloseButton) {
+        updateLogCloseButton.addEventListener('click', closeUpdateLogDialog);
+    }
+    const updateLogCancelButton = document.getElementById('update-log-cancel');
+    if (updateLogCancelButton) {
+        updateLogCancelButton.addEventListener('click', closeUpdateLogDialog);
+    }
+    const updateLogSaveButton = document.getElementById('update-log-save');
+    if (updateLogSaveButton) {
+        updateLogSaveButton.addEventListener('click', submitUpdateLogForm);
+    }
+
+    // Details dialog event listeners
+    document.getElementById('close-details')?.addEventListener('click', () => {
+        document.getElementById('details-dialog')?.classList.remove('show');
+    });
+    document.getElementById('close-details-btn')?.addEventListener('click', () => {
+        document.getElementById('details-dialog')?.classList.remove('show');
+    });
+    document.getElementById('print-details-btn')?.addEventListener('click', () => {
+        if (currentDetailsTracker) {
+            printFileTrackerDetails(currentDetailsTracker);
+        } else {
+            Swal.fire({ icon: 'warning', title: 'No Data', text: 'No tracker data available to print.' });
+        }
+    });
+
+    // Hide Print Details button for dgis and dg views
+    (function () {
+        const urlView = new URLSearchParams(window.location.search).get('url');
+        if (urlView === 'dgis' || urlView === 'dg') {
+            const printBtn = document.getElementById('print-details-btn');
+            if (printBtn) printBtn.style.display = 'none';
+        }
+    })();
+
+    function setupDropdownMenus() {
+        // Handle dropdown toggle
+        document.querySelectorAll('.dropdown-trigger').forEach(trigger => {
+            trigger.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const menu = this.nextElementSibling;
+
+                // Close all other dropdowns
+                document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
+                    if (otherMenu !== menu) {
+                        otherMenu.classList.add('hidden');
+                        otherMenu.style.position = '';
+                        otherMenu.style.top = '';
+                        otherMenu.style.left = '';
+                        otherMenu.style.right = '';
+                    }
+                });
+
+                // Toggle current dropdown
+                if (menu.classList.contains('hidden')) {
+                    const rect = this.getBoundingClientRect();
+                    const menuHeight = 200; // Approximate height of dropdown menu
+                    const spaceAbove = rect.top;
+                    const spaceBelow = window.innerHeight - rect.bottom;
+
+                    // Position the dropdown
+                    menu.style.position = 'fixed';
+                    menu.style.right = (window.innerWidth - rect.right) + 'px';
+
+                    // Show above if there's more space above or if there's not enough space below
+                    if (spaceAbove > menuHeight || spaceBelow < menuHeight) {
+                        menu.style.top = (rect.top - menuHeight) + 'px';
+                        menu.style.bottom = 'auto';
+                    } else {
+                        menu.style.top = (rect.bottom + 8) + 'px';
+                        menu.style.bottom = 'auto';
+                    }
+
+                    menu.classList.remove('hidden');
+                } else {
+                    menu.classList.add('hidden');
+                    menu.style.position = '';
+                    menu.style.top = '';
+                    menu.style.left = '';
+                    menu.style.right = '';
+                }
+            });
+        });
+
+        // Handle dropdown item clicks
+        document.querySelectorAll('.dropdown-item').forEach(item => {
+            item.addEventListener('click', function (event) {
+                if (
+                    this.dataset.disabled === 'true' ||
+                    this.getAttribute('aria-disabled') === 'true' ||
+                    this.hasAttribute('disabled')
+                ) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+
+                const action = this.dataset.action;
+                const trigger = this.closest('.relative').querySelector('.dropdown-trigger');
+                const trackerId = trigger.dataset.trackerId || trigger.getAttribute('data-tracker-id');
+                const logId = trigger.dataset.logId || trigger.getAttribute('data-log-id');
+                const status = trigger.dataset.status;
+
+                // Close dropdown
+                this.closest('.dropdown-menu').classList.add('hidden');
+
+                // Handle different actions
+                switch (action) {
+                    case 'generate-log':
+                        showNotification(`Generating log sheet for ${logId}`, 'info');
+                        break;
+                    case 'print-log':
+                        {
+                            const trackerToPrint = (window.fileTrackers || []).find(t => t.trackingId === trackerId);
+                            if (trackerToPrint) {
+                                printFileTrackerDetails(trackerToPrint);
+                            } else {
+                                showNotification('Tracker data not found for printing.', 'error');
+                            }
+                        }
+                        break;
+                    case 'update-log':
+                        openUpdateLogDialog(trackerId, logId);
+                        break;
+                    case 'update-status':
+                        openRegistryStatusModal(trackerId);
+                        break;
+                    case 'update-movement':
+                        console.log('Update movement action called with trackerId:', trackerId);
+                        // Open the update movement modal using the existing QuickActions method
+                        if (typeof QuickActions !== 'undefined' && QuickActions.updateMovement) {
+                            QuickActions.updateMovement(trackerId);
+                        }
+                        break;
+                    case 'log-out':
+                        handleLogOut(trackerId, logId);
+                        break;
+                    case 'delete-log':
+                        handleDeleteLogEntry(trackerId, logId);
+                        break;
+                }
+            });
+        });
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function () {
+            document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                menu.classList.add('hidden');
+                menu.style.position = '';
+                menu.style.top = '';
+                menu.style.left = '';
+                menu.style.right = '';
+            });
+        });
+    }
+
+    function handleLogOut(trackerId, logId) {
+        const tracker = fileTrackers.find(t => t.trackingId === trackerId);
+
+        if (!tracker) {
+            Swal.fire({ icon: 'error', title: 'Not Found', text: 'Unable to locate this tracker. Please refresh and try again.' });
+            return;
+        }
+
+        if (!tracker.id) {
+            Swal.fire({ icon: 'warning', title: 'Unsaved Tracker', text: 'Please save this tracker before logging out movements.' });
+            return;
+        }
+
+        const activeEntry = tracker.logEntries.find(entry => (entry.status || '').toLowerCase() === 'active');
+        const trackerOwnedByViewer = Boolean(
+            currentUserId &&
+            tracker.assignedToId &&
+            Number(tracker.assignedToId) === Number(currentUserId)
+        );
+
+        if (!activeEntry || activeEntry.logId !== logId) {
+            Swal.fire({ icon: 'warning', title: 'Inactive Entry', text: 'This log entry is no longer active.' });
+            return;
+        }
+
+        if (!entryBelongsToCurrentUser(activeEntry, tracker) && !trackerOwnedByViewer) {
+            Swal.fire({ icon: 'error', title: 'Not Allowed', text: 'You are not allowed to log out this movement.' });
+            return;
+        }
+
+        if (window.AssignmentWorkflow && typeof window.AssignmentWorkflow.openForLogOut === 'function') {
+            const handled = window.AssignmentWorkflow.openForLogOut({
+                tracker,
+                logId,
+                activeEntry
+            });
+
+            if (handled) {
+                return;
+            }
+        }
+
+        const now = new Date();
+        const logOutTime = now.toTimeString().split(' ')[0].substring(0, 5);
+
+        requestCompleteMovement(tracker, { log_out_time: logOutTime })
+            .done(function (response) {
+                if (response && response.success && response.data) {
+                    const updatedTracker = transformApiTracker(response.data);
+                    upsertLocalTracker(updatedTracker);
+                    showNotification('File logged out successfully.', 'success');
+                } else {
+                    const message = response?.message || 'Unable to log out this file entry.';
+                    Swal.fire({ icon: 'error', title: 'Log Out Failed', text: message });
+                }
+            })
+            .fail(function (xhr) {
+                const message = xhr?.responseJSON?.message || 'Unable to log out this file entry.';
+                Swal.fire({ icon: 'error', title: 'Error', text: message });
+            });
+    }
+
+    window.handleQuickAccept = function (trackingId) {
+        const tracker = fileTrackers.find(t => t.trackingId === trackingId);
+        
+        const resetUI = function() {
+            const statusEl = document.getElementById('modal-quick-accept-status');
+            if (statusEl) statusEl.classList.add('hidden');
+            const checkEl = document.getElementById('modal-quick-accept-check');
+            if (checkEl) {
+                checkEl.disabled = false;
+                checkEl.checked = false;
+            }
+        };
+
+        if (!tracker) {
+            Swal.fire({ icon: 'error', title: 'Not Found', text: 'Unable to locate this tracker. Please refresh your dashboard.' });
+            resetUI();
+            return;
+        }
+
+        const pendingEntry = tracker.logEntries.find(entry => (entry.status || '').toLowerCase() === 'pending_acceptance');
+        if (!pendingEntry) {
+            // Check if it's already active (maybe accepted already)
+            const activeEntry = tracker.logEntries.find(entry => (entry.status || '').toLowerCase() === 'active');
+            if (activeEntry) {
+                // Just log it out
+                handleLogOut(trackingId, activeEntry.logId);
+                return;
+            }
+            Swal.fire({ icon: 'info', title: 'Already Processed', text: 'This movement is no longer pending acceptance.' });
+            resetUI();
+            return;
+        }
+
+        if (typeof showNotification === 'function') {
+            showNotification('Processing quick handover...', 'info');
+        }
+
+        // 1. Accept the assignment
+        requestAcceptAssignment(tracker.id, {})
+            .done(function (acceptResponse) {
+                if (acceptResponse && acceptResponse.success) {
+                    const acceptedTracker = transformApiTracker(acceptResponse.data);
+                    if (acceptedTracker) {
+                        upsertLocalTracker(acceptedTracker, false);
+                    }
+
+                    // 2. Immediate Log-out
+                    const now = new Date();
+                    const logOutTime = now.toTimeString().split(' ')[0].substring(0, 5);
+
+                    const trackerObj = acceptedTracker || fileTrackers.find(t => t.trackingId === trackingId);
+
+                    requestCompleteMovement(trackerObj, { log_out_time: logOutTime })
+                        .done(function (logoutResponse) {
+                            if (logoutResponse && logoutResponse.success && logoutResponse.data) {
+                                const finalizedTracker = transformApiTracker(logoutResponse.data);
+                                upsertLocalTracker(finalizedTracker, true);
+                                if (typeof showNotification === 'function') {
+                                    showNotification('File accepted and logged out successfully.', 'success');
+                                }
+
+                                // Refresh modal if it belongs to this tracker
+                                if (window.currentDetailsTracker && window.currentDetailsTracker.trackingId === trackingId) {
+                                    showTrackerDetails(trackingId);
+                                }
+                            } else {
+                                updateFileTrackersTable();
+                                const errorMsg = logoutResponse?.message || 'Handover successful, but log out failed.';
+                                Swal.fire({ icon: 'warning', title: 'Partial Success', text: errorMsg });
+                                if (window.currentDetailsTracker && window.currentDetailsTracker.trackingId === trackingId) {
+                                    showTrackerDetails(trackingId);
+                                }
+                            }
+                        })
+                        .fail(function (xhr) {
+                            updateFileTrackersTable();
+                            const msg = xhr?.responseJSON?.message || 'Handover successful, but log out failed.';
+                            Swal.fire({ icon: 'warning', title: 'Partial Success', text: msg });
+                            if (window.currentDetailsTracker && window.currentDetailsTracker.trackingId === trackingId) {
+                                showTrackerDetails(trackingId);
+                            }
+                        });
+                } else {
+                    const msg = acceptResponse?.message || 'Unable to accept this file.';
+                    Swal.fire({ icon: 'error', title: 'Action Failed', text: msg });
+                    resetUI();
+                }
+            })
+            .fail(function (xhr) {
+                const msg = xhr?.responseJSON?.message || 'Unable to accept this file.';
+                Swal.fire({ icon: 'error', title: 'Error', text: msg });
+                resetUI();
+            });
+    };
+
+    function handleDeleteLogEntry(trackerId, logId) {
+        if (!trackerId || !logId) {
+            showNotification('Missing tracker or log identifier.', 'error');
+            return;
+        }
+
+        const tracker = (window.fileTrackers || []).find(t => t.trackingId === trackerId);
+        const persistedTrackerId = tracker?.id || tracker?.existingTrackerId || null;
+
+        Swal.fire({
+            title: 'Delete Log Entry?',
+            html: `<p class="text-sm text-gray-600">This will remove log <span class="font-mono">${logId}</span> permanently.</p>`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Delete',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#6b7280',
+            reverseButtons: true,
+        }).then((result) => {
+            if (!result.isConfirmed) return;
+
+            // No persisted ID — fall back to local-only removal.
+            if (!persistedTrackerId) {
+                if (tracker) {
+                    tracker.logEntries = (tracker.logEntries || []).filter(e => e.logId !== logId);
+                    updateFileTrackersTable();
+                }
+                showNotification('Log entry removed.', 'success');
+                return;
+            }
+
+            $.ajax({
+                url: `/api/file-trackers/${persistedTrackerId}/logs/${encodeURIComponent(logId)}`,
+                method: 'DELETE',
+            })
+                .done(function (response) {
+                    if (response && response.success) {
+                        if (response.data) {
+                            const normalized = transformApiTracker(response.data);
+                            upsertLocalTracker(normalized);
+                        } else if (tracker) {
+                            tracker.logEntries = (tracker.logEntries || []).filter(e => e.logId !== logId);
+                            updateFileTrackersTable();
+                        }
+                        showNotification('Log entry deleted successfully.', 'success');
+                    } else {
+                        const message = response?.message || 'Unable to delete this log entry.';
+                        Swal.fire({ icon: 'error', title: 'Delete Failed', text: message });
+                    }
+                })
+                .fail(function (xhr) {
+                    const message = xhr?.responseJSON?.message || 'Unable to delete this log entry.';
+                    Swal.fire({ icon: 'error', title: 'Delete Failed', text: message });
+                });
+        });
+    }
+
+    function handleDeleteTracker(trackerId) {
+        if (!trackerId) {
+            showNotification('Missing tracker identifier.', 'error');
+            return;
+        }
+
+        const tracker = (window.fileTrackers || []).find(t => t.trackingId === trackerId);
+        const persistedTrackerId = tracker?.id || tracker?.existingTrackerId || null;
+        const fileLabel = tracker?.subjectMatter || tracker?.fileNumber || tracker?.trackingId || 'this tracker';
+
+        Swal.fire({
+            title: 'Delete Entire Tracker?',
+            html: `<p class="text-sm text-gray-600">This will permanently delete <strong>${$('<div>').text(fileLabel).html()}</strong> and all of its log entries. This action cannot be undone.</p>`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Delete Tracker',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#6b7280',
+            reverseButtons: true,
+        }).then((result) => {
+            if (!result.isConfirmed) return;
+
+            if (!persistedTrackerId) {
+                window.fileTrackers = (window.fileTrackers || []).filter(t => t.trackingId !== trackerId);
+                updateFileTrackersTable();
+                showNotification('Tracker removed.', 'success');
+                return;
+            }
+
+            $.ajax({
+                url: `/api/file-trackers/${persistedTrackerId}`,
+                method: 'DELETE',
+            })
+                .done(function (response) {
+                    if (response && response.success) {
+                        window.fileTrackers = (window.fileTrackers || []).filter(t => t.trackingId !== trackerId);
+                        updateFileTrackersTable();
+                        showNotification('File tracker deleted successfully.', 'success');
+                    } else {
+                        const message = response?.message || 'Unable to delete this tracker.';
+                        Swal.fire({ icon: 'error', title: 'Delete Failed', text: message });
+                    }
+                })
+                .fail(function (xhr) {
+                    const message = xhr?.responseJSON?.message || 'Unable to delete this tracker.';
+                    Swal.fire({ icon: 'error', title: 'Delete Failed', text: message });
+                });
+        });
+    }
+
+    function openRegistryStatusModal(trackerId) {
+        if (!trackerId) {
+            showNotification('Tracking ID is missing for this log entry.', 'error');
+            return;
+        }
+
+        if (!window.QuickActions || typeof QuickActions.updateStatus !== 'function') {
+            showNotification('Update Status workflow is not available right now.', 'error');
+            return;
+        }
+
+        QuickActions.updateStatus();
+
+        let attempts = 0;
+        const maxAttempts = 10;
+
+        function tryPrefill() {
+            attempts += 1;
+            const modal = document.getElementById('update-status-modal');
+            if (!modal) {
+                if (attempts < maxAttempts) {
+                    setTimeout(tryPrefill, 80);
+                }
+                return;
+            }
+
+            const trackingInput = modal.querySelector('#modal-update-tracking-id');
+            if (!trackingInput) {
+                if (attempts < maxAttempts) {
+                    setTimeout(tryPrefill, 80);
+                }
+                return;
+            }
+
+            trackingInput.value = trackerId;
+            trackingInput.dispatchEvent(new Event('input', { bubbles: true }));
+            trackingInput.focus();
+        }
+
+        setTimeout(tryPrefill, 120);
+    }
+
+    // Load existing file trackers from API
+    function loadFileTrackers(page = 1) {
+        console.log('Fetching file trackers from server, page:', page);
+        
+        const container = document.getElementById('trackers-container');
+        if (container) {
+            container.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-20">
+                    <div class="inline-flex h-12 w-12 animate-spin items-center justify-center rounded-full border-4 border-blue-100 border-t-blue-600"></div>
+                    <p class="mt-4 text-gray-500 font-medium">Loading files...</p>
+                </div>
+            `;
+        }
+
+        const searchInput = document.getElementById('search-logs');
+        const searchTerm = searchInput ? searchInput.value.trim() : '';
+
+        const statusFilterEl = document.getElementById('status-filter');
+        const statusFilter = statusFilterEl ? statusFilterEl.value : 'all';
+
+        const activePriorityBtn = document.querySelector('.filter-btn[data-priority].ring-2');
+        const priorityFilter = activePriorityBtn ? activePriorityBtn.getAttribute('data-priority') : 'all';
+
+        $.ajax({
+            url: '/create-file-tracker/list',
+            method: 'GET',
+            data: {
+                page: page,
+                per_page: itemsPerPage,
+                search: searchTerm,
+                status: statusFilter,
+                priority: priorityFilter,
+                module: window.currentModule || undefined,
+                tab: window._dgLogTab || undefined
+            },
+            success: function (response) {
+                if (response.success && response.data) {
+                    fileTrackers = response.data.map(transformApiTracker).filter(Boolean);
+                    window.fileTrackers = fileTrackers;
+                    
+                    // Update global pagination state
+                    if (response.pagination) {
+                        currentPage = response.pagination.current_page;
+                        totalPages = response.pagination.total_pages;
+                        
+                        // Update tracker count labels
+                        const trackerCountEl = document.getElementById('tracker-count');
+                        if (trackerCountEl) trackerCountEl.textContent = response.pagination.total_items;
+                        
+                        const logCountBadge = document.getElementById('log-count');
+                        if (logCountBadge) logCountBadge.textContent = response.pagination.total_items;
+                    }
+
+                    // Update global stats from server
+                    if (response.stats) {
+                        updateTrackerStatsFromServer(response.stats);
+                    }
+
+                    // Render the table with current page data
+                    renderFileTrackersTable(fileTrackers);
+                } else {
+                    console.error('Failed to load file trackers:', response.message);
+                    showNotification(response.message || 'Failed to load file trackers', 'error');
+                }
+            },
+            error: function (xhr) {
+                console.error('Error loading file trackers:', xhr);
+                const message = xhr.responseJSON?.message || 'Error loading file trackers';
+                showNotification(message, 'error');
+            }
+        });
+    }
+
+    function updateTrackerStatsFromServer(stats) {
+        const totalEl = document.getElementById('total-trackers');
+        const activeEl = document.getElementById('active-trackers');
+        const highEl = document.getElementById('high-priority');
+        const movementEl = document.getElementById('total-movements');
+
+        if (totalEl) totalEl.textContent = stats.my_files || 0;
+        if (activeEl) activeEl.textContent = stats.awaiting || 0;
+        if (highEl) highEl.textContent = stats.others || 0;
+        if (movementEl) movementEl.textContent = stats.completed || 0;
+
+        // New KANGIS extra metrics (only present in new_kangis module response)
+        const knTodayEl     = document.getElementById('kn-tracked-today');
+        const knTotalEl     = document.getElementById('kn-total-tracked');
+        const knRequesterEl = document.getElementById('kn-unique-requesters');
+        if (knTodayEl)     knTodayEl.textContent     = stats.tracked_today     ?? 0;
+        if (knTotalEl)     knTotalEl.textContent     = stats.total_tracked     ?? 0;
+        if (knRequesterEl) knRequesterEl.textContent = stats.unique_requesters ?? 0;
+
+        // DG dashboard — file streams breakdown (only present for ?url=dg)
+        const dgKangisEl       = document.getElementById('dg-kangis-count');
+        const dgNewKangisEl    = document.getElementById('dg-new-kangis-count');
+        const dgCrossRegistryEl = document.getElementById('dg-cross-registry-count');
+        if (dgKangisEl)        dgKangisEl.textContent        = stats.kangis_legacy_count  ?? 0;
+        if (dgNewKangisEl)     dgNewKangisEl.textContent     = stats.kangis_new_count     ?? 0;
+        if (dgCrossRegistryEl) dgCrossRegistryEl.textContent = stats.cross_registry_count ?? 0;
+
+        // DG/DGIS sub-tab counts (logs / track-new / request-land)
+        const tabLogsCountEl = document.getElementById('log-count');
+        const tabTrackNewEl  = document.getElementById('track-new-count');
+        const tabReqLandEl   = document.getElementById('request-land-count');
+        if (tabLogsCountEl && stats.kangis_legacy_count !== undefined) {
+            // Only override the existing log-count when DG/DGIS-specific stream counts exist;
+            // this preserves the original "current page total" behavior for non-DG modules.
+            tabLogsCountEl.textContent = stats.kangis_legacy_count ?? 0;
+        }
+        if (tabTrackNewEl) tabTrackNewEl.textContent = stats.kangis_new_count ?? 0;
+        if (tabReqLandEl)  tabReqLandEl.textContent  = stats.cross_registry_count ?? 0;
+    }
+
+    // Tab Management Functions
+    function initializeTabs() {
+        // Set up tab click handlers
+        document.querySelectorAll('.tracker-tab').forEach(tab => {
+            tab.addEventListener('click', function () {
+                const tabName = this.getAttribute('data-tab');
+                switchTab(tabName);
+            });
+        });
+
+        // Set up search functionality for File Log Table tab
+        const searchInput = document.getElementById('search-files');
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                filterFileLogTable(this.value);
+            });
+        }
+
+        // Set up refresh button
+        const refreshButton = document.getElementById('refresh-files');
+        if (refreshButton) {
+            refreshButton.addEventListener('click', function () {
+                loadFileTrackers();
+                updateOverviewStats();
+            });
+        }
+
+        // Set up export button
+        const exportButton = document.getElementById('export-files');
+        if (exportButton) {
+            exportButton.addEventListener('click', function () {
+                exportFileTrackers();
+            });
+        }
+    }
+
+    function switchTab(tabName) {
+        // Update tab buttons
+        document.querySelectorAll('.tracker-tab').forEach(tab => {
+            tab.classList.remove('active');
+            tab.classList.add('border-transparent', 'text-gray-500');
+            tab.classList.remove('border-blue-500', 'text-blue-600');
+        });
+
+        document.getElementById(`tab-${tabName}`).classList.add('active');
+        document.getElementById(`tab-${tabName}`).classList.remove('border-transparent', 'text-gray-500');
+        document.getElementById(`tab-${tabName}`).classList.add('border-blue-500', 'text-blue-600');
+
+        // Update content visibility
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+            content.classList.add('hidden');
+        });
+
+        document.getElementById(`content-${tabName}`).classList.add('active');
+        document.getElementById(`content-${tabName}`).classList.remove('hidden');
+
+        // Update data based on tab
+        if (tabName === 'overview') {
+            updateOverviewStats();
+        } else if (tabName === 'file-log') {
+            updateFileTrackersTable();
+        }
+    }
+
+    function updateOverviewStats() {
+        // Update overview statistics
+        const totalFiles = fileTrackers.length;
+        const inTransitFiles = fileTrackers.filter(tracker =>
+            tracker.logEntries.some(entry => entry.status === 'active')
+        ).length;
+        const completedFiles = fileTrackers.filter(tracker =>
+            tracker.logEntries.every(entry => entry.status === 'completed')
+        ).length;
+
+        // Update summary cards
+        const totalFilesEl = document.getElementById('total-files');
+        const inTransitEl = document.getElementById('in-transit-files');
+        const completedEl = document.getElementById('completed-files');
+        const fileCountEl = document.getElementById('file-count');
+
+        if (totalFilesEl) {
+            totalFilesEl.textContent = totalFiles;
+        }
+        if (inTransitEl) {
+            inTransitEl.textContent = inTransitFiles;
+        }
+        if (completedEl) {
+            completedEl.textContent = completedFiles;
+        }
+        if (fileCountEl) {
+            fileCountEl.textContent = totalFiles;
+        }
+
+        // Update recent activity
+        updateRecentActivity();
+        updateQuickStats();
+    }
+
+    function updateRecentActivity() {
+        const recentActivity = document.getElementById('recent-activity');
+
+        if (!recentActivity) {
+            return;
+        }
+
+        if (fileTrackers.length === 0) {
+            recentActivity.innerHTML = '<p class="text-gray-500 text-sm">No recent activity</p>';
+            return;
+        }
+
+        // Get the 5 most recent log entries across all trackers
+        const allLogEntries = [];
+        fileTrackers.forEach(tracker => {
+            tracker.logEntries.forEach(entry => {
+                allLogEntries.push({
+                    ...entry,
+                    fileNo: tracker.fileNo,
+                    fileName: tracker.fileName
+                });
+            });
+        });
+
+        const recentEntries = allLogEntries
+            .sort((a, b) => new Date(b.logInDate + ' ' + b.logInTime) - new Date(a.logInDate + ' ' + a.logInTime))
+            .slice(0, 5);
+
+        recentActivity.innerHTML = recentEntries.map(entry => {
+            const office = officeData[entry.officeId];
+            const statusColor = entry.status === 'active' ? 'text-yellow-600' : 'text-green-600';
+            const statusIcon = entry.status === 'active' ? 'clock' : 'check-circle';
+
+            return `
+                    <div class="flex items-center justify-between p-3 bg-white rounded-lg border">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="${statusIcon}" class="h-4 w-4 ${statusColor}"></i>
+                            <div>
+                                <p class="text-sm font-medium text-gray-900">${entry.fileName}</p>
+                                <p class="text-xs text-gray-500">${entry.fileNo} → ${office ? office.name : entry.officeId}</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs text-gray-500">${entry.logInDate}</p>
+                            <p class="text-xs text-gray-400">${entry.logInTime}</p>
+                        </div>
+                    </div>
+                `;
+        }).join('');
+    }
+
+    function updateQuickStats() {
+        const quickStats = document.getElementById('quick-stats');
+
+        if (!quickStats) {
+            return;
+        }
+
+        // Calculate some quick statistics
+        const highPriorityFiles = fileTrackers.filter(tracker => tracker.priority === 'HIGH').length;
+        const avgLogEntries = fileTrackers.length > 0 ?
+            (fileTrackers.reduce((sum, tracker) => sum + tracker.logEntries.length, 0) / fileTrackers.length).toFixed(1) : 0;
+
+        const officeDistribution = {};
+        fileTrackers.forEach(tracker => {
+            const activeEntry = tracker.logEntries.find(entry => entry.status === 'active');
+            if (activeEntry) {
+                const office = officeData[activeEntry.officeId];
+                const officeName = office ? office.name : activeEntry.officeId;
+                officeDistribution[officeName] = (officeDistribution[officeName] || 0) + 1;
+            }
+        });
+
+        const topOffice = Object.entries(officeDistribution)
+            .sort(([, a], [, b]) => b - a)[0];
+
+        quickStats.innerHTML = `
+                <div class="flex items-center justify-between p-3 bg-white rounded-lg border">
+                    <span class="text-sm text-gray-600">High Priority Files</span>
+                    <span class="text-sm font-medium text-gray-900">${highPriorityFiles}</span>
+                </div>
+                <div class="flex items-center justify-between p-3 bg-white rounded-lg border">
+                    <span class="text-sm text-gray-600">Avg. Movements per File</span>
+                    <span class="text-sm font-medium text-gray-900">${avgLogEntries}</span>
+                </div>
+                <div class="flex items-center justify-between p-3 bg-white rounded-lg border">
+                    <span class="text-sm text-gray-600">Busiest Office</span>
+                    <span class="text-sm font-medium text-gray-900">${topOffice ? `${topOffice[0]} (${topOffice[1]})` : 'N/A'}</span>
+                </div>
+            `;
+    }
+
+    function filterFileLogTable(searchTerm) {
+        const trackerCards = document.querySelectorAll('#trackers-container .border.rounded-lg');
+
+        trackerCards.forEach(card => {
+            const text = card.textContent.toLowerCase();
+            const isVisible = text.includes(searchTerm.toLowerCase());
+            card.style.display = isVisible ? 'block' : 'none';
+        });
+    }
+
+    function exportFileTrackers() {
+        if (fileTrackers.length === 0) {
+            Swal.fire({ icon: 'info', title: 'No Data', text: 'No file trackers to export.' });
+            return;
+        }
+
+        // Simple CSV export
+        const csvData = [
+            ['File Number', 'File Name', 'File Type', 'Priority', 'Current Location', 'Status', 'Created Date']
+        ];
+
+        fileTrackers.forEach(tracker => {
+            const activeEntry = tracker.logEntries.find(entry => entry.status === 'active');
+            const currentLocation = activeEntry && officeData[activeEntry.officeId] ?
+                officeData[activeEntry.officeId].name : 'Unknown';
+            const status = activeEntry ? 'In Transit' : 'Completed';
+
+            csvData.push([
+                tracker.fileNo,
+                tracker.fileName,
+                tracker.fileType,
+                tracker.priority,
+                currentLocation,
+                status,
+                tracker.createdAt || 'N/A'
+            ]);
+        });
+
+        const csvContent = csvData.map(row => row.join(',')).join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `file_trackers_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function calculateDuration(logInDate, logInTime, logOutDate, logOutTime) {
+        if (!logInDate || !logInTime) {
+            return '—';
+        }
+
+        if (!logOutDate || !logOutTime) {
+            return 'Ongoing';
+        }
+
+        try {
+            const start = new Date(`${logInDate}T${logInTime}`);
+            const end = new Date(`${logOutDate}T${logOutTime}`);
+
+            if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+                return '—';
+            }
+
+            const diffMs = end.getTime() - start.getTime();
+            const hours = Math.floor(diffMs / (1000 * 60 * 60));
+            const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+            if (hours === 0 && minutes === 0) {
+                return '<1m';
+            }
+
+            if (hours === 0) {
+                return `${minutes}m`;
+            }
+
+            return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
+        } catch (error) {
+            return '—';
+        }
+    }
+
+    function updateTrackerStats() {
+        const totals = {
+            trackers: fileTrackers.length,
+            active: 0,
+            highPriority: 0,
+            movements: 0
+        };
+
+        fileTrackers.forEach(tracker => {
+            if ((tracker.priority || '').toUpperCase() === 'HIGH') {
+                totals.highPriority += 1;
+            }
+
+            const movements = tracker.logEntries || [];
+            totals.movements += movements.length;
+
+            if (movements.some(entry => (entry.status || '').toLowerCase() === 'active')) {
+                totals.active += 1;
+            }
+        });
+
+        const totalEl = document.getElementById('total-trackers');
+        const activeEl = document.getElementById('active-trackers');
+        const highEl = document.getElementById('high-priority');
+        const movementEl = document.getElementById('total-movements');
+
+        if (totalEl) totalEl.textContent = totals.trackers;
+        if (activeEl) activeEl.textContent = totals.active;
+        if (highEl) highEl.textContent = totals.highPriority;
+        if (movementEl) movementEl.textContent = totals.movements;
+    }
+
+    function exportFileTrackersToCSV() {
+        if (!fileTrackers.length) {
+            Swal.fire({ icon: 'info', title: 'No Data', text: 'No file trackers to export.' });
+            return;
+        }
+
+        const headers = [
+            'File Number',
+            'File Name',
+            'Tracking ID',
+            'Priority',
+            'Log ID',
+            'Office Code',
+            'Office Name',
+            'Log In',
+            'Log Out',
+            'Duration',
+            'Status',
+            'Notes',
+            'Current Office',
+            'Created At'
+        ];
+
+        const rows = [];
+
+        fileTrackers.forEach(tracker => {
+            const movements = tracker.logEntries && tracker.logEntries.length ? tracker.logEntries : [null];
+
+            movements.forEach(entry => {
+                const logIn = entry ? `${entry.logInDate || ''} ${entry.logInTime || ''}`.trim() : '';
+                const logOut = entry ? `${entry.logOutDate || ''} ${entry.logOutTime || ''}`.trim() : '';
+                const officeName = entry
+                    ? (entry.officeName || entry.office || officeData[entry.officeId]?.name || '')
+                    : '';
+                const duration = entry ? calculateDuration(entry.logInDate, entry.logInTime, entry.logOutDate, entry.logOutTime) : '';
+
+                rows.push([
+                    tracker.fileNo || '',
+                    tracker.fileName || '',
+                    tracker.trackingId || '',
+                    (tracker.priority || '').toUpperCase(),
+                    entry ? entry.logId || '' : '',
+                    entry ? entry.officeId || '' : '',
+                    officeName,
+                    logIn,
+                    logOut,
+                    duration,
+                    entry ? (entry.status || '') : '',
+                    entry ? (entry.notes || '') : '',
+                    tracker.currentOffice || '',
+                    tracker.createdAt || ''
+                ]);
+            });
+        });
+
+        const formatCell = (value) => {
+            const cell = (value ?? '').toString();
+            const escaped = cell.replace(/"/g, '""');
+            return /[",\n]/.test(escaped) ? `"${escaped}"` : escaped;
+        };
+
+        const csvLines = [headers, ...rows]
+            .map(row => row.map(formatCell).join(','))
+            .join('\n');
+
+        const blob = new Blob([csvLines], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `file-trackers-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    // Two-Tab System Functions
+    function initializeMainTabs() {
+        // Set up main tab click handlers
+        document.querySelectorAll('.main-tab').forEach(tab => {
+            tab.addEventListener('click', function () {
+                // DG/DGIS sub-tabs (logs / track-new / request-land) all share #content-logs
+                // but filter the dataset by workflow_type via the `tab` query parameter.
+                const logTab = this.getAttribute('data-log-tab');
+                if (logTab) {
+                    switchDgLogTab(this, logTab);
+                    return;
+                }
+                const tabName = this.getAttribute('data-tab');
+                switchMainTab(tabName);
+            });
+        });
+
+        // Set up search functionality for logs tab
+        const searchLogsInput = document.getElementById('search-logs');
+        if (searchLogsInput) {
+            let searchTimeout = null;
+            searchLogsInput.addEventListener('input', function () {
+                if (searchTimeout) clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    currentPage = 1; // Reset to first page when searching
+                    updateFileTrackersTable();
+                }, 500);
+            });
+
+            searchLogsInput.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    const value = this.value.trim();
+                    currentPage = 1; // Reset to first page
+                    updateFileTrackersTable();
+                    focusAndSelectSearchInput();
+                }
+            });
+        }
+
+        // Set up refresh button for logs tab
+        const refreshLogsButton = document.getElementById('refresh-logs');
+        if (refreshLogsButton) {
+            refreshLogsButton.addEventListener('click', function () {
+                currentPage = 1; // Reset to first page
+                const searchInput = document.getElementById('search-logs');
+                if (searchInput) {
+                    searchInput.value = ''; // Clear search
+                }
+                // Reset status filter
+                const statusFilterEl = document.getElementById('status-filter');
+                if (statusFilterEl) statusFilterEl.value = 'all';
+                // Reset priority filter
+                document.querySelectorAll('.filter-btn[data-priority]').forEach(btn => {
+                    btn.classList.remove('ring-2', 'ring-offset-1', 'ring-blue-500');
+                });
+                const allBtn = document.querySelector('.filter-btn[data-priority="all"]');
+                if (allBtn) allBtn.classList.add('ring-2', 'ring-offset-1', 'ring-blue-500');
+                loadFileTrackers();
+                updateLogCount();
+            });
+        }
+
+        const exportLogsButton = document.getElementById('export-logs');
+        if (exportLogsButton) {
+            exportLogsButton.addEventListener('click', function () {
+                exportFileTrackersToCSV();
+            });
+        }
+
+        // Set up status filter dropdown
+        const statusFilterSelect = document.getElementById('status-filter');
+        if (statusFilterSelect) {
+            statusFilterSelect.addEventListener('change', function () {
+                currentPage = 1;
+                updateFileTrackersTable();
+            });
+        }
+
+        // Set up priority filter buttons
+        document.querySelectorAll('.filter-btn[data-priority]').forEach(button => {
+            button.addEventListener('click', function () {
+                // Update active button styling
+                document.querySelectorAll('.filter-btn[data-priority]').forEach(btn => {
+                    btn.classList.remove('ring-2', 'ring-offset-1', 'ring-blue-500');
+                });
+                this.classList.add('ring-2', 'ring-offset-1', 'ring-blue-500');
+
+                currentPage = 1;
+                updateFileTrackersTable();
+            });
+        });
+    }
+
+    function switchMainTab(tabName) {
+        console.log('Switching to tab:', tabName);
+
+        // Update tab buttons
+        document.querySelectorAll('.main-tab').forEach(tab => {
+            tab.classList.remove('active');
+            tab.classList.add('border-transparent', 'text-gray-500');
+            tab.classList.remove('border-blue-500', 'text-blue-600');
+        });
+
+        const tabEl = document.getElementById(`tab-${tabName}`);
+        if (tabEl) {
+            tabEl.classList.add('active');
+            tabEl.classList.remove('border-transparent', 'text-gray-500');
+            tabEl.classList.add('border-blue-500', 'text-blue-600');
+        }
+
+        // Update content visibility
+        document.querySelectorAll('.main-tab-content').forEach(content => {
+            content.classList.remove('active');
+            content.classList.add('hidden');
+        });
+
+        const targetContent = document.getElementById(`content-${tabName}`);
+        console.log('Target content element:', targetContent);
+        if (targetContent) {
+            console.log('Before changes - classes:', targetContent.className);
+            console.log('Before changes - computed display:', window.getComputedStyle(targetContent).display);
+
+            targetContent.classList.add('active');
+            targetContent.classList.remove('hidden');
+
+            console.log('After changes - classes:', targetContent.className);
+            console.log('After changes - computed display:', window.getComputedStyle(targetContent).display);
+            console.log('Tab content should now be visible');
+        } else {
+            console.error('Target content element not found:', `content-${tabName}`);
+        }
+
+        // Update data based on tab
+        if (tabName === 'logs') {
+            console.log('Loading logs tab, fileTrackers:', fileTrackers.length);
+            updateFileTrackersTable();
+            updateLogCount();
+        }
+    }
+
+    function updateLogCount() {
+        const logCount = document.getElementById('log-count');
+        if (logCount) {
+            logCount.textContent = fileTrackers.length;
+        }
+    }
+
+    /**
+     * Switch DG/DGIS sub-tab (logs / track-new / request-land).
+     * All three sub-tabs share the #content-logs panel but filter the dataset
+     * by workflow_type via the `tab` query parameter sent to /create-file-tracker/list.
+     */
+    window._dgLogTab = window._dgLogTab || 'logs';
+    function switchDgLogTab(clickedBtn, logTab) {
+        // Determine whether this tab lives in the vertical sidebar (left border) or the top tab bar (bottom border)
+        const isSidebar = !!(clickedBtn && (
+            clickedBtn.classList.contains('border-l-4') ||
+            (typeof clickedBtn.closest === 'function' && clickedBtn.closest('nav.flex-col'))
+        ));
+
+        // Visually mark clicked tab as active, others idle
+        document.querySelectorAll('.main-tab').forEach(t => {
+            t.classList.remove('active', 'border-blue-500', 'text-blue-600', 'bg-blue-50');
+            t.classList.add('border-transparent', 'text-gray-500');
+        });
+        clickedBtn.classList.add('active', 'border-blue-500', 'text-blue-600');
+        if (isSidebar) clickedBtn.classList.add('bg-blue-50');
+        clickedBtn.classList.remove('border-transparent', 'text-gray-500');
+
+        // Always show the shared #content-logs panel
+        document.querySelectorAll('.main-tab-content').forEach(c => {
+            c.classList.remove('active');
+            c.classList.add('hidden');
+        });
+        const logsPanel = document.getElementById('content-logs');
+        if (logsPanel) {
+            logsPanel.classList.add('active');
+            logsPanel.classList.remove('hidden');
+        }
+
+        window._dgLogTab = logTab;
+        currentPage = 1;
+
+        // Decorate the panel so renderers can apply tab-specific styling
+        if (logsPanel) {
+            logsPanel.setAttribute('data-active-log-tab', logTab);
+        }
+
+        if (typeof loadFileTrackers === 'function') {
+            loadFileTrackers(1);
+        }
+
+        // Auto-open the Initiate Cross-Registry Request modal when entering the request-land sub-tab
+        if (logTab === 'request-land' && !window._suppressRequestLandAutoOpen) {
+            const mod = (window.currentModule || '').toLowerCase();
+            if (mod === 'dgis' || mod === 'dg' || mod === 'kangis') {
+                setTimeout(function () {
+                    const btn = document.getElementById('requestFileBtn');
+                    if (btn) btn.click();
+                }, 150);
+            }
+        }
+    }
+    window.switchDgLogTab = switchDgLogTab;
+
+    function filterTrackerLogs(searchTerm) {
+        const trackerCards = document.querySelectorAll('#trackers-container .tracker-card');
+        const trimmed = (searchTerm || '').trim();
+        const term = trimmed.toLowerCase();
+
+        if (!trackerCards.length) {
+            if (trimmed.length >= 3) {
+                showArchiveFallback({ loading: true, searchTerm: trimmed });
+                scheduleArchiveLookup(trimmed);
+            } else {
+                hideArchiveFallback();
+            }
+            return;
+        }
+
+        if (!trimmed) {
+            trackerCards.forEach(card => {
+                card.style.display = 'block';
+            });
+            hideArchiveFallback();
+            lastArchiveSearchTerm = null;
+            if (archiveLookupTimeout) {
+                clearTimeout(archiveLookupTimeout);
+                archiveLookupTimeout = null;
+            }
+            return;
+        }
+
+        let visibleCount = 0;
+        trackerCards.forEach(card => {
+            const text = card.textContent.toLowerCase();
+            const isVisible = text.includes(term);
+            card.style.display = isVisible ? 'block' : 'none';
+            if (isVisible) {
+                visibleCount += 1;
+            }
+        });
+
+        if (archiveLookupTimeout) {
+            clearTimeout(archiveLookupTimeout);
+            archiveLookupTimeout = null;
+        }
+
+        if (visibleCount === 0) {
+            if (trimmed.length >= 3) {
+                showArchiveFallback({ loading: true, searchTerm: trimmed });
+                scheduleArchiveLookup(trimmed);
+            } else {
+                showArchiveFallback({ hint: true, searchTerm: trimmed });
+            }
+        } else {
+            hideArchiveFallback();
+            lastArchiveSearchTerm = null;
+        }
+    }
+
+    function scheduleArchiveLookup(term) {
+        if (archiveLookupTimeout) {
+            clearTimeout(archiveLookupTimeout);
+        }
+
+        archiveLookupTimeout = setTimeout(() => {
+            fetchArchiveRecord(term);
+        }, 250);
+    }
+
+    function fetchArchiveRecord(searchTerm) {
+        const normalized = (searchTerm || '').trim();
+        if (!normalized) {
+            return;
+        }
+
+        if (archiveSearchRequest && normalized === lastArchiveSearchTerm) {
+            return;
+        }
+
+        lastArchiveSearchTerm = normalized;
+
+        if (archiveSearchRequest) {
+            archiveSearchRequest.abort();
+            archiveSearchRequest = null;
+        }
+
+        archiveSearchRequest = $.ajax({
+            url: '/create-file-tracker/search',
+            method: 'GET',
+            dataType: 'json',
+            data: { query: normalized }
+        })
+            .done(function (response) {
+                if (response.success && response.data) {
+                    if (response.data.status === 'tracked' && response.data.tracker) {
+                        const normalizedTracker = transformApiTracker(response.data.tracker);
+                        if (normalizedTracker) {
+                            upsertLocalTracker(normalizedTracker);
+                            hideArchiveFallback();
+                            updateFileTrackersTable();
+                            highlightTrackerCard(normalizedTracker.trackingId);
+                            filterTrackerLogs(normalized);
+                        }
+                    } else if (response.data.status === 'archive' && response.data.record) {
+                        showArchiveFallback({ archive: response.data.record, searchTerm: normalized });
+                    } else {
+                        const message = response.message || 'No tracker or archive entry found for the supplied reference.';
+                        showArchiveFallback({ notFound: true, searchTerm: normalized, message });
+                    }
+                } else {
+                    const message = response?.message || 'No tracker or archive entry found for the supplied reference.';
+                    showArchiveFallback({ notFound: true, searchTerm: normalized, message });
+                }
+            })
+            .fail(function (xhr, status) {
+                if (status === 'abort') {
+                    return;
+                }
+                const message = xhr?.responseJSON?.message || 'Unable to search archive at this time.';
+                showArchiveFallback({ error: message, searchTerm: normalized });
+            })
+            .always(function () {
+                archiveSearchRequest = null;
+                lastArchiveSearchTerm = null;
+                focusAndSelectSearchInput();
+            });
+    }
+
+    function toAmPm(timeStr) {
+        if (!timeStr) return '';
+        const parts = timeStr.toString().trim().split(':');
+        if (parts.length < 2) return timeStr;
+        let h = parseInt(parts[0], 10);
+        const m = parts[1].padStart(2, '0');
+        if (isNaN(h)) return timeStr;
+        const period = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return `${h}:${m} ${period}`;
+    }
+
+    function escapeHtml(value) {
+        return (value ?? '').toString()
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function showArchiveFallback(state) {
+        const container = document.getElementById('trackers-container');
+        if (!container) {
+            return;
+        }
+
+        let fallback = document.getElementById('archive-fallback');
+        if (!fallback) {
+            fallback = document.createElement('div');
+            fallback.id = 'archive-fallback';
+            fallback.className = 'archive-fallback-card rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center shadow-sm';
+            container.prepend(fallback);
+        }
+
+        fallback.className = 'archive-fallback-card rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center shadow-sm';
+
+        const searchLabel = state.searchTerm ? escapeHtml(state.searchTerm) : '';
+        let innerHtml = '';
+
+        if (state.loading) {
+            innerHtml = `
+                    <div class="flex flex-col items-center gap-3">
+                        <div class="inline-flex h-12 w-12 animate-spin items-center justify-center rounded-full border-2 border-blue-100 border-t-blue-600"></div>
+                        <p class="text-sm text-gray-600">Searching archive records for "<span class="font-semibold">${searchLabel}</span>"...</p>
+                    </div>
+                `;
+        } else if (state.error) {
+            innerHtml = `
+                    <div class="space-y-3 text-center">
+                        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+                            <i data-lucide="alert-triangle" class="h-6 w-6 text-red-500"></i>
+                        </div>
+                        <p class="text-sm font-semibold text-red-600">${escapeHtml(state.error)}</p>
+                        <p class="text-sm text-gray-500">Please try again or refine your search.</p>
+                    </div>
+                `;
+        } else if (state.archive) {
+            const record = state.archive;
+            const fileNumber = escapeHtml(record.file_number || '—');
+            const trackingId = escapeHtml(record.tracking_id || '—');
+            const fileName = escapeHtml(record.file_name || 'Unknown applicant');
+            const location = escapeHtml(record.location || 'Archive');
+            const sourceType = escapeHtml(record.type || 'Unknown');
+            const created = record.created_at ? escapeHtml(new Date(record.created_at).toLocaleDateString()) : '—';
+            const reason = escapeHtml(record.decommissioning_reason || '—');
+
+            fallback.classList.remove('text-center', 'border-dashed');
+
+            innerHtml = `
+                    <div class="space-y-5 text-left">
+                        <div class="flex items-start gap-3">
+                            <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                                <i data-lucide="archive" class="h-5 w-5"></i>
+                            </span>
+                            <div>
+                                <p class="text-base font-semibold text-blue-700">File located in archive records</p>
+                                <p class="text-sm text-gray-600">This reference does not have an active tracker yet. Use the details below to create one.</p>
+                            </div>
+                        </div>
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            <div>
+                                <p class="text-xs font-semibold uppercase text-gray-500">File Number</p>
+                                <p class="mt-1 text-sm font-semibold text-gray-900">${fileNumber}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-semibold uppercase text-gray-500">Tracking ID</p>
+                                <p class="mt-1 text-sm font-mono text-gray-900">${trackingId}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-semibold uppercase text-gray-500">Applicant / Title</p>
+                                <p class="mt-1 text-sm text-gray-900">${fileName}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-semibold uppercase text-gray-500">Archive Location</p>
+                                <p class="mt-1 text-sm text-gray-900">${location}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-semibold uppercase text-gray-500">Source</p>
+                                <p class="mt-1 text-sm text-gray-900">${sourceType}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-semibold uppercase text-gray-500">Created</p>
+                                <p class="mt-1 text-sm text-gray-900">${created}</p>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <p class="text-xs font-semibold uppercase text-gray-500">Decommissioning Notes</p>
+                                <p class="mt-1 text-sm text-gray-700">${reason}</p>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-2 pt-2">
+                            <button type="button" class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700" data-action="prefill-tracker">
+                                <i data-lucide="plus" class="mr-2 h-4 w-4"></i>
+                                Prepare New Tracker
+                            </button>
+                            <button type="button" class="inline-flex items-center rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50" data-action="clear-search">
+                                <i data-lucide="x" class="mr-2 h-4 w-4"></i>
+                                Clear Search
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+        } else if (state.hint) {
+            innerHtml = `
+                    <div class="space-y-3">
+                        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50">
+                            <i data-lucide="scan" class="h-5 w-5 text-amber-500"></i>
+                        </div>
+                        <p class="text-sm text-gray-600">Keep typing to search — enter at least 3 characters to look up archive records.</p>
+                    </div>
+                `;
+        } else {
+            const message = state.message ? escapeHtml(state.message) : 'No tracker or archive entry was found for this reference.';
+            innerHtml = `
+                    <div class="space-y-3">
+                        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+                            <i data-lucide="file-x" class="h-5 w-5 text-gray-500"></i>
+                        </div>
+                        <p class="text-sm text-gray-600">${message}</p>
+                    </div>
+                `;
+        }
+
+        fallback.innerHTML = innerHtml;
+        lucide.createIcons();
+
+        const prefillButton = fallback.querySelector('[data-action="prefill-tracker"]');
+        if (prefillButton && state.archive) {
+            prefillButton.addEventListener('click', () => {
+                prefillCreateFormFromArchive(state.archive);
+                hideArchiveFallback();
+                showNotification('Archive file details pre-filled. Complete the form to create a tracker.', 'info');
+            });
+        }
+
+        const clearButton = fallback.querySelector('[data-action="clear-search"]');
+        if (clearButton) {
+            clearButton.addEventListener('click', () => {
+                const input = document.getElementById('search-logs');
+                if (input) {
+                    input.value = '';
+                }
+                filterTrackerLogs('');
+                focusAndSelectSearchInput();
+            });
+        }
+    }
+
+    function hideArchiveFallback() {
+        const fallback = document.getElementById('archive-fallback');
+        if (fallback) {
+            fallback.remove();
+        }
+    }
+
+    function prefillCreateFormFromArchive(record) {
+        if (!record) {
+            return;
+        }
+
+        switchMainTab('create');
+
+        if (record.file_number) {
+            forceNextMetadataLookup = true;
+            $('#file-no').val(record.file_number).trigger('change');
+        }
+
+        const fileNameField = $('#file-name');
+        fileNameField.prop('disabled', false).removeClass('metadata-locked');
+        fileNameField.val(record.file_name || '');
+
+        const trackingField = $('#tracking-id');
+        trackingField.prop('disabled', false).removeClass('tracking-id-locked');
+        if (record.tracking_id) {
+            trackingField.val(record.tracking_id);
+            $('#sidebar-tracking-id').text(record.tracking_id);
+        } else {
+            trackingField.val('');
+            $('#sidebar-tracking-id').text('-');
+        }
+
+        $('#sidebar-file-no').text(record.file_number || '-');
+    }
+
+    function focusAndSelectSearchInput() {
+        const input = document.getElementById('search-logs');
+        if (!input) {
+            return;
+        }
+
+        input.focus({ preventScroll: false });
+        input.select();
+    }
+
+    function initDepartmentCascade() {
+        const destinationOfficeSelect = document.getElementById('current-office');
+        const receivingOfficeSelect = document.getElementById('receiving-office');
+
+        if (!destinationOfficeSelect || !receivingOfficeSelect) return;
+
+        function filterReceivingOffices(departmentName) {
+            const options = receivingOfficeSelect.querySelectorAll('option');
+            let hasVisible = false;
+            let firstVisible = null;
+
+            options.forEach(option => {
+                if (!option.value) return; // Skip placeholder
+
+                const officeDept = option.getAttribute('data-department');
+                if (departmentName && officeDept === departmentName) {
+                    option.style.display = '';
+                    option.disabled = false;
+                    hasVisible = true;
+                    if (!firstVisible) firstVisible = option;
+                } else {
+                    option.style.display = 'none';
+                    option.disabled = true;
+                }
+            });
+
+            // If current selection is invalid (hidden), reset
+            const currentSelected = receivingOfficeSelect.selectedOptions[0];
+            if (currentSelected && currentSelected.value && currentSelected.style.display === 'none') {
+                receivingOfficeSelect.value = '';
+            }
+        }
+
+        // Initial run
+        filterReceivingOffices(destinationOfficeSelect.value);
+
+        // Listener
+        destinationOfficeSelect.addEventListener('change', function () {
+            filterReceivingOffices(this.value);
+            receivingOfficeSelect.value = ''; // Reset selection on department change
+
+            // Cross-module request mode is controlled only by the Request File button.
+        });
+    }
+
+    window.showTrackerDetails = showTrackerDetails;
+
+    // Initialize
+    initializeIds();
+
+    // Add file number field change listener
+    $('#file-no').on('input change', function (event) {
+        const fileNo = ($(this).val() || '').trim();
+        $('#sidebar-file-no').text(fileNo || '-');
+
+        if (event.type === 'change') {
+            triggerMetadataLookup(fileNo, { force: forceNextMetadataLookup });
+            loadCrossRequestPreview(fileNo, { force: true });
+            forceNextMetadataLookup = false;
+        }
+    });
+
+    updateDateTime();
+    loadOfficeData();
+    loadReceivingDirectory().catch(() => { });
+    loadFileTrackers(); // Load existing data
+    initializeFileNoModal(); // Initialize file number modal
+    QuickActions.init(); // Initialize quick actions
+    initializeMainTabs(); // Initialize two-tab system
+    bindAssignmentActionEvents();
+    applyDefaultOriginSelection({ force: false }); // Apply default registry from data-default
+    switchMainTab(window.isApprovalModule ? 'logs' : 'create'); // Set default tab based on module
+    applyKangisOfficeWorkflowGate();
+    document.getElementById('workflow-3step-toggle')?.addEventListener('change', applyKangisOfficeWorkflowGate);
+    setInterval(updateDateTime, 1000);
+    initDepartmentCascade();
+    lucide.createIcons();
+
+    // KANGIS / DGIS / DG — auto-open the Cross-Registry Request modal when ?action=request-land
+    (function autoOpenRequestLand() {
+        const mod = (window.currentModule || '').toLowerCase();
+        if (!['kangis', 'dgis', 'dg'].includes(mod)) return;
+        const params = new URLSearchParams(window.location.search);
+        if ((params.get('action') || '').toLowerCase() !== 'request-land') return;
+
+        // The Cross-Registry Request form lives on the KANGIS page. If we landed on
+        // DG/DGIS with action=request-land, redirect to the KANGIS page (preserving the action).
+        if (mod === 'dgis' || mod === 'dg') {
+            const target = new URL(window.location.href);
+            target.searchParams.set('url', 'kangis');
+            target.searchParams.set('action', 'request-land');
+            window.location.replace(target.toString());
+            return;
+        }
+
+        // KANGIS: click the hidden #requestFileBtn to open the Initiate Cross-Registry Request modal.
+        setTimeout(function () {
+            const reqBtn = document.getElementById('requestFileBtn');
+            if (reqBtn) reqBtn.click();
+        }, 250);
+    })();
+
+    // Restore state when returning from /fileindexing/create via return_to redirect
+    (function restoreFromIndexingReturn() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const returnFileNo   = urlParams.get('file_number');
+        const returnTracking = urlParams.get('tracking_id');
+        const returnTitle    = urlParams.get('file_title');
+
+        if (!returnFileNo && !returnTracking) return;
+
+        // Clean the URL immediately so a refresh doesn't re-apply
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('file_number');
+        cleanUrl.searchParams.delete('tracking_id');
+        cleanUrl.searchParams.delete('file_title');
+        window.history.replaceState({}, '', cleanUrl.toString());
+
+        // If we have a tracking ID in new_kangis mode, open the Scan QR modal pre-filled.
+        // Use a poll loop so we don't race against QuickActions initialization.
+        if (returnTracking && window.isNewKangisMode) {
+            let attempts = 0;
+            const tryOpen = function () {
+                attempts++;
+                if (typeof QuickActions !== 'undefined' && typeof QuickActions.scanQr === 'function') {
+                    QuickActions.scanQr({ prefillIdentifier: returnTracking, autoLookup: true });
+                } else if (attempts < 20) {
+                    setTimeout(tryOpen, 150);
+                }
+            };
+            setTimeout(tryOpen, 500);
+            return;
+        }
+
+        // Fallback: populate the form fields and trigger a metadata lookup
+        const $fileNo = $('#file-no');
+        $fileNo.val(returnFileNo);
+        $('#sidebar-file-no').text(returnFileNo || '-');
+
+        if (returnTracking) {
+            $('#tracking-id').val(returnTracking).prop('disabled', true).addClass('tracking-id-locked');
+            $('#sidebar-tracking-id').text(returnTracking);
+        }
+
+        if (returnTitle) {
+            $('#file-name').val(returnTitle).prop('disabled', true).addClass('metadata-locked');
+        }
+
+        forceNextMetadataLookup = true;
+        $fileNo.trigger('change');
+    })();
+
+    // Smart Back button — history-aware navigation.
+    // If the previous page is another tracker module (?url=kangis|new_kangis|dgis|dg)
+    // we go back via history so state (filters, scroll, modals) is preserved.
+    // Otherwise we fall through to the link's href (tracker landing).
+    (function () {
+        const backBtn = document.getElementById('smartBackBtn');
+        if (!backBtn) return;
+
+        const TRACKER_MODULES = ['kangis', 'new_kangis', 'dgis', 'dg'];
+        const referrer = (document.referrer || '').toLowerCase();
+        let cameFromTrackerModule = false;
+        let referrerModule = '';
+
+        try {
+            if (referrer) {
+                const refUrl = new URL(document.referrer);
+                if (refUrl.origin === window.location.origin && /create-file-tracker/i.test(refUrl.pathname)) {
+                    const refModule = (refUrl.searchParams.get('url') || '').toLowerCase();
+                    const currentModule = (new URLSearchParams(window.location.search).get('url') || '').toLowerCase();
+                    if (TRACKER_MODULES.includes(refModule) && refModule !== currentModule) {
+                        cameFromTrackerModule = true;
+                        referrerModule = refModule;
+                    }
+                }
+            }
+        } catch (_) { /* ignore */ }
+
+        // Update label / title to reflect what Back will do
+        const labelEl = backBtn.querySelector('[data-back-label]');
+        if (cameFromTrackerModule) {
+            const niceName = ({
+                kangis: 'Track Existing File',
+                new_kangis: 'Track New File',
+                dgis: 'DGIS',
+                dg: 'DG',
+            })[referrerModule] || 'previous';
+            backBtn.title = `Back to ${niceName}`;
+            if (labelEl) labelEl.textContent = `Back to ${niceName}`;
+        } else {
+            backBtn.title = 'Back to file tracker landing';
+            if (labelEl) labelEl.textContent = 'Back';
+        }
+
+        backBtn.addEventListener('click', function (event) {
+            if (cameFromTrackerModule && window.history.length > 1) {
+                event.preventDefault();
+                window.history.back();
+            }
+            // else: let the anchor's href (landing) handle navigation naturally
+        });
+    })();
+
+    // Cross-Module Request Button logic
+    document.getElementById('requestFileBtn')?.addEventListener('click', function() {
+        const currentMod = (window.currentModule || '').toLowerCase();
+        let receiverLabel = 'Registry 1 - Land';
+        let workflowStepsText = "";
+
+        if (currentMod === 'kangis' || currentMod === 'new_kangis') {
+            receiverLabel = 'Registry 1 - Land';
+            workflowStepsText = `
+                <div class="text-left mt-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded text-sm">
+                    <strong class="block mb-2 text-blue-900 border-b border-blue-200 pb-1">KANGIS Workflow Approval Chain:</strong>
+                    <ol class="list-decimal pl-5 space-y-1 text-blue-800">
+                        <li>Registry 1 - Land &rarr; <em>Recommendation</em></li>
+                        <li>Director of Lands &rarr; <em>Approve</em></li>
+                        <li class="font-semibold pt-1">Result: File Routed to KANGIS</li>
+                    </ol>
+                </div>`;
+        } else {
+            receiverLabel = 'KANGIS Registry';
+            workflowStepsText = `
+                <div class="text-left mt-4 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded text-sm">
+                    <strong class="block mb-2 text-emerald-900 border-b border-emerald-200 pb-1">LAND Workflow Approval Chain:</strong>
+                    <ol class="list-decimal pl-5 space-y-1 text-emerald-800">
+                        <li>KANGIS Registry &rarr; <em>Recommendation</em></li>
+                        <li>DG KANGIS &rarr; <em>Approve</em></li>
+                        <li class="font-semibold pt-1">Result: File Routed to Land Department</li>
+                    </ol>
+                </div>`;
+        }
+
+        Swal.fire({
+            title: 'Initiate Cross-Registry Request',
+            html: `You are about to submit a formal file request to <strong>${receiverLabel}</strong>.<br>${workflowStepsText}`,
+            icon: 'info',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Activate Request Mode',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#3b82f6',
+        }).then(function (result) {
+            if (result.isConfirmed) {
+                _crossModuleRequestMode = true;
+                applyCrossModuleFieldLabels(true);
+
+                // Prefill Supply (Origin) and Requester dropdowns based on direction
+                (function prefillCrossRegistrySelects() {
+                    const originSelect = document.getElementById('origin-office');
+                    const destSelect   = document.getElementById('current-office');
+
+                    // Helpers — lock visually without using the `disabled` attribute,
+                    // so the field still submits its value with the form.
+                    const lockSelectVisually = (sel, reason) => {
+                        if (!sel) return;
+                        sel.dataset.crossLocked = '1';
+                        sel.style.pointerEvents = 'none';
+                        sel.tabIndex = -1;
+                        sel.setAttribute('aria-disabled', 'true');
+                        if (reason) sel.title = reason;
+                        sel.classList.add('cursor-not-allowed', 'bg-gray-100', 'text-gray-700', 'ring-1', 'ring-gray-200');
+                    };
+
+                    // Hide non-Land registry options on the origin select while in
+                    // KANGIS request mode — only the Land registries should be
+                    // selectable as a Supply (Origin).
+                    const restrictOriginToLandRegistries = (sel) => {
+                        if (!sel) return;
+                        Array.from(sel.options).forEach(opt => {
+                            const txt = (opt.textContent || '').toLowerCase().trim();
+                            const val = (opt.value || '').toLowerCase().trim();
+                            const isPlaceholder = !val;
+                            // Match "Registry N - Land" / "Registry N - Lands" / "Land Registry".
+                            const isLandRegistry = txt.includes('land') || val.includes('land');
+                            if (!isPlaceholder && !isLandRegistry) {
+                                opt.dataset.crossHidden = '1';
+                                opt.hidden = true;
+                                opt.disabled = true;
+                            }
+                        });
+                    };
+
+                    if (currentMod === 'kangis' || currentMod === 'new_kangis') {
+                        // KANGIS → Land: Supply must be a Land registry (filtered to land options),
+                        // Requester is fixed to KANGIS and locked.
+                        restrictOriginToLandRegistries(originSelect);
+                        selectPreferredOption(originSelect, ['Registry 1 - Land', 'Registry 1 - Lands'], ['land']);
+                        selectPreferredOption(destSelect, ['KANGIS', 'KANGIS Registry'], ['kangis']);
+                        lockSelectVisually(destSelect, 'Requester is fixed for cross-registry requests');
+                        return;
+                    }
+
+                    // Land → KANGIS: Supply is the single KANGIS Registry option, Requester is Lands;
+                    // both locked since each only has one valid value in this direction.
+                    selectPreferredOption(originSelect, ['KANGIS Registry'], ['kangis']);
+                    selectPreferredOption(destSelect, ['Lands', 'Land Department'], ['land']);
+                    lockSelectVisually(originSelect, 'Supply is fixed for cross-registry requests');
+                    lockSelectVisually(destSelect, 'Requester is fixed for cross-registry requests');
+                })();
+
+                loadCrossRequestPreview(document.getElementById('file-no')?.value || '', { force: true });
+
+                // Setup Cross-Module Workflow UI Diagram
+                const cmPanel = document.getElementById('cross-module-workflow-panel');
+                if (cmPanel) {
+                    cmPanel.classList.remove('hidden');
+                    
+                    // Hide competing workflow panels
+                    const kgPanel = document.getElementById('workflow-toggle-panel');
+                    if (kgPanel) kgPanel.classList.add('hidden');
+                    const npPanel = document.getElementById('new-kangis-workflow-panel');
+                    if (npPanel) npPanel.classList.add('hidden');
+
+                    if (currentMod === 'kangis' || currentMod === 'new_kangis') {
+                        document.getElementById('cm-workflow-title').textContent = "KANGIS Requested File";
+                        document.getElementById('cm-step1-title').textContent = "Registry 1 - Land";
+                        document.getElementById('cm-step2-title').textContent = "Director (Land)";
+                        document.getElementById('cm-step3-title').textContent = "KANGIS";
+                        document.getElementById('cm-workflow-footer').textContent = "After Director approval, the file drops into the KANGIS bucket.";
+                    } else {
+                        document.getElementById('cm-workflow-title').textContent = "Land Requested File";
+                        document.getElementById('cm-step1-title').textContent = "KANGIS Registry";
+                        document.getElementById('cm-step2-title').textContent = "DG KANGIS";
+                        document.getElementById('cm-step3-title').textContent = "Land Dept";
+                        document.getElementById('cm-workflow-footer').textContent = "After DG approval, the file routes to the Land Department.";
+                    }
+                }
+
+                Swal.fire({
+                    title: 'Request Mode Activated',
+                    text: 'Fill the file details and click "Log File" to initiate the structured request. The approval chain rules will apply.',
+                    icon: 'success',
+                    timer: 3000,
+                    showConfirmButton: false
+                });
+            } else {
+                _crossModuleRequestMode = false;
+                applyCrossModuleFieldLabels(false);
+                clearCrossRequestPreview();
+
+                // Reset prefilled selects — also unlock and restore hidden options
+                const originSel = document.getElementById('origin-office');
+                const destSel   = document.getElementById('current-office');
+
+                const unlockSelectVisually = (sel) => {
+                    if (!sel || sel.dataset.crossLocked !== '1') return;
+                    delete sel.dataset.crossLocked;
+                    sel.style.pointerEvents = '';
+                    sel.tabIndex = 0;
+                    sel.removeAttribute('aria-disabled');
+                    sel.removeAttribute('title');
+                    sel.classList.remove('cursor-not-allowed', 'bg-gray-100', 'text-gray-700', 'ring-1', 'ring-gray-200');
+                };
+                const restoreHiddenOptions = (sel) => {
+                    if (!sel) return;
+                    Array.from(sel.options).forEach(opt => {
+                        if (opt.dataset.crossHidden === '1') {
+                            delete opt.dataset.crossHidden;
+                            opt.hidden = false;
+                            opt.disabled = false;
+                        }
+                    });
+                };
+
+                unlockSelectVisually(originSel);
+                unlockSelectVisually(destSel);
+                restoreHiddenOptions(originSel);
+                restoreHiddenOptions(destSel);
+
+                if (originSel) { originSel.value = ''; originSel.dispatchEvent(new Event('change')); }
+                if (destSel)   { destSel.value = '';   destSel.dispatchEvent(new Event('change')); }
+
+                // Re-apply default origin after reset
+                applyDefaultOriginSelection({ force: true });
+
+                // Hide the Cross Module Panel, show origin native panel
+                const cmPanel = document.getElementById('cross-module-workflow-panel');
+                if (cmPanel) cmPanel.classList.add('hidden');
+                    if (window.currentModule === 'kangis') {
+                        document.getElementById('workflow-toggle-panel')?.classList.remove('hidden');
+                    } else if (window.currentModule === 'new_kangis') {
+                        document.getElementById('new-kangis-workflow-panel')?.classList.remove('hidden');
+                    }
+                }
+            });
+    });
+
+</script>

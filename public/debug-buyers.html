@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Primary Form Debug Test</title>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-2xl font-bold mb-6">Primary Form Debug Test</h1>
+        
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="text-lg font-semibold mb-4">Test Status</h2>
+            <div id="test-results">
+                <p class="text-blue-600">Running tests...</p>
+            </div>
+        </div>
+        
+        <!-- Simple Buyers List Test -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-semibold mb-4">Simple Buyers List Test</h2>
+            
+            <div id="buyers-container">
+                <div class="border border-gray-200 rounded-lg p-4 mb-4 bg-white buyer-row" data-index="0">
+                    <div class="flex justify-between items-start mb-4">
+                        <h4 class="text-sm font-medium text-gray-700">Buyer <span class="buyer-number">1</span></h4>
+                    </div>
+                    
+                    <div class="grid grid-cols-4 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
+                            <select name="records[0][buyerTitle]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm">
+                                <option value="">Select title</option>
+                                <option value="Mr.">Mr.</option>
+                                <option value="Mrs.">Mrs.</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+                            <input type="text" name="records[0][firstName]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm" placeholder="Enter First Name">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Surname</label>
+                            <input type="text" name="records[0][surname]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm" placeholder="Enter Surname">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Unit Number</label>
+                            <input type="text" name="records[0][unit_no]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm" placeholder="Enter Unit Number">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <button onclick="addBuyer()" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700 flex items-center">
+                <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
+                Add Another Buyer
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let buyersCount = 1;
+        
+        // Test functions
+        function runTests() {
+            const results = document.getElementById('test-results');
+            const tests = [];
+            
+            // Test 1: Lucide icons
+            tests.push({
+                name: 'Lucide Icons',
+                status: typeof lucide !== 'undefined' ? 'PASS' : 'FAIL',
+                message: typeof lucide !== 'undefined' ? 'Lucide is loaded' : 'Lucide failed to load'
+            });
+            
+            // Test 2: DOM elements
+            tests.push({
+                name: 'Buyers Container',
+                status: document.getElementById('buyers-container') ? 'PASS' : 'FAIL',
+                message: document.getElementById('buyers-container') ? 'Container found' : 'Container not found'
+            });
+            
+            // Test 3: Form fields
+            const titleFields = document.querySelectorAll('select[name*="[buyerTitle]"]');
+            tests.push({
+                name: 'Form Fields',
+                status: titleFields.length > 0 ? 'PASS' : 'FAIL',
+                message: `Found ${titleFields.length} title field(s)`
+            });
+            
+            // Display results
+            let html = '<div class="space-y-2">';
+            tests.forEach(test => {
+                const color = test.status === 'PASS' ? 'text-green-600' : 'text-red-600';
+                html += `<div class="flex items-center space-x-2">
+                    <span class="font-mono text-sm ${color}">${test.status}</span>
+                    <span class="font-medium">${test.name}:</span>
+                    <span class="text-gray-600">${test.message}</span>
+                </div>`;
+            });
+            html += '</div>';
+            
+            results.innerHTML = html;
+        }
+        
+        function addBuyer() {
+            console.log('Adding buyer...');
+            const container = document.getElementById('buyers-container');
+            const newBuyerHtml = createBuyerRowHtml(buyersCount);
+            container.insertAdjacentHTML('beforeend', newBuyerHtml);
+            buyersCount++;
+            
+            // Reinitialize Lucide icons
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        }
+        
+        function createBuyerRowHtml(index) {
+            return `
+                <div class="border border-gray-200 rounded-lg p-4 mb-4 bg-white buyer-row" data-index="${index}">
+                    <div class="flex justify-between items-start mb-4">
+                        <h4 class="text-sm font-medium text-gray-700">Buyer <span class="buyer-number">${index + 1}</span></h4>
+                        <button type="button" onclick="removeBuyer(this)" class="bg-red-500 text-white p-1.5 rounded-md hover:bg-red-600">
+                            <i data-lucide="x" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="grid grid-cols-4 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
+                            <select name="records[${index}][buyerTitle]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm">
+                                <option value="">Select title</option>
+                                <option value="Mr.">Mr.</option>
+                                <option value="Mrs.">Mrs.</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+                            <input type="text" name="records[${index}][firstName]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm" placeholder="Enter First Name">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Surname</label>
+                            <input type="text" name="records[${index}][surname]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm" placeholder="Enter Surname">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Unit Number</label>
+                            <input type="text" name="records[${index}][unit_no]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm" placeholder="Enter Unit Number">
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function removeBuyer(button) {
+            const buyerRow = button.closest('.buyer-row');
+            buyerRow.remove();
+            buyersCount--;
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, running tests...');
+            runTests();
+            
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        });
+    </script>
+</body>
+</html>

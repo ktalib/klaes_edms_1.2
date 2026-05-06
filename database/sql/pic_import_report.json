@@ -1,0 +1,461 @@
+{
+    "generated_at": "2025-12-25T08:54:49+01:00",
+    "csv_directory": "C:\\xampp\\htdocs\\klaes/database/csv/Index Card_All",
+    "output_sql": "C:\\xampp\\htdocs\\klaes/database/sql/pic_inserts.sql",
+    "total_rows": 14952,
+    "total_files": 30,
+    "column_order": [
+        "mlsFNo",
+        "kangisFileNo",
+        "transaction_type",
+        "serialNo",
+        "pageNo",
+        "volumeNo",
+        "regNo",
+        "period",
+        "period_unit",
+        "Grantor",
+        "Grantee",
+        "Assignee",
+        "property_description",
+        "location",
+        "transaction_date",
+        "streetName",
+        "house_no",
+        "districtName",
+        "plot_no",
+        "lga",
+        "layout",
+        "source",
+        "tp_no",
+        "lpkn_no",
+        "approved_plan_no",
+        "plot_size",
+        "date_recommended",
+        "date_approved",
+        "lease_begins",
+        "lease_expires",
+        "surrender_date",
+        "revoked_date",
+        "metric_sheet",
+        "regranted_from",
+        "date_expired",
+        "remarks",
+        "created_by",
+        "created_at",
+        "land_use"
+    ],
+    "warnings": {
+        "missing_file_number_count": 3991,
+        "normalized_count": 1828,
+        "ambiguous_year_count": 1806,
+        "samples": {
+            "missing_file_number": [
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 24
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 42
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 48
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 49
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 56
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 71
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 73
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 74
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 81
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 82
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 88
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 90
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 93
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 94
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 95
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 96
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 104
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 109
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 110
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 111
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 112
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 117
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 120
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 124
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 125
+                }
+            ],
+            "normalized": [
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 4,
+                    "original": "RES-RC-1990-10",
+                    "normalized": "RES-RC-1990-2010"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 39,
+                    "original": "COM-RC-8-18",
+                    "normalized": "COM-RC-2008-2018"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 40,
+                    "original": "COM-RC-8-18",
+                    "normalized": "COM-RC-2008-2018"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 41,
+                    "original": "COM-RC-8-18",
+                    "normalized": "COM-RC-2008-2018"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 43,
+                    "original": "CON-RES-RC-1984-9",
+                    "normalized": "CON-RES-RC-1984-2009"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 46,
+                    "original": "CON-COM-RC-1981-20",
+                    "normalized": "CON-COM-RC-1981-2020"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 53,
+                    "original": "RES-RC-1988-15",
+                    "normalized": "RES-RC-1988-2015"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 54,
+                    "original": "RES-RC-1984-87",
+                    "normalized": "RES-RC-1984-1987"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 55,
+                    "original": "RES-RC-1984-87",
+                    "normalized": "RES-RC-1984-1987"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 65,
+                    "original": "RES-RC-1996-7",
+                    "normalized": "RES-RC-1996-2007"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 66,
+                    "original": "RES-RC-1996-7",
+                    "normalized": "RES-RC-1996-2007"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 67,
+                    "original": "RES-RC-1982-85",
+                    "normalized": "RES-RC-1982-1985"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 68,
+                    "original": "RES-RC-1982-85",
+                    "normalized": "RES-RC-1982-1985"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 118,
+                    "original": "RES-RC-1984-89",
+                    "normalized": "RES-RC-1984-1989"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 119,
+                    "original": "RES-RC-1984-89",
+                    "normalized": "RES-RC-1984-1989"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 121,
+                    "original": "RES-RC-91-39",
+                    "normalized": "RES-RC-1991-39"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 127,
+                    "original": "RES-RC-2009-6",
+                    "normalized": "RES-RC-2009-2006"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 128,
+                    "original": "RES-RC-2009-6",
+                    "normalized": "RES-RC-2009-2006"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 133,
+                    "original": "RES-RC-1987-16",
+                    "normalized": "RES-RC-1987-2016"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 134,
+                    "original": "RES-RC-1987-16",
+                    "normalized": "RES-RC-1987-2016"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 135,
+                    "original": "RES-RC-1995-014",
+                    "normalized": "RES-RC-1995-14"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 136,
+                    "original": "RES-RC-1995-014",
+                    "normalized": "RES-RC-1995-14"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 141,
+                    "original": "RES-RC-1995-14",
+                    "normalized": "RES-RC-1995-2014"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 142,
+                    "original": "RES-RC-1995-14",
+                    "normalized": "RES-RC-1995-2014"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 159,
+                    "original": "RES-RC-2020-6",
+                    "normalized": "RES-RC-2020-2006"
+                }
+            ],
+            "ambiguous_year": [
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 5,
+                    "original": "RES-RC-1988-68",
+                    "token": "68"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 6,
+                    "original": "RES-RC-1988-68",
+                    "token": "68"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 7,
+                    "original": "RES-RC-1988-68",
+                    "token": "68"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 8,
+                    "original": "RES-RC-1988-68",
+                    "token": "68"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 9,
+                    "original": "RES-RC-1988-68",
+                    "token": "68"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 10,
+                    "original": "RES-RC-1991-32",
+                    "token": "32"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 11,
+                    "original": "RES-RC-1988-45",
+                    "token": "45"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 12,
+                    "original": "RES-RC-1988-45",
+                    "token": "45"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 13,
+                    "original": "RES-RC-1988-45",
+                    "token": "45"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 14,
+                    "original": "RES-RC-1982-63",
+                    "token": "63"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 15,
+                    "original": "RES-RC-1982-63",
+                    "token": "63"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 29,
+                    "original": "RES-RC-1988-47",
+                    "token": "47"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 30,
+                    "original": "RES-RC-1988-47",
+                    "token": "47"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 31,
+                    "original": "RES-RC-1988-47",
+                    "token": "47"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 32,
+                    "original": "RES-RC-1986-59",
+                    "token": "59"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 33,
+                    "original": "RES-RC-1986-59",
+                    "token": "59"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 39,
+                    "original": "COM-RC-8-18",
+                    "token": "8"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 40,
+                    "original": "COM-RC-8-18",
+                    "token": "8"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 41,
+                    "original": "COM-RC-8-18",
+                    "token": "8"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 43,
+                    "original": "CON-RES-RC-1984-9",
+                    "token": "9"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 44,
+                    "original": "RES-RC-1989-56",
+                    "token": "56"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 45,
+                    "original": "RES-RC-1989-56",
+                    "token": "56"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 47,
+                    "original": "COM-RC-1983-55",
+                    "token": "55"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 65,
+                    "original": "RES-RC-1996-7",
+                    "token": "7"
+                },
+                {
+                    "file": "Index Card_All-1 -by MaxAI.csv",
+                    "line": 66,
+                    "original": "RES-RC-1996-7",
+                    "token": "7"
+                }
+            ]
+        }
+    }
+}

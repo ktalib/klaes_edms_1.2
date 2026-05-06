@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Address Display</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        input, select { padding: 8px; margin: 5px; width: 200px; }
+        .address-display { padding: 10px; background: #f5f5f5; border: 1px solid #ddd; margin: 10px 0; min-height: 40px; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>Address Display Test</h1>
+    
+    <div class="test-section">
+        <h3>Contact Address Test</h3>
+        <input type="text" id="ownerHouseNo" placeholder="House No" oninput="updateAddressDisplay()">
+        <input type="text" id="ownerStreetName" placeholder="Street Name" oninput="updateAddressDisplay()">
+        <input type="text" id="ownerDistrict" placeholder="District" oninput="updateAddressDisplay()">
+        
+        <select id="ownerState" onchange="updateAddressDisplay()">
+            <option value="">Select State</option>
+            <option value="Lagos">Lagos</option>
+            <option value="Abuja">Abuja</option>
+        </select>
+        
+        <select id="ownerLga" onchange="updateAddressDisplay()">
+            <option value="">Select LGA</option>
+            <option value="Ikeja">Ikeja</option>
+            <option value="Victoria Island">Victoria Island</option>
+        </select>
+        
+        <div class="address-display">
+            <strong>Contact Address:</strong><br>
+            <span id="fullContactAddress">Enter details above</span>
+        </div>
+        <input type="hidden" id="contactAddressDisplay">
+        
+        <button onclick="testContactAddress()">Test Contact Address Update</button>
+    </div>
+    
+    <div class="test-section">
+        <h3>Property Address Test</h3>
+        <input type="text" id="propertyHouseNo" placeholder="House No" oninput="updatePropertyAddressDisplay()">
+        <input type="text" id="propertyPlotNo" placeholder="Plot No" oninput="updatePropertyAddressDisplay()">
+        <input type="text" id="propertyStreetName" placeholder="Street Name" oninput="updatePropertyAddressDisplay()">
+        <input type="text" id="propertyDistrict" placeholder="District" oninput="updatePropertyAddressDisplay()">
+        
+        <select id="propertyState" onchange="updatePropertyAddressDisplay()">
+            <option value="">Select State</option>
+            <option value="Lagos">Lagos</option>
+            <option value="Abuja">Abuja</option>
+        </select>
+        
+        <select id="propertyLga" onchange="updatePropertyAddressDisplay()">
+            <option value="">Select LGA</option>
+            <option value="Ikeja">Ikeja</option>
+            <option value="Victoria Island">Victoria Island</option>
+        </select>
+        
+        <div class="address-display">
+            <strong>Property Address:</strong><br>
+            <span id="fullPropertyAddress">Enter details above</span>
+        </div>
+        <input type="hidden" id="propertyAddressDisplay">
+        
+        <button onclick="testPropertyAddress()">Test Property Address Update</button>
+    </div>
+
+    <script src="/js/primaryform/utilities.js"></script>
+    
+    <script>
+        function testContactAddress() {
+            console.log('Testing contact address...');
+            
+            // Fill in some test data
+            document.getElementById('ownerHouseNo').value = '123';
+            document.getElementById('ownerStreetName').value = 'Test Street';
+            document.getElementById('ownerDistrict').value = 'Test District';
+            document.getElementById('ownerState').value = 'Lagos';
+            document.getElementById('ownerLga').value = 'Ikeja';
+            
+            // Update the display
+            updateAddressDisplay();
+            
+            // Show the hidden input value
+            const hiddenValue = document.getElementById('contactAddressDisplay').value;
+            console.log('Hidden input value:', hiddenValue);
+            alert('Contact address updated! Check console for hidden input value.');
+        }
+        
+        function testPropertyAddress() {
+            console.log('Testing property address...');
+            
+            // Fill in some test data
+            document.getElementById('propertyHouseNo').value = '456';
+            document.getElementById('propertyPlotNo').value = 'Plot 789';
+            document.getElementById('propertyStreetName').value = 'Property Street';
+            document.getElementById('propertyDistrict').value = 'Property District';
+            document.getElementById('propertyState').value = 'Lagos';
+            document.getElementById('propertyLga').value = 'Victoria Island';
+            
+            // Update the display
+            updatePropertyAddressDisplay();
+            
+            // Show the hidden input value
+            const hiddenValue = document.getElementById('propertyAddressDisplay').value;
+            console.log('Hidden input value:', hiddenValue);
+            alert('Property address updated! Check console for hidden input value.');
+        }
+        
+        // Test when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🧪 Address test page loaded');
+            setTimeout(function() {
+                console.log('🔄 Running initial tests...');
+                testContactAddress();
+                setTimeout(testPropertyAddress, 1000);
+            }, 500);
+        });
+    </script>
+</body>
+</html>

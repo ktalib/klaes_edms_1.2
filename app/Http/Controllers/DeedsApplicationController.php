@@ -1,0 +1,197 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\ConsentApplication;
+use App\Models\DeedsApplication;
+use App\Models\LandUseType;
+use App\Models\Purpose;
+use App\Models\StreetName;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+use Illuminate\Support\Facades\DB;
+
+class DeedsApplicationController extends Controller
+{
+    public function index(): View
+    {
+        $applications = ConsentApplication::where('application_type', 'application_for_censent')
+            ->orderBy('created_at', 'desc')
+            ->get();
+            
+        // Fetch ST Assignments from generated memos for APPROVED applications only
+        $stMemos = DB::connection('sqlsrv')
+            ->table('memos')
+            ->join('mother_applications', 'memos.application_id', '=', 'mother_applications.id')
+            ->leftJoin('users', 'memos.created_by', '=', 'users.id')
+            ->where('mother_applications.application_status', 'Approved')
+            ->where(function($query) {
+                $query->where('memos.memo_status', 'GENERATED')
+                      ->orWhereNull('memos.memo_status')
+                      ->orWhere('memos.memo_status', '');
+            })
+            ->whereIn(DB::raw('LOWER(memos.memo_type)'), ['primary', 'physical_planning', 'physical planning'])
+            ->select(
+                'memos.id as memo_id',
+                'memos.created_at',
+                'mother_applications.id as mother_id',
+                'mother_applications.fileno as file_number',
+                'mother_applications.applicant_title',
+                'mother_applications.first_name',
+                'mother_applications.surname',
+                'mother_applications.corporate_name',
+                'memos.created_by',
+                'users.first_name as user_first_name',
+                'users.last_name as user_last_name'
+            )
+            // Use groupBy to ensure one record per mother_id if multiple memos exist
+            ->orderBy('memos.created_at', 'desc')
+            ->get()
+            ->unique('mother_id');
+
+        foreach ($applications as $app) {
+            $app->applicant_name = strtoupper($app->applicant_name);
+            $app->party_name = strtoupper($app->party_name);
+        }
+
+        foreach ($stMemos as $memo) {
+            $party1 = $memo->corporate_name ?: trim("{$memo->applicant_title} {$memo->first_name} {$memo->surname}");
+            $party1 = strtoupper($party1);
+            
+            // Fetch units from buyer_list first (standard for ST Memos)
+            $buyers = DB::connection('sqlsrv')
+                ->table('buyer_list')
+                ->where('application_id', $memo->mother_id)
+                ->get(['id', 'buyer_title', 'buyer_name', 'unit_no']);
+                
+            $unitsData = collect();
+            
+            foreach ($buyers as $buyer) {
+                $unitsData->push([
+                    'unit_number' => $buyer->unit_no,
+                    'party2_name' => strtoupper(trim("{$buyer->buyer_title} {$buyer->buyer_name}"))
+                ]);
+            }
+            
+            // Fallback/additional check for subapplications if buyer_list is empty
+            if ($unitsData->isEmpty()) {
+                $subs = DB::connection('sqlsrv')
+                    ->table('subapplications')
+                    ->where('main_application_id', $memo->mother_id)
+                    ->get(['id', 'applicant_title', 'first_name', 'surname', 'corporate_name', 'unit_number']);
+                    
+                foreach ($subs as $sub) {
+                    $unitsData->push([
+                        'unit_number' => $sub->unit_number,
+                        'party2_name' => strtoupper($sub->corporate_name ?: trim("{$sub->applicant_title} {$sub->first_name} {$sub->surname}"))
+                    ]);
+                }
+            }
+                
+            $party2 = 'N/A';
+            if ($unitsData->count() > 0) {
+                $firstUnit = $unitsData->first();
+                $firstUnitName = $firstUnit['party2_name'];
+                
+                if ($unitsData->count() > 1) {
+                    $othersCount = $unitsData->count() - 1;
+                    $party2 = "{$firstUnitName} & ({$othersCount}) Others";
+                } else {
+                    $party2 = $firstUnitName;
+                }
+            }
+            
+            // Create a ConsentApplication-like instance
+            $stApp = new ConsentApplication();
+            $stApp->setAttribute('id', 'memo_' . $memo->memo_id);
+            $stApp->setAttribute('file_number', $memo->file_number);
+            $stApp->setAttribute('consent_type', 'ST Assignment');
+            $stApp->setAttribute('applicant_name', $party1);
+            $stApp->setAttribute('party_name', $party2);
+            $stApp->setAttribute('application_date', $memo->created_at);
+            $stApp->setAttribute('created_at', \Carbon\Carbon::parse($memo->created_at));
+            $stApp->setAttribute('print_count', 0);
+            $stApp->setAttribute('status', 'Approved');
+            $stApp->setAttribute('created_by', strtoupper(trim("{$memo->user_first_name} {$memo->user_last_name}")) ?: $memo->created_by);
+            $stApp->setAttribute('st_units', $unitsData->toArray());
+            $stApp->setAttribute('is_st_assignment', true);
+            $stApp->setAttribute('mother_party1', $party1);
+            $stApp->setAttribute('memo_id', $memo->memo_id);
+            
+            $applications->push($stApp);
+        }
+        
+        // Re-sort the combined collection by created_at desc
+        $applications = $applications->sortByDesc('created_at')->values();
+
+        $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
+        $lgas = DB::connection('sqlsrv')
+            ->table('StatLGAs')
+            ->join('States', 'StatLGAs.StateID', '=', 'States.StateID')
+            ->where('States.StateName', 'Kano')
+            ->orderBy('LGAName')
+            ->get();
+        $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
+        $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
+        $landUseTypes = LandUseType::query()->where('is_active', 1)->orderBy('name')->get(['id', 'name']);
+        $purposes = Purpose::query()->orderBy('name')->get(['id', 'landuseid', 'name']);
+
+        return view('deeds_applications.index', compact('applications', 'states', 'lgas', 'districts', 'streetNames', 'landUseTypes', 'purposes'));
+    }
+
+    public function create(): View
+    {
+        return view('deeds_applications.create', [
+            'application' => new DeedsApplication(['status' => DeedsApplication::defaultStatus()]),
+            'statusOptions' => DeedsApplication::STATUS_OPTIONS,
+        ]);
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $application = DeedsApplication::create($this->validatedData($request));
+
+        return redirect()->route('deeds-applications.show', $application)->with('status', 'Application created.');
+    }
+
+    public function show(DeedsApplication $deedsApplication): View
+    {
+        return view('deeds_applications.show', ['application' => $deedsApplication]);
+    }
+
+    public function edit(DeedsApplication $deedsApplication): View
+    {
+        return view('deeds_applications.edit', [
+            'application' => $deedsApplication,
+            'statusOptions' => DeedsApplication::STATUS_OPTIONS,
+        ]);
+    }
+
+    public function update(Request $request, DeedsApplication $deedsApplication): RedirectResponse
+    {
+        $deedsApplication->update($this->validatedData($request));
+
+        return redirect()->route('deeds-applications.show', $deedsApplication)->with('status', 'Application updated.');
+    }
+
+    public function destroy(DeedsApplication $deedsApplication): RedirectResponse
+    {
+        $deedsApplication->delete();
+
+        return redirect()->route('deeds-applications.index')->with('status', 'Application deleted.');
+    }
+
+    protected function validatedData(Request $request): array
+    {
+        return $request->validate([
+            'application_number' => ['required', 'string', 'max:50'],
+            'file_number' => ['nullable', 'string', 'max:50'],
+            'subject' => ['nullable', 'string', 'max:150'],
+            'status' => ['required', 'string', 'in:' . implode(',', array_keys(DeedsApplication::STATUS_OPTIONS))],
+            'submitted_by' => ['nullable', 'string', 'max:120'],
+            'submitted_at' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+    }
+}

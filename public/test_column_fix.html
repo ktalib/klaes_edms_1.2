@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Column Fix Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 20px; border: 1px solid #ddd; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>FilearchiveController Column Fix Test</h1>
+    
+    <div class="test-section">
+        <h2>Issue Fixed</h2>
+        <p class="success">✅ Removed non-existent columns from query:</p>
+        <ul>
+            <li><del><code>page_type_id</code></del> - Column doesn't exist in pagetypings table</li>
+            <li><del><code>page_subtype_id</code></del> - Column doesn't exist in pagetypings table</li>
+        </ul>
+        
+        <p class="info">📋 Query now uses correct columns:</p>
+        <ul>
+            <li><code>page_type</code> - Stores the page type value directly</li>
+            <li><code>page_subtype</code> - Stores the page subtype value directly</li>
+            <li><code>cover_type_id</code> - Foreign key to cover types (this one exists)</li>
+        </ul>
+    </div>
+    
+    <div class="test-section">
+        <h2>Database Table Structure</h2>
+        <p>Based on the PageTyping model, the <code>pagetypings</code> table has:</p>
+        <ul>
+            <li>✅ <code>page_type</code> - Direct storage of page type value</li>
+            <li>✅ <code>page_subtype</code> - Direct storage of page subtype value</li>
+            <li>✅ <code>cover_type_id</code> - Foreign key to cover_types table</li>
+        </ul>
+        
+        <p>The relationships work as:</p>
+        <ul>
+            <li><code>pageType()</code> - Maps <code>page_type</code> field to <code>id</code> in page_types table</li>
+            <li><code>pageSubType()</code> - Maps <code>page_subtype</code> field to <code>id</code> in page_subtypes table</li>
+            <li><code>coverType()</code> - Maps <code>cover_type_id</code> field to <code>Id</code> in cover_types table</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>Test the Fix</h2>
+        <p>To verify the fix is working:</p>
+        <ol>
+            <li><a href="/filearchive" target="_blank">Visit the File Archive page</a></li>
+            <li>Check that the page loads without SQL errors</li>
+            <li>Verify that all files are displayed (not just CON-RES)</li>
+            <li>Check browser console for any remaining errors</li>
+        </ol>
+        
+        <p class="success">Expected result: Page should load successfully showing all archived files with proper cover images and metadata.</p>
+    </div>
+    
+    <div class="test-section">
+        <h2>Changes Summary</h2>
+        <h3>Files Modified:</h3>
+        <ul>
+            <li><code>app/Http/Controllers/FilearchiveController.php</code>
+                <ul>
+                    <li>Removed <code>page_type_id</code> and <code>page_subtype_id</code> from select queries</li>
+                    <li>Fixed both <code>pagetypings</code> and <code>firstPageTyping</code> relationship queries</li>
+                </ul>
+            </li>
+        </ul>
+        
+        <h3>Previous Issues Fixed:</h3>
+        <ul>
+            <li>✅ Removed CON-RES-198% filter (shows all files)</li>
+            <li>✅ Added lazy loading for images</li>
+            <li>✅ Reduced pagination from 12 to 6 items</li>
+            <li>✅ Fixed hardcoded file count</li>
+            <li>✅ Fixed SQL column error</li>
+        </ul>
+    </div>
+
+</body>
+</html>
