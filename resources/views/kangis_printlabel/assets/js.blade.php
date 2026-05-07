@@ -264,6 +264,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 secondaryFileNumber: rec.secondary_file_number || null,
                 originalFileNumber: rec.file_number || null,
                 isSTFile: false,
+                kangisFilenoPlaceholder: rec.secondary_file_number || rec.kangis_fileno_placeholder || null,
                 shelfLabel: rec.shelf_label || 'Shelf/Rack-N/A',
                 shelfValue: rec.shelf_value || 'N/A',
                 trackingId: trackingId,
@@ -429,6 +430,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 fileNumber: derived.primaryNumber || file.file_number || '',
                 primaryFileNumber: derived.primaryNumber || file.file_number || null,
                 secondaryFileNumber: file.secondary_file_number || null,
+                kangisFilenoPlaceholder: file.kangis_fileno_placeholder || file.secondary_file_number || null,
                 originalFileNumber: file.file_number,
                 isSTFile: false,
                 shelfLabel: shelfLabel,
@@ -452,6 +454,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     file_number: entry.fileNumber,
                     primary_number: entry.primaryFileNumber || entry.fileNumber,
                     secondary_number: entry.secondaryFileNumber || null,
+                    kangis_fileno_placeholder: entry.kangisFilenoPlaceholder || null,
                     is_st: false,
                     shelf_label: entry.shelfLabel,
                     shelf_value: entry.shelfValue,
@@ -546,6 +549,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 sfn.className = 'label-preview-file !text-[10px] !text-gray-500 !font-normal !mt-[-2px]';
                 sfn.textContent = entry.secondaryFileNumber;
                 meta.appendChild(sfn);
+            }
+
+            // Display kangis_fileno_placeholder in preview
+            if (entry.kangisFilenoPlaceholder && entry.kangisFilenoPlaceholder !== (entry.primaryFileNumber || entry.fileNumber) && entry.kangisFilenoPlaceholder !== entry.secondaryFileNumber) {
+                var pfn = document.createElement('div');
+                pfn.className = 'label-preview-file !text-[10px] !text-gray-500 !font-normal !mt-[-2px]';
+                pfn.textContent = entry.kangisFilenoPlaceholder;
+                meta.appendChild(pfn);
             }
 
             var sd = buildShelfDisplayLabel(entry.shelfLabel, entry.shelfValue);

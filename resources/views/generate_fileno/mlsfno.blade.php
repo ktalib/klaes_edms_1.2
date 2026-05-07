@@ -2361,12 +2361,28 @@
                     </div>
                 </div>
 
-                <!-- Count info -->
-                <div id="bpCountInfo" class="hidden bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 flex items-center space-x-2">
-                    <i data-lucide="files" class="w-4 h-4 text-emerald-600 flex-shrink-0"></i>
-                    <span class="text-sm text-emerald-800">
-                        <strong id="bpCountText">0</strong> commissioning sheet(s) found on this date.
-                    </span>
+                <!-- Count info boxes -->
+                <div id="bpCountInfo" class="hidden space-y-4">
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                            <span class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Total</span>
+                            <span id="bpTotalCount" class="text-2xl font-black text-slate-700">0</span>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                            <span class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Printed</span>
+                            <span id="bpPrintedCount" class="text-2xl font-black text-slate-700">0</span>
+                        </div>
+                        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center ring-2 ring-emerald-500/10">
+                            <span class="block text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1">Unprinted</span>
+                            <span id="bpUnprintedCount" class="text-2xl font-black text-emerald-700">0</span>
+                        </div>
+                    </div>
+                    <div class="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5 flex items-center space-x-2">
+                        <i data-lucide="info" class="w-4 h-4 text-emerald-600 flex-shrink-0"></i>
+                        <span class="text-xs text-emerald-800 font-medium">
+                            Note: The <strong id="bpRemainingText" class="text-emerald-900">0</strong> unprinted sheet(s) will be generated for this date.
+                        </span>
+                    </div>
                 </div>
 
                 <!-- No batches notice -->
@@ -2385,7 +2401,7 @@
                 <button id="bpPrintBtn" onclick="executeBatchPrint()" disabled
                     class="px-5 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors">
                     <i data-lucide="printer" class="w-4 h-4"></i>
-                    <span>Print All Commissioning Sheets</span>
+                    <span>Print Remaining Commissioning Sheets</span>
                 </button>
             </div>
         </div>

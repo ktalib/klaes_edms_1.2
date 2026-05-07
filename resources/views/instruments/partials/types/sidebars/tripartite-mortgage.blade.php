@@ -12,7 +12,7 @@
     
     <div class="grid grid-cols-2 gap-3">
         <x-instrument-input id="coMortgagorAddress" label="Address" icon="map-pin" placeholder="Enter address" value="{{ $record->party_3_address ?? '' }}" />
-        <x-instrument-input id="coMortgagorDistrict" label="District" icon="map-pin" placeholder="District" value="{{ $record->party_3_district ?? '' }}" />
+        <x-instrument-select id="coMortgagorDistrict" label="District" icon="map-pin" :options="$districts->merge([(object)['name' => 'Others']])" placeholder="District" value="{{ $record->party_3_district ?? '' }}" optionValue="name" optionLabel="name" />
     </div>
 
     <div class="grid grid-cols-2 gap-3">
@@ -36,7 +36,7 @@
     
     <div class="grid grid-cols-2 gap-3">
         <x-instrument-input id="thirdPartyAddress" label="Address" icon="map-pin" placeholder="Enter address" value="{{ $record->party_4_address ?? '' }}" />
-        <x-instrument-input id="thirdPartyDistrict" label="District" icon="map-pin" placeholder="District" value="{{ $record->party_4_district ?? '' }}" />
+        <x-instrument-select id="thirdPartyDistrict" label="District" icon="map-pin" :options="$districts->merge([(object)['name' => 'Others']])" placeholder="District" value="{{ $record->party_4_district ?? '' }}" optionValue="name" optionLabel="name" />
     </div>
 
     <div class="grid grid-cols-2 gap-3">
@@ -60,7 +60,7 @@
     
     <div class="grid grid-cols-2 gap-3">
         <x-instrument-input id="party5Address" label="Address" icon="map-pin" placeholder="Enter address" value="{{ $record->party_5_address ?? '' }}" />
-        <x-instrument-input id="party5District" label="District" icon="map-pin" placeholder="District" value="{{ $record->party_5_district ?? '' }}" />
+        <x-instrument-select id="party5District" label="District" icon="map-pin" :options="$districts->merge([(object)['name' => 'Others']])" placeholder="District" value="{{ $record->party_5_district ?? '' }}" optionValue="name" optionLabel="name" />
     </div>
 
     <div class="grid grid-cols-2 gap-3">

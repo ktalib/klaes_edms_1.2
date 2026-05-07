@@ -2135,6 +2135,14 @@ class FileNumberController extends Controller
                     });
                 });
 
+                // Only log records that haven't been printed yet
+                $query->whereNotExists(function ($q) use ($docType) {
+                    $q->select(DB::raw(1))
+                        ->from('print_logs as pl')
+                        ->whereColumn('pl.reference_number', 'mls_file_no.full_file_number')
+                        ->where('pl.document_type', $docType);
+                });
+
                 $files = $query->pluck('full_file_number');
 
                 $logs = [];

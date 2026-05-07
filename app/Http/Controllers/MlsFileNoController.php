@@ -2914,19 +2914,24 @@ class MlsFileNoController extends Controller
             // For informative messaging, we check if records exist for this date at all
             $totalCountForScope = (clone $query)->count();
 
+            // Count unprinted records separately for the count badge
+            $unprintedCountQuery = (clone $query)->whereNotExists(function ($q) {
+                $q->select(DB::raw(1))
+                    ->from('print_logs as pl')
+                    ->whereColumn('pl.reference_number', 'mls_file_no.full_file_number')
+                    ->where('pl.document_type', 'Commissioning Sheet');
+            });
+            $unprintedCount = $unprintedCountQuery->count();
+            $printedCount = $totalCountForScope - $unprintedCount;
+
             // Exclude files already printed (for date/daily scopes only).
             if (in_array($scope, ['date', 'daily_24h'], true) && !$request->boolean('include_printed')) {
-                $query->whereNotExists(function ($q) {
-                    $q->select(DB::raw(1))
-                        ->from('print_logs as pl')
-                        ->whereColumn('pl.reference_number', 'mls_file_no.full_file_number')
-                        ->where('pl.document_type', 'Commissioning Sheet');
-                });
+                $query = $unprintedCountQuery;
             }
 
             $records = $query->get();
 
-            if ($records->isEmpty()) {
+            if ($records->isEmpty() && !$request->boolean('include_printed')) {
                 $message = 'No records found.';
                 if ($scope === 'daily_24h') {
                     $message = 'No unprinted records found in the last 24 hours.';
@@ -2942,13 +2947,19 @@ class MlsFileNoController extends Controller
 
                 return response()->json([
                     'success' => false,
-                    'message' => $message
+                    'message' => $message,
+                    'total_count' => $totalCountForScope,
+                    'printed_count' => $printedCount,
+                    'unprinted_count' => $unprintedCount
                 ], 404);
             }
 
             return response()->json([
                 'success' => true,
                 'count' => $records->count(),
+                'total_count' => $totalCountForScope,
+                'printed_count' => $printedCount,
+                'unprinted_count' => $unprintedCount,
                 'scope' => $scope,
                 'batch_no' => $batchNo,
                 'date' => $date,

@@ -315,7 +315,7 @@
                             </span>
                           @endif
                         @else
-                          <span>{{ Str::of(trim(($app->mother_applicant_title ?? '') . ' ' . ($app->mother_first_name ?? '') . ' ' . ($app->mother_surname ?? '')))->title() }}</span>
+                          <span>{{ Str::of(trim(($app->mother_applicant_title ?? '') . ' ' . ($app->mother_first_name ?? '') . ' ' . ($app->mother_middle_name ?? '') . ' ' . ($app->mother_surname ?? '')))->title() }}</span>
                         @endif
                       </div>
                     </div>
@@ -383,7 +383,7 @@
                             </span>
                           @endif
                         @else
-                          <span>{{ Str::of(trim(($app->applicant_title ?? '') . ' ' . ($app->first_name ?? '') . ' ' . ($app->surname ?? '')))->title() }}</span>
+                          <span>{{ Str::of(trim(($app->applicant_title ?? '') . ' ' . ($app->first_name ?? '') . ' ' . ($app->middle_name ?? '') . ' ' . ($app->surname ?? '')))->title() }}</span>
                         @endif
                       </div>
                     </div>

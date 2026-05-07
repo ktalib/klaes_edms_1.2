@@ -13,6 +13,15 @@ document.addEventListener('DOMContentLoaded', function () {
     let tempFileCounter = 1;
     let opLookupMatchedRecord = null;
     let suppressNextOpSerialLookup = false;
+
+    // Global Exports (Moved to top of DOMContentLoaded for robustness)
+    window.openFileSelector = openFileSelector;
+    window.applySelectedFile = applySelectedFile;
+    window.closeRegistrationDialog = closeRegistrationDialog;
+    window.openRegistrationDialog = openRegistrationDialog;
+    window.checkDuplicate = checkDuplicate;
+    window.handleSubmit = handleSubmit;
+    window.populateForm = populateForm;
     const isInstrumentCaptureCreatePage = window.location.pathname.toLowerCase().includes('/instruments/create');
 
     const instrumentTypes = {
@@ -184,7 +193,7 @@ document.addEventListener('DOMContentLoaded', function () {
         registrationNumberInput: document.getElementById('registration_number'),
         registrationDateInput: document.getElementById('registrationDate'),
         registrationTimeInput: document.getElementById('registrationTime'),
-        
+
         landUseIdSelect: document.getElementById('land_use_id'),
         purposeIdSelect: document.getElementById('purpose_id'),
         landUseHidden: document.getElementById('land_use'),
@@ -211,7 +220,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (typeData) {
                     // Update current logic for the selected subtype
                     currentInstrumentType = subtype; // Update global state
-                    
+
                     elements.dialogTitle.textContent = `Capture ${typeData.name} `;
                     updatePartyLabels(subtype);
                     showInstrumentForm(subtype);
@@ -1955,10 +1964,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
 
-        
+
         // Hard-set hidden fields so submitForm() always receives source linkage values,
         // even if Alpine reactivity timing is delayed.
-       
+
 
         const setHidden = (name, value) => {
             const els = document.querySelectorAll(`form#generateForm input[name="${name}"]`);
@@ -2581,17 +2590,17 @@ document.addEventListener('DOMContentLoaded', function () {
                     };
 
                     toggle.addEventListener('change', updateVisibility);
-                    
+
                     // Prefix for dynamic fetching
-                    const prefix = item.chk === 'hasCoMortgagor' ? 'coMortgagor' : 
-                                  (item.chk === 'hasThirdParty' ? 'thirdParty' : 'party5');
-                    
+                    const prefix = item.chk === 'hasCoMortgagor' ? 'coMortgagor' :
+                        (item.chk === 'hasThirdParty' ? 'thirdParty' : 'party5');
+
                     const stateEl = document.getElementById(`${prefix}State`);
                     const lgaEl = document.getElementById(`${prefix}Lga`);
 
                     // Attach listener to State dropdown
                     if (stateEl && lgaEl) {
-                        stateEl.addEventListener('change', function() {
+                        stateEl.addEventListener('change', function () {
                             fetchLgas(this.value, `${prefix}Lga`);
                         });
                     }
@@ -2601,7 +2610,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         container.classList.remove('hidden');
                         // Trigger initial fetch if visible and state has value
                         if (stateEl && stateEl.value) {
-                             fetchLgas(stateEl.value, `${prefix}Lga`);
+                            fetchLgas(stateEl.value, `${prefix}Lga`);
                         }
                     } else {
                         container.classList.add('hidden');
@@ -2648,7 +2657,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Logic for Tripartite Mortgage:
         // Unchecked = Co-Mortgagor
         // Checked = Third Party
-        
+
         // Logic for Deed of Mortgage (Standard):
         // Checked = Co-Mortgagor (since that's the default extra party role)
         // (Note: Deed of Mortgage hides this section if unchecked)
@@ -2656,11 +2665,11 @@ document.addEventListener('DOMContentLoaded', function () {
         let useThirdPartyTerm = false;
 
         if (isTripartiteSubtype) {
-             if (isChecked) useThirdPartyTerm = true;
+            if (isChecked) useThirdPartyTerm = true;
         } else {
-             // For standard deed, maybe just stick to Co-Mortgagor?
-             // User didn't specify transforming Deed of Mortgage labels, but let's keep Co-Mortgagor standard.
-             useThirdPartyTerm = false; 
+            // For standard deed, maybe just stick to Co-Mortgagor?
+            // User didn't specify transforming Deed of Mortgage labels, but let's keep Co-Mortgagor standard.
+            useThirdPartyTerm = false;
         }
 
         if (header) {
@@ -2674,11 +2683,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 checkboxLabel.textContent = 'Include Co-Mortgagor (three-party agreement)';
             }
         }
-        
+
         if (nameLabel) {
             nameLabel.textContent = useThirdPartyTerm ? 'Third Party Name' : 'Co-Mortgagor Name';
         }
-        
+
         if (nameInput) {
             nameInput.placeholder = useThirdPartyTerm ? 'Enter third party name' : 'Enter co-mortgagor full name';
         }
@@ -2686,7 +2695,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (addrLabel) {
             addrLabel.textContent = useThirdPartyTerm ? 'Third Party Address' : 'Co-Mortgagor Address';
         }
-        
+
         if (distLabel) {
             distLabel.textContent = useThirdPartyTerm ? 'Third Party District' : 'Co-Mortgagor District';
         }
@@ -2939,8 +2948,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     field.style.backgroundColor = '#f3f4f6';
                 }
             });
-            
-            
+
+
             // Trigger field hiding logic
             toggleKanoFields('Kano State Government');
 
@@ -3343,7 +3352,7 @@ document.addEventListener('DOMContentLoaded', function () {
         window.location.reload();
     }
 
-    function closeRegistrationDialog() { 
+    function closeRegistrationDialog() {
         const selectedTypeBeforeClose = String(window.prefillOpTypeFromCommission || '').toLowerCase();
         const wasFromCommission = window.ossOpContext === true;
         const wasFromFfr = window.ffrExistingManualRegistration === true;
@@ -4086,7 +4095,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Check if any match comes from instrument_capture (already captured)
             const capturedCount = matches.filter(r => r.source_table === 'instrument_capture').length;
-            const praOnlyCount  = matches.filter(r => r.source_table === 'pra').length;
+            const praOnlyCount = matches.filter(r => r.source_table === 'pra').length;
             const usedCount = matches.filter(r => r.already_used).length;
             const availableCount = matches.length - usedCount;
 
@@ -4210,14 +4219,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // Global Exports
-    window.openFileSelector = openFileSelector;
-    window.applySelectedFile = applySelectedFile;
-    window.closeRegistrationDialog = closeRegistrationDialog;
-    window.openRegistrationDialog = openRegistrationDialog;
-    window.checkDuplicate = checkDuplicate;
-    window.handleSubmit = handleSubmit;
-    window.populateForm = populateForm;
+    // Exported later at the bottom of DOMContentLoaded, but moved here for safety
     window.prefillLandUseAndPurposeFromLookup = prefillLandUseAndPurposeFromLookup;
 
     async function showAtomicRegistrationConfirmation() {
@@ -4393,7 +4395,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 const typedGrantor = (formDataCurrent.get('firstPartyName') || '').toString().trim() || 'Kano State Government';
                 const typedGrantee = (formDataCurrent.get('secondPartyName') || rec.party_2_name || rec.second_party_name || '').toString().trim() || null;
                 const csrfTok = document.querySelector('input[name="_token"]')?.value ||
-                                document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+                    document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
                 const resolvedTemp2 = (window._generatedTempFileno || '').toString().trim();
                 const sourceFileNo3 = (window.ffrExistingSourceFileNo || '').toString().trim();
                 const systemTempFileNo3 = (elements.displayFileno?.value || '').toString().trim();
@@ -4613,7 +4615,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const sourceFileNo = (window.ffrExistingSourceFileNo || '').toString().trim();
             const csrfToken = document.querySelector('input[name="_token"]')?.value ||
-                              document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+                document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
             // ── Direct OP mode (indexed files): create OP PRA row, then open Capture Existing for Transfer of Title ──
             if (window.ffrDirectOpMode === true) {
@@ -5253,14 +5255,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 title: 'OP Saved!',
                 html: '<div style="display:grid;gap:12px;margin-top:4px;">'
                     + '<div style="border:1.5px solid #e2e8f0;border-radius:10px;padding:12px 12px 10px;background:#f8fafc;">'
-                    +   '<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin:0 0 10px;">Continue with OP Processing</p>'
-                    +   '<button id="swal-btn-subdivide" class="swal2-confirm swal2-styled" style="background:#ea580c;justify-content:center;width:100%;margin-bottom:8px;">&#x2702; Subdivision &mdash; this OP covers multiple files</button>'
-                    +   '<div id="swal-sub-count-row" style="display:none;gap:8px;align-items:center;margin-bottom:8px;">'
-                    +     '<input id="swal-op-count" type="number" min="2" step="1" placeholder="e.g. 3" '
-                    +       'style="flex:1;padding:8px 12px;border:1.5px solid #ea580c;border-radius:8px;font-size:14px;text-align:center;" />'
-                    +     '<button id="swal-sub-confirm" style="background:#ea580c;color:white;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Confirm</button>'
-                    +   '</div>'
-                    +   '<button id="swal-btn-merger" class="swal2-confirm swal2-styled" style="background:#7c3aed;justify-content:center;width:100%;margin-bottom:0;">+ Merger &mdash; another OP will be added</button>'
+                    + '<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin:0 0 10px;">Continue with OP Processing</p>'
+                    + '<button id="swal-btn-subdivide" class="swal2-confirm swal2-styled" style="background:#ea580c;justify-content:center;width:100%;margin-bottom:8px;">&#x2702; Subdivision &mdash; this OP covers multiple files</button>'
+                    + '<div id="swal-sub-count-row" style="display:none;gap:8px;align-items:center;margin-bottom:8px;">'
+                    + '<input id="swal-op-count" type="number" min="2" step="1" placeholder="e.g. 3" '
+                    + 'style="flex:1;padding:8px 12px;border:1.5px solid #ea580c;border-radius:8px;font-size:14px;text-align:center;" />'
+                    + '<button id="swal-sub-confirm" style="background:#ea580c;color:white;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Confirm</button>'
+                    + '</div>'
+                    + '<button id="swal-btn-merger" class="swal2-confirm swal2-styled" style="background:#7c3aed;justify-content:center;width:100%;margin-bottom:0;">+ Merger &mdash; another OP will be added</button>'
                     + '</div>'
                     + '<button id="swal-btn-proceed" class="swal2-cancel swal2-styled" style="background:#2563eb;justify-content:center;width:100%;">Continue with File Commissioning</button>'
                     + '</div>',
@@ -5268,8 +5270,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 showCancelButton: false,
                 allowOutsideClick: false,
                 didOpen: function () {
-                    var subBtn     = document.getElementById('swal-btn-subdivide');
-                    var countRow   = document.getElementById('swal-sub-count-row');
+                    var subBtn = document.getElementById('swal-btn-subdivide');
+                    var countRow = document.getElementById('swal-sub-count-row');
                     var countInput = document.getElementById('swal-op-count');
                     var subConfirm = document.getElementById('swal-sub-confirm');
                     var isSubdivided = false;
@@ -5485,7 +5487,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 return {
                     success: false,
-                    propId: null, 
+                    propId: null,
                     praId: null,
                     message: flattenErrors(createData?.errors) || createData?.message || 'PRA create did not return a valid prop_id.'
                 };
@@ -5500,7 +5502,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Called by mls_js.blade.php after a file number is commissioned for a new (non-existing) OP.
     // Creates a single PRA record using the real file number â€” no temp file numbers.
-    window.submitPendingNewOpPra = async function(fileNumber) {
+    window.submitPendingNewOpPra = async function (fileNumber) {
         if (!window.pendingNewOpFormData || !fileNumber) return;
         const formData = window.pendingNewOpFormData;
         window.pendingNewOpFormData = null;
@@ -5542,7 +5544,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Called after commissioning succeeds for an existing OP captured via lookup/manual form.
     // Always creates Row 2: a new PRA record identical to Row 1 but with mlsFNo filled in.
     // If the name changed, Row 2 becomes a Transfer of Title instead of an OP.
-    window.submitPendingExistingOpPra = async function(fileNumber, commissionedFileNameArg = '', options = {}) {
+    window.submitPendingExistingOpPra = async function (fileNumber, commissionedFileNameArg = '', options = {}) {
         const normalizedFileNumber = (fileNumber || '').toString().trim();
         if (!window.pendingExistingOpPraContext || !normalizedFileNumber) return;
 
@@ -6262,7 +6264,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                     select.appendChild(option);
                 });
-                
+
                 // If it was auto-selected and there's only one purpose or something? No, let user select.
                 if (select.value) {
                     elements.purposeHidden.value = select.options[select.selectedIndex].dataset.name;
@@ -6305,7 +6307,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (matchedKey) {
                 detectedUse = fileNoToLandUse[matchedKey];
-                
+
                 // Auto-select in Land Use dropdown
                 const options = Array.from(landUseSelect.options);
                 const matchingOption = options.find(opt => opt.textContent.trim().toUpperCase() === detectedUse.toUpperCase());
@@ -6350,10 +6352,10 @@ document.addEventListener('DOMContentLoaded', function () {
     setTimeout(() => {
         fetchLandUses();
         updateLandUseDisplay();
-        
+
         // Add listeners for new dropdowns
         if (elements.landUseIdSelect) {
-            elements.landUseIdSelect.addEventListener('change', function() {
+            elements.landUseIdSelect.addEventListener('change', function () {
                 const selectedOption = this.options[this.selectedIndex];
                 elements.landUseHidden.value = selectedOption ? selectedOption.dataset.name : '';
                 fetchPurposes(this.value);
@@ -6361,7 +6363,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (elements.purposeIdSelect) {
-            elements.purposeIdSelect.addEventListener('change', function() {
+            elements.purposeIdSelect.addEventListener('change', function () {
                 const selectedOption = this.options[this.selectedIndex];
                 elements.purposeHidden.value = selectedOption ? selectedOption.dataset.name : '';
             });
@@ -6372,9 +6374,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const container = document.getElementById('kano-grantor-fields');
         const districtContainer = document.getElementById('district-container');
         const row1 = document.getElementById('first-party-row-1');
-        
+
         if (!container) return;
-        
+
         if (name && name.trim().toLowerCase() === 'kano state government') {
             container.classList.add('hidden');
             if (districtContainer) districtContainer.classList.add('hidden');
@@ -6389,11 +6391,11 @@ document.addEventListener('DOMContentLoaded', function () {
     // Attach listener for First Party Name
     const p1NameField = document.getElementById('firstPartyName');
     if (p1NameField) {
-        p1NameField.addEventListener('input', function() {
+        p1NameField.addEventListener('input', function () {
             toggleKanoFields(this.value);
         });
         // Also listen for change and character keyups to be safe
-        p1NameField.addEventListener('change', function() {
+        p1NameField.addEventListener('change', function () {
             toggleKanoFields(this.value);
         });
     }
@@ -6401,7 +6403,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // ─── RDS & CoR Action Handlers for Registration Success Modal ───
-(function() {
+(function () {
     const cfg = () => window.InstrumentCaptureConfig || {};
     const urls = () => cfg().urls || {};
     const csrf = () => cfg().csrfToken || document.querySelector('meta[name="csrf-token"]')?.content || '';
@@ -6432,7 +6434,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (type !== 'loading') setTimeout(() => { if (el.textContent === msg) el.textContent = ''; el.className = 'mt-3'; }, 5000);
     }
 
-    window._icGenerateRDS = function(deedRegId) {
+    window._icGenerateRDS = function (deedRegId) {
         if (!deedRegId || deedRegId === 'deed_reg_null') return;
         const btn = event?.target?.closest('button');
         if (btn) { btn.disabled = true; btn.classList.add('opacity-40'); }
@@ -6442,29 +6444,29 @@ document.addEventListener('DOMContentLoaded', function () {
             method: 'POST',
             headers: { 'X-CSRF-TOKEN': csrf(), 'Content-Type': 'application/json', 'Accept': 'application/json' }
         })
-        .then(r => r.json())
-        .then(d => {
-            if (d.success) {
-                showInlineStatus('✓ RDS generated successfully', 'success');
-                enableBtn('ic-print-rds-btn');
-                enableBtn('ic-generate-cor-btn');
-                if (btn) { btn.disabled = true; btn.classList.add('opacity-40', 'cursor-not-allowed'); }
-            } else {
-                if (d.rds_id) { enableBtn('ic-print-rds-btn'); enableBtn('ic-generate-cor-btn'); }
-                showInlineStatus(d.error || 'RDS could not be generated.', d.rds_id ? 'info' : 'error');
-                if (btn && !d.rds_id) { btn.disabled = false; btn.classList.remove('opacity-40'); }
-                if (btn && d.rds_id) { btn.disabled = true; btn.classList.add('opacity-40', 'cursor-not-allowed'); }
-            }
-        })
-        .catch(() => { showInlineStatus('Failed to generate RDS.', 'error'); if (btn) { btn.disabled = false; btn.classList.remove('opacity-40'); } });
+            .then(r => r.json())
+            .then(d => {
+                if (d.success) {
+                    showInlineStatus('✓ RDS generated successfully', 'success');
+                    enableBtn('ic-print-rds-btn');
+                    enableBtn('ic-generate-cor-btn');
+                    if (btn) { btn.disabled = true; btn.classList.add('opacity-40', 'cursor-not-allowed'); }
+                } else {
+                    if (d.rds_id) { enableBtn('ic-print-rds-btn'); enableBtn('ic-generate-cor-btn'); }
+                    showInlineStatus(d.error || 'RDS could not be generated.', d.rds_id ? 'info' : 'error');
+                    if (btn && !d.rds_id) { btn.disabled = false; btn.classList.remove('opacity-40'); }
+                    if (btn && d.rds_id) { btn.disabled = true; btn.classList.add('opacity-40', 'cursor-not-allowed'); }
+                }
+            })
+            .catch(() => { showInlineStatus('Failed to generate RDS.', 'error'); if (btn) { btn.disabled = false; btn.classList.remove('opacity-40'); } });
     };
 
-    window._icPrintRDS = function(deedRegId) {
+    window._icPrintRDS = function (deedRegId) {
         if (!deedRegId || deedRegId === 'deed_reg_null') return;
         window.open(`${urls().viewRds}/${deedRegId}`, '_blank');
     };
 
-    window._icGenerateCoR = function(deedRegId) {
+    window._icGenerateCoR = function (deedRegId) {
         if (!deedRegId || deedRegId === 'deed_reg_null') return;
         const btn = event?.target?.closest('button');
         if (btn) { btn.disabled = true; btn.classList.add('opacity-40'); }
@@ -6474,23 +6476,23 @@ document.addEventListener('DOMContentLoaded', function () {
             method: 'POST',
             headers: { 'X-CSRF-TOKEN': csrf(), 'Content-Type': 'application/json', 'Accept': 'application/json' }
         })
-        .then(r => r.json())
-        .then(d => {
-            if (d.success) {
-                showInlineStatus('✓ CoR generated successfully', 'success');
-                enableBtn('ic-print-cor-btn');
-                if (btn) { btn.disabled = true; btn.classList.add('opacity-40', 'cursor-not-allowed'); }
-            } else {
-                if (d.cor_exists) { enableBtn('ic-print-cor-btn'); }
-                showInlineStatus(d.error || 'CoR could not be generated.', d.cor_exists ? 'info' : 'error');
-                if (btn && !d.cor_exists) { btn.disabled = false; btn.classList.remove('opacity-40'); }
-                if (btn && d.cor_exists) { btn.disabled = true; btn.classList.add('opacity-40', 'cursor-not-allowed'); }
-            }
-        })
-        .catch(() => { showInlineStatus('Failed to generate CoR.', 'error'); if (btn) { btn.disabled = false; btn.classList.remove('opacity-40'); } });
+            .then(r => r.json())
+            .then(d => {
+                if (d.success) {
+                    showInlineStatus('✓ CoR generated successfully', 'success');
+                    enableBtn('ic-print-cor-btn');
+                    if (btn) { btn.disabled = true; btn.classList.add('opacity-40', 'cursor-not-allowed'); }
+                } else {
+                    if (d.cor_exists) { enableBtn('ic-print-cor-btn'); }
+                    showInlineStatus(d.error || 'CoR could not be generated.', d.cor_exists ? 'info' : 'error');
+                    if (btn && !d.cor_exists) { btn.disabled = false; btn.classList.remove('opacity-40'); }
+                    if (btn && d.cor_exists) { btn.disabled = true; btn.classList.add('opacity-40', 'cursor-not-allowed'); }
+                }
+            })
+            .catch(() => { showInlineStatus('Failed to generate CoR.', 'error'); if (btn) { btn.disabled = false; btn.classList.remove('opacity-40'); } });
     };
 
-    window._icPrintCoR = function(deedRegId) {
+    window._icPrintCoR = function (deedRegId) {
         if (!deedRegId || deedRegId === 'deed_reg_null') return;
         const viewUrl = `${urls().viewCor}?id=${deedRegId}`;
         window.open(viewUrl, '_blank');

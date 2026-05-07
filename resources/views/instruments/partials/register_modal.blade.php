@@ -345,7 +345,7 @@
                                     <x-instrument-select id="firstPartyLga" label="" icon="map"
                                         :options="[]" placeholder="LGA" value="{{ $record->party_1_lga ?? $record->party_1_city ?? '' }}" />
                                     <x-instrument-select id="firstPartyState" label="" icon="map-pin"
-                                        :options="$states" placeholder="State" value="{{ $record->party_1_state ?? '' }}" />
+                                        :options="$states" placeholder="State" value="{{ $record->party_1_state ?? 'Kano' }}" />
                                 </div>
                                 <x-instrument-input id="firstPartyPhone" label="" icon="phone"
                                     placeholder="Phone Number" value="{{ $record->party_1_phone ?? '' }}" />
@@ -387,7 +387,7 @@
                                 <x-instrument-select id="secondPartyLga" label="" icon="map"
                                     :options="[]" placeholder="LGA" value="{{ $record->party_2_lga ?? $record->party_2_city ?? '' }}" />
                                 <x-instrument-select id="secondPartyState" label="" icon="map-pin"
-                                    :options="$states" placeholder="State" value="{{ $record->party_2_state ?? '' }}" />
+                                    :options="$states" placeholder="State" value="{{ $record->party_2_state ?? 'Kano' }}" />
                             </div>
                             <x-instrument-input id="secondPartyPhone" label="" icon="phone"
                                 placeholder="Phone Number" value="{{ $record->party_2_phone ?? '' }}" />

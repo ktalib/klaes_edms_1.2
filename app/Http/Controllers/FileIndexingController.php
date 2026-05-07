@@ -768,6 +768,7 @@ class FileIndexingController extends Controller
             'cofo_vol_no' => $record->volumeNo ?? $record->volume_no ?? null,
             'cofo_deeds_time' => $this->formatTimeForForm($record->transaction_time ?? $record->deeds_time ?? $record->reg_time ?? null),
             'cofo_deeds_date' => $this->formatDateForForm($record->deeds_date ?? $record->transaction_date ?? $record->reg_date ?? null),
+            'transaction_date' => $this->formatDateForForm($record->transaction_date ?? null),
             'cofo_first_party' => $record->Grantor ?? $record->grantor ?? $record->party_1 ?? null,
             'cofo_second_party' => $record->Grantee ?? $record->grantee ?? $record->party_2 ?? null,
             'cofo_land_use' => $record->land_use ?? null,
@@ -1906,7 +1907,7 @@ class FileIndexingController extends Controller
             $cofoPayload['volume_no'] ?? null
         );
 
-        $transactionDate = $cofoPayload['cofo_date'] ?? $cofoPayload['deeds_date'] ?? null;
+        $transactionDate = $cofoPayload['transaction_date'] ?? $cofoPayload['cofo_date'] ?? $cofoPayload['deeds_date'] ?? null;
 
         $recordPayload = [
             'mlsFNo' => $fileNumber,
@@ -3769,7 +3770,7 @@ class FileIndexingController extends Controller
             $cofoPayload['volume_no'] ?? null
         );
 
-        $transactionDate = $cofoPayload['cofo_date'] ?? $cofoPayload['deeds_date'] ?? null;
+        $transactionDate = $cofoPayload['transaction_date'] ?? $cofoPayload['cofo_date'] ?? $cofoPayload['deeds_date'] ?? null;
 
         $recordPayload = [
             'mlsFNo' => $fileIndexing->file_number,
@@ -3824,6 +3825,7 @@ class FileIndexingController extends Controller
             'cofo_no' => $this->normalizeValue($request->input('cofo_no')),
             'instrument_type' => $this->normalizeValue($request->input('cofo_instrument_type')),
             'cofo_date' => $this->normalizeValue($request->input('cofo_date')),
+            'transaction_date' => $this->normalizeValue($request->input('transaction_date')),
             'serial_no' => $this->normalizeValue($request->input('cofo_serial_no')),
             'page_no' => $this->normalizeValue($request->input('cofo_page_no')),
             'volume_no' => $this->normalizeValue($request->input('cofo_vol_no')),

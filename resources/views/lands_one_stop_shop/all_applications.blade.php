@@ -299,7 +299,7 @@
                                     <td class="px-4 py-2.5 text-xs text-slate-400 font-mono">{{ $loop->iteration }}</td>
                                     <td class="px-4 py-2.5 text-slate-600 text-xs font-mono">
                                         @php
-                                            $opSerial = $record->ic_op_serial_number ?? $record->pra_op_serial_number ?? null;
+                                            $opSerial = $record->op_serial_number ?? $record->ic_op_serial_number ?? $record->pra_op_serial_number ?? null;
                                         @endphp
                                         @if($opSerial)
                                             <span class="text-slate-900 font-semibold">{{ $opSerial }}</span>

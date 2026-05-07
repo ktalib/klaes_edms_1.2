@@ -1750,6 +1750,7 @@ class OpResettlementApplicationController extends Controller
             $base = DB::connection('sqlsrv')
                 ->table('fileNumber as fn')
                 ->leftJoin('mls_file_no as mfn', 'fn.tracking_id', '=', 'mfn.tracking_id')
+                ->leftJoin('purposes as p', 'mfn.purpose_id', '=', 'p.id')
                 ->leftJoin('instrument_capture as ic', function ($join) {
                     $join->on('mfn.source_instrument_capture_id', '=', 'ic.id')
                         ->where('ic.instrument_type', 'Occupancy Permit (OP)');
@@ -1766,6 +1767,8 @@ class OpResettlementApplicationController extends Controller
                     'mfn.id as mls_file_no_id',
                     'mfn.customer_type as mfn_customer_type',
                     'mfn.land_use as mfn_land_use',
+                    'mfn.purpose_id as mfn_purpose_id',
+                    'p.name as mfn_purpose_name',
                     'mfn.source_instrument_capture_id',
                     'ic.id as ic_id',
                     'ic.op_type',
@@ -1866,7 +1869,6 @@ class OpResettlementApplicationController extends Controller
             if ($icPropId) {
                 $allPraRows = DB::connection('sqlsrv')->table('pra')
                     ->where('prop_id', $icPropId)
-                    ->where('system_source', 'OSSOPCHANGEOFNAME')
                     ->orderBy('id')
                     ->get();
             } elseif (!empty($mlsfNo)) {
@@ -1874,7 +1876,6 @@ class OpResettlementApplicationController extends Controller
                     ->where(function ($q) use ($mlsfNo) {
                         $q->where('mlsFNo', $mlsfNo)->orWhere('fileno', $mlsfNo);
                     })
-                    ->where('system_source', 'OSSOPCHANGEOFNAME')
                     ->orderBy('id')
                     ->get();
             }
@@ -1978,7 +1979,6 @@ class OpResettlementApplicationController extends Controller
             if (!empty($pra->prop_id)) {
                 $allPraRows = DB::connection('sqlsrv')->table('pra')
                     ->where('prop_id', $pra->prop_id)
-                    ->where('system_source', 'OSSOPCHANGEOFNAME')
                     ->orderBy('id')
                     ->get();
             } elseif (!empty($mlsfNo)) {
@@ -1986,7 +1986,6 @@ class OpResettlementApplicationController extends Controller
                     ->where(function ($q) use ($mlsfNo) {
                         $q->where('mlsFNo', $mlsfNo)->orWhere('fileno', $mlsfNo);
                     })
-                    ->where('system_source', 'OSSOPCHANGEOFNAME')
                     ->orderBy('id')
                     ->get();
             }
@@ -2035,7 +2034,6 @@ class OpResettlementApplicationController extends Controller
         // Keep both latest row (any type) and OP-specific row (excluding Transfer of Title).
         $latestPra = DB::connection('sqlsrv')
             ->table('pra')
-            ->where('system_source', 'OSSOPCHANGEOFNAME')
             ->where(function ($q) use ($base) {
                 $q->where('mlsFNo', $base->mlsfNo)
                     ->orWhere('fileno', $base->mlsfNo);
@@ -2045,19 +2043,25 @@ class OpResettlementApplicationController extends Controller
 
         $opPra = DB::connection('sqlsrv')
             ->table('pra')
-            ->where('system_source', 'OSSOPCHANGEOFNAME')
-            ->where(function ($q) use ($base) {
-                $q->where('mlsFNo', $base->mlsfNo)
-                    ->orWhere('fileno', $base->mlsfNo);
+            ->where(function ($q) use ($base, $latestPra) {
+                $propId = $latestPra->prop_id ?? null;
+                if ($propId) {
+                    $q->where('prop_id', $propId);
+                } else {
+                    $q->where('mlsFNo', $base->mlsfNo)
+                      ->orWhere('fileno', $base->mlsfNo);
+                }
             })
             ->where(function ($q) {
-                $q->whereNull('instrument_type')
-                    ->orWhere('instrument_type', 'not like', '%Transfer of Title%');
+                $q->where('instrument_type', 'like', '%Occupancy Permit%')
+                  ->orWhere('transaction_type', 'like', '%Occupancy Permit%')
+                  ->orWhereNotNull('op_serial_number');
             })
-            ->where(function ($q) {
-                $q->whereNull('transaction_type')
-                    ->orWhere('transaction_type', 'not like', '%Transfer of Title%');
-            })
+            ->orderByRaw("CASE 
+                WHEN (instrument_type NOT LIKE '%Transfer of Title%' OR instrument_type IS NULL) 
+                     AND (regNo IS NOT NULL AND regNo != '0/0/0') THEN 0 
+                WHEN (instrument_type NOT LIKE '%Transfer of Title%' OR instrument_type IS NULL) THEN 1
+                ELSE 2 END")
             ->orderByDesc('id')
             ->first();
 
@@ -2110,7 +2114,7 @@ class OpResettlementApplicationController extends Controller
                 $hasIc ? ($base->ic_land_use ?? null) : ($icFallback->land_use ?? $opPra->land_use ?? $base->mfn_land_use ?? null),
                 $base->mlsfNo
             ),
-            'purpose' => $hasIc ? $base->ic_purpose : ($icFallback->purpose ?? $opPra->purpose ?? null),
+            'purpose' => $hasIc ? $base->ic_purpose : ($icFallback->purpose ?? $opPra->purpose ?? $base->mfn_purpose_name ?? null),
             'file_name' => $resolvedOpFileName,
             'plot_number' => $hasIc ? $base->plot_number : ($icFallback->plot_number ?? $opPra->plot_no ?? $base->plot_no ?? null),
             'tp_number' => $hasIc ? $base->ic_tp_no : ($icFallback->tp_no ?? $opPra->tp_no ?? $base->tp_no ?? null),
@@ -2166,7 +2170,6 @@ class OpResettlementApplicationController extends Controller
         if ($resolvedPropId) {
             $allPraRows = DB::connection('sqlsrv')->table('pra')
                 ->where('prop_id', $resolvedPropId)
-                ->where('system_source', 'OSSOPCHANGEOFNAME')
                 ->orderBy('id')
                 ->get();
         } elseif (!empty($base->mlsfNo)) {
@@ -2174,7 +2177,6 @@ class OpResettlementApplicationController extends Controller
                 ->where(function ($q) use ($base) {
                     $q->where('mlsFNo', $base->mlsfNo)->orWhere('fileno', $base->mlsfNo);
                 })
-                ->where('system_source', 'OSSOPCHANGEOFNAME')
                 ->orderBy('id')
                 ->get();
         }
@@ -2425,7 +2427,6 @@ class OpResettlementApplicationController extends Controller
                     'mlsFNo' => $mlsFNo,
                     'fileno' => $mlsFNo,
                     'temp_fileno' => $totTempFileno,
-                    'force_fresh_prop_id' => true,
                     'parent_prop_id' => $opRow->prop_id,
                     'source_op_table' => 'pra',
                     'source_op_id' => (int) $opRow->id,
@@ -2631,7 +2632,6 @@ class OpResettlementApplicationController extends Controller
                     'mlsFNo' => $mlsFNo,
                     'fileno' => $mlsFNo,
                     'temp_fileno' => $totTempFileno,
-                    'force_fresh_prop_id' => true,
                     'parent_prop_id' => $firstOp->prop_id,
                     'source_op_table' => 'pra',
                     'source_op_id' => (int) $firstOp->id,

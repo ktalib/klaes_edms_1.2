@@ -4818,7 +4818,7 @@
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                 },
-                body: JSON.stringify({ ...requestBody, include_printed: true })
+                body: JSON.stringify({ ...requestBody, include_printed: (scope !== 'date') })
             });
 
             const result = await response.json();
@@ -6240,15 +6240,25 @@
 
             const payload = await response.json();
 
-            if (!payload.success || !payload.data || payload.data.length === 0) {
-                if (noBatchesNotice) noBatchesNotice.classList.remove("hidden");
-                return;
-            }
+            if (payload.total_count > 0) {
+                // Populate the new statistic boxes
+                const totalEl = document.getElementById("bpTotalCount");
+                const printedEl = document.getElementById("bpPrintedCount");
+                const unprintedEl = document.getElementById("bpUnprintedCount");
+                const remainingEl = document.getElementById("bpRemainingText");
 
-            const count = payload.data.length;
-            if (countText) countText.textContent = count;
-            if (countInfo) countInfo.classList.remove("hidden");
-            if (printBtn) printBtn.disabled = false;
+                if (totalEl) totalEl.textContent = payload.total_count;
+                if (printedEl) printedEl.textContent = payload.printed_count;
+                if (unprintedEl) unprintedEl.textContent = payload.unprinted_count;
+                if (remainingEl) remainingEl.textContent = payload.unprinted_count;
+
+                if (countInfo) countInfo.classList.remove("hidden");
+                
+                // Only enable print button if there are unprinted records
+                if (printBtn) printBtn.disabled = (payload.unprinted_count === 0);
+            } else {
+                if (noBatchesNotice) noBatchesNotice.classList.remove("hidden");
+            }
 
         } catch (err) {
             console.error("onBatchPrintDateChange error:", err);

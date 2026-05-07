@@ -34,14 +34,28 @@
 
                 @php
                     // Categorise PRA rows into OP rows and Transfer-of-Title rows
-                    $opPraRows  = $allPraRows->filter(fn($r) =>
-                        stripos($r->instrument_type ?? '', 'Transfer of Title') === false &&
-                        stripos($r->transaction_type ?? '', 'Transfer of Title') === false
+                    // Prioritize records that actually HAVE an op_serial_number for the OP card display.
+                    $opPraRows = $allPraRows->filter(fn($r) => 
+                        !empty($r->op_serial_number) && $r->op_serial_number != '0'
                     )->values();
+
+                    // If still empty, fall back to records that are NOT transfers
+                    if ($opPraRows->isEmpty()) {
+                        $opPraRows = $allPraRows->filter(fn($r) =>
+                            stripos($r->instrument_type ?? '', 'Transfer of Title') === false &&
+                            stripos($r->transaction_type ?? '', 'Transfer of Title') === false
+                        )->values();
+                    }
+
                     $totPraRows = $allPraRows->filter(fn($r) =>
                         stripos($r->instrument_type ?? '', 'Transfer of Title') !== false ||
                         stripos($r->transaction_type ?? '', 'Transfer of Title') !== false
                     )->values();
+
+                    // To avoid confusion, if a record is already shown as an OP card, 
+                    // only show it as a TOT card if it's the only TOT record.
+                    // Actually, usually TOT records should always be shown as TOT cards.
+                    // But if it's shown in both, it might be okay.
 
                     // If OP row is absent in PRA, show a fallback OP card from resolved source data
                     // (instrument_capture/base record) so users can still edit OP details on this page.

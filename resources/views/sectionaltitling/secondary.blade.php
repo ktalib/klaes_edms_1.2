@@ -255,7 +255,7 @@
                           @endif
                         @else
                           <span>{{ $app->mother_applicant_title ?? '' }} {{ $app->mother_first_name ?? '' }}
-                            {{ $app->mother_surname ?? '' }}</span>
+                            {{ $app->mother_middle_name ?? '' }} {{ $app->mother_surname ?? '' }}</span>
                         @endif
                       </div>
                     </div>
@@ -324,7 +324,7 @@
                           @endif
                         @else
                           <span>{{ $app->applicant_title ?? '' }} {{ $app->first_name ?? '' }}
-                            {{ $app->surname ?? '' }}</span>
+                            {{ $app->middle_name ?? '' }} {{ $app->surname ?? '' }}</span>
                         @endif
                       </div>
                     </div>

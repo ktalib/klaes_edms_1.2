@@ -459,6 +459,17 @@
           numberGroup.appendChild(secondaryNumber);
         }
 
+        // Display kangis_fileno_placeholder below the file number
+        const placeholderRaw = label.kangis_fileno_placeholder;
+        const placeholderText = placeholderRaw === undefined || placeholderRaw === null ? '' : String(placeholderRaw).trim();
+        
+        if (placeholderText && placeholderText !== primaryText && placeholderText !== secondaryText) {
+          const placeholderNumber = document.createElement('div');
+          placeholderNumber.className = 'file-number file-number--secondary';
+          placeholderNumber.textContent = placeholderText;
+          numberGroup.appendChild(placeholderNumber);
+        }
+
         item.appendChild(numberGroup);
 
         const shelfDisplayValue = getDisplayShelfValue(label.shelf_value, label.shelf_label);

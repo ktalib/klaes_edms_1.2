@@ -389,7 +389,7 @@
       option.value = fileNumber.id;
       
       // Get display components
-      const fileno = fileNumber.fileno || fileNumber.full_file_number || 'N/A';
+      const unitFileNo = fileNumber.fileno;
       const name = fileNumber.display_name || 'Unknown';
       
       // Try to find buyer info for unit designation and size
@@ -399,8 +399,15 @@
       
       const unitDesignation = `Unit ${unitNo}${unitSize}`;
 
-      // Label format: Unit [No] ([Size]) - [Name] - [FileNo]
-      option.textContent = `${unitDesignation} - ${name} - ${fileno}`;
+      // Check if commissioned (must have a specific unit file number assigned)
+      if (!unitFileNo || unitFileNo === 'N/A') {
+        option.disabled = true;
+        option.textContent = `${unitDesignation} - ${name} - (Not Commissioned)`;
+      } else {
+        // Label format: Unit [No] ([Size]) - [Name] - [FileNo]
+        option.textContent = `${unitDesignation} - ${name} - ${unitFileNo}`;
+      }
+      
       option.dataset.fileData = JSON.stringify(fileNumber);
       selectElement.appendChild(option);
     });
@@ -433,8 +440,7 @@
       option.value = fileNumber.id;
       
       // Get display components
-      // Prioritize fileno (ST-RES-...) over full_file_number (which might be the mother's)
-      const fileno = fileNumber.fileno || fileNumber.full_file_number || 'N/A';
+      const unitFileNo = fileNumber.fileno;
       const name = fileNumber.display_name || 'Unknown';
       
       // Try to find buyer info for unit designation and size
@@ -444,14 +450,16 @@
       
       const unitDesignation = `Unit ${unitNo}${unitSize}`;
 
-      // Label format: Unit [No] ([Size]) - [Name] - [FileNo]
-      // Use direct fileno from the record
-      const displayFileNo = fileNumber.fileno || fileNumber.full_file_number || 'N/A';
-      const label = `${unitDesignation} - ${name} - ${displayFileNo}`;
+      // Check if commissioned (must have a specific unit file number assigned)
+      if (!unitFileNo || unitFileNo === 'N/A') {
+        option.disabled = true;
+        option.textContent = `${unitDesignation} - ${name} - (Not Commissioned)`;
+      } else {
+        // Label format: Unit [No] ([Size]) - [Name] - [FileNo]
+        // Use direct fileno from the record
+        option.textContent = `${unitDesignation} - ${name} - ${unitFileNo}`;
+      }
       
-      console.log(`📝 Formatting option: ${label}`);
-      
-      option.textContent = label;
       option.dataset.fileData = JSON.stringify(fileNumber);
       selectElement.appendChild(option);
     });
@@ -2657,6 +2665,35 @@
             currentStepNumber = parseInt(stepId.replace('step', ''));
           }
           if (currentStepNumber === stepNumber) return;
+
+          // Enforce file selection on Step 1
+          if (currentStepNumber === 1 && stepNumber > 1) {
+            const suaSelect = document.getElementById('sua-file-select');
+            const unitSelect = document.getElementById('unit-file-select');
+            const selectedValue = (suaSelect ? suaSelect.value : (unitSelect ? unitSelect.value : ''));
+
+            if (!selectedValue) {
+              Swal.fire({
+                icon: 'warning',
+                title: 'File Selection Required',
+                text: 'Please select a commissioned Unit File Number to proceed.',
+                confirmButtonColor: '#3085d6'
+              });
+              return;
+            }
+
+            // Also check if the selected option is disabled (extra safety)
+            const activeSelect = suaSelect || unitSelect;
+            if (activeSelect && activeSelect.selectedOptions[0] && activeSelect.selectedOptions[0].disabled) {
+               Swal.fire({
+                icon: 'error',
+                title: 'Invalid Selection',
+                text: 'The selected unit is not commissioned. Please select a valid file number.',
+                confirmButtonColor: '#d33'
+              });
+              return;
+            }
+          }
 
           // Skip validation during step navigation - only validate on final submission
           if (false) {

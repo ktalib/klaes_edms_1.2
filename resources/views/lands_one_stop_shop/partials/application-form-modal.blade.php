@@ -89,6 +89,18 @@
                         <div id="oss_file_indexing_empty" class="text-xs text-slate-700 mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                             No file selected.
                         </div>
+
+                        {{-- Manual OP Serial Entry (Shown only if record is missing serial) --}}
+                        <div id="oss_manual_op_serial_container" class="hidden mt-3 p-4 bg-red-50 border border-red-200 rounded-xl">
+                            <div class="flex items-center gap-2 mb-2">
+                                <i data-lucide="alert-circle" class="w-4 h-4 text-red-600"></i>
+                                <span class="text-xs font-bold text-red-700 uppercase tracking-wider">Manual OP Serial Entry Required</span>
+                            </div>
+                            <p class="text-[10px] text-red-500 mb-2">The selected record is missing an OP Serial Number. Please enter it manually to proceed.</p>
+                            <input type="text" id="oss_op_serial_number" name="op_serial_number"
+                                   placeholder="Enter OP Serial Number (e.g. 12345)"
+                                   class="w-full border border-red-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-mono">
+                        </div>
                     </div>
 
                     {{-- ╔══════════════════════════════════════════════════════════════════════╗

@@ -341,9 +341,10 @@ function populateDropdownContent(app, context = null) {
                 // Actually, for generic instruments, we might not have a CoR view implemented yet if it strictly requires STM_Ref.
                 // But the request is to ENABLE actions.
 
+                const viewCorId = context.registeredId || app.id;
                 const viewCorUrl = app.STM_Ref
                     ? `${window.KlaesConfig.urls.corIndex}?STM_Ref=${app.STM_Ref}`
-                    : `${window.KlaesConfig.urls.corIndex}?id=${app.id}`;
+                    : `${window.KlaesConfig.urls.corIndex}?id=${viewCorId}`;
 
                 viewCorContent = `<a href="${viewCorUrl}" class="dropdown-item">
                                     <i class="fas fa-eye w-4 h-4 text-blue-500"></i>

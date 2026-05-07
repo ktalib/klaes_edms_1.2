@@ -49,49 +49,51 @@ class PropertyIdAllocationService
             throw PropIdAllocationException::missingIdentifiers();
         }
 
-        if (!$skipLookup) {
-            $masterRow = $this->findMasterRowByPrimary($identifierMap['primary_file_number'] ?? null)
-                ?? $this->findMasterRow($identifierMap);
-            if ($masterRow !== null) {
-                $this->fillMissingIdentifiersInMaster($masterRow, $identifierMap);
+        return DB::connection('sqlsrv')->transaction(function () use ($identifierMap, $searchableIdentifiers, $skipLookup, $allowTempOnly) {
+            if (!$skipLookup) {
+                $masterRow = $this->findMasterRowByPrimary($identifierMap['primary_file_number'] ?? null)
+                    ?? $this->findMasterRow($identifierMap);
+                if ($masterRow !== null) {
+                    $this->fillMissingIdentifiersInMaster($masterRow, $identifierMap);
 
-                return (int) $masterRow->prop_id;
+                    return (int) $masterRow->prop_id;
+                }
+
+                $existing = $this->findExistingPropId($searchableIdentifiers);
+                if ($existing !== null) {
+                    $this->ensureMasterRowForPropId($existing, $identifierMap);
+
+                    return $existing;
+                }
             }
 
-            $existing = $this->findExistingPropId($searchableIdentifiers);
-            if ($existing !== null) {
-                $this->ensureMasterRowForPropId($existing, $identifierMap);
-
-                return $existing;
+            if (!$allowTempOnly && !$this->hasOfficialIdentifiers($identifierMap)) {
+                throw PropIdAllocationException::officialNumberRequired();
             }
-        }
 
-        if (!$allowTempOnly && !$this->hasOfficialIdentifiers($identifierMap)) {
-            throw PropIdAllocationException::officialNumberRequired();
-        }
+            // skip_lookup means the caller (e.g. an OP->ToT mint) wants a brand-
+            // new prop_id even though a PropID_Master row already maps this file
+            // number to the source row's prop_id. Inserting another master row
+            // here would violate the unique index on primary_file_number, so we
+            // just allocate the next sequential prop_id and let the caller persist
+            // it directly on its row (no master mutation needed - the existing
+            // master entry continues to point to the source/OP prop_id).
+            if ($skipLookup) {
+                $freshId = $this->generateNextPropIdFromMaster();
 
-        // skip_lookup means the caller (e.g. an OP\u2192ToT mint) wants a brand-
-        // new prop_id even though a PropID_Master row already maps this file
-        // number to the source row's prop_id. Inserting another master row
-        // here would violate the unique index on primary_file_number, so we
-        // just allocate the next sequential prop_id and let the caller persist
-        // it directly on its row (no master mutation needed \u2014 the existing
-        // master entry continues to point to the source/OP prop_id).
-        if ($skipLookup) {
-            $freshId = $this->generateNextPropId();
-            
-            // We MUST record this in Master to prevent the next call from getting the same ID.
-            // If the primary file number is already taken, use the temp_fileno as the primary key.
-            $masterPrimary = $identifierMap['primary_file_number'];
-            if ($this->findMasterRowByPrimary($masterPrimary)) {
-                $masterPrimary = $identifierMap['temp_fileno'] ?? ($masterPrimary . '-REF-' . $freshId);
+                // We MUST record this in Master to prevent the next call from getting the same ID.
+                // If the primary file number is already taken, use the temp_fileno as the primary key.
+                $masterPrimary = $identifierMap['primary_file_number'];
+                if ($this->findMasterRowByPrimary($masterPrimary)) {
+                    $masterPrimary = $identifierMap['temp_fileno'] ?? ($masterPrimary . '-REF-' . $freshId);
+                }
+
+                $this->insertMasterRow($freshId, $identifierMap, $masterPrimary);
+                return $freshId;
             }
-            
-            $this->insertMasterRow($freshId, $identifierMap, $masterPrimary);
-            return $freshId;
-        }
 
-        return $this->createPropIdViaMaster($identifierMap);
+            return $this->createPropIdViaMaster($identifierMap);
+        });
     }
 
     /**
@@ -215,6 +217,11 @@ class PropertyIdAllocationService
             'kangisFileNo_norm',
             'NewKANGISFileno_norm',
             'temp_fileno_norm',
+            'primary_file_number',
+            'mlsFNo',
+            'kangisFileNo',
+            'NewKANGISFileno',
+            'temp_fileno',
         ];
 
         $query = DB::connection('sqlsrv')
@@ -288,7 +295,10 @@ class PropertyIdAllocationService
         $row = DB::connection('sqlsrv')
             ->table('PropID_Master')
             ->select('id', 'prop_id', 'primary_file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'temp_fileno', 'updated_at')
-            ->where('primary_file_number_norm', $normalizedPrimary)
+            ->where(function ($q) use ($normalizedPrimary, $primaryFileNumber) {
+                $q->where('primary_file_number_norm', $normalizedPrimary)
+                    ->orWhere('primary_file_number', $primaryFileNumber);
+            })
             ->orderByDesc('updated_at')
             ->first();
 
@@ -308,6 +318,7 @@ class PropertyIdAllocationService
             $currentValue = $existingRow->{$key} ?? null;
             if ($currentValue === null) {
                 $updates[$key] = $newValue;
+                $updates[$key . '_norm'] = $this->normalizeValue($newValue);
                 continue;
             }
 
@@ -375,10 +386,15 @@ class PropertyIdAllocationService
             ->insert([
                 'prop_id' => $propId,
                 'primary_file_number' => $primaryForMaster,
+                'primary_file_number_norm' => $this->normalizeValue($primaryForMaster),
                 'mlsFNo' => $identifierMap['mlsFNo'] ?? null,
+                'mlsFNo_norm' => $this->normalizeValue($identifierMap['mlsFNo'] ?? null),
                 'kangisFileNo' => $identifierMap['kangisFileNo'] ?? null,
+                'kangisFileNo_norm' => $this->normalizeValue($identifierMap['kangisFileNo'] ?? null),
                 'NewKANGISFileno' => $identifierMap['NewKANGISFileno'] ?? null,
+                'NewKANGISFileno_norm' => $this->normalizeValue($identifierMap['NewKANGISFileno'] ?? null),
                 'temp_fileno' => $identifierMap['temp_fileno'] ?? null,
+                'temp_fileno_norm' => $this->normalizeValue($identifierMap['temp_fileno'] ?? null),
                 'status' => 'active',
                 'created_at' => $timestamp,
                 'updated_at' => $timestamp,

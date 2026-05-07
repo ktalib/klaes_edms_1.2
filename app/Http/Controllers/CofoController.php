@@ -62,6 +62,7 @@ class CofoController extends Controller
                 'm.applicant_type',
                 'm.applicant_title',
                 'm.first_name',
+                'm.middle_name',
                 'm.surname',
                 'm.corporate_name',
                 'm.multiple_owners_names',
@@ -330,6 +331,7 @@ class CofoController extends Controller
                 $primary->applicant_type ?? '',
                 $primary->applicant_title ?? '',
                 $primary->first_name ?? '',
+                $primary->middle_name ?? '',
                 $primary->surname ?? '',
                 $primary->corporate_name ?? '',
                 $primary->multiple_owners_names ?? ''
@@ -388,6 +390,7 @@ class CofoController extends Controller
                 'sa.applicant_type',
                 'sa.applicant_title',
                 'sa.first_name',
+                'sa.middle_name',
                 'sa.surname',
                 'sa.corporate_name',
                 'sa.multiple_owners_names',
@@ -479,6 +482,7 @@ class CofoController extends Controller
                 $nameParts = array_filter([
                     trim((string) ($application->applicant_title ?? '')),
                     trim((string) ($application->first_name ?? '')),
+                    trim((string) ($application->middle_name ?? '')),
                     trim((string) ($application->surname ?? '')),
                 ]);
                 $ownerName = $this->normalizePersonName(implode(' ', $nameParts));
@@ -615,6 +619,7 @@ class CofoController extends Controller
                 'sa.applicant_type',
                 'sa.applicant_title',
                 'sa.first_name',
+                'sa.middle_name',
                 'sa.surname',
                 'sa.corporate_name',
                 'sa.multiple_owners_names',
@@ -691,6 +696,7 @@ class CofoController extends Controller
                 $nameParts = array_filter([
                     trim((string) ($application->applicant_title ?? '')),
                     trim((string) ($application->first_name ?? '')),
+                    trim((string) ($application->middle_name ?? '')),
                     trim((string) ($application->surname ?? '')),
                 ]);
                 $ownerName = $this->normalizePersonName(implode(' ', $nameParts));
@@ -1279,6 +1285,7 @@ class CofoController extends Controller
                     's.applicant_type',
                     's.applicant_title',
                     's.first_name',
+                    's.middle_name',
                     's.surname',
                     's.corporate_name',
                     's.multiple_owners_names',
@@ -1526,6 +1533,7 @@ class CofoController extends Controller
                     $unit->applicant_type ?? '',
                     $unit->applicant_title ?? '',
                     $unit->first_name ?? '',
+                    $unit->middle_name ?? '',
                     $unit->surname ?? '',
                     $unit->corporate_name ?? '',
                     $unit->multiple_owners_names ?? ''

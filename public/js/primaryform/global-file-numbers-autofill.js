@@ -331,6 +331,22 @@ function autoFillApplicantFields(fileData) {
     
     // Wait a moment for form sections to be shown, then fill fields
     setTimeout(() => {
+        // Clear ALL applicant fields first to prevent cross-contamination
+        const allApplicantFields = [
+            'applicantTitle', 'applicantName', 'applicantMiddleName', 'applicantSurname',
+            'corporateName', 'rcNumber'
+        ];
+        allApplicantFields.forEach(id => {
+            const field = document.getElementById(id);
+            if (field) field.value = '';
+        });
+
+        // Also clear multiple owners fields
+        const multipleOwnersInputs = document.querySelectorAll('input[name="multiple_owners_names[]"]');
+        multipleOwnersInputs.forEach(input => {
+            input.value = '';
+        });
+
         // Fill individual fields
         if (fileData.applicant_type?.toLowerCase() === 'individual') {
             updateFormField('applicantTitle', fileData.applicant_title);
@@ -600,7 +616,7 @@ function clearAllAutoFilledFields() {
     
     // Clear applicant fields
     const applicantFields = [
-        'applicantTitle', 'applicantName', 'applicantMiddleName', 'applicantSurname', // Note: 'applicantName' not 'applicantFirstName'
+        'applicantTitle', 'applicantName', 'applicantMiddleName', 'applicantSurname',
         'corporateName', 'rcNumber'
     ];
     
@@ -612,6 +628,20 @@ function clearAllAutoFilledFields() {
             field.dispatchEvent(new Event('input', { bubbles: true }));
         }
     });
+
+    // Clear file inputs and previews
+    const fileInputs = ['photoUpload', 'corporateDocumentUpload'];
+    fileInputs.forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.value = '';
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    });
+
+    // Call individual remove functions if they exist to clear previews
+    if (typeof removePhoto === 'function') removePhoto();
+    if (typeof removeCorporateDocument === 'function') removeCorporateDocument();
     
     // Clear multiple owners fields
     const multipleOwnersInputs = document.querySelectorAll('input[name="multiple_owners_names[]"]');

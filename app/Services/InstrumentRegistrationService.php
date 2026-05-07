@@ -524,15 +524,10 @@ class InstrumentRegistrationService
         }
 
         if (
-            stripos($normalized, 'Deed of Mortgage') !== false
-        ) {
-            return 'Deed of Mortgage';
-        }
-
-        if (
+            stripos($normalized, 'Deed of Mortgage') !== false ||
             stripos($normalized, 'Tripartite Mortgage') !== false
         ) {
-            return 'Tripartite Mortgage';
+            return 'Deed of Mortgage';
         }
 
         if (

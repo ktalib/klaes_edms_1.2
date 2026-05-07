@@ -599,6 +599,9 @@
                                             onclick="sortTable('land_use')">
                                             Land Use <i data-lucide="chevrons-up-down" class="inline h-3 w-3"></i>
                                         </th>
+                                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Units
+                                        </th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                                             onclick="sortTable('year')">
                                             Year <i data-lucide="chevrons-up-down" class="inline h-3 w-3"></i>
@@ -681,6 +684,36 @@
                 </div>
             </div>
 
+            <!-- Units Modal -->
+            <div id="unitsModal" class="fixed inset-0 bg-gray-900 bg-opacity-70 hidden items-center justify-center z-[60]"
+                onclick="closeUnitsModal(event)">
+                <div class="bg-white rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[85vh] flex flex-col overflow-hidden"
+                    onclick="event.stopPropagation()">
+                    <div class="bg-gradient-to-r from-indigo-700 to-purple-800 px-8 py-5 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-2xl font-bold text-white flex items-center">
+                                <i data-lucide="layers" class="h-7 w-7 mr-3"></i>
+                                Linked Units / Sub-Applications
+                            </h3>
+                            <p class="text-indigo-100 text-sm mt-1" id="unitsModalSubtitle">Associated units for this primary file</p>
+                        </div>
+                        <button onclick="closeUnitsModal()" class="text-white hover:bg-white/20 p-2 rounded-full transition-colors">
+                            <i data-lucide="x" class="h-7 w-7"></i>
+                        </button>
+                    </div>
+                    <div class="p-0 overflow-auto flex-1">
+                        <div id="unitsModalContent">
+                            <!-- Table will be populated here -->
+                        </div>
+                    </div>
+                    <div class="px-8 py-4 bg-gray-50 border-t flex justify-end">
+                        <button onclick="closeUnitsModal()" class="px-6 py-2.5 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition-colors">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+
 
 
             <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
@@ -689,6 +722,7 @@
                 // Global variables
                 let allFileNumbers = [];
                 let filteredFileNumbers = [];
+                let unitsByMotherId = {};
                 let currentPage = 1;
                 let itemsPerPage = 1000;
                 let sortColumn = 'created_at';
@@ -817,14 +851,37 @@
                     const year = document.getElementById('yearFilter').value;
                     const status = document.getElementById('statusFilter').value;
 
-                    // Debug: Log unique land use values
-                    if (landUse) {
-                        const uniqueLandUses = [...new Set(allFileNumbers.map(f => f.land_use))];
-                        console.log('Available land uses in data:', uniqueLandUses);
-                        console.log('Selected land use filter:', landUse);
-                    }
+                    // Clear units map
+                    unitsByMotherId = {};
 
-                    filteredFileNumbers = allFileNumbers.filter(file => {
+                    // Build units map and filter records
+                    const mainTableRecords = [];
+
+                    allFileNumbers.forEach(file => {
+                        // Only show PRIMARY and SUA in the main table
+                        if (file.file_no_type === 'PRIMARY' || file.file_no_type === 'SUA') {
+                            mainTableRecords.push(file);
+                        }
+
+                        // Collect PUA units for their respective PRIMARY parents
+                        // Use np_fileno as the common link (Mother's ST File No)
+                        if (file.file_no_type === 'PUA') {
+                            const motherFileno = file.np_fileno;
+                            const motherId = file.mother_application_id;
+                            
+                            if (motherFileno && motherFileno !== 'N/A') {
+                                if (!unitsByMotherId['fn_' + motherFileno]) unitsByMotherId['fn_' + motherFileno] = [];
+                                unitsByMotherId['fn_' + motherFileno].push(file);
+                            }
+                            
+                            if (motherId) {
+                                if (!unitsByMotherId['id_' + motherId]) unitsByMotherId['id_' + motherId] = [];
+                                unitsByMotherId['id_' + motherId].push(file);
+                            }
+                        }
+                    });
+
+                    filteredFileNumbers = mainTableRecords.filter(file => {
                         // Search filter
                         if (search) {
                             const searchableText = [
@@ -851,7 +908,8 @@
                             return false;
                         }
 
-                        // File type filter
+                        // File type filter - usually redundant here as we show primaries, 
+                        // but kept for UI consistency if user changes filter
                         if (fileType && file.file_no_type !== fileType) return false;
 
                         // Year filter
@@ -1007,6 +1065,37 @@
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <span class="land-use-badge land-use-${(file.land_use || '').toLowerCase().replace('-', '')}">${file.land_use || 'N/A'}</span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-center">
+                                    ${(() => {
+                                        if (file.file_no_type !== 'PRIMARY') {
+                                            return `<span class="text-gray-400 text-xs italic">N/A</span>`;
+                                        }
+                                        
+                                        const motherFileno = file.np_fileno;
+                                        const motherId = file.mother_application_id;
+                                        
+                                        // Try to find units by Fileno first, then by ID
+                                        let units = [];
+                                        if (motherFileno && unitsByMotherId['fn_' + motherFileno]) {
+                                            units = unitsByMotherId['fn_' + motherFileno];
+                                        } else if (motherId && unitsByMotherId['id_' + motherId]) {
+                                            units = unitsByMotherId['id_' + motherId];
+                                        }
+
+                                        if (units.length > 0) {
+                                            const triggerId = motherFileno || motherId;
+                                            return `
+                                                <button onclick="showUnitsModal('${triggerId}', '${stFileNo}')" 
+                                                    class="inline-flex items-center px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold hover:bg-indigo-200 transition-colors shadow-sm border border-indigo-200">
+                                                    <i data-lucide="layers" class="h-3 w-3 mr-1.5"></i>
+                                                    ${units.length} ${units.length === 1 ? 'Unit' : 'Units'}
+                                                </button>
+                                            `;
+                                        } else {
+                                            return `<span class="text-gray-400 text-xs italic">0 Units</span>`;
+                                        }
+                                    })()}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                     ${file.year || 'N/A'}
@@ -1210,6 +1299,78 @@
                     if (!event || event.target.id === 'detailsModal') {
                         document.getElementById('detailsModal').classList.add('hidden');
                         document.getElementById('detailsModal').classList.remove('flex');
+                    }
+                }
+
+                /**
+                 * Show modal with units linked to a mother ID or Fileno
+                 */
+                function showUnitsModal(identifier, motherFileNo) {
+                    const units = unitsByMotherId['fn_' + identifier] || unitsByMotherId['id_' + identifier] || [];
+                    const modal = document.getElementById('unitsModal');
+                    const content = document.getElementById('unitsModalContent');
+                    const subtitle = document.getElementById('unitsModalSubtitle');
+
+                    subtitle.textContent = `Displaying ${units.length} sub-application(s) linked to Primary File: ${motherFileNo}`;
+
+                    if (units.length === 0) {
+                        content.innerHTML = `
+                            <div class="py-20 text-center">
+                                <i data-lucide="inbox" class="h-16 w-16 text-gray-300 mx-auto mb-4"></i>
+                                <p class="text-gray-500 font-medium">No units found for this primary application.</p>
+                            </div>
+                        `;
+                    } else {
+                        content.innerHTML = `
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-100">
+                                    <tr>
+                                        <th class="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Unit File No</th>
+                                        <th class="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Applicant Name</th>
+                                        <th class="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Type</th>
+                                        <th class="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Status</th>
+                                        <th class="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Commissioned On</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-100">
+                                    ${units.map(unit => {
+                                        const name = unit.corporate_name || `${unit.first_name || ''} ${unit.middle_name || ''} ${unit.surname || ''}`.trim();
+                                        const stNo = unit.fileno || 'N/A';
+                                        return `
+                                            <tr class="hover:bg-indigo-50/50 transition-colors">
+                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                    <span class="file-number-badge">${stNo}</span>
+                                                </td>
+                                                <td class="px-6 py-4">
+                                                    <div class="text-sm font-semibold text-gray-900">${name}</div>
+                                                    <div class="text-xs text-gray-500">${unit.rc_number || ''}</div>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                    <span class="type-badge type-${(unit.file_no_type || '').toLowerCase()}">${unit.file_no_type}</span>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                    <span class="status-badge status-${getStatusClass(unit.status)}">${getStatusDisplay(unit.status)}</span>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                                    ${unit.created_at ? new Date(unit.created_at).toLocaleDateString() : 'N/A'}
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                        `;
+                    }
+
+                    modal.classList.remove('hidden');
+                    modal.classList.add('flex');
+                    lucide.createIcons();
+                }
+
+                function closeUnitsModal(event) {
+                    if (!event || event.target.id === 'unitsModal' || event.target.closest('button')) {
+                        document.getElementById('unitsModal').classList.add('hidden');
+                        document.getElementById('unitsModal').classList.remove('flex');
                     }
                 }
 

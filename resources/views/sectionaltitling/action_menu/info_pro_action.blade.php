@@ -6,6 +6,7 @@
         $PrimaryApplication->applicant_type ?? '',
         $PrimaryApplication->applicant_title ?? '',
         $PrimaryApplication->first_name ?? '',
+        $PrimaryApplication->middle_name ?? '',
         $PrimaryApplication->surname ?? '',
         $PrimaryApplication->corporate_name ?? '',
         $PrimaryApplication->multiple_owners_names ?? ''
@@ -23,7 +24,7 @@
 
 
 @endphp
-
+   
 <div class="relative dropdown-container">
     <!-- Dropdown Toggle Button -->
     <button type="button"

@@ -10,25 +10,25 @@
         <!-- Header -->
         @include('admin.header')
         @if(in_array(($module ?? ''), ['kangis', 'new_kangis']))
-        <div class="bg-gradient-to-r from-yellow-500 via-amber-400 to-yellow-600 px-6 py-3 flex items-center gap-3 shadow-sm">
+        <div class="bg-gradient-to-r from-orange-600 via-orange-500 to-orange-700 px-6 py-3 flex items-center gap-3 shadow-sm">
             <i data-lucide="map" class="h-5 w-5 text-white shrink-0"></i>
             <div class="flex items-center gap-2">
             <span class="text-white font-bold text-sm uppercase tracking-widest">{{ ($module ?? '') === 'new_kangis' ? 'NEW KANGIS' : 'KANGIS' }}</span>
-                <span class="text-yellow-100 text-sm">·</span>
+                <span class="text-orange-100 text-sm">·</span>
                 <span class="text-white text-sm font-medium">Digital Archive</span>
-                <span class="text-yellow-100 text-sm">·</span>
-                <span class="text-yellow-100 text-sm">Log a File</span>
+                <span class="text-orange-100 text-sm">·</span>
+                <span class="text-orange-100 text-sm">Log a File</span>
             </div>
         </div>
         @elseif(($module ?? '') === 'sltr')
-        <div class="bg-gradient-to-r from-violet-500 via-purple-400 to-violet-600 px-6 py-3 flex items-center gap-3 shadow-sm">
+        <div class="bg-gradient-to-r from-emerald-600 via-green-500 to-emerald-600 px-6 py-3 flex items-center gap-3 shadow-sm">
             <i data-lucide="landmark" class="h-5 w-5 text-white shrink-0"></i>
             <div class="flex items-center gap-2">
                 <span class="text-white font-bold text-sm uppercase tracking-widest">SLTR</span>
-                <span class="text-violet-100 text-sm">·</span>
+                <span class="text-emerald-100 text-sm">·</span>
                 <span class="text-white text-sm font-medium">Digital Archive</span>
-                <span class="text-violet-100 text-sm">·</span>
-                <span class="text-violet-100 text-sm">Log a File</span>
+                <span class="text-emerald-100 text-sm">·</span>
+                <span class="text-emerald-100 text-sm">Log a File</span>
             </div>
         </div>
         @elseif(($module ?? '') === 'st')
@@ -64,6 +64,28 @@
                 <span class="text-emerald-100 text-sm">Approval</span>
             </div>
         </div>
+        @elseif(($module ?? '') === 'dciv')
+        <div class="bg-gradient-to-r from-emerald-600 via-green-500 to-emerald-600 px-6 py-3 flex items-center gap-3 shadow-sm">
+            <i data-lucide="layers" class="h-5 w-5 text-white shrink-0"></i>
+            <div class="flex items-center gap-2">
+                <span class="text-white font-bold text-sm uppercase tracking-widest">DCIV</span>
+                <span class="text-emerald-100 text-sm">·</span>
+                <span class="text-white text-sm font-medium">Digital Archive</span>
+                <span class="text-emerald-100 text-sm">·</span>
+                <span class="text-emerald-100 text-sm">Log a File</span>
+            </div>
+        </div>
+        @else
+        <div class="bg-gradient-to-r from-red-600 via-rose-500 to-red-700 px-6 py-3 flex items-center gap-3 shadow-sm">
+            <i data-lucide="file-text" class="h-5 w-5 text-white shrink-0"></i>
+            <div class="flex items-center gap-2">
+                <span class="text-white font-bold text-sm uppercase tracking-widest">Lands Registry</span>
+                <span class="text-red-100 text-sm">·</span>
+                <span class="text-white text-sm font-medium">File Tracker</span>
+                <span class="text-red-100 text-sm">·</span>
+                <span class="text-red-100 text-sm">Log a File</span>
+            </div>
+        </div>
         @endif
         <!-- Dashboard Content-->
 
@@ -92,6 +114,7 @@
                             'new_kangis' => ['active' => 'border-emerald-600 text-white bg-emerald-600 hover:bg-emerald-700 ring-emerald-300', 'idle' => 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'],
                             'dgis'       => ['active' => 'border-indigo-600 text-white bg-indigo-600 hover:bg-indigo-700 ring-indigo-300',     'idle' => 'border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100'],
                             'dg'         => ['active' => 'border-emerald-600 text-white bg-emerald-600 hover:bg-emerald-700 ring-emerald-300', 'idle' => 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'],
+                            'dciv'       => ['active' => 'border-slate-700 text-white bg-slate-700 hover:bg-slate-800 ring-slate-300',         'idle' => 'border-slate-300 text-slate-700 bg-slate-50 hover:bg-slate-100'],
                         ];
                         $navClass = function ($key) use ($currentModule, $navBaseClass, $navActiveExtra, $navStyles) {
                             $tone = $navStyles[$key] ?? ['active' => '', 'idle' => ''];
@@ -553,9 +576,9 @@
                                                             class="block text-sm font-medium text-gray-700">Registry
                                                             (Origin)</label>
                                                         <select id="origin-office"
-                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 {{ ($module ?? '') === 'sltr' ? 'bg-gray-100 text-gray-700 cursor-not-allowed' : '' }}"
-                                                            @if(in_array(($module ?? ''), ['kangis', 'new_kangis'])) data-default="KANGIS Registry" @elseif(($module ?? '') === 'sltr') data-default="SLTR Registry" @elseif(($module ?? '') === 'st') data-default="ST Registry" @endif
-                                                            {{ ($module ?? '') === 'sltr' ? 'disabled' : '' }}>
+                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 {{ in_array(($module ?? ''), ['sltr', 'dciv']) ? 'bg-gray-100 text-gray-700 cursor-not-allowed' : '' }}"
+                                                            @if(in_array(($module ?? ''), ['kangis', 'new_kangis'])) data-default="KANGIS Registry" @elseif(($module ?? '') === 'sltr') data-default="SLTR Registry" @elseif(($module ?? '') === 'st') data-default="ST Registry" @elseif(($module ?? '') === 'dciv') data-default="DCIV Registry" @endif
+                                                            {{ in_array(($module ?? ''), ['sltr', 'dciv']) ? 'disabled' : '' }}>
                                                             <option value="">Select Registry (Origin)</option>
                                                             @foreach ($registries as $registry)
                                                                 @php
@@ -2037,7 +2060,7 @@
                         <script>
                             window.currentUser = @json($currentUserPayload);
                             window.assignmentPermissions = @json($assignmentPermissionsPayload);
-                            window.isKangisModule = {{ in_array($module ?? '', ['kangis', 'new_kangis', 'sltr', 'st', 'dgis', 'dg']) ? 'true' : 'false' }};
+                            window.isKangisModule = {{ in_array($module ?? '', ['kangis', 'new_kangis', 'sltr', 'st', 'dgis', 'dg', 'dciv']) ? 'true' : 'false' }};
                             window.isNewKangisMode = {{ ($module ?? '') === 'new_kangis' ? 'true' : 'false' }};
                             window.currentModule = '{{ $module ?? '' }}';
                             window.isApprovalModule = {{ in_array($module ?? '', ['dgis', 'dg']) ? 'true' : 'false' }};
@@ -2047,7 +2070,7 @@
                         @include('create_file_tracker_page.partials.js')
                         @include('create_file_tracker_page.partials.assignment-workflow-js')
                         @include('create_file_tracker_page.partials.workflow-3step-js')
-                        @if(in_array($module ?? '', ['kangis', 'sltr', 'st']))
+                        @if(in_array($module ?? '', ['kangis', 'sltr', 'st', 'dciv']))
                         @include('create_file_tracker_page.partials.checkout-approval-js')
                         @endif
                     </div>

@@ -4053,6 +4053,20 @@
             const assignedToId = tracker.assignedToId ?? null;
             const assignmentStatusLower = (tracker.assignmentStatusLower || tracker.assignmentStatus || tracker.assignment_status || '').toLowerCase();
 
+            // Admin check (for restricted actions like deletion)
+            let isSupperAdmin = false;
+            if (window.currentUser) {
+                const assignRole = String(window.currentUser.assign_role || '').toLowerCase();
+                const typeStr = String(window.currentUser.type || '').toLowerCase();
+                isSupperAdmin = assignRole.includes('super admin') || assignRole.includes('supper admin')
+                    || typeStr === 'super admin' || typeStr === 'supper admin'
+                    || (Array.isArray(window.currentUser.roles) && window.currentUser.roles.some(r => String(r).toLowerCase().includes('super admin')));
+            }
+
+            const _urlParam = new URLSearchParams(window.location.search).get('url');
+            const isRestrictedModule = _urlParam === 'kangis' || _urlParam === 'new_kangis';
+            const canDelete = !isRestrictedModule || isSupperAdmin;
+
             const isOwnedByCurrentUser = Boolean(
                 currentUserId &&
                 assignedToId &&
@@ -4121,15 +4135,7 @@
                     const entryStatus = (firstEntry.status || 'completed').toLowerCase();
                     const safeNotes = sanitize(firstEntry.notes);
 
-                    // Admin check (for actions button)
-                    let isSupperAdmin = false;
-                    if (window.currentUser) {
-                        const assignRole = String(window.currentUser.assign_role || '').toLowerCase();
-                        const typeStr = String(window.currentUser.type || '').toLowerCase();
-                        isSupperAdmin = assignRole.includes('super admin') || assignRole.includes('supper admin')
-                            || typeStr === 'super admin' || typeStr === 'supper admin'
-                            || (Array.isArray(window.currentUser.roles) && window.currentUser.roles.some(r => String(r).toLowerCase().includes('super admin')));
-                    }
+                    // Admin check (already computed above)
                     const standardItemClass = isSupperAdmin
                         ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100'
                         : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-50';
@@ -4217,11 +4223,13 @@
                                                     <span>Print Log Sheet</span>
                                                 </button>
                                                 `}
+                                                 ${canDelete ? `
                                                 <hr class="my-1 border-gray-200">
                                                 <button class="${deleteItemClass}" data-action="delete-log" ${commonDisabledAttr}>
                                                     <i data-lucide="trash-2" class="mr-2 h-4 w-4"></i>
                                                     <span>Delete Log Entry</span>
                                                 </button>
+                                                ` : ''}
                                             </div>
                                         </div>
                                     </div>
@@ -4319,13 +4327,15 @@
                                                 <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
                                                 <span>Print Log Sheet</span>
                                             </button>
-                                            ${completeLogButton}
+                                             ${completeLogButton}
                                             ${updateButton}
+                                            ${canDelete ? `
                                             <hr class="my-1 border-gray-200">
                                             <button class="dropdown-item flex w-full items-center px-4 py-2 text-sm text-red-600 transition hover:bg-gray-100" data-action="delete-log">
                                                 <i data-lucide="trash-2" class="mr-2 h-4 w-4"></i>
                                                 <span>Delete Log Entry</span>
                                             </button>
+                                            ` : ''}
                                         </div>
                                     </div>
                                 </div>
@@ -4624,6 +4634,7 @@
                             </table>
                         </div>
 
+                        ${canDelete ? `
                         <div class="mt-3 flex justify-end">
                             <button type="button"
                                 class="tracker-delete-row-btn inline-flex items-center px-3 py-1.5 border border-red-300 rounded-md text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
@@ -4633,6 +4644,7 @@
                                 Delete Entire Record
                             </button>
                         </div>
+                        ` : ''}
 
                         ${transferFooterHtml}
                     </div>

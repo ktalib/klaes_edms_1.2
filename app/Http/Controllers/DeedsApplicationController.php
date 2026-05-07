@@ -62,15 +62,17 @@ class DeedsApplicationController extends Controller
             // Fetch units from buyer_list first (standard for ST Memos)
             $buyers = DB::connection('sqlsrv')
                 ->table('buyer_list')
-                ->where('application_id', $memo->mother_id)
-                ->get(['id', 'buyer_title', 'buyer_name', 'unit_no']);
+                ->leftJoin('st_file_numbers', 'buyer_list.id', '=', 'st_file_numbers.buyer_list_id')
+                ->where('buyer_list.application_id', $memo->mother_id)
+                ->get(['buyer_list.id', 'buyer_list.buyer_title', 'buyer_list.buyer_name', 'buyer_list.unit_no', 'st_file_numbers.fileno as unit_fileno']);
                 
             $unitsData = collect();
             
             foreach ($buyers as $buyer) {
                 $unitsData->push([
                     'unit_number' => $buyer->unit_no,
-                    'party2_name' => strtoupper(trim("{$buyer->buyer_title} {$buyer->buyer_name}"))
+                    'party2_name' => strtoupper(trim("{$buyer->buyer_title} {$buyer->buyer_name}")),
+                    'unit_fileno' => $buyer->unit_fileno
                 ]);
             }
             
@@ -78,13 +80,15 @@ class DeedsApplicationController extends Controller
             if ($unitsData->isEmpty()) {
                 $subs = DB::connection('sqlsrv')
                     ->table('subapplications')
-                    ->where('main_application_id', $memo->mother_id)
-                    ->get(['id', 'applicant_title', 'first_name', 'surname', 'corporate_name', 'unit_number']);
+                    ->leftJoin('st_file_numbers', 'subapplications.id', '=', 'st_file_numbers.subapplication_id')
+                    ->where('subapplications.main_application_id', $memo->mother_id)
+                    ->get(['subapplications.id', 'subapplications.applicant_title', 'subapplications.first_name', 'subapplications.surname', 'subapplications.corporate_name', 'subapplications.unit_number', 'st_file_numbers.fileno as unit_fileno']);
                     
                 foreach ($subs as $sub) {
                     $unitsData->push([
                         'unit_number' => $sub->unit_number,
-                        'party2_name' => strtoupper($sub->corporate_name ?: trim("{$sub->applicant_title} {$sub->first_name} {$sub->surname}"))
+                        'party2_name' => strtoupper($sub->corporate_name ?: trim("{$sub->applicant_title} {$sub->first_name} {$sub->surname}")),
+                        'unit_fileno' => $sub->unit_fileno
                     ]);
                 }
             }

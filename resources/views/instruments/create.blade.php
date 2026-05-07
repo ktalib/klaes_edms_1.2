@@ -206,7 +206,7 @@
             </template>
             <!-- Sidebar Templates -->
             <template id="template-deed-of-mortgage-sidebar">
-                @include('instruments.partials.types.sidebars.tripartite-mortgage')
+                @include('instruments.partials.types.sidebars.deed-of-mortgage')
             </template>
             <template id="template-tripartite-mortgage-sidebar">
                 @include('instruments.partials.types.sidebars.tripartite-mortgage')

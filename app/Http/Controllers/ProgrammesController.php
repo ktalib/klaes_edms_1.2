@@ -6,6 +6,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Models\LandUseType;
+use App\Models\District;
+use App\Models\Lga;
+use App\Models\StreetName;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 
 class ProgrammesController extends Controller
 {
@@ -1656,6 +1662,60 @@ class ProgrammesController extends Controller
             $unitApplication->owner_name = $ownerName && trim($ownerName) !== '' ? $ownerName : 'N/A';
         }
 
+        // Fetch data for Joint Site Inspection (JSI) modal
+        $districts = District::where('is_active', 1)->orderBy('name')->get();
+        $lgas = Lga::where('is_active', 1)->orderBy('name')->get();
+        $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
+        $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
+        
+        $landUseTypes = Cache::remember('land_use_types_all', 3600, function () {
+            return LandUseType::orderBy('name')->get(['id', 'name']);
+        });
+
+        $inspectors = Cache::remember('pp_inspectors_all', 1800, function () {
+            return DB::connection('sqlsrv')
+                ->table('pp_inspectors')
+                ->select('id', 'name', 'rank')
+                ->orderBy('name')
+                ->get();
+        });
+
+        $detailedLandUseHasLandUseId = Schema::connection('sqlsrv')->hasColumn('detailed_land_use', 'land_use_id');
+        $jsiDetailedLandUsesQuery = DB::connection('sqlsrv')
+            ->table('detailed_land_use')
+            ->where('is_active', 1)
+            ->orderByRaw("CASE name WHEN 'Residential' THEN 1 WHEN 'Commercial' THEN 2 WHEN 'Agricultural' THEN 3 WHEN 'Industrial' THEN 4 ELSE 99 END")
+            ->orderBy('name');
+
+        if ($detailedLandUseHasLandUseId) {
+            $jsiDetailedLandUsesQuery->select('id', 'land_use_id', 'name');
+        } else {
+            $jsiDetailedLandUsesQuery->select('id', 'name');
+        }
+        $jsiDetailedLandUses = $jsiDetailedLandUsesQuery->get();
+
+        $jsiPurposesByLandUse = DB::connection('sqlsrv')
+            ->table('jsi_lut_purposes')
+            ->select('id', 'land_use_id', 'name')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get()
+            ->groupBy('land_use_id');
+
+        $jsiRoadCategories = DB::connection('sqlsrv')
+            ->table('jsi_lut_road_categories')
+            ->select('id', 'name')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get();
+
+        $jsiReservations = DB::connection('sqlsrv')
+            ->table('jsi_lut_reservations')
+            ->select('id', 'name')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get();
+
         return view('programmes.approvals.planning_recomm', compact(
             'applications',
             'unitApplications',
@@ -1668,7 +1728,17 @@ class ProgrammesController extends Controller
             'totalUnitApplications',
             'approvedUnitApplications',
             'rejectedUnitApplications',
-            'pendingUnitApplications'
+            'pendingUnitApplications',
+            'districts',
+            'lgas',
+            'states',
+            'streetNames',
+            'landUseTypes',
+            'inspectors',
+            'jsiDetailedLandUses',
+            'jsiPurposesByLandUse',
+            'jsiRoadCategories',
+            'jsiReservations'
         ));
     }
 

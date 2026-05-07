@@ -246,6 +246,90 @@ class CoroiController extends Controller
     private function findRecordById($tableName, $id)
     {
         try {
+            Log::info('findRecordById called', ['id' => $id, 'tableName' => $tableName]);
+
+            // Handle Sectional Titling suffixes (_st_assignment, _sectional_cofo, _st_fragmentation)
+            if (strpos($id, '_st_assignment') !== false || strpos($id, '_sectional_cofo') !== false || strpos($id, '_st_fragmentation') !== false) {
+                $suffix = '';
+                if (strpos($id, '_st_assignment') !== false) $suffix = '_st_assignment';
+                elseif (strpos($id, '_sectional_cofo') !== false) $suffix = '_sectional_cofo';
+                elseif (strpos($id, '_st_fragmentation') !== false) $suffix = '_st_fragmentation';
+
+                $originalId = str_replace($suffix, '', $id);
+                $instrumentType = match($suffix) {
+                    '_st_assignment' => 'ST Assignment (Transfer of Title)',
+                    '_sectional_cofo' => 'Sectional Titling CofO',
+                    '_st_fragmentation' => 'ST Fragmentation',
+                    default => ''
+                };
+                
+                Log::info('Detected ST suffix', ['originalId' => $originalId, 'instrumentType' => $instrumentType]);
+
+                // 1. Determine which table to check for the application
+                $appTable = $suffix === '_st_fragmentation' ? 'mother_applications' : 'subapplications';
+                
+                // 2. Get application fileno
+                $app = DB::connection('sqlsrv')->table($appTable)
+                    ->where('id', $originalId)
+                    ->select('fileno', 'np_fileno')
+                    ->first();
+
+                if ($app) {
+                    $fileno = ($suffix === '_st_fragmentation') ? ($app->np_fileno ?? $app->fileno) : $app->fileno;
+                    Log::info('Found application', ['fileno' => $fileno]);
+                    
+                    // 3. Find in deed_registrations first (where ST instruments are usually registered)
+                    $data = DB::connection('sqlsrv')->table('deed_registrations')
+                        ->where('fileno', $fileno)
+                        ->where('instrument_type', $instrumentType)
+                        ->select([
+                            'grantee as Applicant_Name',
+                            'instrument_type',
+                            'serial_no',
+                            'volume_no',
+                            'page_no',
+                            'deeds_date',
+                            'deeds_time',
+                            'fileno',
+                            'fileno as StFileNo'
+                        ])
+                        ->first();
+
+                    if (!$data) {
+                        // 4. Fallback to registered_instruments
+                        $data = DB::connection('sqlsrv')->table('registered_instruments')
+                            ->where(function($q) use ($fileno) {
+                                $q->where('StFileNo', $fileno)
+                                  ->orWhere('MLSFileNo', $fileno)
+                                  ->orWhere('KAGISFileNO', $fileno)
+                                  ->orWhere('NewKANGISFileNo', $fileno);
+                            })
+                            ->where('instrument_type', $instrumentType)
+                            ->select([
+                                'Grantor as Applicant_Name',
+                                'instrument_type',
+                                'volume_no',
+                                'page_no',
+                                'serial_no',
+                                'deeds_time',
+                                'deeds_date',
+                                'instrumentDate',
+                                'STM_Ref',
+                                'MLSFileNo',
+                                'KAGISFileNO',
+                                'NewKANGISFileNo',
+                                'StFileNo'
+                            ])
+                            ->first();
+                    }
+
+                    if ($data) {
+                        Log::info('Found registered instrument for ST', ['instrumentType' => $instrumentType]);
+                        return $this->formatDateTimeData($data);
+                    }
+                }
+            }
+
             // Handle deed_reg_ prefix
             $realId = $id;
             $isDeedReg = false;
@@ -262,13 +346,15 @@ class CoroiController extends Controller
                     return $this->formatDateTimeData($data);
             }
 
-            // Search in registered_instruments
-            $data = $this->queryRegisteredInstrumentsById($realId);
-            if ($data)
-                return $this->formatDateTimeData($data);
+            // Search in registered_instruments - but only if it's numeric to avoid SQL error
+            if (is_numeric($realId)) {
+                $data = $this->queryRegisteredInstrumentsById($realId);
+                if ($data)
+                    return $this->formatDateTimeData($data);
+            }
 
-            // Search in deed_registrations if not already searched
-            if (!$isDeedReg) {
+            // Search in deed_registrations if not already searched - but only if it's numeric
+            if (!$isDeedReg && is_numeric($realId)) {
                 $data = $this->queryDeedRegistrationsById($realId);
                 if ($data)
                     return $this->formatDateTimeData($data);
@@ -280,6 +366,7 @@ class CoroiController extends Controller
             }
 
             // Return mock data if no record found
+            Log::info('No record found, returning mock data', ['id' => $id]);
             return $this->formatDateTimeData($this->createMockData($id));
         } catch (\Exception $e) {
             Log::error('Error querying record by id: ' . $e->getMessage());

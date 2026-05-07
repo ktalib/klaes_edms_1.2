@@ -28,7 +28,7 @@ class ApplicationController extends Controller
      */
     public function index(Request $request): View
     {
-        $limit  = max(10, min((int) $request->input('limit', 50), 200));
+        $limit = max(10, min((int) $request->input('limit', 50), 200));
         $search = trim((string) $request->input('search'));
         $typeFilter = $request->input('type');
 
@@ -150,17 +150,20 @@ class ApplicationController extends Controller
             return null;
         };
         $fiFileNumberCol = $pickFiColumn(['file_number']);
-        $fiLocationCol   = $pickFiColumn(['location']);
-        $fiPlotCol       = $pickFiColumn(['plot_no', 'plot_number']);
-        $fiPlanCol       = $pickFiColumn(['plan_no', 'tp_no']);
+        $fiLocationCol = $pickFiColumn(['location']);
+        $fiPlotCol = $pickFiColumn(['plot_no', 'plot_number']);
+        $fiPlanCol = $pickFiColumn(['plan_no', 'tp_no']);
 
         $fiApply = '';
         $hasFiTop = false;
         if ($fiFileNumberCol) {
             $fiTopCols = [];
-            if ($fiLocationCol) $fiTopCols[] = "NULLIF(LTRIM(RTRIM(fi.[{$fiLocationCol}])), '') as fi_location";
-            if ($fiPlotCol)     $fiTopCols[] = "NULLIF(LTRIM(RTRIM(fi.[{$fiPlotCol}])), '') as fi_plot_no";
-            if ($fiPlanCol)     $fiTopCols[] = "NULLIF(LTRIM(RTRIM(fi.[{$fiPlanCol}])), '') as fi_plan_no";
+            if ($fiLocationCol)
+                $fiTopCols[] = "NULLIF(LTRIM(RTRIM(fi.[{$fiLocationCol}])), '') as fi_location";
+            if ($fiPlotCol)
+                $fiTopCols[] = "NULLIF(LTRIM(RTRIM(fi.[{$fiPlotCol}])), '') as fi_plot_no";
+            if ($fiPlanCol)
+                $fiTopCols[] = "NULLIF(LTRIM(RTRIM(fi.[{$fiPlanCol}])), '') as fi_plan_no";
             if (!empty($fiTopCols)) {
                 $hasFiTop = true;
                 $fiApply = "OUTER APPLY (
@@ -254,9 +257,9 @@ class ApplicationController extends Controller
         });
 
         // Supporting data for modals / dropdowns
-        $states      = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
-        $lgas        = DB::connection('sqlsrv')->table('lgas')->where('is_active', 1)->orderBy('name')->get();
-        $districts   = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
+        $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
+        $lgas = DB::connection('sqlsrv')->table('lgas')->where('is_active', 1)->orderBy('name')->get();
+        $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
         $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
 
         // ── Card counts by application type ──
@@ -291,19 +294,19 @@ class ApplicationController extends Controller
         $dailyCount = $dailyQuery->count();
 
         return view('lands_one_stop_shop.all_applications', [
-            'pageTitle'     => 'Applications',
-            'records'       => $records,
-            'limit'         => $limit,
-            'typeFilter'    => $typeFilter,
-            'states'        => $states,
-            'lgas'          => $lgas,
-            'districts'     => $districts,
-            'streetNames'   => $streetNames,
-            'typeOptions'   => LandsOneStopShopApplication::typeOptions(),
+            'pageTitle' => 'Applications',
+            'records' => $records,
+            'limit' => $limit,
+            'typeFilter' => $typeFilter,
+            'states' => $states,
+            'lgas' => $lgas,
+            'districts' => $districts,
+            'streetNames' => $streetNames,
+            'typeOptions' => LandsOneStopShopApplication::typeOptions(),
             'statusOptions' => LandsOneStopShopApplication::statusOptions(),
-            'cardCounts'    => $cardCounts,
-            'dailyCount'    => $dailyCount,
-            'isChangeOfNamePage'   => $isChangeOfNamePage,
+            'cardCounts' => $cardCounts,
+            'dailyCount' => $dailyCount,
+            'isChangeOfNamePage' => $isChangeOfNamePage,
             'isNoChangeOfNamePage' => $isNoChangeOfNamePage,
         ]);
     }
@@ -337,8 +340,8 @@ class ApplicationController extends Controller
             ELSE 'residential'
         END";
 
-         $query = DB::connection('sqlsrv')
-             ->table(DB::raw("(
+        $query = DB::connection('sqlsrv')
+            ->table(DB::raw("(
               SELECT id, prop_id, mlsFNo, fileno, temp_fileno, instrument_type,
                   Grantor, Grantee, party_1, party_2, regNo, op_type,
                   op_serial_number, property_description, location,
@@ -559,7 +562,7 @@ class ApplicationController extends Controller
                 if ($ossHasIsDeleted) {
                     $sub->where(function ($q) {
                         $q->whereNull('oss_applications.is_deleted')
-                          ->orWhere('oss_applications.is_deleted', 0);
+                            ->orWhere('oss_applications.is_deleted', 0);
                     });
                 }
             })
@@ -600,13 +603,13 @@ class ApplicationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed.',
-                'errors'  => $validator->errors(),
+                'errors' => $validator->errors(),
             ], 422);
         }
 
         $data = $validator->validated();
         $data['captured_by'] = Auth::id();
-        $data['status']      = LandsOneStopShopApplication::STATUS_PENDING;
+        $data['status'] = LandsOneStopShopApplication::STATUS_PENDING;
 
         // Server-side duplicate file number check
         $fileNo = trim((string) ($data['file_no'] ?? ''));
@@ -648,7 +651,7 @@ class ApplicationController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Application created successfully.',
-            'data'    => $record,
+            'data' => $record,
         ]);
     }
 
@@ -662,7 +665,7 @@ class ApplicationController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Application retrieved.',
-            'data'    => $record,
+            'data' => $record,
         ]);
     }
 
@@ -676,10 +679,10 @@ class ApplicationController extends Controller
         $rules = $this->validationRules();
         // On update, application_type and applicant_name are optional
         $rules['application_type'] = 'sometimes|required|in:residential,commercial,industrial,agricultural';
-        $rules['applicant_name']   = 'sometimes|required|string|max:255';
-        $rules['status']           = 'nullable|in:pending,processing,approved,rejected';
+        $rules['applicant_name'] = 'sometimes|required|string|max:255';
+        $rules['status'] = 'nullable|in:pending,processing,approved,rejected';
         // On update, passport photo is only validated if a new file is uploaded
-        $rules['passport_photo']   = 'nullable|image|mimes:jpeg,jpg,png|max:2048|dimensions:min_width=150,min_height=150,max_width=2000,max_height=2000';
+        $rules['passport_photo'] = 'nullable|image|mimes:jpeg,jpg,png|max:2048|dimensions:min_width=150,min_height=150,max_width=2000,max_height=2000';
 
         $validator = Validator::make($request->all(), $rules, $this->passportValidationMessages());
 
@@ -687,7 +690,7 @@ class ApplicationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed.',
-                'errors'  => $validator->errors(),
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -713,7 +716,7 @@ class ApplicationController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Application updated successfully.',
-            'data'    => $record->fresh(),
+            'data' => $record->fresh(),
         ]);
     }
 
@@ -746,10 +749,10 @@ class ApplicationController extends Controller
 
         if ($existing) {
             return response()->json([
-                'duplicate'          => true,
+                'duplicate' => true,
                 'existing_applicant' => $existing->applicant_name,
-                'existing_type'      => ucfirst($existing->application_type ?? ''),
-                'existing_date'      => $existing->created_at
+                'existing_type' => ucfirst($existing->application_type ?? ''),
+                'existing_date' => $existing->created_at
                     ? \Carbon\Carbon::parse($existing->created_at)->format('M d, Y')
                     : '—',
             ]);
@@ -814,10 +817,10 @@ class ApplicationController extends Controller
 
         // Bill amounts per application type
         $billRates = [
-            'residential' => ['Change_of_Name' => 25000, 'Processing_Fee' => 3000,  'survey_fee' => 10000, 'Application_Form' => 2000],
-            'commercial'  => ['Change_of_Name' => 25000, 'Processing_Fee' => 20000, 'survey_fee' => 20000, 'Application_Form' => 10000],
-            'industrial'  => ['Change_of_Name' => 25000, 'Processing_Fee' => 30000, 'survey_fee' => 30000, 'Application_Form' => 20000],
-            'agricultural'=> ['Change_of_Name' => 25000, 'Processing_Fee' => 3000,  'survey_fee' => 10000, 'Application_Form' => 2000],
+            'residential' => ['Change_of_Name' => 25000, 'Processing_Fee' => 3000, 'survey_fee' => 10000, 'Application_Form' => 2000],
+            'commercial' => ['Change_of_Name' => 25000, 'Processing_Fee' => 20000, 'survey_fee' => 20000, 'Application_Form' => 10000],
+            'industrial' => ['Change_of_Name' => 25000, 'Processing_Fee' => 30000, 'survey_fee' => 30000, 'Application_Form' => 20000],
+            'agricultural' => ['Change_of_Name' => 25000, 'Processing_Fee' => 3000, 'survey_fee' => 10000, 'Application_Form' => 2000],
         ];
 
         $rates = $billRates[$type] ?? $billRates['residential'];
@@ -825,22 +828,22 @@ class ApplicationController extends Controller
         $refId = $this->generateOssBillRefId();
 
         $bill = Billing::create([
-            'Change_of_Name'  => $rates['Change_of_Name'],
-            'Processing_Fee'  => $rates['Processing_Fee'],
-            'survey_fee'      => $rates['survey_fee'],
-            'Application_Form'=> $rates['Application_Form'],
-            'source'          => 'OSS_OP_APPLICATION_FEE',
-            'source_id'       => $id,
-            'ref_id'          => $refId,
-            'Payment_Status'  => 'paid',
-            'created_at'      => now(),
-            'updated_at'      => now(),
+            'Change_of_Name' => $rates['Change_of_Name'],
+            'Processing_Fee' => $rates['Processing_Fee'],
+            'survey_fee' => $rates['survey_fee'],
+            'Application_Form' => $rates['Application_Form'],
+            'source' => 'OSS_OP_APPLICATION_FEE',
+            'source_id' => $id,
+            'ref_id' => $refId,
+            'Payment_Status' => 'paid',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         return response()->json([
             'success' => true,
             'message' => 'Bill generated successfully.',
-            'data'    => $bill,
+            'data' => $bill,
         ]);
     }
 
@@ -942,11 +945,11 @@ class ApplicationController extends Controller
                     ->filter()
                     ->implode(' / ')
             ) ?: strtoupper((string) ($row->fallback_file_title ?? '—')),
-            'plot_no'        => strtoupper($row->plot_number ?? ''),
-            'plan_no'        => strtoupper($row->survey_plan_no ?? $row->tp_no ?? $row->op_serial_number ?? ''),
-            'location'       => strtoupper($row->property_description ?? ''),
-            'date_captured'  => $createdAt ? strtoupper($createdAt->format('M d, Y')) : '',
-            'time_captured'  => $createdAt ? strtoupper($createdAt->format('g:i A')) : '',
+            'plot_no' => strtoupper($row->plot_number ?? ''),
+            'plan_no' => strtoupper($row->survey_plan_no ?? $row->tp_no ?? $row->op_serial_number ?? ''),
+            'location' => strtoupper($row->property_description ?? ''),
+            'date_captured' => $createdAt ? strtoupper($createdAt->format('M d, Y')) : '',
+            'time_captured' => $createdAt ? strtoupper($createdAt->format('g:i A')) : '',
         ];
 
         return view('lands_one_stop_shop.partials.print_acknowledgement', compact('record'));
@@ -1059,30 +1062,30 @@ class ApplicationController extends Controller
         }
 
         $record = (object) [
-            'applicant_name'    => strtoupper((string) $request->input('applicant_name', '')),
-            'file_ref'          => $fileRef,
-            'purpose'           => strtoupper((string) $request->input('purpose', '')),
-            'location'          => $location,
-            'plot_no'           => $plotNo,
-            'plan_no'           => $planNo,
-            'term'              => (string) $request->input('term', ''),
-            'dev_value'         => $formatNaira($request->input('dev_value', '')),
-            'completion_time'   => (string) $request->input('completion_time', ''),
-            'ground_rent'       => $formatNaira($request->input('ground_rent', '')),
-            'dev_charge'        => $formatNaira($request->input('dev_charge', '')),
-            'survey_charges'    => $formatNaira($request->input('survey_charges', '')),
-            'director_reasons'  => (string) $request->input('director_reasons', ''),
-            'director_sign'     => (string) $request->input('director_sign', ''),
-            'director_date'     => (string) $request->input('director_date', ''),
-            'ps_plot'           => strtoupper((string) $request->input('ps_plot', '')),
-            'ps_location'       => strtoupper((string) $request->input('ps_location', '')),
-            'ps_sign'           => (string) $request->input('ps_sign', ''),
-            'ps_date'           => (string) $request->input('ps_date', ''),
+            'applicant_name' => strtoupper((string) $request->input('applicant_name', '')),
+            'file_ref' => $fileRef,
+            'purpose' => strtoupper((string) $request->input('purpose', '')),
+            'location' => $location,
+            'plot_no' => $plotNo,
+            'plan_no' => $planNo,
+            'term' => (string) $request->input('term', ''),
+            'dev_value' => $formatNaira($request->input('dev_value', '')),
+            'completion_time' => (string) $request->input('completion_time', ''),
+            'ground_rent' => $formatNaira($request->input('ground_rent', '')),
+            'dev_charge' => $formatNaira($request->input('dev_charge', '')),
+            'survey_charges' => $formatNaira($request->input('survey_charges', '')),
+            'director_reasons' => (string) $request->input('director_reasons', ''),
+            'director_sign' => (string) $request->input('director_sign', ''),
+            'director_date' => (string) $request->input('director_date', ''),
+            'ps_plot' => strtoupper((string) $request->input('ps_plot', '')),
+            'ps_location' => strtoupper((string) $request->input('ps_location', '')),
+            'ps_sign' => (string) $request->input('ps_sign', ''),
+            'ps_date' => (string) $request->input('ps_date', ''),
             'commissioner_name' => (string) $request->input('commissioner_name', ''),
             'commissioner_date' => (string) $request->input('commissioner_date', ''),
-            'approval_status'   => (string) $request->input('approval_status', ''),
-            'tracking_id'       => $trackingId,
-            'rofo_serial_no'    => $rofoSerialNo,
+            'approval_status' => (string) $request->input('approval_status', ''),
+            'tracking_id' => $trackingId,
+            'rofo_serial_no' => $rofoSerialNo,
         ];
 
         return view('lands_one_stop_shop.partials.print_recommendation', compact('record'));
@@ -1189,7 +1192,7 @@ class ApplicationController extends Controller
     public function workflowStatus(Request $request): JsonResponse
     {
         $recordId = (int) $request->query('record_id', 0);
-        $fileNo   = trim((string) $request->query('file_no', ''));
+        $fileNo = trim((string) $request->query('file_no', ''));
 
         $verificationDone = $recordId > 0
             ? DB::connection('sqlsrv')->table('oss_verifications')
@@ -1206,7 +1209,7 @@ class ApplicationController extends Controller
                 ->where('file_no', $fileNo)->exists();
         }
 
-        $land12Exists  = false;
+        $land12Exists = false;
         $land12Approved = false;
         if ($fileNo) {
             $land12 = DB::connection('sqlsrv')->table('survey_report_requests')
@@ -1222,10 +1225,10 @@ class ApplicationController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'verification_done'    => $verificationDone,
+                'verification_done' => $verificationDone,
                 'acknowledgement_done' => $acknowledgementDone,
-                'land12_exists'        => $land12Exists,
-                'land12_approved'      => $land12Approved,
+                'land12_exists' => $land12Exists,
+                'land12_approved' => $land12Approved,
             ],
         ]);
     }
@@ -1236,8 +1239,8 @@ class ApplicationController extends Controller
     public function saveAcknowledgementDb(Request $request): JsonResponse
     {
         $recordId = (int) $request->input('record_id', 0);
-        $fileNo   = trim((string) $request->input('file_no', ''));
-        $sigName  = trim((string) $request->input('signature_name', ''));
+        $fileNo = trim((string) $request->input('file_no', ''));
+        $sigName = trim((string) $request->input('signature_name', ''));
 
         if ($recordId <= 0 && !$fileNo) {
             return response()->json(['success' => false, 'message' => 'Record ID or File No is required.'], 422);
@@ -1245,18 +1248,18 @@ class ApplicationController extends Controller
 
         // Upsert — if a record already exists, just return success
         $existing = DB::connection('sqlsrv')->table('oss_acknowledgements')
-            ->when($recordId > 0, fn ($q) => $q->where('instrument_capture_id', $recordId))
-            ->when(!$recordId && $fileNo, fn ($q) => $q->where('file_no', $fileNo))
+            ->when($recordId > 0, fn($q) => $q->where('instrument_capture_id', $recordId))
+            ->when(!$recordId && $fileNo, fn($q) => $q->where('file_no', $fileNo))
             ->first();
 
         if (!$existing) {
             DB::connection('sqlsrv')->table('oss_acknowledgements')->insert([
                 'instrument_capture_id' => $recordId ?: null,
-                'file_no'              => $fileNo ?: null,
-                'signature_name'       => $sigName ?: null,
-                'captured_by'          => Auth::id(),
-                'created_at'           => now(),
-                'updated_at'           => now(),
+                'file_no' => $fileNo ?: null,
+                'signature_name' => $sigName ?: null,
+                'captured_by' => Auth::id(),
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
         }
 
@@ -1383,8 +1386,8 @@ class ApplicationController extends Controller
     public function saveChangeOfOwnership(Request $request): JsonResponse
     {
         $request->validate([
-            'record_id'        => 'required|integer',
-            'current_name'     => 'required|string|max:255',
+            'record_id' => 'required|integer',
+            'current_name' => 'required|string|max:255',
         ]);
 
         $recordId = (int) $request->input('record_id');
@@ -1396,19 +1399,19 @@ class ApplicationController extends Controller
 
         $data = [
             'instrument_capture_id' => $recordId,
-            'op_number'        => (string) $request->input('op_number', ''),
-            'location'         => (string) $request->input('location', ''),
-            'plot_no'          => (string) $request->input('plot_no', ''),
-            'plan_no'          => (string) $request->input('plan_no', ''),
+            'op_number' => (string) $request->input('op_number', ''),
+            'location' => (string) $request->input('location', ''),
+            'plot_no' => (string) $request->input('plot_no', ''),
+            'plan_no' => (string) $request->input('plan_no', ''),
             'date_of_issuance' => $request->input('date_of_issuance') ?: null,
-            'original_name'    => (string) $request->input('original_name', ''),
+            'original_name' => (string) $request->input('original_name', ''),
             'original_address' => (string) $request->input('original_address', ''),
-            'original_phone'   => (string) $request->input('original_phone', ''),
-            'current_name'     => (string) $request->input('current_name', ''),
-            'current_address'  => (string) $request->input('current_address', ''),
-            'current_phone'    => (string) $request->input('current_phone', ''),
+            'original_phone' => (string) $request->input('original_phone', ''),
+            'current_name' => (string) $request->input('current_name', ''),
+            'current_address' => (string) $request->input('current_address', ''),
+            'current_phone' => (string) $request->input('current_phone', ''),
             'ownership_method' => (string) $request->input('ownership_method', ''),
-            'updated_at'       => now(),
+            'updated_at' => now(),
         ];
 
         if ($row) {
@@ -1418,7 +1421,7 @@ class ApplicationController extends Controller
                 ->update($data);
         } else {
             $data['captured_by'] = Auth::id();
-            $data['created_at']  = now();
+            $data['created_at'] = now();
             DB::connection('sqlsrv')
                 ->table('oss_change_of_ownership')
                 ->insert($data);
@@ -1530,7 +1533,7 @@ class ApplicationController extends Controller
 
 
 
-   
+
 
 
         // If holder/allottee name does not change, this is not a transfer.
@@ -1553,8 +1556,8 @@ class ApplicationController extends Controller
         if (!$hasNameChange) {
             $existingOp = $praService->findExistingOpInSource([
                 'op_serial_number' => $validated['op_serial_number'] ?? data_get($opRecord, 'op_serial_number'),
-                'mlsFNo'           => $sourceFileNo,
-                'fileno'           => $sourceFileNo,
+                'mlsFNo' => $sourceFileNo,
+                'fileno' => $sourceFileNo,
             ]);
 
             if ($existingOp) {
@@ -1565,14 +1568,14 @@ class ApplicationController extends Controller
                 }
                 $praService->linkSourceOpRecord($existingOp, [
                     'prop_id' => $linkPropId,
-                    'mlsFNo'  => $sourceFileNo,
+                    'mlsFNo' => $sourceFileNo,
                 ]);
                 $skipPraCreate = true;
 
                 Log::info('FFR save: OP exists in IC/DR — skipping PRA creation, linked source', [
                     'source_table' => $existingOp['_source_table'],
-                    'source_id'    => $existingOp['id'],
-                    'prop_id'      => $linkPropId,
+                    'source_id' => $existingOp['id'],
+                    'prop_id' => $linkPropId,
                 ]);
             }
         }
@@ -1589,7 +1592,7 @@ class ApplicationController extends Controller
             'inherited_reg_time' => $inheritedRegTime,
             'user_id' => Auth::id(),
         ]);
-      
+
         $praPayload = [
             'prop_id' => $propId,
             'mlsFNo' => $sourceFileNo,
@@ -1608,7 +1611,7 @@ class ApplicationController extends Controller
             'lgsaOrCity' => data_get($opRecord, 'lga') ?? data_get($opRecord, 'lgsaOrCity'),
             'source' => 'FFR Change of Name',
             'system_source' => 'OSSOPCHANGEOFNAME',
-            
+
             'Grantor' => $partyFromOp,
             'Grantee' => $newParty2,
             'party_1' => $partyFromOp,
@@ -1651,24 +1654,12 @@ class ApplicationController extends Controller
         }
 
         // Pull geo fields from the mother OP record so the OSS table shows them
-        $tpNo     = data_get($opRecord, 'tp_no');
-        $plotNo   = data_get($opRecord, 'plot_no') ?? data_get($opRecord, 'plot_number');
+        $tpNo = data_get($opRecord, 'tp_no');
+        $plotNo = data_get($opRecord, 'plot_no') ?? data_get($opRecord, 'plot_number');
         $lgaValue = data_get($opRecord, 'lga') ?? data_get($opRecord, 'lgsaOrCity');
 
         try {
-            $result = DB::connection('sqlsrv')->transaction(function () use (
-                $praService,
-                $praPayload,
-                $sourceFileNo,
-                $partyFromOp,
-                $newParty2,
-                $validated,
-                $resolvedCustomerType,
-                $tpNo,
-                $plotNo,
-                $lgaValue,
-                $skipPraCreate
-            ) {
+            $result = DB::connection('sqlsrv')->transaction(function () use ($praService, $praPayload, $sourceFileNo, $partyFromOp, $newParty2, $validated, $resolvedCustomerType, $tpNo, $plotNo, $lgaValue, $skipPraCreate) {
                 $praRecord = $skipPraCreate ? [] : $praService->createRecord($praPayload, Auth::id());
                 $now = now();
 
@@ -1754,9 +1745,12 @@ class ApplicationController extends Controller
                     'customer_type' => $resolvedCustomerType,
                     'updated_at' => $now,
                 ];
-                if ($tpNo)     $fileNumberData['tp_no']   = $tpNo;
-                if ($plotNo)   $fileNumberData['plot_no']  = $plotNo;
-                if ($lgaValue) $fileNumberData['lga']      = $lgaValue;
+                if ($tpNo)
+                    $fileNumberData['tp_no'] = $tpNo;
+                if ($plotNo)
+                    $fileNumberData['plot_no'] = $plotNo;
+                if ($lgaValue)
+                    $fileNumberData['lga'] = $lgaValue;
 
                 $fileNumberUpdated = $this->safeUpdateByLookup(
                     'fileNumber',
@@ -1841,8 +1835,8 @@ class ApplicationController extends Controller
 
     /**
      * Capture Existing flow for FFR when file number is not found in PRA.
-        * Keeps the same file number (no extension/new serial), syncs local tables,
-        * and stores the mapped Occupancy Permit (OP) PRA record for the file number.
+     * Keeps the same file number (no extension/new serial), syncs local tables,
+     * and stores the mapped Occupancy Permit (OP) PRA record for the file number.
      */
     public function captureFfrExisting(Request $request, PraRecordService $praService): JsonResponse
     {
@@ -1900,6 +1894,9 @@ class ApplicationController extends Controller
         $ffrTempFileno = trim((string) ($validated['ffr_temp_fileno'] ?? ''));
 
         $sourceHistory = $praService->findAllByFileNumber($sourceFileNo);
+        if (empty($sourceHistory) && $ffrFirstPraPropId) {
+            $sourceHistory = $praService->getHistory((string) $ffrFirstPraPropId);
+        }
         $motherOpRecord = $this->resolveMotherOpRecord($sourceHistory);
 
         if (!$motherOpRecord) {
@@ -2011,9 +2008,9 @@ class ApplicationController extends Controller
         if (!$hasNameChange && !$fromOpFlow) {
             $existingOp = $praService->findExistingOpInSource([
                 'op_serial_number' => $resolvedOpSerialNumber,
-                'mlsFNo'           => $sourceFileNo,
-                'fileno'           => $sourceFileNo,
-                'temp_fileno'      => $ffrTempFileno,
+                'mlsFNo' => $sourceFileNo,
+                'fileno' => $sourceFileNo,
+                'temp_fileno' => $ffrTempFileno,
             ]);
 
             if ($existingOp) {
@@ -2024,14 +2021,14 @@ class ApplicationController extends Controller
                 }
                 $praService->linkSourceOpRecord($existingOp, [
                     'prop_id' => $linkPropId,
-                    'mlsFNo'  => $sourceFileNo,
+                    'mlsFNo' => $sourceFileNo,
                 ]);
                 $skipPraCreate = true;
 
                 Log::info('FFR existing capture: OP exists in IC/DR — skipping PRA, linked source', [
                     'source_table' => $existingOp['_source_table'],
-                    'source_id'    => $existingOp['id'],
-                    'prop_id'      => $linkPropId,
+                    'source_id' => $existingOp['id'],
+                    'prop_id' => $linkPropId,
                 ]);
             }
         }
@@ -2056,49 +2053,7 @@ class ApplicationController extends Controller
         ]);
 
         try {
-            $result = DB::connection('sqlsrv')->transaction(function () use (
-                $praService,
-                $trackingId,
-                $ffrFirstPraPropId,
-                $ffrTempFileno,
-                $sourceFileNo,
-                $fileName,
-                $location,
-                $lga,
-                $customerType,
-                $landUse,
-                $purpose,
-                $purposeId,
-                $phoneNo,
-                $address,
-                $resolvedPlotNo,
-                $resolvedTpNo,
-                $resolvedLga,
-                $resolvedLocation,
-                $resolvedLandUse,
-                $opType,
-                $resolvedOpType,
-                $resolvedOpSerialNumber,
-                $resolvedRegistrationNumber,
-                $resolvedRegDate,
-                $resolvedRegTime,
-                $resolvedTransactionDate,
-                $resolvedSerialNo,
-                $resolvedPageNo,
-                $resolvedVolumeNo,
-                $party1,
-                $party2,
-                $resolvedTransactionType,
-                $resolvedInstrumentType,
-                $resolvedGrantor,
-                $resolvedGrantee,
-                $hasNameChange,
-                $originalAllottee,
-                $enteredAllottee,
-                $skipPraCreate,
-                $isTransferRecord,
-                $motherOpRecord
-            ) {
+            $result = DB::connection('sqlsrv')->transaction(function () use ($praService, $trackingId, $ffrFirstPraPropId, $ffrTempFileno, $sourceFileNo, $fileName, $location, $lga, $customerType, $landUse, $purpose, $purposeId, $phoneNo, $address, $resolvedPlotNo, $resolvedTpNo, $resolvedLga, $resolvedLocation, $resolvedLandUse, $opType, $resolvedOpType, $resolvedOpSerialNumber, $resolvedRegistrationNumber, $resolvedRegDate, $resolvedRegTime, $resolvedTransactionDate, $resolvedSerialNo, $resolvedPageNo, $resolvedVolumeNo, $party1, $party2, $resolvedTransactionType, $resolvedInstrumentType, $resolvedGrantor, $resolvedGrantee, $hasNameChange, $originalAllottee, $enteredAllottee, $skipPraCreate, $isTransferRecord, $motherOpRecord) {
                 $now = now();
                 $userId = Auth::id();
 
@@ -2305,13 +2260,12 @@ class ApplicationController extends Controller
                             ->where('temp_fileno', $ffrTempFileno)
                             ->where(function ($q) {
                                 $q->where('instrument_type', 'like', '%Occupancy Permit%')
-                                  ->orWhere('transaction_type', 'like', '%Occupancy Permit%');
+                                    ->orWhere('transaction_type', 'like', '%Occupancy Permit%');
                             })
                             ->orderByDesc('id')
                             ->value('id');
                     }
                     $ffrPraPayload['prop_id'] = null;
-                    $ffrPraPayload['force_fresh_prop_id'] = true;
                     $ffrPraPayload['parent_prop_id'] = data_get($motherOpRecord, 'prop_id') ?: $ffrFirstPraPropId;
                     $ffrPraPayload['source_op_table'] = 'pra';
                     if ($sourceOpId) {
@@ -2391,46 +2345,46 @@ class ApplicationController extends Controller
     public function directOpCapture(Request $request, PraRecordService $praService): JsonResponse
     {
         $validated = $request->validate([
-            'source_file_no'      => 'required|string|max:120',
-            'allottee'            => 'required|string|max:255',
-            'current_holder'      => 'nullable|string|max:255',
-            'grantor'             => 'nullable|string|max:500',
-            'op_type'             => 'nullable|string|max:100',
-            'op_serial_number'    => 'nullable|string|max:100',
-            'transaction_date'    => 'nullable|date',
+            'source_file_no' => 'required|string|max:120',
+            'allottee' => 'required|string|max:255',
+            'current_holder' => 'nullable|string|max:255',
+            'grantor' => 'nullable|string|max:500',
+            'op_type' => 'nullable|string|max:100',
+            'op_serial_number' => 'nullable|string|max:100',
+            'transaction_date' => 'nullable|date',
             'registration_number' => 'nullable|string|max:100',
-            'serial_no'           => 'nullable|string|max:50',
-            'page_no'             => 'nullable|string|max:50',
-            'volume_no'           => 'nullable|string|max:50',
-            'location'            => 'nullable|string|max:500',
-            'plot_no'             => 'nullable|string|max:100',
-            'tp_no'               => 'nullable|string|max:100',
-            'lga'                 => 'nullable|string|max:100',
-            'land_use'            => 'nullable|string|max:100',
-            'temp_fileno'         => 'nullable|string|max:120',
-            'merger_group_id'     => 'nullable|string|max:36',
-            'is_merger'           => 'nullable|boolean',
+            'serial_no' => 'nullable|string|max:50',
+            'page_no' => 'nullable|string|max:50',
+            'volume_no' => 'nullable|string|max:50',
+            'location' => 'nullable|string|max:500',
+            'plot_no' => 'nullable|string|max:100',
+            'tp_no' => 'nullable|string|max:100',
+            'lga' => 'nullable|string|max:100',
+            'land_use' => 'nullable|string|max:100',
+            'temp_fileno' => 'nullable|string|max:120',
+            'merger_group_id' => 'nullable|string|max:36',
+            'is_merger' => 'nullable|boolean',
         ]);
 
-        $sourceFileNo   = trim((string) $validated['source_file_no']);
-        $allottee        = trim((string) $validated['allottee']);
-        $currentHolder   = trim((string) $validated['current_holder']);
-        $opType          = trim((string) ($validated['op_type'] ?? 'OP Resettlement'));
-        $opSerialNumber  = trim((string) ($validated['op_serial_number'] ?? ''));
-        $txDate          = trim((string) ($validated['transaction_date'] ?? ''));
-        $regNo           = trim((string) ($validated['registration_number'] ?? ''));
-        $serialNo        = trim((string) ($validated['serial_no'] ?? ''));
-        $pageNo          = trim((string) ($validated['page_no'] ?? ''));
-        $volumeNo        = trim((string) ($validated['volume_no'] ?? ''));
-        $location        = trim((string) ($validated['location'] ?? ''));
-        $plotNo          = trim((string) ($validated['plot_no'] ?? ''));
-        $tpNo            = trim((string) ($validated['tp_no'] ?? ''));
-        $lga             = trim((string) ($validated['lga'] ?? ''));
-        $landUse         = trim((string) ($validated['land_use'] ?? ''));
-        $tempFileno      = trim((string) ($validated['temp_fileno'] ?? ''));
-        $grantor         = trim((string) ($validated['grantor'] ?? ''));
-        $isMerger        = !empty($validated['is_merger']);
-        $mergerGroupId   = trim((string) ($validated['merger_group_id'] ?? ''));
+        $sourceFileNo = trim((string) $validated['source_file_no']);
+        $allottee = trim((string) $validated['allottee']);
+        $currentHolder = trim((string) $validated['current_holder']);
+        $opType = trim((string) ($validated['op_type'] ?? 'OP Resettlement'));
+        $opSerialNumber = trim((string) ($validated['op_serial_number'] ?? ''));
+        $txDate = trim((string) ($validated['transaction_date'] ?? ''));
+        $regNo = trim((string) ($validated['registration_number'] ?? ''));
+        $serialNo = trim((string) ($validated['serial_no'] ?? ''));
+        $pageNo = trim((string) ($validated['page_no'] ?? ''));
+        $volumeNo = trim((string) ($validated['volume_no'] ?? ''));
+        $location = trim((string) ($validated['location'] ?? ''));
+        $plotNo = trim((string) ($validated['plot_no'] ?? ''));
+        $tpNo = trim((string) ($validated['tp_no'] ?? ''));
+        $lga = trim((string) ($validated['lga'] ?? ''));
+        $landUse = trim((string) ($validated['land_use'] ?? ''));
+        $tempFileno = trim((string) ($validated['temp_fileno'] ?? ''));
+        $grantor = trim((string) ($validated['grantor'] ?? ''));
+        $isMerger = !empty($validated['is_merger']);
+        $mergerGroupId = trim((string) ($validated['merger_group_id'] ?? ''));
 
         // Generate a new UUID for the first OP in a merger set when none is provided
         if ($isMerger && $mergerGroupId === '') {
@@ -2452,19 +2406,14 @@ class ApplicationController extends Controller
 
         Log::info('FFR direct OP capture initiated', [
             'source_file_no' => $sourceFileNo,
-            'allottee'       => $allottee,
+            'allottee' => $allottee,
             'current_holder' => $resolvedCurrentHolder,
-            'op_type'        => $opType,
-            'user_id'        => Auth::id(),
+            'op_type' => $opType,
+            'user_id' => Auth::id(),
         ]);
 
         try {
-            $result = DB::connection('sqlsrv')->transaction(function () use (
-                $praService, $sourceFileNo, $tempFileno, $allottee, $currentHolder,
-                $resolvedCurrentHolder, $opType, $opSerialNumber, $txDate,
-                $regNo, $serialNo, $pageNo, $volumeNo, $location, $plotNo,
-                $tpNo, $lga, $landUse, $customerType, $grantor, $isMerger, $mergerGroupId
-            ) {
+            $result = DB::connection('sqlsrv')->transaction(function () use ($praService, $sourceFileNo, $tempFileno, $allottee, $currentHolder, $resolvedCurrentHolder, $opType, $opSerialNumber, $txDate, $regNo, $serialNo, $pageNo, $volumeNo, $location, $plotNo, $tpNo, $lga, $landUse, $customerType, $grantor, $isMerger, $mergerGroupId) {
                 $userId = Auth::id();
                 $now = now();
 
@@ -2475,9 +2424,9 @@ class ApplicationController extends Controller
                 $opPra = [];
                 $existingOp = $praService->findExistingOpInSource([
                     'op_serial_number' => $opSerialNumber,
-                    'mlsFNo'           => $sourceFileNo,
-                    'fileno'           => $opFileNo,
-                    'temp_fileno'      => $tempFileno,
+                    'mlsFNo' => $sourceFileNo,
+                    'fileno' => $opFileNo,
+                    'temp_fileno' => $tempFileno,
                 ]);
 
                 if ($existingOp) {
@@ -2487,19 +2436,23 @@ class ApplicationController extends Controller
 
                     if (empty($opPropId)) {
                         $opPropId = $propIdService->allocateOrRetrievePropId(
-                            $opFileNo, $sourceFileNo, null, null, ['allow_temp_only' => true]
+                            $opFileNo,
+                            $sourceFileNo,
+                            null,
+                            null,
+                            ['allow_temp_only' => true]
                         );
                     }
 
                     $praService->linkSourceOpRecord($existingOp, [
-                        'prop_id'  => $opPropId,
-                        'mlsFNo'   => $sourceFileNo !== $opFileNo ? $sourceFileNo : null,
+                        'prop_id' => $opPropId,
+                        'mlsFNo' => $sourceFileNo !== $opFileNo ? $sourceFileNo : null,
                     ]);
 
                     Log::info('FFR direct OP capture: Row 1 (OP) linked to existing source record', [
                         'source_table' => $existingOp['_source_table'],
-                        'source_id'    => $existingOp['id'],
-                        'op_prop_id'   => $opPropId,
+                        'source_id' => $existingOp['id'],
+                        'op_prop_id' => $opPropId,
                     ]);
 
                     // Try to resolve an OP PRA row for detail inheritance; fallback to request fields when absent.
@@ -2508,7 +2461,7 @@ class ApplicationController extends Controller
                             ->where('prop_id', $opPropId)
                             ->where(function ($q) {
                                 $q->where('instrument_type', 'not like', '%Transfer of Title%')
-                                  ->where('transaction_type', 'not like', '%Transfer of Title%');
+                                    ->where('transaction_type', 'not like', '%Transfer of Title%');
                             })
                             ->orderByDesc('id')
                             ->first() ?: [];
@@ -2516,76 +2469,76 @@ class ApplicationController extends Controller
                 } else {
                     // No existing IC/DR record — create OP PRA row as before
                     $opPra = $praService->createRecord([
-                    'mlsFNo'               => null,
-                    'fileno'               => $opFileNo,
-                    'temp_fileno'          => $tempFileno ?: null,
-                    'transaction_type'     => 'Occupancy Permit (OP)',
-                    'instrument_type'      => 'Occupancy Permit (OP)',
-                    'op_type'              => $opType,
-                    'op_serial_number'     => $opSerialNumber ?: null,
-                    'transaction_date'     => $txDate ?: null,
-                    'regNo'                => $regNo ?: null,
-                    'serialNo'             => $serialNo ?: null,
-                    'pageNo'               => ($pageNo ?: $serialNo) ?: null,
-                    'volumeNo'             => $volumeNo ?: null,
-                    'location'             => $location ?: null,
-                    'property_description' => $location ?: null,
-                    'plot_no'              => $plotNo ?: null,
-                    'tp_no'                => $tpNo ?: null,
-                    'lgsaOrCity'           => $lga ?: null,
-                    'land_use'             => $landUse ?: null,
-                    'source'               => 'FFR Direct OP Capture',
-                    'system_source'        => 'OSSOPCHANGEOFNAME',
-                    'Grantor'              => $grantor,
-                    'Grantee'              => $allottee,
-                    'party_1'              => $grantor,
-                    'party_2'              => $allottee,
-                    'parties'              => [
-                        'grantor'  => $grantor,
-                        'grantee'  => $allottee,
-                        'party_1'  => $grantor,
-                        'party_2'  => $allottee,
-                    ],
-                    'merger_group_id'      => $mergerGroupId ?: null,
-                    'is_merger_op'         => $isMerger ? 1 : 0,
-                ], $userId);
+                        'mlsFNo' => null,
+                        'fileno' => $opFileNo,
+                        'temp_fileno' => $tempFileno ?: null,
+                        'transaction_type' => 'Occupancy Permit (OP)',
+                        'instrument_type' => 'Occupancy Permit (OP)',
+                        'op_type' => $opType,
+                        'op_serial_number' => $opSerialNumber ?: null,
+                        'transaction_date' => $txDate ?: null,
+                        'regNo' => $regNo ?: null,
+                        'serialNo' => $serialNo ?: null,
+                        'pageNo' => ($pageNo ?: $serialNo) ?: null,
+                        'volumeNo' => $volumeNo ?: null,
+                        'location' => $location ?: null,
+                        'property_description' => $location ?: null,
+                        'plot_no' => $plotNo ?: null,
+                        'tp_no' => $tpNo ?: null,
+                        'lgsaOrCity' => $lga ?: null,
+                        'land_use' => $landUse ?: null,
+                        'source' => 'FFR Direct OP Capture',
+                        'system_source' => 'OSSOPCHANGEOFNAME',
+                        'Grantor' => $grantor,
+                        'Grantee' => $allottee,
+                        'party_1' => $grantor,
+                        'party_2' => $allottee,
+                        'parties' => [
+                            'grantor' => $grantor,
+                            'grantee' => $allottee,
+                            'party_1' => $grantor,
+                            'party_2' => $allottee,
+                        ],
+                        'merger_group_id' => $mergerGroupId ?: null,
+                        'is_merger_op' => $isMerger ? 1 : 0,
+                    ], $userId);
 
-                // Persist merger_group_id on the OP row directly (PraRecordService may not
-                // forward unknown keys, so we patch the row after creation if needed)
-                $opPropId = data_get($opPra, 'prop_id');
-                $opRowId  = data_get($opPra, 'id');
+                    // Persist merger_group_id on the OP row directly (PraRecordService may not
+                    // forward unknown keys, so we patch the row after creation if needed)
+                    $opPropId = data_get($opPra, 'prop_id');
+                    $opRowId = data_get($opPra, 'id');
 
-                if ($mergerGroupId && !empty($opRowId)) {
-                    DB::connection('sqlsrv')->table('pra')
-                        ->where('id', $opRowId)
-                        ->whereNull('merger_group_id')
-                        ->update([
-                            'merger_group_id' => $mergerGroupId,
-                            'is_merger_op'    => $isMerger ? 1 : 0,
-                        ]);
-                }
+                    if ($mergerGroupId && !empty($opRowId)) {
+                        DB::connection('sqlsrv')->table('pra')
+                            ->where('id', $opRowId)
+                            ->whereNull('merger_group_id')
+                            ->update([
+                                'merger_group_id' => $mergerGroupId,
+                                'is_merger_op' => $isMerger ? 1 : 0,
+                            ]);
+                    }
 
-                // Fallback: if prop_id not in response, query by the row id
-                if (empty($opPropId) && !empty($opRowId)) {
-                    $opPropId = DB::connection('sqlsrv')
-                        ->table('pra')
-                        ->where('id', $opRowId)
-                        ->value('prop_id');
-                }
+                    // Fallback: if prop_id not in response, query by the row id
+                    if (empty($opPropId) && !empty($opRowId)) {
+                        $opPropId = DB::connection('sqlsrv')
+                            ->table('pra')
+                            ->where('id', $opRowId)
+                            ->value('prop_id');
+                    }
 
-                // Fallback 2: query latest by file number (temp or source)
-                if (empty($opPropId)) {
-                    $opPropId = DB::connection('sqlsrv')
-                        ->table('pra')
-                        ->where('mlsFNo', $opFileNo)
-                        ->orderByDesc('id')
-                        ->value('prop_id');
-                }
+                    // Fallback 2: query latest by file number (temp or source)
+                    if (empty($opPropId)) {
+                        $opPropId = DB::connection('sqlsrv')
+                            ->table('pra')
+                            ->where('mlsFNo', $opFileNo)
+                            ->orderByDesc('id')
+                            ->value('prop_id');
+                    }
 
-                Log::info('FFR direct OP capture: Row 1 (OP) created in PRA (no IC/DR source)', [
-                    'op_row_id'  => $opRowId,
-                    'op_prop_id' => $opPropId,
-                ]);
+                    Log::info('FFR direct OP capture: Row 1 (OP) created in PRA (no IC/DR source)', [
+                        'op_row_id' => $opRowId,
+                        'op_prop_id' => $opPropId,
+                    ]);
                 }
 
                 if (empty($opPropId)) {
@@ -2614,6 +2567,7 @@ class ApplicationController extends Controller
                 // OP's prop_id stays as the master file\u2192prop mapping; the ToT
                 // carries its own identity so OP\u2194ToT pairs are never confused
                 // across siblings.
+
                 $totSourceTable = null;
                 $totSourceId = null;
                 if (!empty($existingOp)) {
@@ -2621,45 +2575,44 @@ class ApplicationController extends Controller
                     $totSourceId = !empty($existingOp['id']) ? (int) $existingOp['id'] : null;
                 }
                 $totPra = $praService->createRecord([
-                    'mlsFNo'               => $sourceFileNo,
-                    'fileno'               => $sourceFileNo,
-                    'temp_fileno'          => $tempFileno ?: null,
-                    'force_fresh_prop_id'  => true,
-                    'parent_prop_id'       => $opPropId,
-                    'source_op_table'      => $totSourceTable,
-                    'source_op_id'         => $totSourceId,
-                    'transaction_type'     => 'Transfer of Title (OP)',
-                    'instrument_type'      => 'Transfer of Title (OP)',
-                    'op_type'              => $opInheritedOpType,
-                    'op_serial_number'     => $opInheritedOpSerial ?: null,
-                    'transaction_date'     => $opInheritedTransactionDate,
-                    'regNo'                => '0/0/0',
-                    'serialNo'             => '0',
-                    'pageNo'               => '0',
-                    'volumeNo'             => '0',
-                    'reg_date'             => $opInheritedRegDate,
-                    'reg_time'             => $opInheritedRegTime,
-                    'location'             => $opInheritedLocation ?: null,
+                    'mlsFNo' => $sourceFileNo,
+                    'fileno' => $sourceFileNo,
+                    'temp_fileno' => $tempFileno ?: null,
+                    'parent_prop_id' => $opPropId,
+                    'source_op_table' => $totSourceTable,
+                    'source_op_id' => $totSourceId,
+                    'transaction_type' => 'Transfer of Title (OP)',
+                    'instrument_type' => 'Transfer of Title (OP)',
+                    'op_type' => $opInheritedOpType,
+                    'op_serial_number' => $opInheritedOpSerial ?: null,
+                    'transaction_date' => $opInheritedTransactionDate,
+                    'regNo' => '0/0/0',
+                    'serialNo' => '0',
+                    'pageNo' => '0',
+                    'volumeNo' => '0',
+                    'reg_date' => $opInheritedRegDate,
+                    'reg_time' => $opInheritedRegTime,
+                    'location' => $opInheritedLocation ?: null,
                     'property_description' => $opInheritedPropertyDescription ?: null,
-                    'plot_no'              => $opInheritedPlotNo ?: null,
-                    'tp_no'                => $opInheritedTpNo ?: null,
-                    'lgsaOrCity'           => $opInheritedLga ?: null,
-                    'land_use'             => $opInheritedLandUse ?: null,
-                    'source'               => 'FFR Direct OP Capture',
-                    'system_source'        => 'OSSOPCHANGEOFNAME',
-                    'customer_type'        => $customerType,
-                    'Grantor'              => $allottee,
-                    'Grantee'              => $resolvedCurrentHolder,
-                    'party_1'              => $allottee,
-                    'party_2'              => $resolvedCurrentHolder,
-                    'parties'              => [
-                        'grantor'  => $allottee,
-                        'grantee'  => $resolvedCurrentHolder,
-                        'party_1'  => $allottee,
-                        'party_2'  => $resolvedCurrentHolder,
+                    'plot_no' => $opInheritedPlotNo ?: null,
+                    'tp_no' => $opInheritedTpNo ?: null,
+                    'lgsaOrCity' => $opInheritedLga ?: null,
+                    'land_use' => $opInheritedLandUse ?: null,
+                    'source' => 'FFR Direct OP Capture',
+                    'system_source' => 'OSSOPCHANGEOFNAME',
+                    'customer_type' => $customerType,
+                    'Grantor' => $allottee,
+                    'Grantee' => $resolvedCurrentHolder,
+                    'party_1' => $allottee,
+                    'party_2' => $resolvedCurrentHolder,
+                    'parties' => [
+                        'grantor' => $allottee,
+                        'grantee' => $resolvedCurrentHolder,
+                        'party_1' => $allottee,
+                        'party_2' => $resolvedCurrentHolder,
                     ],
-                    'merger_group_id'      => $mergerGroupId ?: null,
-                    'is_merger_op'         => 0,
+                    'merger_group_id' => $mergerGroupId ?: null,
+                    'is_merger_op' => 0,
                 ], $userId);
 
                 // Patch ToT row with merger_group_id if PraRecordService didn't forward it
@@ -2673,45 +2626,45 @@ class ApplicationController extends Controller
 
                 Log::info('FFR direct OP capture: Row 2 (Transfer of Title) created', [
                     'tot_row_id' => data_get($totPra, 'id'),
-                    'prop_id'    => $opPropId,
+                    'prop_id' => $opPropId,
                 ]);
 
                 return [
-                    'op_pra'              => $opPra,
-                    'tot_pra'             => $totPra,
-                    'prop_id'             => $opPropId,
-                    'merger_group_id'     => $mergerGroupId ?: null,
-                    'is_merger'           => $isMerger,
+                    'op_pra' => $opPra,
+                    'tot_pra' => $totPra,
+                    'prop_id' => $opPropId,
+                    'merger_group_id' => $mergerGroupId ?: null,
+                    'is_merger' => $isMerger,
                 ];
             });
         } catch (\Throwable $e) {
             Log::error('FFR direct OP capture failed', [
                 'source_file_no' => $sourceFileNo,
-                'error'          => $e->getMessage(),
-                'file'           => $e->getFile(),
-                'line'           => $e->getLine(),
-                'user_id'        => Auth::id(),
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'user_id' => Auth::id(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Unable to capture OP record.',
-                'error'   => $e->getMessage(),
+                'error' => $e->getMessage(),
             ], 500);
         }
 
         Log::info('FFR direct OP capture completed', [
             'source_file_no' => $sourceFileNo,
-            'prop_id'        => $result['prop_id'] ?? null,
-            'user_id'        => Auth::id(),
+            'prop_id' => $result['prop_id'] ?? null,
+            'user_id' => Auth::id(),
         ]);
 
         return response()->json([
-            'success'         => true,
-            'message'         => 'OP and Transfer of Title captured successfully.',
+            'success' => true,
+            'message' => 'OP and Transfer of Title captured successfully.',
             'merger_group_id' => $result['merger_group_id'] ?? null,
-            'prop_id'         => $result['prop_id'] ?? null,
-            'data'            => $result,
+            'prop_id' => $result['prop_id'] ?? null,
+            'data' => $result,
         ]);
     }
 
@@ -2831,6 +2784,25 @@ class ApplicationController extends Controller
             })
             ->values()
             ->all();
+
+        if (empty($candidates)) {
+            // Fallback: include Transfer of Title records if they have an op_serial_number
+            $candidates = collect($history)
+                ->filter(fn($row) => is_array($row))
+                ->filter(function (array $row): bool {
+                    $transactionType = strtolower(trim((string) (
+                        $row['transaction_type']
+                        ?? $row['instrument_type']
+                        ?? ''
+                    )));
+                    $looksLikeOp = str_contains($transactionType, 'occupancy permit')
+                        || preg_match('/\bop\b/i', $transactionType) === 1;
+
+                    return $looksLikeOp && !empty($row['op_serial_number']);
+                })
+                ->values()
+                ->all();
+        }
 
         if (empty($candidates)) {
             return null;
@@ -2982,10 +2954,31 @@ class ApplicationController extends Controller
         $normalized = strtolower(preg_replace('/\s+/', ' ', $raw));
 
         $corporateTokens = [
-            'ltd', 'limited', 'plc', 'inc', 'llc', 'company', 'co.', 'corp', 'corporate',
-            'enterprise', 'ventures', 'bank', 'foundation', 'ministry', 'government',
-            'authority', 'agency', 'board', 'association', 'union', 'church', 'mosque',
-            'nig.', 'nigeria', 'nig '
+            'ltd',
+            'limited',
+            'plc',
+            'inc',
+            'llc',
+            'company',
+            'co.',
+            'corp',
+            'corporate',
+            'enterprise',
+            'ventures',
+            'bank',
+            'foundation',
+            'ministry',
+            'government',
+            'authority',
+            'agency',
+            'board',
+            'association',
+            'union',
+            'church',
+            'mosque',
+            'nig.',
+            'nigeria',
+            'nig '
         ];
 
         foreach ($corporateTokens as $token) {
@@ -2995,8 +2988,14 @@ class ApplicationController extends Controller
         }
 
         $multipleSignals = [
-            'multiple', 'multiple owners', 'joint', 'co-owner', 'co owners', 'co-owners',
-            'partners', 'partnership'
+            'multiple',
+            'multiple owners',
+            'joint',
+            'co-owner',
+            'co owners',
+            'co-owners',
+            'partners',
+            'partnership'
         ];
 
         foreach ($multipleSignals as $signal) {
@@ -3022,9 +3021,9 @@ class ApplicationController extends Controller
     public function saveVerification(Request $request): JsonResponse
     {
         $request->validate([
-            'record_id'        => 'required|integer',
-            'applicant_name'   => 'required|string|max:255',
-            'passport_photo'   => 'nullable|image|mimes:jpeg,jpg,png|max:2048',
+            'record_id' => 'required|integer',
+            'applicant_name' => 'required|string|max:255',
+            'passport_photo' => 'nullable|image|mimes:jpeg,jpg,png|max:2048',
         ]);
 
         $recordId = (int) $request->input('record_id');
@@ -3044,20 +3043,20 @@ class ApplicationController extends Controller
 
         $data = [
             'instrument_capture_id' => $recordId,
-            'applicant_name'    => (string) $request->input('applicant_name', ''),
+            'applicant_name' => (string) $request->input('applicant_name', ''),
             'applicant_address' => (string) $request->input('address', ''),
-            'applicant_phone'   => (string) $request->input('phone', ''),
-            'applicant_email'   => (string) $request->input('email', ''),
-            'id_type'           => (string) $request->input('id_type', ''),
+            'applicant_phone' => (string) $request->input('phone', ''),
+            'applicant_email' => (string) $request->input('email', ''),
+            'id_type' => (string) $request->input('id_type', ''),
             'original_allottee' => (string) $request->input('original_allottee', ''),
-            'op_number'         => (string) $request->input('op_number', ''),
-            'plot_no'           => (string) $request->input('plot_plan', '') ? explode('/', (string) $request->input('plot_plan', ''))[0] ?? '' : '',
-            'plan_no'           => (string) $request->input('plot_plan', '') ? (explode('/', (string) $request->input('plot_plan', ''))[1] ?? '') : '',
-            'location'          => (string) $request->input('location', ''),
-            'recommendation'    => (string) $request->input('recommendation', ''),
-            'chairman_name'     => (string) $request->input('chairman_name', ''),
-            'passport_photo'    => $passportPath,
-            'updated_at'        => now(),
+            'op_number' => (string) $request->input('op_number', ''),
+            'plot_no' => (string) $request->input('plot_plan', '') ? explode('/', (string) $request->input('plot_plan', ''))[0] ?? '' : '',
+            'plan_no' => (string) $request->input('plot_plan', '') ? (explode('/', (string) $request->input('plot_plan', ''))[1] ?? '') : '',
+            'location' => (string) $request->input('location', ''),
+            'recommendation' => (string) $request->input('recommendation', ''),
+            'chairman_name' => (string) $request->input('chairman_name', ''),
+            'passport_photo' => $passportPath,
+            'updated_at' => now(),
         ];
 
         if ($row) {
@@ -3067,7 +3066,7 @@ class ApplicationController extends Controller
                 ->update($data);
         } else {
             $data['captured_by'] = Auth::id();
-            $data['created_at']  = now();
+            $data['created_at'] = now();
             DB::connection('sqlsrv')
                 ->table('oss_verifications')
                 ->insert($data);
@@ -3086,18 +3085,18 @@ class ApplicationController extends Controller
     public function printChangeOfOwnership(Request $request): View
     {
         $data = [
-            'file_no'          => strtoupper((string) $request->input('file_no', '')),
-            'op_number'        => strtoupper((string) $request->input('op_number', '')),
-            'location'         => strtoupper((string) $request->input('location', '')),
-            'plot_no'          => strtoupper((string) $request->input('plot_no', '')),
-            'plan_no'          => strtoupper((string) $request->input('plan_no', '')),
+            'file_no' => strtoupper((string) $request->input('file_no', '')),
+            'op_number' => strtoupper((string) $request->input('op_number', '')),
+            'location' => strtoupper((string) $request->input('location', '')),
+            'plot_no' => strtoupper((string) $request->input('plot_no', '')),
+            'plan_no' => strtoupper((string) $request->input('plan_no', '')),
             'date_of_issuance' => (string) $request->input('date_of_issuance', ''),
-            'original_name'    => strtoupper((string) $request->input('original_name', '')),
+            'original_name' => strtoupper((string) $request->input('original_name', '')),
             'original_address' => (string) $request->input('original_address', ''),
-            'original_phone'   => (string) $request->input('original_phone', ''),
-            'current_name'     => strtoupper((string) $request->input('current_name', '')),
-            'current_address'  => (string) $request->input('current_address', ''),
-            'current_phone'    => (string) $request->input('current_phone', ''),
+            'original_phone' => (string) $request->input('original_phone', ''),
+            'current_name' => strtoupper((string) $request->input('current_name', '')),
+            'current_address' => (string) $request->input('current_address', ''),
+            'current_phone' => (string) $request->input('current_phone', ''),
             'ownership_method' => (string) $request->input('ownership_method', ''),
         ];
 
@@ -3111,18 +3110,18 @@ class ApplicationController extends Controller
     public function printVerification(Request $request): View
     {
         $data = [
-            'applicant_name'    => strtoupper((string) $request->input('applicant_name', '')),
+            'applicant_name' => strtoupper((string) $request->input('applicant_name', '')),
             'applicant_address' => (string) $request->input('applicant_address', ''),
-            'applicant_phone'   => (string) $request->input('applicant_phone', ''),
-            'applicant_email'   => (string) $request->input('applicant_email', ''),
-            'id_type'           => (string) $request->input('id_type', ''),
+            'applicant_phone' => (string) $request->input('applicant_phone', ''),
+            'applicant_email' => (string) $request->input('applicant_email', ''),
+            'id_type' => (string) $request->input('id_type', ''),
             'original_allottee' => strtoupper((string) $request->input('original_allottee', '')),
-            'op_number'         => strtoupper((string) $request->input('op_number', '')),
-            'plot_no'           => strtoupper((string) $request->input('plot_no', '')),
-            'plan_no'           => strtoupper((string) $request->input('plan_no', '')),
-            'location'          => strtoupper((string) $request->input('location', '')),
-            'recommendation'    => (string) $request->input('recommendation', ''),
-            'chairman_name'     => (string) $request->input('chairman_name', ''),
+            'op_number' => strtoupper((string) $request->input('op_number', '')),
+            'plot_no' => strtoupper((string) $request->input('plot_no', '')),
+            'plan_no' => strtoupper((string) $request->input('plan_no', '')),
+            'location' => strtoupper((string) $request->input('location', '')),
+            'recommendation' => (string) $request->input('recommendation', ''),
+            'chairman_name' => (string) $request->input('chairman_name', ''),
             'passport_photo_url' => '',
         ];
 
@@ -3204,14 +3203,14 @@ class ApplicationController extends Controller
             ->where('op_type', 'OP Resettlement')
             ->where(function ($q) {
                 $q->where('instrument_type', 'Occupancy Permit (OP)')
-                  ->orWhere('instrument_type', 'Occupancy Permit');
+                    ->orWhere('instrument_type', 'Occupancy Permit');
             });
 
         if ($term !== '') {
             $query->where(function ($q) use ($term) {
                 $q->where('party_2_name', 'LIKE', "%{$term}%")
-                  ->orWhere('registration_number', 'LIKE', "%{$term}%")
-                  ->orWhere('op_serial_number', 'LIKE', "%{$term}%");
+                    ->orWhere('registration_number', 'LIKE', "%{$term}%")
+                    ->orWhere('op_serial_number', 'LIKE', "%{$term}%");
             });
         }
 
@@ -3221,25 +3220,25 @@ class ApplicationController extends Controller
             ->get()
             ->map(function ($row) {
                 return [
-                    'id'                   => (int) $row->id,
-                    'instrument_type'      => strtoupper((string) ($row->instrument_type ?? '')),
-                    'mlsFNo'               => strtoupper((string) ($row->mlsFNo ?? '')),
-                    'temp_fileno'          => strtoupper((string) ($row->temp_fileno ?? '')),
-                    'land_use'             => strtoupper((string) ($row->land_use ?? '')),
-                    'registration_number'  => strtoupper((string) ($row->registration_number ?? '')),
-                    'party_2_name'         => strtoupper((string) ($row->party_2_name ?? '')),
+                    'id' => (int) $row->id,
+                    'instrument_type' => strtoupper((string) ($row->instrument_type ?? '')),
+                    'mlsFNo' => strtoupper((string) ($row->mlsFNo ?? '')),
+                    'temp_fileno' => strtoupper((string) ($row->temp_fileno ?? '')),
+                    'land_use' => strtoupper((string) ($row->land_use ?? '')),
+                    'registration_number' => strtoupper((string) ($row->registration_number ?? '')),
+                    'party_2_name' => strtoupper((string) ($row->party_2_name ?? '')),
                     'property_description' => strtoupper((string) ($row->property_description ?? '')),
-                    'plot_number'          => strtoupper((string) ($row->plot_number ?? '')),
-                    'lga'                  => strtoupper((string) ($row->lga ?? '')),
-                    'op_serial_number'     => strtoupper((string) ($row->op_serial_number ?? '')),
-                    'op_type'              => strtoupper((string) ($row->op_type ?? '')),
-                    'tp_no'                => strtoupper((string) ($row->tp_no ?? '')),
+                    'plot_number' => strtoupper((string) ($row->plot_number ?? '')),
+                    'lga' => strtoupper((string) ($row->lga ?? '')),
+                    'op_serial_number' => strtoupper((string) ($row->op_serial_number ?? '')),
+                    'op_type' => strtoupper((string) ($row->op_type ?? '')),
+                    'tp_no' => strtoupper((string) ($row->tp_no ?? '')),
                 ];
             });
 
         return response()->json([
             'success' => true,
-            'data'    => $results,
+            'data' => $results,
         ]);
     }
 
@@ -3279,7 +3278,7 @@ class ApplicationController extends Controller
             'plot_no' => 'idx_plot_no',
             'plan_no' => 'idx_plan_no',
             'location' => 'idx_location',
-            'lga' => 'idx_lga', 
+            'lga' => 'idx_lga',
             'tp_no' => 'idx_tp_no',
             'registration_number' => 'idx_registration_number',
             'phone' => 'idx_phone',
@@ -3328,26 +3327,26 @@ class ApplicationController extends Controller
             ->first();
 
         $records = $praService->findAllByFileNumber($fileNo);
-        $hasTransferOfTitle = collect($records)->contains(function ($record) {
-            $row = (array) $record;
-            $instrumentType = strtoupper(trim((string) ($row['instrument_type'] ?? '')));
-            $transactionType = strtoupper(trim((string) ($row['transaction_type'] ?? '')));
+        $totRecords = collect($records)
+            ->map(static fn($record) => (array) $record)
+            ->filter(function ($r) {
+                $instrumentType = strtoupper(trim((string) ($r['instrument_type'] ?? '')));
+                $transactionType = strtoupper(trim((string) ($r['transaction_type'] ?? '')));
 
-            return str_contains($instrumentType, 'TRANSFER OF TITLE')
-                || str_contains($transactionType, 'TRANSFER OF TITLE');
-        });
+                return str_contains($instrumentType, 'TRANSFER OF TITLE')
+                    || str_contains($transactionType, 'TRANSFER OF TITLE');
+            })
+            ->sortByDesc(fn(array $record) => $this->rowTimestampForMotherSelection($record));
 
-        if (empty($records) && !$indexingRow && !$fileNumberRow && !$mlsRow) {
+        $hasTransferOfTitle = $totRecords->isNotEmpty();
+        $row = $totRecords->first() ?: [];
+
+        if (!$hasTransferOfTitle && !$indexingRow && !$mlsRow && !$fileNumberRow) {
             return response()->json([
                 'success' => false,
-                'message' => 'No PRA, file indexing, fileNumber, or mls_file_no record found for this file number.',
+                'message' => 'File not found in any registry or history.',
             ]);
         }
-
-        $row = collect($records)
-            ->map(static fn ($record) => (array) $record)
-            ->sortByDesc(fn (array $record) => $this->rowTimestampForMotherSelection($record))
-            ->first() ?? [];
 
         $idx = static function ($indexingRow, string $alias): string {
             return strtoupper(trim((string) ($indexingRow->{$alias} ?? '')));
@@ -3385,7 +3384,7 @@ class ApplicationController extends Controller
         $applicantNameFromMls = strtoupper(trim((string) ($mlsRow->mls_file_name ?? '')));
         $applicantName = $applicantNameFromIndexing !== '' ? $applicantNameFromIndexing
             : ($applicantNameFromPra !== '' ? $applicantNameFromPra
-            : ($applicantNameFromFileNumber !== '' ? $applicantNameFromFileNumber : $applicantNameFromMls));
+                : ($applicantNameFromFileNumber !== '' ? $applicantNameFromFileNumber : $applicantNameFromMls));
 
         $landUse = strtoupper((string) ($this->firstFilledValue($row, ['land_use', 'landUse']) ?? ($idx($indexingRow, 'idx_land_use') ?: ($fnr($fileNumberRow, 'land_use') ?: strtoupper(trim((string) ($mlsRow->mls_land_use ?? '')))))));
         $plotNo = strtoupper((string) ($this->firstFilledValue($row, ['plot_no', 'plotNo', 'plot_number']) ?? ($idx($indexingRow, 'idx_plot_no') ?: $fnr($fileNumberRow, 'plot_no'))));
@@ -3409,25 +3408,25 @@ class ApplicationController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => [
-                'id'                  => (int) ($row['id'] ?? 0),
-                'file_number'         => $fileNumber,
-                'file_name'           => $applicantName,
-                'file_title'          => $applicantName,
-                'current_holder'      => $applicantName,
-                'tracking_id'         => (string) ($row['prop_id'] ?? ($fileNumberRow->tracking_id ?? '')),
-                'land_use'            => $landUse,
-                'plot_no'             => $plotNo,
-                'plan_no'             => $planNo,
-                'location'            => $location,
-                'lga'                 => $lga,
-                'state'               => $state,
-                'tp_no'               => $tpNo,
+            'data' => [
+                'id' => (int) ($row['id'] ?? 0),
+                'file_number' => $fileNumber,
+                'file_name' => $applicantName,
+                'file_title' => $applicantName,
+                'current_holder' => $applicantName,
+                'tracking_id' => (string) ($row['prop_id'] ?? ($fileNumberRow->tracking_id ?? '')),
+                'land_use' => $landUse,
+                'plot_no' => $plotNo,
+                'plan_no' => $planNo,
+                'location' => $location,
+                'lga' => $lga,
+                'state' => $state,
+                'tp_no' => $tpNo,
                 'registration_number' => $registrationNo,
-                'op_serial_number'    => $opSerialNo,
-                'phone'               => $phone,
-                'purpose'             => $purpose,
-                'customer_type'       => strtoupper(trim((string) (($indexingRow->applicant_customer_type ?? '') ?: ($mlsRow->mls_customer_type ?? '')))),
+                'op_serial_number' => $opSerialNo,
+                'phone' => $phone,
+                'purpose' => $purpose,
+                'customer_type' => strtoupper(trim((string) (($indexingRow->applicant_customer_type ?? '') ?: ($mlsRow->mls_customer_type ?? '')))),
                 'has_transfer_of_title' => $hasTransferOfTitle,
             ],
         ]);
@@ -3456,136 +3455,138 @@ class ApplicationController extends Controller
     private function passportValidationMessages(): array
     {
         return [
-            'passport_photo.required_if'    => 'A passport photograph is required for residential applications.',
-            'passport_photo.image'          => 'The passport photograph must be an image file.',
-            'passport_photo.mimes'          => 'The passport photograph must be a JPEG or PNG file.',
-            'passport_photo.max'            => 'The passport photograph may not be larger than 2MB.',
-            'passport_photo.dimensions'     => 'The passport photograph must be between 150x150 and 2000x2000 pixels.',
+            'passport_photo.required_if' => 'A passport photograph is required for residential applications.',
+            'passport_photo.image' => 'The passport photograph must be an image file.',
+            'passport_photo.mimes' => 'The passport photograph must be a JPEG or PNG file.',
+            'passport_photo.max' => 'The passport photograph may not be larger than 2MB.',
+            'passport_photo.dimensions' => 'The passport photograph must be between 150x150 and 2000x2000 pixels.',
         ];
     }
 
     private function validationRules(): array
     {
         return [
-            'instrument_capture_id'      => 'nullable|integer',
-            'file_no'                    => 'nullable|string|max:120',
-            'application_type'          => 'required|in:residential,commercial,industrial,agricultural',
-            'applicant_name'            => 'required|string|max:255',
-            'phone'                     => 'nullable|string|max:50',
-            'email'                     => 'nullable|email|max:255',
-            'state_of_origin'           => 'nullable|string|max:100',
-            'lga'                       => 'nullable|string|max:100',
-            'nationality'               => 'nullable|string|max:255',
-            'correspondence_address'    => 'nullable|string|max:2000',
-            'purpose'                   => 'nullable|string|max:500',
-            'plot_no'                   => 'nullable|string|max:100',
-            'plan_no'                   => 'nullable|string|max:100',
-            'location'                  => 'nullable|string|max:500',
-            'prev_allocated'            => 'nullable|string|max:10',
-            'prev_allocation_details'   => 'nullable|string',
-            'remarks'                   => 'nullable|string',
+            'instrument_capture_id' => 'nullable|integer',
+            'file_no' => 'nullable|string|max:120',
+            'application_type' => 'required|in:residential,commercial,industrial,agricultural',
+            'applicant_name' => 'required|string|max:255',
+            'phone' => 'nullable|string|max:50',
+            'email' => 'nullable|email|max:255',
+            'state_of_origin' => 'nullable|string|max:100',
+            'lga' => 'nullable|string|max:100',
+            'nationality' => 'nullable|string|max:255',
+            'correspondence_address' => 'nullable|string|max:2000',
+            'purpose' => 'nullable|string|max:500',
+            'plot_no' => 'nullable|string|max:100',
+            'plan_no' => 'nullable|string|max:100',
+            'location' => 'nullable|string|max:500',
+            'prev_allocated' => 'nullable|string|max:10',
+            'prev_allocation_details' => 'nullable|string',
+            'remarks' => 'nullable|string',
 
             // Residential
-            'age'                       => 'nullable|string|max:10',
-            'sex'                       => 'nullable|string|max:20',
-            'marital_status'            => 'nullable|string|max:50',
-            'husband_name_address'      => 'nullable|string|max:500',
-            'residential_address'       => 'nullable|string|max:2000',
-            'business_address'          => 'nullable|string|max:2000',
-            'occupation'                => 'nullable|string|max:255',
-            'annual_income'             => 'nullable|string|max:100',
+            'age' => 'nullable|string|max:10',
+            'sex' => 'nullable|string|max:20',
+            'marital_status' => 'nullable|string|max:50',
+            'husband_name_address' => 'nullable|string|max:500',
+            'residential_address' => 'nullable|string|max:2000',
+            'business_address' => 'nullable|string|max:2000',
+            'occupation' => 'nullable|string|max:255',
+            'annual_income' => 'nullable|string|max:100',
 
             // Commercial
-            'home_domicile'             => 'nullable|string|max:255',
-            'occupation_or_business'    => 'nullable|string|max:255',
-            'nature_of_commerce'        => 'nullable|string|max:500',
-            'company_registered_under'  => 'nullable|string|max:500',
-            'registration_particulars'  => 'nullable|string|max:500',
-            'business_location'         => 'nullable|string|max:500',
-            'annual_income_anticipation'=> 'nullable|string|max:100',
-            'prev_land_purpose'         => 'nullable|string|max:500',
-            'intended_activities'       => 'nullable|string',
+            'home_domicile' => 'nullable|string|max:255',
+            'occupation_or_business' => 'nullable|string|max:255',
+            'nature_of_commerce' => 'nullable|string|max:500',
+            'company_registered_under' => 'nullable|string|max:500',
+            'registration_particulars' => 'nullable|string|max:500',
+            'business_location' => 'nullable|string|max:500',
+            'annual_income_anticipation' => 'nullable|string|max:100',
+            'prev_land_purpose' => 'nullable|string|max:500',
+            'intended_activities' => 'nullable|string',
 
             // Industrial
-            'nature_of_occupation'      => 'nullable|string|max:500',
-            'annual_income_turnover'    => 'nullable|string|max:100',
-            'number_of_employees'       => 'nullable|string|max:50',
-            'nature_of_industrial'      => 'nullable|string|max:500',
+            'nature_of_occupation' => 'nullable|string|max:500',
+            'annual_income_turnover' => 'nullable|string|max:100',
+            'number_of_employees' => 'nullable|string|max:50',
+            'nature_of_industrial' => 'nullable|string|max:500',
             'waste_disposal_requirements' => 'nullable|string',
-            'nature_of_agricultural'    => 'nullable|string|max:500',
+            'nature_of_agricultural' => 'nullable|string|max:500',
 
             // Address builder sub-fields (residential)
-            'res_addr_plot'             => 'nullable|string|max:100',
-            'res_addr_street'           => 'nullable|string|max:255',
-            'res_addr_street_other'     => 'nullable|string|max:255',
-            'res_addr_district'         => 'nullable|string|max:255',
-            'res_addr_district_other'   => 'nullable|string|max:255',
-            'res_addr_lga'              => 'nullable|string|max:255',
-            'res_addr_state'            => 'nullable|string|max:255',
-            'res_corr_plot'             => 'nullable|string|max:100',
-            'res_corr_street'           => 'nullable|string|max:255',
-            'res_corr_street_other'     => 'nullable|string|max:255',
-            'res_corr_district'         => 'nullable|string|max:255',
-            'res_corr_district_other'   => 'nullable|string|max:255',
-            'res_corr_lga'              => 'nullable|string|max:255',
-            'res_corr_state'            => 'nullable|string|max:255',
-            'res_biz_plot'              => 'nullable|string|max:100',
-            'res_biz_street'            => 'nullable|string|max:255',
-            'res_biz_street_other'      => 'nullable|string|max:255',
-            'res_biz_district'          => 'nullable|string|max:255',
-            'res_biz_district_other'    => 'nullable|string|max:255',
-            'res_biz_lga'               => 'nullable|string|max:255',
-            'res_biz_state'             => 'nullable|string|max:255',
+            'res_addr_plot' => 'nullable|string|max:100',
+            'res_addr_street' => 'nullable|string|max:255',
+            'res_addr_street_other' => 'nullable|string|max:255',
+            'res_addr_district' => 'nullable|string|max:255',
+            'res_addr_district_other' => 'nullable|string|max:255',
+            'res_addr_lga' => 'nullable|string|max:255',
+            'res_addr_state' => 'nullable|string|max:255',
+            'res_corr_plot' => 'nullable|string|max:100',
+            'res_corr_street' => 'nullable|string|max:255',
+            'res_corr_street_other' => 'nullable|string|max:255',
+            'res_corr_district' => 'nullable|string|max:255',
+            'res_corr_district_other' => 'nullable|string|max:255',
+            'res_corr_lga' => 'nullable|string|max:255',
+            'res_corr_state' => 'nullable|string|max:255',
+            'res_biz_plot' => 'nullable|string|max:100',
+            'res_biz_street' => 'nullable|string|max:255',
+            'res_biz_street_other' => 'nullable|string|max:255',
+            'res_biz_district' => 'nullable|string|max:255',
+            'res_biz_district_other' => 'nullable|string|max:255',
+            'res_biz_lga' => 'nullable|string|max:255',
+            'res_biz_state' => 'nullable|string|max:255',
             // Address builder sub-fields (commercial)
-            'com_biz_plot'              => 'nullable|string|max:100',
-            'com_biz_street'            => 'nullable|string|max:255',
-            'com_biz_street_other'      => 'nullable|string|max:255',
-            'com_biz_district'          => 'nullable|string|max:255',
-            'com_biz_district_other'    => 'nullable|string|max:255',
-            'com_biz_lga'               => 'nullable|string|max:255',
-            'com_biz_state'             => 'nullable|string|max:255',
-            'com_corr_plot'             => 'nullable|string|max:100',
-            'com_corr_street'           => 'nullable|string|max:255',
-            'com_corr_street_other'     => 'nullable|string|max:255',
-            'com_corr_district'         => 'nullable|string|max:255',
-            'com_corr_district_other'   => 'nullable|string|max:255',
-            'com_corr_lga'              => 'nullable|string|max:255',
-            'com_corr_state'            => 'nullable|string|max:255',
+            'com_biz_plot' => 'nullable|string|max:100',
+            'com_biz_street' => 'nullable|string|max:255',
+            'com_biz_street_other' => 'nullable|string|max:255',
+            'com_biz_district' => 'nullable|string|max:255',
+            'com_biz_district_other' => 'nullable|string|max:255',
+            'com_biz_lga' => 'nullable|string|max:255',
+            'com_biz_state' => 'nullable|string|max:255',
+            'com_corr_plot' => 'nullable|string|max:100',
+            'com_corr_street' => 'nullable|string|max:255',
+            'com_corr_street_other' => 'nullable|string|max:255',
+            'com_corr_district' => 'nullable|string|max:255',
+            'com_corr_district_other' => 'nullable|string|max:255',
+            'com_corr_lga' => 'nullable|string|max:255',
+            'com_corr_state' => 'nullable|string|max:255',
             // Address builder sub-fields (industrial)
-            'ind_biz_plot'              => 'nullable|string|max:100',
-            'ind_biz_street'            => 'nullable|string|max:255',
-            'ind_biz_street_other'      => 'nullable|string|max:255',
-            'ind_biz_district'          => 'nullable|string|max:255',
-            'ind_biz_district_other'    => 'nullable|string|max:255',
-            'ind_biz_lga'               => 'nullable|string|max:255',
-            'ind_biz_state'             => 'nullable|string|max:255',
-            'ind_corr_plot'             => 'nullable|string|max:100',
-            'ind_corr_street'           => 'nullable|string|max:255',
-            'ind_corr_street_other'     => 'nullable|string|max:255',
-            'ind_corr_district'         => 'nullable|string|max:255',
-            'ind_corr_district_other'   => 'nullable|string|max:255',
-            'ind_corr_lga'              => 'nullable|string|max:255',
-            'ind_corr_state'            => 'nullable|string|max:255',
+            'ind_biz_plot' => 'nullable|string|max:100',
+            'ind_biz_street' => 'nullable|string|max:255',
+            'ind_biz_street_other' => 'nullable|string|max:255',
+            'ind_biz_district' => 'nullable|string|max:255',
+            'ind_biz_district_other' => 'nullable|string|max:255',
+            'ind_biz_lga' => 'nullable|string|max:255',
+            'ind_biz_state' => 'nullable|string|max:255',
+            'ind_corr_plot' => 'nullable|string|max:100',
+            'ind_corr_street' => 'nullable|string|max:255',
+            'ind_corr_street_other' => 'nullable|string|max:255',
+            'ind_corr_district' => 'nullable|string|max:255',
+            'ind_corr_district_other' => 'nullable|string|max:255',
+            'ind_corr_lga' => 'nullable|string|max:255',
+            'ind_corr_state' => 'nullable|string|max:255',
             // Address builder sub-fields (agricultural)
-            'agr_biz_plot'              => 'nullable|string|max:100',
-            'agr_biz_street'            => 'nullable|string|max:255',
-            'agr_biz_street_other'      => 'nullable|string|max:255',
-            'agr_biz_district'          => 'nullable|string|max:255',
-            'agr_biz_district_other'    => 'nullable|string|max:255',
-            'agr_biz_lga'               => 'nullable|string|max:255',
-            'agr_biz_state'             => 'nullable|string|max:255',
-            'agr_corr_plot'             => 'nullable|string|max:100',
-            'agr_corr_street'           => 'nullable|string|max:255',
-            'agr_corr_street_other'     => 'nullable|string|max:255',
-            'agr_corr_district'         => 'nullable|string|max:255',
-            'agr_corr_district_other'   => 'nullable|string|max:255',
-            'agr_corr_lga'              => 'nullable|string|max:255',
-            'agr_corr_state'            => 'nullable|string|max:255',
+            'agr_biz_plot' => 'nullable|string|max:100',
+            'agr_biz_street' => 'nullable|string|max:255',
+            'agr_biz_street_other' => 'nullable|string|max:255',
+            'agr_biz_district' => 'nullable|string|max:255',
+            'agr_biz_district_other' => 'nullable|string|max:255',
+            'agr_biz_lga' => 'nullable|string|max:255',
+            'agr_biz_state' => 'nullable|string|max:255',
+            'agr_corr_plot' => 'nullable|string|max:100',
+            'agr_corr_street' => 'nullable|string|max:255',
+            'agr_corr_street_other' => 'nullable|string|max:255',
+            'agr_corr_district' => 'nullable|string|max:255',
+            'agr_corr_district_other' => 'nullable|string|max:255',
+            'agr_corr_lga' => 'nullable|string|max:255',
+            'agr_corr_state' => 'nullable|string|max:255',
 
             // Passport photo (required only for residential applications on create; per-method override on update)
-            'passport_photo'            => 'required_if:application_type,residential|image|mimes:jpeg,jpg,png|max:2048|dimensions:min_width=150,min_height=150,max_width=2000,max_height=2000',
+            'passport_photo' => 'required_if:application_type,residential|image|mimes:jpeg,jpg,png|max:2048|dimensions:min_width=150,min_height=150,max_width=2000,max_height=2000',
             // System source (for Change of Name filtering)
-            'system_source'             => 'nullable|string|max:50',
+            'system_source' => 'nullable|string|max:50',
+            // OP Serial Number (for manual capture when not found in record)
+            'op_serial_number' => 'nullable|string|max:100',
         ];
     }
 }

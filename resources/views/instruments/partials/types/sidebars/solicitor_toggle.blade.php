@@ -71,7 +71,7 @@
 
     <div class="grid grid-cols-1 gap-2">
         <x-instrument-select id="solicitorState" label="State" icon="map-pin" :options="$states"
-            placeholder="Select State" value="{{ $record->solicitor_state ?? '' }}" />
+            placeholder="Select State" value="{{ $record->solicitor_state ?? 'Kano' }}" />
 
         <x-instrument-select id="solicitorLga" label="LGA" icon="map" :options="[]" placeholder="Select LGA"
             value="{{ $record->solicitor_lga ?? $record->solicitor_city ?? '' }}" />

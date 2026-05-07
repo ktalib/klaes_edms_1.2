@@ -298,6 +298,7 @@ class SectionalTitlingController extends Controller
                 'dbo.subapplications.applicant_title',
                 'dbo.subapplications.first_name',
                 'dbo.subapplications.surname',
+                'dbo.subapplications.middle_name',
                 'dbo.subapplications.corporate_name',
                 'dbo.subapplications.multiple_owners_names',
                 'dbo.subapplications.phone_number',
@@ -318,6 +319,7 @@ class SectionalTitlingController extends Controller
                 'dbo.mother_applications.applicant_title as mother_applicant_title',
                 'dbo.mother_applications.first_name as mother_first_name',
                 'dbo.mother_applications.surname as mother_surname',
+                'dbo.mother_applications.middle_name as mother_middle_name',
                 'dbo.mother_applications.corporate_name as mother_corporate_name',
                 'dbo.mother_applications.multiple_owners_names as mother_multiple_owners_names',
                 'dbo.mother_applications.land_use',
@@ -347,6 +349,7 @@ class SectionalTitlingController extends Controller
                     'm.applicant_title',
                     'm.first_name',
                     'm.surname',
+                    'm.middle_name',
                     'm.corporate_name',
                     'm.multiple_owners_names'
                 )
@@ -358,6 +361,7 @@ class SectionalTitlingController extends Controller
                     $primaryRecord->applicant_type ?? '',
                     $primaryRecord->applicant_title ?? '',
                     $primaryRecord->first_name ?? '',
+                    $primaryRecord->middle_name ?? '',
                     $primaryRecord->surname ?? '',
                     $primaryRecord->corporate_name ?? '',
                     $primaryRecord->multiple_owners_names ?? ''
@@ -379,6 +383,7 @@ class SectionalTitlingController extends Controller
                     's.applicant_type',
                     's.applicant_title',
                     's.first_name',
+                    's.middle_name',
                     's.surname',
                     's.corporate_name',
                     's.multiple_owners_names',
@@ -467,6 +472,7 @@ class SectionalTitlingController extends Controller
                     $application->applicant_type ?? '',
                     $application->applicant_title ?? '',
                     $application->first_name ?? '',
+                    $application->middle_name ?? '',
                     $application->surname ?? '',
                     $application->corporate_name ?? '',
                     $application->multiple_owners_names ?? ''
@@ -558,6 +564,7 @@ class SectionalTitlingController extends Controller
                 'dbo.subapplications.applicant_title',
                 'dbo.subapplications.first_name',
                 'dbo.subapplications.surname',
+                'dbo.subapplications.middle_name',
                 'dbo.subapplications.corporate_name',
                 'dbo.subapplications.multiple_owners_names',
                 'dbo.subapplications.phone_number',
@@ -577,6 +584,7 @@ class SectionalTitlingController extends Controller
                 'dbo.mother_applications.applicant_title as mother_applicant_title',
                 'dbo.mother_applications.first_name as mother_first_name',
                 'dbo.mother_applications.surname as mother_surname',
+                'dbo.mother_applications.middle_name as mother_middle_name',
                 'dbo.mother_applications.corporate_name as mother_corporate_name',
                 'dbo.mother_applications.multiple_owners_names as mother_multiple_owners_names',
                 'dbo.mother_applications.land_use',
@@ -625,6 +633,7 @@ class SectionalTitlingController extends Controller
                     'm.applicant_type',
                     'm.applicant_title',
                     'm.first_name',
+                    'm.middle_name',
                     'm.surname',
                     'm.corporate_name',
                     'm.multiple_owners_names'
@@ -637,6 +646,7 @@ class SectionalTitlingController extends Controller
                     $primaryRecord->applicant_type ?? '',
                     $primaryRecord->applicant_title ?? '',
                     $primaryRecord->first_name ?? '',
+                    $primaryRecord->middle_name ?? '',
                     $primaryRecord->surname ?? '',
                     $primaryRecord->corporate_name ?? '',
                     $primaryRecord->multiple_owners_names ?? ''
@@ -662,6 +672,7 @@ class SectionalTitlingController extends Controller
                     's.applicant_type',
                     's.applicant_title',
                     's.first_name',
+                    's.middle_name',
                     's.surname',
                     's.corporate_name',
                     's.multiple_owners_names',
@@ -714,6 +725,7 @@ class SectionalTitlingController extends Controller
                     $application->applicant_type ?? '',
                     $application->applicant_title ?? '',
                     $application->first_name ?? '',
+                    $application->middle_name ?? '',
                     $application->surname ?? '',
                     $application->corporate_name ?? '',
                     $application->multiple_owners_names ?? ''

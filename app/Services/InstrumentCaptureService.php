@@ -100,13 +100,14 @@ class InstrumentCaptureService
             // Server-side fallback: auto-generate temp_fileno for OP captures when
             // the client didn't supply one (race condition where user submits before
             // the async /get-next-temp-fileno response arrives).
-            if (empty($tempFileno) && empty($mls) && empty($kangis) && empty($newKangis) && empty($derivedOfficialFileno)
+            if (
+                empty($tempFileno) && empty($mls) && empty($kangis) && empty($newKangis) && empty($derivedOfficialFileno)
                 && stripos((string) $instrumentType, 'Occupancy Permit') !== false
             ) {
                 try {
                     $seqId = DB::connection('sqlsrv')->table('temp_fileno_sequence')->insertGetId([
                         'created_by' => $data['created_by'] ?? auth()->id(),
-                        'is_used'    => 1,
+                        'is_used' => 1,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
@@ -156,7 +157,7 @@ class InstrumentCaptureService
             $regNumberData = null;
             $rootRegNo = $data['root_reg_number'] ?? null;
             $isTempReg = filter_var($data['is_temporary_reg'] ?? false, FILTER_VALIDATE_BOOLEAN);
-            
+
             // NEW: Universal Atomic Registration for all non-temporary captures
             // We only generate numbers if NOT a temporary registration
             if (!$isTempReg) {
@@ -324,7 +325,7 @@ class InstrumentCaptureService
                 $regData['instrument_date'] = $data['registrationDate']; // Enforce server date
                 $regData['grantor'] = $parties['party_1']['name'];
                 $regData['grantee'] = $parties['party_2']['name'];
-                
+
                 $regData['instrument_capture_id'] = $id;
                 $deedRegId = $this->regService->registerInstrument($regData, $regNumberData);
             }
@@ -381,13 +382,13 @@ class InstrumentCaptureService
             'address' => $p2Address ?: null,
             'phone' => $data['secondPartyPhone'] ?? null
         ];
-        
+
         $p3City = $data['thirdPartyLga'] ?? ($data['thirdPartyCity'] ?? '');
         $p3District = $data['coMortgagorDistrict'] ?? ($data['thirdPartyDistrict'] ?? '');
         $p3Address = $data['thirdPartyAddress'] ?? ($data['coMortgagorAddress'] ?? null);
-        
+
         if ($p3Address) {
-             $p3Address = trim($p3Address . ' ' . $p3District . ' ' . $p3City . ' ' . ($data['thirdPartyState'] ?? ''));
+            $p3Address = trim($p3Address . ' ' . $p3District . ' ' . $p3City . ' ' . ($data['thirdPartyState'] ?? ''));
         }
 
         $p3 = [
@@ -420,9 +421,9 @@ class InstrumentCaptureService
         $p4City = $data['party4Lga'] ?? ($data['party4City'] ?? '');
         $p4District = $data['party4District'] ?? '';
         $p4Address = $data['party4Address'] ?? null;
-        
+
         if ($p4Address) {
-             $p4Address = trim($p4Address . ' ' . $p4District . ' ' . $p4City . ' ' . ($data['party4State'] ?? ''));
+            $p4Address = trim($p4Address . ' ' . $p4District . ' ' . $p4City . ' ' . ($data['party4State'] ?? ''));
         }
 
         $p4 = [
@@ -435,9 +436,9 @@ class InstrumentCaptureService
         $p5City = $data['party5Lga'] ?? ($data['party5City'] ?? '');
         $p5District = $data['party5District'] ?? '';
         $p5Address = $data['party5Address'] ?? null;
-        
+
         if ($p5Address) {
-             $p5Address = trim($p5Address . ' ' . $p5District . ' ' . $p5City . ' ' . ($data['party5State'] ?? ''));
+            $p5Address = trim($p5Address . ' ' . $p5District . ' ' . $p5City . ' ' . ($data['party5State'] ?? ''));
         }
 
         $p5 = [

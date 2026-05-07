@@ -6,6 +6,11 @@ use App\Models\JointSiteInspectionReport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Models\LandUseType;
+use App\Models\District;
+use App\Models\Lga;
+use App\Models\StreetName;
+use Illuminate\Support\Facades\Cache;
 
 class JointSiteInspectionEditController extends Controller
 {
@@ -79,7 +84,10 @@ class JointSiteInspectionEditController extends Controller
 
         $returnUrl = $request->query('return');
        $PageTitle   = 'Edit Inspection Details';
-        return view('programmes.inspection.edit', [
+
+        $lookupData = $this->getJsiLookupData();
+
+        return view('programmes.inspection.edit', array_merge([
             'context' => 'primary',
             'application' => $application,
             'subApplication' => null,
@@ -90,7 +98,7 @@ class JointSiteInspectionEditController extends Controller
             'defaults' => $defaults,
             'returnUrl' => $returnUrl,
             'PageTitle' => $PageTitle,
-        ]);
+        ], $lookupData));
     }
 
     public function editUnit(Request $request, int $subApplicationId)
@@ -178,7 +186,10 @@ class JointSiteInspectionEditController extends Controller
         $returnUrl = $request->query('return');
 
        $PageTitle = 'Edit Inspection Details';
-        return view('programmes.inspection.edit', [
+
+        $lookupData = $this->getJsiLookupData();
+
+        return view('programmes.inspection.edit', array_merge([
             'context' => 'unit',
             'application' => $application,
             'subApplication' => $subApplication,
@@ -189,7 +200,7 @@ class JointSiteInspectionEditController extends Controller
             'defaults' => $defaults,
             'returnUrl' => $returnUrl,
             'PageTitle' => $PageTitle,
-        ]);
+        ], $lookupData));
     }
 
     public function detailsPrimary(Request $request, int $applicationId)
@@ -719,5 +730,74 @@ class JointSiteInspectionEditController extends Controller
             'label' => $selected['label'] ?? $base['label'],
             'value' => $selected['value'] ?? $base['value'],
         ];
+    }
+
+    private function getJsiLookupData()
+    {
+        $districts = District::where('is_active', 1)->orderBy('name')->get();
+        $lgas = Lga::where('is_active', 1)->orderBy('name')->get();
+        $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
+        $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
+        
+        $landUseTypes = Cache::remember('land_use_types_all', 3600, function () {
+            return LandUseType::orderBy('name')->get(['id', 'name']);
+        });
+
+        $inspectors = Cache::remember('pp_inspectors_all', 1800, function () {
+            return DB::connection('sqlsrv')
+                ->table('pp_inspectors')
+                ->select('id', 'name', 'rank')
+                ->orderBy('name')
+                ->get();
+        });
+
+        $detailedLandUseHasLandUseId = Schema::connection('sqlsrv')->hasColumn('detailed_land_use', 'land_use_id');
+        $jsiDetailedLandUsesQuery = DB::connection('sqlsrv')
+            ->table('detailed_land_use')
+            ->where('is_active', 1)
+            ->orderByRaw("CASE name WHEN 'Residential' THEN 1 WHEN 'Commercial' THEN 2 WHEN 'Agricultural' THEN 3 WHEN 'Industrial' THEN 4 ELSE 99 END")
+            ->orderBy('name');
+
+        if ($detailedLandUseHasLandUseId) {
+            $jsiDetailedLandUsesQuery->select('id', 'land_use_id', 'name');
+        } else {
+            $jsiDetailedLandUsesQuery->select('id', 'name');
+        }
+        $jsiDetailedLandUses = $jsiDetailedLandUsesQuery->get();
+
+        $jsiPurposesByLandUse = DB::connection('sqlsrv')
+            ->table('jsi_lut_purposes')
+            ->select('id', 'land_use_id', 'name')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get()
+            ->groupBy('land_use_id');
+
+        $jsiRoadCategories = DB::connection('sqlsrv')
+            ->table('jsi_lut_road_categories')
+            ->select('id', 'name')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get();
+
+        $jsiReservations = DB::connection('sqlsrv')
+            ->table('jsi_lut_reservations')
+            ->select('id', 'name')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get();
+
+        return compact(
+            'districts',
+            'lgas',
+            'states',
+            'streetNames',
+            'landUseTypes',
+            'inspectors',
+            'jsiDetailedLandUses',
+            'jsiPurposesByLandUse',
+            'jsiRoadCategories',
+            'jsiReservations'
+        );
     }
 }

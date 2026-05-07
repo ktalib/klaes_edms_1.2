@@ -127,15 +127,21 @@
             // Value is unit_no as that's what we want to save
             option.value = buyer.unit_no;
             
-            const fileno = buyer.unit_fileno || 'N/A';
-            option.text = `Unit ${buyer.unit_no} (${buyer.unit_size || 'N/A'}) - ${buyer.buyer_name} - ${fileno}`;
+            const fileno = (buyer.unit_fileno && buyer.unit_fileno !== 'N/A') ? buyer.unit_fileno : '';
+            
+            if (!fileno) {
+                option.disabled = true;
+                option.text = `Unit ${buyer.unit_no} (${buyer.unit_size || 'N/A'}) - ${buyer.buyer_name} - (Not Commissioned)`;
+            } else {
+                option.text = `Unit ${buyer.unit_no} (${buyer.unit_size || 'N/A'}) - ${buyer.buyer_name} - ${fileno}`;
+            }
 
             // Set data attributes for easy access
             option.setAttribute('data-unit-no', buyer.unit_no);
             option.setAttribute('data-unit-size', buyer.unit_size);
             option.setAttribute('data-buyer-id', buyer.buyer_id);
             option.setAttribute('data-buyer-name', buyer.buyer_name);
-            option.setAttribute('data-fileno', fileno);
+            option.setAttribute('data-fileno', fileno || 'N/A');
 
             selectElement.add(option);
         });

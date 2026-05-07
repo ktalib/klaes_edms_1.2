@@ -27,15 +27,40 @@ use PragmaRX\Google2FAQRCode\Google2FA;
 use Spatie\Permission\Models\Role;
 
 if (!function_exists('file_storage_path')) {
+    /**
+     * Resolve storage path using STORAGE_PATH env variable if set.
+     * Replaces storage_path() to use the dedicated storage location for EDMS files.
+     *
+     * @param string $path Relative path within storage
+     * @return string Full path to file
+     */
     function file_storage_path(?string $path = ''): string
     {
         $normalizedPath = trim((string) ($path ?? ''));
+        $storagePath = env('STORAGE_PATH');
+
+        // If STORAGE_PATH is set in .env, use it as the base; otherwise use Laravel's storage_path()
+        $base = $storagePath ? rtrim((string) $storagePath, '\\/') : storage_path();
 
         if ($normalizedPath === '') {
-            return storage_path();
+            return $base;
         }
 
-        return storage_path(ltrim($normalizedPath, '\\/'));
+        return $base . DIRECTORY_SEPARATOR . ltrim($normalizedPath, '\\/');
+    }
+}
+
+/**
+ * Override storage_path() globally to use STORAGE_PATH when set.
+ * This ensures all code (controllers, services, etc.) that calls storage_path()
+ * gets the correct path for EDMS files (e.g., F:\storage instead of C:\xampp\...\storage).
+ */
+if (env('STORAGE_PATH')) {
+    if (!function_exists('storage_path')) {
+        function storage_path($path = '')
+        {
+            return file_storage_path($path);
+        }
     }
 }
 
@@ -178,13 +203,14 @@ if (!function_exists('parseApplicantOwnersList')) {
 }
 
 if (!function_exists('formatApplicantDisplayName')) {
-    function formatApplicantDisplayName($applicantType, $title = null, $firstName = null, $surname = null, $corporateName = null, $multipleOwnersNames = null): string
+    function formatApplicantDisplayName($applicantType, $title = null, $firstName = null, $middleName = null, $surname = null, $corporateName = null, $multipleOwnersNames = null): string
     {
         $typeKey = preg_replace('/[^a-z]/', '', strtolower((string) ($applicantType ?? '')));
         $corporate = trim((string) ($corporateName ?? ''));
         $individual = trim(implode(' ', array_filter([
             trim((string) ($title ?? '')),
             trim((string) ($firstName ?? '')),
+            trim((string) ($middleName ?? '')),
             trim((string) ($surname ?? '')),
         ])));
         $multipleNames = parseApplicantOwnersList($multipleOwnersNames);
@@ -684,7 +710,7 @@ if (!function_exists('settingsById')) {
     function settingsById($userId)
     {
         $data = DB::table('settings');
-        $data = $data->where('parent_id',  $userId);
+        $data = $data->where('parent_id', $userId);
         $data = $data->get();
         $settings = settingsKeys();
 
@@ -938,7 +964,7 @@ if (!function_exists('MessageReplace')) {
             if ($notification->module == 'user_create') {
                 $user = User::find($id);
                 $search = ['{company_name}', '{company_email}', '{company_phone_number}', '{company_address}', '{company_currency}', '{new_user_name}', '{app_link}', '{username}', '{password}'];
-                $replace = [$settings['company_name'], $settings['company_email'], $settings['company_phone'], $settings['company_address'], $settings['CURRENCY_SYMBOL'],  $user->name, env('APP_URL'), $user->email, $notification['password']];
+                $replace = [$settings['company_name'], $settings['company_email'], $settings['company_phone'], $settings['company_address'], $settings['CURRENCY_SYMBOL'], $user->name, env('APP_URL'), $user->email, $notification['password']];
             }
             if ($notification->module == 'reminder_create') {
                 $reminder = Reminder::find($id);
@@ -1049,7 +1075,7 @@ if (!function_exists('HomePageSection')) {
                 'section' => 'Section 2',
                 'content_value' => '{"name":"OverView","section_enabled":"active","Box1_title":"Customers","Box1_number":"500+","Box2_title":"Subscription Plan","Box2_number":"4+","Box3_title":"Language","Box3_number":"11+","section_footer_image_path":"","section_main_image_path":"","box_image_1_path":"upload\/homepage\/OverView_1.svg","box_image_2_path":"upload\/homepage\/OverView_2.svg","box_image_3_path":"upload\/homepage\/OverView_3.svg","Box1_image_path":"","Box2_image_path":"","Sec4_box1_image_path":"","Sec4_box2_image_path":"","Sec4_box3_image_path":"","Sec4_box4_image_path":"","Sec4_box5_image_path":"","Sec4_box6_image_path":"","Sec7_box1_image_path":"","Sec7_box2_image_path":"","Sec7_box3_image_path":"","Sec7_box4_image_path":"","Sec7_box5_image_path":"","Sec7_box6_image_path":"","Sec7_box7_image_path":"","Sec7_box8_image_path":""}',
                 'content' =>
-                '<section>
+                    '<section>
                     <div class="container">
                         <div class="row g-4">
                             <div class="col-md-6 col-lg-4">
@@ -1115,7 +1141,7 @@ if (!function_exists('HomePageSection')) {
                 'section' => 'Section 3',
                 'content_value' => '{"name":"AboutUs","section_enabled":"active","Box1_title":"Empower Your Business to Thrive with Us","Box1_info":"Unlock growth, streamline operations, and achieve success with our innovative solutions.","Box1_list":["Simplify and automate your business processes for maximum efficiency.","Receive tailored strategies to meet business needs and unlock potential.","Grow confidently with flexible solutions that adapt to your business needs.","Make smarter decisions with real-time analytics and performance tracking.","Rely on 24\/7 expert assistance to keep your business running smoothly."],"Box2_title":"Eliminate Paperwork, Elevate Productivity","Box2_info":"Simplify your operations with seamless digital solutions and focus on what truly matters.","Box2_list":["Replace manual paperwork with automated workflows.","Secure cloud storage lets you manage documents on the go.","Streamlined processes save time and reduce errors.","Keep your information safe with encrypted storage.","Reduce printing, storage, and administrative expenses.","Go green by minimizing paper use and waste."],"section_footer_image_path":"","section_main_image_path":"","box_image_1_path":"","box_image_2_path":"","box_image_3_path":"","Box1_image_path":"upload\/homepage\/img-customize-1_Section 33_image_120250113052054am.png","Box2_image_path":"upload\/homepage\/img-customize-2_Section 33_image_220250113052054am.png","Sec4_box1_image_path":"","Sec4_box2_image_path":"","Sec4_box3_image_path":"","Sec4_box4_image_path":"","Sec4_box5_image_path":"","Sec4_box6_image_path":"","Sec7_box1_image_path":"","Sec7_box2_image_path":"","Sec7_box3_image_path":"","Sec7_box4_image_path":"","Sec7_box5_image_path":"","Sec7_box6_image_path":"","Sec7_box7_image_path":"","Sec7_box8_image_path":""}',
                 'content' =>
-                '<section class="bg-body">
+                    '<section class="bg-body">
                         <div class="container">
                             <div class="row align-items-center g-4">
                                 <div class="col-md-6 text-center mb-md-5">
@@ -1465,7 +1491,7 @@ if (!function_exists('HomePageSection')) {
                 'title' => 'Testimonials',
                 'section' => 'Section 7',
                 'content_value' => '{"name":"Testimonials","section_enabled":"active","Sec7_title":"What Our Customers Say About Us","Sec7_info":"We\u2019re proud of the impact our software has had on businesses just like yours. Hear directly from our customers about how our solutions have made a difference in their day-to-day operations","Sec7_box1_name":"Lenore Becker","Sec7_box1_tag":null,"Sec7_box1_Enabled":"active","Sec7_box1_review":"Aenean leo ligula, porttitor eu, consequat vitae, eleifend ac, enim. Vestibulum rutrum, mi nec elementum vehicula, eros quam gravida nisl, id fringilla neque ante vel mi. Quisque ut nisi. Nulla porta dolor. Aenean tellus metus, bibendum sed, posuere ac, mattis non, nunc.","Sec7_box2_name":"Damian Morales","Sec7_box2_tag":"New","Sec7_box2_Enabled":"active","Sec7_box2_review":"Aenean leo ligula, porttitor eu, consequat vitae, eleifend ac, enim. Vestibulum rutrum.","Sec7_box3_name":"Oleg Lucas","Sec7_box3_tag":null,"Sec7_box3_Enabled":"active","Sec7_box3_review":"Aenean leo ligula, porttitor eu, consequat vitae, eleifend ac, enim. Vestibulum rutrum, mi nec elementum vehicula, eros quam gravida nisl, id fringilla neque ante vel mi. Quisque ut nisi. Nulla porta dolor. Aenean tellus metus, bibendum sed, posuere ac, mattis non, nunc.","Sec7_box4_name":"Jerome Mccoy","Sec7_box4_tag":null,"Sec7_box4_Enabled":"active","Sec7_box4_review":"Aenean leo ligula, porttitor eu, consequat vitae, eleifend ac, enim. Vestibulum rutrum, mi nec elementum vehicula, eros quam gravida nisl, id fringilla neque ante vel mi. Quisque ut nisi. Nulla porta dolor. Aenean tellus metus, bibendum sed, posuere ac, mattis non, nunc.","Sec7_box5_name":"Rafael Carver","Sec7_box5_tag":null,"Sec7_box5_Enabled":"active","Sec7_box5_review":"Aenean leo ligula, porttitor eu, consequat vitae, eleifend.","Sec7_box6_name":"Edan Rodriguez","Sec7_box6_tag":null,"Sec7_box6_Enabled":"active","Sec7_box6_review":"Aenean leo ligula, porttitor eu, consequat vitae, eleifend ac, enim. Vestibulum rutrum, mi nec elementum vehicula, eros quam gravida nisl, id fringilla neque ante vel mi. Quisque ut nisi. Nulla porta dolor. Aenean tellus metus, bibendum sed, posuere ac, mattis non, nunc.","Sec7_box7_name":"Kalia Middleton","Sec7_box7_tag":null,"Sec7_box7_Enabled":"active","Sec7_box7_review":"Aenean leo ligula, porttitor eu, consequat vitae, eleifend ac, enim. Vestibulum rutrum, mi nec elementum.","Sec7_box8_name":"Zenaida Chandler","Sec7_box8_tag":null,"Sec7_box8_Enabled":"active","Sec7_box8_review":"Aenean leo ligula, porttitor eu, consequat vitae, eleifend ac, enim. Vestibulum rutrum, mi nec elementum vehicula, eros quam gravida nisl, id fringilla neque ante vel mi. Quisque ut nisi. Nulla porta dolor. Aenean tellus metus, bibendum sed, posuere ac, mattis non, nunc.","section_footer_image_path":"","section_main_image_path":"","box_image_1_path":"","box_image_2_path":"","box_image_3_path":"","Box1_image_path":"","Box2_image_path":"","Sec4_box1_image_path":"","Sec4_box2_image_path":"","Sec4_box3_image_path":"","Sec4_box4_image_path":"","Sec4_box5_image_path":"","Sec4_box6_image_path":"","Sec7_box1_image_path":"upload\/homepage\/review_1.png","Sec7_box2_image_path":"upload\/homepage\/review_2.png","Sec7_box3_image_path":"upload\/homepage\/review_3.png","Sec7_box4_image_path":"upload\/homepage\/review_4.png","Sec7_box5_image_path":"upload\/homepage\/review_5.png","Sec7_box6_image_path":"upload\/homepage\/review_6.png","Sec7_box7_image_path":"upload\/homepage\/review_7.png","Sec7_box8_image_path":"upload\/homepage\/review_8.png"}',
-                'content'  => '
+                'content' => '
                 <section>
                     <div class="container">
                         <div class="row justify-content-center title">
@@ -2086,7 +2112,7 @@ if (!function_exists('authPage')) {
 
         return $createdTemplates;
     }
-    
+
 
     if (!function_exists('generateSTFileNumber')) {
         function generateSTFileNumber($prefix, $year = null)
@@ -2097,7 +2123,7 @@ if (!function_exists('authPage')) {
                 throw new InvalidArgumentException("Invalid prefix provided.");
             }
 
-             
+
             $year = $year ?? date('Y');
 
             // Fetch the last serial number for the given prefix and year
@@ -2131,7 +2157,7 @@ if (!function_exists('authPage')) {
     }
 
 
-    }
+}
 
 /**
  * Format an address string according to standards
@@ -2149,22 +2175,22 @@ if (!function_exists('formatAddress')) {
         }
 
         // Trim whitespace
-        $address = trim((string)$address);
-        
+        $address = trim((string) $address);
+
         if (empty($address)) {
             return '';
         }
 
         // Split by comma to process each part
         $parts = array_map('trim', explode(',', $address));
-        
+
         // Format each part with proper capitalization
-        $formattedParts = array_map(function($part) {
+        $formattedParts = array_map(function ($part) {
             // Don't modify if it's all uppercase already (like "Kano")
             if ($part === strtoupper($part) && strlen($part) > 1) {
                 return $part;
             }
-            
+
             // Apply title case for mixed case strings
             return ucwords(strtolower($part), " \t\r\n\f\v-");
         }, $parts);
@@ -2192,7 +2218,7 @@ if (!function_exists('getGrantorAddress')) {
         // ST Assignment (Transfer of Title) with SUA unit type
         if ($instrumentType === 'ST Assignment (Transfer of Title)' || $instrumentType === 'ST Assignment') {
             $unitType = isset($applicationData->unit_type) ? strtoupper(trim($applicationData->unit_type ?? '')) : null;
-            
+
             if ($unitType === 'SUA') {
                 // Use allocation_source as GrantorAddress
                 $allocationSource = $applicationData->allocation_source ?? '';

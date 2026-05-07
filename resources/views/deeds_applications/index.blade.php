@@ -278,6 +278,10 @@
           'Assignment')->count() }}</p>
       </div>
       <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm">
+        <p class="text-[10px] md:text-xs font-semibold text-purple-600 uppercase tracking-wider">ST Assignment</p>
+        <p class="text-2xl md:text-3xl font-bold text-purple-700 mt-1.5">{{ $applications->where('consent_type', 'ST Assignment')->count() }}</p>
+      </div>
+      <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm">
         <p class="text-[10px] md:text-xs font-semibold text-emerald-600 uppercase tracking-wider">Gift</p>
         <p class="text-2xl md:text-3xl font-bold text-emerald-700 mt-1.5">{{ $applications->where('consent_type',
           'Gift')->count() }}</p>
@@ -286,11 +290,6 @@
         <p class="text-[10px] md:text-xs font-semibold text-amber-600 uppercase tracking-wider">Mortgage</p>
         <p class="text-2xl md:text-3xl font-bold text-amber-700 mt-1.5">{{ $applications->where('consent_type',
           'Mortgage')->count() }}</p>
-      </div>
-      <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm">
-        <p class="text-[10px] md:text-xs font-semibold text-purple-600 uppercase tracking-wider">ST Assignment</p>
-        <p class="text-2xl md:text-3xl font-bold text-purple-700 mt-1.5">{{ $applications->where('consent_type', 'ST
-          Assignment')->count() }}</p>
       </div>
     </div>
 
@@ -488,7 +487,7 @@
             tbody.innerHTML += `
                 <tr class="hover:bg-slate-50 transition whitespace-nowrap">
                   <td class="px-4 py-3 text-slate-600">${idx + 1}</td>
-                  <td class="px-4 py-3 text-slate-900 font-bold">${fileNo}</td>
+                  <td class="px-4 py-3 text-slate-900 font-bold">${unit.unit_fileno || fileNo}</td>
                   <td class="px-4 py-3 text-slate-600">
                     <span class="px-2.5 py-1 bg-purple-50 text-purple-700 border border-purple-100 rounded-full text-[10px] font-bold uppercase whitespace-nowrap inline-block">ST Assignment</span>
                   </td>
@@ -706,7 +705,7 @@
             tbody.innerHTML += `
                           <tr class="hover:bg-slate-50 transition whitespace-nowrap">
                               <td class="px-4 py-3 text-slate-600">${idx + 1}</td>
-                              <td class="px-4 py-3 text-slate-900 font-bold">${fileNo}</td>
+                              <td class="px-4 py-3 text-slate-900 font-bold">${unit.unit_fileno || fileNo}</td>
                               <td class="px-4 py-3 text-slate-600">
                                   <span class="px-2.5 py-1 bg-purple-50 text-purple-700 border border-purple-100 rounded-full text-[10px] font-bold uppercase whitespace-nowrap inline-block">ST Assignment</span>
                               </td>

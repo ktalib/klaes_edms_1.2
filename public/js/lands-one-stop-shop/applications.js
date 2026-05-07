@@ -10,7 +10,7 @@
  */
 
 var OSS_BASE_URL = '/lands-one-stop-shop/applications';
-var OSS_CSRF     = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+var OSS_CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
 function _ossEnsureSwalOnTop() {
     if (document.getElementById('oss-swal-zindex-fix')) return;
@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', function () {
             infoEmpty: 'No applications available',
             emptyTable: 'No applications found. Click "New Application" to create one.',
             paginate: { previous: 'Prev', next: 'Next' }
-                },
+        },
         drawCallback: function () {
             if (window.lucide) window.lucide.createIcons();
             // Re-initialise Alpine on action dropdowns after DataTable re-renders rows
@@ -189,18 +189,18 @@ function ossResRemovePassport() {
  * The output goes into the real textarea/input whose ID is also specified.
  */
 var _ossAddressBuilderDefs = [
-    { prefix: 'oss_res_addr',  output: 'oss_residential_address' },
-    { prefix: 'oss_res_corr',  output: 'oss_res_correspondence_address' },
-    { prefix: 'oss_res_biz',   output: 'oss_business_address' },
-    { prefix: 'oss_com_biz',   output: 'oss_com_business_location' },
-    { prefix: 'oss_com_corr',  output: 'oss_com_correspondence_address' },
-    { prefix: 'oss_ind_biz',   output: 'oss_ind_business_location' },
-    { prefix: 'oss_ind_corr',  output: 'oss_ind_correspondence_address' },
-    { prefix: 'oss_agr_biz',   output: 'oss_agr_business_location' },
-    { prefix: 'oss_agr_corr',  output: 'oss_agr_correspondence_address' },
+    { prefix: 'oss_res_addr', output: 'oss_residential_address' },
+    { prefix: 'oss_res_corr', output: 'oss_res_correspondence_address' },
+    { prefix: 'oss_res_biz', output: 'oss_business_address' },
+    { prefix: 'oss_com_biz', output: 'oss_com_business_location' },
+    { prefix: 'oss_com_corr', output: 'oss_com_correspondence_address' },
+    { prefix: 'oss_ind_biz', output: 'oss_ind_business_location' },
+    { prefix: 'oss_ind_corr', output: 'oss_ind_correspondence_address' },
+    { prefix: 'oss_agr_biz', output: 'oss_agr_business_location' },
+    { prefix: 'oss_agr_corr', output: 'oss_agr_correspondence_address' },
     { prefix: 'coo_orig_addr', output: 'coo_original_address' },
     { prefix: 'coo_curr_addr', output: 'coo_current_address' },
-    { prefix: 'ver_addr',      output: 'ver_address' }
+    { prefix: 'ver_addr', output: 'ver_address' }
 ];
 
 function _ossIsOtherValue(val) {
@@ -225,16 +225,16 @@ function _ossSelectedOrOther(selectEl, otherEl) {
 }
 
 function _ossBuildAddress(prefix) {
-    var plot    = (document.getElementById(prefix + '_plot')?.value || '').trim();
-    var street  = document.getElementById(prefix + '_street');
+    var plot = (document.getElementById(prefix + '_plot')?.value || '').trim();
+    var street = document.getElementById(prefix + '_street');
     var streetO = document.getElementById(prefix + '_street_other');
-    var dist    = document.getElementById(prefix + '_district');
-    var distO   = document.getElementById(prefix + '_district_other');
-    var lga     = (document.getElementById(prefix + '_lga')?.value || '').trim();
-    var state   = (document.getElementById(prefix + '_state')?.value || '').trim();
+    var dist = document.getElementById(prefix + '_district');
+    var distO = document.getElementById(prefix + '_district_other');
+    var lga = (document.getElementById(prefix + '_lga')?.value || '').trim();
+    var state = (document.getElementById(prefix + '_state')?.value || '').trim();
 
     var streetVal = _ossSelectedOrOther(street, streetO);
-    var distVal   = _ossSelectedOrOther(dist, distO);
+    var distVal = _ossSelectedOrOther(dist, distO);
 
     var parts = [
         plot ? plot : streetVal,
@@ -261,17 +261,17 @@ function _ossInitAddressBuilders() {
         var prefix = def.prefix;
         var outputId = def.output;
 
-        var plotEl    = document.getElementById(prefix + '_plot');
-        var streetEl  = document.getElementById(prefix + '_street');
+        var plotEl = document.getElementById(prefix + '_plot');
+        var streetEl = document.getElementById(prefix + '_street');
         var streetOEl = document.getElementById(prefix + '_street_other');
-        var distEl    = document.getElementById(prefix + '_district');
-        var distOEl   = document.getElementById(prefix + '_district_other');
-        var lgaEl     = document.getElementById(prefix + '_lga');
-        var stateEl   = document.getElementById(prefix + '_state');
+        var distEl = document.getElementById(prefix + '_district');
+        var distOEl = document.getElementById(prefix + '_district_other');
+        var lgaEl = document.getElementById(prefix + '_lga');
+        var stateEl = document.getElementById(prefix + '_state');
 
         // Wrapper IDs follow pattern: convert prefix underscores to dashes + '-{field}-other-wrapper'
         var dashPrefix = prefix.replace(/_/g, '-');
-        var streetWrapperId  = dashPrefix + '-street-other-wrapper';
+        var streetWrapperId = dashPrefix + '-street-other-wrapper';
         var districtWrapperId = dashPrefix + '-district-other-wrapper';
 
         // Wire toggle + rebuild on all sub-field events
@@ -362,7 +362,7 @@ function _ossClearSingleAddressBuilder(prefix, outputId) {
     });
     var dashPrefix = prefix.replace(/_/g, '-');
     var streetWrapper = document.getElementById(dashPrefix + '-street-other-wrapper');
-    var distWrapper   = document.getElementById(dashPrefix + '-district-other-wrapper');
+    var distWrapper = document.getElementById(dashPrefix + '-district-other-wrapper');
     if (streetWrapper) streetWrapper.classList.add('hidden');
     if (distWrapper) distWrapper.classList.add('hidden');
     var outputEl = document.getElementById(outputId);
@@ -396,7 +396,7 @@ function _ossClearAddressBuilders() {
         // Hide "Other" wrappers
         var dashPrefix = prefix.replace(/_/g, '-');
         var streetWrapper = document.getElementById(dashPrefix + '-street-other-wrapper');
-        var distWrapper   = document.getElementById(dashPrefix + '-district-other-wrapper');
+        var distWrapper = document.getElementById(dashPrefix + '-district-other-wrapper');
         if (streetWrapper) streetWrapper.classList.add('hidden');
         if (distWrapper) distWrapper.classList.add('hidden');
 
@@ -417,18 +417,18 @@ function _ossPopulateAddressOnEdit(type, data) {
         residential: [
             { prefix: 'oss_res_addr', cols: { _plot: 'res_addr_plot', _street: 'res_addr_street', _street_other: 'res_addr_street_other', _district: 'res_addr_district', _district_other: 'res_addr_district_other', _lga: 'res_addr_lga', _state: 'res_addr_state' }, output: 'oss_residential_address', outputCol: 'residential_address' },
             { prefix: 'oss_res_corr', cols: { _plot: 'res_corr_plot', _street: 'res_corr_street', _street_other: 'res_corr_street_other', _district: 'res_corr_district', _district_other: 'res_corr_district_other', _lga: 'res_corr_lga', _state: 'res_corr_state' }, output: 'oss_res_correspondence_address', outputCol: 'correspondence_address' },
-            { prefix: 'oss_res_biz',  cols: { _plot: 'res_biz_plot', _street: 'res_biz_street', _street_other: 'res_biz_street_other', _district: 'res_biz_district', _district_other: 'res_biz_district_other', _lga: 'res_biz_lga', _state: 'res_biz_state' }, output: 'oss_business_address', outputCol: 'business_address' }
+            { prefix: 'oss_res_biz', cols: { _plot: 'res_biz_plot', _street: 'res_biz_street', _street_other: 'res_biz_street_other', _district: 'res_biz_district', _district_other: 'res_biz_district_other', _lga: 'res_biz_lga', _state: 'res_biz_state' }, output: 'oss_business_address', outputCol: 'business_address' }
         ],
         commercial: [
-            { prefix: 'oss_com_biz',  cols: { _plot: 'com_biz_plot', _street: 'com_biz_street', _street_other: 'com_biz_street_other', _district: 'com_biz_district', _district_other: 'com_biz_district_other', _lga: 'com_biz_lga', _state: 'com_biz_state' }, output: 'oss_com_business_location', outputCol: 'business_location' },
+            { prefix: 'oss_com_biz', cols: { _plot: 'com_biz_plot', _street: 'com_biz_street', _street_other: 'com_biz_street_other', _district: 'com_biz_district', _district_other: 'com_biz_district_other', _lga: 'com_biz_lga', _state: 'com_biz_state' }, output: 'oss_com_business_location', outputCol: 'business_location' },
             { prefix: 'oss_com_corr', cols: { _plot: 'com_corr_plot', _street: 'com_corr_street', _street_other: 'com_corr_street_other', _district: 'com_corr_district', _district_other: 'com_corr_district_other', _lga: 'com_corr_lga', _state: 'com_corr_state' }, output: 'oss_com_correspondence_address', outputCol: 'correspondence_address' }
         ],
         industrial: [
-            { prefix: 'oss_ind_biz',  cols: { _plot: 'ind_biz_plot', _street: 'ind_biz_street', _street_other: 'ind_biz_street_other', _district: 'ind_biz_district', _district_other: 'ind_biz_district_other', _lga: 'ind_biz_lga', _state: 'ind_biz_state' }, output: 'oss_ind_business_location', outputCol: 'business_location' },
+            { prefix: 'oss_ind_biz', cols: { _plot: 'ind_biz_plot', _street: 'ind_biz_street', _street_other: 'ind_biz_street_other', _district: 'ind_biz_district', _district_other: 'ind_biz_district_other', _lga: 'ind_biz_lga', _state: 'ind_biz_state' }, output: 'oss_ind_business_location', outputCol: 'business_location' },
             { prefix: 'oss_ind_corr', cols: { _plot: 'ind_corr_plot', _street: 'ind_corr_street', _street_other: 'ind_corr_street_other', _district: 'ind_corr_district', _district_other: 'ind_corr_district_other', _lga: 'ind_corr_lga', _state: 'ind_corr_state' }, output: 'oss_ind_correspondence_address', outputCol: 'correspondence_address' }
         ],
         agricultural: [
-            { prefix: 'oss_agr_biz',  cols: { _plot: 'agr_biz_plot', _street: 'agr_biz_street', _street_other: 'agr_biz_street_other', _district: 'agr_biz_district', _district_other: 'agr_biz_district_other', _lga: 'agr_biz_lga', _state: 'agr_biz_state' }, output: 'oss_agr_business_location', outputCol: 'business_location' },
+            { prefix: 'oss_agr_biz', cols: { _plot: 'agr_biz_plot', _street: 'agr_biz_street', _street_other: 'agr_biz_street_other', _district: 'agr_biz_district', _district_other: 'agr_biz_district_other', _lga: 'agr_biz_lga', _state: 'agr_biz_state' }, output: 'oss_agr_business_location', outputCol: 'business_location' },
             { prefix: 'oss_agr_corr', cols: { _plot: 'agr_corr_plot', _street: 'agr_corr_street', _street_other: 'agr_corr_street_other', _district: 'agr_corr_district', _district_other: 'agr_corr_district_other', _lga: 'agr_corr_lga', _state: 'agr_corr_state' }, output: 'oss_agr_correspondence_address', outputCol: 'correspondence_address' }
         ]
     };
@@ -477,9 +477,9 @@ function _ossPopulateAddressOnEdit(type, data) {
    Type Tab Switching – show / hide entire form sections
    ═══════════════════════════════════════════════════════════════════════ */
 var _ossTypeColors = {
-    residential:  { from: 'from-yellow-500', to: 'to-yellow-600', active: 'bg-yellow-500 text-white shadow-sm' },
-    commercial:   { from: 'from-blue-600',  to: 'to-blue-700',  active: 'bg-blue-600 text-white shadow-sm' },
-    industrial:   { from: 'from-red-600',   to: 'to-red-700',   active: 'bg-red-600 text-white shadow-sm' },
+    residential: { from: 'from-yellow-500', to: 'to-yellow-600', active: 'bg-yellow-500 text-white shadow-sm' },
+    commercial: { from: 'from-blue-600', to: 'to-blue-700', active: 'bg-blue-600 text-white shadow-sm' },
+    industrial: { from: 'from-red-600', to: 'to-red-700', active: 'bg-red-600 text-white shadow-sm' },
     agricultural: { from: 'from-green-600', to: 'to-green-700', active: 'bg-green-600 text-white shadow-sm' }
 };
 
@@ -522,157 +522,161 @@ function ossSelectType(type) {
    ═══════════════════════════════════════════════════════════════════════ */
 var _ossFieldMap = {
     residential: {
-        'oss_file_no':                   'file_no',
-        'oss_applicant_name':            'applicant_name',
-        'oss_age':                       'age',
-        'oss_sex':                       'sex',
-        'oss_marital_status':            'marital_status',
-        'oss_husband_name_address':      'husband_name_address',
-        'oss_residential_address':       'residential_address',
-        'oss_res_correspondence_address':'correspondence_address',
-        'oss_res_email':                 'email',
-        'oss_res_phone':                 'phone',
-        'oss_business_address':          'business_address',
-        'oss_res_nationality':           'nationality',
-        'oss_res_state_of_origin':       'state_of_origin',
-        'oss_res_lga':                   'lga',
-        'oss_occupation':                'occupation',
-        'oss_res_annual_income':         'annual_income',
-        'oss_res_prev_allocated':        'prev_allocated',
-        'oss_remarks':                   'remarks',
+        'oss_file_no': 'file_no',
+        'oss_op_serial_number': 'op_serial_number',
+        'oss_applicant_name': 'applicant_name',
+        'oss_age': 'age',
+        'oss_sex': 'sex',
+        'oss_marital_status': 'marital_status',
+        'oss_husband_name_address': 'husband_name_address',
+        'oss_residential_address': 'residential_address',
+        'oss_res_correspondence_address': 'correspondence_address',
+        'oss_res_email': 'email',
+        'oss_res_phone': 'phone',
+        'oss_business_address': 'business_address',
+        'oss_res_nationality': 'nationality',
+        'oss_res_state_of_origin': 'state_of_origin',
+        'oss_res_lga': 'lga',
+        'oss_occupation': 'occupation',
+        'oss_res_annual_income': 'annual_income',
+        'oss_res_prev_allocated': 'prev_allocated',
+        'oss_remarks': 'remarks',
         // Residential Address builder sub-fields
-        'oss_res_addr_plot':             'res_addr_plot',
-        'oss_res_addr_street':           'res_addr_street',
-        'oss_res_addr_street_other':     'res_addr_street_other',
-        'oss_res_addr_district':         'res_addr_district',
-        'oss_res_addr_district_other':   'res_addr_district_other',
-        'oss_res_addr_lga':              'res_addr_lga',
-        'oss_res_addr_state':            'res_addr_state',
+        'oss_res_addr_plot': 'res_addr_plot',
+        'oss_res_addr_street': 'res_addr_street',
+        'oss_res_addr_street_other': 'res_addr_street_other',
+        'oss_res_addr_district': 'res_addr_district',
+        'oss_res_addr_district_other': 'res_addr_district_other',
+        'oss_res_addr_lga': 'res_addr_lga',
+        'oss_res_addr_state': 'res_addr_state',
         // Correspondence Address builder sub-fields
-        'oss_res_corr_plot':             'res_corr_plot',
-        'oss_res_corr_street':           'res_corr_street',
-        'oss_res_corr_street_other':     'res_corr_street_other',
-        'oss_res_corr_district':         'res_corr_district',
-        'oss_res_corr_district_other':   'res_corr_district_other',
-        'oss_res_corr_lga':              'res_corr_lga',
-        'oss_res_corr_state':            'res_corr_state',
+        'oss_res_corr_plot': 'res_corr_plot',
+        'oss_res_corr_street': 'res_corr_street',
+        'oss_res_corr_street_other': 'res_corr_street_other',
+        'oss_res_corr_district': 'res_corr_district',
+        'oss_res_corr_district_other': 'res_corr_district_other',
+        'oss_res_corr_lga': 'res_corr_lga',
+        'oss_res_corr_state': 'res_corr_state',
         // Business Address builder sub-fields
-        'oss_res_biz_plot':              'res_biz_plot',
-        'oss_res_biz_street':            'res_biz_street',
-        'oss_res_biz_street_other':      'res_biz_street_other',
-        'oss_res_biz_district':          'res_biz_district',
-        'oss_res_biz_district_other':    'res_biz_district_other',
-        'oss_res_biz_lga':               'res_biz_lga',
-        'oss_res_biz_state':             'res_biz_state'
+        'oss_res_biz_plot': 'res_biz_plot',
+        'oss_res_biz_street': 'res_biz_street',
+        'oss_res_biz_street_other': 'res_biz_street_other',
+        'oss_res_biz_district': 'res_biz_district',
+        'oss_res_biz_district_other': 'res_biz_district_other',
+        'oss_res_biz_lga': 'res_biz_lga',
+        'oss_res_biz_state': 'res_biz_state'
     },
     commercial: {
-        'oss_file_no':                      'file_no',
-        'oss_com_applicant_name':           'applicant_name',
-        'oss_com_nationality':              'nationality',
-        'oss_com_state_of_origin':          'state_of_origin',
-        'oss_com_home_domicile':            'home_domicile',
-        'oss_com_occupation_or_business':   'occupation_or_business',
-        'oss_com_nature_of_commerce':       'nature_of_commerce',
-        'oss_com_annual_income':            'annual_income',
+        'oss_file_no': 'file_no',
+        'oss_op_serial_number': 'op_serial_number',
+        'oss_com_applicant_name': 'applicant_name',
+        'oss_com_nationality': 'nationality',
+        'oss_com_state_of_origin': 'state_of_origin',
+        'oss_com_home_domicile': 'home_domicile',
+        'oss_com_occupation_or_business': 'occupation_or_business',
+        'oss_com_nature_of_commerce': 'nature_of_commerce',
+        'oss_com_annual_income': 'annual_income',
         'oss_com_company_registered_under': 'company_registered_under',
         'oss_com_registration_particulars': 'registration_particulars',
-        'oss_com_business_location':        'business_location',
-        'oss_com_correspondence_address':   'correspondence_address',
-        'oss_com_annual_income_anticipation':'annual_income_anticipation',
-        'oss_com_prev_allocated':           'prev_allocated',
-        'oss_com_prev_allocation_details':  'prev_allocation_details',
-        'oss_com_prev_land_purpose':        'prev_land_purpose',
-        'oss_com_purpose':                  'purpose',
-        'oss_com_intended_activities':      'intended_activities',
-        'oss_remarks':                      'remarks',        // Business Location Address builder sub-fields
-        'oss_com_biz_plot':                 'com_biz_plot',
-        'oss_com_biz_street':               'com_biz_street',
-        'oss_com_biz_street_other':         'com_biz_street_other',
-        'oss_com_biz_district':             'com_biz_district',
-        'oss_com_biz_district_other':       'com_biz_district_other',
-        'oss_com_biz_lga':                  'com_biz_lga',
-        'oss_com_biz_state':                'com_biz_state',        // Correspondence Address builder sub-fields
-        'oss_com_corr_plot':                'com_corr_plot',
-        'oss_com_corr_street':              'com_corr_street',
-        'oss_com_corr_street_other':        'com_corr_street_other',
-        'oss_com_corr_district':            'com_corr_district',
-        'oss_com_corr_district_other':      'com_corr_district_other',
-        'oss_com_corr_lga':                 'com_corr_lga',
-        'oss_com_corr_state':               'com_corr_state'
+        'oss_com_business_location': 'business_location',
+        'oss_com_correspondence_address': 'correspondence_address',
+        'oss_com_annual_income_anticipation': 'annual_income_anticipation',
+        'oss_com_prev_allocated': 'prev_allocated',
+        'oss_com_prev_allocation_details': 'prev_allocation_details',
+        'oss_com_prev_land_purpose': 'prev_land_purpose',
+        'oss_com_purpose': 'purpose',
+        'oss_com_intended_activities': 'intended_activities',
+        'oss_remarks': 'remarks',        // Business Location Address builder sub-fields
+        'oss_com_biz_plot': 'com_biz_plot',
+        'oss_com_biz_street': 'com_biz_street',
+        'oss_com_biz_street_other': 'com_biz_street_other',
+        'oss_com_biz_district': 'com_biz_district',
+        'oss_com_biz_district_other': 'com_biz_district_other',
+        'oss_com_biz_lga': 'com_biz_lga',
+        'oss_com_biz_state': 'com_biz_state',        // Correspondence Address builder sub-fields
+        'oss_com_corr_plot': 'com_corr_plot',
+        'oss_com_corr_street': 'com_corr_street',
+        'oss_com_corr_street_other': 'com_corr_street_other',
+        'oss_com_corr_district': 'com_corr_district',
+        'oss_com_corr_district_other': 'com_corr_district_other',
+        'oss_com_corr_lga': 'com_corr_lga',
+        'oss_com_corr_state': 'com_corr_state'
     },
     industrial: {
-        'oss_file_no':                          'file_no',
-        'oss_ind_applicant_name':            'applicant_name',
-        'oss_ind_nationality':               'nationality',
-        'oss_ind_state_of_origin':           'state_of_origin',
-        'oss_ind_home_domicile':             'home_domicile',
-        'oss_ind_occupation_or_business':    'occupation_or_business',
-        'oss_ind_nature_of_occupation':      'nature_of_occupation',
-        'oss_ind_company_registered_under':  'company_registered_under',
-        'oss_ind_registration_particulars':  'registration_particulars',
-        'oss_ind_business_location':         'business_location',
-        'oss_ind_correspondence_address':    'correspondence_address',
-        'oss_ind_annual_income_turnover':    'annual_income_turnover',
-        'oss_ind_number_of_employees':       'number_of_employees',
-        'oss_ind_prev_allocated':            'prev_allocated',
-        'oss_ind_prev_allocation_details':   'prev_allocation_details',
-        'oss_ind_purpose':                   'purpose',
-        'oss_ind_nature_of_industrial':      'nature_of_industrial',
-        'oss_ind_waste_disposal':            'waste_disposal_requirements',
-        'oss_remarks':                       'remarks',
+        'oss_file_no': 'file_no',
+        'oss_op_serial_number': 'op_serial_number',
+        'oss_ind_applicant_name': 'applicant_name',
+        'oss_ind_nationality': 'nationality',
+        'oss_ind_state_of_origin': 'state_of_origin',
+        'oss_ind_home_domicile': 'home_domicile',
+        'oss_ind_occupation_or_business': 'occupation_or_business',
+        'oss_ind_nature_of_occupation': 'nature_of_occupation',
+        'oss_ind_company_registered_under': 'company_registered_under',
+        'oss_ind_registration_particulars': 'registration_particulars',
+        'oss_ind_business_location': 'business_location',
+        'oss_ind_correspondence_address': 'correspondence_address',
+        'oss_ind_annual_income_turnover': 'annual_income_turnover',
+        'oss_ind_number_of_employees': 'number_of_employees',
+        'oss_ind_prev_allocated': 'prev_allocated',
+        'oss_ind_prev_allocation_details': 'prev_allocation_details',
+        'oss_ind_purpose': 'purpose',
+        'oss_ind_nature_of_industrial': 'nature_of_industrial',
+        'oss_ind_waste_disposal': 'waste_disposal_requirements',
+        'oss_remarks': 'remarks',
         // Business Location Address builder sub-fields
-        'oss_ind_biz_plot':                  'ind_biz_plot',
-        'oss_ind_biz_street':                'ind_biz_street',
-        'oss_ind_biz_street_other':          'ind_biz_street_other',
-        'oss_ind_biz_district':              'ind_biz_district',
-        'oss_ind_biz_district_other':        'ind_biz_district_other',
-        'oss_ind_biz_lga':                   'ind_biz_lga',
-        'oss_ind_biz_state':                 'ind_biz_state',
+        'oss_ind_biz_plot': 'ind_biz_plot',
+        'oss_ind_biz_street': 'ind_biz_street',
+        'oss_ind_biz_street_other': 'ind_biz_street_other',
+        'oss_ind_biz_district': 'ind_biz_district',
+        'oss_ind_biz_district_other': 'ind_biz_district_other',
+        'oss_ind_biz_lga': 'ind_biz_lga',
+        'oss_ind_biz_state': 'ind_biz_state',
         // Correspondence Address builder sub-fields
-        'oss_ind_corr_plot':                 'ind_corr_plot',
-        'oss_ind_corr_street':               'ind_corr_street',
-        'oss_ind_corr_street_other':         'ind_corr_street_other',
-        'oss_ind_corr_district':             'ind_corr_district',
-        'oss_ind_corr_district_other':       'ind_corr_district_other',
-        'oss_ind_corr_lga':                  'ind_corr_lga',
-        'oss_ind_corr_state':                'ind_corr_state'
+        'oss_ind_corr_plot': 'ind_corr_plot',
+        'oss_ind_corr_street': 'ind_corr_street',
+        'oss_ind_corr_street_other': 'ind_corr_street_other',
+        'oss_ind_corr_district': 'ind_corr_district',
+        'oss_ind_corr_district_other': 'ind_corr_district_other',
+        'oss_ind_corr_lga': 'ind_corr_lga',
+        'oss_ind_corr_state': 'ind_corr_state'
     },
     agricultural: {
-        'oss_file_no':                          'file_no',
-        'oss_agr_applicant_name':            'applicant_name',
-        'oss_agr_nationality':               'nationality',
-        'oss_agr_state_of_origin':           'state_of_origin',
-        'oss_agr_home_domicile':             'home_domicile',
-        'oss_agr_occupation_or_business':    'occupation_or_business',
-        'oss_agr_nature_of_occupation':      'nature_of_occupation',
-        'oss_agr_company_registered_under':  'company_registered_under',
-        'oss_agr_registration_particulars':  'registration_particulars',
-        'oss_agr_business_location':         'business_location',
-        'oss_agr_correspondence_address':    'correspondence_address',
-        'oss_agr_annual_income_turnover':    'annual_income_turnover',
-        'oss_agr_number_of_employees':       'number_of_employees',
-        'oss_agr_prev_allocated':            'prev_allocated',
-        'oss_agr_prev_allocation_details':   'prev_allocation_details',
-        'oss_agr_purpose':                   'purpose',
-        'oss_agr_nature_of_agricultural':    'nature_of_agricultural',
-        'oss_agr_waste_disposal':            'waste_disposal_requirements',
-        'oss_remarks':                       'remarks',
+        'oss_file_no': 'file_no',
+        'oss_op_serial_number': 'op_serial_number',
+        'oss_agr_applicant_name': 'applicant_name',
+        'oss_agr_nationality': 'nationality',
+        'oss_agr_state_of_origin': 'state_of_origin',
+        'oss_agr_home_domicile': 'home_domicile',
+        'oss_agr_occupation_or_business': 'occupation_or_business',
+        'oss_agr_nature_of_occupation': 'nature_of_occupation',
+        'oss_agr_company_registered_under': 'company_registered_under',
+        'oss_agr_registration_particulars': 'registration_particulars',
+        'oss_agr_business_location': 'business_location',
+        'oss_agr_correspondence_address': 'correspondence_address',
+        'oss_agr_annual_income_turnover': 'annual_income_turnover',
+        'oss_agr_number_of_employees': 'number_of_employees',
+        'oss_agr_prev_allocated': 'prev_allocated',
+        'oss_agr_prev_allocation_details': 'prev_allocation_details',
+        'oss_agr_purpose': 'purpose',
+        'oss_agr_nature_of_agricultural': 'nature_of_agricultural',
+        'oss_agr_waste_disposal': 'waste_disposal_requirements',
+        'oss_remarks': 'remarks',
         // Business Location Address builder sub-fields
-        'oss_agr_biz_plot':                  'agr_biz_plot',
-        'oss_agr_biz_street':                'agr_biz_street',
-        'oss_agr_biz_street_other':          'agr_biz_street_other',
-        'oss_agr_biz_district':              'agr_biz_district',
-        'oss_agr_biz_district_other':        'agr_biz_district_other',
-        'oss_agr_biz_lga':                   'agr_biz_lga',
-        'oss_agr_biz_state':                 'agr_biz_state',
+        'oss_agr_biz_plot': 'agr_biz_plot',
+        'oss_agr_biz_street': 'agr_biz_street',
+        'oss_agr_biz_street_other': 'agr_biz_street_other',
+        'oss_agr_biz_district': 'agr_biz_district',
+        'oss_agr_biz_district_other': 'agr_biz_district_other',
+        'oss_agr_biz_lga': 'agr_biz_lga',
+        'oss_agr_biz_state': 'agr_biz_state',
         // Correspondence Address builder sub-fields
-        'oss_agr_corr_plot':                 'agr_corr_plot',
-        'oss_agr_corr_street':               'agr_corr_street',
-        'oss_agr_corr_street_other':         'agr_corr_street_other',
-        'oss_agr_corr_district':             'agr_corr_district',
-        'oss_agr_corr_district_other':       'agr_corr_district_other',
-        'oss_agr_corr_lga':                  'agr_corr_lga',
-        'oss_agr_corr_state':                'agr_corr_state'
+        'oss_agr_corr_plot': 'agr_corr_plot',
+        'oss_agr_corr_street': 'agr_corr_street',
+        'oss_agr_corr_street_other': 'agr_corr_street_other',
+        'oss_agr_corr_district': 'agr_corr_district',
+        'oss_agr_corr_district_other': 'agr_corr_district_other',
+        'oss_agr_corr_lga': 'agr_corr_lga',
+        'oss_agr_corr_state': 'agr_corr_state'
     }
 };
 
@@ -682,7 +686,7 @@ var _ossFieldMap = {
    ═══════════════════════════════════════════════════════════════════════ */
 function _ossCollectPayload() {
     var type = document.getElementById('oss_application_type').value;
-    var map  = _ossFieldMap[type] || {};
+    var map = _ossFieldMap[type] || {};
     var payload = { application_type: type };
 
     Object.keys(map).forEach(function (elId) {
@@ -702,7 +706,7 @@ function _ossCollectPayload() {
         var prevEntries = [];
         for (var i = 1; i <= 3; i++) {
             var plot = (document.getElementById('oss_prev_plot_' + i) || {}).value || '';
-            var loc  = (document.getElementById('oss_prev_location_' + i) || {}).value || '';
+            var loc = (document.getElementById('oss_prev_location_' + i) || {}).value || '';
             var cert = (document.getElementById('oss_prev_cert_' + i) || {}).value || '';
             if (plot || loc || cert) {
                 prevEntries.push({ plot_no: plot, location: loc, cert_no: cert });
@@ -738,9 +742,9 @@ function ossOpenFileNumberSelector() {
 
             // Set the file number on the form
             var displayEl = document.getElementById('oss_file_no_display');
-            var hiddenEl  = document.getElementById('oss_file_no');
+            var hiddenEl = document.getElementById('oss_file_no');
             if (displayEl) displayEl.value = selectedFileNo;
-            if (hiddenEl)  hiddenEl.value  = selectedFileNo;
+            if (hiddenEl) hiddenEl.value = selectedFileNo;
 
             // Fetch PRA record details
             _ossFetchFileIndexing(selectedFileNo);
@@ -799,9 +803,9 @@ function _ossSetChangeOfNameEligibility(isEligible, message) {
 }
 
 function _ossFetchFileIndexing(fileNo) {
-    var card    = document.getElementById('oss_file_indexing_card');
+    var card = document.getElementById('oss_file_indexing_card');
     var details = document.getElementById('oss_file_indexing_details');
-    var empty   = document.getElementById('oss_file_indexing_empty');
+    var empty = document.getElementById('oss_file_indexing_empty');
     var idField = document.getElementById('oss_file_indexing_id');
 
     _ossLinkedPraData = null;
@@ -812,58 +816,57 @@ function _ossFetchFileIndexing(fileNo) {
     fetch(OSS_BASE_URL + '/lookup-file-indexing?file_no=' + encodeURIComponent(fileNo), {
         headers: { 'Accept': 'application/json' }
     })
-    .then(function (res) { return res.json(); })
-    .then(function (body) {
-        if (!body || body.success !== true || !body.data) {
-            if (details) details.innerHTML = '<span class="text-amber-600">No PRA record found for this file number.</span>';
-            if (idField) idField.value = '';
-            if (_ossIsChangeOfNamePage()) {
-                _ossSetChangeOfNameEligibility(false, 'No PRA record found for this file number. You cannot proceed on the Change of Name page without a Transfer of Title (OP) record.');
+        .then(function (res) { return res.json(); })
+        .then(function (body) {
+            if (!body || body.success !== true || !body.data) {
+                if (details) details.innerHTML = '<span class="text-amber-600">' + (body.message || 'No PRA record found for this file number.') + '</span>';
+                if (idField) idField.value = '';
+                if (_ossIsChangeOfNamePage()) {
+                    _ossSetChangeOfNameEligibility(false, 'No PRA record found for this file number. You cannot proceed on the Change of Name page without a Transfer of Title (OP) record.');
+                }
+                return;
             }
-            return;
-        }
-        var d = body.data;
-        _ossLinkedPraData = d;
-        if (idField) idField.value = d.id || '';
+            var d = body.data;
+            _ossLinkedPraData = d;
+            if (idField) idField.value = d.id || '';
 
-        if (_ossIsChangeOfNamePage() && !d.has_transfer_of_title) {
+            if (_ossIsChangeOfNamePage() && !d.has_transfer_of_title) {
+                if (details) {
+                    details.innerHTML = '<span class="text-amber-600">This file number has no Transfer of Title (OP) record in PRA. You must enter the serial manually below.</span>';
+                }
+                // We don't return here anymore; we allow prefill to show the manual input
+            }
+
+            _ossPrefillFromPra(d);
+
+            // Render card
             if (details) {
-                details.innerHTML = '<span class="text-amber-600">This file number has no Transfer of Title (OP) record in PRA. Change of Name cannot proceed.</span>';
+                details.innerHTML =
+                    _ossFileField('File Number', d.file_number) +
+                    _ossFileField('File Name', d.file_name) +
+                    _ossFileField('OP Serial No', d.op_serial_number) +
+                    _ossFileField('Land Use', _ossExpandLandUsePrefix(d.land_use)) +
+                    _ossFileField('Purpose', d.purpose) +
+                    _ossFileField('Plot No', d.plot_no) +
+                    _ossFileField('Plan No', d.plan_no) +
+                    _ossFileField('Location', d.location) +
+                    _ossFileField('LGA', d.lga) +
+                    _ossFileFieldIfValue('State', d.state) +
+                    _ossFileField('TP No', d.tp_no) +
+                    _ossFileField('Reg. Number', d.registration_number) +
+                    _ossFileFieldIfValue('Customer Type', d.customer_type);
             }
-            _ossSetChangeOfNameEligibility(false, 'The selected file number has no Transfer of Title (OP) record in PRA.');
-            return;
-        }
 
-        _ossPrefillFromPra(d);
-
-        // Render card
-        if (details) {
-            details.innerHTML =
-                _ossFileField('File Number', d.file_number) +
-                _ossFileField('File Name', d.file_name) +
-                _ossFileField('OP Serial No', d.op_serial_number) +
-                _ossFileField('Land Use', _ossExpandLandUsePrefix(d.land_use)) +
-                _ossFileField('Purpose', d.purpose) +
-                _ossFileField('Plot No', d.plot_no) +
-                _ossFileField('Plan No', d.plan_no) +
-                _ossFileField('Location', d.location) +
-                _ossFileField('LGA', d.lga) +
-                _ossFileFieldIfValue('State', d.state) +
-                _ossFileField('TP No', d.tp_no) +
-                _ossFileField('Reg. Number', d.registration_number) +
-                _ossFileFieldIfValue('Customer Type', d.customer_type);
-        }
-
-        if (_ossIsChangeOfNamePage()) {
-            _ossSetChangeOfNameEligibility(true);
-        }
-    })
-    .catch(function () {
-        if (details) details.innerHTML = '<span class="text-red-500">Network error looking up file.</span>';
-        if (_ossIsChangeOfNamePage()) {
-            _ossSetChangeOfNameEligibility(false, 'File lookup failed. Change of Name cannot proceed until a PRA Transfer of Title record is confirmed.');
-        }
-    });
+            if (_ossIsChangeOfNamePage()) {
+                _ossSetChangeOfNameEligibility(true);
+            }
+        })
+        .catch(function () {
+            if (details) details.innerHTML = '<span class="text-red-500">Network error looking up file.</span>';
+            if (_ossIsChangeOfNamePage()) {
+                _ossSetChangeOfNameEligibility(false, 'File lookup failed. Change of Name cannot proceed until a PRA Transfer of Title record is confirmed.');
+            }
+        });
 }
 
 function _ossFileField(label, value) {
@@ -893,42 +896,42 @@ function _ossCheckFileNoDuplicate(fileNo) {
     fetch(OSS_BASE_URL + '/check-duplicate?file_no=' + encodeURIComponent(fileNo), {
         headers: { 'Accept': 'application/json' }
     })
-    .then(function (res) { return res.json(); })
-    .then(function (body) {
-        if (body.duplicate) {
-            // Disable Save button
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                submitBtn.classList.remove('hover:bg-blue-700');
-            }
+        .then(function (res) { return res.json(); })
+        .then(function (body) {
+            if (body.duplicate) {
+                // Disable Save button
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    submitBtn.classList.remove('hover:bg-blue-700');
+                }
 
-            // Show warning banner below file number section
-            var container = document.getElementById('oss_file_indexing_card');
-            if (!container) container = document.getElementById('oss_file_no_display');
-            if (container && container.parentElement) {
-                var banner = document.createElement('div');
-                banner.id = 'oss_duplicate_banner';
-                banner.className = 'mt-2 p-3 rounded-lg border border-red-300 bg-red-50 text-sm';
-                banner.innerHTML = '<div class="flex items-start gap-2">' +
-                    '<svg class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
-                    '<div>' +
-                    '<p class="font-bold text-red-700">Duplicate File Number</p>' +
-                    '<p class="text-red-600 text-xs mt-0.5">An application with file number <strong>' + _ossEsc(fileNo) + '</strong> already exists.</p>' +
-                    '<p class="text-red-600 text-xs">Applicant: <strong>' + _ossEsc(body.existing_applicant || '—') + '</strong> | Type: <strong>' + _ossEsc(body.existing_type || '—') + '</strong> | Created: <strong>' + _ossEsc(body.existing_date || '—') + '</strong></p>' +
-                    '<p class="text-red-500 text-[11px] mt-1 font-semibold">Save is disabled. Clear the file number to proceed with a different one.</p>' +
-                    '</div></div>';
-                container.parentElement.appendChild(banner);
+                // Show warning banner below file number section
+                var container = document.getElementById('oss_file_indexing_card');
+                if (!container) container = document.getElementById('oss_file_no_display');
+                if (container && container.parentElement) {
+                    var banner = document.createElement('div');
+                    banner.id = 'oss_duplicate_banner';
+                    banner.className = 'mt-2 p-3 rounded-lg border border-red-300 bg-red-50 text-sm';
+                    banner.innerHTML = '<div class="flex items-start gap-2">' +
+                        '<svg class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+                        '<div>' +
+                        '<p class="font-bold text-red-700">Duplicate File Number</p>' +
+                        '<p class="text-red-600 text-xs mt-0.5">An application with file number <strong>' + _ossEsc(fileNo) + '</strong> already exists.</p>' +
+                        '<p class="text-red-600 text-xs">Applicant: <strong>' + _ossEsc(body.existing_applicant || '—') + '</strong> | Type: <strong>' + _ossEsc(body.existing_type || '—') + '</strong> | Created: <strong>' + _ossEsc(body.existing_date || '—') + '</strong></p>' +
+                        '<p class="text-red-500 text-[11px] mt-1 font-semibold">Save is disabled. Clear the file number to proceed with a different one.</p>' +
+                        '</div></div>';
+                    container.parentElement.appendChild(banner);
+                }
+            } else {
+                // Ensure Save is enabled
+                _ossEnableSubmitBtn();
             }
-        } else {
-            // Ensure Save is enabled
+        })
+        .catch(function () {
+            // On error, don't block — keep Save enabled
             _ossEnableSubmitBtn();
-        }
-    })
-    .catch(function () {
-        // On error, don't block — keep Save enabled
-        _ossEnableSubmitBtn();
-    });
+        });
 }
 
 /**
@@ -959,18 +962,18 @@ function _ossEnableSubmitBtn() {
 function ossClearFileNumberSelection() {
     _ossLinkedPraData = null;
     var displayEl = document.getElementById('oss_file_no_display');
-    var hiddenEl  = document.getElementById('oss_file_no');
-    var idField   = document.getElementById('oss_file_indexing_id');
-    var card      = document.getElementById('oss_file_indexing_card');
-    var empty     = document.getElementById('oss_file_indexing_empty');
-    var clearBtn  = document.getElementById('oss_file_no_clear_btn');
+    var hiddenEl = document.getElementById('oss_file_no');
+    var idField = document.getElementById('oss_file_indexing_id');
+    var card = document.getElementById('oss_file_indexing_card');
+    var empty = document.getElementById('oss_file_indexing_empty');
+    var clearBtn = document.getElementById('oss_file_no_clear_btn');
 
     if (displayEl) displayEl.value = '';
-    if (hiddenEl)  hiddenEl.value  = '';
-    if (idField)   idField.value   = '';
-    if (card)      card.classList.add('hidden');
-    if (empty)     empty.classList.remove('hidden');
-    if (clearBtn)  clearBtn.classList.add('hidden');
+    if (hiddenEl) hiddenEl.value = '';
+    if (idField) idField.value = '';
+    if (card) card.classList.add('hidden');
+    if (empty) empty.classList.remove('hidden');
+    if (clearBtn) clearBtn.classList.add('hidden');
 
     // Remove duplicate banner and re-enable Save
     var dupBanner = document.getElementById('oss_duplicate_banner');
@@ -1077,6 +1080,21 @@ function _ossPrefillFromPra(d) {
     _ossSetIfEmpty('oss_com_purpose', purposeWithPlan);
     _ossSetIfEmpty('oss_ind_purpose', purposeWithPlan);
     _ossSetIfEmpty('oss_agr_purpose', purposeWithPlan);
+
+    // Handle Manual OP Serial Number visibility
+    var manualOpContainer = document.getElementById('oss_manual_op_serial_container');
+    var manualOpInput = document.getElementById('oss_op_serial_number');
+    if (manualOpContainer && manualOpInput) {
+        var opSerial = (d.op_serial_number || '').toString().trim();
+        if (!opSerial) {
+            manualOpContainer.classList.remove('hidden');
+            manualOpInput.required = true;
+        } else {
+            manualOpContainer.classList.add('hidden');
+            manualOpInput.required = false;
+            manualOpInput.value = ''; // Clear it if a serial was found
+        }
+    }
 }
 /* ═══════════════════════════════════════════════════════════════════════
    Clear all fields in all 3 form sections
@@ -1117,6 +1135,15 @@ function _ossClearAllFields() {
 
     // Reset residential passport photo
     if (typeof ossResRemovePassport === 'function') ossResRemovePassport();
+
+    // Reset manual OP serial entry
+    var manualOpContainer = document.getElementById('oss_manual_op_serial_container');
+    var manualOpInput = document.getElementById('oss_op_serial_number');
+    if (manualOpContainer) manualOpContainer.classList.add('hidden');
+    if (manualOpInput) {
+        manualOpInput.value = '';
+        manualOpInput.required = false;
+    }
 }
 
 
@@ -1199,8 +1226,8 @@ function ossEditRecord(btn) {
     // Show prev details sections if prev_allocated == 'Yes'
     if (data.prev_allocated === 'Yes') {
         if (type === 'residential') document.getElementById('ossResPrevDetails')?.classList.remove('hidden');
-        if (type === 'commercial')  document.getElementById('ossComPrevDetails')?.classList.remove('hidden');
-        if (type === 'industrial')  document.getElementById('ossIndPrevDetails')?.classList.remove('hidden');
+        if (type === 'commercial') document.getElementById('ossComPrevDetails')?.classList.remove('hidden');
+        if (type === 'industrial') document.getElementById('ossIndPrevDetails')?.classList.remove('hidden');
         if (type === 'agricultural') document.getElementById('ossAgrPrevDetails')?.classList.remove('hidden');
     }
 
@@ -1243,7 +1270,7 @@ function ossCloseModal() {
    Save / Update Application (AJAX)
    ═══════════════════════════════════════════════════════════════════════ */
 function ossSaveApplication() {
-    var id     = document.getElementById('oss_id').value;
+    var id = document.getElementById('oss_id').value;
     var isEdit = !!id;
     var payload = _ossCollectPayload();
 
@@ -1254,8 +1281,8 @@ function ossSaveApplication() {
             icon: 'warning',
             title: 'Missing Required Fields',
             html: '<ul style="text-align:left;font-size:13px;line-height:1.8;list-style:disc;padding-left:20px;">' +
-                  errors.map(function(e) { return '<li>' + e + '</li>'; }).join('') +
-                  '</ul>'
+                errors.map(function (e) { return '<li>' + e + '</li>'; }).join('') +
+                '</ul>'
         });
         return;
     }
@@ -1263,38 +1290,38 @@ function ossSaveApplication() {
     // ── Duplicate file number check (only for new applications with a file number) ──
     var fileNo = (payload.file_no || '').trim();
     if (!isEdit && fileNo) {
-        var submitBtn  = document.getElementById('ossSubmitBtn');
+        var submitBtn = document.getElementById('ossSubmitBtn');
         var submitText = document.getElementById('ossSubmitText');
-        var origText   = submitText.textContent;
+        var origText = submitText.textContent;
         submitBtn.disabled = true;
         submitText.textContent = 'Checking...';
 
         fetch(OSS_BASE_URL + '/check-duplicate?file_no=' + encodeURIComponent(fileNo) + '&application_type=' + encodeURIComponent(payload.application_type), {
             headers: { 'Accept': 'application/json' }
         })
-        .then(function (res) { return res.json(); })
-        .then(function (body) {
-            if (body.duplicate) {
-                submitBtn.disabled = false;
-                submitText.textContent = origText;
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Duplicate File Number',
-                    html: '<p style="font-size:13px;">An application with file number <strong>' + _ossEsc(fileNo) + '</strong> already exists.</p>' +
-                          '<div style="text-align:left;font-size:12px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;margin-top:10px;">' +
-                          '<p><strong>Applicant:</strong> ' + _ossEsc(body.existing_applicant || '—') + '</p>' +
-                          '<p><strong>Type:</strong> ' + _ossEsc(body.existing_type || '—') + '</p>' +
-                          '<p><strong>Created:</strong> ' + _ossEsc(body.existing_date || '—') + '</p>' +
-                          '</div>'
-                });
-            } else {
+            .then(function (res) { return res.json(); })
+            .then(function (body) {
+                if (body.duplicate) {
+                    submitBtn.disabled = false;
+                    submitText.textContent = origText;
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Duplicate File Number',
+                        html: '<p style="font-size:13px;">An application with file number <strong>' + _ossEsc(fileNo) + '</strong> already exists.</p>' +
+                            '<div style="text-align:left;font-size:12px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;margin-top:10px;">' +
+                            '<p><strong>Applicant:</strong> ' + _ossEsc(body.existing_applicant || '—') + '</p>' +
+                            '<p><strong>Type:</strong> ' + _ossEsc(body.existing_type || '—') + '</p>' +
+                            '<p><strong>Created:</strong> ' + _ossEsc(body.existing_date || '—') + '</p>' +
+                            '</div>'
+                    });
+                } else {
+                    _ossDoSave(id, isEdit, payload);
+                }
+            })
+            .catch(function () {
+                // On network error, proceed with save (server will also check)
                 _ossDoSave(id, isEdit, payload);
-            }
-        })
-        .catch(function () {
-            // On network error, proceed with save (server will also check)
-            _ossDoSave(id, isEdit, payload);
-        });
+            });
         return;
     }
 
@@ -1310,7 +1337,11 @@ function _ossValidatePayload(payload) {
     var type = payload.application_type || 'residential';
 
     if (_ossIsChangeOfNamePage() && _ossLinkedPraData && !_ossLinkedPraData.has_transfer_of_title) {
-        errors.push('The selected file number has no Transfer of Title (OP) record in PRA. Change of Name cannot proceed.');
+        // Only block if manual OP serial is also missing
+        var manualOp = (payload.op_serial_number || '').trim();
+        if (!manualOp) {
+            errors.push('The selected file number has no Transfer of Title (OP) record in PRA. Please enter the OP Serial Number manually below the file lookup.');
+        }
     }
 
     // File number is required for all types
@@ -1340,12 +1371,12 @@ function _ossValidatePayload(payload) {
         // Passport photo: required for new residential applications, or when no
         // existing photo is loaded in edit mode.
         var passportInput = document.getElementById('oss_res_passport_input');
-        var passportImg   = document.getElementById('oss_res_passport_img');
-        var hasFile       = !!(passportInput && passportInput.files && passportInput.files[0]);
-        var hasExisting   = !!(passportImg && !passportImg.classList.contains('hidden') && passportImg.src && passportImg.src.indexOf('data:') !== 0);
+        var passportImg = document.getElementById('oss_res_passport_img');
+        var hasFile = !!(passportInput && passportInput.files && passportInput.files[0]);
+        var hasExisting = !!(passportImg && !passportImg.classList.contains('hidden') && passportImg.src && passportImg.src.indexOf('data:') !== 0);
         // For edit mode, an existing passport (loaded from server as URL) counts as valid.
         // For new applications, a file must be picked.
-        var idEl  = document.getElementById('oss_id');
+        var idEl = document.getElementById('oss_id');
         var isEdt = !!(idEl && idEl.value);
         if (!hasFile && !(isEdt && hasExisting)) {
             errors.push('A passport photograph (JPEG/PNG, max 2 MB) is required for residential applications.');
@@ -1410,9 +1441,9 @@ function _ossValidatePayload(payload) {
  * Actually submit the form (called after validation & duplicate check pass).
  */
 function _ossDoSave(id, isEdit, payload) {
-    var submitBtn  = document.getElementById('ossSubmitBtn');
+    var submitBtn = document.getElementById('ossSubmitBtn');
     var submitText = document.getElementById('ossSubmitText');
-    var origText   = submitText.textContent;
+    var origText = submitText.textContent;
     submitBtn.disabled = true;
     submitText.textContent = 'Saving...';
 
@@ -1422,7 +1453,7 @@ function _ossDoSave(id, isEdit, payload) {
         payload.system_source = 'OSSOPCHANGEOFNAME';
     }
 
-    var url    = isEdit ? OSS_BASE_URL + '/' + id : OSS_BASE_URL;
+    var url = isEdit ? OSS_BASE_URL + '/' + id : OSS_BASE_URL;
 
     // Use FormData to support file upload (passport photo)
     var formData = new FormData();
@@ -1447,39 +1478,39 @@ function _ossDoSave(id, isEdit, payload) {
         },
         body: formData
     })
-    .then(function (res) { return res.json().then(function (data) { return { status: res.status, body: data }; }); })
-    .then(function (result) {
-        submitBtn.disabled = false;
-        submitText.textContent = origText;
+        .then(function (res) { return res.json().then(function (data) { return { status: res.status, body: data }; }); })
+        .then(function (result) {
+            submitBtn.disabled = false;
+            submitText.textContent = origText;
 
-        if (result.body.success) {
-            Swal.fire({
-                icon: 'success',
-                title: isEdit ? 'Updated' : 'Created',
-                text: result.body.message,
-                timer: 1800,
-                showConfirmButton: false
-            });
-            ossCloseModal();
-            setTimeout(function () { location.reload(); }, 1000);
-        } else {
-            var errMsg = result.body.message || 'An error occurred.';
-            if (result.body.errors) {
-                var errList = [];
-                Object.values(result.body.errors).forEach(function (arr) {
-                    arr.forEach(function (e) { errList.push(e); });
+            if (result.body.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: isEdit ? 'Updated' : 'Created',
+                    text: result.body.message,
+                    timer: 1800,
+                    showConfirmButton: false
                 });
-                errMsg += '\n' + errList.join('\n');
+                ossCloseModal();
+                setTimeout(function () { location.reload(); }, 1000);
+            } else {
+                var errMsg = result.body.message || 'An error occurred.';
+                if (result.body.errors) {
+                    var errList = [];
+                    Object.values(result.body.errors).forEach(function (arr) {
+                        arr.forEach(function (e) { errList.push(e); });
+                    });
+                    errMsg += '\n' + errList.join('\n');
+                }
+                Swal.fire({ icon: 'error', title: 'Error', text: errMsg });
             }
-            Swal.fire({ icon: 'error', title: 'Error', text: errMsg });
-        }
-    })
-    .catch(function (err) {
-        submitBtn.disabled = false;
-        submitText.textContent = origText;
-        console.error('OSS save error:', err);
-        Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
-    });
+        })
+        .catch(function (err) {
+            submitBtn.disabled = false;
+            submitText.textContent = origText;
+            console.error('OSS save error:', err);
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
+        });
 }
 
 
@@ -1491,7 +1522,7 @@ function ossViewRecord(btn) {
     if (!data) { alert('Could not read record data.'); return; }
 
     var type = data.application_type || 'residential';
-    var typeBadge  = '<span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold uppercase oss-badge-' + type + '">' + type.toUpperCase() + '</span>';
+    var typeBadge = '<span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold uppercase oss-badge-' + type + '">' + type.toUpperCase() + '</span>';
     var statusBadge = '<span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold uppercase oss-status-' + (data.status || 'pending') + '">' + (data.status || 'pending').toUpperCase() + '</span>';
 
     var html = '<div class="space-y-4">';
@@ -1529,11 +1560,11 @@ function ossViewRecord(btn) {
                 if (Array.isArray(entries)) {
                     var prevHtml = '';
                     entries.forEach(function (e, i) {
-                        prevHtml += '<div class="text-xs text-slate-600">(' + (i+1) + ') Plot: ' + (e.plot_no||'—') + ' | Location: ' + (e.location||'—') + ' | C of O: ' + (e.cert_no||'—') + '</div>';
+                        prevHtml += '<div class="text-xs text-slate-600">(' + (i + 1) + ') Plot: ' + (e.plot_no || '—') + ' | Location: ' + (e.location || '—') + ' | C of O: ' + (e.cert_no || '—') + '</div>';
                     });
                     html += '<div class="pl-4 mb-3">' + prevHtml + '</div>';
                 }
-            } catch(e) {
+            } catch (e) {
                 html += _vRow('Previous Details', data.prev_allocation_details);
             }
         }
@@ -1906,7 +1937,7 @@ function _ossOpenRecommendationModal(data) {
                     if (printBtn) printBtn.disabled = false;
                 }
             })
-            .catch(function () {});
+            .catch(function () { });
     }
 }
 
@@ -2010,7 +2041,7 @@ function saveAcknowledgement() {
             file_no: document.getElementById('ack_file_no')?.value || '',
             signature_name: payload.sig_applicant_name
         })
-    }).catch(function () {});
+    }).catch(function () { });
 
     Swal.fire({ icon: 'success', title: 'Saved', text: 'Acknowledgement data captured successfully.', timer: 1800, showConfirmButton: false });
     var printBtn = document.getElementById('ackPrintBtn');
@@ -2060,19 +2091,19 @@ function saveRecommendation() {
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': OSS_CSRF, 'Accept': 'application/json' },
         body: JSON.stringify(payload)
     })
-    .then(function (res) { return res.json(); })
-    .then(function (result) {
-        if (result && result.success) {
-            Swal.fire({ icon: 'success', title: 'Saved', text: result.message || 'Recommendation saved successfully.', timer: 1800, showConfirmButton: false });
-            var printBtn = document.getElementById('recPrintBtn');
-            if (printBtn) printBtn.disabled = false;
-        } else {
-            Swal.fire({ icon: 'error', title: 'Error', text: (result && result.message) || 'Could not save recommendation.' });
-        }
-    })
-    .catch(function () {
-        Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
-    });
+        .then(function (res) { return res.json(); })
+        .then(function (result) {
+            if (result && result.success) {
+                Swal.fire({ icon: 'success', title: 'Saved', text: result.message || 'Recommendation saved successfully.', timer: 1800, showConfirmButton: false });
+                var printBtn = document.getElementById('recPrintBtn');
+                if (printBtn) printBtn.disabled = false;
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: (result && result.message) || 'Could not save recommendation.' });
+            }
+        })
+        .catch(function () {
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
+        });
 }
 
 function printRecommendation() {
@@ -2138,19 +2169,19 @@ function saveVerification() {
         headers: { 'X-CSRF-TOKEN': OSS_CSRF, 'Accept': 'application/json' },
         body: formData
     })
-    .then(function (res) { return res.json(); })
-    .then(function (result) {
-        if (result && result.success) {
-            Swal.fire({ icon: 'success', title: 'Saved', text: result.message || 'Verification data saved.', timer: 1800, showConfirmButton: false });
-            var printBtn = document.getElementById('verPrintBtn');
-            if (printBtn) printBtn.disabled = false;
-        } else {
-            Swal.fire({ icon: 'error', title: 'Error', text: (result && result.message) || 'Could not save verification.' });
-        }
-    })
-    .catch(function () {
-        Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
-    });
+        .then(function (res) { return res.json(); })
+        .then(function (result) {
+            if (result && result.success) {
+                Swal.fire({ icon: 'success', title: 'Saved', text: result.message || 'Verification data saved.', timer: 1800, showConfirmButton: false });
+                var printBtn = document.getElementById('verPrintBtn');
+                if (printBtn) printBtn.disabled = false;
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: (result && result.message) || 'Could not save verification.' });
+            }
+        })
+        .catch(function () {
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
+        });
 }
 
 function printVerification() {
@@ -2219,19 +2250,19 @@ function ossDeleteRecord(btn) {
                 'Accept': 'application/json'
             }
         })
-        .then(function (res) { return res.json(); })
-        .then(function (body) {
-            if (body.success) {
-                Swal.fire({ icon: 'success', title: 'Deleted', text: body.message, timer: 1500, showConfirmButton: false });
-                setTimeout(function () { location.reload(); }, 1000);
-            } else {
-                Swal.fire({ icon: 'error', title: 'Error', text: body.message || 'Could not delete.' });
-            }
-        })
-        .catch(function (err) {
-            console.error('OSS delete error:', err);
-            Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
-        });
+            .then(function (res) { return res.json(); })
+            .then(function (body) {
+                if (body.success) {
+                    Swal.fire({ icon: 'success', title: 'Deleted', text: body.message, timer: 1500, showConfirmButton: false });
+                    setTimeout(function () { location.reload(); }, 1000);
+                } else {
+                    Swal.fire({ icon: 'error', title: 'Error', text: body.message || 'Could not delete.' });
+                }
+            })
+            .catch(function (err) {
+                console.error('OSS delete error:', err);
+                Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
+            });
     });
 }
 
@@ -2245,10 +2276,10 @@ function ossDeleteRecord(btn) {
  * Keys: Change_of_Name, Processing_Fee, survey_fee (Survey Deposit), Application_Form
  */
 var _ossBillRates = {
-    residential:  { Change_of_Name: 25000, Processing_Fee: 3000,  survey_fee: 10000, Application_Form: 2000  },
-    commercial:   { Change_of_Name: 25000, Processing_Fee: 20000, survey_fee: 20000, Application_Form: 10000 },
-    industrial:   { Change_of_Name: 25000, Processing_Fee: 30000, survey_fee: 30000, Application_Form: 20000 },
-    agricultural: { Change_of_Name: 25000, Processing_Fee: 3000,  survey_fee: 10000, Application_Form: 2000  }
+    residential: { Change_of_Name: 25000, Processing_Fee: 3000, survey_fee: 10000, Application_Form: 2000 },
+    commercial: { Change_of_Name: 25000, Processing_Fee: 20000, survey_fee: 20000, Application_Form: 10000 },
+    industrial: { Change_of_Name: 25000, Processing_Fee: 30000, survey_fee: 30000, Application_Form: 20000 },
+    agricultural: { Change_of_Name: 25000, Processing_Fee: 3000, survey_fee: 10000, Application_Form: 2000 }
 };
 
 function _ossFormatMoney(n) {
@@ -2267,9 +2298,9 @@ function _ossTitleCase(str) {
 function _ossFillBillAmounts(type) {
     var rates = _ossBillRates[type] || _ossBillRates['residential'];
     document.getElementById('ossBill_application_type').value = type;
-    document.getElementById('ossBill_change_of_name').value  = Number(rates.Change_of_Name).toLocaleString('en-NG');
-    document.getElementById('ossBill_processing_fee').value  = Number(rates.Processing_Fee).toLocaleString('en-NG');
-    document.getElementById('ossBill_survey_deposit').value   = Number(rates.survey_fee).toLocaleString('en-NG');
+    document.getElementById('ossBill_change_of_name').value = Number(rates.Change_of_Name).toLocaleString('en-NG');
+    document.getElementById('ossBill_processing_fee').value = Number(rates.Processing_Fee).toLocaleString('en-NG');
+    document.getElementById('ossBill_survey_deposit').value = Number(rates.survey_fee).toLocaleString('en-NG');
     document.getElementById('ossBill_application_form').value = Number(rates.Application_Form).toLocaleString('en-NG');
     var total = rates.Change_of_Name + rates.Processing_Fee + rates.survey_fee + rates.Application_Form;
     document.getElementById('ossBill_total').textContent = _ossFormatMoney(total);
@@ -2290,7 +2321,7 @@ function ossBillRecord(btn) {
     var data = _ossGetRecord(btn);
     if (!data) return Swal.fire({ icon: 'error', title: 'Error', text: 'Could not load record data.' });
 
-    var type  = (data.application_type || 'residential').toLowerCase();
+    var type = (data.application_type || 'residential').toLowerCase();
 
     document.getElementById('ossBill_application_id').value = data.id;
 
@@ -2305,9 +2336,9 @@ function ossBillRecord(btn) {
 
     // Type-based header colour
     var headerColours = {
-        residential:  'from-green-600 to-green-700',
-        commercial:   'from-blue-600 to-blue-700',
-        industrial:   'from-red-600 to-red-700',
+        residential: 'from-green-600 to-green-700',
+        commercial: 'from-blue-600 to-blue-700',
+        industrial: 'from-red-600 to-red-700',
         agricultural: 'from-emerald-600 to-emerald-700'
     };
     var hdr = document.getElementById('ossBillModalHeader');
@@ -2326,21 +2357,21 @@ function ossBillRecord(btn) {
         method: 'GET',
         headers: { 'Accept': 'application/json' }
     })
-    .then(function (res) { return res.json(); })
-    .then(function (result) {
-        if (!billBtn) return;
-        if (result && result.success && result.data && result.data.exists) {
-            billBtn.dataset.mode = 'print';
-            billBtn.innerHTML = '<i data-lucide="printer" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Print Bill';
-        } else {
-            billBtn.dataset.mode = 'save';
-            billBtn.innerHTML = '<i data-lucide="save" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Save Bill';
-        }
-        if (window.lucide) window.lucide.createIcons();
-    })
-    .catch(function () {
-        // Keep default save mode if status lookup fails
-    });
+        .then(function (res) { return res.json(); })
+        .then(function (result) {
+            if (!billBtn) return;
+            if (result && result.success && result.data && result.data.exists) {
+                billBtn.dataset.mode = 'print';
+                billBtn.innerHTML = '<i data-lucide="printer" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Print Bill';
+            } else {
+                billBtn.dataset.mode = 'save';
+                billBtn.innerHTML = '<i data-lucide="save" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Save Bill';
+            }
+            if (window.lucide) window.lucide.createIcons();
+        })
+        .catch(function () {
+            // Keep default save mode if status lookup fails
+        });
 
     document.getElementById('ossBillModal').classList.remove('hidden');
     if (window.lucide) window.lucide.createIcons();
@@ -2378,41 +2409,41 @@ function ossSaveBill() {
         },
         body: JSON.stringify({})
     })
-    .then(function (res) { return res.json().then(function(body) { return { ok: res.ok, body: body }; }); })
-    .then(function (result) {
-        if (saveBtn) { saveBtn.disabled = false; }
+        .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })
+        .then(function (result) {
+            if (saveBtn) { saveBtn.disabled = false; }
 
-        if (result.body.success) {
-            if (saveBtn) {
-                saveBtn.dataset.mode = 'print';
-                saveBtn.innerHTML = '<i data-lucide="printer" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Print Bill';
-            }
-            ossCloseBillModal();
-            Swal.fire({ icon: 'success', title: 'Bill Ready', text: result.body.message, timer: 1200, showConfirmButton: false });
-            window.open('/lands-one-stop-shop/bill/' + appId + '/print', '_blank');
-        } else {
-            var msg = (result.body && result.body.message) ? String(result.body.message) : '';
-            if (msg.toLowerCase().indexOf('already been generated') !== -1) {
+            if (result.body.success) {
                 if (saveBtn) {
                     saveBtn.dataset.mode = 'print';
                     saveBtn.innerHTML = '<i data-lucide="printer" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Print Bill';
                 }
                 ossCloseBillModal();
+                Swal.fire({ icon: 'success', title: 'Bill Ready', text: result.body.message, timer: 1200, showConfirmButton: false });
                 window.open('/lands-one-stop-shop/bill/' + appId + '/print', '_blank');
             } else {
-                if (saveBtn) {
-                    saveBtn.dataset.mode = 'save';
-                    saveBtn.innerHTML = '<i data-lucide="save" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Save Bill';
+                var msg = (result.body && result.body.message) ? String(result.body.message) : '';
+                if (msg.toLowerCase().indexOf('already been generated') !== -1) {
+                    if (saveBtn) {
+                        saveBtn.dataset.mode = 'print';
+                        saveBtn.innerHTML = '<i data-lucide="printer" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Print Bill';
+                    }
+                    ossCloseBillModal();
+                    window.open('/lands-one-stop-shop/bill/' + appId + '/print', '_blank');
+                } else {
+                    if (saveBtn) {
+                        saveBtn.dataset.mode = 'save';
+                        saveBtn.innerHTML = '<i data-lucide="save" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Save Bill';
+                    }
+                    Swal.fire({ icon: 'error', title: 'Error', text: result.body.message || 'Could not generate bill.' });
                 }
-                Swal.fire({ icon: 'error', title: 'Error', text: result.body.message || 'Could not generate bill.' });
             }
-        }
 
-        if (window.lucide) window.lucide.createIcons();
-    })
-    .catch(function (err) {
-        console.error('OSS bill error:', err);
-        if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = '<i data-lucide="save" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Save Bill'; saveBtn.dataset.mode = 'save'; }
-        Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
-    });
+            if (window.lucide) window.lucide.createIcons();
+        })
+        .catch(function (err) {
+            console.error('OSS bill error:', err);
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = '<i data-lucide="save" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Save Bill'; saveBtn.dataset.mode = 'save'; }
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
+        });
 }

@@ -60,8 +60,8 @@ class PropertyRecordController extends Controller
 
         if ($fileNumber === '') {
             return response()->json([
-                'success'   => true,
-                'matches'   => [],
+                'success' => true,
+                'matches' => [],
                 'duplicate' => null,
                 'lock_form' => false,
             ]);
@@ -71,8 +71,8 @@ class PropertyRecordController extends Controller
         $isCofOType = in_array($transactionType, self::COFO_TRANSACTION_TYPES, true);
 
         $cofoTypeMap = [
-            'Certificate of Occupancy'      => 'Legacy CofO',
-            'ST Certificate of Occupancy'   => 'ST CofO',
+            'Certificate of Occupancy' => 'Legacy CofO',
+            'ST Certificate of Occupancy' => 'ST CofO',
             'SLTR Certificate of Occupancy' => 'SLTR CofO',
         ];
         $cofoType = $isCofOType ? ($cofoTypeMap[$transactionType] ?? null) : null;
@@ -85,11 +85,11 @@ class PropertyRecordController extends Controller
                 })
                 ->where(function ($q) use ($fileNumber) {
                     $q->where('mlsFNo', $fileNumber)
-                      ->orWhere('kangisFileNo', $fileNumber)
-                      ->orWhere('NewKANGISFileno', $fileNumber)
-                      ->orWhere('np_fileno', $fileNumber)
-                      ->orWhere('temp_fileno', $fileNumber)
-                      ->orWhere('fileno', $fileNumber);
+                        ->orWhere('kangisFileNo', $fileNumber)
+                        ->orWhere('NewKANGISFileno', $fileNumber)
+                        ->orWhere('np_fileno', $fileNumber)
+                        ->orWhere('temp_fileno', $fileNumber)
+                        ->orWhere('fileno', $fileNumber);
                 });
 
             $matches = (clone $baseQuery)->orderByDesc('id')->limit(10)->get();
@@ -138,20 +138,26 @@ class PropertyRecordController extends Controller
 
                 if ($regNo !== '' && (string) ($row->regNo ?? '') === $regNo) {
                     $hits++;
-                } elseif ($vol !== '' && $page !== '' && $serial !== ''
+                } elseif (
+                    $vol !== '' && $page !== '' && $serial !== ''
                     && (string) ($row->volumeNo ?? '') === $vol
                     && (string) ($row->pageNo ?? '') === $page
-                    && (string) ($row->serialNo ?? '') === $serial) {
+                    && (string) ($row->serialNo ?? '') === $serial
+                ) {
                     $hits++;
                 }
 
-                if ($lga !== '' && !empty($row->lgsaOrCity)
-                    && strcasecmp((string) $row->lgsaOrCity, $lga) === 0) {
+                if (
+                    $lga !== '' && !empty($row->lgsaOrCity)
+                    && strcasecmp((string) $row->lgsaOrCity, $lga) === 0
+                ) {
                     $hits++;
                 }
 
-                if ($location !== '' && !empty($row->location)
-                    && stripos((string) $row->location, $location) !== false) {
+                if (
+                    $location !== '' && !empty($row->location)
+                    && stripos((string) $row->location, $location) !== false
+                ) {
                     $hits++;
                 }
 
@@ -162,12 +168,12 @@ class PropertyRecordController extends Controller
                 }
             }
             return response()->json([
-                'success'        => true,
-                'matches'        => $matches,
-                'duplicate'      => $lockingRecord,
+                'success' => true,
+                'matches' => $matches,
+                'duplicate' => $lockingRecord,
                 'duplicate_type' => 'cofo_staging',
-                'lock_form'      => $lockForm,
-                'message'        => $lockForm
+                'lock_form' => $lockForm,
+                'message' => $lockForm
                     ? 'A Certificate of Occupancy with matching details already exists for file number ' . $fileNumber . '.'
                     : null,
             ]);
@@ -181,10 +187,10 @@ class PropertyRecordController extends Controller
                 // NOTE: the `pra` table does NOT carry an `np_fileno` column, so it
                 // must be excluded from this OR-clause even though CofO_staging has it.
                 $q->whereRaw('UPPER(LTRIM(RTRIM(mlsFNo))) = ?', [strtoupper($fileNumber)])
-                  ->orWhereRaw('UPPER(LTRIM(RTRIM(kangisFileNo))) = ?', [strtoupper($fileNumber)])
-                  ->orWhereRaw('UPPER(LTRIM(RTRIM(NewKANGISFileno))) = ?', [strtoupper($fileNumber)])
-                  ->orWhereRaw('UPPER(LTRIM(RTRIM(temp_fileno))) = ?', [strtoupper($fileNumber)])
-                  ->orWhereRaw('UPPER(LTRIM(RTRIM(fileno))) = ?', [strtoupper($fileNumber)]);
+                    ->orWhereRaw('UPPER(LTRIM(RTRIM(kangisFileNo))) = ?', [strtoupper($fileNumber)])
+                    ->orWhereRaw('UPPER(LTRIM(RTRIM(NewKANGISFileno))) = ?', [strtoupper($fileNumber)])
+                    ->orWhereRaw('UPPER(LTRIM(RTRIM(temp_fileno))) = ?', [strtoupper($fileNumber)])
+                    ->orWhereRaw('UPPER(LTRIM(RTRIM(fileno))) = ?', [strtoupper($fileNumber)]);
             })
             ->when($transactionType !== '', function ($query) use ($transactionType) {
                 // Older rows stored the instrument in `instrument_type`; newer rows
@@ -192,7 +198,7 @@ class PropertyRecordController extends Controller
                 $upTxn = strtoupper($transactionType);
                 $query->where(function ($q) use ($upTxn) {
                     $q->whereRaw('UPPER(LTRIM(RTRIM(transaction_type))) = ?', [$upTxn])
-                      ->orWhereRaw('UPPER(LTRIM(RTRIM(instrument_type))) = ?', [$upTxn]);
+                        ->orWhereRaw('UPPER(LTRIM(RTRIM(instrument_type))) = ?', [$upTxn]);
                 });
             })
             ->orderByDesc('id')
@@ -240,27 +246,35 @@ class PropertyRecordController extends Controller
                     }
                 }
 
-                if ($transactionDate && !empty($row->transaction_date)
-                    && substr((string) $row->transaction_date, 0, 10) === substr((string) $transactionDate, 0, 10)) {
+                if (
+                    $transactionDate && !empty($row->transaction_date)
+                    && substr((string) $row->transaction_date, 0, 10) === substr((string) $transactionDate, 0, 10)
+                ) {
                     $hits++;
                 }
 
                 if ($regNo !== '' && (string) ($row->regNo ?? '') === $regNo) {
                     $hits++;
-                } elseif ($vol !== '' && $page !== '' && $serial !== ''
+                } elseif (
+                    $vol !== '' && $page !== '' && $serial !== ''
                     && (string) ($row->volumeNo ?? '') === $vol
                     && (string) ($row->pageNo ?? '') === $page
-                    && (string) ($row->serialNo ?? '') === $serial) {
+                    && (string) ($row->serialNo ?? '') === $serial
+                ) {
                     $hits++;
                 }
 
-                if ($lga !== '' && !empty($row->lgsaOrCity)
-                    && strcasecmp((string) $row->lgsaOrCity, $lga) === 0) {
+                if (
+                    $lga !== '' && !empty($row->lgsaOrCity)
+                    && strcasecmp((string) $row->lgsaOrCity, $lga) === 0
+                ) {
                     $hits++;
                 }
 
-                if ($location !== '' && !empty($row->location)
-                    && stripos((string) $row->location, $location) !== false) {
+                if (
+                    $location !== '' && !empty($row->location)
+                    && stripos((string) $row->location, $location) !== false
+                ) {
                     $hits++;
                 }
 
@@ -273,12 +287,12 @@ class PropertyRecordController extends Controller
         }
 
         return response()->json([
-            'success'        => true,
-            'matches'        => $praMatches,
-            'duplicate'      => $lockingPraRecord ?? $praDuplicate,
+            'success' => true,
+            'matches' => $praMatches,
+            'duplicate' => $lockingPraRecord ?? $praDuplicate,
             'duplicate_type' => 'pra',
-            'lock_form'      => $lockForm,
-            'message'        => $lockForm
+            'lock_form' => $lockForm,
+            'message' => $lockForm
                 ? 'A ' . $transactionType . ' with matching details already exists for file number ' . $fileNumber . '.'
                 : null,
         ]);
@@ -592,8 +606,8 @@ class PropertyRecordController extends Controller
         $isCofOSubmission = !$isIndexMode && in_array($incomingTransactionType, self::COFO_TRANSACTION_TYPES, true);
 
         $cofoTypeMap = [
-            'Certificate of Occupancy'      => 'Legacy CofO',
-            'ST Certificate of Occupancy'   => 'ST CofO',
+            'Certificate of Occupancy' => 'Legacy CofO',
+            'ST Certificate of Occupancy' => 'ST CofO',
             'SLTR Certificate of Occupancy' => 'SLTR CofO',
         ];
 
@@ -620,11 +634,11 @@ class PropertyRecordController extends Controller
 
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
-                    'success'        => false,
-                    'message'        => $errorMsg,
-                    'duplicate'      => $duplicateFound,
+                    'success' => false,
+                    'message' => $errorMsg,
+                    'duplicate' => $duplicateFound,
                     'duplicate_type' => $dupType,
-                    'lock_form'      => $isCofOSubmission,
+                    'lock_form' => $isCofOSubmission,
                 ], 422);
             }
             return redirect()->back()->with('error', $errorMsg)->withInput();
@@ -717,44 +731,59 @@ class PropertyRecordController extends Controller
         // Add conditional validation for parties based on transaction type
         $validator->after(function ($validator) use ($request) {
             $tx = strtolower((string) $request->transactionType);
-            if (!$tx) return;
+            if (!$tx)
+                return;
 
-            $hasFirst = $request->filled('firstParty') || $request->filled('Assignor') || $request->filled('Mortgagor') || 
-                        $request->filled('Vendor') || $request->filled('Donor') || $request->filled('Surrenderor') || 
-                        $request->filled('Lessor') || $request->filled('Grantor');
-                        
-            $hasSecond = $request->filled('secondParty') || $request->filled('Assignee') || $request->filled('Mortgagee') || 
-                         $request->filled('Purchaser') || $request->filled('Donee') || $request->filled('Surrenderee') || 
-                         $request->filled('Lessee') || $request->filled('Grantee');
+            $hasFirst = $request->filled('firstParty') || $request->filled('Assignor') || $request->filled('Mortgagor') ||
+                $request->filled('Vendor') || $request->filled('Donor') || $request->filled('Surrenderor') ||
+                $request->filled('Lessor') || $request->filled('Grantor');
+
+            $hasSecond = $request->filled('secondParty') || $request->filled('Assignee') || $request->filled('Mortgagee') ||
+                $request->filled('Purchaser') || $request->filled('Donee') || $request->filled('Surrenderee') ||
+                $request->filled('Lessee') || $request->filled('Grantee');
 
             if (strpos($tx, 'assignment') !== false) {
-                if (!$hasFirst) $validator->errors()->add('Assignor', 'The Assignor name is required for Assignment transactions.');
-                if (!$hasSecond) $validator->errors()->add('Assignee', 'The Assignee name is required for Assignment transactions.');
+                if (!$hasFirst)
+                    $validator->errors()->add('Assignor', 'The Assignor name is required for Assignment transactions.');
+                if (!$hasSecond)
+                    $validator->errors()->add('Assignee', 'The Assignee name is required for Assignment transactions.');
             } elseif (strpos($tx, 'mortgage') !== false) {
-                if (!$hasFirst) $validator->errors()->add('Mortgagor', 'The Mortgagor name is required for Mortgage transactions.');
-                if (!$hasSecond) $validator->errors()->add('Mortgagee', 'The Mortgagee name is required for Mortgage transactions.');
-                
+                if (!$hasFirst)
+                    $validator->errors()->add('Mortgagor', 'The Mortgagor name is required for Mortgage transactions.');
+                if (!$hasSecond)
+                    $validator->errors()->add('Mortgagee', 'The Mortgagee name is required for Mortgage transactions.');
+
                 if (strpos($tx, 'tripartite') !== false) {
                     if (!$request->filled('thirdParty') && !$request->filled('Mortgagor_2')) {
                         $validator->errors()->add('thirdParty', 'A second Mortgagor/Co-mortgagor is required for Tripartite Mortgage.');
                     }
                 }
             } elseif (strpos($tx, 'purchase') !== false) {
-                if (!$hasFirst) $validator->errors()->add('Vendor', 'The Vendor name is required for Purchase transactions.');
-                if (!$hasSecond) $validator->errors()->add('Purchaser', 'The Purchaser name is required for Purchase transactions.');
+                if (!$hasFirst)
+                    $validator->errors()->add('Vendor', 'The Vendor name is required for Purchase transactions.');
+                if (!$hasSecond)
+                    $validator->errors()->add('Purchaser', 'The Purchaser name is required for Purchase transactions.');
             } elseif (strpos($tx, 'gift') !== false) {
-                if (!$hasFirst) $validator->errors()->add('Donor', 'The Donor name is required for Gift transactions.');
-                if (!$hasSecond) $validator->errors()->add('Donee', 'The Donee name is required for Gift transactions.');
+                if (!$hasFirst)
+                    $validator->errors()->add('Donor', 'The Donor name is required for Gift transactions.');
+                if (!$hasSecond)
+                    $validator->errors()->add('Donee', 'The Donee name is required for Gift transactions.');
             } elseif (strpos($tx, 'surrender') !== false) {
-                if (!$hasFirst) $validator->errors()->add('Surrenderor', 'The Surrenderor name is required for Surrender transactions.');
-                if (!$hasSecond) $validator->errors()->add('Surrenderee', 'The Surrenderee name is required for Surrender transactions.');
+                if (!$hasFirst)
+                    $validator->errors()->add('Surrenderor', 'The Surrenderor name is required for Surrender transactions.');
+                if (!$hasSecond)
+                    $validator->errors()->add('Surrenderee', 'The Surrenderee name is required for Surrender transactions.');
             } elseif (strpos($tx, 'lease') !== false) {
-                if (!$hasFirst) $validator->errors()->add('Lessor', 'The Lessor name is required for Lease transactions.');
-                if (!$hasSecond) $validator->errors()->add('Lessee', 'The Lessee name is required for Lease transactions.');
+                if (!$hasFirst)
+                    $validator->errors()->add('Lessor', 'The Lessor name is required for Lease transactions.');
+                if (!$hasSecond)
+                    $validator->errors()->add('Lessee', 'The Lessee name is required for Lease transactions.');
             } elseif ($tx !== '') {
                 // Default fallback
-                if (!$hasFirst) $validator->errors()->add('firstParty', 'The first party name is required.');
-                if (!$hasSecond) $validator->errors()->add('secondParty', 'The second party name is required.');
+                if (!$hasFirst)
+                    $validator->errors()->add('firstParty', 'The first party name is required.');
+                if (!$hasSecond)
+                    $validator->errors()->add('secondParty', 'The second party name is required.');
             }
         });
 
@@ -885,9 +914,9 @@ class PropertyRecordController extends Controller
             }
 
             // Create registration number from components (use "0" for null values and strip leading zeros)
-            $serialNo = $request->serialNo ? (string)intval(preg_replace('/\D/', '', $request->serialNo)) : '0';
-            $pageNo = $request->pageNo ? (string)intval(preg_replace('/\D/', '', $request->pageNo)) : '0';
-            $volumeNo = $request->volumeNo ? (string)intval(preg_replace('/\D/', '', $request->volumeNo)) : '0';
+            $serialNo = $request->serialNo ? (string) intval(preg_replace('/\D/', '', $request->serialNo)) : '0';
+            $pageNo = $request->pageNo ? (string) intval(preg_replace('/\D/', '', $request->pageNo)) : '0';
+            $volumeNo = $request->volumeNo ? (string) intval(preg_replace('/\D/', '', $request->volumeNo)) : '0';
             $regNo = $serialNo . '/' . $pageNo . '/' . $volumeNo;
 
             // Get transaction-specific party information (robust to labels and field names)
@@ -1162,21 +1191,22 @@ class PropertyRecordController extends Controller
             if (is_array($extraRegs) && count($extraRegs) > 0) {
                 foreach ($extraRegs as $reg) {
                     $regSerial = isset($reg['serial_no']) ? trim((string) $reg['serial_no']) : null;
-                    $regPage   = isset($reg['page_no'])   ? trim((string) $reg['page_no'])   : null;
-                    $regVol    = isset($reg['volume_no']) ? trim((string) $reg['volume_no']) : null;
+                    $regPage = isset($reg['page_no']) ? trim((string) $reg['page_no']) : null;
+                    $regVol = isset($reg['volume_no']) ? trim((string) $reg['volume_no']) : null;
                     // Skip rows with no data at all
                     $hasAnyData = $regSerial || $regPage || $regVol
                         || !empty($reg['transaction_date']) || !empty($reg['deeds_date'])
                         || !empty($reg['land_use']) || !empty($reg['period']);
-                    if (!$hasAnyData) continue;
+                    if (!$hasAnyData)
+                        continue;
                     $extraRegNo = ($regSerial || $regPage || $regVol)
                         ? implode('/', [$regSerial ?: '0', $regPage ?: '0', $regVol ?: '0'])
                         : null;
                     $extraData = $primaryRecordData;
                     $extraData['serialNo'] = $regSerial ?: null;
-                    $extraData['pageNo']   = $regPage   ?: null;
-                    $extraData['volumeNo'] = $regVol    ?: null;
-                    $extraData['regNo']    = $extraRegNo;
+                    $extraData['pageNo'] = $regPage ?: null;
+                    $extraData['volumeNo'] = $regVol ?: null;
+                    $extraData['regNo'] = $extraRegNo;
                     // Override per-card fields if provided and column exists in the record
                     if (!empty($reg['transaction_date']) && array_key_exists('transaction_date', $extraData)) {
                         $extraData['transaction_date'] = $reg['transaction_date'];
@@ -1376,44 +1406,59 @@ class PropertyRecordController extends Controller
         // Add conditional validation for parties based on transaction type
         $validator->after(function ($validator) use ($request) {
             $tx = strtolower((string) $request->transactionType);
-            if (!$tx) return;
+            if (!$tx)
+                return;
 
-            $hasFirst = $request->filled('firstParty') || $request->filled('Assignor') || $request->filled('Mortgagor') || 
-                        $request->filled('Vendor') || $request->filled('Donor') || $request->filled('Surrenderor') || 
-                        $request->filled('Lessor') || $request->filled('Grantor');
-                        
-            $hasSecond = $request->filled('secondParty') || $request->filled('Assignee') || $request->filled('Mortgagee') || 
-                         $request->filled('Purchaser') || $request->filled('Donee') || $request->filled('Surrenderee') || 
-                         $request->filled('Lessee') || $request->filled('Grantee');
+            $hasFirst = $request->filled('firstParty') || $request->filled('Assignor') || $request->filled('Mortgagor') ||
+                $request->filled('Vendor') || $request->filled('Donor') || $request->filled('Surrenderor') ||
+                $request->filled('Lessor') || $request->filled('Grantor');
+
+            $hasSecond = $request->filled('secondParty') || $request->filled('Assignee') || $request->filled('Mortgagee') ||
+                $request->filled('Purchaser') || $request->filled('Donee') || $request->filled('Surrenderee') ||
+                $request->filled('Lessee') || $request->filled('Grantee');
 
             if (strpos($tx, 'assignment') !== false) {
-                if (!$hasFirst) $validator->errors()->add('Assignor', 'The Assignor name is required for Assignment transactions.');
-                if (!$hasSecond) $validator->errors()->add('Assignee', 'The Assignee name is required for Assignment transactions.');
+                if (!$hasFirst)
+                    $validator->errors()->add('Assignor', 'The Assignor name is required for Assignment transactions.');
+                if (!$hasSecond)
+                    $validator->errors()->add('Assignee', 'The Assignee name is required for Assignment transactions.');
             } elseif (strpos($tx, 'mortgage') !== false) {
-                if (!$hasFirst) $validator->errors()->add('Mortgagor', 'The Mortgagor name is required for Mortgage transactions.');
-                if (!$hasSecond) $validator->errors()->add('Mortgagee', 'The Mortgagee name is required for Mortgage transactions.');
-                
+                if (!$hasFirst)
+                    $validator->errors()->add('Mortgagor', 'The Mortgagor name is required for Mortgage transactions.');
+                if (!$hasSecond)
+                    $validator->errors()->add('Mortgagee', 'The Mortgagee name is required for Mortgage transactions.');
+
                 if (strpos($tx, 'tripartite') !== false) {
                     if (!$request->filled('thirdParty') && !$request->filled('Mortgagor_2') && !$request->filled('party_3')) {
                         $validator->errors()->add('thirdParty', 'A second Mortgagor/Co-mortgagor is required for Tripartite Mortgage.');
                     }
                 }
             } elseif (strpos($tx, 'purchase') !== false) {
-                if (!$hasFirst) $validator->errors()->add('Vendor', 'The Vendor name is required for Purchase transactions.');
-                if (!$hasSecond) $validator->errors()->add('Purchaser', 'The Purchaser name is required for Purchase transactions.');
+                if (!$hasFirst)
+                    $validator->errors()->add('Vendor', 'The Vendor name is required for Purchase transactions.');
+                if (!$hasSecond)
+                    $validator->errors()->add('Purchaser', 'The Purchaser name is required for Purchase transactions.');
             } elseif (strpos($tx, 'gift') !== false) {
-                if (!$hasFirst) $validator->errors()->add('Donor', 'The Donor name is required for Gift transactions.');
-                if (!$hasSecond) $validator->errors()->add('Donee', 'The Donee name is required for Gift transactions.');
+                if (!$hasFirst)
+                    $validator->errors()->add('Donor', 'The Donor name is required for Gift transactions.');
+                if (!$hasSecond)
+                    $validator->errors()->add('Donee', 'The Donee name is required for Gift transactions.');
             } elseif (strpos($tx, 'surrender') !== false) {
-                if (!$hasFirst) $validator->errors()->add('Surrenderor', 'The Surrenderor name is required for Surrender transactions.');
-                if (!$hasSecond) $validator->errors()->add('Surrenderee', 'The Surrenderee name is required for Surrender transactions.');
+                if (!$hasFirst)
+                    $validator->errors()->add('Surrenderor', 'The Surrenderor name is required for Surrender transactions.');
+                if (!$hasSecond)
+                    $validator->errors()->add('Surrenderee', 'The Surrenderee name is required for Surrender transactions.');
             } elseif (strpos($tx, 'lease') !== false) {
-                if (!$hasFirst) $validator->errors()->add('Lessor', 'The Lessor name is required for Lease transactions.');
-                if (!$hasSecond) $validator->errors()->add('Lessee', 'The Lessee name is required for Lease transactions.');
+                if (!$hasFirst)
+                    $validator->errors()->add('Lessor', 'The Lessor name is required for Lease transactions.');
+                if (!$hasSecond)
+                    $validator->errors()->add('Lessee', 'The Lessee name is required for Lease transactions.');
             } elseif ($tx !== '') {
                 // Default fallback
-                if (!$hasFirst) $validator->errors()->add('firstParty', 'The first party name is required.');
-                if (!$hasSecond) $validator->errors()->add('secondParty', 'The second party name is required.');
+                if (!$hasFirst)
+                    $validator->errors()->add('firstParty', 'The first party name is required.');
+                if (!$hasSecond)
+                    $validator->errors()->add('secondParty', 'The second party name is required.');
             }
         });
 
@@ -1427,9 +1472,9 @@ class PropertyRecordController extends Controller
 
         try {
             // Create registration number from components (use "0" for null values and strip leading zeros)
-            $serialNo = $request->serialNo ? (string)intval(preg_replace('/\D/', '', $request->serialNo)) : '0';
-            $pageNo = $request->pageNo ? (string)intval(preg_replace('/\D/', '', $request->pageNo)) : '0';
-            $volumeNo = $request->volumeNo ? (string)intval(preg_replace('/\D/', '', $request->volumeNo)) : '0';
+            $serialNo = $request->serialNo ? (string) intval(preg_replace('/\D/', '', $request->serialNo)) : '0';
+            $pageNo = $request->pageNo ? (string) intval(preg_replace('/\D/', '', $request->pageNo)) : '0';
+            $volumeNo = $request->volumeNo ? (string) intval(preg_replace('/\D/', '', $request->volumeNo)) : '0';
             $regNo = $serialNo . '/' . $pageNo . '/' . $volumeNo;
 
             // Get existing property record to preserve file numbers
@@ -2099,7 +2144,10 @@ class PropertyRecordController extends Controller
                     try {
                         $tempFileno = $this->allocateTempFileNumberForImport();
                         $propId = $this->propertyIdAllocationService->allocateOrRetrievePropId(
-                            $tempFileno, null, null, null,
+                            $tempFileno,
+                            null,
+                            null,
+                            null,
                             ['temp_fileno' => $tempFileno, 'allow_temp_only' => true, 'skip_lookup' => true]
                         );
                     } catch (\Throwable $e) {
@@ -2248,22 +2296,23 @@ class PropertyRecordController extends Controller
         // Map to our field names - try multiple possible header spellings
         $find = function (array $candidates) use ($headerLookup) {
             foreach ($candidates as $c) {
-                if (isset($headerLookup[$c])) return $headerLookup[$c];
+                if (isset($headerLookup[$c]))
+                    return $headerLookup[$c];
             }
             return null;
         };
 
         $col = [
-            'serial_no'  => $find(['serialno', 'serial']),
-            'page_no'    => $find(['pageno', 'page']),
-            'volume_no'  => $find(['volno', 'volume', 'volumeno']),
-            'reg_time'   => $find(['regtime']),
-            'reg_date'   => $find(['regdate']),
-            'tp_no'      => $find(['tpno', 'tpnumber']),
+            'serial_no' => $find(['serialno', 'serial']),
+            'page_no' => $find(['pageno', 'page']),
+            'volume_no' => $find(['volno', 'volume', 'volumeno']),
+            'reg_time' => $find(['regtime']),
+            'reg_date' => $find(['regdate']),
+            'tp_no' => $find(['tpno', 'tpnumber']),
             'op_serial_number' => $find(['opserialno', 'opserialnumber', 'opserno']),
-            'plot_no'    => $find(['plotno', 'plotnumber', 'plot']),
-            'district'   => $find(['district']),
-            'allottee'   => $find(['allottee', 'name', 'newparty']),
+            'plot_no' => $find(['plotno', 'plotnumber', 'plot']),
+            'district' => $find(['district']),
+            'allottee' => $find(['allottee', 'name', 'newparty']),
         ];
 
         Log::info('OP import column mapping', ['col' => $col]);
@@ -2276,14 +2325,15 @@ class PropertyRecordController extends Controller
 
             $get = function ($field) use ($csvRow, $col) {
                 $idx = $col[$field];
-                if ($idx === null) return null;
+                if ($idx === null)
+                    return null;
                 $val = trim((string) ($csvRow[$idx] ?? ''));
                 return $val !== '' ? $val : null;
             };
 
-            $opSerial   = $get('op_serial_number');
-            $plotNo     = $get('plot_no');
-            $district   = $get('district');
+            $opSerial = $get('op_serial_number');
+            $plotNo = $get('plot_no');
+            $district = $get('district');
 
             // Skip empty rows
             if ($opSerial === null && $plotNo === null && $district === null) {
@@ -2291,17 +2341,17 @@ class PropertyRecordController extends Controller
             }
 
             $rows[] = [
-                '__row'            => $lineNum,
-                'serial_no'        => $get('serial_no'),
-                'page_no'          => $get('page_no'),
-                'volume_no'        => $get('volume_no'),
-                'reg_time'         => $get('reg_time'),
-                'reg_date'         => $get('reg_date'),
-                'tp_no'            => $get('tp_no'),
+                '__row' => $lineNum,
+                'serial_no' => $get('serial_no'),
+                'page_no' => $get('page_no'),
+                'volume_no' => $get('volume_no'),
+                'reg_time' => $get('reg_time'),
+                'reg_date' => $get('reg_date'),
+                'tp_no' => $get('tp_no'),
                 'op_serial_number' => $opSerial,
-                'plot_no'          => $plotNo,
-                'district'         => $district,
-                'allottee'         => $get('allottee'),
+                'plot_no' => $plotNo,
+                'district' => $district,
+                'allottee' => $get('allottee'),
             ];
         }
 
@@ -2448,7 +2498,7 @@ class PropertyRecordController extends Controller
         try {
             $sequenceId = DB::connection('sqlsrv')->table('temp_fileno_sequence')->insertGetId([
                 'created_by' => Auth::id(),
-                'is_used'    => 1,
+                'is_used' => 1,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -2582,16 +2632,16 @@ class PropertyRecordController extends Controller
             \Log::info('Checking existing property records for file number: ' . $fileNumber);
 
             $variants = $this->buildFileNumberVariants($fileNumber);
-            
+
             \Log::info('Built variants for file number search:', $variants);
 
             // Search for existing property records in file_history_staging
             $existingRecords = DB::connection('sqlsrv')->table(self::PROPERTY_TABLE)
                 ->where(function ($query) use ($variants) {
                     $query->whereIn('mlsFNo', $variants)
-                          ->orWhereIn('kangisFileNo', $variants)
-                          ->orWhereIn('NewKANGISFileno', $variants)
-                          ->orWhereIn('fileno', $variants);
+                        ->orWhereIn('kangisFileNo', $variants)
+                        ->orWhereIn('NewKANGISFileno', $variants)
+                        ->orWhereIn('fileno', $variants);
                 })
                 ->orderByRaw("COALESCE(TRY_CONVERT(DATETIME, NULLIF(transaction_date, '')), TRY_CONVERT(DATETIME, NULLIF(reg_date, '')), created_at) ASC")
                 ->orderBy('id')
@@ -2602,9 +2652,9 @@ class PropertyRecordController extends Controller
             $cofoRecords = DB::connection('sqlsrv')->table(self::COFO_TABLE)
                 ->where(function ($query) use ($variants) {
                     $query->whereIn('mlsFNo', $variants)
-                          ->orWhereIn('fileno', $variants)
-                          ->orWhereIn('kangisFileNo', $variants)
-                          ->orWhereIn('NewKANGISFileno', $variants);
+                        ->orWhereIn('fileno', $variants)
+                        ->orWhereIn('kangisFileNo', $variants)
+                        ->orWhereIn('NewKANGISFileno', $variants);
                 })
                 ->orderByRaw("COALESCE(TRY_CONVERT(DATETIME, NULLIF(transaction_date, '')), created_at) ASC")
                 ->orderBy('id')
@@ -2626,12 +2676,12 @@ class PropertyRecordController extends Controller
             $praRecords = DB::connection('sqlsrv')->table(self::PRA_TABLE)
                 ->where(function ($query) use ($variants) {
                     $query->whereIn('mlsFNo', $variants)
-                          ->orWhereIn('fileno', $variants);
+                        ->orWhereIn('fileno', $variants);
                 })
                 ->where(function ($query) {
                     $query->where('transaction_type', 'like', '%Occupancy Permit%')
-                          ->orWhere('instrument_type', 'like', '%Occupancy Permit%')
-                          ->orWhere('transaction_type', 'like', '%OP%');
+                        ->orWhere('instrument_type', 'like', '%Occupancy Permit%')
+                        ->orWhere('transaction_type', 'like', '%OP%');
                 })
                 ->orderByRaw("COALESCE(TRY_CONVERT(DATETIME, NULLIF(transaction_date, '')), created_at) ASC")
                 ->orderBy('id')
@@ -3097,11 +3147,12 @@ class PropertyRecordController extends Controller
                             ->where('created_at', '>=', now()->subMinutes(2))
                             ->where(function ($q) {
                                 $q->where('transaction_type', 'like', '%Occupancy Permit%')
-                                  ->orWhere('instrument_type', 'like', '%Occupancy Permit%');
+                                    ->orWhere('instrument_type', 'like', '%Occupancy Permit%');
                             })
                             ->where(function ($query) use ($mlsFNo, $fileNumber) {
                                 $query->where('fileno', $fileNumber);
-                                if ($mlsFNo) $query->orWhere('mlsFNo', $mlsFNo);
+                                if ($mlsFNo)
+                                    $query->orWhere('mlsFNo', $mlsFNo);
                             })
                             ->when(!empty($praData['serialNo']), function ($q) use ($praData) {
                                 return $q->where('serialNo', $praData['serialNo']);
@@ -3184,7 +3235,7 @@ class PropertyRecordController extends Controller
                         // we should try to update it in the correct table if possible, or default to propertyTable.
                         $source = $transaction['_source'] ?? 'file_history';
                         $targetTable = $propertyTable;
-                        
+
                         if ($source === 'pra' || $isOP) {
                             $targetTable = self::PRA_TABLE;
                         } elseif ($source === 'cofo' || $isCofO) {
@@ -3609,7 +3660,7 @@ class PropertyRecordController extends Controller
             ->where('mlsFNo', $fileNumber)
             ->where(function ($q) {
                 $q->where('transaction_type', 'like', '%Occupancy Permit%')
-                  ->orWhere('instrument_type', 'like', '%Occupancy Permit%');
+                    ->orWhere('instrument_type', 'like', '%Occupancy Permit%');
             });
 
         if ($serial !== null) {

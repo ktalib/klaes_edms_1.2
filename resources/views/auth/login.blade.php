@@ -610,7 +610,7 @@ System (KLAES) is a next-generation, enterprise-grade Land Information
         </div>
 
         <div class="mt-4 mb-8 text-sm text-gray-600 text-center">
-          © 2025 LAAD-Sys - Land Admin System. All rights reserved.
+          © 2026 LAAD-Sys - Land Admin System. All rights reserved.
         </div>
       </div>
     </div>

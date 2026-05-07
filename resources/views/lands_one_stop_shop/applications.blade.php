@@ -1471,10 +1471,26 @@
                     throw new Error('No transaction records found.');
                 }
 
+                // Filter: only show Occupancy Permit (OP) and Transfer of Title (OP) instruments
+                // This matches the logic used in the main applications table to define what "looks like an OP"
+                transactions = transactions.filter(tx => {
+                    const type = String(tx.instrument_type || tx.transaction_type || '').toLowerCase();
+                    return type.includes('occupancy permit')
+                        || type.includes('transfer of title')
+                        || type.includes('(op)')
+                        || type.includes('op ')
+                        || type === 'op resettlement'
+                        || type === 'op direct allocation';
+                });
+
+                if (transactions.length === 0) {
+                    throw new Error('No relevant Occupancy Permit or Transfer of Title records found for this property.');
+                }
+
                 // Sort: Occupancy Permit first, then Transfer of Title; within same type by date ascending
                 transactions.sort((a, b) => {
-                    const typeA = (a.instrument_type || '').toLowerCase();
-                    const typeB = (b.instrument_type || '').toLowerCase();
+                    const typeA = String(a.instrument_type || a.transaction_type || '').toLowerCase();
+                    const typeB = String(b.instrument_type || b.transaction_type || '').toLowerCase();
                     const isTransferA = typeA.includes('transfer of title') ? 1 : 0;
                     const isTransferB = typeB.includes('transfer of title') ? 1 : 0;
                     if (isTransferA !== isTransferB) return isTransferA - isTransferB;
@@ -3042,15 +3058,23 @@
 
     function ffrLooksLikeTransferOfTitle(row) {
         if (!row || typeof row !== 'object') return false;
-        var transactionText = [
-            row.transaction_type,
-            row.instrument_type
-        ]
-            .filter(function (val) { return val !== null && val !== undefined && String(val).trim() !== ''; })
-            .map(function (val) { return String(val).toLowerCase(); })
-            .join(' | ');
-        if (transactionText.indexOf('transfer of title') !== -1) return true;
-        if (transactionText.indexOf('transfer') !== -1 && transactionText.indexOf('title') !== -1) return true;
+        var txType = (row.transaction_type || '').toLowerCase();
+        var insType = (row.instrument_type || '').toLowerCase();
+        
+        // Match explicit "Transfer of Title"
+        if (txType.indexOf('transfer of title') !== -1) return true;
+        if (insType.indexOf('transfer of title') !== -1) return true;
+        
+        // Match "Transfer" + "Title" combination
+        if (txType.indexOf('transfer') !== -1 && txType.indexOf('title') !== -1) return true;
+        if (insType.indexOf('transfer') !== -1 && insType.indexOf('title') !== -1) return true;
+
+        // Strict exclusions for non-ToT instruments that might be returned in the same context
+        if (insType.indexOf('mortgage') !== -1) return false;
+        if (insType.indexOf('power of attorney') !== -1) return false;
+        if (insType.indexOf('caveat') !== -1) return false;
+        if (insType.indexOf('partition') !== -1) return false;
+        
         return false;
     }
 
@@ -3364,10 +3388,15 @@
 
             // Build OP record panel — show all records (OPs first, then ToTs)
             var opPanelHtml = '';
+            
+            // Strictly filter the transaction history to ONLY show OP and Transfer of Title (TOT)
+            // This prevents Mortgages, POA, etc. from cluttering the FEFR/Match OP card.
+            var totRecords = records.filter(function (row) { 
+                return ffrLooksLikeTransferOfTitle(row) && !ffrLooksLikeOpRecord(row); 
+            });
+            var allPanelRecords = opRecords.concat(totRecords);
+
             if (opRecords.length > 1 || (opRecords.length >= 1 && hasTransfer)) {
-                // Sort: OPs first, then pure ToTs (exclude hybrid Transfer of Title (OP) from totRecords)
-                var totRecords = records.filter(function (row) { return ffrLooksLikeTransferOfTitle(row) && !ffrLooksLikeOpRecord(row); });
-                var allPanelRecords = opRecords.concat(totRecords);
 
                 // FEFR can receive the same semantic ToT row from multiple endpoints
                 // (all-by-file + pra-transactions). Dedupe before rendering cards.
@@ -3489,21 +3518,31 @@
                 }
             }
 
-            if (!opTempFileno) {
-                // Unmatched OP (no TEMP file number) — show Match OP, hide NEW mode
-                statusEl.textContent = opRecords.length > 1
-                    ? opRecords.length + ' OPs found but not yet matched. Click the button to join & link.'
-                    : 'OP found but not yet matched. Click Match OP to link this record.';
-                ffrShowModes(false, false, false);
-                if (matchOpBtnEl) matchOpBtnEl.classList.remove('hidden');
-            } else {
-                // OP is already matched (has TEMP-XXXXX) — hide Match OP, show NEW mode if Transfer of Title exists
+            if (opTempFileno && hasTransfer) {
+                // OP is already matched (has TEMP-XXXXX) AND has an associated Transfer of Title — proceed to NEW mode
                 if (matchOpBtnEl) matchOpBtnEl.classList.add('hidden');
+                statusEl.textContent = 'OP & Transfer of Title found. Use New mode to update holder name.';
+                ffrShowModes(true, false, false);
+            } else {
+                // Unmatched OP (no TEMP file number) OR Match is incomplete (no ToT found despite having a TEMP number)
+                if (matchOpBtnEl) {
+                    if (!hasTransfer) {
+                        matchOpBtnEl.classList.remove('hidden');
+                    } else if (!opTempFileno) {
+                        // It has a ToT but no TEMP number? Still allow matching to create the permanent link
+                        matchOpBtnEl.classList.remove('hidden');
+                    } else {
+                        matchOpBtnEl.classList.add('hidden');
+                    }
+                }
+                
                 if (hasTransfer) {
                     statusEl.textContent = 'OP & Transfer of Title found. Use New mode to update holder name.';
                     ffrShowModes(true, false, false);
                 } else {
-                    statusEl.textContent = 'OP matched but Transfer of Title not yet found.';
+                    statusEl.textContent = opRecords.length > 1
+                        ? opRecords.length + ' OPs found but not yet matched to a Transfer of Title. Click the button to link.'
+                        : (opTempFileno ? 'OP has a TEMP file number but Transfer of Title not yet found. Click Match OP to link.' : 'OP found but not yet matched. Click Match OP to link this record.');
                     ffrShowModes(false, false, false);
                 }
             }

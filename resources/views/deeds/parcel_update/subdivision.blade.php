@@ -105,6 +105,7 @@
                                     <td class="px-4 py-3 text-slate-600">{{ $record->num_plots }}</td>
                                     <td class="px-4 py-3 text-slate-600 text-xs">
                                         {{ implode(', ', array_filter([
+                                            $record->house_no ? 'House No '.$record->house_no : null,
                                             $record->plot_no ? 'Plot '.$record->plot_no : null,
                                             $record->street_name,
                                             $record->district,
@@ -129,10 +130,8 @@
                                                         <button onclick="openKnupdaModal({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
                                                             <i data-lucide="handshake" class="w-4 h-4 text-purple-500"></i> KNUPDA Handshake
                                                         </button>
-                                                        @if($record->knupda_status === 'Approved' && $record->status !== 'approved')
-                                                            <button onclick="approveRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 gap-2 font-bold border-t border-slate-50 mt-1">
-                                                                <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i> Approval
-                                                            </button>
+                                                        @if($record->knupda_status === 'Approved')
+                                                            {{-- Approval is now automatic via KNUPDA Handshake --}}
                                                         @endif
                                                     </div>
                                                     <div class="py-1">
@@ -523,16 +522,13 @@
         const form = document.getElementById('create-form');
         const formData = new FormData(form);
         
-        // Collect single location card data into JSON array for backend compatibility
-        const locationDetails = [{
-            plot_no: document.getElementById('loc_plot_no')?.value || '',
-            house_no: document.getElementById('loc_house_no')?.value || '',
-            street_name: document.getElementById('loc_street_name')?.value || '',
-            district: document.getElementById('loc_district')?.value || '',
-            lga: document.getElementById('loc_lga')?.value || '',
-            state: document.getElementById('loc_state')?.value || '',
-        }];
-        formData.append('location_details_json', JSON.stringify(locationDetails));
+        // Map location fields to top-level for controller compatibility
+        formData.append('plot_no', document.getElementById('loc_plot_no')?.value || '');
+        formData.append('house_no', document.getElementById('loc_house_no')?.value || '');
+        formData.append('street_name', document.getElementById('loc_street_name')?.value || '');
+        formData.append('district', document.getElementById('loc_district')?.value || '');
+        formData.append('lga', document.getElementById('loc_lga')?.value || '');
+        formData.append('state', document.getElementById('loc_state')?.value || '');
 
         try {
             const response = await fetch('{{ route("plot-subdivision.store") }}', {
@@ -689,7 +685,7 @@
 
                             <div class="mt-4 pt-4 border-t border-slate-100">
                                 <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Property Location</p>
-                                <p class="text-sm font-bold text-slate-700">${data.plot_no ? 'Plot ' + data.plot_no + ', ' : ''}${data.street_name || ''}, ${data.district || ''}, ${data.lga || ''}, ${data.state || ''}</p>
+                                <p class="text-sm font-bold text-slate-700">${data.house_no ? 'House No ' + data.house_no + ', ' : ''}${data.plot_no ? 'Plot ' + data.plot_no + ', ' : ''}${data.street_name || ''}, ${data.district || ''}, ${data.lga || ''}, ${data.state || ''}</p>
                             </div>
                         </div>
                     `,
@@ -842,32 +838,6 @@
         }
     }
 
-    async function approveRecord(id) {
-        const result = await Swal.fire({
-            title: 'Approve Application?',
-            text: "Are you sure you want to approve this subdivision application?",
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#10b981',
-            confirmButtonText: 'Yes, approve'
-        });
-
-        if (result.isConfirmed) {
-            try {
-                const response = await fetch(`{{ url('plot-subdivision') }}/${id}/approve`, {
-                    method: 'POST',
-                    headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }
-                });
-                const res = await response.json();
-                if (res.success) {
-                    Swal.fire('Approved!', res.message, 'success');
-                    location.reload();
-                }
-            } catch (error) {
-                Swal.fire('Error!', 'Failed to approve record.', 'error');
-            }
-        }
-    }
 
     async function rejectRecord(id) {
         const { value: reason } = await Swal.fire({

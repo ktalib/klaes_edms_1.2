@@ -116,6 +116,7 @@ class BillBalanceController extends Controller
                       ->orWhereNull('billing.Payment_Status');
                 })
                 ->count(),
+            'generated_today' => BillBalance::whereDate('created_at', Carbon::today())->count(),
         ];
 
         return view('bill_balance.index', [

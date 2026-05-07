@@ -572,31 +572,31 @@ class PrimaryApplicationController extends Controller
                 'fileno' => $fileNo,
                 'land_use' => $landUseForStorage,
                 'applicant_type' => $applicantType,
-                'applicant_title' => $validated['applicant_title'] ?? null,
-                'first_name' => $validated['first_name'] ?? null,
-                'middle_name' => $validated['middle_name'] ?? null,
-                'surname' => $validated['surname'] ?? null,
-                'corporate_name' => $validated['corporate_name'] ?? null,
-                'rc_number' => $validated['rc_number'] ?? null,
-                'multiple_owners_names' => $multipleOwnersNamesHasValue
+                'applicant_title' => ($applicantType === 'individual') ? ($validated['applicant_title'] ?? null) : null,
+                'first_name' => ($applicantType === 'individual') ? ($validated['first_name'] ?? null) : null,
+                'middle_name' => ($applicantType === 'individual') ? ($validated['middle_name'] ?? null) : null,
+                'surname' => ($applicantType === 'individual') ? ($validated['surname'] ?? null) : null,
+                'corporate_name' => ($applicantType === 'corporate') ? ($validated['corporate_name'] ?? null) : null,
+                'rc_number' => ($applicantType === 'corporate') ? ($validated['rc_number'] ?? null) : null,
+                'multiple_owners_names' => ($applicantType === 'multiple' && $multipleOwnersNamesHasValue)
                     ? json_encode($multipleOwnersNames, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
                     : null,
-                'multiple_owners_address' => $multipleOwnersAddressesHasValue
+                'multiple_owners_address' => ($applicantType === 'multiple' && $multipleOwnersAddressesHasValue)
                     ? json_encode($multipleOwnersAddresses, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
                     : null,
-                'multiple_owners_passport' => $multipleOwnersPassportHasValue
+                'multiple_owners_passport' => ($applicantType === 'multiple' && $multipleOwnersPassportHasValue)
                     ? json_encode($multipleOwnersPassportPaths, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
                     : null,
-                'multiple_owners_email' => $multipleOwnersEmailsHasValue
+                'multiple_owners_email' => ($applicantType === 'multiple' && $multipleOwnersEmailsHasValue)
                     ? json_encode($multipleOwnersEmails, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
                     : null,
-                'multiple_owners_phone' => $multipleOwnersPhonesHasValue
+                'multiple_owners_phone' => ($applicantType === 'multiple' && $multipleOwnersPhonesHasValue)
                     ? json_encode($multipleOwnersPhones, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
                     : null,
-                'multiple_owners_identification_type' => $multipleOwnersIdentificationTypesHasValue
+                'multiple_owners_identification_type' => ($applicantType === 'multiple' && $multipleOwnersIdentificationTypesHasValue)
                     ? json_encode($multipleOwnersIdentificationTypes, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
                     : null,
-                'multiple_owners_identification_image' => $multipleOwnersIdImagesHasValue
+                'multiple_owners_identification_image' => ($applicantType === 'multiple' && $multipleOwnersIdImagesHasValue)
                     ? json_encode($multipleOwnersIdImages, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
                     : null,
                 'address_house_no' => $validated['address_house_no'] ?? null,

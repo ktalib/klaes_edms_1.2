@@ -306,6 +306,7 @@
 
                                                         $normalizedName = collect([
                                                             $PrimaryApplication->first_name,
+                                                            $PrimaryApplication->middle_name,
                                                             $PrimaryApplication->surname,
                                                         ])
                                                             ->filter(fn($value) => filled($value))
