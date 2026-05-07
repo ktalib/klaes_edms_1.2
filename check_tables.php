@@ -5,9 +5,9 @@ $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
 
 try {
-    $columns = DB::connection('sqlsrv')->select("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'kangis_grouping'");
-    foreach ($columns as $c) {
-        echo $c->COLUMN_NAME . PHP_EOL;
+    $tables = DB::connection('sqlsrv')->select("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%grouping%'");
+    foreach ($tables as $t) {
+        echo $t->TABLE_NAME . PHP_EOL;
     }
 } catch (\Exception $e) {
     echo "Error: " . $e->getMessage() . PHP_EOL;
