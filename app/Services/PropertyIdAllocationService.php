@@ -381,20 +381,36 @@ class PropertyIdAllocationService
     {
         $timestamp = now();
 
+        // Prevent unique constraint violations and ensure search integrity by
+        // 'stealing' conflicting identifiers from older master rows. This ensures
+        // the latest property entity (e.g. a ToT) is the one discovered by file no.
+        $conflicts = [
+            'mlsFNo' => $identifierMap['mlsFNo'] ?? null,
+            'kangisFileNo' => $identifierMap['kangisFileNo'] ?? null,
+            'NewKANGISFileno' => $identifierMap['NewKANGISFileno'] ?? null,
+        ];
+
+        foreach ($conflicts as $column => $value) {
+            if (!$value) continue;
+            
+            DB::connection('sqlsrv')->table('PropID_Master')
+                ->where($column, $value)
+                ->where('prop_id', '!=', $propId)
+                ->update([
+                    $column => null,
+                    'updated_at' => $timestamp
+                ]);
+        }
+
         DB::connection('sqlsrv')
             ->table('PropID_Master')
             ->insert([
                 'prop_id' => $propId,
                 'primary_file_number' => $primaryForMaster,
-                'primary_file_number_norm' => $this->normalizeValue($primaryForMaster),
                 'mlsFNo' => $identifierMap['mlsFNo'] ?? null,
-                'mlsFNo_norm' => $this->normalizeValue($identifierMap['mlsFNo'] ?? null),
                 'kangisFileNo' => $identifierMap['kangisFileNo'] ?? null,
-                'kangisFileNo_norm' => $this->normalizeValue($identifierMap['kangisFileNo'] ?? null),
                 'NewKANGISFileno' => $identifierMap['NewKANGISFileno'] ?? null,
-                'NewKANGISFileno_norm' => $this->normalizeValue($identifierMap['NewKANGISFileno'] ?? null),
                 'temp_fileno' => $identifierMap['temp_fileno'] ?? null,
-                'temp_fileno_norm' => $this->normalizeValue($identifierMap['temp_fileno'] ?? null),
                 'status' => 'active',
                 'created_at' => $timestamp,
                 'updated_at' => $timestamp,
@@ -451,8 +467,22 @@ class PropertyIdAllocationService
                 ->whereNotNull('prop_id');
 
             if (!empty($normalizedIdentifiers)) {
-                $query->where(function ($builder) use ($availableColumns, $normalizedIdentifiers, $grammar) {
+                // Determine if we have any official identifiers to prioritize.
+                $hasOfficial = false;
+                foreach (['mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'fileno', 'np_fileno'] as $official) {
+                    if (!empty($normalizedIdentifiers[$official])) {
+                        $hasOfficial = true;
+                        break;
+                    }
+                }
+
+                $query->where(function ($builder) use ($availableColumns, $normalizedIdentifiers, $grammar, $hasOfficial) {
                     foreach ($availableColumns as $column) {
+                        // Skip temp_fileno if we have official IDs to prevent accidental collisions.
+                        if ($column === 'temp_fileno' && $hasOfficial) {
+                            continue;
+                        }
+
                         foreach ($normalizedIdentifiers as $identifier) {
                             $builder->orWhereRaw('UPPER(' . $grammar->wrap($column) . ') = ?', [$identifier]);
                         }

@@ -332,7 +332,9 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function can($abilities, $arguments = [])
     {
-        if ($this->type === 'super admin') {
+        $roleNames = $this->assignedRoleNames();
+        $type = strtolower((string)$this->type);
+        if ($type === 'super admin' || $type === 'supper admin' || in_array('super admin', $roleNames) || in_array('supper admin', $roleNames)) {
             return true;
         }
 

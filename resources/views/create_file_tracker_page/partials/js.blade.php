@@ -4058,9 +4058,11 @@
             if (window.currentUser) {
                 const assignRole = String(window.currentUser.assign_role || '').toLowerCase();
                 const typeStr = String(window.currentUser.type || '').toLowerCase();
+                const roles = Array.isArray(window.currentUser.roles) ? window.currentUser.roles.map(r => String(r).toLowerCase()) : [];
+                
                 isSupperAdmin = assignRole.includes('super admin') || assignRole.includes('supper admin')
                     || typeStr === 'super admin' || typeStr === 'supper admin'
-                    || (Array.isArray(window.currentUser.roles) && window.currentUser.roles.some(r => String(r).toLowerCase().includes('super admin')));
+                    || roles.some(r => r.includes('super admin') || r.includes('supper admin'));
             }
 
             const _urlParam = new URLSearchParams(window.location.search).get('url');

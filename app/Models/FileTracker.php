@@ -366,7 +366,20 @@ class FileTracker extends Model
             return false;
         }
 
-        if ($user->type === 'super admin') {
+        // Robust check for super/supper admin across both standard 'type' and assigned roles.
+        $roleStr = strtolower((string) ($user->assign_role ?? ''));
+        $typeStr = strtolower((string) ($user->type ?? ''));
+        
+        $isElevatedAdmin = $typeStr === 'super admin' || $typeStr === 'supper admin'
+            || str_contains($roleStr, 'super admin') || str_contains($roleStr, 'supper admin');
+
+        // If User model method is available, use it for more precision (handles IDs/JSON/etc)
+        if (!$isElevatedAdmin && method_exists($user, 'assignedRoleNames')) {
+            $roleNames = $user->assignedRoleNames();
+            $isElevatedAdmin = in_array('super admin', $roleNames) || in_array('supper admin', $roleNames);
+        }
+
+        if ($isElevatedAdmin) {
             return true;
         }
 

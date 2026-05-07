@@ -2271,6 +2271,7 @@ class ApplicationController extends Controller
                     if ($sourceOpId) {
                         $ffrPraPayload['source_op_id'] = (int) $sourceOpId;
                     }
+                    $ffrPraPayload['force_fresh_prop_id'] = true;
                 }
 
                 $praOpRecord = $skipPraCreate ? [] : $praService->createRecord($ffrPraPayload, $userId);
@@ -2578,6 +2579,7 @@ class ApplicationController extends Controller
                     'mlsFNo' => $sourceFileNo,
                     'fileno' => $sourceFileNo,
                     'temp_fileno' => $tempFileno ?: null,
+                    'force_fresh_prop_id' => true,
                     'parent_prop_id' => $opPropId,
                     'source_op_table' => $totSourceTable,
                     'source_op_id' => $totSourceId,

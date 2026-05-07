@@ -433,20 +433,36 @@ class OpResettlementApplicationController extends Controller
         $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
         $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
 
-        // ── Card counts via a single lightweight SQL query ──
-        // Total Commissioned should match the visible card arithmetic exactly
-        // (Residential + Commercial + Industrial + Agriculture).
-        $cardCountRows = DB::connection('sqlsrv')
-            ->table('pra')
+        // ── Card counts via a single SQL query ──
+        // Ensure stats match the filtered table view (OP vs ToT) and include
+        // instrument_capture records when applicable.
+        $statsBaseQuery = DB::connection('sqlsrv')
+            ->table(DB::raw("(
+                SELECT prop_id, land_use
+                FROM pra
+                WHERE system_source = 'OSSOPCHANGEOFNAME'
+                  AND prop_id IS NOT NULL AND prop_id != ''
+                  $instrumentFilter
+                
+                " . (!$isChangeOfName ? "
+                UNION ALL
+                SELECT prop_id, land_use
+                FROM instrument_capture
+                WHERE instrument_type = 'Occupancy Permit (OP)'
+                  AND prop_id IS NOT NULL AND prop_id != 0
+                  AND (is_deleted IS NULL OR is_deleted = 0)
+                  AND id NOT IN (SELECT CAST(source_op_id AS INT) FROM pra WHERE source_op_table = 'instrument_capture' AND source_op_id IS NOT NULL)
+                " : "") . "
+            ) as stats_source"));
+
+        $cardCountRows = $statsBaseQuery
             ->selectRaw("
+                COUNT(DISTINCT prop_id) as total_count,
                 COUNT(DISTINCT CASE WHEN land_use LIKE '%RES%' OR land_use LIKE '%res%' THEN prop_id END) as res_count,
                 COUNT(DISTINCT CASE WHEN land_use LIKE '%COM%' OR land_use LIKE '%com%' THEN prop_id END) as com_count,
                 COUNT(DISTINCT CASE WHEN land_use LIKE '%IND%' OR land_use LIKE '%ind%' THEN prop_id END) as ind_count,
                 COUNT(DISTINCT CASE WHEN land_use LIKE '%AGR%' OR land_use LIKE '%agr%' THEN prop_id END) as agr_count
             ")
-            ->where('system_source', 'OSSOPCHANGEOFNAME')
-            ->whereNotNull('prop_id')
-            ->where('prop_id', '!=', '')
             ->first();
 
         $cardCounts = [
@@ -456,7 +472,7 @@ class OpResettlementApplicationController extends Controller
             'Agriculture' => (int) ($cardCountRows->agr_count ?? 0),
         ];
 
-        $totalCommissioned = array_sum($cardCounts);
+        $totalCommissioned = (int) ($cardCountRows->total_count ?? array_sum($cardCounts));
 
         // ── Today's count: distinct commissioned OPs commissioned today ──
         // Mirrors the cards' filter (system_source = OSSOPCHANGEOFNAME) but scoped to today
@@ -2427,6 +2443,7 @@ class OpResettlementApplicationController extends Controller
                     'mlsFNo' => $mlsFNo,
                     'fileno' => $mlsFNo,
                     'temp_fileno' => $totTempFileno,
+                    'force_fresh_prop_id' => true,
                     'parent_prop_id' => $opRow->prop_id,
                     'source_op_table' => 'pra',
                     'source_op_id' => (int) $opRow->id,
@@ -2632,6 +2649,7 @@ class OpResettlementApplicationController extends Controller
                     'mlsFNo' => $mlsFNo,
                     'fileno' => $mlsFNo,
                     'temp_fileno' => $totTempFileno,
+                    'force_fresh_prop_id' => true,
                     'parent_prop_id' => $firstOp->prop_id,
                     'source_op_table' => 'pra',
                     'source_op_id' => (int) $firstOp->id,
