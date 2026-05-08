@@ -220,6 +220,11 @@
         $totalAmount = data_get($bill, 'total_amount');
         $billStatus = data_get($bill, 'bill_status');
         $paymentStatus = data_get($bill, 'Payment_Status');
+        
+        // Granular receipts
+        $appReceipt = data_get($bill, 'application_fee_receipt_number') ?? data_get($bill, 'application_fee_receipt_no');
+        $procReceipt = data_get($bill, 'processing_fee_receipt_number') ?? data_get($bill, 'processing_fee_receipt_no');
+        $siteReceipt = data_get($bill, 'site_plan_fee_receipt_number') ?? data_get($bill, 'survey_fee_receipt_no');
     @endphp
     <!-- Header -->
     <div class="header">
@@ -315,25 +320,37 @@
                 @if($schemeApplicationFee)
                 <tr>
                     <td>Scheme Application Fee</td>
-                    <td class="amount">{{ number_format(floatval($schemeApplicationFee), 2) }}</td>
+                    <td class="amount">
+                        {{ number_format(floatval($schemeApplicationFee), 2) }}
+                        {!! $appReceipt ? '<br><small style="color: #666; font-weight: normal;">Rec: '.$appReceipt.'</small>' : '' !!}
+                    </td>
                 </tr>
                 @endif
                 @if($sitePlanFee)
                 <tr>
                     <td>Site Plan Fee</td>
-                    <td class="amount">{{ number_format(floatval($sitePlanFee), 2) }}</td>
+                    <td class="amount">
+                        {{ number_format(floatval($sitePlanFee), 2) }}
+                        {!! $siteReceipt ? '<br><small style="color: #666; font-weight: normal;">Rec: '.$siteReceipt.'</small>' : '' !!}
+                    </td>
                 </tr>
                 @endif
                 @if($unitApplicationFees)
                 <tr>
                     <td>Application Fee</td>
-                    <td class="amount">{{ number_format(floatval($unitApplicationFees), 2) }}</td>
+                    <td class="amount">
+                        {{ number_format(floatval($unitApplicationFees), 2) }}
+                        {!! $appReceipt ? '<br><small style="color: #666; font-weight: normal;">Rec: '.$appReceipt.'</small>' : '' !!}
+                    </td>
                 </tr>
                 @endif
                 @if($processingFeeInitial)
                 <tr>
                     <td>Processing Fee</td>
-                    <td class="amount">{{ number_format(floatval($processingFeeInitial), 2) }}</td>
+                    <td class="amount">
+                        {{ number_format(floatval($processingFeeInitial), 2) }}
+                        {!! $procReceipt ? '<br><small style="color: #666; font-weight: normal;">Rec: '.$procReceipt.'</small>' : '' !!}
+                    </td>
                 </tr>
                 @endif
             @elseif($type === 'betterment')

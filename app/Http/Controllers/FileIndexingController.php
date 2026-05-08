@@ -1061,6 +1061,19 @@ class FileIndexingController extends Controller
                 }
             }
 
+            // Check if the file number exists in the corresponding_fileno table
+            $correspondingMatch = DB::connection('sqlsrv')
+                ->table('corresponding_fileno')
+                ->whereRaw('UPPER(LTRIM(RTRIM(fileno))) = UPPER(?)', [trim((string) ($validated['file_number'] ?? ''))])
+                ->value('fileno');
+            if ($correspondingMatch !== null) {
+                $validated['is_corresponding_file'] = 1;
+                $validated['corresponding_fileno']  = $correspondingMatch;
+            } else {
+                $validated['is_corresponding_file'] = 0;
+                $validated['corresponding_fileno']  = null;
+            }
+
             DB::connection('sqlsrv')->transaction(function () use (&$validated, $id, $existingRecord, $request, $resolvedTestControl, $requestHasCofo, $normalizedPropId, $skipEntityCustomerUpdates, $isKangisRegistry) {
                 $updatePayload = Arr::only($validated, FileIndexing::columnWhitelist());
 

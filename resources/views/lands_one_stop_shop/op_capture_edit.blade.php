@@ -715,6 +715,16 @@
 
         // Init Lucide icons and wire up all cards
         document.addEventListener('DOMContentLoaded', function() {
+            // Force uppercase on all text inputs and textareas
+            document.querySelectorAll('input[type="text"], textarea').forEach(function(input) {
+                if (!input.readOnly && !input.classList.contains('opRegNumber')) {
+                    input.addEventListener('input', function() {
+                        this.value = this.value.toUpperCase();
+                    });
+                    input.style.textTransform = 'uppercase';
+                }
+            });
+
             document.querySelectorAll('[data-card-type="op"]').forEach(function(card) {
                 _initOpCard(card);
             });

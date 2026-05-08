@@ -75,7 +75,7 @@
             </div>
 
             {{-- -- Dashboard Stats -- --}}
-            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                 {{-- Total --}}
                 <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex items-start justify-between">
                     <div>
@@ -85,6 +85,17 @@
                     </div>
                     <div class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
                         <i data-lucide="layers" class="w-5 h-5 text-slate-500"></i>
+                    </div>
+                </div>
+                {{-- Daily --}}
+                <div class="bg-white rounded-2xl border border-indigo-200 shadow-sm p-5 flex items-start justify-between">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-indigo-500">Created Today</p>
+                        <p class="text-3xl font-extrabold text-indigo-600 mt-1">{{ $stats['daily'] }}</p>
+                        <p class="text-[10px] text-slate-400 mt-1">New entries</p>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+                        <i data-lucide="calendar" class="w-5 h-5 text-indigo-500"></i>
                     </div>
                 </div>
                 {{-- Pending --}}
@@ -109,6 +120,7 @@
                         <i data-lucide="check-circle" class="w-5 h-5 text-blue-500"></i>
                     </div>
                 </div>
+
 
                 {{-- Rejected --}}
                 <div class="bg-white rounded-2xl border border-red-200 shadow-sm p-5 flex items-start justify-between">
@@ -199,9 +211,15 @@
                                                         <button onclick="copViewApplication(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
                                                             <i data-lucide="eye" class="w-4 h-4 text-blue-500"></i> View Details
                                                         </button>
-                                                        <button onclick="copOpenKnupdaModal({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
-                                                            <i data-lucide="handshake" class="w-4 h-4 text-purple-500"></i> KNUPDA Handshake
-                                                        </button>
+                                                        @if($record->knupda_status === 'Approved' || $record->knupda_status === 'Declined')
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="KNUPDA evaluation completed">
+                                                                <i data-lucide="handshake" class="w-4 h-4 text-slate-300"></i> KNUPDA Handshake
+                                                            </button>
+                                                        @else
+                                                            <button onclick="copOpenKnupdaModal({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                <i data-lucide="handshake" class="w-4 h-4 text-purple-500"></i> KNUPDA Handshake
+                                                            </button>
+                                                        @endif
                                                         <div class="py-1">
                                                             @if($record->knupda_status === 'Approved')
                                                                 @if(!$record->application_generated_at)
@@ -264,9 +282,15 @@
                                                         </div>
                                                     </div>
                                                         <div class="py-1">
+                                                        @if($record->status === 'approved')
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Approved applications cannot be deleted">
+                                                                <i data-lucide="trash-2" class="w-4 h-4 text-slate-300"></i> Delete
+                                                            </button>
+                                                        @else
                                                             <button onclick="copDelete(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 gap-2">
                                                                 <i data-lucide="trash-2" class="w-4 h-4"></i> Delete
                                                             </button>
+                                                        @endif
                                                         </div>
                                                     </div>
                                                 </div>

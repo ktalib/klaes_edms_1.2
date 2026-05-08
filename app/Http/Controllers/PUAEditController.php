@@ -24,8 +24,34 @@ class PUAEditController extends Controller
             $motherApplication = ApplicationMother::find($subApplication->main_application_id);
         }
 
-        // Get some metadata if mother app exists
-        $propertyLocation = $motherApplication ? ($motherApplication->property_location ?? 'N/A') : 'N/A';
+        // Get some metadata if mother app exists, otherwise use sub-application's own location (for SUA)
+        $propertyLocation = 'N/A';
+        if ($motherApplication) {
+            $parts = [];
+            if (!empty($motherApplication->property_house_no)) $parts[] = $motherApplication->property_house_no;
+            if (!empty($motherApplication->property_plot_no)) $parts[] = $motherApplication->property_plot_no;
+            // Enhanced Property Location logic: check mother application address components first
+            $mainLocation = null;
+            if ($motherApplication) {
+                $components = [
+                    $motherApplication->property_house_no ?: $motherApplication->property_plot_no,
+                    $motherApplication->property_street_name,
+                    $motherApplication->property_district,
+                    $motherApplication->property_lga,
+                ];
+                $mainLocation = implode(', ', array_filter($components));
+            }
+
+            // Fallback chain: Mother Address Components -> Mother property_location -> Sub property_location -> N/A
+            $propertyLocation = strtoupper($mainLocation ?: ($motherApplication->property_location ?? ($subApplication->property_location ?? 'N/A')));
+
+            // Fallback for Application ID if missing
+            if (empty($motherApplication->applicationID)) {
+                $motherApplication->applicationID = 'STM-2025-' . str_pad($motherApplication->id, 4, '0', STR_PAD_LEFT);
+            }
+        } else {
+            $propertyLocation = strtoupper($subApplication->property_location ?? 'N/A');
+        }
 
         return view('sectionaltitling.pua_edit.edit', compact('subApplication', 'motherApplication', 'propertyLocation'));
     }

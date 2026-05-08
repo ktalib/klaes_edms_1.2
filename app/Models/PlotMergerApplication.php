@@ -12,6 +12,7 @@ class PlotMergerApplication extends Model
     public const STATUS_PENDING    = 'pending';
     public const STATUS_APPROVED   = 'approved';
     public const STATUS_REJECTED   = 'rejected';
+    public const STATUS_COMMISSIONED = 'commissioned';
 
     protected $fillable = [
         'temp_file_no',
@@ -41,6 +42,9 @@ class PlotMergerApplication extends Model
         'application_generated_at',
         'recommendation_generated_at',
         'site_plan',
+        'is_deleted',
+        'deleted_by',
+        'deleted_at',
     ];
 
     public function plotSizes()

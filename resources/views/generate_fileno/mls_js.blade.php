@@ -3097,6 +3097,11 @@
             subdivisionFileNo: '',
             mergerFileNo: '',
 
+            // Change of Purpose Properties
+            changeOfPurposeAppId: '',
+            originalFileNo: '',
+            copApplicantName: '',
+
             // Batch Mode Properties
             batchMode: false,
             batchQuantity: 2,
@@ -3592,6 +3597,21 @@
                                 if (res.success) {
                                     self.subdivisionFileNo = data.fileNumber;
                                     self.subdivisionAppId = res.data.id;
+                                    
+                                    // Backfill details
+                                    self.fileName = res.data.applicant_name || res.data.file_title || '';
+                                    self.plotNo = res.data.plot_no || '';
+                                    self.lga = res.data.lga || '';
+                                    
+                                    // Construct location from available components
+                                    let locParts = [];
+                                    if (res.data.house_no) locParts.push(res.data.house_no);
+                                    if (res.data.street_name) locParts.push(res.data.street_name);
+                                    if (res.data.district) locParts.push(res.data.district);
+                                    self.location = locParts.length > 0 ? locParts.join(', ').toUpperCase() : '';
+                                    
+                                    self.isInherited = true;
+
                                     self.batchMode = true;
                                     self.batchQuantity = res.data.num_plots;
                                     
@@ -3623,42 +3643,96 @@
             },
 
             openMergerFileModal() {
-                if (typeof GlobalFileNoModal === 'undefined' || typeof GlobalFileNoModal.open !== 'function') {
-                    alert('File number selector is not available. Please refresh the page.');
+                const self = this;
+                const modal = document.getElementById('mergerFileModal');
+                const searchInput = document.getElementById('mergerSearchInput');
+                
+                if (!modal) {
+                    alert('Merger selection modal not found.');
                     return;
                 }
-                const self = this;
-                GlobalFileNoModal.open({
-                    callback: function(data) {
-                        if (!data || !data.fileNumber) return;
-                        
-                        showGlobalLoading('Verifying merger...');
-                        fetch(`/plot-merger/find-by-file/${encodeURIComponent(data.fileNumber)}`)
-                            .then(response => response.json())
-                            .then(res => {
-                                hideGlobalLoading();
-                                if (res.success) {
-                                    self.mergerFileNo = data.fileNumber;
-                                    self.mergerAppId = res.data.id;
-                                    
-                                    Swal.fire({
-                                        icon: 'success',
-                                        title: 'Merger Found',
-                                        text: 'This file has an approved merger application.',
-                                        timer: 2000,
-                                        showConfirmButton: false
-                                    });
-                                } else {
-                                    Swal.fire('Not Found', res.message, 'warning');
-                                }
-                            })
-                            .catch(err => {
-                                hideGlobalLoading();
-                                console.error(err);
-                                Swal.fire('Error', 'Failed to lookup merger application.', 'error');
-                            });
-                    }
-                });
+
+                modal.classList.remove('hidden');
+                if (searchInput) {
+                    searchInput.value = '';
+                    searchInput.focus();
+                }
+                
+                // Load initial list
+                searchMergerFiles('');
+
+                // Register callback
+                window._mergerCallback = (data) => {
+                    self.mergerFileNo = data.temp_file_no; // Display Temp File No as Source
+                    self.mergerAppId = data.id;
+                    
+                    // Backfill details
+                    self.fileName = data.applicant_name || data.file_title || '';
+                    self.plotNo = data.plot_no || '';
+                    self.lga = data.lga || '';
+                    
+                    // Construct location from available components
+                    let locParts = [];
+                    if (data.house_no) locParts.push(data.house_no);
+                    if (data.street_name) locParts.push(data.street_name);
+                    if (data.district) locParts.push(data.district);
+                    self.location = locParts.length > 0 ? locParts.join(', ').toUpperCase() : '';
+                    
+                    self.isInherited = true;
+
+                    self.updatePreview();
+                    
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Merger Selected',
+                        text: `Source: ${data.temp_file_no}`,
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                };
+            },
+
+            openCopFileSelector() {
+                const modal = document.getElementById('copFileModal');
+                const searchInput = document.getElementById('copSearchInput');
+                
+                if (!modal) {
+                    alert('Change of Purpose selection modal not found.');
+                    return;
+                }
+
+                modal.classList.remove('hidden');
+                if (searchInput) {
+                    searchInput.value = '';
+                    searchInput.focus();
+                }
+                
+                // Load initial list
+                searchCopFiles('');
+
+                // Register callback
+                window._copCallback = (data) => {
+                    this.originalFileNo = data.file_no;
+                    this.changeOfPurposeAppId = data.id;
+                    this.copApplicantName = data.applicant_name;
+                    
+                    // Backfill details
+                    this.fileName = data.applicant_name || '';
+                    this.plotNo = data.plot_no || '';
+                    this.lga = data.lga || '';
+                    this.location = (data.location || '').toUpperCase();
+                    this.isInherited = true;
+
+                    this.updatePreview();
+                    
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Application Selected',
+                        text: `File No: ${data.file_no}`,
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                };
             },
 
             updateFileOption() {
@@ -6647,4 +6721,111 @@
         }
     };
 
+    // --- Merger Selection Modal Functions ---
+    window.closeMergerFileModal = function() {
+        document.getElementById('mergerFileModal').classList.add('hidden');
+    };
+
+    window.searchMergerFiles = function(query) {
+        const tableBody = document.getElementById('mergerResultsTable');
+        if (!tableBody) return;
+
+        fetch(`/plot-merger/approved-list?search=${encodeURIComponent(query || '')}`)
+            .then(res => res.json())
+            .then(res => {
+                if (res.success) {
+                    tableBody.innerHTML = res.data.length ? '' : '<tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">No approved applications found.</td></tr>';
+                    res.data.forEach(item => {
+                        const row = document.createElement('tr');
+                        row.className = 'hover:bg-gray-50 cursor-pointer transition-colors border-b last:border-0';
+                        row.innerHTML = `
+                            <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-gray-900">${item.temp_file_no}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">${item.file_no || '-'}</td>
+                            <td class="px-4 py-3 text-sm text-gray-600">
+                                <div class="font-semibold uppercase">${item.applicant_name || 'N/A'}</div>
+                                <div class="text-[10px] text-gray-400 uppercase truncate max-w-xs">${item.file_title || ''}</div>
+                            </td>
+                            <td class="px-4 py-3 text-right">
+                                <button type="button" 
+                                        class="px-3 py-1 bg-orange-600 text-white text-xs font-bold rounded hover:bg-orange-700 transition-colors">
+                                    Select
+                                </button>
+                            </td>
+                        `;
+                        row.onclick = () => selectMergerFile(item);
+                        tableBody.appendChild(row);
+                    });
+                    if (typeof lucide !== 'undefined') lucide.createIcons();
+                }
+            })
+            .catch(err => {
+                console.error('Failed to search merger files:', err);
+                tableBody.innerHTML = '<tr><td colspan="4" class="px-4 py-8 text-center text-red-500">Error loading data.</td></tr>';
+            });
+    };
+
+    window.selectMergerFile = function(item) {
+        if (window._mergerCallback) {
+            window._mergerCallback(item);
+        }
+        closeMergerFileModal();
+    };
+
+    window.searchCopFiles = function(query) {
+        const resultsContainer = document.getElementById('copSearchResults');
+        if (!resultsContainer) return;
+
+        resultsContainer.innerHTML = `
+            <div class="flex items-center justify-center py-8">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+        `;
+
+        fetch(`{{ route("change-of-purpose.search-approved") }}?term=${encodeURIComponent(query)}`)
+            .then(response => response.json())
+            .then(res => {
+                if (res.success && res.data && res.data.length > 0) {
+                    let html = '<div class="space-y-2">';
+                    res.data.forEach(item => {
+                        html += `
+                            <div class="p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors" 
+                                 onclick="selectCopFile(${JSON.stringify(item).replace(/"/g, '&quot;')})">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <div class="font-bold text-gray-900">${item.file_no}</div>
+                                        <div class="text-sm text-gray-600">${item.applicant_name}</div>
+                                        <div class="text-xs text-gray-400 mt-1">${item.location || 'No location'}</div>
+                                    </div>
+                                    <span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Approved</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    resultsContainer.innerHTML = html;
+                } else {
+                    resultsContainer.innerHTML = `
+                        <div class="text-center py-8 text-gray-500">
+                            No approved applications found for "${query}"
+                        </div>
+                    `;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                resultsContainer.innerHTML = '<div class="text-center py-8 text-red-500">Error loading applications</div>';
+            });
+    };
+
+    window.closeCopFileModal = function() {
+        const modal = document.getElementById('copFileModal');
+        if (modal) modal.classList.add('hidden');
+    };
+
+    window.selectCopFile = function(item) {
+        if (window._copCallback) {
+            window._copCallback(item);
+        }
+        closeCopFileModal();
+    };
 </script>

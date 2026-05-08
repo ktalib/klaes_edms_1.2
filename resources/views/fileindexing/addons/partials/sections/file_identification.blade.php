@@ -111,20 +111,32 @@
         <div id="kangis-fileno-placeholder-wrapper" class="form-group mt-6 hidden{{ ($isNewKnMode ?? false) ? ' kn-mode-force-hidden' : '' }}">
             <label class="block text-sm font-medium text-gray-700 mb-2">
                 KANGIS FileNo Placeholder <span class="text-red-500">*</span>
-                <span class="ml-1 text-xs font-normal text-gray-400">(e.g. MNKL 01)</span>
+                <span class="ml-1 text-xs font-normal text-gray-400">(e.g. KN001, MNKL 01)</span>
             </label>
             {{-- Hidden real field — assembled from prefix + serial by JS --}}
             <input type="hidden" id="kangis-fileno-placeholder" name="kangis_fileno_placeholder">
             <div class="flex gap-2">
-                {{-- Prefix dropdown --}}
-                <select id="kangis-fileno-prefix"
-                    class="w-36 shrink-0 px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm font-mono bg-white">
-                    <option value="">Select Prefix</option>
-                    <option value="KNML">KNML</option>
-                    
-                    <option value="MLKN">MLKN</option>
-                    <option value="KNGP">KNGP</option>
-                </select>
+                @php
+    $prefixes = DB::connection('sqlsrv')
+        ->table('kangis_prefixes')
+        ->where('status', 1)
+        ->orderBy('prefix_code')
+        ->get();
+@endphp
+
+{{-- Prefix dropdown --}}
+<select id="kangis-fileno-prefix"
+    name="kangis_fileno_prefix"
+    class="w-36 shrink-0 px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm font-mono bg-white">
+
+    <option value="">Select Prefix</option>
+
+    @foreach ($prefixes as $prefix)
+        <option value="{{ $prefix->prefix_code }}">
+            {{ $prefix->prefix_code }}
+        </option>
+    @endforeach
+</select>
                 {{-- Serial / number part --}}
                 <input type="text" id="kangis-fileno-serial"
                     class="flex-1 px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm font-mono uppercase"

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Services;
 
@@ -275,10 +275,10 @@ class PropertyIdAllocationService
 
         $updates['updated_at'] = now();
 
-        // Explicitly strip any computed columns if they somehow leaked in
-        $updates = array_filter($updates, function ($key) {
-            return !str_ends_with($key, '_norm');
-        }, ARRAY_FILTER_USE_KEY);
+        Log::info('PropertyIdAllocationService: updating PropID_Master', [
+            'id' => $existingRow->id,
+            'updates' => $updates
+        ]);
 
         DB::connection('sqlsrv')
             ->table('PropID_Master')

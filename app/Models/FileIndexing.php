@@ -87,7 +87,8 @@ class FileIndexing extends Model
         'mls_file_no',
         'kangis_file_no',
         'new_kangis_file_no',
-        'kn_grouping_id',
+        'is_corresponding_file',
+        'corresponding_fileno',
         'sub_prefix',
         'suffix',
     ];

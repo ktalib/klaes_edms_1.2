@@ -39,6 +39,7 @@ class ChangeOfNameApplication extends Model
         'comment',
         'captured_by',
         'updated_by',
+        'is_deleted',
     ];
 
     protected $casts = [

@@ -17,6 +17,11 @@ class KangisFileNoPlaceholderService
     public function normalize(string $raw): string
     {
         $value = strtoupper(trim($raw));
+        // Handle joined format where prefix and serial have no separator (e.g. KN001 -> KN 001)
+        if (preg_match('/^([A-Z]+)(\d+)$/', $value, $m)) {
+            $value = $m[1] . ' ' . $m[2];
+        }
+
         // Collapse separators
         $value = preg_replace('/[\s\-_]+/', ' ', $value);
         // Strip leading zeros from the trailing numeric segment

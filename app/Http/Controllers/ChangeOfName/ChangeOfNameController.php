@@ -38,6 +38,9 @@ class ChangeOfNameController extends Controller
         $search = trim((string) $request->input('search'));
 
         $base = ChangeOfNameApplication::query()
+            ->where(function($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     $sub->where('current_name',   'LIKE', "%{$search}%")
@@ -70,11 +73,11 @@ class ChangeOfNameController extends Controller
         $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
 
         $stats = [
-            'total'        => ChangeOfNameApplication::count(),
-            'pending'      => ChangeOfNameApplication::where('status', ChangeOfNameApplication::STATUS_PENDING)->count(),
-            'approved'     => ChangeOfNameApplication::where('status', ChangeOfNameApplication::STATUS_APPROVED)->count(),
-            'commissioned' => ChangeOfNameApplication::where('status', 'commissioned')->count(),
-            'rejected'     => ChangeOfNameApplication::where('status', ChangeOfNameApplication::STATUS_REJECTED)->count(),
+            'total'        => ChangeOfNameApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->count(),
+            'daily'        => ChangeOfNameApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->whereDate('created_at', today())->count(),
+            'pending'      => ChangeOfNameApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfNameApplication::STATUS_PENDING)->count(),
+            'approved'     => ChangeOfNameApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfNameApplication::STATUS_APPROVED)->count(),
+            'rejected'     => ChangeOfNameApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfNameApplication::STATUS_REJECTED)->count(),
         ];
 
         return view('change_of_name.index', compact(
@@ -194,9 +197,14 @@ class ChangeOfNameController extends Controller
 
     public function destroy(int $id): JsonResponse
     {
-        $record = ChangeOfNameApplication::query()->findOrFail($id);
-        $record->delete();
-        return response()->json(['success' => true, 'message' => 'Record deleted.']);
+        $record = ChangeOfNameApplication::findOrFail($id);
+        
+        if ($record->status === ChangeOfNameApplication::STATUS_APPROVED) {
+            return response()->json(['success' => false, 'message' => 'Approved applications cannot be deleted.'], 403);
+        }
+
+        $record->update(['is_deleted' => 1]);
+        return response()->json(['success' => true, 'message' => 'Application deleted successfully.']);
     }
 
     public function searchFileNumbers(Request $request): JsonResponse

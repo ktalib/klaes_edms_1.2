@@ -18,11 +18,18 @@
                 print-color-adjust: exact;
                 -webkit-print-color-adjust: exact;
                 margin: 0;
-                padding: 12mm !important;
-                /* Approx 1 inch */
+                padding: 0 !important;
                 width: 210mm;
-                min-height: 297mm;
+                height: 297mm;
+                overflow: hidden;
+            }
+
+            .document-content {
+                padding: 15mm !important;
+                height: 100%;
                 box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
             }
 
             /* Remove browser headers and footers and set margins */
@@ -283,7 +290,7 @@
         </div>
 
         <!-- Form Content -->
-        <div class="space-y-6 text-sm leading-relaxed">
+        <div class="space-y-6 text-sm leading-relaxed flex-grow">
             <!-- Date Line - Data-Driven from registration_date -->
             <div class="flex items-baseline gap-2">
                 <span class="font-semibold">Dated:</span>
@@ -407,12 +414,13 @@
                     <div><strong>Status:</strong> {{ ucfirst($instrument->status ?? 'unknown') }}</div>
                 @endif
             </div>
- <br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>
-            <!-- Footer Logo -->
-            <div class="mt-8 flex justify-end">
-                <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES Logo"
-                    class="h-10 w-auto object-contain">
-            </div>
+
+        </div>
+
+        <!-- Footer Logo -->
+        <div class="mt-auto flex justify-end pt-4">
+            <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES Logo"
+                class="h-10 w-auto object-contain">
         </div>
     </div>
 

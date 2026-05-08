@@ -20,6 +20,9 @@ class PlotExtensionController extends Controller
         $search = trim((string) $request->input('search'));
 
         $records = PlotExtensionApplication::query()
+            ->where(function($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     $sub->where('applicant_name', 'LIKE', "%{$search}%")
@@ -117,7 +120,16 @@ class PlotExtensionController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $record = PlotExtensionApplication::findOrFail($id);
-        $record->delete();
+        
+        if ($record->status === PlotExtensionApplication::STATUS_APPROVED) {
+            return response()->json(['success' => false, 'message' => 'Approved applications cannot be deleted.'], 403);
+        }
+
+        $record->update([
+            'is_deleted' => 1,
+            'deleted_by' => Auth::id(),
+            'deleted_at' => now(),
+        ]);
 
         return response()->json([
             'success' => true,

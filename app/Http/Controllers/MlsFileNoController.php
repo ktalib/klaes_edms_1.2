@@ -14,6 +14,9 @@ use Illuminate\Support\Facades\Storage;
 use App\Models\LandUse;
 use App\Models\Purpose;
 use App\Models\Prefix;
+use App\Models\PlotMergerApplication;
+use App\Models\PlotSubdivisionApplication;
+use App\Models\ChangeOfPurposeApplication;
 
 class MlsFileNoController extends Controller
 {
@@ -1301,6 +1304,9 @@ class MlsFileNoController extends Controller
                 'related_fileno' => 'nullable|string|max:255',
                 'related_file_title' => 'nullable|string|max:500',
                 'related_file_indexing_id' => 'nullable|integer',
+                'merger_app_id' => 'nullable|integer',
+                'subdivision_app_id' => 'nullable|integer',
+                'change_of_purpose_app_id' => 'nullable|integer',
             ]);
 
             $landUse = $validated['land_use'] ?? null;
@@ -1414,12 +1420,19 @@ class MlsFileNoController extends Controller
 
                     // 5. Update indexings to flip related_fileno
                     if ($oldIndexing) {
+                        $correspondingMatch = DB::connection('sqlsrv')
+                            ->table('corresponding_fileno')
+                            ->whereRaw('UPPER(LTRIM(RTRIM(fileno))) = UPPER(?)', [trim((string) $fullFileNumber)])
+                            ->value('fileno');
+
                         DB::connection('sqlsrv')->table('file_indexings')
                             ->where('file_number', $originalFileNo)
                             ->update([
                                 'file_number' => $fullFileNumber,
                                 'land_use_type' => $landUse,
                                 'related_fileno' => $originalFileNo,
+                                'is_corresponding_file' => ($correspondingMatch !== null) ? 1 : 0,
+                                'corresponding_fileno' => $correspondingMatch,
                                 'tracking_id' => $trackingId ?? $oldIndexing->tracking_id,
                                 'updated_at' => now()
                             ]);
@@ -1822,7 +1835,37 @@ class MlsFileNoController extends Controller
                             'file_number' => $fullFileNumber,
                             'source' => $sourceValue,
                         ]);
-                    }
+                    // Handle Merger Application Linkage
+                if (!empty($validated['merger_app_id'])) {
+                    PlotMergerApplication::where('id', $validated['merger_app_id'])
+                        ->update([
+                            'status' => PlotMergerApplication::STATUS_COMMISSIONED,
+                            'remarks' => "Commissioned to File No: {$fullFileNumber} on " . now()->toDateTimeString(),
+                            'updated_by' => Auth::id()
+                        ]);
+                    Log::info('Merger application marked as commissioned', ['app_id' => $validated['merger_app_id'], 'file_no' => $fullFileNumber]);
+                }
+
+                // Handle Subdivision Application Linkage
+                if (!empty($validated['subdivision_app_id'])) {
+                    PlotSubdivisionApplication::where('id', $validated['subdivision_app_id'])
+                        ->update([
+                            'status' => PlotSubdivisionApplication::STATUS_COMMISSIONED,
+                            'remarks' => "Commissioned to File No: {$fullFileNumber} on " . now()->toDateTimeString(),
+                            'updated_by' => Auth::id()
+                        ]);
+                    Log::info('Subdivision application marked as commissioned', ['app_id' => $validated['subdivision_app_id'], 'file_no' => $fullFileNumber]);
+                }
+
+                // Handle Change of Purpose Application Linkage
+                if (!empty($validated['change_of_purpose_app_id'])) {
+                    ChangeOfPurposeApplication::where('id', $validated['change_of_purpose_app_id'])
+                        ->update([
+                            'status' => ChangeOfPurposeApplication::STATUS_COMMISSIONED,
+                            'remarks' => "Commissioned to File No: {$fullFileNumber} on " . now()->toDateTimeString(),
+                            'updated_by' => Auth::id()
+                        ]);
+                    Log::info('Change of Purpose application marked as commissioned', ['app_id' => $validated['change_of_purpose_app_id'], 'file_no' => $fullFileNumber]);
                 }
 
                 DB::connection('sqlsrv')->commit();
@@ -1921,7 +1964,9 @@ class MlsFileNoController extends Controller
                 'allocated_by_filter' => 'nullable|string|max:100',
                 'default_allocation_type' => 'nullable|string|max:50',
                 'source_instrument_capture_id' => 'nullable|integer',
-                'sub_source' => 'nullable|string|max:100'
+                'sub_source' => 'nullable|string|max:100',
+                'subdivision_app_id' => 'nullable|integer',
+                'merger_app_id' => 'nullable|integer',
             ]);
 
             $landUse = $validated['land_use'];
@@ -2003,6 +2048,20 @@ class MlsFileNoController extends Controller
                     }
                 } catch (\Exception $e) {
                     Log::warning('Bulk grouping lookup failed', ['error' => $e->getMessage()]);
+                }
+
+                // Pre-fetch corresponding file matches for the batch
+                $correspondingCache = [];
+                try {
+                    $matches = DB::connection('sqlsrv')->table('corresponding_fileno')
+                        ->whereIn('fileno', $allFileNumbers)
+                        ->select(['fileno'])
+                        ->get();
+                    foreach ($matches as $m) {
+                        $correspondingCache[strtoupper(trim($m->fileno))] = $m->fileno;
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Bulk corresponding_fileno lookup failed', ['error' => $e->getMessage()]);
                 }
 
                 // 3. Count how many new tracking IDs we need (only if not found in grouping or request)
@@ -2102,6 +2161,8 @@ class MlsFileNoController extends Controller
                         'workflow_status' => 'indexed',
                         'is_updated' => false,
                         'is_deleted' => false,
+                        'is_corresponding_file' => isset($correspondingCache[strtoupper(trim($fullFileNumber))]) ? 1 : 0,
+                        'corresponding_fileno'  => $correspondingCache[strtoupper(trim($fullFileNumber))] ?? null,
                         'created_at' => $now,
                         'updated_at' => $now
                     ];
@@ -2249,6 +2310,27 @@ class MlsFileNoController extends Controller
                         'last_serial' => $endSerial
                     ]
                 );
+
+                // Handle Application Linkage for Batch
+                if (!empty($validated['merger_app_id'])) {
+                    PlotMergerApplication::where('id', $validated['merger_app_id'])
+                        ->update([
+                            'status' => PlotMergerApplication::STATUS_COMMISSIONED,
+                            'remarks' => "Commissioned to Batch of {$batchQuantity} files (First: {$allFileNumbers[0]}) on " . now()->toDateTimeString(),
+                            'updated_by' => Auth::id()
+                        ]);
+                    Log::info('Batch Merger application marked as commissioned', ['app_id' => $validated['merger_app_id']]);
+                }
+
+                if (!empty($validated['subdivision_app_id'])) {
+                    PlotSubdivisionApplication::where('id', $validated['subdivision_app_id'])
+                        ->update([
+                            'status' => PlotSubdivisionApplication::STATUS_COMMISSIONED,
+                            'remarks' => "Commissioned to Batch of {$batchQuantity} files (First: {$allFileNumbers[0]}) on " . now()->toDateTimeString(),
+                            'updated_by' => Auth::id()
+                        ]);
+                    Log::info('Batch Subdivision application marked as commissioned', ['app_id' => $validated['subdivision_app_id']]);
+                }
 
                 DB::connection('sqlsrv')->commit();
 

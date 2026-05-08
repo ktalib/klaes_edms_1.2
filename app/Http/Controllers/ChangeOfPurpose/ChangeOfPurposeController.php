@@ -34,7 +34,9 @@ class ChangeOfPurposeController extends Controller
         $search = trim((string) $request->input('search'));
 
         $base = ChangeOfPurposeApplication::query()
-            
+            ->where(function($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     $sub->where('applicant_name', 'LIKE', "%{$search}%")
@@ -69,11 +71,11 @@ class ChangeOfPurposeController extends Controller
 
         // Dashboard stats
         $stats = [
-            'total'        => ChangeOfPurposeApplication::count(),
-            'pending'      => ChangeOfPurposeApplication::where('status', ChangeOfPurposeApplication::STATUS_PENDING)->count(),
-            'approved'     => ChangeOfPurposeApplication::where('status', ChangeOfPurposeApplication::STATUS_APPROVED)->count(),
-            'commissioned' => ChangeOfPurposeApplication::where('status', 'commissioned')->count(),
-            'rejected'     => ChangeOfPurposeApplication::where('status', ChangeOfPurposeApplication::STATUS_REJECTED)->count(),
+            'total'        => ChangeOfPurposeApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->count(),
+            'daily'        => ChangeOfPurposeApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->whereDate('created_at', today())->count(),
+            'pending'      => ChangeOfPurposeApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfPurposeApplication::STATUS_PENDING)->count(),
+            'approved'     => ChangeOfPurposeApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfPurposeApplication::STATUS_APPROVED)->count(),
+            'rejected'     => ChangeOfPurposeApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfPurposeApplication::STATUS_REJECTED)->count(),
         ];
 
         return view('change_of_purpose.index', compact(
@@ -588,6 +590,18 @@ class ChangeOfPurposeController extends Controller
             'land_size'              => 'nullable|numeric',
             'site_plan'              => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
         ];
+    }
+
+    public function destroy(int $id): JsonResponse
+    {
+        $record = ChangeOfPurposeApplication::findOrFail($id);
+        
+        if ($record->status === ChangeOfPurposeApplication::STATUS_APPROVED) {
+            return response()->json(['success' => false, 'message' => 'Approved applications cannot be deleted.'], 403);
+        }
+
+        $record->update(['is_deleted' => 1]);
+        return response()->json(['success' => true, 'message' => 'Application deleted successfully.']);
     }
 }
 

@@ -504,22 +504,40 @@
                           </div>
                         </div>
                         <div class="ml-3">
-                          <div class="text-sm font-medium text-gray-900">{{ ucwords(strtolower($payment->owner_name)) }}
+                          <div class="text-sm font-bold text-gray-900">{{ strtoupper($payment->owner_name) }}
                           </div>
                         </div>
                       </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                      <span class="text-green-600 font-semibold">N
-                        {{ number_format(floatval($payment->application_fee ?? 0), 2) }}</span>
+                      <div class="flex flex-col">
+                        <span class="text-green-600 font-semibold">N {{ number_format(floatval($payment->application_fee ?? 0), 2) }}</span>
+                        @if(!empty($payment->application_fee_receipt_number))
+                          <span class="text-[10px] text-gray-500 font-normal">Rec: {{ $payment->application_fee_receipt_number }}</span>
+                        @else
+                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'application_fee')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
+                        @endif
+                      </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                      <span class="text-green-600 font-semibold">N
-                        {{ number_format(floatval($payment->processing_fee ?? 0), 2) }}</span>
+                      <div class="flex flex-col">
+                        <span class="text-green-600 font-semibold">N {{ number_format(floatval($payment->processing_fee ?? 0), 2) }}</span>
+                        @if(!empty($payment->processing_fee_receipt_number))
+                          <span class="text-[10px] text-gray-500 font-normal">Rec: {{ $payment->processing_fee_receipt_number }}</span>
+                        @else
+                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'processing_fee')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
+                        @endif
+                      </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                      <span class="text-green-600 font-semibold">N
-                        {{ number_format(floatval($payment->site_plan_fee ?? 0), 2) }}</span>
+                      <div class="flex flex-col">
+                        <span class="text-green-700 font-bold">₦{{ number_format(floatval($payment->site_plan_fee ?? 0), 2) }}</span>
+                        @if(!empty($payment->site_plan_fee_receipt_number))
+                          <span class="inline-block mt-1 px-1.5 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded border border-blue-100 uppercase w-fit">Rec: {{ $payment->site_plan_fee_receipt_number }}</span>
+                        @else
+                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'site_plan_fee')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
+                        @endif
+                      </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
                       <span class="text-green-600 font-semibold">N
@@ -853,16 +871,34 @@
                         class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">{{ $unitTypeLabel }}</span>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                      <span class="text-green-600 font-semibold">N
-                        {{ number_format(floatval($payment->application_fee ?? 0), 2) }}</span>
+                      <div class="flex flex-col">
+                        <span class="text-green-600 font-semibold">N {{ number_format(floatval($payment->application_fee ?? 0), 2) }}</span>
+                        @if(!empty($payment->application_fee_receipt_number))
+                          <span class="text-[10px] text-gray-500 font-normal">Rec: {{ $payment->application_fee_receipt_number }}</span>
+                        @else
+                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'application_fee')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
+                        @endif
+                      </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                      <span class="text-green-600 font-semibold">N
-                        {{ number_format(floatval($payment->processing_fee ?? 0), 2) }}</span>
+                      <div class="flex flex-col">
+                        <span class="text-green-600 font-semibold">N {{ number_format(floatval($payment->processing_fee ?? 0), 2) }}</span>
+                        @if(!empty($payment->processing_fee_receipt_number))
+                          <span class="text-[10px] text-gray-500 font-normal">Rec: {{ $payment->processing_fee_receipt_number }}</span>
+                        @else
+                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'processing_fee')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
+                        @endif
+                      </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                      <span class="text-green-600 font-semibold">N
-                        {{ number_format(floatval($payment->site_plan_fee ?? 0), 2) }}</span>
+                      <div class="flex flex-col">
+                        <span class="text-green-600 font-semibold">N {{ number_format(floatval($payment->site_plan_fee ?? 0), 2) }}</span>
+                        @if(!empty($payment->survey_fee_receipt_number))
+                          <span class="text-[10px] text-gray-500 font-normal">Rec: {{ $payment->survey_fee_receipt_number }}</span>
+                        @else
+                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'site_plan_fee')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
+                        @endif
+                      </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
                       <span class="text-blue-600 font-semibold">N
@@ -1711,6 +1747,92 @@
             submitBtn.disabled = false;
           });
       });
+    };
+
+    /**
+     * Enter and save specific fee receipt
+     */
+    function enterSpecificReceipt(fileNo, feeType, currentReceipt = '') {
+      const feeLabels = {
+        'application_fee': 'Application Fee',
+        'processing_fee': 'Processing Fee',
+        'site_plan_fee': 'Site Plan/Survey Fee'
+      };
+
+      const modalContent = `
+        <div class="space-y-4">
+          <div class="p-3 bg-blue-50 text-blue-700 rounded-lg text-sm mb-4">
+            <p class="font-medium">Update Receipt for: ${feeLabels[feeType]}</p>
+            <p class="text-xs">File Number: ${fileNo}</p>
+          </div>
+          
+          <form id="specific-receipt-form" onsubmit="event.preventDefault(); window.saveSpecificReceiptAction();">
+            <div class="grid grid-cols-1 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Receipt Number</label>
+                <input type="text" id="spec_receipt_no" class="modal-input" 
+                       value="${currentReceipt}" required placeholder="Enter receipt number">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
+                <input type="date" id="spec_receipt_date" class="modal-input" 
+                       value="${new Date().toISOString().split('T')[0]}" required>
+              </div>
+            </div>
+            
+            <input type="hidden" id="spec_file_no" value="${fileNo}">
+            <input type="hidden" id="spec_fee_type" value="${feeType}">
+            
+            <div class="mt-6 flex justify-end space-x-3">
+              <button type="button" onclick="closeModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-md transition">Save Receipt</button>
+            </div>
+          </form>
+        </div>
+      `;
+
+      showModal('Update Fee Receipt', modalContent);
+    }
+
+    // Attach to window to ensure accessibility from modal
+    window.saveSpecificReceiptAction = async function() {
+      const fileNo = document.getElementById('spec_file_no').value;
+      const feeType = document.getElementById('spec_fee_type').value;
+      const receiptNo = document.getElementById('spec_receipt_no').value;
+      const receiptDate = document.getElementById('spec_receipt_date').value;
+
+      const data = {
+        file_no: fileNo,
+        fee_type: feeType,
+        receipt_number: receiptNo,
+        receipt_date: receiptDate,
+        _token: '{{ csrf_token() }}'
+      };
+
+      try {
+        const response = await fetch('{{ route("programmes.payments.save-specific-receipt") }}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+          },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          showSuccessMessage('Receipt saved successfully');
+          closeModal();
+          // Reload to show changes
+          setTimeout(() => location.reload(), 1000);
+        } else {
+          alert('Error: ' + result.message);
+        }
+      } catch (error) {
+        console.error('Error saving receipt:', error);
+        alert('An error occurred while saving the receipt.');
+      }
     };
 
     // Modal utility functions

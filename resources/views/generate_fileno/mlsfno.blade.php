@@ -2061,6 +2061,95 @@
                 </div>
             </div>
 
+            <!-- Merger Selection Modal -->
+            <div id="mergerFileModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-[100]">
+                <div class="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+                    <div class="mt-3">
+                        <div class="flex items-center justify-between mb-4 border-b pb-3">
+                            <h3 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+                                <i data-lucide="merge" class="w-6 h-6 text-orange-600"></i>
+                                Select Approved Merger File
+                            </h3>
+                            <button onclick="closeMergerFileModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                                <i data-lucide="x" class="w-6 h-6"></i>
+                            </button>
+                        </div>
+
+                        <div class="mb-4">
+                            <div class="relative">
+                                <input type="text" id="mergerSearchInput" 
+                                       class="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500" 
+                                       placeholder="Search by Temp File No, Global File No or Applicant Name..."
+                                       onkeyup="searchMergerFiles(this.value)">
+                                <div class="absolute left-3 top-3 text-gray-400">
+                                    <i data-lucide="search" class="w-5 h-5"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="overflow-hidden border border-gray-200 rounded-lg">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Temp File No</th>
+                                        <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">File No</th>
+                                        <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Applicant / Title</th>
+                                        <th class="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mergerResultsTable" class="bg-white divide-y divide-gray-200">
+                                    <tr>
+                                        <td colspan="4" class="px-4 py-8 text-center text-gray-500">
+                                            <div class="flex flex-col items-center gap-2">
+                                                <i data-lucide="loader" class="w-8 h-8 animate-spin text-orange-500"></i>
+                                                <span>Loading approved applications...</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+            
+            <!-- Change of Purpose Selection Modal -->
+            <div id="copFileModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-[101]">
+                <div class="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+                    <div class="mt-3">
+                        <div class="flex items-center justify-between mb-4 border-b pb-3">
+                            <h3 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+                                <i data-lucide="refresh-cw" class="w-6 h-6 text-blue-600"></i>
+                                Select Approved Change of Purpose
+                            </h3>
+                            <button onclick="closeCopFileModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                                <i data-lucide="x" class="w-6 h-6"></i>
+                            </button>
+                        </div>
+
+                        <div class="mb-4">
+                            <div class="relative">
+                                <input type="text" id="copSearchInput" 
+                                       class="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                       placeholder="Search by File No, Applicant Name or Purpose..."
+                                       onkeyup="searchCopFiles(this.value)">
+                                <div class="absolute left-3 top-3 text-gray-400">
+                                    <i data-lucide="search" class="w-5 h-5"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="copSearchResults" class="max-h-[400px] overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
+                            <div class="text-center py-8 text-gray-500">
+                                <div class="flex flex-col items-center gap-2">
+                                    <i data-lucide="search" class="w-8 h-8 text-gray-300"></i>
+                                    <span>Search for approved applications...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+                </div>
+            </div>
 
         <style>
             /* Tab Styling */

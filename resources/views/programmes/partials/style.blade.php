@@ -126,6 +126,23 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    /* Modal Input Styles */
+    .modal-input {
+      width: 100%;
+      padding: 0.625rem 0.875rem;
+      border: 1px solid #d1d5db;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      color: #111827;
+      background-color: #ffffff;
+      transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+      margin-bottom: 0.5rem;
+    }
+    .modal-input:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
 </style>
  
  

@@ -172,6 +172,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/bill/print/{type}/{id}', [ProgrammesController::class, 'printBill'])->name('programmes.bill.print');
         Route::get('/bill/download/{type}/{id}', [ProgrammesController::class, 'downloadBill'])->name('programmes.bill.download');
         Route::get('/payments', [ProgrammesController::class, 'Payments'])->name('programmes.payments');
+        Route::post('/payments/save-specific-receipt', [ProgrammesController::class, 'saveSpecificReceipt'])->name('programmes.payments.save-specific-receipt');
         Route::get('/approvals/other-departments', [ProgrammesController::class, 'Others'])->name('programmes.approvals.other-departments');
         Route::get('/approvals/deeds', [ProgrammesController::class, 'Deeds'])->name('programmes.approvals.deeds');
         Route::get('/approvals/lands', [ProgrammesController::class, 'Lands'])->name('programmes.approvals.lands');

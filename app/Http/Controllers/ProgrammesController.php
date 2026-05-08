@@ -186,7 +186,7 @@ class ProgrammesController extends Controller
 
         // Get all file numbers for Select2 dropdown
         $primaryFiles = DB::connection('sqlsrv')->table('mother_applications')
-            ->select('id', 'fileno', 'first_name', 'surname', 'corporate_name')
+            ->select('id', 'fileno', 'applicationID', 'first_name', 'surname', 'corporate_name')
             ->whereNotNull('fileno')
             ->get()
             ->map(function ($item) {
@@ -196,6 +196,7 @@ class ProgrammesController extends Controller
                 return [
                     'id' => $item->id,
                     'fileno' => $item->fileno,
+                    'applicationID' => $item->applicationID,
                     'owner_name' => $ownerName,
                     'type' => 'primary',
                     'unit_type' => null,
@@ -206,7 +207,7 @@ class ProgrammesController extends Controller
         if ($showOnlyPrimary) {
             // For physical planning view include primary files and SUA units (subapplications flagged as SUA)
             $suaFiles = DB::connection('sqlsrv')->table('subapplications')
-                ->select('id', 'fileno', 'first_name', 'surname', 'corporate_name', 'unit_type', 'is_sua_unit')
+                ->select('id', 'fileno', 'main_application_id', 'first_name', 'surname', 'corporate_name', 'unit_type', 'is_sua_unit')
                 ->whereNotNull('fileno')
                 ->where(function ($q) {
                     $q->whereRaw("UPPER(unit_type) = 'SUA'")
@@ -220,6 +221,7 @@ class ProgrammesController extends Controller
                     return [
                         'id' => $item->id,
                         'fileno' => $item->fileno,
+                        'applicationID' => $item->main_application_id,
                         'owner_name' => $ownerName,
                         'type' => 'sua',
                         'unit_type' => strtoupper((string) ($item->unit_type ?? '')) ?: null,
@@ -229,7 +231,7 @@ class ProgrammesController extends Controller
             $allFiles = $primaryFiles->merge($suaFiles)->sortBy('fileno');
         } else {
             $unitFiles = DB::connection('sqlsrv')->table('subapplications')
-                ->select('id', 'fileno', 'first_name', 'surname', 'corporate_name', 'unit_type', 'is_sua_unit')
+                ->select('id', 'fileno', 'main_application_id', 'first_name', 'surname', 'corporate_name', 'unit_type', 'is_sua_unit')
                 ->whereNotNull('fileno')
                 ->get()
                 ->map(function ($item) {
@@ -239,6 +241,7 @@ class ProgrammesController extends Controller
                     return [
                         'id' => $item->id,
                         'fileno' => $item->fileno,
+                        'applicationID' => $item->main_application_id,
                         'owner_name' => $ownerName,
                         'type' => ($item->is_sua_unit ?? 0) ? 'sua' : 'unit',
                         'unit_type' => strtoupper((string) ($item->unit_type ?? '')) ?: null,
@@ -252,12 +255,18 @@ class ProgrammesController extends Controller
         $primaryInitialBills = DB::connection('sqlsrv')->table('mother_applications')
             ->select(
                 'id',
-                'id as application_id',
+                'applicationID',
                 'application_fee as primary_application_fee',
                 'processing_fee as primary_processing_fee',
                 'site_plan_fee as primary_site_plan_fee',
                 'payment_date as primary_payment_date',
                 'receipt_number as primary_receipt_number',
+                'application_fee_payment_date',
+                'application_fee_receipt_number',
+                'processing_fee_payment_date',
+                'processing_fee_receipt_number',
+                'site_plan_fee_payment_date',
+                'site_plan_fee_receipt_number',
                 'fileno as primary_fileno',
                 'first_name as primary_first_name',
                 'surname as primary_surname',
@@ -276,12 +285,18 @@ class ProgrammesController extends Controller
         $unitInitialBills = DB::connection('sqlsrv')->table('subapplications')
             ->select(
                 'id',
-                'id as sub_application_id',
+                'main_application_id as application_id',
                 'application_fee as unit_application_fee',
                 'processing_fee as unit_processing_fee',
                 'site_plan_fee as unit_site_plan_fee',
                 'payment_date as unit_payment_date',
                 'receipt_number as unit_receipt_number',
+                'application_fee_payment_date',
+                'application_fee_receipt_no',
+                'processing_fee_payment_date',
+                'processing_fee_receipt_no',
+                'survey_fee_payment_date',
+                'survey_fee_receipt_no',
                 'fileno as unit_fileno',
                 'first_name as unit_first_name',
                 'surname as unit_surname',
@@ -306,6 +321,7 @@ class ProgrammesController extends Controller
             ->leftJoin('subapplications', 'billing.sub_application_id', '=', 'subapplications.id')
             ->select(
                 'billing.*',
+                'mother_applications.applicationID as primary_applicationID',
                 'mother_applications.fileno as primary_fileno',
                 'mother_applications.first_name as primary_first_name',
                 'mother_applications.surname as primary_surname',
@@ -342,11 +358,13 @@ class ProgrammesController extends Controller
             foreach ($billCollection as $bill) {
                 if (!empty($bill->primary_fileno)) {
                     $bill->fileno = $bill->primary_fileno;
+                    $bill->applicationID = $bill->applicationID ?? $bill->primary_applicationID ?? null;
                     $bill->owner_name = !empty($bill->primary_corporate_name)
                         ? $bill->primary_corporate_name
                         : trim(($bill->primary_first_name ?? '') . ' ' . ($bill->primary_surname ?? ''));
                 } else {
                     $bill->fileno = $bill->unit_fileno ?? 'N/A';
+                    $bill->applicationID = $bill->application_id ?? null;
                     $bill->owner_name = !empty($bill->unit_corporate_name)
                         ? $bill->unit_corporate_name
                         : trim(($bill->unit_first_name ?? '') . ' ' . ($bill->unit_surname ?? ''));
@@ -653,6 +671,12 @@ class ProgrammesController extends Controller
                         'site_plan_fee',
                         'payment_date',
                         'receipt_number',
+                        'application_fee_payment_date',
+                        'application_fee_receipt_number',
+                        'processing_fee_payment_date',
+                        'processing_fee_receipt_number',
+                        'site_plan_fee_payment_date',
+                        'site_plan_fee_receipt_number',
                         'Payment_Status',
                         'created_at'
                     )
@@ -689,6 +713,12 @@ class ProgrammesController extends Controller
                         'site_plan_fee',
                         'payment_date',
                         'receipt_number',
+                        'application_fee_payment_date',
+                        'application_fee_receipt_no',
+                        'processing_fee_payment_date',
+                        'processing_fee_receipt_no',
+                        'survey_fee_payment_date',
+                        'survey_fee_receipt_no',
                         'Payment_Status',
                         'created_at'
                     )
@@ -3094,4 +3124,75 @@ class ProgrammesController extends Controller
         }
     }
 
+    /**
+     * Save specific fee receipt (Application, Processing, or Site Plan/Survey Fee)
+     */
+    public function saveSpecificReceipt(Request $request)
+    {
+        try {
+            $request->validate([
+                'file_no' => 'required|string',
+                'fee_type' => 'required|string|in:application_fee,processing_fee,site_plan_fee',
+                'receipt_number' => 'required|string',
+                'receipt_date' => 'required|date',
+            ]);
+
+            $fileNo = $request->input('file_no');
+            $feeType = $request->input('fee_type');
+            $receiptNo = $request->input('receipt_number');
+            $receiptDate = $request->input('receipt_date');
+
+            // Try primary first
+            $primary = DB::connection('sqlsrv')->table('mother_applications')->where('fileno', $fileNo)->first();
+            if ($primary) {
+                $columnPrefix = $feeType;
+                $updateData = [
+                    $columnPrefix . '_receipt_number' => $receiptNo,
+                    $columnPrefix . '_payment_date' => $receiptDate,
+                    'updated_at' => now()
+                ];
+                
+                // If it's the first receipt, also update the main receipt_number if empty
+                if (empty($primary->receipt_number)) {
+                    $updateData['receipt_number'] = $receiptNo;
+                    $updateData['payment_date'] = $receiptDate;
+                }
+
+                DB::connection('sqlsrv')->table('mother_applications')
+                    ->where('id', $primary->id)
+                    ->update($updateData);
+
+                return response()->json(['success' => true, 'message' => 'Receipt saved successfully']);
+            }
+
+            // Try unit next
+            $unit = DB::connection('sqlsrv')->table('subapplications')->where('fileno', $fileNo)->first();
+            if ($unit) {
+                $columnReceipt = ($feeType === 'site_plan_fee') ? 'survey_fee_receipt_no' : ($feeType . '_receipt_no');
+                $columnDate = ($feeType === 'site_plan_fee') ? 'survey_fee_payment_date' : ($feeType . '_payment_date');
+
+                $updateData = [
+                    $columnReceipt => $receiptNo,
+                    $columnDate => $receiptDate,
+                    'updated_at' => now()
+                ];
+
+                if (empty($unit->receipt_number)) {
+                    $updateData['receipt_number'] = $receiptNo;
+                    $updateData['payment_date'] = $receiptDate;
+                }
+
+                DB::connection('sqlsrv')->table('subapplications')
+                    ->where('id', $unit->id)
+                    ->update($updateData);
+
+                return response()->json(['success' => true, 'message' => 'Receipt saved successfully']);
+            }
+
+            return response()->json(['success' => false, 'message' => 'File not found'], 404);
+
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
 }

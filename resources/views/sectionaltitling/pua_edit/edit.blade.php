@@ -69,7 +69,7 @@
                                         class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Application
                                         ID</label>
                                     <p class="text-sm font-bold text-blue-900">
-                                        {{ $motherApplication->applicationID ?? 'N/A' }}
+                                        {{ !empty($motherApplication->applicationID) ? strtoupper($motherApplication->applicationID) : 'N/A' }}
                                     </p>
                                 </div>
                                 <div>

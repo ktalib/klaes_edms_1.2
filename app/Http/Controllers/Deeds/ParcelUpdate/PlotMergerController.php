@@ -20,6 +20,9 @@ class PlotMergerController extends Controller
         $search = trim((string) $request->input('search'));
 
         $records = PlotMergerApplication::query()
+            ->where(function($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     $sub->where('applicant_name', 'LIKE', "%{$search}%")
@@ -36,8 +39,16 @@ class PlotMergerController extends Controller
         $districts   = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
         $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
 
+        $stats = [
+            'total'        => PlotMergerApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->count(),
+            'daily'        => PlotMergerApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->whereDate('created_at', today())->count(),
+            'pending'      => PlotMergerApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', 'pending')->count(),
+            'approved'     => PlotMergerApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', 'approved')->count(),
+            'rejected'     => PlotMergerApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', 'rejected')->count(),
+        ];
+
         return view('deeds.parcel_update.merger', compact(
-            'records', 'limit', 'states', 'lgas', 'districts', 'streetNames'
+            'records', 'limit', 'states', 'lgas', 'districts', 'streetNames', 'stats'
         ));
     }
 
@@ -117,13 +128,6 @@ class PlotMergerController extends Controller
         return response()->json(['success' => true, 'data' => $record]);
     }
 
-    public function destroy($id)
-    {
-        $record = PlotMergerApplication::findOrFail($id);
-        $record->delete();
-
-        return response()->json(['success' => true, 'message' => 'Record deleted successfully.']);
-    }
 
     public function approve(int $id)
     {
@@ -202,17 +206,66 @@ class PlotMergerController extends Controller
         return response()->json(['success' => true, 'message' => 'KNUPDA status updated.']);
     }
 
+    public function approvedList(Request $request): JsonResponse
+    {
+        $search = trim((string) $request->input('search'));
+        $records = PlotMergerApplication::where('status', PlotMergerApplication::STATUS_APPROVED)
+            ->when($search, function ($q) use ($search) {
+                $q->where(function ($sub) use ($search) {
+                    $sub->where('temp_file_no', 'LIKE', "%{$search}%")
+                        ->orWhere('file_no', 'LIKE', "%{$search}%")
+                        ->orWhere('applicant_name', 'LIKE', "%{$search}%");
+                });
+            })
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get([
+                'id', 
+                'temp_file_no', 
+                'file_no', 
+                'applicant_name', 
+                'file_title',
+                'plot_no',
+                'house_no',
+                'street_name',
+                'district',
+                'lga',
+                'state'
+            ]);
+
+        return response()->json(['success' => true, 'data' => $records]);
+    }
+
     public function findByFileNo(string $fileNo): JsonResponse
     {
-        $record = PlotMergerApplication::where('file_no', $fileNo)
+        $record = PlotMergerApplication::where(function($q) use ($fileNo) {
+                $q->where('file_no', $fileNo)
+                  ->orWhere('temp_file_no', $fileNo);
+            })
             ->where('status', PlotMergerApplication::STATUS_APPROVED)
             ->orderByDesc('created_at')
             ->first();
 
         if (!$record) {
-            return response()->json(['success' => false, 'message' => 'No approved merger application found for this file number.'], 404);
+            return response()->json(['success' => false, 'message' => 'No approved merger application found for this identifier.'], 404);
         }
 
         return response()->json(['success' => true, 'data' => $record]);
+    }
+
+    public function destroy(int $id): JsonResponse
+    {
+        $record = PlotMergerApplication::findOrFail($id);
+        
+        if ($record->status === PlotMergerApplication::STATUS_APPROVED) {
+            return response()->json(['success' => false, 'message' => 'Approved applications cannot be deleted.'], 403);
+        }
+
+        $record->update([
+            'is_deleted' => 1,
+            'deleted_by' => Auth::id(),
+            'deleted_at' => now(),
+        ]);
+        return response()->json(['success' => true, 'message' => 'Application deleted successfully.']);
     }
 }

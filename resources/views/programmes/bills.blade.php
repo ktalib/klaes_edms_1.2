@@ -67,10 +67,11 @@
                             @foreach($allFiles as $file)
                                 <option value="{{ $file['id'] }}" data-type="{{ $file['type'] }}"
                                     data-fileno="{{ $file['fileno'] }}" data-owner="{{ $file['owner_name'] }}"
+                                    data-application-id="{{ $file['applicationID'] ?? '' }}"
                                     data-unit-type="{{ $file['unit_type'] ?? '' }}"
                                     data-existing-site-area="{{ $file['existing_site_area'] ?? '' }}"
                                     data-existing-structure-total="{{ $file['existing_structure_total'] ?? '' }}">
-                                    {{ $file['fileno'] }} - {{ $file['owner_name'] }} ({{ ucfirst($file['type']) }})
+                                    {{ strtoupper($file['fileno']) }} - {{ strtoupper($file['owner_name']) }} ({{ ucfirst($file['type']) }})
                                 </option>
                             @endforeach
                         </select>
@@ -846,34 +847,18 @@
 
             // File number selection handler
             $('#filenoSelect').on('select2:select', function (e) {
-                var selectedOption = e.params.data.element;
-                var fileId = $(selectedOption).val();
-                var fileType = $(selectedOption).data('type');
-                var fileno = $(selectedOption).data('fileno');
-                var owner = $(selectedOption).data('owner');
-                var unitType = ($(selectedOption).data('unitType') || '').toString().toUpperCase();
-                var existingSiteArea = $(selectedOption).attr('data-existing-site-area');
-                if (existingSiteArea === undefined || existingSiteArea === null || existingSiteArea === '') {
-                    existingSiteArea = $(selectedOption).data('existingSiteArea');
-                }
+                var data = e.params.data;
+                var element = $(data.element);
+                var fileId = data.id;
+                var fileType = element.data('type');
+                var fileno = element.data('fileno');
+                var owner = element.data('owner');
+                var applicationId = element.data('application-id');
+                var unitType = element.data('unit-type');
+                var existingSiteArea = element.data('existing-site-area');
+                var existingStructureTotal = element.data('existing-structure-total');
 
-                var existingStructureTotal = $(selectedOption).attr('data-existing-structure-total');
-                if (existingStructureTotal === undefined || existingStructureTotal === null || existingStructureTotal === '') {
-                    existingStructureTotal = $(selectedOption).data('existingStructureTotal');
-                }
-
-                var metricKey = String(fileId || '');
-                if ((existingSiteArea === undefined || existingSiteArea === null || existingSiteArea === '')
-                    && conversionFileMetrics && conversionFileMetrics[metricKey]) {
-                    existingSiteArea = conversionFileMetrics[metricKey].existing_site_area;
-                }
-
-                if ((existingStructureTotal === undefined || existingStructureTotal === null || existingStructureTotal === '')
-                    && conversionFileMetrics && conversionFileMetrics[metricKey]) {
-                    existingStructureTotal = conversionFileMetrics[metricKey].existing_structure_total;
-                }
-
-                loadBillsForFile(fileId, fileType, fileno, owner, unitType, existingSiteArea, existingStructureTotal);
+                loadBillsForFile(fileId, fileType, fileno, owner, unitType, existingSiteArea, existingStructureTotal, applicationId);
             });
 
             // Clear selection handler
@@ -920,11 +905,11 @@
             };
         }
 
-        function loadBillsForFile(fileId, fileType, fileno, owner, unitType = null, existingSiteArea = null, existingStructureTotal = null) {
-            // Hide no selection state
+        function loadBillsForFile(fileId, fileType, fileno, owner, unitType = null, existingSiteArea = null, existingStructureTotal = null, applicationId = null) {
             $('#no-selection').addClass('hidden');
             $('#bills-container').removeClass('hidden');
 
+            // Parse and format metrics
             var parsedExistingSiteArea = parseFloat(String(existingSiteArea ?? '').replace(/,/g, ''));
             parsedExistingSiteArea = Number.isFinite(parsedExistingSiteArea) && parsedExistingSiteArea > 0 ? parsedExistingSiteArea : null;
 
@@ -936,7 +921,8 @@
                 fileId: fileId,
                 fileType: fileType,
                 fileno: fileno,
-                owner: normalizeName(owner),
+                owner: owner ? owner.toUpperCase() : '',
+                applicationId: applicationId,
                 unitType: unitType,
                 existingSiteArea: parsedExistingSiteArea,
                 existingStructureTotal: parsedExistingStructureTotal
@@ -944,8 +930,18 @@
 
             // Update application info
             $('#app-owner-name').text(currentApplication.owner);
-            $('#app-id').text('ST-2025-' + String(fileId).padStart(4, '0'));
-            $('#app-fileno').text(fileno);
+            
+            // Format Application ID
+            var displayAppId = applicationId;
+            if (!displayAppId || displayAppId === 'null') {
+                displayAppId = (fileType === 'primary' ? 'ST-2025-' : 'STM-2025-') + String(fileId).padStart(4, '0');
+            } else if (!isNaN(displayAppId)) {
+                // If it's just a number (id), format it
+                displayAppId = 'STM-2025-' + String(displayAppId).padStart(4, '0');
+            }
+            
+            $('#app-id').text(displayAppId.toUpperCase());
+            $('#app-fileno').text(fileno.toUpperCase());
             $('#app-type').html('<i data-lucide="file-text" class="w-4 h-4 mr-1"></i>' + formatApplicationTypeLabel(fileType, unitType));
 
             // Filter bills for this file
@@ -1058,6 +1054,7 @@
             bills.forEach(function (bill) {
                 // Check for primary or unit application fields
                 var applicationFee, processingFee, sitePlanFee, paymentDate, receiptNumber;
+                var appReceipt, procReceipt, siteReceipt;
 
                 if (bill.primary_application_fee !== null && bill.primary_application_fee !== undefined) {
                     // Primary application
@@ -1066,6 +1063,10 @@
                     sitePlanFee = parseFloat(bill.primary_site_plan_fee || 0);
                     paymentDate = bill.primary_payment_date;
                     receiptNumber = bill.primary_receipt_number;
+                    
+                    appReceipt = bill.application_fee_receipt_number;
+                    procReceipt = bill.processing_fee_receipt_number;
+                    siteReceipt = bill.site_plan_fee_receipt_number;
                 } else if (bill.unit_application_fee !== null && bill.unit_application_fee !== undefined) {
                     // Unit application
                     applicationFee = parseFloat(bill.unit_application_fee || 0);
@@ -1073,6 +1074,10 @@
                     sitePlanFee = parseFloat(bill.unit_site_plan_fee || 0);
                     paymentDate = bill.unit_payment_date;
                     receiptNumber = bill.unit_receipt_number;
+
+                    appReceipt = bill.application_fee_receipt_no;
+                    procReceipt = bill.processing_fee_receipt_no;
+                    siteReceipt = bill.survey_fee_receipt_no;
                 } else {
                     // Fallback to original field names
                     applicationFee = parseFloat(bill.Scheme_Application_Fee || bill.Unit_Application_Fees || 0);
@@ -1080,6 +1085,10 @@
                     sitePlanFee = parseFloat(bill.Site_Plan_Fee || 0);
                     paymentDate = bill.payment_date;
                     receiptNumber = bill.receipt_number;
+
+                    appReceipt = bill.application_fee_receipt_number || bill.application_fee_receipt_no;
+                    procReceipt = bill.processing_fee_receipt_number || bill.processing_fee_receipt_no;
+                    siteReceipt = bill.site_plan_fee_receipt_number || bill.survey_fee_receipt_no;
                 }
 
                 var total = applicationFee + processingFee + sitePlanFee;
@@ -1093,9 +1102,9 @@
                     title: 'Initial Application Bill',
                     subtitle: 'Application Fee, Processing Fee, Site Plan Fee',
                     items: [
-                        { label: 'Application Fee', amount: applicationFee },
-                        { label: 'Processing Fee', amount: processingFee },
-                        { label: 'Site Plan Fee', amount: sitePlanFee }
+                        { label: 'Application Fee', amount: applicationFee, receipt: appReceipt },
+                        { label: 'Processing Fee', amount: processingFee, receipt: procReceipt },
+                        { label: 'Site Plan Fee', amount: sitePlanFee, receipt: siteReceipt }
                     ],
                     total: total,
                     status: bill.Payment_Status,
@@ -1194,10 +1203,17 @@
 
             var itemsHtml = '';
             data.items.forEach(function (item) {
+                var formattedAmount = !isNaN(parseFloat(item.amount)) 
+                    ? `₦${parseFloat(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                    : (item.amount || '—');
+                    
                 itemsHtml += `
-                                                    <div class="flex justify-between text-sm">
+                                                    <div class="flex justify-between text-sm py-1 border-b border-gray-50 last:border-0">
                                                         <span class="text-gray-600">${item.label}</span>
-                                                        <span class="font-medium">₦${parseFloat(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <div class="text-right flex flex-col items-end">
+                                                            <span class="font-bold text-gray-900">${formattedAmount}</span>
+                                                            ${item.receipt ? `<span class="inline-block mt-0.5 px-1.5 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded border border-blue-100 uppercase">Rec: ${item.receipt}</span>` : ''}
+                                                        </div>
                                                     </div>
                                                 `;
             });

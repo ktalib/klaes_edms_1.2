@@ -20,6 +20,9 @@ class PlotSubdivisionController extends Controller
         $search = trim((string) $request->input('search'));
 
         $records = PlotSubdivisionApplication::query()
+            ->where(function($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     $sub->where('applicant_name', 'LIKE', "%{$search}%")
@@ -36,8 +39,16 @@ class PlotSubdivisionController extends Controller
         $districts   = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
         $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
 
+        $stats = [
+            'total'        => PlotSubdivisionApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->count(),
+            'daily'        => PlotSubdivisionApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->whereDate('created_at', today())->count(),
+            'pending'      => PlotSubdivisionApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', 'pending')->count(),
+            'approved'     => PlotSubdivisionApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', 'approved')->count(),
+            'rejected'     => PlotSubdivisionApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', 'rejected')->count(),
+        ];
+
         return view('deeds.parcel_update.subdivision', compact(
-            'records', 'limit', 'states', 'lgas', 'districts', 'streetNames'
+            'records', 'limit', 'states', 'lgas', 'districts', 'streetNames', 'stats'
         ));
     }
 
@@ -115,13 +126,6 @@ class PlotSubdivisionController extends Controller
         return response()->json(['success' => true, 'data' => $record]);
     }
 
-    public function destroy($id)
-    {
-        $record = PlotSubdivisionApplication::findOrFail($id);
-        $record->delete();
-
-        return response()->json(['success' => true, 'message' => 'Record deleted successfully.']);
-    }
 
     public function approve(int $id)
     {
@@ -213,5 +217,21 @@ class PlotSubdivisionController extends Controller
         }
 
         return response()->json(['success' => true, 'data' => $record]);
+    }
+
+    public function destroy(int $id): JsonResponse
+    {
+        $record = PlotSubdivisionApplication::findOrFail($id);
+        
+        if ($record->status === PlotSubdivisionApplication::STATUS_APPROVED) {
+            return response()->json(['success' => false, 'message' => 'Approved applications cannot be deleted.'], 403);
+        }
+
+        $record->update([
+            'is_deleted' => 1,
+            'deleted_by' => Auth::id(),
+            'deleted_at' => now(),
+        ]);
+        return response()->json(['success' => true, 'message' => 'Application deleted successfully.']);
     }
 }

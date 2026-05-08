@@ -65,7 +65,7 @@
             ->where('s.main_application_id', $motherApplication->id);
         })
         ->leftJoin('st_file_numbers as sfn', function ($join) use ($motherApplication) {
-          $join->on('bl.unit_no', '=', 'sfn.unit_sequence')
+          $join->on(DB::raw('CAST(bl.unit_no AS NVARCHAR(255))'), '=', DB::raw('CAST(sfn.unit_sequence AS NVARCHAR(255))'))
                ->where('sfn.parent_id', '=', $motherApplication->primary_file_id)
                ->where('sfn.file_no_type', '=', 'PUA');
         })

@@ -141,7 +141,11 @@ class DeedsApplicationController extends Controller
         $landUseTypes = LandUseType::query()->where('is_active', 1)->orderBy('name')->get(['id', 'name']);
         $purposes = Purpose::query()->orderBy('name')->get(['id', 'landuseid', 'name']);
 
-        return view('deeds_applications.index', compact('applications', 'states', 'lgas', 'districts', 'streetNames', 'landUseTypes', 'purposes'));
+        $consentTodayCount = $applications->filter(function($app) {
+            return $app->created_at->isToday();
+        })->count();
+
+        return view('deeds_applications.index', compact('applications', 'states', 'lgas', 'districts', 'streetNames', 'landUseTypes', 'purposes', 'consentTodayCount'));
     }
 
     public function create(): View

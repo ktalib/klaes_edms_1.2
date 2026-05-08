@@ -17,7 +17,7 @@ class SubApplicationController extends Controller
 
     /**
      * Save Unit (Sub-application) survey data coming from Planning Recommendation modal.
-     * Only scheme_no is stored on subapplications; the survey numbers are saved on mother_applications/surveyCadastralRecord.
+     * 
      */
     public function saveUnitSurveyData(Request $request)
     {

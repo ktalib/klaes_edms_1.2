@@ -78,6 +78,65 @@
                 </div>
             </div>
 
+            {{-- Status Cards --}}
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                {{-- Total --}}
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex items-start justify-between transition hover:shadow-md">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Total</p>
+                        <p class="text-3xl font-extrabold text-slate-800 mt-1">{{ number_format($stats['total']) }}</p>
+                        <p class="text-[10px] text-slate-400 mt-1">All applications</p>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
+                        <i data-lucide="layers" class="w-5 h-5 text-slate-500"></i>
+                    </div>
+                </div>
+                {{-- Daily --}}
+                <div class="bg-white rounded-2xl border border-indigo-200 shadow-sm p-5 flex items-start justify-between transition hover:shadow-md">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-indigo-500">Created Today</p>
+                        <p class="text-3xl font-extrabold text-indigo-600 mt-1">{{ number_format($stats['daily']) }}</p>
+                        <p class="text-[10px] text-slate-400 mt-1">New entries</p>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+                        <i data-lucide="calendar" class="w-5 h-5 text-indigo-500"></i>
+                    </div>
+                </div>
+                {{-- Pending --}}
+                <div class="bg-white rounded-2xl border border-amber-200 shadow-sm p-5 flex items-start justify-between transition hover:shadow-md">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-amber-500">Pending</p>
+                        <p class="text-3xl font-extrabold text-amber-600 mt-1">{{ number_format($stats['pending']) }}</p>
+                        <p class="text-[10px] text-slate-400 mt-1">Awaiting review</p>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                        <i data-lucide="clock" class="w-5 h-5 text-amber-500"></i>
+                    </div>
+                </div>
+                {{-- Approved --}}
+                <div class="bg-white rounded-2xl border border-blue-200 shadow-sm p-5 flex items-start justify-between transition hover:shadow-md">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-blue-500">Approved</p>
+                        <p class="text-3xl font-extrabold text-blue-600 mt-1">{{ number_format($stats['approved']) }}</p>
+                        <p class="text-[10px] text-slate-400 mt-1">Ready to process</p>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-blue-500"></i>
+                    </div>
+                </div>
+                {{-- Rejected --}}
+                <div class="bg-white rounded-2xl border border-red-200 shadow-sm p-5 flex items-start justify-between transition hover:shadow-md">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-red-500">Rejected</p>
+                        <p class="text-3xl font-extrabold text-red-600 mt-1">{{ number_format($stats['rejected']) }}</p>
+                        <p class="text-[10px] text-slate-400 mt-1">Not approved</p>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
+                        <i data-lucide="x-circle" class="w-5 h-5 text-red-500"></i>
+                    </div>
+                </div>
+            </div>
+
             {{-- Table --}}
             <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                 <div class="overflow-x-auto">
@@ -127,9 +186,15 @@
                                                     <button onclick="viewRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
                                                         <i data-lucide="eye" class="w-4 h-4 text-blue-500"></i> View Details
                                                     </button>
-                                                    <button onclick="openKnupdaModal({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
-                                                        <i data-lucide="handshake" class="w-4 h-4 text-purple-500"></i> KNUPDA Handshake
-                                                    </button>
+                                                    @if($record->knupda_status === 'Approved' || $record->knupda_status === 'Declined')
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="KNUPDA evaluation completed">
+                                                            <i data-lucide="handshake" class="w-4 h-4 text-slate-300"></i> KNUPDA Handshake
+                                                        </button>
+                                                    @else
+                                                        <button onclick="openKnupdaModal({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                            <i data-lucide="handshake" class="w-4 h-4 text-purple-500"></i> KNUPDA Handshake
+                                                        </button>
+                                                    @endif
                                                     @if($record->knupda_status === 'Approved' && $record->status !== 'approved')
                                                         <button onclick="approveRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 gap-2 font-bold border-t border-slate-50 mt-1">
                                                             <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i> Process Approval
@@ -197,9 +262,15 @@
                                                     @endif
                                                 </div>
                                                     <div class="py-1">
-                                                        <button onclick="deleteRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 gap-2">
-                                                            <i data-lucide="trash-2" class="w-4 h-4"></i> Delete
-                                                        </button>
+                                                        @if($record->status === 'approved')
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Approved applications cannot be deleted">
+                                                                <i data-lucide="trash-2" class="w-4 h-4 text-slate-300"></i> Delete
+                                                            </button>
+                                                        @else
+                                                            <button onclick="deleteRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 gap-2">
+                                                                <i data-lucide="trash-2" class="w-4 h-4"></i> Delete
+                                                            </button>
+                                                        @endif
                                                     </div>
                                                 </div>
                                             </div>
@@ -990,6 +1061,35 @@
                 }
             } catch (error) {
                 Swal.fire('Error!', 'Failed to reject record.', 'error');
+            }
+        }
+    }
+
+    async function deleteRecord(id) {
+        const result = await Swal.fire({
+            title: 'Delete Application?',
+            text: "Are you sure you want to delete this application? This action cannot be undone.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            confirmButtonText: 'Yes, delete it'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                const response = await fetch(`{{ url('plot-merger') }}/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }
+                });
+                const res = await response.json();
+                if (res.success) {
+                    Swal.fire('Deleted!', res.message, 'success');
+                    location.reload();
+                } else {
+                    Swal.fire('Error!', res.message || 'Failed to delete record.', 'error');
+                }
+            } catch (error) {
+                Swal.fire('Error!', 'An error occurred.', 'error');
             }
         }
     }

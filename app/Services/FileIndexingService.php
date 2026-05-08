@@ -33,6 +33,8 @@ class FileIndexingService
             'is_deleted' => false,
         ];
 
+        $data = $this->enrichWithCorrespondingFile($data);
+
         if ($relatedFileNo) {
             $data['related_fileno'] = json_encode([$relatedFileNo]);
         }
@@ -72,6 +74,8 @@ class FileIndexingService
             'is_updated' => false,
             'is_deleted' => false,
         ];
+
+        $indexingData = $this->enrichWithCorrespondingFile($indexingData);
 
         $fileIndexing = FileIndexing::create($indexingData);
 
@@ -140,5 +144,44 @@ class FileIndexingService
         }
 
         return $this->createFromFileNumberData(array_merge($data, ['file_number' => $fileNumber]));
+    }
+    /**
+     * Check if a file number exists in the corresponding_fileno table
+     * and return the matching fileno if found.
+     *
+     * @param string $fileNumber
+     * @return string|null
+     */
+    public function getCorrespondingMatch(string $fileNumber): ?string
+    {
+        return \DB::connection('sqlsrv')
+            ->table('corresponding_fileno')
+            ->whereRaw('UPPER(LTRIM(RTRIM(fileno))) = UPPER(?)', [trim((string) $fileNumber)])
+            ->value('fileno');
+    }
+
+    /**
+     * Enrich indexing data with corresponding file information
+     *
+     * @param array $data
+     * @return array
+     */
+    public function enrichWithCorrespondingFile(array $data): array
+    {
+        $fileNumber = $data['file_number'] ?? null;
+        if (!$fileNumber) {
+            return $data;
+        }
+
+        $match = $this->getCorrespondingMatch($fileNumber);
+        if ($match !== null) {
+            $data['is_corresponding_file'] = 1;
+            $data['corresponding_fileno'] = $match;
+        } else {
+            $data['is_corresponding_file'] = 0;
+            $data['corresponding_fileno'] = null;
+        }
+
+        return $data;
     }
 }

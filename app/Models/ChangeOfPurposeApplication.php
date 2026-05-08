@@ -41,6 +41,7 @@ class ChangeOfPurposeApplication extends Model
         'application_generated_at',
         'recommendation_generated_at',
         'site_plan',
+        'is_deleted',
     ];
 
     protected $casts = [

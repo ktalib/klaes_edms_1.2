@@ -267,11 +267,17 @@
     </div>
 
     {{-- Stats cards --}}
-    <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
+    <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
+      <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm ring-1 ring-emerald-100 bg-emerald-50/10">
+        <p class="text-[10px] md:text-xs font-semibold text-emerald-600 uppercase tracking-wider">Generated Today</p>
+        <p class="text-2xl md:text-3xl font-bold text-emerald-700 mt-1.5">{{ $consentTodayCount }}</p>
+      </div>
+
       <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm">
         <p class="text-[10px] md:text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Applications</p>
         <p class="text-2xl md:text-3xl font-bold text-slate-900 mt-1.5">{{ $applications->count() }}</p>
       </div>
+    
       <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm">
         <p class="text-[10px] md:text-xs font-semibold text-blue-600 uppercase tracking-wider">Assignment</p>
         <p class="text-2xl md:text-3xl font-bold text-blue-700 mt-1.5">{{ $applications->where('consent_type',

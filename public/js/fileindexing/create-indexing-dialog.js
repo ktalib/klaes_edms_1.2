@@ -6792,7 +6792,7 @@
         function assembleKangisPlaceholder() {
             const prefix = kangisPlaceholderPrefix ? kangisPlaceholderPrefix.value.trim() : '';
             const serial = kangisPlaceholderSerial ? kangisPlaceholderSerial.value.trim() : '';
-            const assembled = (prefix && serial) ? `${prefix} ${serial}` : '';
+            const assembled = (prefix && serial) ? (prefix === 'KN' ? `${prefix}${serial}` : `${prefix} ${serial}`) : '';
             if (kangisPlaceholderInput) kangisPlaceholderInput.value = assembled;
             if (kangisPlaceholderPreview && kangisPlaceholderPreviewValue) {
                 if (assembled) {

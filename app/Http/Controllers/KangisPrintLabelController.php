@@ -277,139 +277,140 @@ class KangisPrintLabelController extends Controller
                 $prefix, $fileIds, $fullLabel, $rackPrimary, $rackSecondary, $shelfNumber
             ) {
                 $now = Carbon::now();
-
-                $batchNumber = 'KANGIS-' . $prefix . '-' . $now->format('YmdHis');
-
-                $batch = KangisPrintLabelBatch::create([
-                    'batch_number'   => $batchNumber,
-                    'prefix'         => $prefix,
-                    'sys_batch_no'   => $validated['registry_batch_no'] ?? null,
-                    'status'         => KangisPrintLabelBatch::STATUS_PENDING,
-                    'full_label'     => $fullLabel,
-                    'rack_primary'   => $rackPrimary,
-                    'rack_secondary' => $rackSecondary,
-                    'shelf_number'   => $shelfNumber,
-                    'created_by'     => auth()->id(),
-                    'updated_by'     => auth()->id(),
-                    'created_at'     => $now,
-                    'updated_at'     => $now,
-                ]);
-
-                // Fetch files from kangis_grouping (IDs passed from the UI)
-                $files = DB::connection('sqlsrv')
+                
+                // Fetch files from kangis_grouping to group them by their registry_batch_no
+                $filesFromDb = DB::connection('sqlsrv')
                     ->table('kangis_grouping')
                     ->whereIn('id', $fileIds)
                     ->where('kangis_awaiting_fileno', 'like', $prefix . '%')
                     ->get();
 
-                if ($files->isEmpty()) {
-                    throw ValidationException::withMessages(['file_ids' => 'No matching files found in kangis_grouping for the given prefix.']);
+                if ($filesFromDb->isEmpty()) {
+                    throw ValidationException::withMessages(['file_ids' => 'No valid matching records found in kangis_grouping.']);
                 }
 
-                // Resolve / create rack label record
-                $shelfLabelRecord = $this->resolveRackLabelRecord($fullLabel, $rackPrimary, $rackSecondary, $shelfNumber, false, true);
+                // Group by registry_batch_no (this allows "1 will A1 and 5 will have A2" logic)
+                $groups = $filesFromDb->groupBy('registry_batch_no');
+                
+                $createdBatchesData = [];
+                $currentFullLabel = $fullLabel;
+                $currentRackPrimary = $rackPrimary;
+                $currentRackSecondary = $rackSecondary;
+                $currentShelfNumber = $shelfNumber;
 
-                $items = $files->values()->map(function ($file, $index) use ($batch, $fullLabel, $prefix, $now) {
-                    $fileNumber = $file->kangis_awaiting_fileno;
-                    $placeholder = $file->kangis_fileno_placeholder;
-                    $qrPayload  = [
-                        'file_number'  => $fileNumber,
-                        'tracking_id'  => $file->tracking_id ?? $fileNumber,
-                        'prefix'       => $prefix,
-                        'shelf_label'  => $fullLabel,
-                        'generated_at' => $now->toIso8601String(),
-                    ];
+                foreach ($groups as $regBatchNo => $groupFiles) {
+                    $regBatchNoStr = (string)$regBatchNo;
+                    
+                    // 1. Check for unique constraint violation (prefix + sys_batch_no)
+                    $existing = KangisPrintLabelBatch::where('prefix', $prefix)
+                        ->where('sys_batch_no', $regBatchNoStr)
+                        ->first();
+                    
+                    if ($existing) {
+                        throw new \Exception("A print batch already exists for Registry Batch #{$regBatchNoStr} (Prefix: {$prefix}). Please delete the existing batch or use a different Registry Batch No.");
+                    }
 
-                    return [
-                        'batch_id'           => $batch->id,
-                        'kangis_grouping_id' => $file->id, // Use kangis_grouping_id
-                        'file_number'        => $fileNumber,
-                        'prefix'             => $prefix,
-                        'file_title'         => $placeholder,
-                        'plot_number'        => null,
-                        'district'           => null,
-                        'lga'                => null,
-                        'land_use_type'      => null,
-                        'shelf_location'     => $fullLabel,
-                        'label_position'     => $index + 1,
-                        'qr_code_data'       => json_encode($qrPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                        'barcode_data'       => $fileNumber,
-                        'is_printed'         => false,
-                        'created_at'         => $now,
-                        'updated_at'         => $now,
-                    ];
-                })->all();
+                    $batchNumber = 'KANGIS-' . $prefix . '-' . $now->format('YmdHis') . ($groups->count() > 1 ? '-' . $regBatchNoStr : '');
 
-                // Insert batch items in chunks
-                $this->insertBatchItemsInChunks($items);
-
-                // Bump the rack label counter
-                $ids = $files->pluck('id')->all();
-                if ($shelfLabelRecord) {
-                    $count = count($ids);
-                    $shelfLabelRecord->update([
-                        'assigned'   => 'KANGIS-' . $prefix,
-                        'counter'    => DB::raw("CAST(CAST(ISNULL(NULLIF(counter, ''), '0') AS INT) + {$count} AS NVARCHAR(MAX))"),
-                        'status'     => 'Occupied',
-                        'updated_at' => $now,
+                    $batch = KangisPrintLabelBatch::create([
+                        'batch_number'   => $batchNumber,
+                        'prefix'         => $prefix,
+                        'sys_batch_no'   => $regBatchNoStr,
+                        'status'         => KangisPrintLabelBatch::STATUS_PENDING,
+                        'full_label'     => $currentFullLabel,
+                        'rack_primary'   => $currentRackPrimary,
+                        'rack_secondary' => $currentRackSecondary,
+                        'shelf_number'   => $currentShelfNumber,
+                        'created_by'     => auth()->id(),
+                        'updated_by'     => auth()->id(),
+                        'created_at'     => $now,
+                        'updated_at'     => $now,
                     ]);
+
+                    $shelfLabelRecord = $this->resolveRackLabelRecord($currentFullLabel, $currentRackPrimary, $currentRackSecondary, $currentShelfNumber, false, true);
+                    if ($shelfLabelRecord) {
+                        $count = $groupFiles->count();
+                        $shelfLabelRecord->update([
+                            'assigned'   => 'KANGIS-' . $prefix,
+                            'counter'    => DB::raw("CAST(CAST(ISNULL(NULLIF(counter, ''), '0') AS INT) + {$count} AS NVARCHAR(MAX))"),
+                            'status'     => 'Occupied',
+                            'updated_at' => $now,
+                        ]);
+                    }
+
+                    $items = $groupFiles->values()->map(function ($file, $index) use ($batch, $currentFullLabel, $prefix, $now) {
+                        $fileNumber = $file->kangis_awaiting_fileno;
+                        $placeholder = $file->kangis_fileno_placeholder;
+                        $qrPayload  = [
+                            'file_number'  => $fileNumber,
+                            'tracking_id'  => $file->tracking_id ?? $fileNumber,
+                            'prefix'       => $prefix,
+                            'shelf_label'  => $currentFullLabel,
+                            'generated_at' => $now->toIso8601String(),
+                        ];
+
+                        return [
+                            'batch_id'           => $batch->id,
+                            'kangis_grouping_id' => $file->id,
+                            'file_number'        => $fileNumber,
+                            'prefix'             => $prefix,
+                            'file_title'         => $placeholder,
+                            'plot_number'        => null,
+                            'district'           => null,
+                            'lga'                => null,
+                            'land_use_type'      => null,
+                            'shelf_location'     => $currentFullLabel,
+                            'label_position'     => $index + 1,
+                            'qr_code_data'       => json_encode($qrPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                            'barcode_data'       => $fileNumber,
+                            'is_printed'         => false,
+                            'created_at'         => $now,
+                            'updated_at'         => $now,
+                        ];
+                    })->all();
+
+                    $this->insertBatchItemsInChunks($items);
+
+                    $batch->update([
+                        'status'          => KangisPrintLabelBatch::STATUS_GENERATED,
+                        'generated_count' => $groupFiles->count(),
+                        'updated_by'      => auth()->id(),
+                    ]);
+
+                    DB::connection('sqlsrv')
+                        ->table('kangis_grouping')
+                        ->whereIn('id', $groupFiles->pluck('id')->all())
+                        ->update([
+                            'is_indexed' => 0,
+                            'updated_at' => $now,
+                            'updated_by' => auth()->id(),
+                        ]);
+
+                    $createdBatchesData[] = [
+                        'batch' => $batch->fresh(),
+                        'file_count' => $groupFiles->count()
+                    ];
+
+                    if ($groups->count() > 1) {
+                        $currentFullLabel = $this->getNextShelfLabel($currentFullLabel);
+                        if (preg_match('/^([A-Z]{1,2})(\d+)$/i', $currentFullLabel, $m)) {
+                            $currentShelfNumber = (int)$m[2];
+                        }
+                    }
                 }
 
-                // Finalize batch
-                $batch->update([
-                    'status'          => KangisPrintLabelBatch::STATUS_GENERATED,
-                    'generated_count' => count($ids),
-                    'updated_by'      => auth()->id(),
-                ]);
-
-                // Update is_indexed to 0 in kangis_grouping to mark that label batch is generated
-                DB::connection('sqlsrv')
-                    ->table('kangis_grouping')
-                    ->whereIn('id', $ids)
-                    ->update([
-                        'is_indexed' => 0,
-                        'updated_at' => $now,
-                        'updated_by' => auth()->id(),
-                    ]);
-
-                // Return label items for immediate print preview
-                $labelItems = $files->values()->map(function ($file, $index) use ($fullLabel, $prefix) {
-                    $fileNumber = $file->kangis_awaiting_fileno;
-                    $placeholder = $file->kangis_fileno_placeholder;
-                    return [
-                        'kangis_grouping_id'    => $file->id,
-                        'file_number'           => $fileNumber,
-                        'secondary_file_number' => $placeholder,
-                        'file_title'            => $placeholder,
-                        'plot_number'           => null,
-                        'district'              => null,
-                        'lga'                   => null,
-                        'land_use_type'         => null,
-                        'shelf_location'        => $fullLabel,
-                        'shelf_value'           => $fullLabel,
-                        'shelf_label'           => $fullLabel,
-                        'tracking_id'           => $file->tracking_id ?? $fileNumber,
-                        'qr_value'              => $file->tracking_id ?? $fileNumber,
-                        'label_position'        => $index + 1,
-                        'prefix'                => $prefix,
-                    ];
-                })->values()->toArray();
-
-                return [
-                    'batch'       => $batch->fresh(),
-                    'label_items' => $labelItems,
-                    'file_count'  => count($ids),
-                ];
+                return $createdBatchesData;
             });
+
+            $first = $result[0];
 
             return response()->json([
                 'success' => true,
-                'message' => 'Label batch created successfully.',
+                'message' => count($result) > 1 ? count($result) . ' separate batches created successfully.' : 'Label batch created successfully.',
                 'data' => [
-                    'batch_id'     => $result['batch']->id,
-                    'batch_number' => $result['batch']->batch_number,
-                    'file_count'   => $result['file_count'],
-                    'label_items'  => $result['label_items'],
+                    'batch_id'     => $first['batch']->id,
+                    'batch_number' => $first['batch']->batch_number,
+                    'file_count'   => $first['file_count'],
                 ],
             ]);
 
@@ -643,5 +644,18 @@ $query = KangisPrintLabelBatch::with(['creator'])
         foreach (array_chunk($items, $maxPerInsert) as $chunk) {
             KangisPrintLabelBatchItem::insert($chunk);
         }
+    }
+
+    /**
+     * Increment shelf label (e.g. A1 -> A2).
+     */
+    private function getNextShelfLabel(string $fullLabel): string
+    {
+        if (preg_match('/^([A-Z]{1,2})(\d+)$/i', $fullLabel, $matches)) {
+            $prefix = $matches[1];
+            $num = (int)$matches[2];
+            return strtoupper($prefix) . ($num + 1);
+        }
+        return $fullLabel . '_NEXT';
     }
 }

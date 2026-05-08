@@ -76,6 +76,7 @@
                                     <option value="Assignment">Assignment</option>
                                     <option value="Gift">Gift </option>
                                     <option value="Mortgage">Mortgage</option>
+                                     <option value="Tripartite Mortgage">Tripartite Mortgage</option>
                                 </select>
                                 <div
                                     class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">

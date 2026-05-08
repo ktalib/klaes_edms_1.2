@@ -283,6 +283,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/generate-recommendation', [PlotMergerController::class, 'generateRecommendation'])->name('generate-recommendation')->where('id', '[0-9]+');
         Route::get('/{id}/print-recommendation', [PlotMergerController::class, 'printRecommendation'])->name('print-recommendation')->where('id', '[0-9]+');
         Route::get('/find-by-file/{fileNumber}', [PlotMergerController::class, 'findByFileNo'])->name('find-by-file');
+        Route::get('/approved-list', [PlotMergerController::class, 'approvedList'])->name('approved-list');
         Route::post('/{id}/knupda', [PlotMergerController::class, 'updateKnupda'])->name('knupda')->where('id', '[0-9]+');
     });
 

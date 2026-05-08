@@ -42,16 +42,16 @@ document.addEventListener('DOMContentLoaded', function() {
         kangisBatchNo: '',
     };
 
-    // ─── Hardcoded API endpoints ───
-    const PRINT_TEMPLATE_URL = '/kangis-printlabel/print-template';
+    // ─── Dynamic API endpoints ───
+    const PRINT_TEMPLATE_URL = "{{ route('kangis-printlabel.print-template') }}";
     const API = {
-        prefixes:        '/kangis-printlabel/api/prefixes',
-        prefixNextRange: '/kangis-printlabel/api/prefix-next-range',
-        files:           '/kangis-printlabel/api/files',
-        rackStatus:      '/kangis-printlabel/api/rack-label/status',
-        createBatch:     '/kangis-printlabel/api/batch',
-        batches:         '/kangis-printlabel/api/batches',
-        batchBase:       '/kangis-printlabel/api/batch/',
+        prefixes:        "{{ route('kangis-printlabel.api.prefixes') }}",
+        prefixNextRange: "{{ route('kangis-printlabel.api.prefix-next-range') }}",
+        files:           "{{ route('kangis-printlabel.api.files') }}",
+        rackStatus:      "{{ route('kangis-printlabel.api.rack-label.status') }}",
+        createBatch:     "{{ route('kangis-printlabel.api.batch.store') }}",
+        batches:         "{{ route('kangis-printlabel.api.batches') }}",
+        batchBase:       "{{ url('/kangis-printlabel/api/batch') }}/",
     };
 
     // ─── Utility helpers ───
