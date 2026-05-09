@@ -732,6 +732,14 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/', [App\Http\Controllers\ValuationCompensationController::class, 'store'])->name('store');
         Route::get('/project-print/{projectId}', [App\Http\Controllers\ValuationCompensationController::class, 'projectPrint'])->name('project-print');
         
+        // Workers Pool Console Routes
+        Route::prefix('workers')->name('workers.')->group(function () {
+            Route::get('/', [App\Http\Controllers\VfcWorkerController::class, 'index'])->name('index');
+            Route::get('/next-id', [App\Http\Controllers\VfcWorkerController::class, 'getNextId'])->name('next-id');
+            Route::post('/', [App\Http\Controllers\VfcWorkerController::class, 'store'])->name('store');
+            Route::delete('/{id}', [App\Http\Controllers\VfcWorkerController::class, 'destroy'])->name('destroy');
+        });
+
         // Project Manager Console Routes (Must be above wildcard routes)
         Route::prefix('projects')->name('projects.')->group(function () {
             Route::get('/', [App\Http\Controllers\ProjectController::class, 'index'])->name('index');
@@ -739,6 +747,8 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/next-code', [App\Http\Controllers\ProjectController::class, 'getNextCode'])->name('next-code');
             Route::get('/selection', [App\Http\Controllers\ProjectController::class, 'getProjectsForSelection'])->name('selection');
             Route::get('/{id}/workers', [App\Http\Controllers\ProjectController::class, 'getProjectWorkers'])->name('workers');
+            Route::post('/{id}/workers', [App\Http\Controllers\ProjectController::class, 'addWorkerToProject'])->name('add-worker');
+            Route::delete('/{id}/workers/{workerId}', [App\Http\Controllers\ProjectController::class, 'removeWorkerFromProject'])->name('remove-worker');
             Route::get('/{id}/templates', [App\Http\Controllers\ProjectController::class, 'generateWorkerTemplates'])->name('templates');
         });
         // Mobile Field Entry Routes

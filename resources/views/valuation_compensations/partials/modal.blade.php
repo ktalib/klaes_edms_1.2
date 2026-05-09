@@ -7,7 +7,7 @@
         <!-- Header -->
         <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
             <div>
-                <h3 class="text-xl font-bold text-slate-900" id="modal-title">COMPENSATION for VALUATION (CFV) Data entry</h3>
+                <h3 class="text-xl font-bold text-slate-900" id="modal-title">Valuation for Compensation Data Entry</h3>
                 <p class="text-xs text-slate-500 mt-1 uppercase tracking-widest font-semibold">Record property compensation details</p>
             </div>
             <button type="button" class="close-modal text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-50 rounded-xl transition">
@@ -37,50 +37,59 @@
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
                                 <option value="">Select Project</option>
                             </select>
-                            <div id="project-info" class="hidden mt-2 p-3 rounded-lg bg-blue-50 border border-blue-100">
-                                <p class="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Project Summary</p>
-                                <div class="grid grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 mt-4">
-                                    <div class="flex flex-col">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <i data-lucide="hash" class="h-3.5 w-3.5 text-blue-400"></i>
-                                            <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Project ID</span>
+                            <div id="project-info" class="hidden mt-3 p-4 rounded-xl bg-blue-50/50 border border-blue-100/50">
+                                <p class="text-[10px] font-bold text-blue-600 uppercase tracking-widest flex items-center gap-2 mb-3 px-1">
+                                    <i data-lucide="info" class="h-3 w-3"></i> Project Summary
+                                </p>
+                                <div class="space-y-4">
+                                    <!-- Primary Identifiers -->
+                                    <div class="flex flex-wrap items-start gap-x-10 gap-y-3 pb-3.5 border-b border-blue-100/50">
+                                        <div class="flex flex-col">
+                                            <span class="text-[9px] text-blue-400 font-bold uppercase tracking-widest mb-1">Project FileNo</span>
+                                            <div class="flex items-center gap-2">
+                                                <i data-lucide="file-text" class="h-3.5 w-3.5 text-blue-500"></i>
+                                                <span id="proj_fileno_summary" class="text-[12px] font-bold text-blue-900 font-mono whitespace-nowrap">-</span>
+                                            </div>
                                         </div>
-                                        <span id="proj_id_summary" class="text-sm font-bold text-blue-900">-</span>
+
+                                        <div class="flex flex-col">
+                                            <span class="text-[9px] text-amber-500/70 font-bold uppercase tracking-widest mb-1">Project Code</span>
+                                            <div class="flex items-center gap-2">
+                                                <i data-lucide="tag" class="h-3.5 w-3.5 text-amber-600"></i>
+                                                <span id="proj_code_summary" class="text-[12px] font-bold text-amber-800 font-mono whitespace-nowrap">-</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex flex-col">
+                                            <span class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mb-1">Project ID</span>
+                                            <div class="flex items-center gap-2">
+                                                <i data-lucide="hash" class="h-3.5 w-3.5 text-slate-500"></i>
+                                                <span id="proj_id_summary" class="text-[12px] font-bold text-slate-700">-</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div class="flex flex-col">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <i data-lucide="file-text" class="h-3.5 w-3.5 text-blue-400"></i>
-                                            <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Project FileNo</span>
+                                    
+                                    <!-- Statistics -->
+                                    <div class="flex flex-wrap items-center gap-x-12 gap-y-3">
+                                        <div class="flex items-center gap-2.5">
+                                            <div class="h-8 w-8 rounded-lg bg-white border border-slate-100 shadow-sm flex items-center justify-center text-indigo-400">
+                                                <i data-lucide="users" class="h-4 w-4"></i>
+                                            </div>
+                                            <div class="flex flex-col">
+                                                <span class="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Total Workers</span>
+                                                <span id="proj_workers_summary" class="text-xs font-bold text-slate-800">0</span>
+                                            </div>
                                         </div>
-                                        <span id="proj_fileno_summary" class="text-sm font-bold text-blue-900">-</span>
-                                    </div>
-                                    <div class="flex flex-col">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <i data-lucide="tag" class="h-3.5 w-3.5 text-blue-400"></i>
-                                            <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Project Code</span>
+
+                                        <div class="flex items-center gap-2.5">
+                                            <div class="h-8 w-8 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-500">
+                                                <i data-lucide="clipboard-check" class="h-4 w-4"></i>
+                                            </div>
+                                            <div class="flex flex-col">
+                                                <span class="text-[9px] text-emerald-600/70 font-bold uppercase tracking-tight">Form filled</span>
+                                                <span id="proj_rem" class="text-xs font-bold text-emerald-600">0</span>
+                                            </div>
                                         </div>
-                                        <span id="proj_code_summary" class="text-sm font-bold text-blue-900">-</span>
-                                    </div>
-                                    <div class="flex flex-col">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <i data-lucide="layers" class="h-3.5 w-3.5 text-blue-400"></i>
-                                            <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Template Rows</span>
-                                        </div>
-                                        <span id="proj_total" class="text-sm font-bold text-blue-900">0</span>
-                                    </div>
-                                    <div class="flex flex-col">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <i data-lucide="users" class="h-3.5 w-3.5 text-blue-400"></i>
-                                            <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Total Workers</span>
-                                        </div>
-                                        <span id="proj_workers_summary" class="text-sm font-bold text-blue-900">0</span>
-                                    </div>
-                                    <div class="flex flex-col">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <i data-lucide="clipboard-check" class="h-3.5 w-3.5 text-blue-400"></i>
-                                            <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Form Filled</span>
-                                        </div>
-                                        <span id="proj_rem" class="text-sm font-bold text-blue-900">0</span>
                                     </div>
                                 </div>
                             </div>

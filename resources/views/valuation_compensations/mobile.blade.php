@@ -148,6 +148,94 @@
             margin: 0 auto;
         }
 
+        /* ── SUMMARY CARD ── */
+        .summary-card {
+            margin-top: 16px;
+            padding: 16px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+        .summary-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 12px;
+        }
+        .summary-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .id-badge {
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 6px;
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--accent);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        .summary-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .summary-icon-box {
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+        }
+        .summary-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .stats-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .stat-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+        .stat-badge.success {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+        }
+        .stat-badge span {
+            color: var(--text);
+            font-weight: 800;
+        }
+        .stat-badge.success span {
+            color: var(--success);
+        }
+        .mt-3 { margin-top: 12px; }
+        .hidden { display: none !important; }
+
         .section-card {
             background: var(--surface);
             border: 1px solid var(--border);
@@ -510,52 +598,35 @@
                             <option value="">Loading Projects...</option>
                         </select>
 
-                        <div id="mobile-project-info" class="hidden mt-4 p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                            <p class="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                <i data-lucide="info" class="w-3 h-3"></i> Project Summary
-                            </p>
-                            <div class="grid grid-cols-2 gap-x-4 gap-y-3">
-                                <div class="flex flex-col gap-0.5">
-                                    <div class="flex items-center gap-1.5">
-                                        <i data-lucide="hash" class="w-2.5 h-2.5 text-slate-500"></i>
-                                        <span class="text-[9px] text-slate-500 uppercase font-bold tracking-tight">Project ID</span>
+                        <div id="mobile-project-info" class="hidden summary-card">
+                            <div class="summary-header">
+                                <p class="summary-label">Project Summary</p>
+                                <span class="id-badge">ID: <span id="m_proj_id">-</span></span>
+                            </div>
+
+                            <div class="summary-body">
+                                <div class="summary-item">
+                                    <div class="summary-icon-box" style="border-color: rgba(245, 158, 11, 0.2);">
+                                        <i data-lucide="hash" style="width: 12px; color: var(--warning);"></i>
                                     </div>
-                                    <span id="m_proj_id" class="text-xs font-bold text-slate-200">-</span>
+                                    <span id="m_proj_code" class="summary-value" style="color: var(--warning);">-</span>
                                 </div>
-                                <div class="flex flex-col gap-0.5">
-                                    <div class="flex items-center gap-1.5">
-                                        <i data-lucide="file-text" class="w-2.5 h-2.5 text-slate-500"></i>
-                                        <span class="text-[9px] text-slate-500 uppercase font-bold tracking-tight">FileNo</span>
+                                <div class="summary-item">
+                                    <div class="summary-icon-box" style="border-color: rgba(59, 130, 246, 0.2);">
+                                        <i data-lucide="file-text" style="width: 12px; color: var(--accent);"></i>
                                     </div>
-                                    <span id="m_proj_fileno" class="text-xs font-bold text-slate-200">-</span>
+                                    <span id="m_proj_fileno" class="summary-value" style="color: var(--accent);">-</span>
                                 </div>
-                                <div class="flex flex-col gap-0.5">
-                                    <div class="flex items-center gap-1.5">
-                                        <i data-lucide="tag" class="w-2.5 h-2.5 text-slate-500"></i>
-                                        <span class="text-[9px] text-slate-500 uppercase font-bold tracking-tight">Code</span>
+
+                                <div class="stats-grid">
+                                    <div class="stat-badge">
+                                        <i data-lucide="users"></i>
+                                        WORKERS: <span id="m_proj_workers">0</span>
                                     </div>
-                                    <span id="m_proj_code" class="text-xs font-bold text-slate-200">-</span>
-                                </div>
-                                <div class="flex flex-col gap-0.5">
-                                    <div class="flex items-center gap-1.5">
-                                        <i data-lucide="layers" class="w-2.5 h-2.5 text-slate-500"></i>
-                                        <span class="text-[9px] text-slate-500 uppercase font-bold tracking-tight">Template Rows</span>
+                                    <div class="stat-badge success">
+                                        <i data-lucide="check-circle"></i>
+                                        FORM FILLED: <span id="m_proj_filled">0</span>
                                     </div>
-                                    <span id="m_proj_rows" class="text-xs font-bold text-slate-200">0</span>
-                                </div>
-                                <div class="flex flex-col gap-0.5">
-                                    <div class="flex items-center gap-1.5">
-                                        <i data-lucide="users" class="w-2.5 h-2.5 text-slate-500"></i>
-                                        <span class="text-[9px] text-slate-500 uppercase font-bold tracking-tight">Total Workers</span>
-                                    </div>
-                                    <span id="m_proj_workers" class="text-xs font-bold text-slate-200">0</span>
-                                </div>
-                                <div class="flex flex-col gap-0.5">
-                                    <div class="flex items-center gap-1.5">
-                                        <i data-lucide="clipboard-check" class="w-2.5 h-2.5 text-slate-500"></i>
-                                        <span class="text-[9px] text-slate-500 uppercase font-bold tracking-tight">Form Filled</span>
-                                    </div>
-                                    <span id="m_proj_filled" class="text-xs font-bold text-emerald-400">0</span>
                                 </div>
                             </div>
                         </div>
@@ -670,14 +741,6 @@
                 </div>
                 <div class="section-body">
                     <div class="field">
-                        <label>Account Number <span class="req">*</span></label>
-                        <input type="tel" name="account_number" class="inp" placeholder="10 Digits" maxlength="10" required>
-                    </div>
-                    <div class="field">
-                        <label>Account Name <span class="req">*</span></label>
-                        <input type="text" name="account_name" class="inp" placeholder="Full Name as on Bank Account" required>
-                    </div>
-                    <div class="field">
                         <label>Bank Name</label>
                         <div class="inp-wrap" style="position: relative; display: flex; align-items: center;">
                             <div id="selectedBankLogo" class="hidden" style="position: absolute; left: 12px; z-index: 10; pointer-events: none;">
@@ -691,6 +754,14 @@
                                 <!-- JS items -->
                             </div>
                         </div>
+                    </div>
+                    <div class="field">
+                        <label>Account Name <span class="req">*</span></label>
+                        <input type="text" name="account_name" class="inp" placeholder="Full Name as on Bank Account" required>
+                    </div>
+                    <div class="field">
+                        <label>Account Number <span class="req">*</span></label>
+                        <input type="tel" name="account_number" class="inp" placeholder="10 Digits" maxlength="10" required>
                     </div>
                     <div class="field">
                         <label>Phone Number <span class="req">*</span></label>
@@ -983,13 +1054,19 @@
                     document.getElementById('mobile_project_fileno').value = proj.fileno;
                     
                     // Update Summary UI
-                    document.getElementById('m_proj_id').textContent = proj.id;
-                    document.getElementById('m_proj_fileno').textContent = proj.fileno;
-                    document.getElementById('m_proj_code').textContent = proj.code;
-                    document.getElementById('m_proj_rows').textContent = proj.total_items;
-                    document.getElementById('m_proj_workers').textContent = proj.workers_count || 0;
-                    document.getElementById('m_proj_filled').textContent = proj.valuations_count || 0;
-                    document.getElementById('mobile-project-info').classList.remove('hidden');
+                    const safeSetText = (id, text) => {
+                        const el = document.getElementById(id);
+                        if (el) el.textContent = text;
+                    };
+
+                    safeSetText('m_proj_id', proj.id);
+                    safeSetText('m_proj_fileno', proj.fileno);
+                    safeSetText('m_proj_code', proj.code);
+                    safeSetText('m_proj_workers', proj.workers_count || 0);
+                    safeSetText('m_proj_filled', proj.valuations_count || 0);
+                    
+                    const infoPanel = document.getElementById('mobile-project-info');
+                    if (infoPanel) infoPanel.classList.remove('hidden');
                     if (window.lucide) window.lucide.createIcons();
                 }
             }

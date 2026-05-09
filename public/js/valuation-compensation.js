@@ -334,7 +334,7 @@ const VFC = {
     },
 
     openCreateModal: function() {
-        $('#modal-title').text('New Valuation for Compensation');
+        $('#modal-title').text('Valuation for Compensation Data Entry');
         $('#valuation-form')[0].reset();
         $('#record_id').val('');
         $('#our_ref').val('').attr('placeholder', 'Select project...');

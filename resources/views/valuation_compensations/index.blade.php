@@ -19,6 +19,10 @@
                 <p class="text-slate-500 mt-1">Manage property compensation records and valuations</p>
             </div>
             <div class="flex gap-3">
+                <a href="{{ route('valuation-compensations.workers.index') }}" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold shadow-sm hover:bg-slate-50 transition">
+                    <i data-lucide="users" class="h-5 w-5"></i>
+                    <span>Workers Console</span>
+                </a>
                 <a href="{{ route('valuation-compensations.projects.index') }}" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold shadow-sm hover:bg-slate-50 transition">
                     <i data-lucide="layout-dashboard" class="h-5 w-5"></i>
                     <span>Project Manager Console</span>

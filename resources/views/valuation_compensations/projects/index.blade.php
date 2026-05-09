@@ -60,16 +60,19 @@
                                 @endif
                             </div>
                         </div>
-                        <div class="text-right">
-                            <p class="text-xs text-slate-400 font-bold uppercase tracking-widest">Template Rows</p>
-                            <p class="text-2xl font-black text-slate-800">{{ $project->number_of_items }}</p>
-                        </div>
+                        <!-- Template Rows Removed -->
                     </div>
                 </div>
                 <div class="p-6">
-                    <div class="flex items-center gap-2 mb-4">
-                        <i data-lucide="users" class="h-4 w-4 text-slate-400"></i>
-                        <span class="text-xs font-bold text-slate-500 uppercase">Assigned Workers ({{ $project->workers->count() }})</span>
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="users" class="h-4 w-4 text-slate-400"></i>
+                            <span class="text-xs font-bold text-slate-500 uppercase">Assigned Workers ({{ $project->workers->count() }})</span>
+                        </div>
+                        <button type="button" onclick='openManageWorkersModal({{ $project->id }}, "{{ $project->project_name }}", {!! json_encode($project->workers->map(function($w) { return ["id" => $w->id, "name" => $w->user->first_name . " " . $w->user->last_name, "code" => $w->worker_code]; })) !!})' 
+                            class="text-[10px] font-bold text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition flex items-center gap-1">
+                            <i data-lucide="user-cog" class="h-3 w-3"></i> Manage
+                        </button>
                     </div>
                     <div class="flex flex-wrap gap-2 mb-6">
                         @foreach($project->workers->take(3) as $worker)
@@ -133,6 +136,48 @@
     </div>
 </div>
 
+<!-- Manage Workers Modal -->
+<div id="manage-workers-modal" class="fixed inset-0 z-[101] hidden flex items-center justify-center p-4">
+    <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onclick="closeManageWorkersModal()"></div>
+    <div class="relative bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden transform transition-all scale-95 opacity-0 duration-300" id="manage-modal-container">
+        <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
+            <div>
+                <h3 class="text-xl font-bold text-slate-900" id="manage-modal-title">Manage Project Workers</h3>
+                <p class="text-xs text-slate-500 mt-0.5" id="manage-modal-subtitle"></p>
+            </div>
+            <button type="button" onclick="closeManageWorkersModal()" class="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-50 rounded-xl transition">
+                <i data-lucide="x" class="h-6 w-6"></i>
+            </button>
+        </div>
+        
+        <div class="px-8 py-6 space-y-6 max-h-[70vh] overflow-y-auto">
+            <!-- Add New Worker Section -->
+            <div class="bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+                <label class="block text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-3">Assign Worker from Pool</label>
+                <form id="add-worker-to-project-form" class="flex gap-2">
+                    <select id="pool_worker_select" name="user_id" required class="flex-1 px-4 py-2.5 rounded-xl border border-blue-200 bg-white text-sm font-medium focus:ring-0 focus:border-blue-500 transition">
+                        <option value="">Select a worker from pool...</option>
+                        @foreach($workers as $worker)
+                        <option value="{{ $worker->id }}">{{ $worker->first_name }} {{ $worker->last_name }} ({{ $worker->vfc_worker_id ?? 'VFC' }})</option>
+                        @endforeach
+                    </select>
+                    <button type="submit" class="px-5 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition flex items-center gap-2">
+                        <i data-lucide="plus" class="h-4 w-4"></i> Add
+                    </button>
+                </form>
+            </div>
+
+            <!-- Current Workers List -->
+            <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Currently Assigned</label>
+                <div id="current-project-workers" class="space-y-3">
+                    <!-- Dynamic rows here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Project Modal -->
 <div id="project-modal" class="fixed inset-0 z-[100] hidden flex items-center justify-center p-4">
     <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" id="modal-overlay"></div>
@@ -140,7 +185,7 @@
         <!-- Header -->
         <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
             <div>
-                <h3 class="text-xl font-bold text-slate-900">Create New VFC Project</h3>
+                <h3 class="text-xl font-bold text-slate-900">Create Project</h3>
                 <p class="text-xs text-slate-500 mt-1 uppercase tracking-widest font-semibold">Define project scope and assign workers</p>
             </div>
             <button type="button" onclick="closeModal()" class="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-50 rounded-xl transition">
@@ -182,11 +227,7 @@
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Your Reference</label>
                             <input type="text" name="your_reference" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. MH/VFC/2026/045">
                         </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Number of Template Rows <span class="text-slate-400 font-normal italic">(Estimated)</span> <span class="text-red-500">*</span></label>
-                            <input type="number" name="number_of_items" value="10" readonly 
-                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 font-bold text-slate-500 cursor-not-allowed shadow-inner transition text-sm">
-                        </div>
+                        <input type="hidden" name="number_of_items" value="10">
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Type <span class="text-red-500">*</span></label>
                             <select name="project_type" id="project_type" required class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
@@ -254,7 +295,7 @@
                         <div class="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
                             <i data-lucide="users" class="h-4 w-4"></i>
                         </div>
-                        <h4 class="text-sm font-bold text-slate-700 uppercase tracking-wider">Worker Assignment</h4>
+                        <h4 class="text-sm font-bold text-slate-700 uppercase tracking-wider">Add Worker</h4>
                     </div>
 
                     <div>
@@ -427,6 +468,120 @@
         setTimeout(() => {
             $('#project-modal').addClass('hidden').removeClass('flex');
         }, 300);
+    }
+
+    let activeProjectId = null;
+
+    function openManageWorkersModal(projectId, projectName, assignedWorkers) {
+        activeProjectId = projectId;
+        $('#manage-modal-title').text(`Manage Workers: ${projectName}`);
+        $('#manage-modal-subtitle').text('Add from pool or remove existing assignments');
+        
+        renderProjectWorkers(assignedWorkers);
+
+        const $modal = $('#manage-workers-modal');
+        const $container = $('#manage-modal-container');
+        $modal.removeClass('hidden').addClass('flex');
+        setTimeout(() => {
+            $container.removeClass('scale-95 opacity-0').addClass('scale-100 opacity-100');
+        }, 10);
+    }
+
+    function closeManageWorkersModal() {
+        const $modal = $('#manage-workers-modal');
+        const $container = $('#manage-modal-container');
+        $container.addClass('scale-95 opacity-0').removeClass('scale-100 opacity-100');
+        setTimeout(() => {
+            $modal.addClass('hidden').removeClass('flex');
+        }, 300);
+    }
+
+    function renderProjectWorkers(workers) {
+        let html = '';
+        if (workers.length === 0) {
+            html = '<div class="text-center py-8 text-slate-400 italic text-sm">No workers assigned yet.</div>';
+        } else {
+            workers.forEach(w => {
+                html += `
+                    <div class="flex items-center justify-between p-4 rounded-xl bg-white border border-slate-100 hover:border-slate-200 transition group">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-[10px]">
+                                ${w.name.split(' ').map(n => n[0]).join('')}
+                            </div>
+                            <div class="flex flex-col">
+                                <span class="text-sm font-bold text-slate-700">${w.name}</span>
+                                <span class="text-[10px] font-black text-emerald-600 font-mono">${w.code}</span>
+                            </div>
+                        </div>
+                        <button type="button" onclick="removeWorkerFromProject(${activeProjectId}, ${w.id}, '${w.name}')" 
+                            class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition opacity-0 group-hover:opacity-100">
+                            <i data-lucide="user-minus" class="h-4 w-4"></i>
+                        </button>
+                    </div>
+                `;
+            });
+        }
+        $('#current-project-workers').html(html);
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    $('#add-worker-to-project-form').on('submit', function(e) {
+        e.preventDefault();
+        const userId = $('#pool_worker_select').val();
+        if (!userId) return;
+
+        Swal.fire({
+            title: 'Assigning...',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        $.ajax({
+            url: `{{ url('valuation-compensations/projects') }}/${activeProjectId}/workers`,
+            type: "POST",
+            data: {
+                _token: "{{ csrf_token() }}",
+                user_id: userId
+            },
+            success: function(response) {
+                if (response.success) {
+                    Swal.fire('Success!', response.message, 'success').then(() => {
+                        window.location.reload();
+                    });
+                } else {
+                    Swal.fire('Warning', response.message, 'warning');
+                }
+            },
+            error: function() {
+                Swal.fire('Error!', 'Could not add worker.', 'error');
+            }
+        });
+    });
+
+    function removeWorkerFromProject(projectId, workerId, name) {
+        Swal.fire({
+            title: 'Remove Worker?',
+            text: `Remove ${name} from this project?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            confirmButtonText: 'Yes, remove'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                $.ajax({
+                    url: `{{ url('valuation-compensations/projects') }}/${projectId}/workers/${workerId}`,
+                    type: "DELETE",
+                    data: { _token: "{{ csrf_token() }}" },
+                    success: function(response) {
+                        if (response.success) {
+                            Swal.fire('Removed!', response.message, 'success').then(() => {
+                                window.location.reload();
+                            });
+                        }
+                    }
+                });
+            }
+        });
     }
 
     function saveProject() {

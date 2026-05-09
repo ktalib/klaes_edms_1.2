@@ -26,10 +26,14 @@ class ProjectController extends Controller
     {
         $projects = Project::with('workers.user')->orderBy('created_at', 'desc')->get();
         
-        // Fetch all users who are not MDCM
-        $workers = User::where('staff_type_category', '!=', 'MDCM')
-            ->orderBy('first_name')
-            ->get();
+        // Fetch all workers from the VFC pool
+        $workers = \App\Models\VfcWorker::with('user')
+            ->where('is_active', true)
+            ->get()
+            ->map(function($w) {
+                $w->user->vfc_worker_id = $w->vfc_worker_id;
+                return $w->user;
+            });
 
         // Location data (reuse existing logic if possible, or fetch simple Kano lists)
         $lgas = DB::connection('sqlsrv')->table('StatLGAs')->join('States', 'StatLGAs.StateID', '=', 'States.StateID')->where('States.StateName', 'Kano')->orderBy('LGAName')->get();
@@ -131,6 +135,51 @@ class ProjectController extends Controller
             'code' => $this->generateNextProjectCode(),
             'fileno' => $this->fileNumberService->peekNextFileNumber()
         ]);
+    }
+
+    public function addWorkerToProject(Request $request, $projectId)
+    {
+        $request->validate([
+            'user_id' => 'required|exists:sqlsrv.users,id',
+        ]);
+
+        $project = Project::findOrFail($projectId);
+        
+        // Check if already assigned
+        $exists = ProjectWorker::where('project_id', $projectId)->where('user_id', $request->user_id)->exists();
+        if ($exists) {
+            return response()->json(['success' => false, 'message' => 'Worker already assigned to this project.']);
+        }
+
+        // Generate worker code
+        $count = ProjectWorker::where('project_id', $projectId)->count();
+        $workerIndex = str_pad($count + 1, 3, '0', STR_PAD_LEFT);
+        $workerCode = "WRK-{$project->project_code}-{$workerIndex}";
+
+        $worker = ProjectWorker::create([
+            'project_id' => $projectId,
+            'user_id' => $request->user_id,
+            'worker_code' => $workerCode,
+        ]);
+
+        $this->auditService->logAction('UPDATED', 'Project', $projectId, null, $worker->toArray(), "Assigned worker {$workerCode} to project {$project->project_name}");
+
+        return response()->json(['success' => true, 'message' => 'Worker assigned successfully.', 'worker' => $worker->load('user')]);
+    }
+
+    public function removeWorkerFromProject($projectId, $workerId)
+    {
+        try {
+            $assignment = ProjectWorker::where('project_id', $projectId)->where('id', $workerId)->firstOrFail();
+            $oldData = $assignment->toArray();
+            $assignment->delete();
+
+            $this->auditService->logAction('UPDATED', 'Project', $projectId, $oldData, null, "Removed worker from project");
+
+            return response()->json(['success' => true, 'message' => 'Worker removed from project.']);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
     }
 
     private function generateNextProjectCode()
