@@ -52,10 +52,16 @@ const VFC = {
 
             const proj = self.projectsData.find(p => p.id == projId);
             if (proj) {
+                $('#proj_id_summary').text(proj.id);
+                $('#proj_fileno_summary').text(proj.fileno);
                 $('#proj_code_summary').text(proj.code);
                 $('#proj_total').text(proj.total_items);
+                $('#proj_workers_summary').text(proj.workers_count || 0);
                 $('#proj_rem').text(proj.valuations_count || 0);
+                
                 $('#project-info').removeClass('hidden');
+                if (window.lucide) window.lucide.createIcons();
+                
                 $('#our_ref').val(proj.fileno || proj.code);
                 $('#project_code_display').val(proj.code);
                 $('#hidden_project_fileno').val(proj.fileno || proj.code);

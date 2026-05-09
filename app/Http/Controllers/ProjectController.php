@@ -96,7 +96,7 @@ class ProjectController extends Controller
 
     public function getProjectsForSelection()
     {
-        $projects = Project::withCount('valuations')->get()->map(function($p) {
+        $projects = Project::withCount(['valuations', 'workers'])->get()->map(function($p) {
             return [
                 'id' => $p->id,
                 'name' => $p->project_name,
@@ -104,6 +104,7 @@ class ProjectController extends Controller
                 'fileno' => $p->project_fileno,
                 'total_items' => $p->number_of_items,
                 'valuations_count' => $p->valuations_count,
+                'workers_count' => $p->workers_count,
                 'our_reference' => $p->our_reference,
                 'your_reference' => $p->your_reference,
             ];

@@ -184,7 +184,8 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Number of Template Rows <span class="text-slate-400 font-normal italic">(Estimated)</span> <span class="text-red-500">*</span></label>
-                            <input type="number" name="number_of_items" required min="1" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. 100">
+                            <input type="number" name="number_of_items" value="10" readonly 
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 font-bold text-slate-500 cursor-not-allowed shadow-inner transition text-sm">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Type <span class="text-red-500">*</span></label>

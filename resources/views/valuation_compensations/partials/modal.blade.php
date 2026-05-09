@@ -7,7 +7,7 @@
         <!-- Header -->
         <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
             <div>
-                <h3 class="text-xl font-bold text-slate-900" id="modal-title">New Valuation for Compensation</h3>
+                <h3 class="text-xl font-bold text-slate-900" id="modal-title">COMPENSATION for VALUATION (CFV) Data entry</h3>
                 <p class="text-xs text-slate-500 mt-1 uppercase tracking-widest font-semibold">Record property compensation details</p>
             </div>
             <button type="button" class="close-modal text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-50 rounded-xl transition">
@@ -39,10 +39,49 @@
                             </select>
                             <div id="project-info" class="hidden mt-2 p-3 rounded-lg bg-blue-50 border border-blue-100">
                                 <p class="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Project Summary</p>
-                                <div class="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
-                                    <span class="text-xs text-blue-600">Project Code: <span id="proj_code_summary" class="font-bold">-</span></span>
-                                    <span class="text-xs text-blue-600">Template Rows: <span id="proj_total" class="font-bold">0</span></span>
-                                    <span class="text-xs text-blue-600 col-span-2">Items Done: <span id="proj_rem" class="font-bold">0</span></span>
+                                <div class="grid grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 mt-4">
+                                    <div class="flex flex-col">
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <i data-lucide="hash" class="h-3.5 w-3.5 text-blue-400"></i>
+                                            <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Project ID</span>
+                                        </div>
+                                        <span id="proj_id_summary" class="text-sm font-bold text-blue-900">-</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <i data-lucide="file-text" class="h-3.5 w-3.5 text-blue-400"></i>
+                                            <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Project FileNo</span>
+                                        </div>
+                                        <span id="proj_fileno_summary" class="text-sm font-bold text-blue-900">-</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <i data-lucide="tag" class="h-3.5 w-3.5 text-blue-400"></i>
+                                            <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Project Code</span>
+                                        </div>
+                                        <span id="proj_code_summary" class="text-sm font-bold text-blue-900">-</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <i data-lucide="layers" class="h-3.5 w-3.5 text-blue-400"></i>
+                                            <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Template Rows</span>
+                                        </div>
+                                        <span id="proj_total" class="text-sm font-bold text-blue-900">0</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <i data-lucide="users" class="h-3.5 w-3.5 text-blue-400"></i>
+                                            <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Total Workers</span>
+                                        </div>
+                                        <span id="proj_workers_summary" class="text-sm font-bold text-blue-900">0</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <i data-lucide="clipboard-check" class="h-3.5 w-3.5 text-blue-400"></i>
+                                            <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Form Filled</span>
+                                        </div>
+                                        <span id="proj_rem" class="text-sm font-bold text-blue-900">0</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -71,17 +110,17 @@
                         <!-- Project References (From Project) -->
                         <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Code <span class="text-slate-400 font-normal italic">(From Project)</span></label>
+                                <input type="text" id="project_code_display" readonly
+                                    class="w-full px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-sm font-bold font-mono text-amber-700 cursor-not-allowed shadow-sm"
+                                    placeholder="Select Project First...">
+                            </div>
+                            <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project FileNo <span class="text-slate-400 font-normal italic">(From Project)</span></label>
                                 <input type="text" id="our_ref" readonly
                                     class="w-full px-4 py-3 rounded-xl border border-blue-200 bg-blue-50 text-sm font-bold font-mono text-blue-700 cursor-not-allowed shadow-sm"
                                     placeholder="Select Project First...">
                                 <input type="hidden" name="project_fileno" id="hidden_project_fileno">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Code <span class="text-slate-400 font-normal italic">(From Project)</span></label>
-                                <input type="text" id="project_code_display" readonly
-                                    class="w-full px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-sm font-bold font-mono text-amber-700 cursor-not-allowed shadow-sm"
-                                    placeholder="Select Project First...">
                             </div>
                         </div>
 

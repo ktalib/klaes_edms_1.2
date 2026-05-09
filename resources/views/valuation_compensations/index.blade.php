@@ -25,7 +25,7 @@
                 </a>
                 <button type="button" onclick="VFC.openCreateModal()" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold shadow hover:bg-blue-700 transition">
                     <i data-lucide="plus-circle" class="h-5 w-5"></i>
-                    <span>Add New Valuation</span>
+                    <span>CFV Data entry</span>
                 </button>
             </div>
         </div>
