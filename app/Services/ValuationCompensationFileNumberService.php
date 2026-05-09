@@ -44,26 +44,23 @@ class ValuationCompensationFileNumberService
             $serial = sprintf('%04d', $serial);
             $fileNumber = "COM-PRJ-{$year}-{$serial}";
 
-            // Final check against the main table to be absolutely sure
-            $exists = DB::connection('sqlsrv')->table('valuation_compensations')
-                ->where('our_ref', $fileNumber)
-                ->exists();
-
-            if ($exists) {
-                // If by some miracle it exists (e.g. manual entry previously),
-                // we update the sequence to jump over it and try again
-                DB::connection('sqlsrv')->table('valuation_comp_sequences')
-                    ->where('id', $sequence->id)
-                    ->update([
-                        'last_serial' => intval($serial),
-                        'updated_at' => Carbon::now(),
-                    ]);
-                
-                // Recursive call to get the next one
-                return $this->generateNextFileNumber();
-            }
-
             return $fileNumber;
         });
+    }
+
+    /**
+     * Preview the next file number without incrementing the sequence.
+     */
+    public function peekNextFileNumber()
+    {
+        $year = Carbon::now()->year;
+        $sequence = DB::connection('sqlsrv')->table('valuation_comp_sequences')
+            ->where('year', $year)
+            ->first();
+
+        $serial = $sequence ? ($sequence->last_serial + 1) : 1;
+        $serial = sprintf('%04d', $serial);
+        
+        return "COM-PRJ-{$year}-{$serial}";
     }
 }

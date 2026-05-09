@@ -47,7 +47,7 @@
                             </div>
                         </div>
                         <div class="text-right">
-                            <p class="text-xs text-slate-400 font-bold uppercase tracking-widest">Total Items</p>
+                            <p class="text-xs text-slate-400 font-bold uppercase tracking-widest">Template Rows</p>
                             <p class="text-2xl font-black text-slate-800">{{ $project->number_of_items }}</p>
                         </div>
                     </div>
@@ -148,17 +148,21 @@
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Name <span class="text-red-500">*</span></label>
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Title <span class="text-red-500">*</span></label>
                             <input type="text" name="project_name" required class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. Zaria Road Expansion Phase 1">
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project ID / Session <span class="text-red-500">*</span></label>
-                            <input type="text" name="project_code" id="project_code" readonly required class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed focus:outline-none transition text-sm font-bold font-mono" placeholder="Generating...">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project FileNo <span class="text-slate-400 font-normal italic">(Auto-generated)</span></label>
+                            <input type="text" name="project_fileno" id="project_fileno" readonly class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-bold font-mono text-slate-500" placeholder="Generating...">
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Number of Items <span class="text-red-500">*</span></label>
-                            <input type="number" name="number_of_items" required min="1" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="Expected number of records">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Code <span class="text-slate-400 font-normal italic">(Auto-generated)</span></label>
+                            <input type="text" name="project_code" id="project_code" readonly class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-bold font-mono text-slate-500" placeholder="Generating...">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Number of Template Rows <span class="text-slate-400 font-normal italic">(Estimated)</span> <span class="text-red-500">*</span></label>
+                            <input type="number" name="number_of_items" required min="1" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. 100">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Type <span class="text-red-500">*</span></label>
@@ -281,10 +285,6 @@
     }
 </style>
 <script>
-    $(document).ready(function() {
-        if (window.lucide) window.lucide.createIcons();
-    });
-
     function toggleWorkers(projectId, btn) {
         const container = $(`#more-workers-${projectId}`);
         const isHidden = container.hasClass('hidden');
@@ -302,6 +302,9 @@
         
         if (window.lucide) window.lucide.createIcons();
     }
+
+    $(document).ready(function() {
+        if (window.lucide) window.lucide.createIcons();
 
         $('#project_type').on('change', function() {
             if ($(this).val() === 'Other') {
@@ -380,11 +383,13 @@
         $('#project-form')[0].reset();
         $('#worker-cards').empty();
         $('#project_type_other').addClass('hidden');
+        $('#project_fileno').val('Generating...');
         $('#project_code').val('Generating...');
         
         // Fetch next available code
         $.get("{{ route('valuation-compensations.projects.next-code') }}", function(data) {
             $('#project_code').val(data.code);
+            $('#project_fileno').val(data.fileno);
             // Refresh worker cards if number already entered
             const num = $('#num_workers').val();
             if (num > 0) generateWorkerCards(num);

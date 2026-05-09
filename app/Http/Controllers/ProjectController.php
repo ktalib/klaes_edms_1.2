@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\ProjectWorker;
 use App\Models\User;
 use App\Services\AuditService;
+use App\Services\ValuationCompensationFileNumberService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -13,10 +14,12 @@ use Illuminate\Support\Facades\Auth;
 class ProjectController extends Controller
 {
     protected $auditService;
+    protected $fileNumberService;
 
-    public function __construct(AuditService $auditService)
+    public function __construct(AuditService $auditService, ValuationCompensationFileNumberService $fileNumberService)
     {
         $this->auditService = $auditService;
+        $this->fileNumberService = $fileNumberService;
     }
 
     public function index()
@@ -49,10 +52,12 @@ class ProjectController extends Controller
         DB::connection('sqlsrv')->beginTransaction();
         try {
             $projectCode = $this->generateNextProjectCode();
+            $projectFileNo = $this->fileNumberService->generateNextFileNumber();
             
             $project = Project::create([
                 'project_name' => $request->project_name,
                 'project_code' => $projectCode,
+                'project_fileno' => $projectFileNo,
                 'number_of_items' => $request->number_of_items,
                 'street' => $request->street,
                 'district' => $request->district,
@@ -92,8 +97,9 @@ class ProjectController extends Controller
                 'id' => $p->id,
                 'name' => $p->project_name,
                 'code' => $p->project_code,
+                'fileno' => $p->project_fileno,
                 'total_items' => $p->number_of_items,
-                'remaining' => $p->number_of_items - $p->valuations_count,
+                'valuations_count' => $p->valuations_count,
             ];
         });
 
@@ -114,25 +120,27 @@ class ProjectController extends Controller
 
     public function getNextCode()
     {
-        return response()->json(['code' => $this->generateNextProjectCode()]);
+        return response()->json([
+            'code' => $this->generateNextProjectCode(),
+            'fileno' => $this->fileNumberService->peekNextFileNumber()
+        ]);
     }
 
     private function generateNextProjectCode()
     {
-        $year = date('Y');
-        $prefix = "PRJ-{$year}";
+        $prefix = "VFC/CODE";
         
-        $lastProject = Project::where('project_code', 'like', "{$prefix}-%")
-            ->orderBy('project_code', 'desc')
+        $lastProject = Project::where('project_code', 'like', "{$prefix}/%")
+            ->orderBy('id', 'desc')
             ->first();
 
         if (!$lastProject) {
-            return "{$prefix}-001";
+            return "{$prefix}/001";
         }
 
         $lastSerial = (int) substr($lastProject->project_code, -3);
         $nextSerial = str_pad($lastSerial + 1, 3, '0', STR_PAD_LEFT);
 
-        return "{$prefix}-{$nextSerial}";
+        return "{$prefix}/{$nextSerial}";
     }
 }

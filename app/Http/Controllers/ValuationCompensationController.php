@@ -28,7 +28,11 @@ class ValuationCompensationController extends Controller
      */
     public function index()
     {
-        $records = ValuationCompensation::active()->orderBy('created_at', 'desc')->get();
+        $records = ValuationCompensation::active()
+            ->with('project')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->groupBy('project_id');
         
         // Statistics
         $stats = [
@@ -56,6 +60,8 @@ class ValuationCompensationController extends Controller
 
         $streets = \App\Models\StreetName::orderBy('name')->get();
 
+        $valuationItems = DB::connection('sqlsrv')->table('vfc_valuation_items')->where('is_active', 1)->get();
+
         $banks = \App\Models\VfcBank::orderBy('name')->get()->map(function($b) {
             return [
                 'title' => $b->name,
@@ -65,7 +71,7 @@ class ValuationCompensationController extends Controller
         });
         $PageTitle = "Valuation for Compensation";
 
-        return view('valuation_compensations.index', compact('records', 'stats', 'PageTitle', 'states', 'lgas', 'districts', 'buildingTypes', 'streets', 'banks'));
+        return view('valuation_compensations.index', compact('records', 'stats', 'PageTitle', 'states', 'lgas', 'districts', 'buildingTypes', 'streets', 'banks', 'valuationItems'));
     }
 
     /**
@@ -102,6 +108,7 @@ class ValuationCompensationController extends Controller
             'compensated_items' => 'nullable|string',
             'compensated_items_other' => 'nullable|string',
             'project_id' => 'required|exists:sqlsrv.vfc_projects,id',
+            'project_fileno' => 'nullable|string',
             'worker_id' => 'required|string',
         ]);
 
@@ -109,7 +116,8 @@ class ValuationCompensationController extends Controller
         
         // Auto-generate file number if not provided
         if (empty($data['our_ref'])) {
-            $data['our_ref'] = $this->fileNumberService->generateNextFileNumber();
+            $project = \App\Models\Project::findOrFail($data['project_id']);
+            $data['our_ref'] = $project->project_fileno;
         }
 
         $record = ValuationCompensation::create($data);
@@ -169,6 +177,7 @@ class ValuationCompensationController extends Controller
             'compensated_items' => 'nullable|string',
             'compensated_items_other' => 'nullable|string',
             'project_id' => 'required|exists:sqlsrv.vfc_projects,id',
+            'project_fileno' => 'nullable|string',
             'worker_id' => 'required|string',
         ]);
 

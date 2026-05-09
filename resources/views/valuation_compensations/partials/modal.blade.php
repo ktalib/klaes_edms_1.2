@@ -16,11 +16,9 @@
         </div>
 
         <!-- Form Body -->
-        <form id="valuation-form" class="flex-1 overflow-y-auto">
+        <form id="valuation-form" action="{{ route('valuation-compensations.store') }}" method="POST" class="flex-1 overflow-y-auto">
             @csrf
             <input type="hidden" name="id" id="record_id">
-            <input type="hidden" name="project_id" id="hidden_project_id">
-            <input type="hidden" name="worker_id" id="hidden_worker_id">
             
             <div class="px-8 py-8 space-y-8">
                 <!-- Section 0: Project & Worker (Mandatory for New) -->
@@ -41,9 +39,10 @@
                             </select>
                             <div id="project-info" class="hidden mt-2 p-3 rounded-lg bg-blue-50 border border-blue-100">
                                 <p class="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Project Summary</p>
-                                <div class="flex justify-between mt-1">
-                                    <span class="text-xs text-blue-600">Total Items: <span id="proj_total" class="font-bold">0</span></span>
-                                    <span class="text-xs text-blue-600">Remaining: <span id="proj_rem" class="font-bold">0</span></span>
+                                <div class="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
+                                    <span class="text-xs text-blue-600">Project Code: <span id="proj_code_summary" class="font-bold">-</span></span>
+                                    <span class="text-xs text-blue-600">Template Rows: <span id="proj_total" class="font-bold">0</span></span>
+                                    <span class="text-xs text-blue-600 col-span-2">Items Done: <span id="proj_rem" class="font-bold">0</span></span>
                                 </div>
                             </div>
                         </div>
@@ -69,19 +68,38 @@
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <!-- File Number Display (Auto-generated) -->
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Our Reference <span class="text-slate-400 font-normal italic">(Auto-generated)</span></label>
-                            <input type="text" name="our_ref" id="our_ref" readonly
-                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-bold font-mono text-slate-500 cursor-not-allowed"
-                                placeholder="Generated on save...">
+                        <!-- Project References (From Project) -->
+                        <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project FileNo <span class="text-slate-400 font-normal italic">(From Project)</span></label>
+                                <input type="text" id="our_ref" readonly
+                                    class="w-full px-4 py-3 rounded-xl border border-blue-200 bg-blue-50 text-sm font-bold font-mono text-blue-700 cursor-not-allowed shadow-sm"
+                                    placeholder="Select Project First...">
+                                <input type="hidden" name="project_fileno" id="hidden_project_fileno">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Code <span class="text-slate-400 font-normal italic">(From Project)</span></label>
+                                <input type="text" id="project_code_display" readonly
+                                    class="w-full px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-sm font-bold font-mono text-amber-700 cursor-not-allowed shadow-sm"
+                                    placeholder="Select Project First...">
+                            </div>
                         </div>
 
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Your Reference</label>
-                            <input type="text" name="your_ref" id="your_ref"
-                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
-                                placeholder="e.g. MLW/COMP/2024/001">
+                        <!-- References -->
+                        <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Our Reference <span class="text-red-500">*</span></label>
+                                <input type="text" name="our_ref" id="manual_our_ref" required
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-bold font-mono"
+                                    placeholder="e.g. COMP/2026/001">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Your Reference</label>
+                                <input type="text" name="your_ref" id="your_ref"
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
+                                    placeholder="e.g. MLW/COMP/2024/001">
+                            </div>
                         </div>
 
                         <div>
@@ -146,36 +164,49 @@
                         </div>
 
                         <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Total Compensation Amount (₦)</label>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Amount of Compensation</label>
                             <div class="relative">
                                 <input type="number" step="0.01" name="compensation_amount" id="compensation_amount" required
-                                    class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-100 font-bold text-blue-700 text-lg focus:ring-0 cursor-not-allowed"
-                                    readonly>
-                                <div class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₦</div>
+                                    class="w-full pl-10 pr-4 py-3 rounded-xl border border-blue-200 bg-white font-bold text-blue-700 text-lg focus:ring-0 shadow-sm"
+                                    placeholder="0.00">
+                                <div class="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 font-bold">₦</div>
                             </div>
                         </div>
                     </div>
 
                     <!-- Compensated Items -->
                     <div class="pt-6">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-4">Compensated Items</label>
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-4">Items Considered During Valuation</label>
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            @foreach($valuationItems as $item)
                             @php
-                                $items = ['Borehole', 'Well', 'Soakaway', 'Pit Latrine', 'Fence', 'Generator House'];
+                                $icon = 'box';
+                                $lower = strtolower($item->name);
+                                if (str_contains($lower, 'building') || str_contains($lower, 'permanent') || str_contains($lower, 'warehouse')) $icon = 'building';
+                                if (str_contains($lower, 'wall') || str_contains($lower, 'fence')) $icon = 'fence';
+                                if (str_contains($lower, 'pavement') || str_contains($lower, 'court yard')) $icon = 'layers';
+                                if (str_contains($lower, 'borehole') || str_contains($lower, 'well')) $icon = 'droplets';
+                                if (str_contains($lower, 'soackaway') || str_contains($lower, 'pitlatrine')) $icon = 'trash-2';
+                                if (str_contains($lower, 'reservoir') || str_contains($lower, 'pond')) $icon = 'container';
+                                if (str_contains($lower, 'hut') || str_contains($lower, 'shed') || str_contains($lower, 'cage')) $icon = 'home';
+                                if (str_contains($lower, 'nest') || str_contains($lower, 'animal') || str_contains($lower, 'fish')) $icon = 'ghost';
+                                if (str_contains($lower, 'granary')) $icon = 'archive';
+                                if (str_contains($lower, 'fuel') || str_contains($lower, 'pump')) $icon = 'fuel';
+                                if (str_contains($lower, 'wire') || str_contains($lower, 'mesh')) $icon = 'grid';
+                                if (str_contains($lower, 'dpc')) $icon = 'maximize';
                             @endphp
-                            @foreach($items as $item)
-                            <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition cursor-pointer group">
-                                <input type="checkbox" name="compensated_items_list[]" value="{{ $item }}" class="item-checkbox w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500">
-                                <span class="text-sm font-medium text-slate-600 group-hover:text-blue-700">{{ $item }}</span>
+                            <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 transition cursor-pointer group relative">
+                                <input type="checkbox" name="compensated_items_list[]" value="{{ $item->name }}" 
+                                    class="item-checkbox absolute top-3 right-3 w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500">
+                                <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-600 transition">
+                                    <i data-lucide="{{ $icon }}" class="h-4 w-4"></i>
+                                </div>
+                                <span class="text-[11px] font-bold text-slate-600 group-hover:text-blue-700 leading-tight pr-5">{{ $item->name }}</span>
                             </label>
                             @endforeach
-                            <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition cursor-pointer group">
-                                <input type="checkbox" id="item-other-check" class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500">
-                                <span class="text-sm font-medium text-slate-600 group-hover:text-blue-700">Other</span>
-                            </label>
                         </div>
                         <input type="text" name="compensated_items_other" id="compensated_items_other"
-                            class="hidden mt-3 w-full px-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
+                            class="hidden mt-4 w-full px-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
                             placeholder="Specify other items (separate with commas)...">
                         <input type="hidden" name="compensated_items" id="compensated_items_val">
                     </div>
@@ -319,8 +350,8 @@
             </button>
             <button type="submit" form="valuation-form" id="submit-btn"
                 class="px-8 py-3 rounded-xl bg-blue-600 text-white font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition flex items-center gap-2">
-                <span>Save Valuation</span>
-                <i data-lucide="save" class="h-4 w-4"></i>
+                <span>Submit</span>
+                <i data-lucide="send" class="h-4 w-4"></i>
             </button>
         </div>
     </div>

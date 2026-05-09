@@ -35,6 +35,7 @@ class ValuationMobileController extends Controller
                     'id' => $p->id,
                     'name' => $p->project_name,
                     'code' => $p->project_code,
+                    'fileno' => $p->project_fileno,
                 ];
             });
 
@@ -52,6 +53,8 @@ class ValuationMobileController extends Controller
                 ];
             });
 
+            $valuationItems = DB::connection('sqlsrv')->table('vfc_valuation_items')->where('is_active', 1)->get();
+
             return response()->json([
                 'success' => true,
                 'projects' => $projects,
@@ -59,7 +62,8 @@ class ValuationMobileController extends Controller
                 'streets' => $streets,
                 'lgas' => $lgas,
                 'districts' => $districts,
-                'banks' => $banks
+                'banks' => $banks,
+                'valuationItems' => $valuationItems
             ]);
         });
     }
@@ -104,10 +108,8 @@ class ValuationMobileController extends Controller
         try {
             DB::connection('sqlsrv')->beginTransaction();
 
-            // Use the same logic as the main controller for file numbering if needed, 
-            // but for mobile we might just let it be generated.
-            $fileNumberService = app(\App\Services\ValuationCompensationFileNumberService::class);
-            $fileNumber = $fileNumberService->generateNextFileNumber();
+            $project = \App\Models\Project::findOrFail($request->project_id);
+            $fileNumber = $project->project_fileno;
 
             // Handle 'Other' building type
             $buildingType = $request->building_type;

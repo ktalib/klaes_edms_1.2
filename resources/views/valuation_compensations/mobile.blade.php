@@ -579,28 +579,20 @@
                         <label>Rate of Cost (₦)</label>
                         <input type="number" name="rate_of_cost" id="rateOfCost" class="inp" placeholder="0.00" step="0.01">
                     </div>
-                    <div class="amount-card">
-                        <span class="amount-label">Estimated Total</span>
-                        <span class="amount-val" id="totalDisplay">₦ 0.00</span>
-                        <input type="hidden" name="compensation_amount" id="compensation_amount" value="0">
+                    <div class="field">
+                        <label>Amount of Compensation <span class="req">*</span></label>
+                        <div class="inp-wrap" style="position: relative;">
+                            <div style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--success); font-weight: 700;">₦</div>
+                            <input type="number" name="compensation_amount" id="compensation_amount" class="inp" placeholder="0.00" step="0.01" style="padding-left: 32px; color: var(--success); font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700;" required>
+                        </div>
                     </div>
                     
                     <div class="field">
                         <label>Compensated Items</label>
-                        <div class="items-grid">
-                            @php $items = ['Borehole', 'Well', 'Soakaway', 'Pit Latrine', 'Fence', 'Gen House']; @endphp
-                            @foreach($items as $item)
-                                <div class="check-item" data-val="{{ $item }}">
-                                    <div class="check-box"><i data-lucide="check"></i></div>
-                                    <span class="check-label">{{ $item }}</span>
-                                </div>
-                            @endforeach
-                            <div class="check-item" id="compItemOtherCheck" data-val="Other">
-                                <div class="check-box"><i data-lucide="check"></i></div>
-                                <span class="check-label">Other...</span>
-                            </div>
+                        <div class="items-grid" id="valuationItemsGrid">
+                            <div style="padding:10px; font-size:11px; color:var(--text-dim); font-style:italic;">Loading items...</div>
                         </div>
-                        <input type="text" id="compItemsOtherText" class="inp hidden mt-2" placeholder="Specify other items (comma separated)...">
+                        <input type="text" id="compItemsOtherText" class="inp hidden mt-3" placeholder="Specify other items...">
                         <input type="hidden" name="compensated_items" id="compItemsVal">
                     </div>
                 </div>
@@ -725,7 +717,8 @@
                 pSel.innerHTML = '<option value="">Select Project</option>';
                 if (data.projects) {
                     data.projects.forEach(p => {
-                        pSel.innerHTML += `<option value="${p.id}">${p.name} (${p.code})</option>`;
+                        const displayCode = p.fileno || p.code;
+                        pSel.innerHTML += `<option value="${p.id}">${p.name} (${displayCode})</option>`;
                     });
                 }
 
@@ -770,6 +763,24 @@
 
                 // Banks
                 allBanks = data.banks || [];
+
+                // Populate Valuation Items
+                const itemGrid = document.getElementById('valuationItemsGrid');
+                itemGrid.innerHTML = '';
+                if (data.valuationItems) {
+                    data.valuationItems.forEach(item => {
+                        itemGrid.innerHTML += `
+                            <div class="check-item ${item.name === 'Others' ? 'special-other' : ''}" data-val="${item.name}">
+                                <div class="check-box"><i data-lucide="check" style="width:10px;height:10px;"></i></div>
+                                <span class="check-label">${item.name}</span>
+                            </div>
+                        `;
+                    });
+                    
+                    // Re-initialize click listeners for new items
+                    initCheckItems();
+                    if (window.lucide) window.lucide.createIcons();
+                }
 
             } catch (err) {
                 console.error('Initialization Error:', err);
@@ -836,17 +847,29 @@
             }
         });
 
-        // Compensated Items Other Logic
-        document.getElementById('compItemOtherCheck').addEventListener('click', function() {
-            const otherText = document.getElementById('compItemsOtherText');
-            if (this.classList.contains('active')) {
-                otherText.classList.remove('hidden');
-                otherText.required = true;
-            } else {
-                otherText.classList.add('hidden');
-                otherText.required = false;
-            }
-        });
+        // Initialize Check Items functionality
+        function initCheckItems() {
+            document.querySelectorAll('.check-item').forEach(item => {
+                item.onclick = function() {
+                    this.classList.toggle('active');
+                    const val = this.dataset.val;
+                    
+                    if (this.classList.contains('active')) {
+                        if (!selectedItems.includes(val)) selectedItems.push(val);
+                        if (val === 'Others' || val === 'Other') {
+                            document.getElementById('compItemsOtherText').classList.remove('hidden');
+                        }
+                    } else {
+                        selectedItems = selectedItems.filter(i => i !== val);
+                        if (val === 'Others' || val === 'Other') {
+                            document.getElementById('compItemsOtherText').classList.add('hidden');
+                        }
+                    }
+                    
+                    document.getElementById('compItemsVal').value = selectedItems.join(', ');
+                };
+            });
+        }
 
         // Street/District Other Logic (if needed)
         ['streetSelect', 'districtSelect'].forEach(id => {
@@ -901,8 +924,9 @@
             const rate = parseFloat(document.getElementById('rateOfCost').value) || 0;
             const total = count * area * rate;
             
-            document.getElementById('totalDisplay').textContent = '₦ ' + total.toLocaleString('en-NG', { minimumFractionDigits: 2 });
-            document.getElementById('compensation_amount').value = total;
+            // Only auto-update if the user hasn't manually modified it or if we want to provide an estimate
+            // In most cases for VFC, the auto-calculation is the baseline.
+            document.getElementById('compensation_amount').value = total.toFixed(2);
         }
 
         ['buildingCount', 'areaCovered', 'rateOfCost'].forEach(id => {
