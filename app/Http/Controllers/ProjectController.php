@@ -43,7 +43,7 @@ class ProjectController extends Controller
             'number_of_items' => 'required|integer|min:1',
             'project_type' => 'required|string',
             'worker_assignments' => 'required|array|min:1',
-            'worker_assignments.*.user_id' => 'required|exists:users,id',
+            'worker_assignments.*.user_id' => 'required|exists:sqlsrv.users,id',
         ]);
 
         DB::connection('sqlsrv')->beginTransaction();
