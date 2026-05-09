@@ -89,16 +89,16 @@
                         <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Our Reference <span class="text-red-500">*</span></label>
-                                <input type="text" name="our_ref" id="manual_our_ref" required
-                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-bold font-mono"
-                                    placeholder="e.g. COMP/2026/001">
+                                <input type="text" name="our_ref" id="manual_our_ref" readonly
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-bold font-mono text-slate-500 cursor-not-allowed shadow-inner"
+                                    placeholder="Select Project First...">
                             </div>
 
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Your Reference</label>
-                                <input type="text" name="your_ref" id="your_ref"
-                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
-                                    placeholder="e.g. MLW/COMP/2024/001">
+                                <input type="text" name="your_ref" id="your_ref" readonly
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-medium text-slate-500 cursor-not-allowed shadow-inner"
+                                    placeholder="Select Project First...">
                             </div>
                         </div>
 
@@ -222,20 +222,6 @@
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="md:col-span-2">
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Account Name</label>
-                            <input type="text" name="account_name" id="account_name"
-                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium uppercase"
-                                placeholder="Full Name as on Bank Account">
-                        </div>
-
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Account Number <span class="text-red-500">*</span></label>
-                            <input type="text" name="account_number" id="account_number" required
-                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-bold tracking-widest"
-                                placeholder="e.g. 0123456789" maxlength="10">
-                        </div>
-
                         <div class="relative">
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Bank Name</label>
                             <div class="relative group">
@@ -247,11 +233,23 @@
                                     placeholder="Search Nigerian Bank...">
                                 <input type="hidden" name="bank_name" id="bank_name_val">
                                 
-                                <!-- Custom Dropdown -->
                                 <div id="bank_dropdown" class="hidden absolute z-[60] left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-64 overflow-y-auto overflow-x-hidden">
-                                    <!-- Bank items will be injected here via JS -->
                                 </div>
                             </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Account Number <span class="text-red-500">*</span></label>
+                            <input type="text" name="account_number" id="account_number" required
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-bold tracking-widest"
+                                placeholder="e.g. 0123456789" maxlength="10">
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Account Name <span class="text-red-500">*</span></label>
+                            <input type="text" name="account_name" id="account_name" required
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium uppercase"
+                                placeholder="Full Name as on Bank Account">
                         </div>
 
                         <div>
@@ -262,6 +260,13 @@
                         </div>
 
                         <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">National Identity Number (NIN)</label>
+                            <input type="text" name="nin" id="nin"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
+                                placeholder="e.g. 12345678901">
+                        </div>
+
+                        <div class="md:col-span-2">
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Remarks</label>
                             <input type="text" name="remarks" id="remarks"
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"

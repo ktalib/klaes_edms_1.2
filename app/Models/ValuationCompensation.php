@@ -29,6 +29,7 @@ class ValuationCompensation extends Model
         'account_number',
         'bank_name',
         'phone_number',
+        'nin',
         'remarks',
         'compensated_items',
         'compensated_items_other',

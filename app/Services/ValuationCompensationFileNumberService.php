@@ -9,7 +9,7 @@ class ValuationCompensationFileNumberService
 {
     /**
      * Generate the next file number for Valuation for Compensation.
-     * Format: COM-PRJ-YEAR-SERIAL NO (e.g., COM-PRJ-2024-0001)
+     * Format: COM-PRJ-YEAR-SERIAL NO (e.g., COM-PRJ-2026-0001)
      *
      * @return string
      */
@@ -42,14 +42,12 @@ class ValuationCompensationFileNumberService
             }
             
             $serial = sprintf('%04d', $serial);
-            $fileNumber = "COM-PRJ-{$year}-{$serial}";
-
-            return $fileNumber;
+            return "COM-PRJ-{$year}-{$serial}";
         });
     }
 
     /**
-     * Preview the next file number without incrementing the sequence.
+     * Preview the next file number without incrementing.
      */
     public function peekNextFileNumber()
     {

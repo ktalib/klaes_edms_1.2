@@ -6,6 +6,7 @@
 const VFC = {
     config: window.VFC_CONFIG || {},
     allBanks: window.VFC_BANKS || [],
+    records: window.VFC_RECORDS || {},
     projectsData: [],
 
     init: function() {
@@ -58,10 +59,12 @@ const VFC = {
                 $('#our_ref').val(proj.fileno || proj.code);
                 $('#project_code_display').val(proj.code);
                 $('#hidden_project_fileno').val(proj.fileno || proj.code);
+                $('#manual_our_ref').val(proj.our_reference || '');
+                $('#your_ref').val(proj.your_reference || '');
             }
 
             // Fetch workers for this project
-            $.get(`${self.config.routes.projectWorkers}/${projId}`, function(workers) {
+            $.get(`${self.config.routes.projectWorkers}/${projId}/workers`, function(workers) {
                 const $workerSelect = $('#vfc_worker_id');
                 $workerSelect.html('<option value="">Select Worker</option>');
                 workers.forEach(w => {
@@ -148,6 +151,25 @@ const VFC = {
             e.preventDefault();
             self.saveRecord();
             return false;
+        });
+
+        // Project Group Toggle (Now opens modal)
+        $(document).on('click', '.project-group-header', function() {
+            const projectId = $(this).data('project-id');
+            self.openRecordsModal(projectId);
+        });
+
+        // Records Modal Close
+        $('.close-records-modal, #records-modal-overlay').on('click', function() {
+            self.closeRecordsModal();
+        });
+
+        // Print Batch
+        $(document).on('click', '#print-batch-btn', function() {
+            const projectId = $(this).data('project-id');
+            if (projectId) {
+                window.open(`${self.config.routes.store}/project-print/${projectId}`, '_blank');
+            }
         });
     },
 
@@ -311,6 +333,8 @@ const VFC = {
         $('#record_id').val('');
         $('#our_ref').val('').attr('placeholder', 'Select project...');
         $('#project_code_display').val('').attr('placeholder', 'Select project...');
+        $('#manual_our_ref').val('');
+        $('#your_ref').val('');
         
         $('#project-selection-section').removeClass('hidden');
         $('#vfc_project_id').val('').trigger('change');
@@ -340,6 +364,7 @@ const VFC = {
         
         $('#our_ref').val(record.project_fileno || record.our_ref);
         $('#project_code_display').val(record.project ? record.project.project_code : 'N/A');
+        $('#manual_our_ref').val(record.our_ref);
         $('#your_ref').val(record.your_ref);
         $('#valuation_date').val(record.valuation_date.split('T')[0]);
         $('#owner_name').val(record.owner_name);
@@ -373,6 +398,7 @@ const VFC = {
         }
 
         $('#phone_number').val(record.phone_number);
+        $('#nin').val(record.nin);
         $('#remarks').val(record.remarks);
         
         if (record.compensated_items) {
@@ -407,6 +433,61 @@ const VFC = {
 
         $('#valuation-modal').removeClass('hidden').addClass('flex');
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
+    },
+
+    openRecordsModal: function(projectId) {
+        const group = this.records[projectId];
+        if (!group || group.length === 0) return;
+
+        const project = group[0].project;
+        $('#records-modal-title').text(project ? project.project_name : 'Individual Records');
+        $('#records-modal-subtitle').text(project ? `${project.project_code} | ${project.project_fileno}` : '');
+        $('#print-batch-btn').data('project-id', projectId);
+
+        let html = '';
+        group.forEach((record, index) => {
+            const bType = record.building_type === 'Other' ? (record.building_type_other || 'Other') : record.building_type;
+            html += `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-2 py-4 text-xs font-bold text-slate-400">${index + 1}</td>
+                    <td class="px-2 py-4 font-mono text-[10px] font-bold text-slate-400">${record.our_ref || 'N/A'}</td>
+                    <td class="px-2 py-4 font-bold text-slate-700 uppercase text-xs">${record.owner_name}</td>
+                    <td class="px-2 py-4 text-[10px] text-slate-500">${record.location ? (record.location.substring(0, 40) + (record.location.length > 40 ? '...' : '')) : 'N/A'}</td>
+                    <td class="px-2 py-4 text-[11px] text-slate-600">${bType}</td>
+                    <td class="px-2 py-4 font-bold text-teal-600 text-xs">₦${parseFloat(record.compensation_amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td class="px-2 py-4 text-right">
+                        <div class="flex justify-end gap-1">
+                            <a href="${this.config.routes.store}/${record.id}" target="_blank" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="View/Print">
+                                <i data-lucide="printer" class="h-3.5 w-3.5"></i>
+                            </a>
+                            <button onclick='VFC.openEditModal(${JSON.stringify(record).replace(/'/g, "&apos;")})' class="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg" title="Edit">
+                                <i data-lucide="edit-3" class="h-3.5 w-3.5"></i>
+                            </button>
+                            <button onclick="VFC.deleteRecord(${record.id}, '${record.owner_name}')" class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg" title="Delete">
+                                <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+
+        $('#project-records-body').html(html);
+        if (window.lucide) window.lucide.createIcons();
+
+        $('#records-modal').removeClass('hidden').addClass('flex');
+        setTimeout(() => {
+            $('#records-modal-overlay').addClass('opacity-100');
+            $('#records-modal-container').removeClass('scale-95 opacity-0').addClass('scale-100 opacity-100');
+        }, 10);
+    },
+
+    closeRecordsModal: function() {
+        $('#records-modal-overlay').removeClass('opacity-100');
+        $('#records-modal-container').addClass('scale-95 opacity-0').removeClass('scale-100 opacity-100');
+        setTimeout(() => {
+            $('#records-modal').addClass('hidden').removeClass('flex');
+        }, 300);
     },
 
     closeModal: function() {

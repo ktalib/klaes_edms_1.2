@@ -535,8 +535,12 @@
                 </div>
                 <div class="section-body">
                     <div class="field">
-                        <label>Field Ref / Serial</label>
-                        <input type="text" class="inp inp-readonly" value="Auto-Generated on Save" readonly>
+                        <label>Our Reference <span class="req">*</span></label>
+                        <input type="text" name="our_ref" id="mobile_our_ref" class="inp inp-readonly" placeholder="Select Project First" readonly>
+                    </div>
+                    <div class="field">
+                        <label>Your Reference</label>
+                        <input type="text" name="your_ref" id="mobile_your_ref" class="inp inp-readonly" placeholder="Select Project First" readonly>
                     </div>
                     <div class="field">
                         <label>Owner Full Name <span class="req">*</span></label>
@@ -608,12 +612,12 @@
                 </div>
                 <div class="section-body">
                     <div class="field">
-                        <label>Account Name</label>
-                        <input type="text" name="account_name" class="inp" placeholder="Payee Name">
+                        <label>Account Number <span class="req">*</span></label>
+                        <input type="tel" name="account_number" class="inp" placeholder="10 Digits" maxlength="10" required>
                     </div>
                     <div class="field">
-                        <label>Account Number</label>
-                        <input type="tel" name="account_number" class="inp" placeholder="10 Digits" maxlength="10">
+                        <label>Account Name <span class="req">*</span></label>
+                        <input type="text" name="account_name" class="inp" placeholder="Full Name as on Bank Account" required>
                     </div>
                     <div class="field">
                         <label>Bank Name</label>
@@ -634,6 +638,14 @@
                         <label>Phone Number <span class="req">*</span></label>
                         <input type="tel" name="phone_number" class="inp" placeholder="080..." required>
                     </div>
+                    <div class="field">
+                        <label>National Identity Number (NIN)</label>
+                        <input type="text" name="nin" id="mobile_nin" class="inp" placeholder="11 Digits">
+                    </div>
+                    <div class="field">
+                        <label>Remarks</label>
+                        <textarea name="remarks" id="mobile_remarks" class="inp" rows="2" placeholder="Any additional notes..."></textarea>
+                    </div>
                 </div>
             </section>
 
@@ -646,6 +658,10 @@
                     <h2>Property Location</h2>
                 </div>
                 <div class="section-body">
+                    <div class="field">
+                        <label>Plot No <span class="req">*</span></label>
+                        <input type="text" name="plot_no" id="plot_no" class="inp loc-trigger" placeholder="e.g. 101" required>
+                    </div>
                     <div class="field">
                         <label>Street Name</label>
                         <select name="street_name" id="streetSelect" class="inp loc-trigger">
@@ -883,12 +899,25 @@
             const pId = this.value;
             const wSel = document.getElementById('workerSelect');
             const wBadge = document.getElementById('workerBadge');
+            const ourRef = document.getElementById('mobile_our_ref');
+            const yourRef = document.getElementById('mobile_your_ref');
             
             if (!pId) {
                 wSel.disabled = true;
                 wSel.innerHTML = '<option value="">Select Project First</option>';
                 wBadge.classList.add('hidden');
+                ourRef.value = '';
+                yourRef.value = '';
                 return;
+            }
+
+            // Backfill references
+            if (lookupData && lookupData.projects) {
+                const proj = lookupData.projects.find(p => p.id == pId);
+                if (proj) {
+                    ourRef.value = proj.our_reference || '';
+                    yourRef.value = proj.your_reference || '';
+                }
             }
 
             wSel.disabled = false;
@@ -949,11 +978,13 @@
 
         // Address Builder
         function buildAddress() {
+            const plotNo = document.getElementById('plot_no').value;
             const street = document.getElementById('streetSelect').value;
             const district = document.getElementById('districtSelect').value;
             const lga = document.getElementById('lgaSelect').value;
             
             let parts = [];
+            if (plotNo) parts.push('Plot ' + plotNo);
             if (street) parts.push(street);
             if (district) parts.push(district + ' District');
             if (lga) parts.push(lga + ' LGA');
@@ -964,6 +995,7 @@
 
         document.querySelectorAll('.loc-trigger').forEach(el => {
             el.addEventListener('change', buildAddress);
+            el.addEventListener('input', buildAddress);
         });
 
         // Toggle Section Collapse

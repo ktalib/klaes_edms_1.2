@@ -41,9 +41,23 @@
                                 {{ $project->project_type }}
                             </span>
                             <h3 class="text-xl font-bold text-slate-900">{{ $project->project_name }}</h3>
-                            <div class="flex items-center gap-2 mt-2">
-                                <i data-lucide="hash" class="h-3 w-3 text-indigo-500"></i>
-                                <span class="text-[13px] font-black font-mono text-indigo-600 bg-indigo-50/50 px-2 py-0.5 rounded border border-indigo-100/50 shadow-sm">{{ $project->project_code }}</span>
+                            <div class="flex items-center gap-4 mt-2">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="hash" class="h-3 w-3 text-indigo-500"></i>
+                                    <span class="text-[13px] font-black font-mono text-indigo-600 bg-indigo-50/50 px-2 py-0.5 rounded border border-indigo-100/50 shadow-sm">{{ $project->project_code }}</span>
+                                </div>
+                                @if($project->our_reference)
+                                <div class="flex items-center gap-2 border-l border-slate-200 pl-4">
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase">Our Ref:</span>
+                                    <span class="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">{{ $project->our_reference }}</span>
+                                </div>
+                                @endif
+                                @if($project->your_reference)
+                                <div class="flex items-center gap-2 border-l border-slate-200 pl-4">
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase">Your Ref:</span>
+                                    <span class="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">{{ $project->your_reference }}</span>
+                                </div>
+                                @endif
                             </div>
                         </div>
                         <div class="text-right">
@@ -154,11 +168,19 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project FileNo <span class="text-slate-400 font-normal italic">(Auto-generated)</span></label>
-                            <input type="text" name="project_fileno" id="project_fileno" readonly class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-bold font-mono text-slate-500" placeholder="Generating...">
+                            <input type="text" name="project_fileno" id="project_fileno" readonly class="w-full px-4 py-3 rounded-xl border border-blue-100 bg-blue-50/50 text-sm font-bold font-mono text-blue-600 shadow-sm" placeholder="Generating...">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Code <span class="text-slate-400 font-normal italic">(Auto-generated)</span></label>
-                            <input type="text" name="project_code" id="project_code" readonly class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-bold font-mono text-slate-500" placeholder="Generating...">
+                            <input type="text" name="project_code" id="project_code" readonly class="w-full px-4 py-3 rounded-xl border border-indigo-100 bg-indigo-50/50 text-sm font-bold font-mono text-indigo-600 shadow-sm" placeholder="Generating...">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Our Reference <span class="text-red-500">*</span></label>
+                            <input type="text" name="our_reference" required class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. LS/VAL/FGE/5KM">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Your Reference</label>
+                            <input type="text" name="your_reference" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. MH/VFC/2026/045">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Number of Template Rows <span class="text-slate-400 font-normal italic">(Estimated)</span> <span class="text-red-500">*</span></label>

@@ -100,10 +100,11 @@ class ValuationCompensationController extends Controller
             'area_covered' => 'required|numeric|min:0',
             'rate_of_cost' => 'required|numeric|min:0',
             'compensation_amount' => 'required|numeric|min:0',
-            'account_name' => 'nullable|string',
+            'account_name' => 'required|string',
             'account_number' => 'required|string',
             'bank_name' => 'nullable|string',
             'phone_number' => 'required|string',
+            'nin' => 'nullable|string',
             'remarks' => 'nullable|string',
             'compensated_items' => 'nullable|string',
             'compensated_items_other' => 'nullable|string',
@@ -169,10 +170,11 @@ class ValuationCompensationController extends Controller
             'area_covered' => 'required|numeric|min:0',
             'rate_of_cost' => 'required|numeric|min:0',
             'compensation_amount' => 'required|numeric|min:0',
-            'account_name' => 'nullable|string',
+            'account_name' => 'required|string',
             'account_number' => 'required|string',
             'bank_name' => 'nullable|string',
             'phone_number' => 'required|string',
+            'nin' => 'nullable|string',
             'remarks' => 'nullable|string',
             'compensated_items' => 'nullable|string',
             'compensated_items_other' => 'nullable|string',
@@ -259,5 +261,25 @@ class ValuationCompensationController extends Controller
             DB::rollBack();
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Print all records for a project in a single template.
+     */
+    public function projectPrint($projectId)
+    {
+        $records = ValuationCompensation::active()
+            ->where('project_id', $projectId)
+            ->with('project')
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        if ($records->isEmpty()) {
+            return redirect()->back()->with('error', 'No records found for this project.');
+        }
+
+        $project = $records->first()->project;
+        
+        return view('valuation_compensations.batch_template', compact('records', 'project'));
     }
 }

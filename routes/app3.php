@@ -730,6 +730,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [App\Http\Controllers\ValuationCompensationController::class, 'index'])->name('index');
         Route::get('/create', [App\Http\Controllers\ValuationCompensationController::class, 'create'])->name('create');
         Route::post('/', [App\Http\Controllers\ValuationCompensationController::class, 'store'])->name('store');
+        Route::get('/project-print/{projectId}', [App\Http\Controllers\ValuationCompensationController::class, 'projectPrint'])->name('project-print');
         
         // Project Manager Console Routes (Must be above wildcard routes)
         Route::prefix('projects')->name('projects.')->group(function () {

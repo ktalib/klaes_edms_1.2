@@ -45,6 +45,8 @@ class ProjectController extends Controller
             'project_name' => 'required|string',
             'number_of_items' => 'required|integer|min:1',
             'project_type' => 'required|string',
+            'our_reference' => 'required|string',
+            'your_reference' => 'nullable|string',
             'worker_assignments' => 'required|array|min:1',
             'worker_assignments.*.user_id' => 'required|exists:sqlsrv.users,id',
         ]);
@@ -65,6 +67,8 @@ class ProjectController extends Controller
                 'state' => $request->state ?? 'Kano',
                 'project_type' => $request->project_type,
                 'project_type_other' => $request->project_type_other,
+                'our_reference' => $request->our_reference,
+                'your_reference' => $request->your_reference,
                 'user_id' => Auth::id(),
             ]);
 
@@ -100,6 +104,8 @@ class ProjectController extends Controller
                 'fileno' => $p->project_fileno,
                 'total_items' => $p->number_of_items,
                 'valuations_count' => $p->valuations_count,
+                'our_reference' => $p->our_reference,
+                'your_reference' => $p->your_reference,
             ];
         });
 
@@ -128,19 +134,15 @@ class ProjectController extends Controller
 
     private function generateNextProjectCode()
     {
-        $prefix = "VFC/CODE";
+        $year = \Carbon\Carbon::now()->year;
         
-        $lastProject = Project::where('project_code', 'like', "{$prefix}/%")
-            ->orderBy('id', 'desc')
-            ->first();
+        // Get the next identity value for vfc_projects
+        $result = DB::connection('sqlsrv')
+            ->select("SELECT IDENT_CURRENT('vfc_projects') + IDENT_INCR('vfc_projects') as next_id");
+            
+        $nextId = $result[0]->next_id ?? 1;
+        $serial = str_pad($nextId, 4, '0', STR_PAD_LEFT);
 
-        if (!$lastProject) {
-            return "{$prefix}/001";
-        }
-
-        $lastSerial = (int) substr($lastProject->project_code, -3);
-        $nextSerial = str_pad($lastSerial + 1, 3, '0', STR_PAD_LEFT);
-
-        return "{$prefix}/{$nextSerial}";
+        return "PRJ-{$year}-{$serial}";
     }
 }

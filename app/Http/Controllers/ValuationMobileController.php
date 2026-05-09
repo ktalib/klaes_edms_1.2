@@ -36,6 +36,8 @@ class ValuationMobileController extends Controller
                     'name' => $p->project_name,
                     'code' => $p->project_code,
                     'fileno' => $p->project_fileno,
+                    'our_reference' => $p->our_reference,
+                    'your_reference' => $p->your_reference,
                 ];
             });
 
@@ -99,10 +101,13 @@ class ValuationMobileController extends Controller
             'project_id' => 'required|exists:sqlsrv.vfc_projects,id',
             'worker_id' => 'required|exists:sqlsrv.vfc_project_workers,id',
             'owner_name' => 'required|string',
-            'compensation_amount' => 'required|numeric',
+            'compensation_amount' => 'required|numeric|min:0',
             'valuation_date' => 'required|date',
             'lga' => 'required',
             'location' => 'required',
+            'account_name' => 'required|string',
+            'account_number' => 'required|string',
+            'plot_no' => 'required|string',
         ]);
 
         try {
@@ -131,7 +136,7 @@ class ValuationMobileController extends Controller
                 'project_id' => $request->project_id,
                 'worker_id' => $request->worker_id,
                 'file_number' => $fileNumber,
-                'our_ref' => $fileNumber, // Mapping file_number to our_ref as well
+                'our_ref' => $request->our_ref ?? $fileNumber,
                 'your_ref' => $request->your_ref,
                 'owner_name' => $request->owner_name,
                 'valuation_date' => $request->valuation_date,
@@ -146,6 +151,7 @@ class ValuationMobileController extends Controller
                 'account_number' => $request->account_number,
                 'bank_name' => $request->bank_name,
                 'phone_number' => $request->phone_number,
+                'nin' => $request->nin,
                 'remarks' => $request->remarks,
                 'plot_no' => $request->plot_no,
                 'street_name' => $request->street_name,

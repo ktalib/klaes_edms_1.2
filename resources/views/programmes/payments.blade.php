@@ -309,7 +309,11 @@
                       ₦{{ number_format($betterment, 2) }}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-600">
-                      {{ $payment->Betterment_receipt ?? '—' }}
+                      @if(!empty($payment->Betterment_receipt))
+                        <span class="inline-block px-2 py-0.5 bg-green-50 text-green-700 text-xs font-bold rounded border border-green-200 uppercase w-fit">Rec: {{ $payment->Betterment_receipt }}</span>
+                      @else
+                        —
+                      @endif
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-600">
                       {{ $paymentDateDisplay }}
@@ -513,9 +517,9 @@
                       <div class="flex flex-col">
                         <span class="text-green-600 font-semibold">N {{ number_format(floatval($payment->application_fee ?? 0), 2) }}</span>
                         @if(!empty($payment->application_fee_receipt_number))
-                          <span class="text-[10px] text-gray-500 font-normal">Rec: {{ $payment->application_fee_receipt_number }}</span>
+                          <span class="inline-block mt-1 px-1.5 py-0.5 bg-blue-50 text-blue-700 text-xs font-bold rounded border border-blue-200 uppercase w-fit">Rec: {{ $payment->application_fee_receipt_number }}</span>
                         @else
-                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'application_fee')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
+                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'application_fee', '', '{{ number_format(floatval($payment->application_fee ?? 0), 2) }}')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
                         @endif
                       </div>
                     </td>
@@ -523,9 +527,9 @@
                       <div class="flex flex-col">
                         <span class="text-green-600 font-semibold">N {{ number_format(floatval($payment->processing_fee ?? 0), 2) }}</span>
                         @if(!empty($payment->processing_fee_receipt_number))
-                          <span class="text-[10px] text-gray-500 font-normal">Rec: {{ $payment->processing_fee_receipt_number }}</span>
+                          <span class="inline-block mt-1 px-1.5 py-0.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded border border-indigo-200 uppercase w-fit">Rec: {{ $payment->processing_fee_receipt_number }}</span>
                         @else
-                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'processing_fee')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
+                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'processing_fee', '', '{{ number_format(floatval($payment->processing_fee ?? 0), 2) }}')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
                         @endif
                       </div>
                     </td>
@@ -533,15 +537,19 @@
                       <div class="flex flex-col">
                         <span class="text-green-700 font-bold">₦{{ number_format(floatval($payment->site_plan_fee ?? 0), 2) }}</span>
                         @if(!empty($payment->site_plan_fee_receipt_number))
-                          <span class="inline-block mt-1 px-1.5 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded border border-blue-100 uppercase w-fit">Rec: {{ $payment->site_plan_fee_receipt_number }}</span>
+                          <span class="inline-block mt-1 px-1.5 py-0.5 bg-teal-50 text-teal-700 text-xs font-bold rounded border border-teal-200 uppercase w-fit">Rec: {{ $payment->site_plan_fee_receipt_number }}</span>
                         @else
-                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'site_plan_fee')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
+                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'site_plan_fee', '', '{{ number_format(floatval($payment->site_plan_fee ?? 0), 2) }}')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
                         @endif
                       </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                      <span class="text-green-600 font-semibold">N
-                        {{ number_format(floatval($payment->Betterment_Charges ?? 0), 2) }}</span>
+                      <div class="flex flex-col">
+                        <span class="text-green-600 font-semibold">N {{ number_format(floatval($payment->Betterment_Charges ?? 0), 2) }}</span>
+                        @if(!empty($payment->Betterment_receipt))
+                          <span class="inline-block mt-1 px-1.5 py-0.5 bg-green-50 text-green-700 text-xs font-bold rounded border border-green-200 uppercase w-fit">Rec: {{ $payment->Betterment_receipt }}</span>
+                        @endif
+                      </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
                       <span class="text-red-600 font-semibold">N
@@ -605,7 +613,7 @@
                               $hasBettermentReceipt = !empty($payment->Betterment_receipt);
                             @endphp
                             <button type="button"
-                              @click="enterBettermentBillReceipt('{{ $payment->Sectional_Title_File_No }}')"
+                              @click="enterBettermentBillReceipt('{{ $payment->Sectional_Title_File_No }}', '{{ number_format(floatval($payment->Betterment_Charges ?? 0), 2) }}')"
                               class="group flex items-center px-3 py-1 text-xs w-full text-left {{ $hasBettermentReceipt ? 'text-gray-400 cursor-not-allowed bg-gray-50' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900' }}"
                               {{ $hasBettermentReceipt ? 'disabled' : '' }}>
                               <i data-lucide="plus-circle"
@@ -874,9 +882,9 @@
                       <div class="flex flex-col">
                         <span class="text-green-600 font-semibold">N {{ number_format(floatval($payment->application_fee ?? 0), 2) }}</span>
                         @if(!empty($payment->application_fee_receipt_number))
-                          <span class="text-[10px] text-gray-500 font-normal">Rec: {{ $payment->application_fee_receipt_number }}</span>
+                          <span class="inline-block mt-1 px-1.5 py-0.5 bg-blue-50 text-blue-700 text-xs font-bold rounded border border-blue-200 uppercase w-fit">Rec: {{ $payment->application_fee_receipt_number }}</span>
                         @else
-                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'application_fee')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
+                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'application_fee', '', '{{ number_format(floatval($payment->application_fee ?? 0), 2) }}')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
                         @endif
                       </div>
                     </td>
@@ -884,9 +892,9 @@
                       <div class="flex flex-col">
                         <span class="text-green-600 font-semibold">N {{ number_format(floatval($payment->processing_fee ?? 0), 2) }}</span>
                         @if(!empty($payment->processing_fee_receipt_number))
-                          <span class="text-[10px] text-gray-500 font-normal">Rec: {{ $payment->processing_fee_receipt_number }}</span>
+                          <span class="inline-block mt-1 px-1.5 py-0.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded border border-indigo-200 uppercase w-fit">Rec: {{ $payment->processing_fee_receipt_number }}</span>
                         @else
-                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'processing_fee')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
+                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'processing_fee', '', '{{ number_format(floatval($payment->processing_fee ?? 0), 2) }}')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
                         @endif
                       </div>
                     </td>
@@ -894,9 +902,9 @@
                       <div class="flex flex-col">
                         <span class="text-green-600 font-semibold">N {{ number_format(floatval($payment->site_plan_fee ?? 0), 2) }}</span>
                         @if(!empty($payment->survey_fee_receipt_number))
-                          <span class="text-[10px] text-gray-500 font-normal">Rec: {{ $payment->survey_fee_receipt_number }}</span>
+                          <span class="inline-block mt-1 px-1.5 py-0.5 bg-teal-50 text-teal-700 text-xs font-bold rounded border border-teal-200 uppercase w-fit">Rec: {{ $payment->survey_fee_receipt_number }}</span>
                         @else
-                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'site_plan_fee')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
+                          <button onclick="enterSpecificReceipt('{{ $payment->Sectional_Title_File_No }}', 'site_plan_fee', '', '{{ number_format(floatval($payment->site_plan_fee ?? 0), 2) }}')" class="text-[10px] text-blue-600 hover:underline font-normal">+ Add Receipt</button>
                         @endif
                       </div>
                     </td>
@@ -909,11 +917,20 @@
                         {{ number_format(floatval($payment->assignment_fee ?? 0), 2) }}</span>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                      <span class="text-green-600 font-semibold">N {{ number_format($bettermentAmountDisplay, 2) }}</span>
+                      <div class="flex flex-col">
+                        <span class="text-green-600 font-semibold">N {{ number_format($bettermentAmountDisplay, 2) }}</span>
+                        @if(!empty($payment->Betterment_receipt))
+                          <span class="inline-block mt-1 px-1.5 py-0.5 bg-green-50 text-green-700 text-xs font-bold rounded border border-green-200 uppercase w-fit">Rec: {{ $payment->Betterment_receipt }}</span>
+                        @endif
+                      </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                      <span class="text-orange-600 font-semibold">N
-                        {{ number_format(floatval($payment->bill_balance ?? 0), 2) }}</span>
+                      <div class="flex flex-col">
+                        <span class="text-orange-600 font-semibold">N {{ number_format(floatval($payment->bill_balance ?? 0), 2) }}</span>
+                        @if(!empty($payment->Bill_Balance_receipt))
+                          <span class="inline-block mt-1 px-1.5 py-0.5 bg-amber-50 text-amber-700 text-xs font-bold rounded border border-amber-200 uppercase w-fit">Rec: {{ $payment->Bill_Balance_receipt }}</span>
+                        @endif
+                      </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
                       <span class="text-indigo-600 font-semibold">N
@@ -977,7 +994,7 @@
                                 View Betterment Bill Reference
                               </button>
                               <button type="button"
-                                @click="enterBettermentBillReceipt('{{ $payment->Sectional_Title_File_No }}')"
+                                @click="enterBettermentBillReceipt('{{ $payment->Sectional_Title_File_No }}', '{{ number_format($bettermentAmountDisplay, 2) }}')"
                                 class="group flex items-center px-4 py-2 text-sm w-full text-left {{ !empty($payment->Betterment_receipt) ? 'text-gray-400 cursor-not-allowed bg-gray-50' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900' }}"
                                 {{ !empty($payment->Betterment_receipt) ? 'disabled' : '' }}>
                                 <i data-lucide="plus-circle"
@@ -996,7 +1013,7 @@
                               $hasBillBalanceReceipt = !empty($payment->Bill_Balance_receipt);
                             @endphp
                             <button type="button"
-                              @click="enterBillBalanceReceipt('{{ $payment->Sectional_Title_File_No }}')"
+                              @click="enterBillBalanceReceipt('{{ $payment->Sectional_Title_File_No }}', '{{ number_format(floatval($payment->bill_balance ?? 0), 2) }}')"
                               class="group flex items-center px-4 py-2 text-sm w-full text-left {{ $hasBillBalanceReceipt ? 'text-gray-400 cursor-not-allowed bg-gray-50' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900' }}"
                               {{ $hasBillBalanceReceipt ? 'disabled' : '' }}>
                               <i data-lucide="plus-circle"
@@ -1343,7 +1360,7 @@
                             <p class="text-sm font-semibold text-gray-900">${fee.label}</p>
                             <div class="text-xs text-gray-500 space-x-3 mt-1">
                               <span>Date: ${fee.payment_date || 'N/A'}</span>
-                              <span>Receipt: ${fee.receipt || 'N/A'}</span>
+                              <span>Receipt: ${fee.receipt ? `<span class="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded border border-blue-200 uppercase inline-block ml-1">${fee.receipt}</span>` : '<span class="text-gray-400">N/A</span>'}</span>
                             </div>
                           </div>
                           <div class="text-right">
@@ -1397,7 +1414,7 @@
                       </div>
                       <div class="rounded-xl border border-gray-200 p-4">
                         <p class="text-xs text-gray-500 uppercase">Receipt Number</p>
-                        <p class="text-base font-semibold text-gray-900 mt-1">${payment.receipt_number || 'Not provided'}</p>
+                        <p class="mt-1">${payment.receipt_number ? `<span class="px-3 py-1 bg-blue-50 text-blue-700 text-lg font-bold rounded-lg border border-blue-200 uppercase shadow-sm inline-block">${payment.receipt_number}</span>` : '<span class="text-gray-400 font-medium italic">Not provided</span>'}</p>
                       </div>
                       <div class="rounded-xl border border-gray-200 p-4">
                         <p class="text-xs text-gray-500 uppercase">Total Amount</p>
@@ -1457,7 +1474,7 @@
                           <div class="grid grid-cols-2 gap-4">
                             <div>
                               <label class="block text-sm font-medium text-gray-700">Receipt Number</label>
-                              <p class="mt-1 text-sm text-gray-900">${data.receipt_number || 'N/A'}</p>
+                              <p class="mt-1">${data.receipt_number ? `<span class="px-2 py-1 bg-blue-50 text-blue-700 text-sm font-bold rounded border border-blue-200 uppercase inline-block">${data.receipt_number}</span>` : '<span class="text-gray-400 font-medium italic">N/A</span>'}</p>
                             </div>
                             <div>
                               <label class="block text-sm font-medium text-gray-700">Amount</label>
@@ -1586,12 +1603,20 @@
     };
 
     // Updated function for betterment bill receipt
-    window.enterBettermentBillReceipt = function (fileNo) {
+    window.enterBettermentBillReceipt = function (fileNo, amount = '') {
       const content = `
                   <form id="betterment-bill-form" class="space-y-4">
-                    <div class="bg-yellow-50 p-4 rounded-lg">
-                      <h4 class="font-semibold text-yellow-900">Enter Betterment Bill Receipt</h4>
-                      <p class="text-sm text-yellow-700 mt-1">File No: ${fileNo}</p>
+                    <div class="bg-yellow-50 p-4 rounded-lg flex justify-between items-start">
+                      <div>
+                        <h4 class="font-semibold text-yellow-900">Enter Betterment Bill Receipt</h4>
+                        <p class="text-sm text-yellow-700 mt-1">File No: ${fileNo}</p>
+                      </div>
+                      ${amount ? `
+                      <div class="text-right">
+                        <p class="text-[10px] uppercase font-semibold text-yellow-600 tracking-wider">Amount Due</p>
+                        <p class="text-lg font-bold text-yellow-800">N ${amount}</p>
+                      </div>
+                      ` : ''}
                     </div>
                     <div>
                       <label for="receipt-number" class="block text-sm font-medium text-gray-700">Receipt Number *</label>
@@ -1668,12 +1693,20 @@
     };
 
     // New function for bill balance receipt (unit applications)
-    window.enterBillBalanceReceipt = function (fileNo) {
+    window.enterBillBalanceReceipt = function (fileNo, amount = '') {
       const content = `
                   <form id="bill-balance-form" class="space-y-4">
-                    <div class="bg-blue-50 p-4 rounded-lg">
-                      <h4 class="font-semibold text-blue-900">Enter Bill Balance Receipt</h4>
-                      <p class="text-sm text-blue-700 mt-1">File No: ${fileNo}</p>
+                    <div class="bg-blue-50 p-4 rounded-lg flex justify-between items-start">
+                      <div>
+                        <h4 class="font-semibold text-blue-900">Enter Bill Balance Receipt</h4>
+                        <p class="text-sm text-blue-700 mt-1">File No: ${fileNo}</p>
+                      </div>
+                      ${amount ? `
+                      <div class="text-right">
+                        <p class="text-[10px] uppercase font-semibold text-blue-600 tracking-wider">Amount Due</p>
+                        <p class="text-lg font-bold text-blue-800">N ${amount}</p>
+                      </div>
+                      ` : ''}
                     </div>
                     <div>
                       <label for="receipt-number" class="block text-sm font-medium text-gray-700">Receipt Number *</label>
@@ -1752,7 +1785,7 @@
     /**
      * Enter and save specific fee receipt
      */
-    function enterSpecificReceipt(fileNo, feeType, currentReceipt = '') {
+    function enterSpecificReceipt(fileNo, feeType, currentReceipt = '', amount = '') {
       const feeLabels = {
         'application_fee': 'Application Fee',
         'processing_fee': 'Processing Fee',
@@ -1761,9 +1794,17 @@
 
       const modalContent = `
         <div class="space-y-4">
-          <div class="p-3 bg-blue-50 text-blue-700 rounded-lg text-sm mb-4">
-            <p class="font-medium">Update Receipt for: ${feeLabels[feeType]}</p>
-            <p class="text-xs">File Number: ${fileNo}</p>
+          <div class="p-3 bg-blue-50 text-blue-700 rounded-lg text-sm mb-4 flex justify-between items-start">
+            <div>
+              <p class="font-medium text-blue-900">Update Receipt for: ${feeLabels[feeType]}</p>
+              <p class="text-xs mt-0.5">File Number: ${fileNo}</p>
+            </div>
+            ${amount ? `
+            <div class="text-right">
+              <p class="text-[10px] uppercase font-semibold text-blue-600 tracking-wider">Amount Due</p>
+              <p class="text-lg font-bold text-blue-800">N ${amount}</p>
+            </div>
+            ` : ''}
           </div>
           
           <form id="specific-receipt-form" onsubmit="event.preventDefault(); window.saveSpecificReceiptAction();">

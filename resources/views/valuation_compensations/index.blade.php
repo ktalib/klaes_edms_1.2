@@ -23,7 +23,7 @@
                     <i data-lucide="layout-dashboard" class="h-5 w-5"></i>
                     <span>Project Manager Console</span>
                 </a>
-                <button type="button" onclick="openCreateModal()" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold shadow hover:bg-blue-700 transition">
+                <button type="button" onclick="VFC.openCreateModal()" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold shadow hover:bg-blue-700 transition">
                     <i data-lucide="plus-circle" class="h-5 w-5"></i>
                     <span>Add New Valuation</span>
                 </button>
@@ -75,20 +75,20 @@
 
     <!-- Data Table -->
     <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-        <div class="p-6 border-b border-slate-100 bg-slate-50/50">
-            <h2 class="text-lg font-semibold text-slate-800">Valuation Records</h2>
+        <div class="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+            <h2 class="text-lg font-semibold text-slate-800">Project Valuation Summary</h2>
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{{ count($records) }} Projects Active</span>
         </div>
         <div class="p-6">
             <table id="valuationTable" class="w-full text-left border-collapse">
                 <thead>
                     <tr class="text-slate-500 text-sm uppercase tracking-wider">
+                        <th class="pb-4 font-semibold">S/N</th>
+                        <th class="pb-4 font-semibold">Project Name</th>
+                        <th class="pb-4 font-semibold">Project Code</th>
                         <th class="pb-4 font-semibold">Project FileNo</th>
-                        <th class="pb-4 font-semibold">Our Reference</th>
-                        <th class="pb-4 font-semibold">Owner Name</th>
-                        <th class="pb-4 font-semibold">Location</th>
-                        <th class="pb-4 font-semibold">Building Type</th>
-                        <th class="pb-4 font-semibold">Amount (₦)</th>
-                        <th class="pb-4 font-semibold">Date</th>
+                        <th class="pb-4 font-semibold">Records</th>
+                        <th class="pb-4 font-semibold">Total Amount</th>
                         <th class="pb-4 font-semibold text-right">Actions</th>
                     </tr>
                 </thead>
@@ -97,44 +97,34 @@
                         @php
                             $project = $group->first()->project;
                         @endphp
-                        <tr class="bg-slate-50/50">
-                            <td colspan="7" class="px-6 py-3 border-y border-slate-200">
-                                <div class="flex items-center justify-between">
-                                    <div class="flex items-center gap-3">
-                                        <span class="px-2 py-0.5 rounded bg-blue-600 text-white font-mono font-bold text-[10px]">{{ $project->project_fileno ?? 'N/A' }}</span>
-                                        <span class="font-bold text-slate-800">{{ $project->project_name ?? 'Individual Records' }}</span>
-                                    </div>
-                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{{ $group->count() }} Records</span>
-                                </div>
+                        <tr class="hover:bg-slate-50 transition-colors border-b border-slate-100 group">
+                            <td class="px-6 py-4 text-xs font-bold text-slate-400">{{ $loop->iteration }}</td>
+                            <td class="px-6 py-4">
+                                <span class="font-bold text-slate-800">{{ $project->project_name ?? 'Individual Records' }}</span>
                             </td>
-                        </tr>
-                        @foreach($group as $record)
-                        <tr class="hover:bg-slate-50/80 transition-colors group">
-                            <td class="px-6 py-4 font-mono font-bold text-blue-600/70 text-xs">{{ $record->project_fileno ?? ($record->project->project_fileno ?? 'N/A') }}</td>
-                            <td class="px-6 py-4 font-mono font-bold text-slate-500 text-xs">{{ $record->our_ref ?? 'N/A' }}</td>
-                            <td class="px-6 py-4 font-medium text-slate-800 uppercase">{{ $record->owner_name }}</td>
-                            <td class="px-6 py-4 text-xs">{{ Str::limit($record->location, 40) }}</td>
-                            <td class="px-6 py-4">{{ $record->building_type }} ({{ $record->building_count }})</td>
-                            <td class="px-6 py-4 font-bold text-teal-600">₦{{ number_format($record->compensation_amount, 2) }}</td>
-                            <td class="px-6 py-4">{{ $record->valuation_date->format('d M, Y') }}</td>
+                            <td class="px-6 py-4 font-mono text-xs font-bold text-slate-500">{{ $project->project_code ?? 'N/A' }}</td>
+                            <td class="px-6 py-4">
+                                <a href="javascript:void(0)" onclick="VFC.openRecordsModal({{ $projectId }})" 
+                                   class="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-mono font-bold text-[11px] shadow-sm hover:bg-blue-700 transition inline-flex items-center gap-2 group/btn">
+                                    {{ $project->project_fileno ?? 'N/A' }}
+                                    <i data-lucide="eye" class="h-3 w-3 opacity-0 group-hover/btn:opacity-100 transition-opacity"></i>
+                                </a>
+                            </td>
+                            <td class="px-6 py-4">
+                                <span class="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">{{ $group->count() }}</span>
+                            </td>
+                            <td class="px-6 py-4 font-bold text-teal-600">
+                                ₦{{ number_format($group->sum('compensation_amount'), 2) }}
+                            </td>
                             <td class="px-6 py-4 text-right">
-                                <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <a href="{{ route('valuation-compensations.show', $record->id) }}" target="_blank" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="View/Print">
-                                        <i data-lucide="printer" class="h-4 w-4"></i>
-                                    </a>
-                                    <button onclick="openEditModal({{ json_encode($record) }})" class="p-2 text-amber-600 hover:bg-amber-50 rounded-lg" title="Edit">
-                                        <i data-lucide="edit-3" class="h-4 w-4"></i>
-                                    </button>
-                                    <button onclick="deleteRecord({{ $record->id }}, '{{ $record->owner_name }}')" class="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Delete">
-                                        <i data-lucide="trash-2" class="h-4 w-4"></i>
-                                    </button>
-                                </div>
+                                <button onclick="VFC.openRecordsModal({{ $projectId }})" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Open Records">
+                                    <i data-lucide="external-link" class="h-4 w-4"></i>
+                                </button>
                             </td>
                         </tr>
-                        @endforeach
                     @empty
                         <tr>
-                            <td colspan="7" class="py-12 text-center text-slate-400 italic">No valuation records found.</td>
+                            <td colspan="7" class="py-12 text-center text-slate-400 italic">No project valuation records found.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -144,426 +134,21 @@
 </div>
 
 @include('valuation_compensations.partials.modal')
+@include('valuation_compensations.partials.records_modal')
 
 @push('scripts')
 <script>
-    let allBanks = Array.isArray(@json($banks ?? [])) ? @json($banks ?? []) : Object.values(@json($banks ?? []));
-    function fetchBanks() {
-        console.log('Banks loaded from database:', allBanks.length);
-    }
-
-    let projectsData = [];
-
-    async function loadProjectsForSelection() {
-        try {
-            const response = await fetch("{{ route('valuation-compensations.projects.selection') }}");
-            projectsData = await response.json();
-            const $projSelect = $('#vfc_project_id');
-            $projSelect.html('<option value="">Select Project</option>');
-            projectsData.forEach(p => {
-                const displayCode = p.fileno || p.code;
-                $projSelect.append(`<option value="${p.id}">${p.name} (${displayCode})</option>`);
-            });
-        } catch (error) {
-            console.error('Error loading projects:', error);
+    window.VFC_CONFIG = {
+        csrf: '{{ csrf_token() }}',
+        routes: {
+            store: "{{ url('valuation-compensations') }}",
+            projectSelection: "{{ route('valuation-compensations.projects.selection') }}",
+            projectWorkers: "{{ url('valuation-compensations/projects') }}"
         }
-    }
-
-    $(document).ready(function() {
-        loadProjectsForSelection();
-        // Initialize Lucide
-        if (window.lucide) window.lucide.createIcons();
-
-        // Fetch banks on load
-        fetchBanks();
-
-        $('#vfc_project_id').on('change', function() {
-            const projId = $(this).val();
-            if (!projId) {
-                $('#project-info').addClass('hidden');
-                $('#vfc_worker_id').html('<option value="">Select Worker (Select Project First)</option>');
-                $('#our_ref').val('');
-                return;
-            }
-
-            const proj = projectsData.find(p => p.id == projId);
-            if (proj) {
-                $('#proj_code_summary').text(proj.code);
-                $('#proj_total').text(proj.total_items);
-                $('#proj_rem').text(proj.valuations_count || 0);
-                $('#project-info').removeClass('hidden');
-                $('#our_ref').val(proj.fileno || proj.code);
-                $('#project_code_display').val(proj.code);
-                $('#hidden_project_fileno').val(proj.fileno || proj.code);
-            }
-
-            // Fetch workers for this project
-            $.get(`/valuation-compensations/projects/${projId}/workers`, function(workers) {
-                const $workerSelect = $('#vfc_worker_id');
-                $workerSelect.html('<option value="">Select Worker</option>');
-                workers.forEach(w => {
-                    $workerSelect.append(`<option value="${w.worker_code}">${w.user.first_name} ${w.user.last_name} (${w.worker_code})</option>`);
-                });
-            });
-        });
-
-        // Initialize DataTable
-        const table = $('#valuationTable').DataTable({
-            responsive: true,
-            order: [[5, 'desc']],
-            pageLength: 10,
-            dom: '<"flex flex-col md:flex-row justify-between gap-4 mb-4"fB>rt<"flex flex-col md:flex-row justify-between items-center gap-4 mt-4"ip>',
-            buttons: [
-                'copy', 'csv', 'excel', 'pdf', 'print'
-            ]
-        });
-
-        // Location Auto-builder (Using delegated events for robustness)
-        $(document).on('change input', '.loc-trigger, #loc_district, #loc_lga, #loc_state', function() {
-            buildLocation();
-        });
-
-        // Auto-calculation
-        $('.calc-trigger').on('input', function() {
-            calculateCompensation();
-        });
-
-        // Building Type 'Other' logic
-        $('#building_type').on('change', function() {
-            if ($(this).val() === 'Other') {
-                $('#building_type_other').removeClass('hidden').prop('required', true).focus();
-            } else {
-                $('#building_type_other').addClass('hidden').prop('required', false);
-            }
-        });
-
-        // Compensated Items logic
-        $(document).on('change', '.item-checkbox', function() {
-            const val = $(this).val();
-            const isOther = val.toLowerCase().includes('other');
-            
-            if (isOther) {
-                if ($(this).is(':checked')) {
-                    $('#compensated_items_other').removeClass('hidden').focus();
-                } else {
-                    $('#compensated_items_other').addClass('hidden');
-                }
-            }
-            updateCompensatedItemsValue();
-        });
-
-        $('#compensated_items_other').on('input', function() {
-            updateCompensatedItemsValue();
-        });
-
-        // Bank Search logic
-        const $bankSearch = $('#bank_search');
-        const $bankDropdown = $('#bank_dropdown');
-        const $bankNameHidden = $('#bank_name_val');
-        const $bankLogo = $('#selected_bank_logo');
-
-        function renderBanks(filter = '') {
-            const filtered = allBanks.filter(b => b.title.toLowerCase().includes(filter.toLowerCase()));
-            let html = '';
-            filtered.forEach(bank => {
-                html += `
-                    <div class="bank-option flex items-center gap-3 px-4 py-3 hover:bg-blue-50 cursor-pointer transition border-b border-slate-50 last:border-0" data-name="${bank.title}" data-logo="${bank.route}">
-                        <div class="w-8 h-8 rounded-lg overflow-hidden border border-slate-100 bg-white flex-shrink-0 flex items-center justify-center p-1">
-                            <img src="${bank.route}" alt="${bank.title}" class="w-full h-full object-contain" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(bank.title)}&background=f1f5f9&color=64748b'">
-                        </div>
-                        <span class="text-sm font-medium text-slate-700">${bank.title}</span>
-                    </div>
-                `;
-            });
-            if (!html) html = '<div class="px-4 py-3 text-sm text-slate-400 italic text-center">No banks found...</div>';
-            $bankDropdown.html(html);
-        }
-
-        $(document).on('focus', '#bank_search', function() {
-            renderBanks($(this).val());
-            $('#bank_dropdown').removeClass('hidden');
-        });
-
-        $(document).on('input', '#bank_search', function() {
-            renderBanks($(this).val());
-        });
-
-        $(document).on('click', '.bank-option', function() {
-            const name = $(this).data('name');
-            const logo = $(this).data('logo');
-            $bankSearch.val(name);
-            $bankNameHidden.val(name);
-            $bankLogo.html(`<img src="${logo}" alt="${name}" class="w-full h-full object-contain">`);
-            $bankDropdown.addClass('hidden');
-        });
-
-        $(document).on('click', function(e) {
-            if (!$(e.target).closest('.relative.group').length) {
-                $bankDropdown.addClass('hidden');
-            }
-        });
-
-        // Modal close buttons
-        $('.close-modal, #modal-overlay').on('click', function() {
-            closeModal();
-        });
-
-        // Form submission (Using delegated binding for better reliability)
-        $(document).on('submit', '#valuation-form', function(e) {
-            e.preventDefault();
-            saveRecord();
-            return false;
-        });
-    });
-
-    function updateCompensatedItemsValue() {
-        let selected = [];
-        $('.item-checkbox:checked').each(function() {
-            selected.push($(this).val());
-        });
-        
-        // Add manual entry if 'Other' is checked
-        const hasOther = selected.some(s => s.toLowerCase().includes('other'));
-        if (hasOther) {
-            const other = $('#compensated_items_other').val();
-            if (other) selected.push(other);
-        }
-        
-        $('#compensated_items_val').val(selected.join(', '));
-    }
-
-    function openCreateModal() {
-        $('#modal-title').text('New Valuation for Compensation');
-        $('#valuation-form')[0].reset();
-        $('#record_id').val('');
-        $('#our_ref').val('').attr('placeholder', 'Select project...');
-        $('#project_code_display').val('').attr('placeholder', 'Select project...');
-        $('#manual_our_ref').val('');
-        
-        // Reset project fields
-        $('#project-selection-section').removeClass('hidden');
-        $('#vfc_project_id').val('').trigger('change');
-        $('#project-info').addClass('hidden');
-
-        // Reset custom fields
-        $('#selected_bank_logo').html('<i data-lucide="building-2" class="h-4 w-4 text-slate-400"></i>');
-        if (window.lucide) window.lucide.createIcons();
-        $('#building_type_other, #compensated_items_other').addClass('hidden');
-        $('.item-checkbox, #item-other-check').prop('checked', false);
-        
-        $('#valuation-modal').removeClass('hidden').addClass('flex');
-        setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
-    }
-
-    function openEditModal(record) {
-        $('#modal-title').text('Edit Valuation Record');
-        $('#valuation-form')[0].reset();
-        $('#record_id').val(record.id);
-        
-        // Show project selection during edit but it can be changed if needed
-        // Or keep it visible to show context
-        $('#project-selection-section').removeClass('hidden');
-        $('#vfc_project_id').val(record.project_id).trigger('change');
-        
-        // Wait for workers to load then set worker
-        setTimeout(() => {
-            $('#vfc_worker_id').val(record.worker_id);
-        }, 500);
-        
-        // Fill basic fields
-        $('#our_ref').val(record.project_fileno || record.our_ref);
-        $('#project_code_display').val(record.project ? record.project.project_code : 'N/A');
-        $('#manual_our_ref').val(record.our_ref);
-        $('#your_ref').val(record.your_ref);
-        $('#valuation_date').val(record.valuation_date.split('T')[0]);
-        $('#owner_name').val(record.owner_name);
-        
-        // Handle Building Type
-        const bTypeSelect = $('#building_type');
-        const typeExists = bTypeSelect.find(`option[value="${record.building_type}"]`).length > 0;
-        if (typeExists) {
-            bTypeSelect.val(record.building_type);
-            $('#building_type_other').addClass('hidden');
-        } else {
-            bTypeSelect.val('Other');
-            $('#building_type_other').val(record.building_type).removeClass('hidden');
-        }
-
-        $('#building_count').val(record.building_count);
-        $('#area_covered').val(record.area_covered);
-        $('#rate_of_cost').val(record.rate_of_cost);
-        $('#compensation_amount').val(record.compensation_amount);
-        
-        // Account Details
-        $('#account_name').val(record.account_name);
-        $('#account_number').val(record.account_number);
-        $('#bank_name').val(record.bank_name);
-        $('#bank_search').val(record.bank_name);
-        
-        const bank = allBanks.find(b => b.title === record.bank_name);
-        if (bank) {
-            $('#selected_bank_logo').html(`<img src="${bank.route}" alt="${bank.title}" class="w-full h-full object-contain">`);
-        } else {
-            $('#selected_bank_logo').html('<i data-lucide="building-2" class="h-4 w-4 text-slate-400"></i>');
-            if (window.lucide) window.lucide.createIcons();
-        }
-
-        $('#phone_number').val(record.phone_number);
-        $('#remarks').val(record.remarks);
-        
-        // Compensated Items
-        if (record.compensated_items) {
-            const items = record.compensated_items.split(', ').map(i => i.trim());
-            let otherItems = [];
-            
-            items.forEach(item => {
-                const $cb = $(`.item-checkbox[value="${item}"]`);
-                if ($cb.length > 0) {
-                    $cb.prop('checked', true);
-                    if (item.toLowerCase().includes('other')) {
-                        $('#compensated_items_other').removeClass('hidden');
-                    }
-                } else {
-                    otherItems.push(item);
-                }
-            });
-            
-            if (otherItems.length > 0 || record.compensated_items_other) {
-                // Find and check the 'Other' checkbox if not already checked
-                $('.item-checkbox').filter(function() {
-                    return $(this).val().toLowerCase().includes('other');
-                }).prop('checked', true);
-                
-                $('#compensated_items_other').val(record.compensated_items_other || otherItems.join(', ')).removeClass('hidden');
-            }
-            $('#compensated_items_val').val(record.compensated_items);
-        }
-
-        $('#plot_no').val(record.plot_no);
-        $('#street_name').val(record.street_name);
-        $('#location').val(record.location);
-
-        $('#valuation-modal').removeClass('hidden').addClass('flex');
-        setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
-    }
-
-    function closeModal() {
-        $('#modal-overlay').removeClass('opacity-100');
-        setTimeout(() => {
-            $('#valuation-modal').addClass('hidden').removeClass('flex');
-        }, 300);
-    }
-
-    function buildLocation() {
-        const plot = $('#plot_no').val();
-        let street = $('#street_name').val();
-        if (street === 'Other') {
-            street = $('#street_name_other').val();
-        }
-        
-        let district = $('#loc_district').val();
-        if (district === 'Other') {
-            // We might want to add a district_other field later, but for now just use the value
-        }
-        
-        const lga = $('#loc_lga').val();
-        const state = $('#loc_state').val();
-        
-        let loc = '';
-        if (plot) loc += plot;
-        if (street) loc += (loc ? ', ' : '') + street;
-        if (district && district !== 'Other') loc += (loc ? ', ' : '') + district;
-        if (lga) loc += (loc ? ', ' : '') + lga;
-        if (state) loc += (loc ? ', ' : '') + state + ' State';
-        
-        if (loc) {
-            $('#location').val(loc);
-        }
-    }
-
-    function calculateCompensation() {
-        const count = parseFloat($('#building_count').val()) || 0;
-        const area = parseFloat($('#area_covered').val()) || 0;
-        const rate = parseFloat($('#rate_of_cost').val()) || 0;
-        const total = count * area * rate;
-        $('#compensation_amount').val(total.toFixed(2));
-    }
-
-    function saveRecord() {
-        const id = $('#record_id').val();
-        const url = id ? `/valuation-compensations/${id}` : '/valuation-compensations';
-        const method = 'POST'; // Always use POST for AJAX in this setup
-        
-        let formData = $('#valuation-form').serializeArray();
-        if (id) {
-            formData.push({ name: '_method', value: 'PUT' });
-        }
-
-        // Handle 'Other' building type override
-        if ($('#building_type').val() === 'Other') {
-            const manualVal = $('#building_type_other').val();
-            formData = formData.map(item => (item.name === 'building_type' ? { name: 'building_type', value: manualVal } : item));
-        }
-
-        Swal.fire({
-            title: 'Saving...',
-            allowOutsideClick: false,
-            didOpen: () => { Swal.showLoading(); }
-        });
-
-        $.ajax({
-            url: url,
-            type: method,
-            data: formData,
-            success: function(response) {
-                if (response.success) {
-                    Swal.fire('Success!', response.message, 'success').then(() => {
-                        window.location.reload();
-                    });
-                }
-            },
-            error: function(xhr) {
-                let msg = 'Something went wrong.';
-                if (xhr.status === 422) {
-                    const errors = xhr.responseJSON.errors;
-                    msg = Object.values(errors).flat().join('<br>');
-                }
-                Swal.fire('Error!', msg, 'error');
-            }
-        });
-    }
-
-    function deleteRecord(id, name) {
-        Swal.fire({
-            title: 'Are you sure?',
-            text: `You are about to delete the valuation for ${name}. This action is reversible by administrators.`,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#ef4444',
-            cancelButtonColor: '#64748b',
-            confirmButtonText: 'Yes, delete it!'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                $.ajax({
-                    url: `/valuation-compensations/${id}`,
-                    type: 'DELETE',
-                    data: {
-                        _token: '{{ csrf_token() }}'
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            Swal.fire('Deleted!', response.message, 'success').then(() => {
-                                window.location.reload();
-                            });
-                        }
-                    },
-                    error: function(xhr) {
-                        Swal.fire('Error!', 'Something went wrong.', 'error');
-                    }
-                });
-            }
-        });
-    }
+    };
+    window.VFC_BANKS = @json($banks ?? []);
+    window.VFC_RECORDS = @json($records ?? []);
 </script>
+<script src="{{ asset('js/valuation-compensation.js') }}"></script>
 @endpush
 @endsection

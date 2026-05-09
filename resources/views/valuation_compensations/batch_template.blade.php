@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Compensation Valuation - {{ $record->owner_name }}</title>
+    <title>Batch Compensation Valuation - {{ $project->project_name ?? 'Project' }}</title>
     <style>
         body {
             font-family: "Times New Roman", Times, serif;
@@ -16,18 +16,31 @@
 
         .container {
             width: 100%;
-            max-width: 1200px;
+            max-width: 1400px;
             background-color: white;
             padding: 40px;
             border: 2px solid #00008B;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            position: relative;
+        }
+
+        .logo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .logo-header img {
+            height: 100px;
+            object-contain: contain;
         }
 
         h1 {
             text-align: center;
             text-decoration: underline;
             font-size: 28px;
-            margin-top: 0;
+            margin-top: 10px;
             margin-bottom: 25px;
             text-transform: uppercase;
         }
@@ -68,37 +81,37 @@
 
         th, td {
             border: 1px solid black;
-            padding: 12px 8px;
+            padding: 8px 4px;
             text-align: center;
-            font-size: 14px;
+            font-size: 12px;
             word-wrap: break-word;
         }
 
         th {
             background-color: #f8fafc;
-            height: 50px;
+            height: 40px;
             text-transform: uppercase;
-            font-size: 12px;
+            font-size: 10px;
         }
 
         .footer-signatures {
-            margin-top: 60px;
+            margin-top: 40px;
         }
 
         .sig-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 80px;
+            margin-bottom: 60px;
         }
 
         .sig-line {
-            width: 280px;
+            width: 250px;
             border-top: 1px solid black;
             padding-top: 8px;
             font-weight: bold;
             text-align: center;
             text-transform: uppercase;
-            font-size: 14px;
+            font-size: 12px;
         }
 
         .perm-sec-wrap {
@@ -106,11 +119,27 @@
             justify-content: center;
         }
 
+        .logo-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 40px;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+        }
+
+        .logo-footer img {
+            height: 40px;
+            width: auto;
+            max-width: 120px;
+            object-contain: contain;
+        }
+
         /* PRINT SETTINGS */
         @media print {
             @page {
                 size: landscape;
-                margin: 1cm;
+                margin: 0.5cm;
             }
             
             body {
@@ -123,7 +152,7 @@
                 max-width: none;
                 box-shadow: none;
                 border: 2px solid #00008B;
-                padding: 20px;
+                padding: 15px;
             }
 
             .no-print {
@@ -131,7 +160,6 @@
             }
         }
 
-        /* Action Bar */
         .no-print-bar {
             position: fixed;
             top: 20px;
@@ -156,7 +184,6 @@
 
         .btn-print { background: #0d9488; color: white; }
         .btn-back { background: #64748b; color: white; }
-        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
     </style>
 </head>
 <body>
@@ -165,18 +192,18 @@
     <a href="{{ route('valuation-compensations.index') }}" class="btn btn-back">
         <span>Back to List</span>
     </a>
-    <button onclick="window.print(); logPrint();" class="btn btn-print">
-        <span>Print Document</span>
+    <button onclick="window.print();" class="btn btn-print">
+        <span>Print Batch Report</span>
     </button>
 </div>
 
 <div class="container">
-    <div class="logo-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Header Left" style="height: 100px; object-fit: contain;">
-        <img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Header Right" style="height: 100px; object-fit: contain;">
+    <div class="logo-header">
+        <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Header Left">
+        <img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Header Right">
     </div>
 
-    <h1>COMPENSATION VALUATION</h1>
+    <h1>COMPENSATION VALUATION (BATCH REPORT)</h1>
 
     <div class="header-meta">
         <div>
@@ -185,35 +212,33 @@
             <span style="margin-left: 25px;"></span><span class="underline-field">Planning, Kano State</span>
         </div>
         <div style="text-align: right;">
-            Our Ref: <span class="underline-field">{{ $record->our_ref ?? 'LS/VAL/FGE/5KM' }}</span><br>
-            Your Ref: <span class="underline-field">{{ $record->your_ref ?? 'N/A' }}</span><br>
-            Date: <span class="underline-field">{{ $record->valuation_date->format('jS F, Y') }}</span>
+            Our Ref: <span class="underline-field">{{ $project->project_fileno ?? 'N/A' }}</span><br>
+            Your Ref: <span class="underline-field">N/A</span><br>
+            Date: <span class="underline-field">{{ now()->format('jS F, Y') }}</span>
         </div>
-    </div>
-
-    <div class="location-banner">
-        LOCATION: <span style="text-decoration: underline;">{{ $record->location }}</span>
     </div>
 
     <table>
         <thead>
             <tr>
-                <th style="width: 4%;">S/N</th>
+                <th style="width: 3%;">S/N</th>
                 <th style="width: 15%;">Name of Owner</th>
-                <th style="width: 12%;">Type of Building</th>
-                <th style="width: 8%;">No. of Building</th>
-                <th style="width: 10%;">Area Covered in M<sup>2</sup></th>
-                <th style="width: 10%;">Rate of Cost ₦</th>
-                <th style="width: 12%;">Amount of Compensation ₦</th>
-                <th style="width: 10%;">Account Number</th>
-                <th style="width: 10%;">Phone Number</th>
-                <th style="width: 9%;">Remarks</th>
+                <th style="width: 10%;">Type of Building</th>
+                <th style="width: 6%;">No. of Building</th>
+                <th style="width: 8%;">Area in M<sup>2</sup></th>
+                <th style="width: 8%;">Rate ₦</th>
+                <th style="width: 12%;">Amount ₦</th>
+                <th style="width: 10%;">Account No</th>
+                <th style="width: 10%;">Phone</th>
+                <th style="width: 10%;">Ref No</th>
+                <th style="width: 8%;">Remarks</th>
             </tr>
         </thead>
         <tbody>
+            @foreach($records as $index => $record)
             <tr>
-                <td>1</td>
-                <td style="font-weight: bold;">{{ $record->owner_name }}</td>
+                <td>{{ $index + 1 }}</td>
+                <td style="font-weight: bold; text-align: left; padding-left: 5px;">{{ $record->owner_name }}</td>
                 <td>{{ $record->building_type }}</td>
                 <td>{{ $record->building_count }}</td>
                 <td>{{ number_format($record->area_covered, 2) }}</td>
@@ -221,12 +246,17 @@
                 <td style="font-weight: bold;">{{ number_format($record->compensation_amount, 2) }}</td>
                 <td>{{ $record->account_number }}</td>
                 <td>{{ $record->phone_number }}</td>
-                <td style="font-size: 11px;">{{ $record->remarks ?? '-' }}</td>
+                <td style="font-size: 10px;">{{ $record->our_ref }}</td>
+                <td style="font-size: 10px;">{{ Str::limit($record->remarks, 20) }}</td>
             </tr>
-            <!-- Empty rows for spacing as in template -->
-            @for($i=0; $i<5; $i++)
-            <tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
-            @endfor
+            @endforeach
+            
+            <tr style="background-color: #f8fafc; font-weight: bold;">
+                <td colspan="6" style="text-align: right; padding-right: 10px;">TOTAL COMPENSATION</td>
+                <td colspan="5" style="text-align: left; padding-left: 10px; color: #0d9488; font-size: 14px;">
+                    ₦{{ number_format($records->sum('compensation_amount'), 2) }}
+                </td>
+            </tr>
         </tbody>
     </table>
 
@@ -240,23 +270,11 @@
         </div>
     </div>
 
-    <div class="logo-footer" style="display: flex; justify-content: space-between; align-items: center; margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px;">
-        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Footer Left" style="height: 40px; width: auto; object-fit: contain;">
-        <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="Footer Right" style="height: 40px; width: auto; max-width: 120px; object-fit: contain;">
+    <div class="logo-footer">
+        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Footer Left">
+        <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="Footer Right">
     </div>
 </div>
-
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script>
-    function logPrint() {
-        $.ajax({
-            url: "{{ route('valuation-compensations.log-print', $record->id) }}",
-            type: 'POST',
-            data: { _token: '{{ csrf_token() }}' },
-            success: function(response) { console.log('Print logged'); }
-        });
-    }
-</script>
 
 </body>
 </html>

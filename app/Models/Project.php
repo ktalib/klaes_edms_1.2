@@ -23,6 +23,8 @@ class Project extends Model
         'state',
         'project_type',
         'project_type_other',
+        'our_reference',
+        'your_reference',
         'user_id'
     ];
 
