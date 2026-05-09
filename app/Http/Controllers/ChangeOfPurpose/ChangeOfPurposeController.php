@@ -600,7 +600,12 @@ class ChangeOfPurposeController extends Controller
             return response()->json(['success' => false, 'message' => 'Approved applications cannot be deleted.'], 403);
         }
 
-        $record->update(['is_deleted' => 1]);
+        $record->update([
+            'is_deleted' => 1,
+            'deleted_by' => Auth::id(),
+            'deleted_at' => now(),
+        ]);
+        
         return response()->json(['success' => true, 'message' => 'Application deleted successfully.']);
     }
 }

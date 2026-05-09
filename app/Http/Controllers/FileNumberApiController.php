@@ -288,7 +288,7 @@ class FileNumberApiController extends Controller
 
             if (!$record) {
                 if ($isKangisModule && $selectedFileNumber !== '') {
-                    // For KN-format numbers (new KANGIS awaiting files), check file_trackers directly.
+                    // For KN-format numbers (new KANGIS awaiting files), check file_tracker directly.
                     if ($isKnFormat) {
                         $knData = $this->findKnFileTrackerData($selectedFileNumber);
                         if ($knData) {
@@ -300,7 +300,7 @@ class FileNumberApiController extends Controller
                         }
 
                         // For KN-format in KANGIS module, the source of truth for "indexed"
-                        // is file_indexings / file_trackers. Do NOT fall back to grouping
+                        // is file_indexings / file_tracker. Do NOT fall back to grouping
                         // tables — otherwise a stale kn_grouping / kangis_grouping row will
                         // backfill a tracking_id and the UI will skip the "File Not Yet
                         // Indexed" prompt even though the file was never indexed.
@@ -368,7 +368,7 @@ class FileNumberApiController extends Controller
             $payload = $this->transformFileNumberRecord((array) $record);
 
             if ($isKangisModule && $selectedFileNumber !== '') {
-                // For KN-format numbers, tracking_id comes from file_trackers, not fileNumber table.
+                // For KN-format numbers, tracking_id comes from file_tracker, not fileNumber table.
                 if ($isKnFormat) {
                     $knData = $this->findKnFileTrackerData($selectedFileNumber);
                     if ($knData && !empty($knData['tracking_id'])) {
@@ -395,7 +395,7 @@ class FileNumberApiController extends Controller
             }
 
             // Skip generic grouping-table fallback for KN-format in KANGIS module —
-            // its indexed state is authoritative from file_indexings / file_trackers only.
+            // its indexed state is authoritative from file_indexings / file_tracker only.
             if (
                 empty(trim((string) ($payload['tracking_id'] ?? '')))
                 && $selectedFileNumber !== ''
@@ -625,7 +625,7 @@ class FileNumberApiController extends Controller
 
     /**
      * Resolve file tracker data for a New KANGIS awaiting file number (KN-format).
-     * These numbers live in file_trackers.file_number, created at indexing time.
+     * These numbers live in file_tracker.file_number, created at indexing time.
      *
      * @return array{file_number:string,tracking_id:string,file_name:string}|null
      */
@@ -638,7 +638,7 @@ class FileNumberApiController extends Controller
 
         try {
             $row = DB::connection('sqlsrv')
-                ->table('file_trackers')
+                ->table('file_tracker')
                 ->select(['tracking_id', 'file_number', 'file_title'])
                 ->where('file_number', $fileNumber)
                 ->whereNotNull('tracking_id')
@@ -927,10 +927,10 @@ class FileNumberApiController extends Controller
             $search = $request->get('search');
 
             // KN-format numbers (KN1, KN2, …) live in kn_grouping.kn_awaiting_fileno.
-            // Join file_trackers so the modal can surface the tracking_id immediately.
+            // Join file_tracker so the modal can surface the tracking_id immediately.
             $query = DB::connection('sqlsrv')
                 ->table('kn_grouping as kg')
-                ->leftJoin('file_trackers as ft', 'ft.file_number', '=', 'kg.kn_awaiting_fileno')
+                ->leftJoin('file_tracker as ft', 'ft.file_number', '=', 'kg.kn_awaiting_fileno')
                 ->select([
                     'kg.id',
                     DB::raw('kg.kn_awaiting_fileno as file_number'),

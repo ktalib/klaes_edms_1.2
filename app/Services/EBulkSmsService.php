@@ -35,7 +35,11 @@ class EBulkSmsService
 
         $payload = json_encode([
             'SMS' => [
-                'auth'       => ['username' => $username, 'apikey' => $apikey],
+                'auth'       => [
+                    'username' => $username,
+                    'apikey'   => $apikey,
+                    'api_key'  => $apikey
+                ],
                 'message'    => [
                     'sender'      => substr($sender, 0, 11),
                     'messagetext' => substr($message, 0, 160),
@@ -50,6 +54,14 @@ class EBulkSmsService
             ],
         ]);
 
+        Log::debug('EBulkSmsService: request context', [
+            'url'      => $this->endpoint,
+            'username' => $username,
+            'apikey_prefix' => substr((string)$apikey, 0, 4),
+            'sender'   => $sender,
+            'phone'    => $mobile,
+        ]);
+
         $ch = curl_init($this->endpoint);
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
@@ -57,6 +69,8 @@ class EBulkSmsService
             CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 30,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
         ]);
 
         $response = curl_exec($ch);

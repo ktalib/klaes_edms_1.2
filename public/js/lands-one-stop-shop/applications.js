@@ -28,13 +28,13 @@ document.addEventListener('DOMContentLoaded', function () {
     _ossEnsureSwalOnTop();
 
     var table = $('#lss-applications-table').DataTable({
-        dom: '<"lss-table-scroll"t><"px-4 py-3 flex items-center justify-between border-t border-slate-100"ip>',
-        pageLength: parseInt(document.getElementById('lss-length')?.value, 10) || 50,
+        dom: '<"lss-table-scroll"t>',
+        pageLength: -1,
         lengthChange: false,
         searching: false,
         ordering: true,
-        info: true,
-        paging: true,
+        info: false,
+        paging: false,
         autoWidth: false,
         scrollX: false,
         order: [[14, 'desc']],

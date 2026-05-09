@@ -78,8 +78,8 @@
             <i data-lucide="file-check" class="h-3.5 w-3.5 text-teal-400"></i>
             <span>Valuation for Assignment (Report)</span>
           </a>
-          <a href="#"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
+          <a href="{{ route('valuation-compensations.index') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('valuation-compensations.*') ? 'active' : '' }}">
             <i data-lucide="file-signature" class="h-3.5 w-3.5 text-teal-400"></i>
             <span>Valuation for Compensation</span>
           </a>

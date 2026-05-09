@@ -301,17 +301,10 @@ class KangisPrintLabelController extends Controller
                 foreach ($groups as $regBatchNo => $groupFiles) {
                     $regBatchNoStr = (string)$regBatchNo;
                     
-                    // 1. Check for unique constraint violation (prefix + sys_batch_no)
-                    $existing = KangisPrintLabelBatch::where('prefix', $prefix)
-                        ->where('sys_batch_no', $regBatchNoStr)
-                        ->first();
-                    
-                    if ($existing) {
-                        throw new \Exception("A print batch already exists for Registry Batch #{$regBatchNoStr} (Prefix: {$prefix}). Please delete the existing batch or use a different Registry Batch No.");
-                    }
-
+                    // 1. Generate Batch Number
                     $batchNumber = 'KANGIS-' . $prefix . '-' . $now->format('YmdHis') . ($groups->count() > 1 ? '-' . $regBatchNoStr : '');
 
+                    // 2. Create the Batch Record
                     $batch = KangisPrintLabelBatch::create([
                         'batch_number'   => $batchNumber,
                         'prefix'         => $prefix,
@@ -327,6 +320,7 @@ class KangisPrintLabelController extends Controller
                         'updated_at'     => $now,
                     ]);
 
+                    // 3. Resolve/Update Shelf Label Counter
                     $shelfLabelRecord = $this->resolveRackLabelRecord($currentFullLabel, $currentRackPrimary, $currentRackSecondary, $currentShelfNumber, false, true);
                     if ($shelfLabelRecord) {
                         $count = $groupFiles->count();

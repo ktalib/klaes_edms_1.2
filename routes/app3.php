@@ -725,6 +725,36 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/log-print/{id}', [ValuationReportController::class, 'logPrint'])->name('log-print');
     });
 
+    // Valuation for Compensation Routes
+    Route::prefix('valuation-compensations')->name('valuation-compensations.')->group(function () {
+        Route::get('/', [App\Http\Controllers\ValuationCompensationController::class, 'index'])->name('index');
+        Route::get('/create', [App\Http\Controllers\ValuationCompensationController::class, 'create'])->name('create');
+        Route::post('/', [App\Http\Controllers\ValuationCompensationController::class, 'store'])->name('store');
+        
+        // Project Manager Console Routes (Must be above wildcard routes)
+        Route::prefix('projects')->name('projects.')->group(function () {
+            Route::get('/', [App\Http\Controllers\ProjectController::class, 'index'])->name('index');
+            Route::post('/', [App\Http\Controllers\ProjectController::class, 'store'])->name('store');
+            Route::get('/next-code', [App\Http\Controllers\ProjectController::class, 'getNextCode'])->name('next-code');
+            Route::get('/selection', [App\Http\Controllers\ProjectController::class, 'getProjectsForSelection'])->name('selection');
+            Route::get('/{id}/workers', [App\Http\Controllers\ProjectController::class, 'getProjectWorkers'])->name('workers');
+            Route::get('/{id}/templates', [App\Http\Controllers\ProjectController::class, 'generateWorkerTemplates'])->name('templates');
+        });
+        // Mobile Field Entry Routes
+        Route::prefix('mobile')->name('mobile.')->group(function () {
+            Route::get('/', [App\Http\Controllers\ValuationMobileController::class, 'index'])->name('index');
+            Route::get('/lookup', [App\Http\Controllers\ValuationMobileController::class, 'getLookupData'])->name('lookup');
+            Route::get('/workers/{projectId}', [App\Http\Controllers\ValuationMobileController::class, 'getProjectWorkers'])->name('workers');
+            Route::post('/save', [App\Http\Controllers\ValuationMobileController::class, 'store'])->name('save');
+        });
+
+        Route::get('/{id}/edit', [App\Http\Controllers\ValuationCompensationController::class, 'edit'])->name('edit');
+        Route::put('/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'update'])->name('update');
+        Route::get('/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'show'])->name('show');
+        Route::delete('/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'destroy'])->name('destroy');
+        Route::post('/log-print/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'logPrint'])->name('log-print');
+    });
+
     // Lands 12 - Request for Survey Report
     Route::prefix('survey-report')->name('survey-report.')->group(function () {
         Route::get('/', [SurveyReportController::class, 'index'])->name('index');

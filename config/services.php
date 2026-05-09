@@ -37,17 +37,17 @@ return [
 
     'ebulksms' => [
         'username' => env('EBULKSMS_USERNAME'),
-        'apikey'   => env('EBULKSMS_APIKEY'),
-        'sender'   => env('EBULKSMS_SENDER', 'KANGIS'),
+        'apikey' => env('EBULKSMS_APIKEY'),
+        'sender' => env('EBULKSMS_SENDER', 'Klaesedms'),
     ],
 
     'bulksmsnigeria' => [
         'api_token' => env('BULKSMSNG_API_TOKEN', '488|sKKj8eoZkgxFWLvdaBobT2aISYSZT055IcFJjZA994a7f693'),
-        'sender'    => env('BULKSMSNG_SENDER', 'KANGIS'),
+        'sender' => env('BULKSMSNG_SENDER', 'KANGIS'),
         // When true, posts to /api/sandbox/v2/sms (no real SMS, no wallet
         // deduction). Useful for staging or before production access is
         // activated. Flip BULKSMSNG_SANDBOX=false in .env to send live SMS.
-        'sandbox'   => env('BULKSMSNG_SANDBOX', false),
+        'sandbox' => env('BULKSMSNG_SANDBOX', false),
     ],
 
 ];

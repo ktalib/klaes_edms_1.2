@@ -34,6 +34,29 @@
         background: rgb(241 245 249) !important;
     }
 
+    /* ── Laravel Pagination Overrides ── */
+    .oss-pagination nav svg {
+        width: 1.25rem;
+        height: 1.25rem;
+    }
+    .oss-pagination nav div:first-child { display: none; }
+    .oss-pagination nav span[aria-current="page"] span {
+        background: rgb(37 99 235) !important;
+        color: #fff !important;
+        border-color: rgb(37 99 235) !important;
+    }
+    .oss-pagination nav a, .oss-pagination nav span {
+        border-radius: 0.5rem;
+        border: 1px solid rgb(226 232 240);
+        padding: 4px 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        transition: all 0.15s;
+    }
+    .oss-pagination nav a:hover {
+        background: rgb(241 245 249);
+    }
+
     /* ── Table normalisation ── */
     #lss-applications-table {
         border-collapse: collapse;
@@ -377,9 +400,18 @@
                                                     <i data-lucide="printer" class="w-3.5 h-3.5 text-indigo-600"></i> Printer Manager
                                                 </button>
                                                 @if(!empty($record->oss_application_id))
+                                                @php
+                                                    $isApproved = ($record->status ?? '') === \App\Models\LandsOneStopShopApplication::STATUS_APPROVED;
+                                                @endphp
+                                                @if($isApproved)
+                                                <button type="button" disabled title="Approved applications cannot be deleted" class="inline-flex items-center gap-2 opacity-40 cursor-not-allowed">
+                                                    <i data-lucide="trash-2" class="w-3.5 h-3.5 text-slate-400"></i> Delete Entry
+                                                </button>
+                                                @else
                                                 <button type="button" onclick="ossDeleteRecord(this)" class="inline-flex items-center gap-2 !text-red-500 hover:!text-red-700 hover:!bg-red-50">
                                                     <i data-lucide="trash-2" class="w-3.5 h-3.5 text-red-500"></i> Delete Entry
                                                 </button>
+                                                @endif
                                                 @endif
                                                 @else
                                                 <button type="button" onclick="ossViewRecord(this)" class="inline-flex items-center gap-2">
@@ -391,9 +423,18 @@
                                                 <button type="button" onclick="ossBillRecord(this)" class="inline-flex items-center gap-2">
                                                     <i data-lucide="receipt" class="w-3.5 h-3.5 text-emerald-500"></i> Bill
                                                 </button>
+                                                @php
+                                                    $isApproved = ($record->status ?? '') === \App\Models\LandsOneStopShopApplication::STATUS_APPROVED;
+                                                @endphp
+                                                @if($isApproved)
+                                                <button type="button" disabled title="Approved applications cannot be deleted" class="inline-flex items-center gap-2 opacity-40 cursor-not-allowed">
+                                                    <i data-lucide="trash-2" class="w-3.5 h-3.5 text-slate-400"></i> Delete
+                                                </button>
+                                                @else
                                                 <button type="button" onclick="ossDeleteRecord(this)" class="inline-flex items-center gap-2 !text-red-500 hover:!text-red-700 hover:!bg-red-50">
                                                     <i data-lucide="trash-2" class="w-3.5 h-3.5 text-red-500"></i> Delete
                                                 </button>
+                                                @endif
                                                 @endif
                                             </div>
                                         </div>
@@ -406,6 +447,20 @@
                             @endforelse
                         </tbody>
                     </table>
+                </div>
+
+                {{-- ── Custom Pagination Info & Links ── --}}
+                <div class="px-4 py-3 flex items-center justify-between border-t border-slate-100 bg-slate-50/30">
+                    <div class="text-xs text-slate-500 font-medium">
+                        @if($records->total() > 0)
+                            Showing <span class="text-slate-900">{{ $records->firstItem() }}</span> to <span class="text-slate-900">{{ $records->lastItem() }}</span> of <span class="text-slate-900">{{ number_format($records->total()) }}</span> applications
+                        @else
+                            No applications available
+                        @endif
+                    </div>
+                    <div class="oss-pagination">
+                        {{ $records->links() }}
+                    </div>
                 </div>
             </div>
         </div>

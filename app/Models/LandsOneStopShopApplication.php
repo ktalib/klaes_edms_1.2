@@ -171,6 +171,8 @@ class LandsOneStopShopApplication extends Model
         'street_name',
         'state',
         'num_plots',
+        'is_deleted',
+        'deleted_by',
     ];
 
     protected $casts = [

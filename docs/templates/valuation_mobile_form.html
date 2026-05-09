@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>New Valuation · Compensation Record</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2330;
+    --border: #2a3444;
+    --border-active: #3d8bff;
+    --accent: #3d8bff;
+    --accent2: #00e5a0;
+    --accent3: #f5a623;
+    --text: #e6edf3;
+    --text-muted: #7d8d9f;
+    --text-dim: #4a5568;
+    --danger: #f85149;
+    --success: #3fb950;
+    --section-h: #3d8bff;
+    --input-bg: #0d1117;
+    --pill-bg: #1c2330;
+    --tag-active-bg: #1a3a5c;
+    --tag-active-border: #3d8bff;
+    --tag-active-text: #79b8ff;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Sora', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+    overscroll-behavior: none;
+  }
+
+  /* ── TOP BAR ── */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(13,17,23,0.92);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 10px; }
+  .topbar-icon {
+    width: 34px; height: 34px;
+    background: linear-gradient(135deg, #1a3a5c, #3d8bff);
+    border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .topbar-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .topbar-sub { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+  .topbar-save {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 8px 18px;
+    font-family: 'Sora', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+    letter-spacing: 0.02em;
+  }
+  .topbar-save:active { transform: scale(0.96); background: #2a72e0; }
+
+  /* ── PROGRESS STRIP ── */
+  .progress-strip {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .progress-strip::-webkit-scrollbar { display: none; }
+  .prog-step {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    padding: 5px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .prog-step.active {
+    border-color: var(--accent);
+    background: var(--tag-active-bg);
+    color: var(--tag-active-text);
+  }
+  .prog-step.done {
+    border-color: var(--success);
+    background: rgba(63,185,80,0.1);
+    color: var(--success);
+  }
+  .prog-step .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .prog-step span { font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+
+  /* ── MAIN CONTENT ── */
+  .content { padding: 16px; padding-bottom: 100px; max-width: 480px; margin: 0 auto; }
+
+  /* ── SECTION CARD ── */
+  .section-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 14px;
+    overflow: hidden;
+    transition: border-color .2s;
+  }
+  .section-card:focus-within { border-color: rgba(61,139,255,0.4); }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+  }
+  .section-icon {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .section-header h3 {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    flex: 1;
+  }
+  .section-chevron {
+    color: var(--text-dim);
+    font-size: 11px;
+    transition: transform .25s;
+  }
+  .section-card.collapsed .section-chevron { transform: rotate(-90deg); }
+  .section-body {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .section-card.collapsed .section-body { display: none; }
+
+  /* ── FIELD ── */
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .req { color: var(--danger); font-size: 12px; }
+  .auto-badge {
+    background: rgba(0,229,160,0.12);
+    color: var(--accent2);
+    border: 1px solid rgba(0,229,160,0.25);
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* ── INPUTS ── */
+  .inp, select.inp, textarea.inp {
+    background: var(--input-bg);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: 'Sora', sans-serif;
+    font-size: 13px;
+    padding: 10px 12px;
+    width: 100%;
+    transition: border-color .2s, box-shadow .2s;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .inp:focus, select.inp:focus, textarea.inp:focus {
+    outline: none;
+    border-color: var(--border-active);
+    box-shadow: 0 0 0 3px rgba(61,139,255,0.12);
+  }
+  .inp::placeholder, textarea.inp::placeholder { color: var(--text-dim); }
+  select.inp { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237d8d9f' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+  select.inp option { background: #1c2330; color: var(--text); }
+  textarea.inp { resize: none; min-height: 80px; line-height: 1.5; }
+
+  .inp-mono { font-family: 'JetBrains Mono', monospace; font-size: 13px; letter-spacing: 0.04em; }
+
+  /* Auto-generated input */
+  .inp-auto {
+    background: rgba(0,229,160,0.06);
+    border-color: rgba(0,229,160,0.2);
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    cursor: not-allowed;
+  }
+
+  /* Amount display */
+  .amount-display {
+    background: linear-gradient(135deg, rgba(61,139,255,0.08), rgba(0,229,160,0.06));
+    border: 1.5px solid rgba(61,139,255,0.3);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .amount-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .amount-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--accent2);
+  }
+
+  /* Checkbox items (compensated items) */
+  .items-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .item-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 10px;
+    background: var(--surface2);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all .15s;
+    user-select: none;
+  }
+  .item-check input[type=checkbox] { display: none; }
+  .item-check.checked {
+    border-color: var(--tag-active-border);
+    background: var(--tag-active-bg);
+    color: var(--tag-active-text);
+  }
+  .check-box {
+    width: 16px; height: 16px;
+    border-radius: 4px;
+    border: 1.5px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: all .15s;
+  }
+  .item-check.checked .check-box {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .check-icon { font-size: 10px; opacity: 0; transition: opacity .15s; }
+  .item-check.checked .check-icon { opacity: 1; }
+  .item-label { font-size: 12px; font-weight: 500; }
+
+  /* Worker ID banner */
+  .worker-id-banner {
+    background: rgba(245,166,35,0.08);
+    border: 1px solid rgba(245,166,35,0.2);
+    border-radius: var(--radius-sm);
+    padding: 9px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--accent3);
+  }
+  .worker-id-banner .wid { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+
+  /* Number input with stepper */
+  .num-wrap { position: relative; display: flex; align-items: center; }
+  .num-wrap .inp { padding-right: 56px; }
+  .steppers {
+    position: absolute;
+    right: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .stepper-btn {
+    width: 24px; height: 20px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .1s;
+    -webkit-appearance: none;
+  }
+  .stepper-btn:active { background: var(--border-active); color: #fff; }
+
+  /* Bank search wrapper */
+  .search-wrap { position: relative; }
+  .search-wrap .inp { padding-left: 34px; }
+  .search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    font-size: 13px;
+    pointer-events: none;
+  }
+
+  /* Helper text */
+  .helper { font-size: 10px; color: var(--text-dim); margin-top: 1px; }
+
+  /* ── BOTTOM BAR ── */
+  .bottom-bar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 100;
+    background: rgba(13,17,23,0.95);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex;
+    gap: 10px;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .btn-secondary {
+    flex: 1;
+    background: var(--surface2);
+    border: 1.5px solid var(--border);
+    color: var(--text-muted);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    font-family: 'Sora', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-secondary:active { background: var(--border); }
+  .btn-primary {
+    flex: 2;
+    background: linear-gradient(135deg, #2a6be8, #3d8bff);
+    border: none;
+    color: #fff;
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    font-family: 'Sora', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    letter-spacing: 0.02em;
+    box-shadow: 0 4px 20px rgba(61,139,255,0.3);
+  }
+  .btn-primary:active { transform: scale(0.97); box-shadow: 0 2px 10px rgba(61,139,255,0.2); }
+
+  /* Color dots for section icons */
+  .ic-project { background: rgba(61,139,255,0.15); color: #79b8ff; }
+  .ic-file { background: rgba(0,229,160,0.12); color: var(--accent2); }
+  .ic-building { background: rgba(245,166,35,0.12); color: var(--accent3); }
+  .ic-payment { background: rgba(248,81,73,0.12); color: #f85149; }
+  .ic-location { background: rgba(121,80,255,0.12); color: #a78bfa; }
+
+  /* Fade-in on load */
+  .section-card {
+    animation: fadeUp .35s ease both;
+  }
+  .section-card:nth-child(1) { animation-delay: .04s; }
+  .section-card:nth-child(2) { animation-delay: .08s; }
+  .section-card:nth-child(3) { animation-delay: .12s; }
+  .section-card:nth-child(4) { animation-delay: .16s; }
+  .section-card:nth-child(5) { animation-delay: .20s; }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 88px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--success);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 30px;
+    font-size: 12px;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events: none;
+    transition: all .3s;
+    white-space: nowrap;
+    z-index: 999;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Date input fix */
+  input[type="date"].inp { color-scheme: dark; }
+
+  /* Divider */
+  .divider { height: 1px; background: var(--border); margin: 2px 0; }
+
+  input[type=number] { -moz-appearance: textfield; }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+  .full-addr-note {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: -6px;
+    padding: 6px 8px;
+    background: var(--surface2);
+    border-radius: 5px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-icon">🏛️</div>
+    <div>
+      <div class="topbar-title">New Valuation</div>
+      <div class="topbar-sub">Compensation Record</div>
+    </div>
+  </div>
+  <button class="topbar-save" onclick="handleSave()">Save Draft</button>
+</div>
+
+<!-- PROGRESS STRIP -->
+<div class="progress-strip" id="progressStrip">
+  <div class="prog-step active" onclick="scrollTo('sec-project')" data-sec="sec-project">
+    <div class="dot"></div><span>Project</span>
+  </div>
+  <div class="prog-step" onclick="scrollTo('sec-file')" data-sec="sec-file">
+    <div class="dot"></div><span>File & Owner</span>
+  </div>
+  <div class="prog-step" onclick="scrollTo('sec-building')" data-sec="sec-building">
+    <div class="dot"></div><span>Building</span>
+  </div>
+  <div class="prog-step" onclick="scrollTo('sec-payment')" data-sec="sec-payment">
+    <div class="dot"></div><span>Payment</span>
+  </div>
+  <div class="prog-step" onclick="scrollTo('sec-location')" data-sec="sec-location">
+    <div class="dot"></div><span>Location</span>
+  </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="content">
+
+  <!-- 1. PROJECT & ASSIGNMENT -->
+  <div class="section-card" id="sec-project">
+    <div class="section-header" onclick="toggleSection('sec-project')">
+      <div class="section-icon ic-project">📋</div>
+      <h3>Project & Assignment</h3>
+      <span class="section-chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <label>Select Project <span class="req">*</span></label>
+        <select class="inp" id="projectSelect" onchange="onProjectChange()">
+          <option value="">Select Project</option>
+          <option value="P001">Kano Ring Road Phase 2</option>
+          <option value="P002">Abuja Metro Expansion</option>
+          <option value="P003">Kaduna-Abuja Rail Corridor</option>
+          <option value="P004">Lagos-Ibadan Expressway Upgrade</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Assigned Worker <span class="req">*</span></label>
+        <select class="inp" id="workerSelect" onchange="onWorkerChange()" disabled>
+          <option value="">Select Worker (Select Project First)</option>
+        </select>
+        <div class="helper" id="workerHelper">Select a project to load available workers.</div>
+      </div>
+      <div class="worker-id-banner" id="workerBanner" style="display:none">
+        <span>🪪</span>
+        <span>Worker ID: <span class="wid" id="workerIdDisplay">—</span> · Auto-recorded</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. FILE & OWNER INFORMATION -->
+  <div class="section-card" id="sec-file">
+    <div class="section-header" onclick="toggleSection('sec-file')">
+      <div class="section-icon ic-file">📁</div>
+      <h3>File & Owner Information</h3>
+      <span class="section-chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <label>Our Reference <span class="auto-badge">Auto</span></label>
+        <input class="inp inp-auto inp-mono" type="text" id="ourRef" value="Generated on save..." readonly>
+      </div>
+      <div class="field">
+        <label>Your Reference</label>
+        <input class="inp inp-mono" type="text" placeholder="e.g. MLW/COMP/2024/001" id="yourRef">
+      </div>
+      <div class="field">
+        <label>Owner Name <span class="req">*</span></label>
+        <input class="inp" type="text" placeholder="e.g. Musa Yakubu" id="ownerName" oninput="buildAddress()">
+      </div>
+      <div class="field">
+        <label>Valuation Date <span class="req">*</span></label>
+        <input class="inp" type="date" id="valuationDate" value="2026-05-09">
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. BUILDING & COMPENSATED ITEMS -->
+  <div class="section-card" id="sec-building">
+    <div class="section-header" onclick="toggleSection('sec-building')">
+      <div class="section-icon ic-building">🏗️</div>
+      <h3>Building & Compensated Items</h3>
+      <span class="section-chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <label>Building Type <span class="req">*</span></label>
+        <select class="inp" id="buildingType">
+          <option value="">Select Building Type</option>
+          <option value="residential">Residential</option>
+          <option value="commercial">Commercial</option>
+          <option value="industrial">Industrial</option>
+          <option value="agricultural">Agricultural</option>
+          <option value="mixed">Mixed Use</option>
+          <option value="uncompleted">Uncompleted Structure</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Building Count <span class="req">*</span></label>
+          <div class="num-wrap">
+            <input class="inp" type="number" id="buildingCount" value="1" min="1" max="999" oninput="calcTotal()">
+            <div class="steppers">
+              <button class="stepper-btn" onclick="step('buildingCount',1)">▲</button>
+              <button class="stepper-btn" onclick="step('buildingCount',-1)">▼</button>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Area (m²) <span class="req">*</span></label>
+          <input class="inp" type="number" id="areaCovered" placeholder="0.00" step="0.01" oninput="calcTotal()">
+        </div>
+      </div>
+      <div class="field">
+        <label>Rate of Cost (₦) <span class="req">*</span></label>
+        <input class="inp inp-mono" type="number" id="rateOfCost" placeholder="0.00" step="0.01" oninput="calcTotal()">
+      </div>
+      <div class="divider"></div>
+      <div class="amount-display">
+        <div>
+          <div class="amount-label">Total Compensation</div>
+        </div>
+        <div class="amount-value" id="totalAmount">₦ 0.00</div>
+      </div>
+      <div class="field">
+        <label>Compensated Items</label>
+        <div class="items-grid" id="compItemsGrid">
+          <div class="item-check" onclick="toggleItem(this)">
+            <input type="checkbox" name="compItems" value="borehole">
+            <div class="check-box"><span class="check-icon">✓</span></div>
+            <span class="item-label">💧 Borehole</span>
+          </div>
+          <div class="item-check" onclick="toggleItem(this)">
+            <input type="checkbox" name="compItems" value="well">
+            <div class="check-box"><span class="check-icon">✓</span></div>
+            <span class="item-label">🪣 Well</span>
+          </div>
+          <div class="item-check" onclick="toggleItem(this)">
+            <input type="checkbox" name="compItems" value="soakaway">
+            <div class="check-box"><span class="check-icon">✓</span></div>
+            <span class="item-label">🔵 Soakaway</span>
+          </div>
+          <div class="item-check" onclick="toggleItem(this)">
+            <input type="checkbox" name="compItems" value="pit_latrine">
+            <div class="check-box"><span class="check-icon">✓</span></div>
+            <span class="item-label">🚻 Pit Latrine</span>
+          </div>
+          <div class="item-check" onclick="toggleItem(this)">
+            <input type="checkbox" name="compItems" value="fence">
+            <div class="check-box"><span class="check-icon">✓</span></div>
+            <span class="item-label">🧱 Fence</span>
+          </div>
+          <div class="item-check" onclick="toggleItem(this)">
+            <input type="checkbox" name="compItems" value="generator">
+            <div class="check-box"><span class="check-icon">✓</span></div>
+            <span class="item-label">⚡ Generator</span>
+          </div>
+          <div class="item-check" onclick="toggleItem(this)">
+            <input type="checkbox" name="compItems" value="house">
+            <div class="check-box"><span class="check-icon">✓</span></div>
+            <span class="item-label">🏠 House</span>
+          </div>
+          <div class="item-check" onclick="toggleItem(this)">
+            <input type="checkbox" name="compItems" value="other">
+            <div class="check-box"><span class="check-icon">✓</span></div>
+            <span class="item-label">📦 Other</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. ACCOUNT & PAYMENT DETAILS -->
+  <div class="section-card" id="sec-payment">
+    <div class="section-header" onclick="toggleSection('sec-payment')">
+      <div class="section-icon ic-payment">💳</div>
+      <h3>Account & Payment Details</h3>
+      <span class="section-chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <label>Account Name</label>
+        <input class="inp" type="text" placeholder="Full Name as on Bank Account" id="accountName">
+        <div class="helper">Must match your bank records exactly.</div>
+      </div>
+      <div class="field">
+        <label>Account Number <span class="req">*</span></label>
+        <input class="inp inp-mono" type="tel" maxlength="10" placeholder="e.g. 0123456789" id="accountNumber" oninput="this.value=this.value.replace(/\D/g,'').slice(0,10)">
+      </div>
+      <div class="field">
+        <label>Bank Name</label>
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input class="inp" type="text" placeholder="Search Bank..." id="bankSearch" oninput="filterBanks(this.value)" autocomplete="off">
+        </div>
+        <div id="bankDropdown" style="display:none; background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius-sm); margin-top:4px; overflow:hidden; max-height:180px; overflow-y:auto;"></div>
+      </div>
+      <div class="field">
+        <label>Phone Number <span class="req">*</span></label>
+        <input class="inp" type="tel" placeholder="e.g. 08012345678" id="phoneNumber" maxlength="11" oninput="this.value=this.value.replace(/\D/g,'').slice(0,11)">
+      </div>
+      <div class="field">
+        <label>Remarks</label>
+        <textarea class="inp" placeholder="Any additional notes..." id="remarks"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. PROPERTY LOCATION -->
+  <div class="section-card" id="sec-location">
+    <div class="section-header" onclick="toggleSection('sec-location')">
+      <div class="section-icon ic-location">📍</div>
+      <h3>Property Location</h3>
+      <span class="section-chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="field-row">
+        <div class="field">
+          <label>Plot Number</label>
+          <input class="inp" type="text" placeholder="e.g. Plot 12A" id="plotNumber" oninput="buildAddress()">
+        </div>
+        <div class="field">
+          <label>Street Name</label>
+          <select class="inp" id="streetName" onchange="buildAddress()">
+            <option value="">Select Street</option>
+            <option>Ahmadu Bello Way</option>
+            <option>Yakubu Gowon Way</option>
+            <option>Murtala Mohammed Way</option>
+            <option>Independence Way</option>
+            <option>Constitution Avenue</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>District</label>
+          <select class="inp" id="district" onchange="buildAddress()">
+            <option value="">Select District</option>
+            <option>Wuse</option>
+            <option>Garki</option>
+            <option>Maitama</option>
+            <option>Asokoro</option>
+            <option>Gwarimpa</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>LGA <span class="req">*</span></label>
+          <select class="inp" id="lga" onchange="buildAddress()">
+            <option value="">Select LGA</option>
+            <option>Kano Municipal</option>
+            <option>Nassarawa</option>
+            <option>Tarauni</option>
+            <option>Gwale</option>
+            <option>Fagge</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>State <span class="req">*</span></label>
+        <select class="inp" id="stateField" onchange="buildAddress()">
+          <option value="Kano">Kano</option>
+          <option value="Lagos">Lagos</option>
+          <option value="Abuja">FCT Abuja</option>
+          <option value="Kaduna">Kaduna</option>
+          <option value="Katsina">Katsina</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Full Location Address <span class="req">*</span></label>
+        <textarea class="inp" id="fullAddress" placeholder="Detailed location description..." rows="3"></textarea>
+        <div class="full-addr-note">🔧 Automatically built from fields above — you can edit manually.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- BOTTOM BAR -->
+<div class="bottom-bar">
+  <button class="btn-secondary" onclick="clearForm()">Clear</button>
+  <button class="btn-primary" onclick="handleSave()">
+    <span>💾</span> Save Record
+  </button>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── DATA ──────────────────────────────────────────────
+const projectWorkers = {
+  P001: [
+    { id: 'WK-1042', name: 'Ibrahim Suleiman' },
+    { id: 'WK-1043', name: 'Fatima Aliyu' },
+    { id: 'WK-1044', name: 'Emeka Nwosu' }
+  ],
+  P002: [
+    { id: 'WK-2011', name: 'Chidi Okonkwo' },
+    { id: 'WK-2015', name: 'Aisha Bello' }
+  ],
+  P003: [
+    { id: 'WK-3001', name: 'Yusuf Musa' },
+    { id: 'WK-3007', name: 'Ngozi Eze' },
+    { id: 'WK-3009', name: 'Aminu Kano' }
+  ],
+  P004: [
+    { id: 'WK-4021', name: 'Tunde Adeyemi' },
+    { id: 'WK-4022', name: 'Blessing Okafor' }
+  ]
+};
+
+const banks = [
+  'Access Bank','First Bank of Nigeria','Zenith Bank','GTBank','United Bank for Africa (UBA)',
+  'Stanbic IBTC','FCMB','Fidelity Bank','Polaris Bank','Sterling Bank',
+  'Union Bank','Wema Bank','Keystone Bank','Jaiz Bank','Heritage Bank',
+  'Ecobank Nigeria','Providus Bank','Kuda Bank','Opay','Moniepoint'
+];
+
+// ─── PROJECT / WORKER ───────────────────────────────────
+function onProjectChange() {
+  const pId = document.getElementById('projectSelect').value;
+  const ws = document.getElementById('workerSelect');
+  ws.innerHTML = '<option value="">Select Worker</option>';
+  ws.disabled = !pId;
+  if (pId && projectWorkers[pId]) {
+    projectWorkers[pId].forEach(w => {
+      const o = document.createElement('option');
+      o.value = w.id;
+      o.textContent = `${w.name} (${w.id})`;
+      ws.appendChild(o);
+    });
+    document.getElementById('workerHelper').textContent = `${projectWorkers[pId].length} worker(s) available.`;
+  }
+  document.getElementById('workerBanner').style.display = 'none';
+  markStep('sec-project', pId ? 'active' : '');
+}
+
+function onWorkerChange() {
+  const wId = document.getElementById('workerSelect').value;
+  const banner = document.getElementById('workerBanner');
+  if (wId) {
+    document.getElementById('workerIdDisplay').textContent = wId;
+    banner.style.display = 'flex';
+    markStepDone('sec-project');
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+// ─── CALCULATION ────────────────────────────────────────
+function calcTotal() {
+  const count = parseFloat(document.getElementById('buildingCount').value) || 0;
+  const area = parseFloat(document.getElementById('areaCovered').value) || 0;
+  const rate = parseFloat(document.getElementById('rateOfCost').value) || 0;
+  const total = count * area * rate;
+  document.getElementById('totalAmount').textContent = '₦ ' + total.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function step(id, dir) {
+  const el = document.getElementById(id);
+  const cur = parseInt(el.value) || 1;
+  const nv = Math.max(1, cur + dir);
+  el.value = nv;
+  calcTotal();
+}
+
+// ─── ITEMS CHECKBOX ─────────────────────────────────────
+function toggleItem(el) {
+  el.classList.toggle('checked');
+  el.querySelector('input[type=checkbox]').checked = el.classList.contains('checked');
+}
+
+// ─── BANK SEARCH ────────────────────────────────────────
+function filterBanks(q) {
+  const dd = document.getElementById('bankDropdown');
+  if (!q) { dd.style.display = 'none'; return; }
+  const matches = banks.filter(b => b.toLowerCase().includes(q.toLowerCase()));
+  if (!matches.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = matches.map(b =>
+    `<div onclick="selectBank('${b}')" style="padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);transition:background .15s;" onmouseenter="this.style.background='var(--surface)'" onmouseleave="this.style.background=''">${b}</div>`
+  ).join('');
+  dd.style.display = 'block';
+}
+
+function selectBank(name) {
+  document.getElementById('bankSearch').value = name;
+  document.getElementById('bankDropdown').style.display = 'none';
+}
+
+// Close bank dropdown on outside click
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-wrap') && !e.target.closest('#bankDropdown')) {
+    document.getElementById('bankDropdown').style.display = 'none';
+  }
+});
+
+// ─── ADDRESS BUILDER ────────────────────────────────────
+function buildAddress() {
+  const plot = document.getElementById('plotNumber').value.trim();
+  const street = document.getElementById('streetName').value;
+  const district = document.getElementById('district').value;
+  const lga = document.getElementById('lga').value;
+  const state = document.getElementById('stateField').value;
+
+  let parts = [];
+  if (plot) parts.push(plot);
+  if (street) parts.push(street);
+  if (district) parts.push(district + ' District');
+  if (lga) parts.push(lga + ' LGA');
+  if (state) parts.push(state + ' State, Nigeria');
+
+  const addr = document.getElementById('fullAddress');
+  if (parts.length) addr.value = parts.join(', ');
+}
+
+// ─── SECTION TOGGLE ─────────────────────────────────────
+function toggleSection(id) {
+  document.getElementById(id).classList.toggle('collapsed');
+}
+
+function scrollTo(id) {
+  document.getElementById(id).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.querySelectorAll('.prog-step').forEach(s => s.classList.remove('active'));
+  document.querySelector(`[data-sec="${id}"]`).classList.add('active');
+}
+
+function markStepDone(secId) {
+  const el = document.querySelector(`[data-sec="${secId}"]`);
+  if (el) { el.className = 'prog-step done'; }
+}
+
+function markStep(secId, cls) {
+  const el = document.querySelector(`[data-sec="${secId}"]`);
+  if (el) el.className = 'prog-step ' + cls;
+}
+
+// Intersection observer for progress strip
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting && entry.intersectionRatio > 0.3) {
+      const id = entry.target.id;
+      document.querySelectorAll('.prog-step').forEach(s => s.classList.remove('active'));
+      const step = document.querySelector(`[data-sec="${id}"]`);
+      if (step && !step.classList.contains('done')) step.classList.add('active');
+    }
+  });
+}, { threshold: 0.3 });
+
+['sec-project','sec-file','sec-building','sec-payment','sec-location'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) observer.observe(el);
+});
+
+// ─── SAVE ───────────────────────────────────────────────
+function handleSave() {
+  const project = document.getElementById('projectSelect').value;
+  const worker = document.getElementById('workerSelect').value;
+  const owner = document.getElementById('ownerName').value.trim();
+
+  if (!project || !worker || !owner) {
+    showToast('⚠️ Fill required fields first', '#f85149');
+    return;
+  }
+
+  // Generate Our Reference
+  const now = new Date();
+  const ref = `MLW/VAL/${now.getFullYear()}/${String(Math.floor(Math.random()*9000)+1000)}`;
+  document.getElementById('ourRef').value = ref;
+
+  showToast('✅ Record saved — ' + ref, 'var(--success)');
+  markStepDone('sec-file');
+}
+
+function clearForm() {
+  if (!confirm('Clear all fields?')) return;
+  document.querySelectorAll('input:not([readonly]), select, textarea').forEach(el => {
+    if (el.type === 'checkbox') el.checked = false;
+    else el.value = el.defaultValue || '';
+  });
+  document.querySelectorAll('.item-check.checked').forEach(el => el.classList.remove('checked'));
+  document.getElementById('workerBanner').style.display = 'none';
+  document.getElementById('totalAmount').textContent = '₦ 0.00';
+  document.getElementById('bankDropdown').style.display = 'none';
+  document.getElementById('workerSelect').disabled = true;
+  document.getElementById('buildingCount').value = 1;
+  document.getElementById('valuationDate').value = '2026-05-09';
+  document.querySelectorAll('.prog-step').forEach((s,i) => { s.className = 'prog-step' + (i===0?' active':''); });
+  showToast('🗑️ Form cleared', 'var(--text-muted)');
+}
+
+function showToast(msg, color = 'var(--success)') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = color;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+</script>
+</body>
+</html>

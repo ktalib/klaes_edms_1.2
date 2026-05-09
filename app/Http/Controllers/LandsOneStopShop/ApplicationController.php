@@ -238,13 +238,15 @@ class ApplicationController extends Controller
                         ->orWhere('oa.system_source', '!=', 'OSSOPCHANGEOFNAME');
                 });
             })
+            ->where(function ($q) {
+                $q->whereNull('oa.is_deleted')
+                    ->orWhere('oa.is_deleted', 0);
+            })
             ->orderByDesc('oa.created_at')
-            ->limit($limit)
-            ->get();
+            ->paginate($limit)
+            ->appends($request->query());
 
-        // Build a displayable URL for each record's passport photo
-        // Use direct URL construction instead of per-row Storage::disk()->exists() I/O
-        $records->transform(function ($record) {
+        $records->getCollection()->transform(function ($record) {
             $record->passport_photo_url = null;
             if (!empty($record->passport_photo)) {
                 $path = $record->passport_photo;
@@ -274,6 +276,10 @@ class ApplicationController extends Controller
                     ->orWhere('system_source', '!=', 'OSSOPCHANGEOFNAME');
             });
         }
+        $cardCountsQuery->where(function ($q) {
+            $q->whereNull('is_deleted')
+                ->orWhere('is_deleted', 0);
+        });
 
         $cardCounts = $cardCountsQuery
             ->groupBy('application_type')
@@ -291,6 +297,10 @@ class ApplicationController extends Controller
                     ->orWhere('system_source', '!=', 'OSSOPCHANGEOFNAME');
             });
         }
+        $dailyQuery->where(function ($q) {
+            $q->whereNull('is_deleted')
+                ->orWhere('is_deleted', 0);
+        });
         $dailyCount = $dailyQuery->count();
 
         return view('lands_one_stop_shop.all_applications', [
@@ -463,10 +473,15 @@ class ApplicationController extends Controller
                 $builder->whereRaw("$applicationTypeSql = ?", [$appTypeFilter]);
             })
             ->whereNotNull('oa.id')
-            ->orderByDesc('p.created_at')
-            ->limit($limit);
+            ->where(function ($q) {
+                $q->whereNull('oa.is_deleted')
+                    ->orWhere('oa.is_deleted', 0);
+            })
+            ->orderByDesc('p.created_at');
 
-        $records = $query->get()->map(function ($row) {
+        $records = $query->paginate($limit)->appends($request->query());
+
+        $records->getCollection()->transform(function ($row) {
             $rawLandUse = strtoupper(trim((string) ($row->resolved_land_use ?? '')));
             $applicationType = strtolower(trim((string) ($row->resolved_application_type ?? 'residential')));
             $applicantName = trim((string) ($row->oa_applicant_name ?: ($row->Grantee ?: ($row->source_party_2_name ?: $row->indexed_file_title))));
@@ -726,7 +741,19 @@ class ApplicationController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $record = LandsOneStopShopApplication::findOrFail($id);
-        $record->delete();
+
+        if ($record->status === LandsOneStopShopApplication::STATUS_APPROVED) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Approved applications cannot be deleted.',
+            ], 403);
+        }
+
+        $record->update([
+            'is_deleted' => 1,
+            'deleted_by' => Auth::id(),
+            'deleted_at' => now(),
+        ]);
 
         return response()->json([
             'success' => true,

@@ -284,7 +284,7 @@
         const timeoutHandle = setTimeout(() => controller.abort(), GROUPING_LOOKUP_TIMEOUT_MS);
 
         try {
-            const response = await fetch('/api/grouping/link-mls', {
+            const response = await fetch("{{ route('api.grouping.link-mls') }}", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -3049,6 +3049,7 @@
             hasCustomFileName: true, // Toggle for custom file name input - default to checked
             allocationId: null,
             landUse: '',
+            landUseId: '',
             landUseFullText: '',
             // Dependent Data
             purposes: [],
@@ -3101,6 +3102,8 @@
             changeOfPurposeAppId: '',
             originalFileNo: '',
             copApplicantName: '',
+            copCurrentLandUse: '',
+            copNewPurpose: '',
 
             // Batch Mode Properties
             batchMode: false,
@@ -3114,6 +3117,10 @@
             init() {
                 try {
                     console.log('Alpine fileNumberGenerator init() started');
+                    
+                    // Default serial for new forms
+                    this.serialNo = '';
+
                     this.$watch('applicationType', (value) => {
                         console.log('applicationType watched change:', value);
                         if (value === 'new') {
@@ -3125,6 +3132,7 @@
                         } else {
                             this.allocatedByFilter = '';
                         }
+                        this.updateApplicationType();
                     });
 
                     // Trigger on first load if default is 'new' and allocation list is selected
@@ -3136,6 +3144,25 @@
                             });
                         }
                     }
+                    
+                    this.$watch('prefix', (value) => {
+                        console.log('prefix watched change:', value);
+                        if (value) {
+                            this.handlePrefixChange();
+                        }
+                    });
+
+                    this.$watch('landUseId', (value) => {
+                        console.log('landUseId watched change:', value);
+                        if (value) {
+                            this.fetchDependentData(value);
+                        } else if (this.fileOption !== 'sit') {
+                            this.purposes = [];
+                            this.purpose = '';
+                        }
+                    });
+
+                    this.updatePreview();
                 } catch (e) {
                     console.error('Error in Alpine init():', e);
                 }
@@ -3421,6 +3448,9 @@
 
             // Methods
             handlePrefixChange(event) {
+                if (event) {
+                    console.log('handlePrefixChange called via event', event.target.value);
+                }
                 // Find the selected prefix object from our full list
                 // We can't rely just on the filtered list index, so find by string
                 const selectedPrefixStr = this.prefix; 
@@ -3462,7 +3492,8 @@
                         }
                         
                         // 2. Fetch Purposes for this Land Use ID
-                        this.fetchDependentData(prefixObj.land_use_id);
+                        this.landUseId = prefixObj.land_use_id;
+                        // fetchDependentData will be triggered by watcher on landUseId
                      }
                 }
                 
@@ -3511,7 +3542,7 @@
 
                 showGlobalLoading('Fetching purposes...');
 
-                fetch(`/mls-fileno/get-dependent-data?land_use_id=${landUseId}`)
+                fetch(`{{ route('mls-fileno.get-dependent-data') }}?land_use_id=${landUseId}`)
                     .then(response => response.json())
                     .then(data => {
                         this.purposes = data.purposes || [];
@@ -3531,7 +3562,7 @@
             },
 
             fetchAllPurposes() {
-                fetch('/mls-fileno/get-dependent-data?land_use_id=all')
+                fetch(`{{ route('mls-fileno.get-dependent-data') }}?land_use_id=all`)
                     .then(response => response.json())
                     .then(data => {
                         this.purposes = data.purposes || [];
@@ -3543,11 +3574,7 @@
                     });
             },
 
-            init() {
-                // Serial will be updated when land use is selected
-                this.serialNo = '';
-                this.updatePreview();
-            },
+
 
             updateApplicationType() {
                 this.landUse = '';
@@ -3590,7 +3617,7 @@
                         if (!data || !data.fileNumber) return;
                         
                         showGlobalLoading('Verifying subdivision...');
-                        fetch(`/plot-subdivision/find-by-file/${encodeURIComponent(data.fileNumber)}`)
+                        fetch(`{{ route('plot-subdivision.find-by-file', '') }}/${encodeURIComponent(data.fileNumber)}`)
                             .then(response => response.json())
                             .then(res => {
                                 hideGlobalLoading();
@@ -3612,13 +3639,35 @@
                                     
                                     self.isInherited = true;
 
-                                    self.batchMode = true;
-                                    self.batchQuantity = res.data.num_plots;
+                                    // Set Land Use from application
+                                    if (res.data.land_use) {
+                                        const luCode = res.data.land_use.toUpperCase();
+                                        this.landUse = luCode;
+                                        
+                                        if (this.landUses) {
+                                            const luEntity = this.landUses.find(l => {
+                                                const name = l.landuse.toUpperCase();
+                                                if (luCode === 'RES' && name.includes('RESIDENTIAL')) return true;
+                                                if (luCode === 'COM' && name.includes('COMMERCIAL')) return true;
+                                                if (luCode === 'IND' && name.includes('INDUSTRIAL')) return true;
+                                                if (luCode === 'AG' && name.includes('AGRICULTURAL')) return true;
+                                                if (luCode === 'AGR' && name.includes('AGRICULTURAL')) return true;
+                                                return false;
+                                            });
+                                            
+                                            if (luEntity) {
+                                                this.landUseId = luEntity.id;
+                                            }
+                                        }
+                                    }
+
+                                    this.batchMode = true;
+                                    this.batchQuantity = res.data.num_plots;
                                     
                                     // Trigger Alpine reactivity for batchQuantity and batchMode
-                                    self.$nextTick(() => {
-                                        if (typeof self.updatePreview === 'function') {
-                                            self.updatePreview();
+                                    this.$nextTick(() => {
+                                        if (typeof this.updatePreview === 'function') {
+                                            this.updatePreview();
                                         }
                                     });
                                     
@@ -3678,6 +3727,28 @@
                     if (data.district) locParts.push(data.district);
                     self.location = locParts.length > 0 ? locParts.join(', ').toUpperCase() : '';
                     
+                    // Set Land Use from application
+                    if (data.land_use) {
+                        const luCode = data.land_use.toUpperCase();
+                        self.landUse = luCode;
+                        
+                        if (self.landUses) {
+                            const luEntity = self.landUses.find(l => {
+                                const name = l.landuse.toUpperCase();
+                                if (luCode === 'RES' && name.includes('RESIDENTIAL')) return true;
+                                if (luCode === 'COM' && name.includes('COMMERCIAL')) return true;
+                                if (luCode === 'IND' && name.includes('INDUSTRIAL')) return true;
+                                if (luCode === 'AG' && name.includes('AGRICULTURAL')) return true;
+                                if (luCode === 'AGR' && name.includes('AGRICULTURAL')) return true;
+                                return false;
+                            });
+                            
+                            if (luEntity) {
+                                self.landUseId = luEntity.id;
+                            }
+                        }
+                    }
+
                     self.isInherited = true;
 
                     self.updatePreview();
@@ -3716,6 +3787,31 @@
                     this.changeOfPurposeAppId = data.id;
                     this.copApplicantName = data.applicant_name;
                     
+                    // These are used for the summary display in Blade (which we should add to Alpine data if missing)
+                    this.copCurrentLandUse = data.land_use;
+                    this.copNewPurpose = data.purpose;
+                    
+                    // Set New Land Use based on the "purpose" field in CoP app (which is the NEW land use code)
+                    const newLuCode = (data.purpose || '').toUpperCase();
+                    this.landUse = newLuCode;
+                    
+                    // Find the land use ID to fetch purposes
+                    if (this.landUses) {
+                        const luEntity = this.landUses.find(l => {
+                            const name = l.landuse.toUpperCase();
+                            if (newLuCode === 'RES' && name.includes('RESIDENTIAL')) return true;
+                            if (newLuCode === 'COM' && name.includes('COMMERCIAL')) return true;
+                            if (newLuCode === 'IND' && name.includes('INDUSTRIAL')) return true;
+                            if (newLuCode === 'AG' && name.includes('AGRICULTURAL')) return true;
+                            if (newLuCode === 'AGR' && name.includes('AGRICULTURAL')) return true;
+                            return false;
+                        });
+                        
+                        if (luEntity) {
+                            this.landUseId = luEntity.id;
+                        }
+                    }
+
                     // Backfill details
                     this.fileName = data.applicant_name || '';
                     this.plotNo = data.plot_no || '';
@@ -4057,7 +4153,7 @@
                 }
 
                 try {
-                    const response = await fetch('/api/grouping/bulk-lookup', {
+                    const response = await fetch("{{ route('api.grouping.bulk-lookup') }}", {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -6120,7 +6216,7 @@
                 return;
             }
 
-            const recordResponse = await fetch('/file-numbers/record-print', {
+            const recordResponse = await fetch("{{ route('file-numbers.record-print') }}", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -6389,7 +6485,7 @@
             await generateBatchPDF(selectedDate, "Original", "date");
 
             // ONLY record the print AFTER the PDF has been successfully generated
-            const recordResponse = await fetch("/file-numbers/record-print", {
+            const recordResponse = await fetch("{{ route('file-numbers.record-print') }}", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrfToken },
                 body: JSON.stringify({ reference: selectedDate, type: "Date", doc_type: "Commissioning Sheet" })
@@ -6730,7 +6826,7 @@
         const tableBody = document.getElementById('mergerResultsTable');
         if (!tableBody) return;
 
-        fetch(`/plot-merger/approved-list?search=${encodeURIComponent(query || '')}`)
+        fetch(`{{ route('plot-merger.approved-list') }}?search=${encodeURIComponent(query || '')}`)
             .then(res => res.json())
             .then(res => {
                 if (res.success) {
