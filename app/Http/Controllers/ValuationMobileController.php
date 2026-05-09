@@ -10,6 +10,7 @@ use App\Models\StreetName;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
 
 class ValuationMobileController extends Controller
@@ -28,28 +29,39 @@ class ValuationMobileController extends Controller
      */
     public function getLookupData()
     {
-        $projects = Project::orderBy('project_name')->get()->map(function($p) {
-            return [
-                'id' => $p->id,
-                'name' => $p->project_name,
-                'code' => $p->project_code,
-            ];
+        return Cache::remember('vfc_mobile_lookup_data', 60 * 60 * 24, function() {
+            $projects = Project::orderBy('project_name')->get()->map(function($p) {
+                return [
+                    'id' => $p->id,
+                    'name' => $p->project_name,
+                    'code' => $p->project_code,
+                ];
+            });
+
+            $buildingTypes = BuildingType::active()->orderBy('name')->get();
+            $streets = StreetName::orderBy('name')->get();
+            
+            $lgas = DB::connection('sqlsrv')->table('StatLGAs')->join('States', 'StatLGAs.StateID', '=', 'States.StateID')->where('States.StateName', 'Kano')->orderBy('LGAName')->get();
+            $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
+
+            $banks = \App\Models\VfcBank::orderBy('name')->get()->map(function($b) {
+                return [
+                    'name' => $b->name,
+                    'logo' => asset('assets/' . $b->logo),
+                    'code' => $b->code
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'projects' => $projects,
+                'buildingTypes' => $buildingTypes,
+                'streets' => $streets,
+                'lgas' => $lgas,
+                'districts' => $districts,
+                'banks' => $banks
+            ]);
         });
-
-        $buildingTypes = BuildingType::active()->orderBy('name')->get();
-        $streets = StreetName::orderBy('name')->get();
-        
-        $lgas = DB::connection('sqlsrv')->table('StatLGAs')->join('States', 'StatLGAs.StateID', '=', 'States.StateID')->where('States.StateName', 'Kano')->orderBy('LGAName')->get();
-        $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
-
-        return response()->json([
-            'success' => true,
-            'projects' => $projects,
-            'buildingTypes' => $buildingTypes,
-            'streets' => $streets,
-            'lgas' => $lgas,
-            'districts' => $districts,
-        ]);
     }
 
     /**
@@ -80,8 +92,8 @@ class ValuationMobileController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'project_id' => 'required',
-            'worker_id' => 'required',
+            'project_id' => 'required|exists:sqlsrv.vfc_projects,id',
+            'worker_id' => 'required|exists:sqlsrv.vfc_project_workers,id',
             'owner_name' => 'required|string',
             'compensation_amount' => 'required|numeric',
             'valuation_date' => 'required|date',

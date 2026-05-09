@@ -125,26 +125,9 @@
 
 @push('scripts')
 <script>
-    let allBanks = [];
-
-    async function fetchBanks() {
-        try {
-            const response = await fetch('https://api.nigerianbanklogos.xyz');
-            allBanks = await response.json();
-            // Sort by title
-            allBanks.sort((a, b) => a.title.localeCompare(b.title));
-            console.log('Banks loaded from API:', allBanks.length);
-        } catch (error) {
-            console.error('Error fetching banks:', error);
-            // Fallback basic list if API fails
-            allBanks = [
-                { title: 'Access Bank', route: 'https://nbl.xyz/library/access-bank.svg' },
-                { title: 'Zenith Bank', route: 'https://nbl.xyz/library/zenith-bank.svg' },
-                { title: 'First Bank', route: 'https://nbl.xyz/library/first-bank.svg' },
-                { title: 'GTBank', route: 'https://nbl.xyz/library/gtbank.svg' },
-                { title: 'UBA', route: 'https://nbl.xyz/library/uba.svg' },
-            ];
-        }
+    let allBanks = @json($banks ?? []);
+    function fetchBanks() {
+        console.log('Banks loaded from database:', allBanks.length);
     }
 
     let projectsData = [];

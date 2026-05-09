@@ -48,7 +48,7 @@
             position: sticky;
             top: 0;
             z-index: 100;
-            background: rgba(11, 14, 20, 0.85);
+            background: rgba(11, 14, 20, 0.95);
             backdrop-filter: blur(20px);
             border-bottom: 1px solid var(--border);
             display: flex;
@@ -98,7 +98,11 @@
 
         /* ── PROGRESS STRIP ── */
         .nav-strip {
-            background: var(--surface);
+            position: sticky;
+            top: 65px; /* adjust based on topbar height */
+            z-index: 99;
+            background: rgba(21, 25, 33, 0.95);
+            backdrop-filter: blur(10px);
             padding: 12px 20px;
             display: flex;
             gap: 8px;
@@ -153,18 +157,54 @@
             animation: slideUp 0.4s ease-out both;
         }
 
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+        .bank-logo-img {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: contain !important;
+            display: block !important;
+        }
+
+        .selected-logo-wrap {
+            width: 28px !important;
+            height: 28px !important;
+            min-width: 28px !important;
+            border-radius: 6px;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 3px;
+            overflow: hidden;
+            flex-shrink: 0;
+            border: 1px solid rgba(255,255,255,0.1);
         }
 
         .section-header {
             padding: 16px 20px;
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 12px;
             border-bottom: 1px solid var(--border);
             background: rgba(255, 255, 255, 0.02);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .section-header:active {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .section-card.collapsed .section-body {
+            display: none;
+        }
+
+        .section-card.collapsed {
+            margin-bottom: 8px;
+        }
+
+        .section-card.collapsed .section-header {
+            border-bottom: none;
         }
 
         .section-icon {
@@ -417,8 +457,8 @@
     <!-- TOP BAR -->
     <header class="topbar">
         <div class="topbar-brand">
-            <div class="brand-icon">
-                <i data-lucide="calculator"></i>
+            <div class="brand-icon" style="background: white; padding: 2px;">
+                <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="Logo" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;">
             </div>
             <div class="brand-text">
                 <h1>VFC FIELD APP</h1>
@@ -486,7 +526,7 @@
             </section>
 
             <!-- 2. OWNER & FILE -->
-            <section class="section-card" id="sec-owner">
+            <section class="section-card collapsed" id="sec-owner">
                 <div class="section-header">
                     <div class="section-icon" style="background: rgba(16, 185, 129, 0.1); color: var(--success);">
                         <i data-lucide="file-text" style="width: 16px;"></i>
@@ -510,7 +550,7 @@
             </section>
 
             <!-- 3. BUILDING & COST -->
-            <section class="section-card" id="sec-building">
+            <section class="section-card collapsed" id="sec-building">
                 <div class="section-header">
                     <div class="section-icon" style="background: rgba(245, 158, 11, 0.1); color: var(--warning);">
                         <i data-lucide="building" style="width: 16px;"></i>
@@ -567,7 +607,7 @@
             </section>
 
             <!-- 4. ACCOUNT DETAILS -->
-            <section class="section-card" id="sec-payment">
+            <section class="section-card collapsed" id="sec-payment">
                 <div class="section-header">
                     <div class="section-icon" style="background: rgba(239, 68, 68, 0.1); color: var(--danger);">
                         <i data-lucide="banknote" style="width: 16px;"></i>
@@ -585,9 +625,11 @@
                     </div>
                     <div class="field">
                         <label>Bank Name</label>
-                        <div class="inp-wrap">
-                            <div id="selectedBankLogo" class="hidden absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded bg-white flex items-center justify-center p-0.5">
-                                <img src="" alt="Bank" class="w-full h-full object-contain">
+                        <div class="inp-wrap" style="position: relative; display: flex; align-items: center;">
+                            <div id="selectedBankLogo" class="hidden" style="position: absolute; left: 12px; z-index: 10; pointer-events: none;">
+                                <div class="selected-logo-wrap shadow-lg">
+                                    <img src="" alt="Bank" class="bank-logo-img">
+                                </div>
                             </div>
                             <input type="text" id="bankSearch" class="inp" placeholder="Search Nigerian Banks..." autocomplete="off">
                             <input type="hidden" name="bank_name" id="bankNameVal">
@@ -604,7 +646,7 @@
             </section>
 
             <!-- 5. LOCATION -->
-            <section class="section-card" id="sec-location">
+            <section class="section-card collapsed" id="sec-location">
                 <div class="section-header">
                     <div class="section-icon" style="background: rgba(139, 92, 246, 0.1); color: #a78bfa;">
                         <i data-lucide="map" style="width: 16px;"></i>
@@ -726,8 +768,8 @@
                 }
                 dSel.innerHTML += `<option value="Other">Other</option>`;
 
-                // Load Banks in background
-                loadBanks();
+                // Banks
+                allBanks = data.banks || [];
 
             } catch (err) {
                 console.error('Initialization Error:', err);
@@ -735,24 +777,6 @@
             }
         }
 
-        async function loadBanks() {
-            try {
-                const res = await fetch("https://api.nigerianbanklogos.xyz");
-                allBanks = await res.json();
-            } catch (err) {
-                console.error('Failed to fetch bank logos', err);
-                // Fallback banks
-                allBanks = [
-                    { title: "Access Bank", route: "https://nbl.xyz/library/access-bank.svg" },
-                    { title: "Fidelity Bank", route: "" },
-                    { title: "First Bank", route: "" },
-                    { title: "GTBank", route: "" },
-                    { title: "Zenith Bank", route: "" },
-                    { title: "UBA", route: "" },
-                    { title: "Union Bank", route: "" }
-                ];
-            }
-        }
 
         // Bank Search Logic
         const bankSearch = document.getElementById('bankSearch');
@@ -767,16 +791,16 @@
                 return;
             }
 
-            const matches = allBanks.filter(b => b.title.toLowerCase().includes(q));
+            const matches = allBanks.filter(b => b.name.toLowerCase().includes(q));
             if (!matches.length) {
                 bankResults.innerHTML = '<div style="padding:16px;text-align:center;font-size:12px;color:var(--text-dim);">No banks found</div>';
             } else {
                 bankResults.innerHTML = matches.map(b => `
-                    <div class="bank-item" onclick="selectBank('${b.title}', '${b.route}')" style="padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;border-bottom:1px solid var(--border);">
-                        <div style="width:24px;height:24px;border-radius:4px;background:white;display:flex;align-items:center;justify-content:center;padding:2px;">
-                            <img src="${b.route}" alt="" style="width:100%;height:100%;object-contain" onerror="this.src='https://ui-avatars.com/api/?name=${b.title}&background=random'">
+                    <div class="bank-item" onclick="selectBank('${b.name}', '${b.logo}')" style="padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;border-bottom:1px solid var(--border);">
+                        <div class="selected-logo-wrap">
+                            <img src="${b.logo}" alt="" class="bank-logo-img" onerror="this.src='https://ui-avatars.com/api/?name=${b.name}&background=random'">
                         </div>
-                        <span style="font-size:13px;font-weight:600;">${b.title}</span>
+                        <span style="font-size:13px;font-weight:600;">${b.name}</span>
                     </div>
                 `).join('');
             }
@@ -790,7 +814,9 @@
             
             selectedBankLogo.querySelector('img').src = logo || `https://ui-avatars.com/api/?name=${title}&background=random`;
             selectedBankLogo.classList.remove('hidden');
-            bankSearch.style.paddingLeft = '44px';
+            bankSearch.style.paddingLeft = '48px';
+            bankSearch.style.fontWeight = '700';
+            bankSearch.style.color = '#fff';
         };
 
         // Close bank dropdown on click outside
@@ -916,6 +942,43 @@
             el.addEventListener('change', buildAddress);
         });
 
+        // Toggle Section Collapse
+        document.querySelectorAll('.section-header').forEach(header => {
+            header.addEventListener('click', () => {
+                const card = header.closest('.section-card');
+                card.classList.toggle('collapsed');
+            });
+            // Add Chevron Icon
+            const icon = document.createElement('i');
+            icon.setAttribute('data-lucide', 'chevron-down');
+            icon.style.width = '16px';
+            icon.style.color = 'var(--text-dim)';
+            header.appendChild(icon);
+        });
+
+        // Navigation Functionality
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const targetId = item.dataset.target;
+                const targetSection = document.getElementById(targetId);
+                
+                // Expand the section if collapsed
+                targetSection.classList.remove('collapsed');
+                
+                // Scroll to it
+                const offset = 120; // topbar + navstrip height
+                const bodyRect = document.body.getBoundingClientRect().top;
+                const elementRect = targetSection.getBoundingClientRect().top;
+                const elementPosition = elementRect - bodyRect;
+                const offsetPosition = elementPosition - offset;
+
+                window.scrollTo({
+                    top: offsetPosition,
+                    behavior: 'smooth'
+                });
+            });
+        });
+
         // Navigation Highlight on Scroll
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
@@ -926,7 +989,7 @@
                     });
                 }
             });
-        }, { threshold: 0.5 });
+        }, { threshold: 0.2 });
 
         document.querySelectorAll('section').forEach(section => observer.observe(section));
 

@@ -56,9 +56,16 @@ class ValuationCompensationController extends Controller
 
         $streets = \App\Models\StreetName::orderBy('name')->get();
 
+        $banks = \App\Models\VfcBank::orderBy('name')->get()->map(function($b) {
+            return [
+                'title' => $b->name,
+                'route' => asset('assets/' . $b->logo),
+                'code' => $b->code
+            ];
+        });
         $PageTitle = "Valuation for Compensation";
 
-        return view('valuation_compensations.index', compact('records', 'stats', 'PageTitle', 'states', 'lgas', 'districts', 'buildingTypes', 'streets'));
+        return view('valuation_compensations.index', compact('records', 'stats', 'PageTitle', 'states', 'lgas', 'districts', 'buildingTypes', 'streets', 'banks'));
     }
 
     /**

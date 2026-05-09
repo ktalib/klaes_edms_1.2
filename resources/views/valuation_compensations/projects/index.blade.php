@@ -41,7 +41,10 @@
                                 {{ $project->project_type }}
                             </span>
                             <h3 class="text-xl font-bold text-slate-900">{{ $project->project_name }}</h3>
-                            <p class="text-sm font-mono text-slate-500 font-bold mt-1">{{ $project->project_code }}</p>
+                            <div class="flex items-center gap-2 mt-2">
+                                <i data-lucide="hash" class="h-3 w-3 text-indigo-500"></i>
+                                <span class="text-[13px] font-black font-mono text-indigo-600 bg-indigo-50/50 px-2 py-0.5 rounded border border-indigo-100/50 shadow-sm">{{ $project->project_code }}</span>
+                            </div>
                         </div>
                         <div class="text-right">
                             <p class="text-xs text-slate-400 font-bold uppercase tracking-widest">Total Items</p>
@@ -55,15 +58,33 @@
                         <span class="text-xs font-bold text-slate-500 uppercase">Assigned Workers ({{ $project->workers->count() }})</span>
                     </div>
                     <div class="flex flex-wrap gap-2 mb-6">
-                        @foreach($project->workers as $worker)
+                        @foreach($project->workers->take(3) as $worker)
                         <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-100" title="{{ $worker->user->phone_number }}">
                             <div class="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[10px] text-white font-bold">
                                 {{ substr($worker->user->first_name, 0, 1) }}{{ substr($worker->user->last_name, 0, 1) }}
                             </div>
                             <span class="text-xs font-semibold text-slate-700">{{ $worker->user->first_name }} {{ $worker->user->last_name }}</span>
-                            <span class="text-[10px] text-slate-400 font-mono">[{{ $worker->worker_code }}]</span>
+                            <span class="text-[10px] text-emerald-600 font-black font-mono bg-emerald-50 px-1.5 py-0.5 rounded tracking-tighter">{{ $worker->worker_code }}</span>
                         </div>
                         @endforeach
+
+                        @if($project->workers->count() > 3)
+                        <div id="more-workers-{{ $project->id }}" class="hidden flex flex-wrap gap-2 w-full mt-2">
+                            @foreach($project->workers->slice(3) as $worker)
+                            <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-100" title="{{ $worker->user->phone_number }}">
+                                <div class="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[10px] text-white font-bold">
+                                    {{ substr($worker->user->first_name, 0, 1) }}{{ substr($worker->user->last_name, 0, 1) }}
+                                </div>
+                                <span class="text-xs font-semibold text-slate-700">{{ $worker->user->first_name }} {{ $worker->user->last_name }}</span>
+                                <span class="text-[10px] text-emerald-600 font-black font-mono bg-emerald-50 px-1.5 py-0.5 rounded tracking-tighter">{{ $worker->worker_code }}</span>
+                            </div>
+                            @endforeach
+                        </div>
+                        <button type="button" onclick="toggleWorkers({{ $project->id }}, this)" class="text-[11px] font-bold text-blue-600 hover:text-blue-700 mt-2 flex items-center gap-1 transition-all py-1 px-2 rounded-lg hover:bg-blue-50">
+                            <i data-lucide="plus-circle" class="h-3.5 w-3.5"></i>
+                            <span>View {{ $project->workers->count() - 3 }} More</span>
+                        </button>
+                        @endif
                     </div>
                     
                     <div class="flex items-center justify-between pt-4 border-t border-slate-50">
@@ -262,6 +283,25 @@
 <script>
     $(document).ready(function() {
         if (window.lucide) window.lucide.createIcons();
+    });
+
+    function toggleWorkers(projectId, btn) {
+        const container = $(`#more-workers-${projectId}`);
+        const isHidden = container.hasClass('hidden');
+        
+        if (isHidden) {
+            container.removeClass('hidden').addClass('flex');
+            $(btn).find('span').text('Show Less');
+            $(btn).find('i').attr('data-lucide', 'minus-circle');
+        } else {
+            container.addClass('hidden').removeClass('flex');
+            const count = container.children().length;
+            $(btn).find('span').text(`View ${count} More`);
+            $(btn).find('i').attr('data-lucide', 'plus-circle');
+        }
+        
+        if (window.lucide) window.lucide.createIcons();
+    }
 
         $('#project_type').on('change', function() {
             if ($(this).val() === 'Other') {
@@ -309,7 +349,7 @@
                 <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-4">
                     <div class="flex items-center justify-between">
                         <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Worker #${i}</span>
-                        <span class="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">${workerCode}</span>
+                        <span class="text-[11px] font-mono font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shadow-sm">${workerCode}</span>
                     </div>
                     <div>
                         <select name="worker_assignments[${i-1}][user_id]" class="worker-select w-full" required>
