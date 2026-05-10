@@ -51,6 +51,7 @@ class ProjectController extends Controller
             'project_type' => 'required|string',
             'our_reference' => 'required|string',
             'your_reference' => 'nullable|string',
+            'addressed_to' => 'nullable|string',
             'worker_assignments' => 'required|array|min:1',
             'worker_assignments.*.user_id' => 'required|exists:sqlsrv.users,id',
         ]);
@@ -73,6 +74,7 @@ class ProjectController extends Controller
                 'project_type_other' => $request->project_type_other,
                 'our_reference' => $request->our_reference,
                 'your_reference' => $request->your_reference,
+                'addressed_to' => $request->addressed_to,
                 'user_id' => Auth::id(),
             ]);
 
@@ -98,6 +100,39 @@ class ProjectController extends Controller
         }
     }
 
+    public function update(Request $request, $id)
+    {
+        $project = Project::findOrFail($id);
+        $oldData = $project->toArray();
+
+        $request->validate([
+            'project_name' => 'required|string',
+            'number_of_items' => 'required|integer|min:1',
+            'project_type' => 'required|string',
+            'our_reference' => 'required|string',
+            'your_reference' => 'nullable|string',
+            'addressed_to' => 'nullable|string',
+        ]);
+
+        $project->update([
+            'project_name' => $request->project_name,
+            'number_of_items' => $request->number_of_items,
+            'street' => $request->street,
+            'district' => $request->district,
+            'lga' => $request->lga,
+            'state' => $request->state ?? 'Kano',
+            'project_type' => $request->project_type,
+            'project_type_other' => $request->project_type_other,
+            'our_reference' => $request->our_reference,
+            'your_reference' => $request->your_reference,
+            'addressed_to' => $request->addressed_to,
+        ]);
+
+        $this->auditService->logAction('UPDATED', 'Project', $project->id, $oldData, $project->toArray(), "Updated project {$project->project_name}");
+
+        return response()->json(['success' => true, 'message' => 'Project updated successfully.']);
+    }
+
     public function getProjectsForSelection()
     {
         $projects = Project::withCount(['valuations', 'workers'])->get()->map(function($p) {
@@ -111,6 +146,7 @@ class ProjectController extends Controller
                 'workers_count' => $p->workers_count,
                 'our_reference' => $p->our_reference,
                 'your_reference' => $p->your_reference,
+                'addressed_to' => $p->addressed_to,
             ];
         });
 

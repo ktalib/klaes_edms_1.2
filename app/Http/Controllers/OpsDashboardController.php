@@ -6,9 +6,17 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Yajra\DataTables\Facades\DataTables;
 use App\Support\DateFormatter;
+use App\Services\TimelineWeightingService;
 
 class OpsDashboardController extends Controller
 {
+    protected TimelineWeightingService $timelineService;
+
+    public function __construct(TimelineWeightingService $timelineService)
+    {
+        $this->timelineService = $timelineService;
+    }
+
     public function index()
     {
         return view('ops_dashboard.index');
@@ -280,6 +288,13 @@ class OpsDashboardController extends Controller
             ->filterColumn('grantor',         fn($q, $kw) => $q->where('grantor',         'like', "%$kw%"))
             ->filterColumn('allottee',        fn($q, $kw) => $q->where('allottee',        'like', "%$kw%"))
             ->editColumn('created_at', fn($row) => DateFormatter::toDisplay($row->created_at) ?? '—')
+            ->editColumn('timeline_count', function ($row) {
+                $propId = trim((string) ($row->prop_id ?? ''));
+                $fileNo = trim((string) ($row->mls_file_number ?? ($row->temp_fileno ?? '')));
+                
+                $rawRecords = $this->timelineService->getRawRecords($fileNo, $propId);
+                return max(1, $this->timelineService->getWeightedCount($rawRecords));
+            })
             ->rawColumns([])
             ->make(true);
     }

@@ -147,11 +147,16 @@
     @php
         $isChangeOfName = request()->filled('type') && request()->query('type') === 'change-of-name';
         $isGenerateChangeOfName = $isChangeOfName && request()->query('source') === 'lands-one-stop-shop';
+        $recordTypeSuffix = '';
+        if (isset($recordType)) {
+            $recordTypeSuffix = $recordType === 'fc' ? ' (FC)' : ($recordType === 'fefr' ? ' (FEFR)' : '');
+        }
+
         $pageTitle = $isChangeOfName 
-            ? 'OSS File Commissioning & OP Matching Applications (Change of Name)' 
+            ? 'OSS File Commissioning & OP Matching Applications (Change of Name)' . $recordTypeSuffix
             : 'Applications (No Change of Name)';
         $pageDescription = $isChangeOfName
-            ? 'Land One Stop Shop overview of Change of Name Occupancy Permit records.'
+            ? 'Land One Stop Shop overview of Change of Name Occupancy Permit records' . ($recordType ? ' filtered by ' . strtoupper($recordType) : '') . '.'
             : 'Land One Stop Shop overview of regular Occupancy Permit records.';
     @endphp
     @include('admin.header', [
@@ -165,7 +170,12 @@
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
                     <p class="text-[11px] font-black uppercase tracking-[0.4em] text-slate-400">Land One Stop Shop</p>
-                    <h1 class="text-3xl font-extrabold text-slate-900 mt-1">Applications (Occupancy Permit)</h1>
+                    <h1 class="text-3xl font-extrabold text-slate-900 mt-1">
+                        Applications (Occupancy Permit)
+                        @if(isset($recordType))
+                            <span class="text-blue-600">[{{ strtoupper($recordType) }}]</span>
+                        @endif
+                    </h1>
                     <p class="text-slate-500 mt-1 text-sm">{{ number_format($records->count()) }} record(s) loaded</p>
                 </div>
                 <div class="flex flex-wrap items-center justify-start md:justify-end gap-2 sm:gap-3">
@@ -198,16 +208,21 @@
                         @endforeach
                     </select>
                     <div class="flex flex-col gap-2">
-                        <button type="button" id="btn-file-commissioning"
-                            class="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-blue-700 transition">
-                            <i data-lucide="file-plus-2" class="w-4 h-4"></i>
-                            FileNo Commissioning
-                        </button>
-                        <button type="button" id="btn-ffr" onclick="openFfrModal()"
-                            class="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 border border-slate-300  text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-orange-700 transition">
-                            <i data-lucide="folder-search-2" class="w-4 h-4"></i>
-                            Fetch Existing File Record
-                        </button>
+                        @if(!isset($recordType) || $recordType === 'fc')
+                            <button type="button" id="btn-file-commissioning"
+                                class="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-blue-700 transition">
+                                <i data-lucide="file-plus-2" class="w-4 h-4"></i>
+                                FileNo Commissioning
+                            </button>
+                        @endif
+
+                        @if(!isset($recordType) || $recordType === 'fefr')
+                            <button type="button" id="btn-ffr" onclick="openFfrModal()"
+                                class="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 border border-slate-300  text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-orange-700 transition">
+                                <i data-lucide="folder-search-2" class="w-4 h-4"></i>
+                                Fetch Existing File Record
+                            </button>
+                        @endif
                     </div>
                 </div>
             </div>

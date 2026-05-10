@@ -193,9 +193,20 @@
                                         <td class="align-top text-proper">{{ $instrument->party_2_name ? ucwords(strtolower($instrument->party_2_name)) : '' }}</td>
                                         <td class="align-top text-proper">{{ $instrument->party_3_name ? ucwords(strtolower($instrument->party_3_name)) : '' }}</td>
                                             <td class="align-top">
-                                            <div class="flex flex-col">
-                                                <span class="font-medium text-gray-800 text-proper">{{ $instrument->solicitor_name ? ucwords(strtolower($instrument->solicitor_name)) : '' }}</span>
-                                                <span class="text-xs text-gray-500 text-proper">{{ $instrument->solicitor_address ? ucwords(strtolower($instrument->solicitor_address)) : '' }}</span>
+                                            <div class="flex flex-col max-w-[250px]" x-data="{ expanded: false }">
+                                                <div :class="expanded ? '' : 'truncate'" class="font-bold text-gray-800 text-proper cursor-pointer" @click="expanded = !expanded" title="{{ $instrument->solicitor_name }}">
+                                                    {{ $instrument->solicitor_name ? ucwords(strtolower($instrument->solicitor_name)) : '' }}
+                                                </div>
+                                                <div :class="expanded ? '' : 'truncate'" class="text-[11px] text-gray-500 text-proper cursor-pointer leading-tight" @click="expanded = !expanded" title="{{ $instrument->solicitor_address }}">
+                                                    {{ $instrument->solicitor_address ? ucwords(strtolower($instrument->solicitor_address)) : '' }}
+                                                </div>
+                                                @if((strlen($instrument->solicitor_name ?? '') > 30) || (strlen($instrument->solicitor_address ?? '') > 40))
+                                                    <button @click="expanded = !expanded" class="text-[10px] text-blue-600 font-bold hover:underline mt-1 self-start flex items-center gap-1">
+                                                        <span x-show="!expanded">View More</span>
+                                                        <span x-show="expanded">View Less</span>
+                                                        <i :data-lucide="expanded ? 'chevron-up' : 'chevron-down'" class="w-3 h-3"></i>
+                                                    </button>
+                                                @endif
                                             </div>
                                         </td>
                                         <td class="align-top">

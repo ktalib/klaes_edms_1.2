@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log; // Add Log facade
 use Illuminate\Validation\ValidationException;
 use App\Models\InstrumentType;
+use App\Services\TimelineWeightingService;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class PropertyRecordController extends Controller
@@ -25,6 +26,7 @@ class PropertyRecordController extends Controller
     ];
     private const PRA_TABLE = 'pra';
     private PropertyIdAllocationService $propertyIdAllocationService;
+    private TimelineWeightingService $timelineService;
 
     /**
      * Check if a transaction type is an Occupancy Permit variant.
@@ -34,9 +36,10 @@ class PropertyRecordController extends Controller
         return stripos($transactionType, 'Occupancy Permit (OP)') !== false;
     }
 
-    public function __construct(PropertyIdAllocationService $propertyIdAllocationService)
+    public function __construct(PropertyIdAllocationService $propertyIdAllocationService, TimelineWeightingService $timelineService)
     {
         $this->propertyIdAllocationService = $propertyIdAllocationService;
+        $this->timelineService = $timelineService;
     }
 
     /**
@@ -520,29 +523,17 @@ class PropertyRecordController extends Controller
             $propId = trim((string) ($record->prop_id ?? ''));
             $key = $propId !== '' ? $propId : ('__id_' . (string) ($record->id ?? '0'));
 
-            $fileNumbers = collect([
-                $record->mlsFNo ?? null,
-                $record->fileno ?? null,
-                $record->kangisFileNo ?? null,
-                $record->NewKANGISFileno ?? null,
-            ])->filter(fn($v) => $v !== null && trim((string) $v) !== '')
-                ->map(fn($v) => strtoupper(trim((string) $v)))
-                ->unique()
-                ->values()
-                ->all();
+            $primaryFileNumber = $record->mlsFNo ?: ($record->fileno ?: ($record->kangisFileNo ?: ($record->NewKANGISFileno ?: null)));
 
-            if ($propId === '' && empty($fileNumbers)) {
+            if ($propId === '' && !$primaryFileNumber) {
                 $counts[$key] = 1;
                 continue;
             }
 
-            $total = 0;
-            $total += $this->countTimelineMatches('file_history_staging', $propId, $fileNumbers, ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno']);
-            $total += $this->countTimelineMatches('CofO_staging', $propId, $fileNumbers, ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno']);
-            $total += $this->countTimelineMatches('pra', $propId, $fileNumbers, ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'], true);
-            $total += $this->countTimelineMatches('deed_registrations', $propId, $fileNumbers, ['fileno', 'parent_fileno']);
+            $rawRecords = $this->timelineService->getRawRecords($primaryFileNumber, $propId);
+            $weightedCount = $this->timelineService->getWeightedCount($rawRecords);
 
-            $counts[$key] = max(1, $total);
+            $counts[$key] = max(1, $weightedCount);
         }
 
         return collect($counts);

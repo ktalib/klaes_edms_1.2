@@ -180,9 +180,16 @@
 
     <div class="header-meta">
         <div>
-            To: <span class="underline-field">The Honourable Commissioner</span><br>
-            <span style="margin-left: 25px;"></span><span class="underline-field">Ministry of Land and Physical</span><br>
-            <span style="margin-left: 25px;"></span><span class="underline-field">Planning, Kano State</span>
+            @php
+                $addressedTo = ($record->project && $record->project->addressed_to) 
+                    ? $record->project->addressed_to 
+                    : "The Honourable Commissioner\nMinistry of Land and Physical\nPlanning, Kano State";
+                $addrLines = explode("\n", $addressedTo);
+            @endphp
+            To: <span class="underline-field">{{ $addrLines[0] ?? '' }}</span><br>
+            @foreach(array_slice($addrLines, 1) as $line)
+                <span style="margin-left: 25px;"></span><span class="underline-field">{{ $line }}</span><br>
+            @endforeach
         </div>
         <div style="text-align: right;">
             Our Ref: <span class="underline-field">{{ $record->our_ref ?? 'LS/VAL/FGE/5KM' }}</span><br>

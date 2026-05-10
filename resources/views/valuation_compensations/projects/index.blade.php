@@ -110,6 +110,9 @@
                             <span>Created {{ $project->created_at->format('d M, Y') }}</span>
                         </div>
                         <div class="flex gap-2">
+                            <button type="button" onclick='editProject({!! json_encode($project) !!})' class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Edit Project">
+                                <i data-lucide="edit-3" class="h-5 w-5"></i>
+                            </button>
                             <a href="{{ route('valuation-compensations.projects.templates', $project->id) }}" target="_blank" class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Generate Templates">
                                 <i data-lucide="download-cloud" class="h-5 w-5"></i>
                             </a>
@@ -185,7 +188,7 @@
         <!-- Header -->
         <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
             <div>
-                <h3 class="text-xl font-bold text-slate-900">Create Project</h3>
+                <h3 class="text-xl font-bold text-slate-900" id="modal-title-text">Create Project</h3>
                 <p class="text-xs text-slate-500 mt-1 uppercase tracking-widest font-semibold">Define project scope and assign workers</p>
             </div>
             <button type="button" onclick="closeModal()" class="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-50 rounded-xl transition">
@@ -196,6 +199,7 @@
         <!-- Body -->
         <form id="project-form" class="flex-1 overflow-y-auto">
             @csrf
+            <input type="hidden" name="id" id="project-id">
             <div class="px-8 py-8 space-y-8">
                 <!-- Project Info -->
                 <div class="space-y-6">
@@ -226,6 +230,12 @@
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Your Reference</label>
                             <input type="text" name="your_reference" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. MH/VFC/2026/045">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Addressed To <span class="text-slate-400 font-normal italic">(Default if empty)</span></label>
+                            <textarea name="addressed_to" rows="3" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="The Honourable Commissioner&#10;Ministry of Land and Physical&#10;Planning, Kano State">The Honourable Commissioner
+Ministry of Land and Physical
+Planning, Kano State</textarea>
                         </div>
                         <input type="hidden" name="number_of_items" value="10">
                         <div>
@@ -290,12 +300,12 @@
                 </div>
 
                 <!-- Worker Assignment -->
-                <div class="pt-8 border-t border-slate-100 space-y-6">
+                <div id="worker-assignment-section" class="pt-8 border-t border-slate-100 space-y-6">
                     <div class="flex items-center gap-3 mb-2">
                         <div class="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
                             <i data-lucide="users" class="h-4 w-4"></i>
                         </div>
-                        <h4 class="text-sm font-bold text-slate-700 uppercase tracking-wider">Add Worker</h4>
+                        <h4 class="text-sm font-bold text-slate-700 uppercase tracking-wider">Add Workers</h4>
                     </div>
 
                     <div>
@@ -449,6 +459,10 @@
         $('#project_type_other').addClass('hidden');
         $('#project_fileno').val('Generating...');
         $('#project_code').val('Generating...');
+        $('#project-id').val('');
+        $('#modal-title-text').text('Create Project');
+        $('#submit-btn span').text('Save Project');
+        $('#worker-assignment-section').show();
         
         // Fetch next available code
         $.get("{{ route('valuation-compensations.projects.next-code') }}", function(data) {
@@ -458,6 +472,35 @@
             const num = $('#num_workers').val();
             if (num > 0) generateWorkerCards(num);
         });
+
+        $('#project-modal').removeClass('hidden').addClass('flex');
+        setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
+    }
+
+    function editProject(project) {
+        $('#project-form')[0].reset();
+        $('#project-id').val(project.id);
+        $('#modal-title-text').text('Edit Project: ' + project.project_name);
+        $('#submit-btn span').text('Update Project');
+        $('#worker-assignment-section').hide(); // Don't allow changing initial workers during simple edit
+
+        // Populate fields
+        $('input[name="project_name"]').val(project.project_name);
+        $('#project_fileno').val(project.project_fileno);
+        $('#project_code').val(project.project_code);
+        $('input[name="our_reference"]').val(project.our_reference);
+        $('input[name="your_reference"]').val(project.your_reference);
+        $('textarea[name="addressed_to"]').val(project.addressed_to);
+        $('#project_type').val(project.project_type).trigger('change');
+        if (project.project_type === 'Other') {
+            $('#project_type_other').val(project.project_type_other);
+        }
+        $('#proj_street').val(project.street).trigger('change');
+        if (project.street === 'Other') {
+            $('#proj_street_other').val(project.street_other);
+        }
+        $('select[name="district"]').val(project.district);
+        $('select[name="lga"]').val(project.lga);
 
         $('#project-modal').removeClass('hidden').addClass('flex');
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
@@ -585,15 +628,21 @@
     }
 
     function saveProject() {
+        const projectId = $('#project-id').val();
+        const url = projectId 
+            ? `{{ url('valuation-compensations/projects') }}/${projectId}`
+            : "{{ route('valuation-compensations.projects.store') }}";
+        const method = projectId ? "PUT" : "POST";
+
         Swal.fire({
-            title: 'Saving Project...',
+            title: projectId ? 'Updating Project...' : 'Saving Project...',
             allowOutsideClick: false,
             didOpen: () => { Swal.showLoading(); }
         });
 
         $.ajax({
-            url: "{{ route('valuation-compensations.projects.store') }}",
-            type: "POST",
+            url: url,
+            type: method,
             data: $('#project-form').serialize(),
             success: function(response) {
                 if (response.success) {

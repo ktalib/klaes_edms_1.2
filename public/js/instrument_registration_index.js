@@ -532,6 +532,47 @@ function generateRDS(identifier) {
                     text: data.message || 'Registered Document Sheet has been generated successfully',
                     confirmButtonText: 'View RDS'
                 }).then((result) => {
+                    // Update the local instrument state
+                    instrument.rds_exists = true;
+                    if (data.rds_data) {
+                        instrument.rds_data = data.rds_data;
+                    }
+
+                    // Dynamically update the UI buttons without full page refresh
+                    const rdsActions = document.getElementById(`rds-actions-${instrument.id}`);
+                    const corActions = document.getElementById(`cor-actions-${instrument.id}`);
+
+                    if (rdsActions) {
+                        rdsActions.innerHTML = `
+                            <span class="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 cursor-not-allowed">
+                                <i data-lucide="file-text" class="w-4 h-4"></i> Generate RDS
+                                <i data-lucide="check-circle" class="w-3 h-3 text-green-500"></i>
+                            </span>
+                            <a href="#" id="view-rds-${instrument.id}" onclick="viewRDS('${instrument.id}'); return false;" 
+                               class="flex items-center gap-2 px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 transition">
+                                <i data-lucide="eye" class="w-4 h-4"></i> View RDS
+                            </a>
+                        `;
+                    }
+
+                    if (corActions) {
+                        corActions.innerHTML = `
+                            <a href="#" id="gen-cor-${instrument.id}" onclick="showGenerateCoRModal('${instrument.id}'); return false;" 
+                               class="flex items-center gap-2 px-4 py-2 text-sm text-green-600 hover:bg-green-50 transition">
+                                <i data-lucide="check-square" class="w-4 h-4"></i> Generate CoR
+                            </a>
+                            <span class="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 cursor-not-allowed">
+                                <i data-lucide="file-check" class="w-4 h-4"></i> View CoR
+                                <i data-lucide="x-circle" class="w-3 h-3 text-red-400"></i>
+                            </span>
+                        `;
+                    }
+
+                    // Refresh Lucide icons if applicable
+                    if (window.lucide) {
+                        window.lucide.createIcons();
+                    }
+
                     if (result.isConfirmed && data.rds_url) {
                         const newWindow = window.open(data.rds_url, '_blank');
                         if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {

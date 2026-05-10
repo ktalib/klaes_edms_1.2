@@ -543,7 +543,7 @@
                                 <div x-show="applicationType === 'new'" class="mt-4 pt-4 border-t border-gray-200" x-transition>
                                     <label class="block text-[10px] font-bold text-gray-400 uppercase mb-3">
                                         <i data-lucide="filter" class="w-3 h-3 inline mr-1 text-blue-500"></i>
-                                        Allocation Source
+                                        Select Registry
                                     </label>
                                     
                                     <!-- Allocation Options - Row 1 -->
@@ -732,7 +732,7 @@
                                             <!-- Row 2, Col 1: Prefix (Now First) -->
                                             <div x-show="fileOption !== 'sit'" x-transition>
                                                 <label for="prefix" class="block text-xs font-medium text-gray-600 mb-1">
-                                                    Prefix
+                                                    Select Prefix
                                                 </label>
                                                 <!-- Hidden input to ensure Prefix is submitted if select is disabled -->
                                                 <input type="hidden" name="prefix" :value="prefix" :disabled="!isInherited">
@@ -750,7 +750,7 @@
                                             <!-- Row 2, Col 2: Land Use (Read-Only/Disabled) -->
                                             <div x-show="fileOption !== 'sit'" x-transition>
                                                 <label for="landUse" class="block text-xs font-medium text-gray-600 mb-1">
-                                                    Land Use
+                                                    Select Land Use
                                                 </label>
                                                 <!-- Hidden input to ensure value is submitted if select is disabled -->
                                                 <input type="hidden" name="land_use" x-model="landUse">
@@ -1362,12 +1362,12 @@
                             </div><!-- end x-show !isOpFormHidden wrapper -->
 
                             <!-- OP capture pending message (shown when OP is selected but not yet captured) -->
-                            <div x-show="isOpFormHidden" x-transition.opacity.duration.200ms class="text-center py-10 px-6">
-                                <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-4">
-                                    <i data-lucide="file-search" class="w-8 h-8 text-blue-600"></i>
+                            <div x-show="isOpFormHidden" x-transition.opacity.duration.200ms class="flex flex-col items-center justify-center p-8 text-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 min-h-[300px] overflow-hidden">
+                                <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+                                    <i data-lucide="info" class="w-8 h-8 text-blue-600"></i>
                                 </div>
                                 <h4 class="text-lg font-semibold text-gray-800 mb-2">Capture Occupancy Permit First</h4>
-                                <p class="text-sm text-gray-500 max-w-md mx-auto">Please select <strong>Direct Allocation</strong> or <strong>Resettlement</strong> above, then capture/select an Occupancy Permit (OP) record to continue with file commissioning.</p>
+                                <p class="text-gray-500 max-w-md mx-auto">Please select Direct Allocation or Resettlement above, then capture/select an Occupancy Permit (OP) record to continue with the commissioning process.</p>
                             </div>
                         </form>
                     </div>

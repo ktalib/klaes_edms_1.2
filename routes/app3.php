@@ -589,6 +589,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/related-files/{id}', [IndexedFileTableController::class, 'getRelatedFiles'])->name('related-files');
         Route::put('/related-files/{id}', [IndexedFileTableController::class, 'updateRelatedFile'])->name('related-files.update');
         Route::get('/edms-files/{id}', [IndexedFileTableController::class, 'getEdmsFiles'])->name('edms-files');
+        Route::post('/{id}/update-placeholder', [IndexedFileTableController::class, 'updateKangisPlaceholder'])->name('update-placeholder');
     });
 
     Route::get('/api/kangis-placeholder/check', [IndexedFileTableController::class, 'checkKangisPlaceholder'])->name('kangis-placeholder.check');
@@ -744,6 +745,7 @@ Route::middleware(['auth'])->group(function () {
         Route::prefix('projects')->name('projects.')->group(function () {
             Route::get('/', [App\Http\Controllers\ProjectController::class, 'index'])->name('index');
             Route::post('/', [App\Http\Controllers\ProjectController::class, 'store'])->name('store');
+            Route::put('/{id}', [App\Http\Controllers\ProjectController::class, 'update'])->name('update');
             Route::get('/next-code', [App\Http\Controllers\ProjectController::class, 'getNextCode'])->name('next-code');
             Route::get('/selection', [App\Http\Controllers\ProjectController::class, 'getProjectsForSelection'])->name('selection');
             Route::get('/{id}/workers', [App\Http\Controllers\ProjectController::class, 'getProjectWorkers'])->name('workers');

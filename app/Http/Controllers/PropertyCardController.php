@@ -11,9 +11,17 @@ use App\Models\PropertyRecord;
 use App\Support\PropertyRecordFormatter;
 use App\Models\InstrumentType;
 use App\Support\DateFormatter;
+use App\Services\TimelineWeightingService;
 
 class PropertyCardController extends Controller
 {
+    protected TimelineWeightingService $timelineService;
+
+    public function __construct(TimelineWeightingService $timelineService)
+    {
+        $this->timelineService = $timelineService;
+    }
+
     /**
      * Cached CofO table name to avoid repeated schema lookups.
      */
@@ -1083,32 +1091,19 @@ class PropertyCardController extends Controller
 
         foreach ($records as $record) {
             $propId = trim((string) ($record->prop_id ?? ''));
+            $key = $propId !== '' ? $propId : (string) ($record->id ?? '0');
 
-            // Collect all file numbers from the record (same columns timeline modal uses)
-            $fileNumbers = collect([
-                $record->mlsFNo ?? null,
-                $record->fileno ?? null,
-                $record->kangisFileNo ?? null,
-                $record->NewKANGISFileno ?? null,
-            ])->filter(fn($v) => $v !== null && trim($v) !== '')
-              ->map(fn($v) => strtoupper(trim($v)))
-              ->unique()
-              ->values()
-              ->all();
+            $primaryFileNumber = $record->mlsFNo ?? ($record->fileno ?? ($record->kangisFileNo ?? ($record->NewKANGISFileno ?? null)));
 
-            if ($propId === '' && empty($fileNumbers)) {
-                $counts[$propId ?: (string) $record->id] = 1;
+            if ($propId === '' && !$primaryFileNumber) {
+                $counts[$key] = 1;
                 continue;
             }
 
-            $total = 0;
-            $total += $this->countInTimelineTable('file_history_staging', $propId, $fileNumbers, ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno']);
-            $total += $this->countInTimelineTable('CofO_staging', $propId, $fileNumbers, ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno']);
-            $total += $this->countInTimelineTable('pra', $propId, $fileNumbers, ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'], true);
-            $total += $this->countInTimelineTable('deed_registrations', $propId, $fileNumbers, ['fileno', 'parent_fileno']);
+            $rawRecords = $this->timelineService->getRawRecords($primaryFileNumber, $propId);
+            $weightedCount = $this->timelineService->getWeightedCount($rawRecords);
 
-            $key = $propId !== '' ? $propId : (string) $record->id;
-            $counts[$key] = max(1, $total);
+            $counts[$key] = max(1, $weightedCount);
         }
 
         return collect($counts);

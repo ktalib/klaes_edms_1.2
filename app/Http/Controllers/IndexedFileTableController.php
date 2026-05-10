@@ -991,4 +991,51 @@ class IndexedFileTableController extends Controller
             }
         }
     }
+
+    public function updateKangisPlaceholder(Request $request, $id): JsonResponse
+    {
+        try {
+            $fileId = (int) $id;
+            if ($fileId <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid file ID.',
+                ], 422);
+            }
+
+            $placeholder = trim((string) $request->input('placeholder', ''));
+            if ($placeholder === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Placeholder is required.',
+                ], 422);
+            }
+
+            $affected = \Illuminate\Support\Facades\DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('id', $fileId)
+                ->update([
+                    'kangis_fileno_placeholder' => $placeholder,
+                    'updated_at' => now(),
+                ]);
+
+            if ($affected === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Indexed file not found.',
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'KANGIS placeholder updated successfully.',
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update placeholder.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }

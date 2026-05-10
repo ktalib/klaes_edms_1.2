@@ -391,6 +391,11 @@ function buildActionsMenu(row, viewUrl) {
           Has Temporary File
         </button>`;
 
+  const updatePlaceholderButton = (isKangisVariant || row.kangis_fileno_placeholder) ? `<button type="button" class="update-placeholder-btn block w-full text-left px-4 py-2.5 text-sm text-purple-700 hover:bg-purple-50 transition-colors" data-file-id="${id}" data-placeholder="${escapeHtml(row.kangis_fileno_placeholder ?? '')}">
+          <i data-lucide="edit-3" class="h-4 w-4 mr-2.5 inline text-purple-600"></i>
+          KANGIS FileNo Placeholder
+        </button>` : '';
+
   const deleteButton = deleteUrl
     ? `<button type="button" class="indexed-delete-btn block w-full text-left px-4 py-2.5 text-sm text-gray-400 cursor-not-allowed opacity-40 transition-colors" data-delete-url="${deleteUrl}" data-file-number="${safeFileNumber}" disabled="disabled">
           <i data-lucide="trash-2" class="h-4 w-4 mr-2.5 inline text-gray-300"></i>
@@ -411,6 +416,7 @@ function buildActionsMenu(row, viewUrl) {
                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">File Actions</p>
             </div>
             ${trackingButton}
+            ${updatePlaceholderButton}
           </div>
         </div>
       </div>
@@ -432,6 +438,7 @@ function buildActionsMenu(row, viewUrl) {
           ${trackingButton}
           ${duplicateButton}
           ${tempFileButton}
+          ${updatePlaceholderButton}
           ${deleteButton ? '<div class="border-t border-slate-50 my-1.5"></div>' + deleteButton : ''}
         </div>
       </div>
@@ -596,6 +603,14 @@ function handleTableBodyClick(event) {
     event.preventDefault();
     event.stopPropagation();
     handleDelete(deleteButton);
+    return;
+  }
+
+  const updatePlaceholderBtn = event.target.closest('.update-placeholder-btn');
+  if (updatePlaceholderBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    handleUpdatePlaceholder(updatePlaceholderBtn);
     return;
   }
 
@@ -1311,6 +1326,124 @@ async function submitTempFile() {
   }
 }
 
+function handleUpdatePlaceholder(button) {
+  const fileId = button.getAttribute('data-file-id');
+  const fullPlaceholder = (button.getAttribute('data-placeholder') || '').trim();
+
+  if (!fileId) return;
+
+  closeAllActionMenus();
+
+  const modal = document.getElementById('update-placeholder-modal');
+  if (!modal) return;
+
+  document.getElementById('update-placeholder-id').value = fileId;
+  
+  // Split prefix and serial
+  const prefixSelect = document.getElementById('update-placeholder-prefix');
+  const serialInput = document.getElementById('update-placeholder-serial');
+  
+  if (fullPlaceholder) {
+    const parts = fullPlaceholder.split(/\s+/);
+    if (parts.length >= 2) {
+      const prefix = parts[0].toUpperCase();
+      const serial = parts.slice(1).join(' ');
+      
+      // Try to match prefix in select
+      let found = false;
+      for (let i = 0; i < prefixSelect.options.length; i++) {
+        if (prefixSelect.options[i].value === prefix) {
+          prefixSelect.selectedIndex = i;
+          found = true;
+          break;
+        }
+      }
+      
+      if (!found) {
+        prefixSelect.value = 'OTHER';
+      }
+      
+      serialInput.value = serial;
+    } else {
+      prefixSelect.value = ''; // Default to "Select Prefix"
+      serialInput.value = fullPlaceholder;
+    }
+  } else {
+    prefixSelect.value = '';
+    serialInput.value = '';
+  }
+
+  modal.classList.remove('hidden');
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function submitUpdatePlaceholder() {
+  const fileId = document.getElementById('update-placeholder-id').value;
+  const prefix = document.getElementById('update-placeholder-prefix').value;
+  const serial = document.getElementById('update-placeholder-serial').value.trim();
+
+  if (!prefix && prefix !== 'OTHER') {
+    if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
+      await window.Swal.fire({ icon: 'warning', title: 'Required', text: 'Please select a prefix.' });
+    } else {
+      alert('Please select a prefix.');
+    }
+    return;
+  }
+
+  if (!serial) {
+    if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
+      await window.Swal.fire({ icon: 'warning', title: 'Required', text: 'Please enter the serial number part.' });
+    } else {
+      alert('Please enter the serial number part.');
+    }
+    return;
+  }
+
+  const fullPlaceholder = prefix === 'OTHER' ? serial : `${prefix} ${serial}`;
+
+  const csrfToken = getCsrfToken();
+  if (!csrfToken) {
+    alert('Unable to locate CSRF token. Please refresh the page and try again.');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${window.location.origin}/api/indexed-files/${encodeURIComponent(fileId)}/update-placeholder`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': csrfToken,
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({ placeholder: fullPlaceholder })
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to update placeholder.');
+    }
+
+    document.getElementById('update-placeholder-modal').classList.add('hidden');
+
+    if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
+      await window.Swal.fire({ icon: 'success', title: 'Updated', text: result.message || 'Placeholder updated successfully.' });
+    } else {
+      alert(result.message || 'Placeholder updated successfully.');
+    }
+
+    await loadTable();
+  } catch (error) {
+    console.error('Failed to update placeholder:', error);
+    if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
+      await window.Swal.fire({ icon: 'error', title: 'Failed', text: error.message || 'Failed to update placeholder.' });
+    } else {
+      alert(error.message || 'Failed to update placeholder.');
+    }
+  }
+}
+
 // Bind temp file modal events
 document.addEventListener('DOMContentLoaded', function() {
   const closeTempModalBtn = document.getElementById('close-temp-file-modal');
@@ -1331,6 +1464,22 @@ document.addEventListener('DOMContentLoaded', function() {
   if (submitTempBtn) submitTempBtn.addEventListener('click', submitTempFile);
   if (openFileNoSelectorBtn) openFileNoSelectorBtn.addEventListener('click', openTempFileNoSelector);
   if (tempFileNoInput) tempFileNoInput.addEventListener('click', openTempFileNoSelector);
+
+  // Placeholder modal events
+  const closePlaceholderModalBtn = document.getElementById('close-update-placeholder-modal');
+  const cancelPlaceholderBtn = document.getElementById('cancel-update-placeholder');
+  const placeholderBackdrop = document.getElementById('update-placeholder-backdrop');
+  const submitPlaceholderBtn = document.getElementById('submit-update-placeholder');
+
+  const closePlaceholderModal = () => {
+    const modal = document.getElementById('update-placeholder-modal');
+    if (modal) modal.classList.add('hidden');
+  };
+
+  if (closePlaceholderModalBtn) closePlaceholderModalBtn.addEventListener('click', closePlaceholderModal);
+  if (cancelPlaceholderBtn) cancelPlaceholderBtn.addEventListener('click', closePlaceholderModal);
+  if (placeholderBackdrop) placeholderBackdrop.addEventListener('click', closePlaceholderModal);
+  if (submitPlaceholderBtn) submitPlaceholderBtn.addEventListener('click', submitUpdatePlaceholder);
 });
 
 function getRowFromCache(id) {

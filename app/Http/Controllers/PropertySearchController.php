@@ -6,9 +6,17 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Services\TimelineWeightingService;
 
 class PropertySearchController extends Controller
 {
+    protected TimelineWeightingService $timelineService;
+
+    public function __construct(TimelineWeightingService $timelineService)
+    {
+        $this->timelineService = $timelineService;
+    }
+
     /**
      * Display the Property Records search page.
      */
@@ -76,6 +84,12 @@ class PropertySearchController extends Controller
                 ->get();
 
             $data = $records->map(function ($row) {
+                $propId = trim((string) ($row->prop_id_raw ?? ''));
+                $fileNo = trim((string) ($row->file_number ?? ''));
+                
+                $rawRecords = $this->timelineService->getRawRecords($fileNo, $propId);
+                $weightedCount = $this->timelineService->getWeightedCount($rawRecords);
+
                 return [
                     'file_number'       => $row->file_number ?: 'N/A',
                     'party_1'           => $row->party_1 ?: 'N/A',
@@ -86,7 +100,7 @@ class PropertySearchController extends Controller
                     'transaction_date'  => $this->formatDate($row->transaction_date),
                     'location'          => $row->location ?: 'N/A',
                     'source_table'      => $row->source_table,
-                    'timeline_count'    => (int) ($row->timeline_count ?? 1),
+                    'timeline_count'    => max(1, $weightedCount),
                     'prop_id'           => $row->prop_id_raw,
                 ];
             });

@@ -23,6 +23,7 @@ class OpResettlementApplicationController extends Controller
         $page = max(1, (int) $request->input('page', 1));
         $offset = ($page - 1) * $limit;
         $isChangeOfName = trim((string) $request->query('type')) === 'change-of-name';
+        $recordType = $request->query('record_type'); // fc or fefr
 
         $hasSqlsrvColumn = static function (string $table, string $column): bool {
             static $cache = [];
@@ -262,6 +263,12 @@ class OpResettlementApplicationController extends Controller
             })
             ->orderByRaw('COALESCE(mfn.con_commissioned_at, p.created_at) DESC');
 
+        if ($recordType === 'fc') {
+            $query->whereNotNull('mfn.full_file_number');
+        } elseif ($recordType === 'fefr') {
+            $query->whereNull('mfn.full_file_number');
+        }
+
         if ($search = trim((string) $request->input('search'))) {
             $query->where(function ($builder) use ($search, $praFileNoExpr, $resolvedCustomerTypeSql) {
                 $builder
@@ -438,7 +445,7 @@ class OpResettlementApplicationController extends Controller
         // instrument_capture records when applicable.
         $statsBaseQuery = DB::connection('sqlsrv')
             ->table(DB::raw("(
-                SELECT prop_id, land_use
+                SELECT prop_id, land_use, mlsFNo, fileno
                 FROM pra
                 WHERE system_source = 'OSSOPCHANGEOFNAME'
                   AND prop_id IS NOT NULL AND prop_id != ''
@@ -446,7 +453,7 @@ class OpResettlementApplicationController extends Controller
                 
                 " . (!$isChangeOfName ? "
                 UNION ALL
-                SELECT prop_id, land_use
+                SELECT prop_id, land_use, mlsFNo, NULL as fileno
                 FROM instrument_capture
                 WHERE instrument_type = 'Occupancy Permit (OP)'
                   AND prop_id IS NOT NULL AND prop_id != 0
@@ -454,6 +461,20 @@ class OpResettlementApplicationController extends Controller
                   AND id NOT IN (SELECT CAST(source_op_id AS INT) FROM pra WHERE source_op_table = 'instrument_capture' AND source_op_id IS NOT NULL)
                 " : "") . "
             ) as stats_source"));
+
+        if ($recordType === 'fc') {
+            $statsBaseQuery->whereExists(function ($q) {
+                $q->select(DB::raw(1))
+                    ->from('mls_file_no as mfn_stat')
+                    ->whereRaw("mfn_stat.full_file_number = COALESCE(NULLIF(stats_source.mlsFNo, ''), stats_source.fileno)");
+            });
+        } elseif ($recordType === 'fefr') {
+            $statsBaseQuery->whereNotExists(function ($q) {
+                $q->select(DB::raw(1))
+                    ->from('mls_file_no as mfn_stat')
+                    ->whereRaw("mfn_stat.full_file_number = COALESCE(NULLIF(stats_source.mlsFNo, ''), stats_source.fileno)");
+            });
+        }
 
         $cardCountRows = $statsBaseQuery
             ->selectRaw("
@@ -487,6 +508,12 @@ class OpResettlementApplicationController extends Controller
             ->whereNotNull('p.prop_id')
             ->where('p.prop_id', '!=', '')
             ->whereRaw('CAST(COALESCE(mfn.con_commissioned_at, p.created_at) AS DATE) = CAST(GETDATE() AS DATE)')
+            ->when($recordType === 'fc', function ($q) {
+                $q->whereNotNull('mfn.full_file_number');
+            })
+            ->when($recordType === 'fefr', function ($q) {
+                $q->whereNull('mfn.full_file_number');
+            })
             ->distinct()
             ->count('p.prop_id');
 
@@ -526,7 +553,9 @@ class OpResettlementApplicationController extends Controller
             'cardCounts' => $cardCounts,
             'totalCommissioned' => $totalCommissioned,
             'totalOssRecords' => $totalOssRecords,
+            'totalOssRecords' => $totalOssRecords,
             'todayCount' => $todayCount,
+            'recordType' => $recordType,
         ]);
     }
 

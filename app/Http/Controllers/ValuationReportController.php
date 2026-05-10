@@ -20,6 +20,7 @@ class ValuationReportController extends Controller
     public function index()
     {
         $reports = ValuationReport::orderBy('created_at', 'desc')->get();
+        $todayCount = ValuationReport::whereDate('created_at', \Carbon\Carbon::today())->count();
         $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
         $lgas = DB::connection('sqlsrv')->table('StatLGAs')
             ->join('States', 'StatLGAs.StateID', '=', 'States.StateID')
@@ -31,7 +32,7 @@ class ValuationReportController extends Controller
         $landUses = \App\Models\LandUse::with('purposes')->get();
         $valuationOfficers = ValuationOfficer::orderBy('name')->get(['name', 'rank']);
 
-        return view('valuation_reports.index', compact('reports', 'states', 'lgas', 'districts', 'streetNames', 'landUses', 'valuationOfficers'));
+        return view('valuation_reports.index', compact('reports', 'todayCount', 'states', 'lgas', 'districts', 'streetNames', 'landUses', 'valuationOfficers'));
     }
 
     /**

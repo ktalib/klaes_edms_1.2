@@ -275,19 +275,6 @@ class ChangeOfPurposeController extends Controller
         return response()->json(['success' => true, 'message' => 'Record updated.', 'data' => $record->fresh()]);
     }
 
-    /**
-     * Delete an application record.
-     */
-    public function destroy(int $id): JsonResponse
-    {
-        $record = ChangeOfPurposeApplication::query()
-            
-            ->findOrFail($id);
-
-        $record->delete();
-
-        return response()->json(['success' => true, 'message' => 'Record deleted.']);
-    }
 
     /**
      * Search fileNumber records for the file-selector lookup.

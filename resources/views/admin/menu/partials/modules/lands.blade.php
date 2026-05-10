@@ -50,12 +50,31 @@
             <span>Generate New FileNo (MLSFileNo)</span>
           </a>
 
-          <!-- iii. New Applications (Existing OP) -->
-          <a href="{{ route('lands-one-stop-shop.all-applications.index', ['type' => 'no-change-of-name']) }}"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-one-stop-shop.all-applications.index') && request()->query('type') === 'no-change-of-name' ? 'active' : '' }}">
-            <i data-lucide="file-text" class="h-3.5 w-3.5 text-orange-400"></i>
-            <span>New Applications (Existing OP)</span>
-          </a>
+          <!-- iii. New Applications (Existing OP) - Collapsible -->
+          <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+            data-section="newApplicationsOP">
+            <div class="flex items-center gap-2">
+              <i data-lucide="file-text" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>New Applications (Existing OP)</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-3.5 w-3.5 transition-transform duration-200" data-chevron="newApplicationsOP"></i>
+          </div>
+
+          <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="newApplicationsOP">
+            <!-- 1. FC Records -->
+            <a href="{{ route('lands-one-stop-shop.all-applications.index', ['type' => 'no-change-of-name', 'record_type' => 'fc']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-one-stop-shop.all-applications.index') && request()->query('type') === 'no-change-of-name' && request()->query('record_type') === 'fc' ? 'active' : '' }}">
+              <i data-lucide="file-badge-2" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>FC Records</span>
+            </a>
+
+            <!-- 2. FEFR Records -->
+            <a href="{{ route('lands-one-stop-shop.all-applications.index', ['type' => 'no-change-of-name', 'record_type' => 'fefr']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-one-stop-shop.all-applications.index') && request()->query('type') === 'no-change-of-name' && request()->query('record_type') === 'fefr' ? 'active' : '' }}">
+              <i data-lucide="folder-search-2" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>FEFR Records</span>
+            </a>
+          </div>
 
           <!-- iv. Bill -->
           <a href="{{ route('lands-one-stop-shop.bill.index') }}?type=land"
@@ -120,18 +139,56 @@
 
         <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="lands-one-stop-shop">
           <!-- i. Generate FileNos (Change of Name) -->
-          <a href="{{ route('lands-one-stop-shop.applications.index', ['source' => 'lands-one-stop-shop', 'type' => 'change-of-name']) }}"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-one-stop-shop.applications.index') && request()->query('source') === 'lands-one-stop-shop' && request()->query('type') === 'change-of-name' ? 'active' : '' }}">
-            <i data-lucide="hash" class="h-3.5 w-3.5 text-orange-400"></i>
-            <span>Generate FileNos (Change of Name)</span>
-          </a>
+          <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+            data-section="lands-oss-change-name">
+            <div class="flex items-center gap-2">
+              <i data-lucide="hash" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>Generate FileNos (Change of Name)</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-3.5 w-3.5 transition-transform duration-200" data-chevron="lands-oss-change-name"></i>
+          </div>
 
-          <!-- ii. New Applications (Existing OP Change of Name) -->
-          <a href="{{ route('lands-one-stop-shop.all-applications.index', ['type' => 'change-of-name']) }}"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-one-stop-shop.all-applications.index') && request()->query('type') === 'change-of-name' ? 'active' : '' }}">
-            <i data-lucide="users" class="h-3.5 w-3.5 text-orange-400"></i>
-            <span>New Applications (Existing OP Change of Name)</span>
-          </a>
+          <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="lands-oss-change-name">
+            <!-- 1. File Commissioning (FC) -->
+            <a href="{{ route('lands-one-stop-shop.applications.index', ['source' => 'lands-one-stop-shop', 'type' => 'change-of-name', 'record_type' => 'fc']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-one-stop-shop.applications.index') && request()->query('record_type') === 'fc' ? 'active' : '' }}">
+              <div class="w-1.5 h-1.5 rounded-full bg-blue-400"></div>
+              <span>File Commissioning (FC)</span>
+            </a>
+
+            <!-- 2. Fetch Existing File Record (FEFR) -->
+            <a href="{{ route('lands-one-stop-shop.applications.index', ['source' => 'lands-one-stop-shop', 'type' => 'change-of-name', 'record_type' => 'fefr']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-one-stop-shop.applications.index') && request()->query('record_type') === 'fefr' ? 'active' : '' }}">
+              <div class="w-1.5 h-1.5 rounded-full bg-orange-400"></div>
+              <span>Fetch Existing File Record (FEFR)</span>
+            </a>
+          </div>
+
+          <!-- ii. New Applications (Existing OP Change of Name) - Collapsible -->
+          <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+            data-section="changeOfNameOP">
+            <div class="flex items-center gap-2">
+              <i data-lucide="users" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>New Applications (Existing OP Change of Name)</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-3.5 w-3.5 transition-transform duration-200" data-chevron="changeOfNameOP"></i>
+          </div>
+
+          <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="changeOfNameOP">
+            <!-- 1. FC Records -->
+            <a href="{{ route('lands-one-stop-shop.all-applications.index', ['type' => 'change-of-name', 'record_type' => 'fc']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-one-stop-shop.all-applications.index') && request()->query('type') === 'change-of-name' && request()->query('record_type') === 'fc' ? 'active' : '' }}">
+              <i data-lucide="file-badge-2" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>FC Records</span>
+            </a>
+
+            <!-- 2. FEFR Records -->
+            <a href="{{ route('lands-one-stop-shop.all-applications.index', ['type' => 'change-of-name', 'record_type' => 'fefr']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-one-stop-shop.all-applications.index') && request()->query('type') === 'change-of-name' && request()->query('record_type') === 'fefr' ? 'active' : '' }}">
+              <i data-lucide="folder-search-2" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>FEFR Records</span>
+            </a>
+          </div>
 
           <!-- iii. Bill -->
           <a href="{{ route('lands-one-stop-shop.bill.index') }}"

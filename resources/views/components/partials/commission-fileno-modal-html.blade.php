@@ -102,7 +102,7 @@
                     <div id="allocation-source-section" x-show="applicationType === 'new'" class="mt-4 pt-4 border-t border-gray-200" x-transition>
                         <label class="block text-[10px] font-bold text-gray-400 uppercase mb-3">
                             <i data-lucide="filter" class="w-3 h-3 inline mr-1 text-blue-500"></i>
-                            Allocation Source
+                            Select Registry
                         </label>
                         
                         <!-- Custom File Name Checkbox -->
@@ -340,7 +340,7 @@
                                 <!-- Row 2, Col 1: Prefix -->
                                 <div>
                                     <label for="prefix" class="block text-xs font-medium text-gray-600 mb-1">
-                                        Prefix
+                                        Select Prefix
                                     </label>
                                     <input type="hidden" name="prefix" :value="prefix" :disabled="!isInherited">
                                     <select id="prefix" :name="isInherited ? '' : 'prefix'" x-model="prefix" @change="handlePrefixChange($event)"
@@ -357,7 +357,7 @@
                                 <!-- Row 2, Col 2: Land Use (Read-Only/Disabled) -->
                                 <div>
                                     <label for="landUse" class="block text-xs font-medium text-gray-600 mb-1">
-                                        Land Use
+                                        Select Land Use
                                     </label>
                                     <input type="hidden" name="land_use" x-model="landUse">
                                     <select id="landUse" x-model="landUse" disabled

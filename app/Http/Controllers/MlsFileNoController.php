@@ -1835,7 +1835,10 @@ class MlsFileNoController extends Controller
                             'file_number' => $fullFileNumber,
                             'source' => $sourceValue,
                         ]);
-                    // Handle Merger Application Linkage
+                    }
+                }
+
+                // Handle Merger Application Linkage
                 if (!empty($validated['merger_app_id'])) {
                     PlotMergerApplication::where('id', $validated['merger_app_id'])
                         ->update([

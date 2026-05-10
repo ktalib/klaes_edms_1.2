@@ -6,9 +6,17 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Services\TimelineWeightingService;
 
 class FileIndexViewController extends Controller
 {
+    protected TimelineWeightingService $timelineService;
+
+    public function __construct(TimelineWeightingService $timelineService)
+    {
+        $this->timelineService = $timelineService;
+    }
+
     public function index()
     {
         return view('file_index_view.index', [
@@ -290,29 +298,17 @@ class FileIndexViewController extends Controller
             $propId = trim((string) ($record->prop_id ?? ''));
             $key = $propId !== '' ? $propId : ('__id_' . (string) ($record->id ?? '0'));
 
-            $fileNumbers = collect([
-                $record->mlsFNo ?? null,
-                $record->fileno ?? null,
-                $record->kangisFileNo ?? null,
-                $record->NewKANGISFileno ?? null,
-            ])->filter(fn($v) => $v !== null && trim((string) $v) !== '')
-                ->map(fn($v) => strtoupper(trim((string) $v)))
-                ->unique()
-                ->values()
-                ->all();
+            $primaryFileNumber = $record->mlsFNo ?: ($record->fileno ?: ($record->kangisFileNo ?: ($record->NewKANGISFileno ?: null)));
 
-            if ($propId === '' && empty($fileNumbers)) {
+            if ($propId === '' && !$primaryFileNumber) {
                 $counts[$key] = 1;
                 continue;
             }
 
-            $total = 0;
-            $total += $this->countTimelineMatches('file_history_staging', $propId, $fileNumbers, ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno']);
-            $total += $this->countTimelineMatches('CofO_staging', $propId, $fileNumbers, ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno']);
-            $total += $this->countTimelineMatches('pra', $propId, $fileNumbers, ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'], true);
-            $total += $this->countTimelineMatches('deed_registrations', $propId, $fileNumbers, ['fileno', 'parent_fileno']);
+            $rawRecords = $this->timelineService->getRawRecords($primaryFileNumber, $propId);
+            $weightedCount = $this->timelineService->getWeightedCount($rawRecords);
 
-            $counts[$key] = max(1, $total);
+            $counts[$key] = max(1, $weightedCount);
         }
 
         return collect($counts);

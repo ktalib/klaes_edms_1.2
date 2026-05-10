@@ -25,6 +25,7 @@ class Project extends Model
         'project_type_other',
         'our_reference',
         'your_reference',
+        'addressed_to',
         'user_id'
     ];
 
