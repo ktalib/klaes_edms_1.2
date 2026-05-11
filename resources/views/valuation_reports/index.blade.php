@@ -34,6 +34,19 @@
 
             <!-- Stats -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+                 <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-semibold text-purple-600 uppercase tracking-wider">Captured Today</p>
+                            <p class="text-3xl font-bold text-purple-700 mt-2">{{ $todayCount }}</p>
+                        </div>
+                        <div class="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center">
+                            <i data-lucide="calendar" class="h-6 w-6 text-purple-600"></i>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
                     <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Reports</p>
                     <p class="text-3xl font-bold text-slate-900 mt-2">{{ count($reports) }}</p>
@@ -46,17 +59,7 @@
                     <p class="text-xs font-semibold text-amber-600 uppercase tracking-wider">Unprinted</p>
                     <p class="text-3xl font-bold text-amber-700 mt-2">{{ $reports->where('print_count', 0)->count() }}</p>
                 </div>
-                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs font-semibold text-purple-600 uppercase tracking-wider">Captured Today</p>
-                            <p class="text-3xl font-bold text-purple-700 mt-2">{{ $todayCount }}</p>
-                        </div>
-                        <div class="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center">
-                            <i data-lucide="calendar" class="h-6 w-6 text-purple-600"></i>
-                        </div>
-                    </div>
-                </div>
+               
             </div>
 
             <!-- Data Table -->

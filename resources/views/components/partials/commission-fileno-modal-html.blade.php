@@ -4,7 +4,7 @@
 
 <!-- Generate Modal with Alpine.js -->
 <div id="generateModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
-    <div class="relative top-5 mx-auto p-6 border w-[800px] max-w-4xl shadow-xl rounded-lg bg-white" 
+    <div class="relative top-5 mx-auto p-4 md:p-6 border w-full max-w-4xl md:w-[800px] shadow-xl rounded-lg bg-white" 
          x-data="fileNumberGenerator()" x-init="console.log('X-INIT DIRECT LOG'); init()">
         <div class="mt-3">
             <!-- Modal Header -->
@@ -779,12 +779,12 @@
                 </div><!-- end x-show !isOpFormHidden wrapper -->
 
                 <!-- OP capture pending message (shown when OP is selected but not yet captured) -->
-                <div x-show="isOpFormHidden" x-transition.opacity.duration.200ms class="text-center py-10 px-6">
-                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-4">
+                <div x-show="isOpFormHidden" x-cloak x-transition.opacity.duration.200ms class="flex flex-col items-center justify-center p-8 text-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 min-h-[250px] overflow-hidden">
+                    <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
                         <i data-lucide="file-search" class="w-8 h-8 text-blue-600"></i>
                     </div>
                     <h4 class="text-lg font-semibold text-gray-800 mb-2">Capture Occupancy Permit First</h4>
-                    <p class="text-sm text-gray-500 max-w-md mx-auto">Please select <strong>Direct Allocation</strong> or <strong>Resettlement</strong> above, then capture/select an Occupancy Permit (OP) record to continue with file commissioning.</p>
+                    <p class="text-sm text-gray-500 max-w-md mx-auto">Please select <strong>Direct Allocation</strong> or <strong>Resettlement</strong> above, then capture/select an Occupancy Permit (OP) record to continue with the commissioning process.</p>
                 </div>
             </form>
         </div>

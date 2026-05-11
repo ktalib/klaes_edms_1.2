@@ -10,6 +10,7 @@ class StreetName extends Model
     use HasFactory;
 
     protected $connection = 'sqlsrv';
+    protected $table = 'streets';
 
     protected $fillable = ['name'];
 }

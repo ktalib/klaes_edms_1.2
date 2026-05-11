@@ -801,6 +801,11 @@ function generateCoR(identifier) {
                     timer: 1500,
                     showConfirmButton: false
                 }).then(() => {
+                    // Update local state before refresh
+                    instrument.cor_exists = true;
+                    if (data.instrument_data) {
+                        Object.assign(instrument, data.instrument_data);
+                    }
                     refreshInstrumentData();
                 });
             } else {
@@ -845,9 +850,29 @@ function viewCOR(identifier) {
     }
 }
 
-// Simple function to refresh page after RDS generation
+// Function to refresh UI components after data changes
 function refreshInstrumentData() {
-    location.reload();
+    console.log('Refreshing instrument data UI...');
+    
+    // 1. If on /instrument_registration (DataTables mode)
+    if (typeof window.updateTable === 'function') {
+        window.updateTable();
+        if (typeof window.updatePaginationControls === 'function') {
+            window.updatePaginationControls();
+        }
+        console.log('DataTables updated.');
+    } 
+    // 2. If on /instruments (Blade mode), we already have some manual DOM updates in generateRDS, 
+    // but we can also trigger a reload if we haven't implemented full DOM sync for everything.
+    // For now, if we see the Blade table IDs, we assume DOM sync was handled or we reload.
+    else if (document.getElementById('instrumentsTable')) {
+        // If we want to be safe and ensure everything (stats cards etc) is correct:
+        location.reload();
+    }
+    // 3. Fallback
+    else {
+        location.reload();
+    }
 }
 
 // Function to check RDS status and handle Generate action

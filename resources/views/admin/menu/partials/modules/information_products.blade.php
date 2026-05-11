@@ -1,7 +1,7 @@
     <!-- 3. Information Products -->
     @if(
       $hasRole('Letter of Grant/RofO') || $hasRole('Occupancy Permit (OP)') || $hasRole('Site Plan/Parcel Plan') ||
-      $hasRole('Change of Purpose') || $hasRole('Certificate of Occupancy')
+      $hasRole('Certificate of Occupancy')
     )
     <div class="py-1 px-3 mb-0.5 border-t border-slate-100">
       <div class="sidebar-module-header flex items-center justify-between py-2 px-3 mb-0.5 cursor-pointer hover:bg-slate-50 rounded-md" data-module="infoProducts">
@@ -35,12 +35,7 @@
           <span>Site Plan/Parcel Plan</span>
         </a>
         @endif
-        {{-- @if($hasRole('Change of Purpose'))
-        <a href="{{ route('change-of-purpose.index') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ (request()->routeIs('change-of-purpose.*') && !request()->has('mode')) ? 'active' : '' }}">
-          <i data-lucide="repeat" class="h-4 w-4 text-indigo-500"></i>
-          <span>Change of Purpose</span>
-        </a>
-        @endif --}}
+
         @if($hasRole('Certificate of Occupancy'))
         <a href="/propertycard/cofo" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
           <i data-lucide="file-text" class="h-4 w-4 text-indigo-500"></i>

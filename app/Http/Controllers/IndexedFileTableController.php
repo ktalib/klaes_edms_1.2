@@ -167,6 +167,9 @@ class IndexedFileTableController extends Controller
                 'file_indexings.temp_file_no',
                 'file_indexings.kangis_fileno_placeholder',
                 'file_indexings.corresponding_fileno',
+                'file_indexings.mls_file_no',
+                'file_indexings.kangis_file_no',
+                'file_indexings.new_kangis_file_no',
             ]);
 
         $isCorrespondingFile = filter_var($request->input('is_corresponding_file', false), FILTER_VALIDATE_BOOLEAN);
@@ -343,6 +346,9 @@ class IndexedFileTableController extends Controller
             $rowData['temp_file_no'] = $item->temp_file_no ?? null;
             $rowData['kangis_fileno_placeholder'] = $item->kangis_fileno_placeholder ?? null;
             $rowData['corresponding_fileno'] = $item->corresponding_fileno ?? null;
+            $rowData['mls_file_no'] = $item->mls_file_no ?? null;
+            $rowData['kangis_file_no'] = $item->kangis_file_no ?? null;
+            $rowData['new_kangis_file_no'] = $item->new_kangis_file_no ?? null;
 
             // Flags whether scanned files exist in any EDMS registry folder
             $rowData['has_edms_files'] = (bool) ($edmsFolderMap[$item->file_number] ?? false);

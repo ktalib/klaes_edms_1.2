@@ -15,6 +15,16 @@ class Authenticate extends Middleware
     protected function redirectTo($request)
     {
         if (! $request->expectsJson()) {
+            // Check for VFC Mobile App (exclude login page itself from redirection)
+            if ($request->is('valuation-compensations/mobile*') && ! $request->is('valuation-compensations/mobile/login')) {
+                return route('valuation-compensations.mobile.login');
+            }
+            
+            // Check for Generic Mobile File Tracker (exclude login page itself)
+            if ($request->is('mobile*') && ! $request->is('mobile/login')) {
+                return route('mobile.login');
+            }
+
             return route('login');
         }
     }

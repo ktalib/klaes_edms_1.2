@@ -37,7 +37,9 @@ class ValuationCompensation extends Model
         'project_fileno',
         'worker_id',
         'is_deleted',
-        'user_id'
+        'user_id',
+        'latitude',
+        'longitude'
     ];
 
     protected $casts = [
@@ -46,7 +48,9 @@ class ValuationCompensation extends Model
         'area_covered' => 'decimal:2',
         'rate_of_cost' => 'decimal:2',
         'compensation_amount' => 'decimal:2',
-        'is_deleted' => 'integer'
+        'is_deleted' => 'integer',
+        'latitude' => 'decimal:8',
+        'longitude' => 'decimal:8'
     ];
 
     /**

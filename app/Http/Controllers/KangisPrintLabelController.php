@@ -301,10 +301,16 @@ class KangisPrintLabelController extends Controller
                 foreach ($groups as $regBatchNo => $groupFiles) {
                     $regBatchNoStr = (string)$regBatchNo;
                     
-                    // 1. Generate Batch Number
+                    // 1. Derive Shelf from Batch Number (User Request: Batch 3 should map to A3 even if A2 is empty)
+                    if (is_numeric($regBatchNoStr)) {
+                        $currentShelfNumber = (int)$regBatchNoStr;
+                        $currentFullLabel   = $currentRackPrimary . $currentShelfNumber;
+                    }
+
+                    // 2. Generate Batch Number
                     $batchNumber = 'KANGIS-' . $prefix . '-' . $now->format('YmdHis') . ($groups->count() > 1 ? '-' . $regBatchNoStr : '');
 
-                    // 2. Create the Batch Record
+                    // 3. Create the Batch Record
                     $batch = KangisPrintLabelBatch::create([
                         'batch_number'   => $batchNumber,
                         'prefix'         => $prefix,

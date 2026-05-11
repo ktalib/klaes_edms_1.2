@@ -164,38 +164,74 @@ function renderRows(rows) {
     }
 
     const rowCells = isKangisVariant
-      ? `
-        ${col('shelf_location', `<td class="${standardCellClass}">${escapeHtml(row.shelf_location)}</td>`)}
-        ${col('file_number', `<td class="p-3 whitespace-nowrap">
-          ${fileNumberBadge}
-          ${tableVariant === 'sltr' && row.has_edms_files ? `<div class="mt-1"><button type="button" class="edms-view-files-btn inline-flex items-center gap-1 text-[10px] font-bold text-violet-600 hover:text-violet-800 hover:underline transition-colors" data-id="${row.id}" data-file-number="${escapeHtml(row.file_number)}" data-registry-folder="SLTR_Registry"><i data-lucide="folder-open" class="w-3 h-3"></i><span>View Files</span></button></div>` : ''}
-          ${tableVariant === 'kangis' && row.has_edms_files ? `<div class="mt-1"><button type="button" class="edms-view-files-btn inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 hover:text-purple-800 hover:underline transition-colors" data-id="${row.id}" data-file-number="${escapeHtml(row.file_number)}" data-registry-folder="KANGIS_Registry"><i data-lucide="folder-open" class="w-3 h-3"></i><span>View Files</span></button></div>` : ''}
-        </td>`)}
-        ${col('kangis_fileno_placeholder', `<td class="${standardCellClass}">${row.kangis_fileno_placeholder ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">${escapeHtml(row.kangis_fileno_placeholder)}</span>` : '<span class="text-gray-400">-</span>'}</td>`)}
-        ${col('related_file_no', `<td class="${standardCellClass}">
-          ${row.related_file_no ? (row.related_file_no !== '-' ? `
-            <span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">${escapeHtml(row.related_file_no)}</span>
-          ` : '-') : '-'}
-        </td>`)}
-        ${col('related_fileno_action', `<td class="${standardCellClass}">
-          ${row.has_related_files ? `
-            <button type="button" class="view-related-files-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all shadow-sm" data-id="${row.id}">
-              <i data-lucide="link" class="w-3 h-3"></i>
-              <span>View Related FileNo(s)</span>
-            </button>
-          ` : '<span class="text-gray-400 font-medium text-[10px] uppercase">None</span>'}
-        </td>`)}
-        ${col('file_title', `<td class="p-3 whitespace-nowrap text-gray-700">${escapeHtml(row.file_title)}</td>`)}
-        ${col('land_use_type', `<td class="p-3 whitespace-nowrap">${landUseBadge}</td>`)}
-        ${col('plot_number', `<td class="${standardCellClass}">${escapeHtml(row.plot_number)}</td>`)}
-        ${col('tp_no', `<td class="${standardCellClass}">${escapeHtml(row.tp_no)}</td>`)}
-        ${col('lpkn_no', `<td class="${standardCellClass}">${escapeHtml(row.lpkn_no)}</td>`)}
-        ${col('district', `<td class="${standardCellClass}">${escapeHtml(row.district)}</td>`)}
-        ${col('lga', `<td class="${standardCellClass}">${escapeHtml(lgaValue)}</td>`)}
-        ${col('indexed_by', `<td class="${standardCellClass}">${escapeHtml(row.indexed_by)}</td>`)}
-        ${col('indexed_date', `<td class="${standardCellClass}">${escapeHtml(row.indexed_at ?? '')}</td>`)}
-        ${col('status', `<td class="p-3 whitespace-nowrap">${statusBadge}</td>`)}
-      `
+      ? (() => {
+          // Detect based on prefix as requested
+          const fn = (row.file_number || '').toUpperCase().trim();
+          const p = (row.kangis_fileno_placeholder || '').toUpperCase().trim();
+          const rel = (row.related_file_no || '').toUpperCase().trim();
+          const mls = (row.mls_file_no || '').toUpperCase().trim();
+          const nkn = (row.new_kangis_file_no || '').toUpperCase().trim();
+
+          let kangisVal = row.kangis_file_no || '';
+          let placeholderVal = row.kangis_fileno_placeholder || '';
+          let newKangisVal = row.new_kangis_file_no || '';
+          let mlsVal = row.mls_file_no || (row.related_file_no !== '-' ? row.related_file_no : '');
+
+          // Smart detection based on prefixes
+          const allValues = [fn, p, rel, mls, nkn, row.temp_file_no || ''].map(v => v.toUpperCase().trim()).filter(v => v !== '' && v !== '-');
+          
+          allValues.forEach(val => {
+            if (val.startsWith('KNML') || val.startsWith('MNKL') || val.startsWith('MLKN') || val.startsWith('KNGP')) {
+              if (!kangisVal) kangisVal = val;
+            } else if (val.startsWith('KN') && !val.startsWith('KNML')) {
+              // If it has a space and 4+ digits, it's likely a placeholder
+              if (val.includes(' ') && /\d{4,}/.test(val)) {
+                if (!placeholderVal) placeholderVal = val;
+              } else {
+                if (!newKangisVal) newKangisVal = val;
+              }
+            } else if (/^(RES|COM|IND|AG|CON|MISC|SIT|SLTR|DCIV|LPCC|GKN|LPKN)/.test(val)) {
+              if (!mlsVal) mlsVal = val;
+            }
+          });
+
+          // Fallback to row fields if still empty
+          if (!kangisVal && (fn.startsWith('KNML') || fn.startsWith('MNKL') || fn.startsWith('MLKN') || fn.startsWith('KNGP'))) kangisVal = row.file_number;
+          if (!newKangisVal && fn.startsWith('KN') && !fn.startsWith('KNML') && !fn.includes(' ')) newKangisVal = row.file_number;
+          if (!mlsVal && /^(RES|COM|IND|AG|CON|MISC|SIT|SLTR|DCIV|LPCC|GKN|LPKN)/.test(fn)) mlsVal = row.file_number;
+
+          return `
+            ${col('shelf_location', `<td class="${standardCellClass}">${escapeHtml(row.shelf_location)}</td>`)}
+            ${col('file_number', `<td class="p-3 whitespace-nowrap">
+              ${kangisVal ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">${escapeHtml(kangisVal)}</span>` : '<span class="text-gray-400">-</span>'}
+              ${tableVariant === 'sltr' && row.has_edms_files ? `<div class="mt-1"><button type="button" class="edms-view-files-btn inline-flex items-center gap-1 text-[10px] font-bold text-violet-600 hover:text-violet-800 hover:underline transition-colors" data-id="${row.id}" data-file-number="${escapeHtml(row.file_number)}" data-registry-folder="SLTR_Registry"><i data-lucide="folder-open" class="w-3 h-3"></i><span>View Files</span></button></div>` : ''}
+              ${tableVariant === 'kangis' && row.has_edms_files ? `<div class="mt-1"><button type="button" class="edms-view-files-btn inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 hover:text-purple-800 hover:underline transition-colors" data-id="${row.id}" data-file-number="${escapeHtml(row.file_number)}" data-registry-folder="KANGIS_Registry"><i data-lucide="folder-open" class="w-3 h-3"></i><span>View Files</span></button></div>` : ''}
+            </td>`)}
+            ${col('kangis_fileno_placeholder', `<td class="${standardCellClass}">${placeholderVal ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">${escapeHtml(placeholderVal)}</span>` : '<span class="text-gray-400">-</span>'}</td>`)}
+            ${col('new_kangis_file_no', `<td class="${standardCellClass}">${newKangisVal ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">${escapeHtml(newKangisVal)}</span>` : '<span class="text-gray-400">-</span>'}</td>`)}
+            ${col('related_file_no', `<td class="${standardCellClass}">
+              ${mlsVal ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">${escapeHtml(mlsVal)}</span>` : '<span class="text-gray-400">-</span>'}
+            </td>`)}
+            ${col('related_fileno_action', `<td class="${standardCellClass}">
+              ${row.has_related_files ? `
+                <button type="button" class="view-related-files-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all shadow-sm" data-id="${row.id}">
+                  <i data-lucide="link" class="w-3 h-3"></i>
+                  <span>View Related FileNo(s)</span>
+                </button>
+              ` : '<span class="text-gray-400 font-medium text-[10px] uppercase">None</span>'}
+            </td>`)}
+            ${col('file_title', `<td class="p-3 whitespace-nowrap text-gray-700">${escapeHtml(row.file_title)}</td>`)}
+            ${col('land_use_type', `<td class="p-3 whitespace-nowrap">${landUseBadge}</td>`)}
+            ${col('plot_number', `<td class="${standardCellClass}">${escapeHtml(row.plot_number)}</td>`)}
+            ${col('tp_no', `<td class="${standardCellClass}">${escapeHtml(row.tp_no)}</td>`)}
+            ${col('lpkn_no', `<td class="${standardCellClass}">${escapeHtml(row.lpkn_no)}</td>`)}
+            ${col('district', `<td class="${standardCellClass}">${escapeHtml(row.district)}</td>`)}
+            ${col('lga', `<td class="${standardCellClass}">${escapeHtml(lgaValue)}</td>`)}
+            ${col('indexed_by', `<td class="${standardCellClass}">${escapeHtml(row.indexed_by)}</td>`)}
+            ${col('indexed_date', `<td class="${standardCellClass}">${escapeHtml(row.indexed_at ?? '')}</td>`)}
+            ${col('status', `<td class="p-3 whitespace-nowrap">${statusBadge}</td>`)}
+          `;
+        })()
       : `
         ${col('shelf_location', `<td class="${standardCellClass}">${escapeHtml(row.shelf_location)}</td>`)}
         ${col('general_registry', `<td class="${standardCellClass}">${escapeHtml(row.general_registry)}</td>`)}

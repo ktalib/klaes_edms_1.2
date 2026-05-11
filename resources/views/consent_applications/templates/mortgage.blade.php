@@ -14,8 +14,8 @@
         }
 
         body {
-            font-family: 'Times New Roman', Times, serif;
-            font-size: 12pt;
+            font-family: 'Times New Roman';
+            font-size: 13pt;
             line-height: 1.3;
             color: #000;
             background-color: white !important;
@@ -97,6 +97,27 @@
                 display: none !important;
             }
         }
+
+        .footer-logos {
+            position: absolute;
+            bottom: 1.0cm;
+            left: 1.5cm;
+            right: 1.5cm;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 10px;
+        }
+
+        .footer-logo-img {
+            height: 35px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        .logo-left {
+            height: 45px; /* Slightly larger to match visual weight */
+        }
     </style>
 </head>
 
@@ -169,6 +190,11 @@
                     [Official Stamp Here]
                 </div> -->
             </div>
+        </div>
+
+        <div class="footer-logos">
+            <img src="http://app.klaes.ng/storage/upload/logo/logo.png" class="footer-logo-img logo-left" alt="Left Logo">
+            <img src="http://app.klaes.ng/assets/logo/las.jpg" class="footer-logo-img" alt="Right Logo">
         </div>
     </div>
 

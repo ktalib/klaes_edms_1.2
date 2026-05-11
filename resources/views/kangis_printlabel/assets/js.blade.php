@@ -1045,7 +1045,23 @@ document.addEventListener('DOMContentLoaded', function() {
                     .then(function(d) {
                         if (d.success && d.data) {
                             var bi = document.getElementById('kangisBatchNoInput');
-                            if (bi && !bi.value) { bi.value = d.data.next_batch_no; state.kangisBatchNo = d.data.next_batch_no.toString(); }
+                            if (bi && !bi.value) {
+                                var val = d.data.next_batch_no;
+                                bi.value = val;
+                                state.kangisBatchNo = val.toString();
+                                
+                                // Sync shelf number if it's a single number
+                                if (/^\d+$/.test(val)) {
+                                    var num = parseInt(val);
+                                    if (num >= 1 && num <= 100) {
+                                        state.shelfNumber = num.toString();
+                                        var ss = document.getElementById('shelfNumberSelect');
+                                        if (ss) ss.value = num;
+                                        updateFullLabelDisplay();
+                                        fetchRackLabelStatus(state.fullLabel);
+                                    }
+                                }
+                            }
                         }
                     })
                     .catch(function(e){ console.warn('Could not auto-suggest batch number:', e); });
@@ -1056,7 +1072,21 @@ document.addEventListener('DOMContentLoaded', function() {
     // KANGIS batch number input
     var kangisBatchNoInput = document.getElementById('kangisBatchNoInput');
     if (kangisBatchNoInput) {
-        kangisBatchNoInput.addEventListener('change', function() { state.kangisBatchNo = this.value; });
+        kangisBatchNoInput.addEventListener('input', function() {
+            state.kangisBatchNo = this.value;
+            // Sync shelf number if it's a single numeric batch
+            if (/^\d+$/.test(this.value.trim())) {
+                var num = parseInt(this.value.trim());
+                if (num >= 1 && num <= 100) {
+                    state.shelfNumber = num.toString();
+                    var ss = document.getElementById('shelfNumberSelect');
+                    if (ss) ss.value = num;
+                    updateFullLabelDisplay();
+                    fetchRackLabelStatus(state.fullLabel);
+                    if (state.activeTab === 'preview') refreshPreview(true);
+                }
+            }
+        });
     }
 
     // Exclude assigned toggle

@@ -56,7 +56,9 @@
                 'columnLabels' => [
                     'file_number' => 'Kangis FileNo',
                     'kangis_fileno_placeholder' => 'Placeholder',
+                    'new_kangis_file_no' => 'Newkangis',
                     'related_file_no' => 'Mls FileNo',
+                    'related_fileno_action' => 'Related FileNo',
                     'file_title' => 'File Title',
                 ],
                 'hideActions' => false,

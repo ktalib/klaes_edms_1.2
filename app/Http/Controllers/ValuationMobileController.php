@@ -163,6 +163,8 @@ class ValuationMobileController extends Controller
                 'state' => $request->state ?? 'Kano',
                 'location' => $request->location,
                 'user_id' => Auth::id(),
+                'latitude' => $request->latitude,
+                'longitude' => $request->longitude,
             ]);
 
             DB::connection('sqlsrv')->commit();

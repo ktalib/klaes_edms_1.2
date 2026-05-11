@@ -261,7 +261,7 @@
       <!-- d. File History View -->
       @if($hasRole('File History View'))
         <a href="{{ route('file-index-view.index', ['url' => 'land']) }}"
-          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-index-view.index') ? 'active' : '' }}">
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-index-view.index') && request()->query('url') === 'land' ? 'active' : '' }}">
           <i data-lucide="eye" class="h-4 w-4 text-orange-500"></i>
           <span>File History View</span>
         </a>

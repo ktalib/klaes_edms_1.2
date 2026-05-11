@@ -1,0 +1,55 @@
+[2026-05-11 03:16:41] local.INFO: Batch PRA creation skipped for non-OP source {"batch_size":2,"land_use":"IND-RC","source":"Direct Allocation"} 
+[2026-05-11 03:16:41] local.INFO: Batch MLS File Numbers Generated {"batch_size":2,"land_use":"IND-RC","serial_range":"3 to 4","files":["IND-RC-2026-3","IND-RC-2026-4"],"user":"Klaes Admin"} 
+[2026-05-11 03:19:58] local.INFO: MLS generate request started {"user_id":1,"application_type":"new","default_allocation_type":null,"file_option":"normal"} 
+[2026-05-11 03:19:58] local.INFO: MLS Serial allocated: RES-2026 -> 2097  
+[2026-05-11 03:19:58] local.INFO: File automatically indexed {"mls_file_id":23543,"file_indexing_id":117459,"file_number":"RES-2026-2097"} 
+[2026-05-11 03:19:58] local.INFO: MLS generate linking grouping record {"file_number":"RES-2026-2097"} 
+[2026-05-11 03:19:59] local.INFO: MLS generate grouping link done {"file_number":"RES-2026-2097"} 
+[2026-05-11 03:19:59] local.INFO: MLS generate OP mirror decision {"file_number":"RES-2026-2097","should_mirror":false,"default_allocation_type":null,"source_instrument_capture_id":null} 
+[2026-05-11 03:19:59] local.INFO: MLS generate basic PRA creation skipped for non-OP source {"file_number":"RES-2026-2097","source":"Direct Allocation"} 
+[2026-05-11 03:19:59] local.INFO: Merger application marked as commissioned {"app_id":"1","file_no":"RES-2026-2097"} 
+[2026-05-11 03:19:59] local.INFO: MLS File Number Generated {"file_number":"RES-2026-2097","land_use":"RES","serial":2097,"user":"Klaes Admin"} 
+[2026-05-11 03:54:46] local.ERROR: Unexpected end of input {"exception":"[object] (InvalidArgumentException(code: 0): Unexpected end of input at C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php:899)
+[stacktrace]
+#0 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php(1343): Psy\\Shell->setCode('print_r(Schema:...', true)
+#1 C:\\wamp64\\www\\klaes\\vendor\\laravel\\tinker\\src\\Console\\TinkerCommand.php(76): Psy\\Shell->execute('print_r(Schema:...')
+#2 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(36): Laravel\\Tinker\\Console\\TinkerCommand->handle()
+#3 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\Util.php(41): Illuminate\\Container\\BoundMethod::Illuminate\\Container\\{closure}()
+#4 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(93): Illuminate\\Container\\Util::unwrapIfClosure(Object(Closure))
+#5 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(35): Illuminate\\Container\\BoundMethod::callBoundMethod(Object(Illuminate\\Foundation\\Application), Array, Object(Closure))
+#6 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\Container.php(661): Illuminate\\Container\\BoundMethod::call(Object(Illuminate\\Foundation\\Application), Array, Array, NULL)
+#7 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Command.php(183): Illuminate\\Container\\Container->call(Array)
+#8 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Command\\Command.php(326): Illuminate\\Console\\Command->execute(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Illuminate\\Console\\OutputStyle))
+#9 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Command.php(152): Symfony\\Component\\Console\\Command\\Command->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Illuminate\\Console\\OutputStyle))
+#10 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(1063): Illuminate\\Console\\Command->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#11 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(320): Symfony\\Component\\Console\\Application->doRunCommand(Object(Laravel\\Tinker\\Console\\TinkerCommand), Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#12 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(174): Symfony\\Component\\Console\\Application->doRun(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#13 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Application.php(102): Symfony\\Component\\Console\\Application->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#14 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Console\\Kernel.php(155): Illuminate\\Console\\Application->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#15 C:\\wamp64\\www\\klaes\\artisan(35): Illuminate\\Foundation\\Console\\Kernel->handle(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#16 {main}
+"} 
+[2026-05-11 03:54:53] local.ERROR: PHP Parse error: Syntax error, unexpected ')' on line 1 {"exception":"[object] (Psy\\Exception\\ParseErrorException(code: 0): PHP Parse error: Syntax error, unexpected ')' on line 1 at C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Exception\\ParseErrorException.php:38)
+[stacktrace]
+#0 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\CodeCleaner.php(339): Psy\\Exception\\ParseErrorException::fromParseError(Object(PhpParser\\Error))
+#1 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\CodeCleaner.php(268): Psy\\CodeCleaner->parse('<?php foreach(D...', false)
+#2 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php(860): Psy\\CodeCleaner->clean(Array, false)
+#3 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php(889): Psy\\Shell->addCode('foreach(DB::con...', true)
+#4 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php(1343): Psy\\Shell->setCode('foreach(DB::con...', true)
+#5 C:\\wamp64\\www\\klaes\\vendor\\laravel\\tinker\\src\\Console\\TinkerCommand.php(76): Psy\\Shell->execute('foreach(DB::con...')
+#6 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(36): Laravel\\Tinker\\Console\\TinkerCommand->handle()
+#7 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\Util.php(41): Illuminate\\Container\\BoundMethod::Illuminate\\Container\\{closure}()
+#8 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(93): Illuminate\\Container\\Util::unwrapIfClosure(Object(Closure))
+#9 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(35): Illuminate\\Container\\BoundMethod::callBoundMethod(Object(Illuminate\\Foundation\\Application), Array, Object(Closure))
+#10 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\Container.php(661): Illuminate\\Container\\BoundMethod::call(Object(Illuminate\\Foundation\\Application), Array, Array, NULL)
+#11 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Command.php(183): Illuminate\\Container\\Container->call(Array)
+#12 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Command\\Command.php(326): Illuminate\\Console\\Command->execute(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Illuminate\\Console\\OutputStyle))
+#13 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Command.php(152): Symfony\\Component\\Console\\Command\\Command->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Illuminate\\Console\\OutputStyle))
+#14 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(1063): Illuminate\\Console\\Command->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#15 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(320): Symfony\\Component\\Console\\Application->doRunCommand(Object(Laravel\\Tinker\\Console\\TinkerCommand), Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#16 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(174): Symfony\\Component\\Console\\Application->doRun(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#17 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Application.php(102): Symfony\\Component\\Console\\Application->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#18 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Console\\Kernel.php(155): Illuminate\\Console\\Application->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#19 C:\\wamp64\\www\\klaes\\artisan(35): Illuminate\\Foundation\\Console\\Kernel->handle(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#20 {main}
+"} 

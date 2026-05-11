@@ -89,6 +89,7 @@ class PlotMergerController extends Controller
                 'district' => $request->district,
                 'lga' => $request->lga,
                 'state' => $request->state,
+                'land_use' => explode('-', $request->file_no)[0],
                 'status' => PlotMergerApplication::STATUS_PENDING,
                 'captured_by' => Auth::id(),
                 'land_value' => $request->land_value,

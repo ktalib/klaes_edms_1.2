@@ -3639,35 +3639,77 @@
                                     
                                     self.isInherited = true;
 
-                                    // Set Land Use from application
-                                    if (res.data.land_use) {
-                                        const luCode = res.data.land_use.toUpperCase();
-                                        this.landUse = luCode;
-                                        
-                                        if (this.landUses) {
-                                            const luEntity = this.landUses.find(l => {
-                                                const name = l.landuse.toUpperCase();
-                                                if (luCode === 'RES' && name.includes('RESIDENTIAL')) return true;
-                                                if (luCode === 'COM' && name.includes('COMMERCIAL')) return true;
-                                                if (luCode === 'IND' && name.includes('INDUSTRIAL')) return true;
-                                                if (luCode === 'AG' && name.includes('AGRICULTURAL')) return true;
-                                                if (luCode === 'AGR' && name.includes('AGRICULTURAL')) return true;
-                                                return false;
-                                            });
-                                            
-                                            if (luEntity) {
-                                                this.landUseId = luEntity.id;
-                                            }
+                                    // Detect full prefix from source file number (e.g. IND-RC from IND-RC-2026-4)
+                                    let detectedPrefix = '';
+                                    if (data.fileNumber) {
+                                        const parts = data.fileNumber.split('-');
+                                        const yearIndex = parts.findIndex(p => /^(19|20)\d{2}$/.test(p));
+                                        if (yearIndex > 0) {
+                                            detectedPrefix = parts.slice(0, yearIndex).join('-').toUpperCase();
+                                        } else {
+                                            detectedPrefix = parts[0].toUpperCase();
                                         }
                                     }
 
-                                    this.batchMode = true;
-                                    this.batchQuantity = res.data.num_plots;
+                                    // Auto-detect Conversion type
+                                    if (detectedPrefix.startsWith('CON-')) {
+                                        self.applicationType = 'conversion';
+                                        self.updateApplicationType();
+                                    }
+
+                                    if (detectedPrefix && self.allAllPrefixes) {
+                                        // Find exact match first
+                                        let bestPrefix = self.allAllPrefixes.find(p => p.prefix === detectedPrefix);
+                                        
+                                        if (!bestPrefix) {
+                                            // Try partial match (e.g. if detected is IND-RC but only IND exists, or vice versa)
+                                            bestPrefix = self.allAllPrefixes.find(p => p.prefix.startsWith(detectedPrefix) || detectedPrefix.startsWith(p.prefix));
+                                        }
+                                        
+                                        if (bestPrefix) {
+                                            self.prefix = bestPrefix.prefix;
+                                            // Sync landUseId and purposes
+                                            self.handlePrefixChange({ target: { value: self.prefix } });
+                                        }
+                                    }
+
+                                    // Fallback for landUseId if prefix match fails
+                                    if (!self.prefix && self.landUses) {
+                                        const luCode = (res.data.land_use || detectedPrefix.split('-')[0]).toUpperCase();
+                                        const luEntity = self.landUses.find(l => {
+                                            const name = l.landuse.toUpperCase();
+                                            return (luCode === 'RES' && name.includes('RESIDENTIAL')) ||
+                                                   (luCode === 'COM' && name.includes('COMMERCIAL')) ||
+                                                   (luCode === 'IND' && name.includes('INDUSTRIAL')) ||
+                                                   (luCode.startsWith('AG') && name.includes('AGRICULTURAL'));
+                                        });
+                                        if (luEntity) self.landUseId = luEntity.id;
+                                    }
+
+                                    self.batchMode = true;
                                     
-                                    // Trigger Alpine reactivity for batchQuantity and batchMode
-                                    this.$nextTick(() => {
-                                        if (typeof this.updatePreview === 'function') {
-                                            this.updatePreview();
+                                    // Populate locationEntries for batch mode FIRST to prevent watcher from overwriting
+                                    const bQty = parseInt(res.data.num_plots) || 0;
+                                    if (bQty > 0) {
+                                        let entries = [];
+                                        for (let i = 0; i < bQty; i++) {
+                                            entries.push({
+                                                plotNo: res.data.plot_no || '',
+                                                tpNo: res.data.tp_no || '',
+                                                location: self.location,
+                                                lga: self.lga,
+                                                tracking_id: null
+                                            });
+                                        }
+                                        self.locationEntries = entries;
+                                    }
+                                    
+                                    self.batchQuantity = bQty;
+
+                                    // Trigger Alpine reactivity
+                                    self.$nextTick(() => {
+                                        if (typeof self.updatePreview === 'function') {
+                                            self.updatePreview();
                                         }
                                     });
                                     
@@ -3727,26 +3769,52 @@
                     if (data.district) locParts.push(data.district);
                     self.location = locParts.length > 0 ? locParts.join(', ').toUpperCase() : '';
                     
-                    // Set Land Use from application
-                    if (data.land_use) {
-                        const luCode = data.land_use.toUpperCase();
-                        self.landUse = luCode;
-                        
-                        if (self.landUses) {
-                            const luEntity = self.landUses.find(l => {
-                                const name = l.landuse.toUpperCase();
-                                if (luCode === 'RES' && name.includes('RESIDENTIAL')) return true;
-                                if (luCode === 'COM' && name.includes('COMMERCIAL')) return true;
-                                if (luCode === 'IND' && name.includes('INDUSTRIAL')) return true;
-                                if (luCode === 'AG' && name.includes('AGRICULTURAL')) return true;
-                                if (luCode === 'AGR' && name.includes('AGRICULTURAL')) return true;
-                                return false;
-                            });
-                            
-                            if (luEntity) {
-                                self.landUseId = luEntity.id;
-                            }
+                    // Detect full prefix from source file number (e.g. CON-IND from CON-IND-2026-1)
+                    let detectedPrefix = '';
+                    if (data.temp_file_no || data.file_no) {
+                        const fn = data.temp_file_no || data.file_no;
+                        const parts = fn.split('-');
+                        const yearIndex = parts.findIndex(p => /^(19|20)\d{2}$/.test(p));
+                        if (yearIndex > 0) {
+                            detectedPrefix = parts.slice(0, yearIndex).join('-').toUpperCase();
+                        } else {
+                            detectedPrefix = parts[0].toUpperCase();
                         }
+                    }
+
+                    // Auto-detect Conversion type
+                    if (detectedPrefix.startsWith('CON-')) {
+                        self.applicationType = 'conversion';
+                        self.updateApplicationType();
+                    }
+
+                    if (detectedPrefix && self.allAllPrefixes) {
+                        // Find exact match first
+                        let bestPrefix = self.allAllPrefixes.find(p => p.prefix === detectedPrefix);
+                        
+                        if (!bestPrefix) {
+                            // Try partial match
+                            bestPrefix = self.allAllPrefixes.find(p => p.prefix.startsWith(detectedPrefix) || detectedPrefix.startsWith(p.prefix));
+                        }
+                        
+                        if (bestPrefix) {
+                            self.prefix = bestPrefix.prefix;
+                            // Sync landUseId and purposes
+                            self.handlePrefixChange({ target: { value: self.prefix } });
+                        }
+                    }
+
+                    // Fallback for landUseId if prefix match fails
+                    if (!self.prefix && self.landUses) {
+                        const luCode = (data.land_use || detectedPrefix.split('-')[0]).toUpperCase();
+                        const luEntity = self.landUses.find(l => {
+                            const name = l.landuse.toUpperCase();
+                            return (luCode === 'RES' && name.includes('RESIDENTIAL')) ||
+                                   (luCode === 'COM' && name.includes('COMMERCIAL')) ||
+                                   (luCode === 'IND' && name.includes('INDUSTRIAL')) ||
+                                   (luCode.startsWith('AG') && name.includes('AGRICULTURAL'));
+                        });
+                        if (luEntity) self.landUseId = luEntity.id;
                     }
 
                     self.isInherited = true;
@@ -3894,8 +3962,8 @@
             },
 
             updatePreview() {
-                // Auto-update serial number when land use changes for normal files
-                if (this.fileOption === 'normal' && (this.landUse || this.prefix) && !isOverrideMode) {
+                // Auto-update serial number when land use changes for normal, subdivision, and merger files
+                if (['normal', 'subdivision', 'merger'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
                     const newSerial = getNextSerialForLandUse(this.prefix || this.landUse);
                     if (this.serialNo !== newSerial) {
                         this.serialNo = newSerial;
@@ -3933,7 +4001,7 @@
                     previewText = `SLTR-${this.serialNo}`;
                 } else if (this.fileOption === 'sit' && this.serialNo) {
                     previewText = `SIT-${this.year}-${this.serialNo}`;
-                } else if (this.fileOption === 'normal' && this.serialNo && this.year) {
+                } else if (['normal', 'subdivision', 'merger'].includes(this.fileOption) && this.serialNo && this.year) {
                     const code = this.prefix || this.landUse;
                     if (code) {
                          previewText = `${code}-${this.year}-${this.serialNo}`;

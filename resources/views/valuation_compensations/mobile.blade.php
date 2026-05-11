@@ -2,11 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>VFC Mobile · Field Entry</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         :root {
             --bg: #0b0e14;
@@ -475,6 +477,11 @@
             max-width: 500px;
             margin: 0 auto;
             z-index: 100;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+
+        body.keyboard-visible .bottom-nav {
+            display: none !important;
         }
 
         .btn {
@@ -537,6 +544,50 @@
             transform: translateX(-50%) translateY(0);
         }
 
+        /* ── MAP STYLES ── */
+        #map {
+            height: 220px;
+            width: 100%;
+            border-radius: var(--radius-sm);
+            margin-top: 12px;
+            border: 1.5px solid var(--border);
+            z-index: 1;
+        }
+
+        .map-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .btn-geo {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            color: var(--accent);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .coord-badge {
+            flex: 1;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
     </style>
 </head>
 <body>
@@ -546,14 +597,23 @@
     <header class="topbar">
         <div class="topbar-brand">
             <div class="brand-icon" style="background: white; padding: 2px;">
-                <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="Logo" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;">
+                <img src="{{ asset('storage/upload/logo/logo.png') }}" alt="Logo" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;" onerror="this.src='http://app.klaes.ng/storage/upload/logo/1.jpeg'">
             </div>
             <div class="brand-text">
-                <h1>CFV FIELD APP</h1>
-                <p>CFV Data Entry</p>
+                <h1>VFC MOBILE</h1>
+                <p>{{ Auth::user()->first_name ?? 'Field' }} Officer</p>
             </div>
         </div>
-        <div class="sync-status"></div>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <div class="sync-status" title="Online"></div>
+            <form action="{{ route('valuation-compensations.mobile.logout') }}" method="POST" id="logout-form" style="display: none;">
+                @csrf
+            </form>
+            <a href="javascript:void(0)" onclick="if(confirm('Are you sure you want to logout?')) document.getElementById('logout-form').submit();" style="text-decoration: none; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #f87171; padding: 8px 12px; border-radius: 10px; font-size: 11px; font-weight: 700; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                <i data-lucide="log-out" style="width: 14px;"></i>
+                EXIT
+            </a>
+        </div>
     </header>
 
     <!-- NAV STRIP -->
@@ -812,6 +872,22 @@
                     <div class="field">
                         <label>Full Address <span class="req">*</span></label>
                         <textarea name="location" id="fullLocation" class="inp" rows="3" required placeholder="Generating from selections..."></textarea>
+                    </div>
+
+                    <div class="field">
+                        <label>Geographic Coordinates</label>
+                        <div id="map"></div>
+                        <div class="map-controls">
+                            <button type="button" class="btn-geo" onclick="getCurrentLocation()">
+                                <i data-lucide="crosshair" style="width: 14px;"></i>
+                                PIN CURRENT
+                            </button>
+                            <div class="coord-badge">
+                                <span id="coordDisplay">12.0022, 8.5920</span>
+                            </div>
+                        </div>
+                        <input type="hidden" name="latitude" id="lat" value="12.0022">
+                        <input type="hidden" name="longitude" id="lng" value="8.5920">
                     </div>
                 </div>
             </section>
@@ -1258,7 +1334,18 @@
             document.getElementById('vfcForm').reset();
             selectedItems = [];
             document.querySelectorAll('.check-item').forEach(i => i.classList.remove('active'));
-            document.getElementById('totalDisplay').textContent = '₦ 0.00';
+            
+            // Clear compensation amount
+            const compAmt = document.getElementById('compensation_amount');
+            if (compAmt) compAmt.value = '';
+
+            // Clear bank logo
+            const bankLogo = document.getElementById('selectedBankLogo');
+            if (bankLogo) {
+                bankLogo.classList.add('hidden');
+                document.getElementById('bankSearch').style.paddingLeft = '14px';
+            }
+
             document.getElementById('workerBadge').classList.add('hidden');
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -1272,10 +1359,107 @@
             setTimeout(() => t.classList.remove('show'), 3000);
         }
 
-        // Start when DOM is ready
         document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
             loadLookupData();
+            initMap();
+
+            // Keyboard Visibility Detection (Focus-based for maximum compatibility)
+            const formInputs = document.querySelectorAll('input, textarea, select');
+            formInputs.forEach(input => {
+                input.addEventListener('focus', () => {
+                    document.body.classList.add('keyboard-visible');
+                });
+                input.addEventListener('blur', () => {
+                    // Small delay to check if focus moved to another input
+                    setTimeout(() => {
+                        if (!document.activeElement || !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+                            document.body.classList.remove('keyboard-visible');
+                        }
+                    }, 100);
+                });
+            });
+
+            // Fallback for visualViewport resizing
+            if (window.visualViewport) {
+                const initialHeight = window.visualViewport.height;
+                window.visualViewport.addEventListener('resize', () => {
+                    if (window.visualViewport.height < initialHeight * 0.85) {
+                        document.body.classList.add('keyboard-visible');
+                    }
+                });
+            }
         });
+
+        /* ── MAP LOGIC ── */
+        let map, marker;
+        function initMap() {
+            // Default: Kano, Nigeria
+            const startLat = 12.0022;
+            const startLng = 8.5920;
+
+            map = L.map('map', {
+                zoomControl: false
+            }).setView([startLat, startLng], 13);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OSM'
+            }).addTo(map);
+
+            marker = L.marker([startLat, startLng], { draggable: true }).addTo(map);
+
+            marker.on('dragend', function(e) {
+                const pos = marker.getLatLng();
+                updateCoords(pos.lat, pos.lng);
+            });
+
+            map.on('click', function(e) {
+                marker.setLatLng(e.latlng);
+                updateCoords(e.latlng.lat, e.latlng.lng);
+            });
+
+            // Adjust map size when section is expanded
+            document.querySelector('#sec-location .section-header').addEventListener('click', () => {
+                setTimeout(() => map.invalidateSize(), 100);
+            });
+        }
+
+        function updateCoords(lat, lng) {
+            const fixedLat = lat.toFixed(6);
+            const fixedLng = lng.toFixed(6);
+            document.getElementById('lat').value = fixedLat;
+            document.getElementById('lng').value = fixedLng;
+            document.getElementById('coordDisplay').textContent = `${fixedLat}, ${fixedLng}`;
+        }
+
+        function getCurrentLocation() {
+            if (!navigator.geolocation) {
+                showToast('❌ GPS not supported', 'danger');
+                return;
+            }
+
+            const btn = document.querySelector('.btn-geo');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> LOCATING...';
+
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    const lat = pos.coords.latitude;
+                    const lng = pos.coords.longitude;
+                    map.setView([lat, lng], 17);
+                    marker.setLatLng([lat, lng]);
+                    updateCoords(lat, lng);
+                    btn.innerHTML = '<i data-lucide="crosshair" style="width: 14px;"></i> PIN CURRENT';
+                    lucide.createIcons();
+                    showToast('✅ Location pinned', 'success');
+                },
+                (err) => {
+                    showToast('❌ GPS access denied', 'danger');
+                    btn.innerHTML = '<i data-lucide="crosshair" style="width: 14px;"></i> PIN CURRENT';
+                    lucide.createIcons();
+                },
+                { enableHighAccuracy: true }
+            );
+        }
     </script>
 </body>
 </html>

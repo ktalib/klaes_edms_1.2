@@ -31,6 +31,7 @@
         ['key' => 'shelf_location',          'sort' => 'shelf_location',          'default' => 'Shelf/Rack'],
         ['key' => 'file_number',             'sort' => 'file_number',             'default' => 'Kangis FileNo'],
         ['key' => 'kangis_fileno_placeholder','sort' => 'kangis_fileno_placeholder','default' => 'Kangis Placeholder'],
+        ['key' => 'new_kangis_file_no',      'sort' => 'new_kangis_file_no',      'default' => 'Newkangis'],
         ['key' => 'related_file_no',         'sort' => null,                      'default' => 'Mls FileNo'],
         ['key' => 'related_fileno_action',   'sort' => null,                      'default' => 'Related FileNo'],
         ['key' => 'corresponding_fileno',    'sort' => null,                      'default' => 'Corresponding FileNo'],

@@ -753,19 +753,12 @@ Route::middleware(['auth'])->group(function () {
             Route::delete('/{id}/workers/{workerId}', [App\Http\Controllers\ProjectController::class, 'removeWorkerFromProject'])->name('remove-worker');
             Route::get('/{id}/templates', [App\Http\Controllers\ProjectController::class, 'generateWorkerTemplates'])->name('templates');
         });
-        // Mobile Field Entry Routes
-        Route::prefix('mobile')->name('mobile.')->group(function () {
-            Route::get('/', [App\Http\Controllers\ValuationMobileController::class, 'index'])->name('index');
-            Route::get('/lookup', [App\Http\Controllers\ValuationMobileController::class, 'getLookupData'])->name('lookup');
-            Route::get('/workers/{projectId}', [App\Http\Controllers\ValuationMobileController::class, 'getProjectWorkers'])->name('workers');
-            Route::post('/save', [App\Http\Controllers\ValuationMobileController::class, 'store'])->name('save');
-        });
 
-        Route::get('/{id}/edit', [App\Http\Controllers\ValuationCompensationController::class, 'edit'])->name('edit');
-        Route::put('/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'update'])->name('update');
-        Route::get('/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'show'])->name('show');
-        Route::delete('/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'destroy'])->name('destroy');
-        Route::post('/log-print/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'logPrint'])->name('log-print');
+        Route::get('/{id}/edit', [App\Http\Controllers\ValuationCompensationController::class, 'edit'])->name('edit')->where('id', '[0-9]+');
+        Route::put('/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'update'])->name('update')->where('id', '[0-9]+');
+        Route::get('/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'show'])->name('show')->where('id', '[0-9]+');
+        Route::delete('/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
+        Route::post('/log-print/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'logPrint'])->name('log-print')->where('id', '[0-9]+');
     });
 
     // Lands 12 - Request for Survey Report
@@ -928,5 +921,19 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/api/batch/{id}/print',      [DcivPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');
         Route::patch('/api/batch/{id}/print',    [DcivPrintLabelController::class, 'markBatchAsPrinted'])->name('api.batch.mark-printed');
         Route::delete('/api/batch/{id}',         [DcivPrintLabelController::class, 'deleteBatch'])->name('api.batch.delete');
+    });
+});
+
+// VFC Mobile Auth & App Routes (Placed outside main auth group to avoid redirect loop)
+Route::prefix('valuation-compensations/mobile')->name('valuation-compensations.mobile.')->group(function () {
+    Route::get('/login', [App\Http\Controllers\ValuationMobileAuthController::class, 'loginForm'])->name('login');
+    Route::post('/login', [App\Http\Controllers\ValuationMobileAuthController::class, 'login'])->name('login.submit');
+    Route::post('/logout', [App\Http\Controllers\ValuationMobileAuthController::class, 'logout'])->name('logout');
+
+    Route::middleware(['auth'])->group(function() {
+        Route::get('/', [App\Http\Controllers\ValuationMobileController::class, 'index'])->name('index');
+        Route::get('/lookup', [App\Http\Controllers\ValuationMobileController::class, 'getLookupData'])->name('lookup');
+        Route::get('/workers/{projectId}', [App\Http\Controllers\ValuationMobileController::class, 'getProjectWorkers'])->name('workers');
+        Route::post('/save', [App\Http\Controllers\ValuationMobileController::class, 'store'])->name('save');
     });
 });

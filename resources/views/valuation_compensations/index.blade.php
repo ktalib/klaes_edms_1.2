@@ -71,7 +71,7 @@
                 <i data-lucide="calendar" class="h-6 w-6"></i>
             </div>
             <div>
-                <p class="text-sm text-slate-500 font-medium uppercase tracking-wider">Recorded Today</p>
+                <p class="text-sm text-slate-500 font-medium uppercase tracking-wider">Captured Today</p>
                 <h3 class="text-2xl font-bold text-slate-800">{{ number_format($stats['today_count']) }}</h3>
             </div>
         </div>

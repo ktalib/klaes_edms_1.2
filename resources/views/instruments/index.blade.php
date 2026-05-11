@@ -11,6 +11,8 @@
     {{-- PDF Generation Libraries --}}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.1/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+
 
     @include('instrument_registration.modals.export_preview')
     <script src="{{ asset('js/instrument_capture_export.js') }}"></script>
@@ -18,10 +20,6 @@
 
 @section('content') 
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/lucide@latest"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@floating-ui/dom@1.5.3/dist/floating-ui.dom.min.js"></script>
 
     {{-- DataTables CSS + Buttons --}}
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css">
@@ -192,19 +190,18 @@
                                         <td class="align-top text-proper">{{ $instrument->party_1_name ? ucwords(strtolower($instrument->party_1_name)) : '' }}</td>
                                         <td class="align-top text-proper">{{ $instrument->party_2_name ? ucwords(strtolower($instrument->party_2_name)) : '' }}</td>
                                         <td class="align-top text-proper">{{ $instrument->party_3_name ? ucwords(strtolower($instrument->party_3_name)) : '' }}</td>
-                                            <td class="align-top">
-                                            <div class="flex flex-col max-w-[250px]" x-data="{ expanded: false }">
-                                                <div :class="expanded ? '' : 'truncate'" class="font-bold text-gray-800 text-proper cursor-pointer" @click="expanded = !expanded" title="{{ $instrument->solicitor_name }}">
+                                        <td class="align-top">
+                                            <div class="flex flex-col" style="max-width: 180px;" x-data="{ expanded: false }">
+                                                <div :class="expanded ? 'whitespace-normal' : 'truncate block'" class="font-bold text-gray-800 text-proper leading-tight w-full" :title="expanded ? '' : '{{ addslashes($instrument->solicitor_name) }}'">
                                                     {{ $instrument->solicitor_name ? ucwords(strtolower($instrument->solicitor_name)) : '' }}
                                                 </div>
-                                                <div :class="expanded ? '' : 'truncate'" class="text-[11px] text-gray-500 text-proper cursor-pointer leading-tight" @click="expanded = !expanded" title="{{ $instrument->solicitor_address }}">
+                                                <div :class="expanded ? 'whitespace-normal' : 'truncate block'" class="text-xs text-gray-500 text-proper mt-0.5 w-full" style="font-size: 11px;" :title="expanded ? '' : '{{ addslashes($instrument->solicitor_address) }}'">
                                                     {{ $instrument->solicitor_address ? ucwords(strtolower($instrument->solicitor_address)) : '' }}
                                                 </div>
-                                                @if((strlen($instrument->solicitor_name ?? '') > 30) || (strlen($instrument->solicitor_address ?? '') > 40))
-                                                    <button @click="expanded = !expanded" class="text-[10px] text-blue-600 font-bold hover:underline mt-1 self-start flex items-center gap-1">
-                                                        <span x-show="!expanded">View More</span>
-                                                        <span x-show="expanded">View Less</span>
-                                                        <i :data-lucide="expanded ? 'chevron-up' : 'chevron-down'" class="w-3 h-3"></i>
+                                                @if((strlen($instrument->solicitor_name ?? '') > 25) || (strlen($instrument->solicitor_address ?? '') > 35))
+                                                    <button type="button" @click.stop="expanded = !expanded" class="text-xs text-blue-600 font-bold hover:underline mt-1 self-start flex items-center bg-blue-50/50 px-1.5 py-0.5 rounded border border-blue-100/50" style="font-size: 10px;">
+                                                        <span x-text="expanded ? 'View Less' : 'View More'"></span>
+                                                        <i :data-lucide="expanded ? 'chevron-up' : 'chevron-down'" class="ml-1" style="width: 12px; height: 12px;"></i>
                                                     </button>
                                                 @endif
                                             </div>
@@ -336,12 +333,23 @@
                                             </div>
                                         </td>
                                   
-                                        <td class="align-top expandable">
+                                        <td class="align-top">
                                             @if($instrument->property_description)
-                                                <span class="prop-desc-cell block max-w-[180px] truncate text-gray-600 text-sm leading-tight cursor-default text-proper"
-                                                    title="{{ $instrument->property_description }}">
-                                                    {{ ucwords(strtolower($instrument->property_description)) }}
-                                                </span>
+                                                <div x-data="{ expanded: false }" class="flex flex-col" style="max-width: 180px;">
+                                                    <div :class="expanded ? 'whitespace-normal' : 'truncate block'" 
+                                                         class="text-gray-600 text-sm leading-tight text-proper w-full"
+                                                         :title="expanded ? '' : '{{ addslashes($instrument->property_description) }}'">
+                                                        {{ ucwords(strtolower($instrument->property_description)) }}
+                                                    </div>
+                                                    @if(strlen($instrument->property_description) > 30)
+                                                        <button type="button" @click.stop="expanded = !expanded" 
+                                                                class="text-xs text-blue-600 font-bold hover:underline mt-1 self-start flex items-center bg-blue-50/50 px-1.5 py-0.5 rounded border border-blue-100/50" 
+                                                                style="font-size: 10px;">
+                                                            <span x-text="expanded ? 'View Less' : 'View More'"></span>
+                                                            <i :data-lucide="expanded ? 'chevron-up' : 'chevron-down'" class="ml-1" style="width: 12px; height: 12px;"></i>
+                                                        </button>
+                                                    @endif
+                                                </div>
                                             @else
                                                 <span class="text-gray-300 text-xs">—</span>
                                             @endif

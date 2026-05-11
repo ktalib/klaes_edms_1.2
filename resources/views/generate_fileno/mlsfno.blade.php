@@ -447,7 +447,7 @@
 
             <!-- Generate Modal with Alpine.js -->
             <div id="generateModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
-                <div class="relative top-5 mx-auto p-6 border w-[800px] max-w-4xl shadow-xl rounded-lg bg-white" 
+                <div class="relative top-5 mx-auto p-4 md:p-6 border w-full max-w-4xl md:w-[800px] shadow-xl rounded-lg bg-white" 
                      x-data="fileNumberGenerator()" x-init="console.log('X-INIT DIRECT LOG'); init()">
                     <div class="mt-3">
                         <!-- Modal Header -->
@@ -552,7 +552,7 @@
                                         <label class="flex items-center justify-center p-2 rounded-md border border-gray-200 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors">
                                             <input type="radio" name="allocation_source_type" value="default"
                                                    class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500" checked
-                                                   @change="_currentAllocationSourceType = 'default'; hasCustomFileName = false; allocatedByFilter = ''; defaultAllocationType = ''">
+                                                   @change="_currentAllocationSourceType = 'default'; hasCustomFileName = false; allocatedByFilter = ''; defaultAllocationType = ''; requireOpSource = false; subSource = ''">
                                             <span class="ml-2 text-xs font-medium text-gray-700 whitespace-nowrap">Default</span>
                                         </label>
 
@@ -596,7 +596,6 @@
                                     <input type="hidden" name="is_resettlement" :value="defaultAllocationType === 'resettlement' ? 1 : 0" x-show="allocatedByFilter === ''">
                                     </div>
                                 </div>
-                            </div>
 
                             <!-- Sections hidden when OP source is selected but not yet captured -->
                             <div x-show="!isOpFormHidden" x-transition.opacity.duration.200ms class="space-y-6">
@@ -698,8 +697,7 @@
                                                 <div x-show="hasCustomFileName || applicationType !== 'new' || allocatedByFilter === ''" x-cloak>
                                                     <input type="text" id="fileName" name="file_name" x-model="fileName"
                                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                           :class="{ 'bg-gray-100 opacity-75': isInherited }"
-                                                           :readonly="isInherited"
+                                                           :class="{ '': isInherited }"
                                                            placeholder="Enter file name">
                                                 </div>
 
@@ -735,11 +733,10 @@
                                                     Select Prefix
                                                 </label>
                                                 <!-- Hidden input to ensure Prefix is submitted if select is disabled -->
-                                                <input type="hidden" name="prefix" :value="prefix" :disabled="!isInherited">
-                                                <select id="prefix" :name="isInherited ? '' : 'prefix'" x-model="prefix" @change="handlePrefixChange($event)"
+
+                                                <select id="prefix" name="prefix" x-model="prefix" @change="handlePrefixChange($event)"
                                                         class="w-full px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                                                        :class="{ 'bg-gray-100 opacity-75 cursor-not-allowed': isInherited }"
-                                                        :disabled="isInherited">
+                                                        :class="{ '': isInherited }">
                                                     <option value="">Select Prefix</option>
                                                     <template x-for="px in filteredPrefixes" :key="px.id">
                                                         <option :value="px.prefix" :data-limit="px.land_use_id" x-text="px.prefix"></option>
@@ -754,8 +751,8 @@
                                                 </label>
                                                 <!-- Hidden input to ensure value is submitted if select is disabled -->
                                                 <input type="hidden" name="land_use" x-model="landUse">
-                                                <select id="landUse" x-model="landUse" disabled
-                                                        class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-500 cursor-not-allowed">
+                                                <select id="landUse" x-model="landUse"
+                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
                                                     <option value="">(Auto-selected)</option>
                                                     @foreach($landUses as $lu)
                                                         @php
@@ -785,9 +782,9 @@
                                                 <label for="purpose" class="block text-xs font-medium text-gray-600 mb-1">
                                                     Purpose
                                                 </label>
-                                                <select id="purpose" name="purpose_id" x-model="purpose" @change="updatePreview()"
-                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                                                        :disabled="!landUse && fileOption !== 'sit'" required>
+                                                 <select id="purpose" name="purpose_id" x-model="purpose" @change="updatePreview()"
+                                                         class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                                                         :disabled="fileOption === 'sit'" required>
                                                     <option value="">Select Purpose</option>
                                                     <template x-for="p in purposes" :key="p.id">
                                                         <option :value="p.id" x-text="p.name"></option>
@@ -800,9 +797,9 @@
                                                    Customer Type
                                                 </label>
                                                 <div class="flex items-center h-[42px]">
-                                                    <select id="customerType" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                                                        :class="{ 'bg-gray-100 opacity-75 cursor-not-allowed': fileOption === 'sit' }"
-                                                        name="customer_type" x-model="customerType" :disabled="fileOption === 'sit'" required>
+                                                     <select id="customerType" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                                                         :class="{ '': fileOption === 'sit' }"
+                                                         name="customer_type" x-model="customerType" :disabled="fileOption === 'sit'" required>
                                                         <option value="">Select Customer Type</option>
                                                         <option value="Individual">Individual</option>
                                                         <option value="Corporate">Corporate</option>
@@ -821,8 +818,7 @@
                                                 </label>
                                                 <input type="text" id="generatePhoneNo" name="phone_no" x-model="phone_no"
                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                       :class="{ 'bg-gray-100 opacity-75': isInherited }"
-                                                       :readonly="isInherited"
+                                                       :class="{ '': isInherited }"
                                                        placeholder="Enter Phone No">
                                             </div>
 
@@ -833,8 +829,7 @@
                                                 </label>
                                                 <input type="text" id="generateAddress" name="address" x-model="address"
                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
-                                                       :class="{ 'bg-gray-100 opacity-75': isInherited }"
-                                                       :readonly="isInherited"
+                                                       :class="{ '': isInherited }"
                                                        placeholder="Enter Address">
                                             </div>
                                         </div>
@@ -850,8 +845,7 @@
                                                     </label>
                                                     <input type="text" id="generateRepPhoneNo" name="rep_phone_no" x-model="rep_phone_no"
                                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                                           :class="{ 'bg-gray-100 opacity-75': isInherited }"
-                                                           :readonly="isInherited"
+                                                           :class="{ '': isInherited }"
                                                            placeholder="Rep Phone No">
                                                 </div>
 
@@ -861,8 +855,7 @@
                                                     </label>
                                                     <input type="text" id="generateRepAddress" name="rep_address" x-model="rep_address"
                                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm uppercase"
-                                                           :class="{ 'bg-gray-100 opacity-75': isInherited }"
-                                                           :readonly="isInherited"
+                                                           :class="{ '': isInherited }"
                                                            placeholder="Rep Address">
                                                 </div>
                                             </div>
@@ -1225,8 +1218,8 @@
                                                        :value="batchMode ? locationEntries[currentEntryIndex]?.plotNo : plotNo"
                                                        @input="batchMode ? updateLocationEntry('plotNo', $event.target.value) : plotNo = $event.target.value"
                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                       :class="{ 'bg-gray-100 opacity-75': isInherited }"
-                                                       :readonly="isInherited"
+                                                       :class="{ '': isInherited }"
+                                                       
                                                        placeholder="Enter plot number">
                                             </div>
 
@@ -1239,8 +1232,8 @@
                                                        :value="batchMode ? locationEntries[currentEntryIndex]?.tpNo : tpNo"
                                                        @input="batchMode ? updateLocationEntry('tpNo', $event.target.value) : tpNo = $event.target.value"
                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                       :class="{ 'bg-gray-100 opacity-75': isInherited }"
-                                                       :readonly="isInherited"
+                                                       :class="{ '': isInherited }"
+                                                       
                                                        placeholder="Enter TP number">
                                             </div>
 
@@ -1253,8 +1246,8 @@
                                                        :value="batchMode ? locationEntries[currentEntryIndex]?.location : location"
                                                        @input="batchMode ? updateLocationEntry('location', $event.target.value) : location = $event.target.value"
                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                       :class="{ 'bg-gray-100 opacity-75': isInherited }"
-                                                       :readonly="isInherited"
+                                                       :class="{ '': isInherited }"
+                                                       
                                                        placeholder="Enter location details" >
                                             </div>
 
@@ -1264,13 +1257,11 @@
                                                     LGA
                                                 </label>
                                                 <!-- Hidden input to ensure LGA is submitted if select is disabled -->
-                                                <input type="hidden" name="lga" :value="lga" :disabled="!isInherited">
-                                                <select id="generator_lga" :name="isInherited ? '' : 'lga'" 
+                                                <select id="generator_lga" name="lga" 
                                                         :value="batchMode ? locationEntries[currentEntryIndex]?.lga : lga"
                                                         @change="batchMode ? updateLocationEntry('lga', $event.target.value) : lga = $event.target.value"
                                                         class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                                                        :class="{ 'bg-gray-100 opacity-75 cursor-not-allowed': isInherited }"
-                                                        :disabled="isInherited">
+                                                        :class="{ '': isInherited }">
                                                     <option value="" >Select LGA</option>
                                                     @foreach($lgas as $lga)
                                                         <option value="{{ $lga->name }}">{{ $lga->name }}</option>
@@ -1304,9 +1295,9 @@
                                                         <i data-lucide="clock" class="w-3.5 h-3.5 inline mr-1 text-blue-500"></i>
                                                         Commissioning Time
                                                     </label>
-                                                    <input type="time" id="commissionTime" name="commission_time"
-                                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent bg-gray-100 sync-time text-sm"
-                                                           placeholder="Auto-filled" value="{{ date('H:i') }}">
+                                                     <input type="time" id="commissionTime" name="commission_time"
+                                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent bg-white sync-time text-sm"
+                                                            placeholder="Auto-filled" value="{{ date('H:i') }}">
                                                 </div>
 
                                                 <!-- Commission Date -->
@@ -1315,9 +1306,9 @@
                                                         <i data-lucide="calendar-check" class="w-3.5 h-3.5 inline mr-1 text-blue-500"></i>
                                                         Commissioning Date
                                                     </label>
-                                                    <input type="date" id="commissionDate" name="commission_date"                 
-                                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent bg-gray-100 sync-time text-sm"
-                                                           placeholder="Auto-filled" value="{{ date('Y-m-d') }}">
+                                                     <input type="date" id="commissionDate" name="commission_date"                 
+                                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent bg-white sync-time text-sm"
+                                                            placeholder="Auto-filled" value="{{ date('Y-m-d') }}">
                                                 </div>
                                             </div>
 
@@ -1327,9 +1318,9 @@
                                                     <i data-lucide="user-check" class="w-3.5 h-3.5 inline mr-1 text-blue-500"></i>
                                                     Commissioned By
                                                 </label>
-                                                <input type="text" id="commissionedBy" name="commissioned_by"  
-                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent bg-gray-100 text-sm"
-                                                       placeholder="Auto-filled" value="{{ Auth::user()->name }}">
+                                                 <input type="text" id="commissionedBy" name="commissioned_by"  
+                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent bg-white text-sm"
+                                                        placeholder="Auto-filled" value="{{ Auth::user()->name }}">
                                             </div>
                                         </div>
                                     </div>
@@ -1362,12 +1353,12 @@
                             </div><!-- end x-show !isOpFormHidden wrapper -->
 
                             <!-- OP capture pending message (shown when OP is selected but not yet captured) -->
-                            <div x-show="isOpFormHidden" x-transition.opacity.duration.200ms class="flex flex-col items-center justify-center p-8 text-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 min-h-[300px] overflow-hidden">
+                            <div x-show="isOpFormHidden" x-cloak x-transition.opacity.duration.200ms class="flex flex-col items-center justify-center p-8 text-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 min-h-[250px] overflow-hidden">
                                 <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
                                     <i data-lucide="info" class="w-8 h-8 text-blue-600"></i>
                                 </div>
                                 <h4 class="text-lg font-semibold text-gray-800 mb-2">Capture Occupancy Permit First</h4>
-                                <p class="text-gray-500 max-w-md mx-auto">Please select Direct Allocation or Resettlement above, then capture/select an Occupancy Permit (OP) record to continue with the commissioning process.</p>
+                                <p class="text-gray-500 max-w-md mx-auto text-sm">Please select <strong>Direct Allocation</strong> or <strong>Resettlement</strong> above, then capture/select an Occupancy Permit (OP) record to continue with the commissioning process.</p>
                             </div>
                         </form>
                     </div>
@@ -2453,13 +2444,13 @@
                 <!-- Count info boxes -->
                 <div id="bpCountInfo" class="hidden space-y-4">
                     <div class="grid grid-cols-3 gap-3">
-                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
-                            <span class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Total</span>
-                            <span id="bpTotalCount" class="text-2xl font-black text-slate-700">0</span>
+                        <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+                            <span class="block text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Total</span>
+                            <span id="bpTotalCount" class="text-2xl font-black text-blue-700">0</span>
                         </div>
-                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
-                            <span class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Printed</span>
-                            <span id="bpPrintedCount" class="text-2xl font-black text-slate-700">0</span>
+                        <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+                            <span class="block text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1">Printed</span>
+                            <span id="bpPrintedCount" class="text-2xl font-black text-amber-700">0</span>
                         </div>
                         <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center ring-2 ring-emerald-500/10">
                             <span class="block text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1">Unprinted</span>

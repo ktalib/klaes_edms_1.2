@@ -219,13 +219,19 @@ class GroupingFileNumberService
 
         // Auto-detect based on file number prefix first (High Priority)
         if ($f) {
+            $f = strtoupper($f);
             if (str_contains($f, 'GKN')) return 'gkn_grouping';
             if (str_contains($f, 'LPKN')) return 'lpkn_grouping';
             if (str_contains($f, 'MISC')) return 'miscs_kn_grouping';
             if (str_contains($f, 'SLTR')) return 'sltr_grouping';
             if (str_contains($f, 'SIT')) return 'sit_grouping';
             if (str_contains($f, 'DCIV')) return 'dciv_grouping';
-            if (str_contains($f, 'KNML') || str_contains($f, 'MLKN') || str_contains($f, 'MNKL') || str_contains($f, 'KNGP')) return 'kangis_grouping';
+            
+            // KANGIS variations
+            if (str_contains($f, 'KNML') || str_contains($f, 'MLKN') || str_contains($f, 'MNKL') || str_contains($f, 'KNGP') || str_contains($f, 'EGS')) {
+                return 'kangis_grouping';
+            }
+            
             // KN-series awaiting file numbers (KN1, KN2 … KN9999)
             if (preg_match('/^KN\d+$/i', $f)) return 'kn_grouping';
         }
