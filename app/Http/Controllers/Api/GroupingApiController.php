@@ -389,10 +389,13 @@ class GroupingApiController extends Controller
         LinkMlsFileNumberRequest $request,
         GroupingFileNumberService $service
     ): JsonResponse {
-        $mlsFileNumber = $request->validated()['mls_file_number'];
+        $validated = $request->validated();
+        $mlsFileNumber = $validated['mls_file_number'];
+        $awaitingFileNumber = $validated['awaiting_file_number'] ?? $mlsFileNumber;
+        $registry = $validated['registry'] ?? 'Lands Registry';
 
         try {
-            $result = $service->linkAwaitingToMls($mlsFileNumber);
+            $result = $service->linkAwaitingToMls($mlsFileNumber, $awaitingFileNumber, $registry);
         } catch (\InvalidArgumentException $exception) {
             return response()->json([
                 'success' => false,

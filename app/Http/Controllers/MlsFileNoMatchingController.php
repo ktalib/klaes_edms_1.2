@@ -28,7 +28,7 @@ class MlsFileNoMatchingController extends Controller
 
         // Calculate Statistics using CadastralShadowFile
         $stats = [
-            'total' => CadastralShadowFile::where('is_deleted', 0)->count(),
+            'total' => FileIndexing::where('is_corresponding_file', 1)->count(),
             'today' => CadastralShadowFile::where('is_deleted', 0)->whereDate('date_matched', date('Y-m-d'))->count(),
             'month' => CadastralShadowFile::where('is_deleted', 0)
                 ->whereMonth('date_matched', date('m'))

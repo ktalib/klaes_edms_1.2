@@ -102,11 +102,6 @@
             <i data-lucide="file-text" class="h-3.5 w-3.5 text-teal-400"></i>
             <span>Application</span>
           </a>
-          <a href="{{ route('consent-applications.index') }}"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('consent-applications.*') ? 'active' : '' }}">
-            <i data-lucide="mail" class="h-3.5 w-3.5 text-teal-400"></i>
-            <span>Letter</span>
-          </a>
         </div>
       @endif
 

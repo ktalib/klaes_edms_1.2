@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KLAES File Request Sheet</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f0f0f0;
+        }
+
+        .page {
+            width: 210mm;
+            height: 297mm;
+            padding: 10mm;
+            margin: 10mm auto;
+            background: white;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .half-page {
+            height: 138.5mm;
+            /* Roughly half of A4 minus some padding */
+            border-bottom: 1px dashed #ccc;
+            padding-bottom: 10mm;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+
+        td {
+            border: 1px solid black;
+            padding: 6px 10px;
+            font-size: 13px;
+            height: 24px;
+        }
+
+        .label {
+            width: 30%;
+            font-weight: bold;
+        }
+
+        .signatures {
+            display: flex;
+            justify-content: space-between;
+            margin-top: auto;
+            padding-bottom: 20px;
+        }
+
+        .sig-box {
+            width: 40%;
+            text-align: center;
+        }
+
+        .sig-line {
+            border-top: 1px solid #1a73e8;
+            margin-bottom: 5px;
+        }
+
+        .sig-text {
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            margin-top: 10px;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+        }
+
+        .logo-icon {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2px;
+            width: 20px;
+            height: 20px;
+            margin-right: 5px;
+        }
+
+        .logo-icon div {
+            border-radius: 2px;
+        }
+
+        .logo-red {
+            background: #d93025;
+        }
+
+        .logo-green {
+            background: #1e8e3e;
+        }
+
+        .logo-yellow {
+            background: #f9ab00;
+        }
+
+        .logo-black {
+            background: #202124;
+        }
+
+        .logo-text {
+            font-weight: bold;
+            font-size: 18px;
+            letter-spacing: 1px;
+        }
+
+        @media print {
+            body {
+                background: none;
+            }
+
+            .page {
+                margin: 0;
+                box-shadow: none;
+            }
+
+            .print-btn {
+                display: none;
+            }
+        }
+
+        .print-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: #000;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            z-index: 100;
+        }
+    </style>
+</head>
+
+<body>
+
+    <button class="print-btn" onclick="window.print()">Print</button>
+
+    <div class="page">
+        <!-- TOP HALF -->
+        <div class="half-page">
+            <div class="header">KLAES FILE REQUEST SHEET</div>
+
+            <table>
+                <tr>
+                    <td class="label">File Number</td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="label">File Title</td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="label">File Request Priority</td>
+                    <td>High / Medium / Low</td>
+                </tr>
+                <tr>
+                    <td class="label">Registry (Origin)</td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="label">Destination Office (Department)</td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="label">Receiving Office</td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="label">Receiving Officer</td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="label">Officer's Rank</td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="label" style="height: 60px; vertical-align: top;">Remark(s)</td>
+                    <td></td>
+                </tr>
+            </table>
+            <br><br>
+            <div class="signatures">
+                <div class="sig-box">
+                    <div class="sig-line"></div>
+                    <div class="sig-text">
+                        Signature and Date<br>
+                        <strong>Requester</strong>
+                    </div>
+                </div>
+                <div class="sig-box">
+                    <div class="sig-line"></div>
+                    <div class="sig-text">
+                        Signature and Date<br>
+                        <strong>Director Lands</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer">
+                <div class="logo-container">
+                    <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES Logo" style="height: 35px;">
+                </div>
+            </div>
+        </div>
+
+        <!-- BOTTOM HALF (Optional Duplicate or Empty) -->
+        <!-- If you want it only on the top half, we can leave the bottom empty or repeat it -->
+    </div>
+
+</body>
+
+</html>

@@ -708,7 +708,6 @@
                                     <option value="KNGP">KNGP</option>
                                     <option value="KNML">KNML</option>
                                     <option value="MLKN">MLKN</option>
-                                    <option value="OTHER">Other</option>
                                 </select>
                             </div>
                             <div class="flex-1">

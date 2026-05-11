@@ -320,11 +320,11 @@
                     </div>
                     <div class="md:col-span-1">
                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">File Title <span class="text-red-500">*</span></label>
-                        <input type="text" name="file_title" id="file_title" readonly class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-600">
+                        <input type="text" name="file_title" id="file_title" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-bold">
                     </div>
                     <div class="md:col-span-1">
                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Applicant Name</label>
-                        <input type="text" name="applicant_name" id="applicant_name" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
+                        <input type="text" name="applicant_name" id="applicant_name" oninput="document.getElementById('file_title').value = this.value" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
                     </div>
 
                     <div>

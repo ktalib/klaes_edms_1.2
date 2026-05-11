@@ -111,7 +111,7 @@
                         </div>
                     </div>
                     <div class="mt-4 pt-4 border-t border-white/10 flex items-center justify-between text-[10px] font-bold text-blue-100 uppercase tracking-widest">
-                        <span>All Cadastral Shadow Files</span>
+                        <span>All Indexed Records</span>
                         <span class="px-2 py-0.5 bg-white/20 text-white rounded-lg border border-white/20">CSF</span>
                     </div>
                 </div>

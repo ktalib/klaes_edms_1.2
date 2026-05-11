@@ -88,7 +88,7 @@
 
     <div id="ptl-nonweighted-section" class="space-y-3 pt-2 border-t border-gray-100">
         <div class="flex items-center justify-between">
-            <h4 class="text-sm font-semibold text-gray-800">Suporting Records</h4>
+            <h4 class="text-sm font-semibold text-gray-800">Supporting Records</h4>
             <span id="ptl-nonweighted-count" class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">0</span>
         </div>
         <div class="relative ptl-timeline-wrap">
@@ -143,6 +143,9 @@
     if (fullLink) fullLink.href = '/property-search/timeline?' + params.toString();
 
     const txns = payload.transactions || [];
+    const weightedTxnsSorted = payload.weighted || [];
+    const nonWeightedTxnsSorted = payload.omitted || [];
+
     const badgesEl = document.getElementById('ptl-source-badges');
     const totalEl = document.getElementById('ptl-total');
 
@@ -166,197 +169,6 @@
         });
     };
 
-    const normalize = (value) => String(value || '')
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, ' ')
-        .replace(/[.,]/g, '');
-
-    const cleanNumericValue = (value) => {
-        const s = String(value || '').trim();
-        if (!s || s === '-' || s.toLowerCase() === 'null' || s.toLowerCase() === 'n/a') return '';
-        return s.replace(/\s+/g, '');
-    };
-
-    // Same canonicalization used in the Legal Search weighting method.
-    const canonicalInstrumentType = (value) => {
-        const raw = normalize(value);
-        if (!raw || raw === '-') return raw;
-
-        if (raw.includes('right of occupancy') || raw.includes('right of occupanc')) return 'right of occupancy';
-        if (/^r\s*of\s*o$/.test(raw)) return 'right of occupancy';
-        const compact = raw.replace(/[^a-z0-9]/g, '');
-        if (/^r[o0]f[o0]$/.test(compact) || /^r[o0]f[o0]occupanc/.test(compact)) return 'right of occupancy';
-        if (raw === 'customary right of occupancy' || raw === 'statutory right of occupancy') return 'right of occupancy';
-
-        if (raw.includes('certificate of occupancy') || raw.includes('cert of occupancy')) return 'certificate of occupancy';
-        if (/^c\s*of\s*o$/.test(raw) || /^c[o0]f[o0]$/.test(compact)) return 'certificate of occupancy';
-
-        if (raw.includes('occupancy permit')) return 'occupancy permit';
-        if (/^o\s*p$/.test(raw) || compact === 'op') return 'occupancy permit';
-
-        if (raw.includes('transfer of title')) return 'transfer of title';
-
-        // Mortgage aliases — collapse file-history shorthand ("mortgage") and
-        // PRA variants ("tripartite/legal/equitable mortgage", "deed of mortgage")
-        // to a single canonical so reg-particulars dedup can pair them up.
-        if (raw === 'mortgage' || raw === 'deed of mortgage' ||
-            raw === 'tripartite mortgage' || raw === 'legal mortgage' || raw === 'equitable mortgage') {
-            return 'deed of mortgage';
-        }
-
-        // Assignment aliases — "assignment", "deed assignment", "deed of
-        // assignment" (and any trivial spacing / missing "of") all describe the
-        // same instrument. Matching on the word "assignment" safely groups
-        // PRA and file-history entries that share reg particulars.
-        if (/\bassignment\b/.test(raw) &&
-            !raw.includes('sub-assignment') &&
-            !raw.includes('re-assignment') &&
-            !raw.includes('reassignment')) {
-            return 'deed of assignment';
-        }
-
-        if (raw === 'deed of surrender' || raw === 'deed of release' || raw === 'deed of surrender & release') {
-            return 'deed of surrender and release';
-        }
-
-        // Power of Attorney variants → power of attorney
-        // Collapses "Power Of Attorney", "Irrevocable Power Of Attorney",
-        // "Deed Of Power Of Attorney", "POA", etc. to one canonical key so
-        // copies of the same instrument across PRA/FH dedupe correctly.
-        if (raw.includes('power of attorney')) return 'power of attorney';
-        if (compact === 'poa' || compact === 'ipoa') return 'power of attorney';
-
-        return raw;
-    };
-
-    const recordRichnessScore = (item) => {
-        if (!item) return 0;
-        const hasText = (v) => v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '-';
-        const hasReg  = (v) => {
-            if (v === null || v === undefined) return false;
-            const s = String(v).trim();
-            if (s === '' || s === '-' || s === '0') return false;
-            return true;
-        };
-        let score = 0;
-        if (hasText(item.party_1 || item.primary_party) || hasText(item.party_2 || item.secondary_party) || hasText(item.party_3)) score += 2;
-        const serial = item.serial_no ?? item.serialNo ?? '';
-        const page   = item.page_no   ?? item.pageNo   ?? '';
-        const volume = item.volume_no ?? item.volumeNo ?? '';
-        if (hasReg(serial) || hasReg(page) || hasReg(volume)) score += 2;
-        const txDate = item.sort_date ?? item.transaction_date ?? item.display_date ?? '';
-        if (hasText(txDate)) score += 2;
-        const regTime = item.reg_time ?? item.deeds_time ?? item.transaction_time ?? '';
-        if (hasText(regTime)) score += 2;
-        const regDate = item.reg_date ?? item.deeds_date ?? '';
-        if (hasText(regDate)) score += 2;
-        return score;
-    };
-
-    const sourceBaseScore = (row) => {
-        const source = String(row?.source_table || '').trim();
-        const transType = canonicalInstrumentType(row?.transaction_type || '');
-
-        // Requested precedence
-        if (transType === 'occupancy permit') return 10;
-        if (transType === 'transfer of title') return 9.5;
-        if (transType === 'right of occupancy') return 9;
-        if (source === 'CofO_staging' || transType === 'certificate of occupancy') return 8;
-
-        // Existing baseline for other records
-        if (source === 'pra') return 5;
-        if (source === 'file_history_staging') return 2.5;
-        return 1;
-    };
-
-    // Same key strategy as Legal Search:
-    // - PRA, File History, CofO and Deed Registration participate in dedup
-    // - reg particulars first
-    // - fallback party/date key, with ROFO date ignored
-    const recordKey = (row) => {
-        const source = String(row?.source_table || '').trim();
-        const dedupableSources = ['file_history_staging', 'pra', 'CofO_staging', 'deed_registrations'];
-        if (!dedupableSources.includes(source)) return null;
-
-        const transType = canonicalInstrumentType(row?.transaction_type || '');
-        if (!transType) return null;
-
-        const serialNo = cleanNumericValue(row?.serial_no) || '0';
-        const pageNo   = cleanNumericValue(row?.page_no) || '0';
-        const volumeNo = cleanNumericValue(row?.volume_no) || '0';
-        const hasRealReg = (serialNo !== '0' && serialNo !== '-') ||
-                           (pageNo !== '0' && pageNo !== '-') ||
-                           (volumeNo !== '0' && volumeNo !== '-');
-
-        if (hasRealReg) {
-            return 'reg|' + transType + '|' + serialNo + '/' + pageNo + '/' + volumeNo;
-        }
-
-        const party1 = normalize(row?.party_1 || row?.primary_party || '');
-        const party2 = normalize(row?.party_2 || row?.secondary_party || '');
-        const party3 = normalize(row?.party_3 || '');
-        const party4 = normalize(row?.party_4 || '');
-        const date = transType === 'right of occupancy'
-            ? ''
-            : normalize(row?.sort_date || row?.transaction_date || row?.display_date || '');
-
-        const hasSignal = [transType, party1, party2, date].some(Boolean);
-        if (!hasSignal) return null;
-
-        return [transType, party1, party2, party3, party4, date].join('|');
-    };
-
-    const classifyWeighting = (rows) => {
-        const deduped = [];
-        const keyToIndex = new Map();
-        const keyToAllRows = new Map();
-
-        rows.forEach((row, idx) => {
-            row._ptl_idx = idx;
-            // Match Legal Search behavior: rows outside PRA/FH dedup groups are unique/weighted.
-            row._ptl_weighting_status = 'unique';
-            row._ptl_weighting_score = sourceBaseScore(row);
-
-            const key = recordKey(row);
-            if (!key) {
-                deduped.push(row);
-                return;
-            }
-
-            if (!keyToAllRows.has(key)) keyToAllRows.set(key, []);
-            keyToAllRows.get(key).push(row);
-
-            const existingIndex = keyToIndex.get(key);
-            if (existingIndex === undefined) {
-                keyToIndex.set(key, deduped.length);
-                deduped.push(row);
-                return;
-            }
-
-            const existing = deduped[existingIndex];
-            const rowRichness = recordRichnessScore(row);
-            const existingRichness = recordRichnessScore(existing);
-
-            if (rowRichness > existingRichness) {
-                deduped[existingIndex] = row;
-            } else if (rowRichness === existingRichness && sourceBaseScore(row) > sourceBaseScore(existing)) {
-                deduped[existingIndex] = row;
-            }
-        });
-
-        const winnerRows = new Set(deduped);
-        keyToAllRows.forEach((groupRows) => {
-            const isDuplicated = groupRows.length > 1;
-            groupRows.forEach((row) => {
-                const isWinner = winnerRows.has(row);
-                row._ptl_weighting_status = isDuplicated
-                    ? (isWinner ? 'preferred' : 'duplicate')
-                    : 'unique';
-            });
-        });
-    };
-
     // Timeline items
     const weightedItemsEl = document.getElementById('ptl-items-weighted');
     const nonWeightedItemsEl = document.getElementById('ptl-items-nonweighted');
@@ -375,54 +187,23 @@
         return;
     }
 
-    classifyWeighting(txns);
-
-    // Weighted = preferred/unique surviving rows.
-    // Supporting = duplicate rows that lost to a preferred winner (still shown
-    // in their own section so users can see the full history).
-    const weightedTxns = txns.filter(t => t._ptl_weighting_status === 'preferred' || t._ptl_weighting_status === 'unique');
-    const nonWeightedTxns = txns.filter(t => t._ptl_weighting_status === 'duplicate');
-
-    const parseTxnTime = (t) => {
-        const candidate = t?.sort_date || t?.transaction_date || t?.display_date || '';
-        const d = new Date(candidate);
-        return Number.isNaN(d.getTime()) ? null : d.getTime();
-    };
-
-    const sortByPriorityThenDate = (rows) => {
-        return [...rows].sort((a, b) => {
-            const ra = recordRichnessScore(a);
-            const rb = recordRichnessScore(b);
-            if (ra !== rb) return rb - ra;
-
-            const wa = sourceBaseScore(a);
-            const wb = sourceBaseScore(b);
-            if (wa !== wb) return wb - wa;
-
-            const ta = parseTxnTime(a);
-            const tb = parseTxnTime(b);
-            if (ta === null && tb === null) return (Number(a.id) || 0) - (Number(b.id) || 0);
-            if (ta === null) return 1;
-            if (tb === null) return -1;
-            if (ta !== tb) return ta - tb;
-
-            return (Number(a.id) || 0) - (Number(b.id) || 0);
-        });
-    };
-
-    const weightedTxnsSorted = sortByPriorityThenDate(weightedTxns);
-    const nonWeightedTxnsSorted = sortByPriorityThenDate(nonWeightedTxns);
-    const displayedTxns = weightedTxnsSorted.concat(nonWeightedTxnsSorted);
-
     // Keep summary cards consistent with what the modal actually renders.
-    renderSourceBadges(displayedTxns);
-    if (totalEl) totalEl.textContent = String(displayedTxns.length);
+    renderSourceBadges(txns);
+    if (totalEl) totalEl.textContent = String(weightedTxnsSorted.length);
 
     if (weightedCountEl) weightedCountEl.textContent = String(weightedTxnsSorted.length);
     if (nonWeightedCountEl) nonWeightedCountEl.textContent = String(nonWeightedTxnsSorted.length);
 
-    if (weightedSectionEl) weightedSectionEl.classList.toggle('hidden', weightedTxnsSorted.length === 0);
-    if (nonWeightedSectionEl) nonWeightedSectionEl.classList.toggle('hidden', nonWeightedTxnsSorted.length === 0);
+    if (weightedSectionEl) {
+        weightedSectionEl.classList.toggle('hidden', weightedTxnsSorted.length === 0);
+        const header = weightedSectionEl.querySelector('h4');
+        if (header) header.textContent = 'Primary Timeline';
+    }
+    if (nonWeightedSectionEl) {
+        nonWeightedSectionEl.classList.toggle('hidden', nonWeightedTxnsSorted.length === 0);
+        const header = nonWeightedSectionEl.querySelector('h4');
+        if (header) header.textContent = 'Supporting Records';
+    }
 
     const renderTxnCard = (t) => {
         const color  = dotColors[t.source_table] || '#6b7280';

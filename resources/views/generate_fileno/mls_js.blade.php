@@ -176,34 +176,46 @@
         const displayEl = document.getElementById('trackingIdDisplay');
         if (displayEl) {
             displayEl.textContent = text;
+            // Add visual cue for empty/reset state
+            displayEl.classList.remove('text-green-600', 'text-blue-600');
+            displayEl.classList.add('text-red-600');
         }
-
+        
         const inputEl = document.getElementById('trackingIdInput');
         if (inputEl) {
             inputEl.value = '';
         }
-
+        
+        // Clear last successful number to ensure reactivity when switching back and forth
         groupingLookupState.lastSuccessfulNumber = null;
         setActionButtonsDisabled(true);
     }
 
     function applyTrackingIdToDisplay(trackingId, fallbackText = '--') {
-        const value = (trackingId || '').trim();
-        const displayValue = value !== '' ? value : fallbackText;
+        const displayValue = trackingId || fallbackText;
+        
+        const inputEl = document.getElementById('trackingIdInput');
+        if (inputEl) {
+            inputEl.value = trackingId || '';
+        }
 
         const displayEl = document.getElementById('trackingIdDisplay');
         if (displayEl) {
             displayEl.textContent = displayValue;
+            
+            // Visual feedback - always red as per user request
+            displayEl.classList.remove('text-green-600', 'text-blue-600', 'text-gray-500');
+            displayEl.classList.add('text-red-600');
+            
+            if (!trackingId) {
+                // Clear cache if not found so we can try again if user re-enters
+                groupingLookupState.lastSuccessfulNumber = null;
+            }
         }
 
         const summaryTrackingEl = document.getElementById('summaryTrackingId');
         if (summaryTrackingEl) {
             summaryTrackingEl.textContent = displayValue;
-        }
-
-        const inputEl = document.getElementById('trackingIdInput');
-        if (inputEl) {
-            inputEl.value = value;
         }
     }
 
@@ -221,20 +233,20 @@
             preview = preview.split(' to ')[0].trim();
         }
 
+        // If we have an existing file number (from OP capture, subdivision, etc.),
+        // it's the primary candidate for finding the record in the grouping/index table.
+        if (existing !== '' && (fileOption === 'normal' || fileOption === 'temporary' || fileOption === 'extension')) {
+            return existing;
+        }
+
         if (!fileOption) {
             return preview;
         }
 
         switch (fileOption) {
             case 'extension':
-                if (existing !== '') {
-                    return existing;
-                }
                 return preview.replace(/\s+AND\s+EXTENSION$/i, '').trim();
             case 'temporary':
-                if (existing !== '') {
-                    return existing;
-                }
                 return preview.replace(/\(T\)\s*$/i, '').trim();
             case 'old_mls':
                 return preview.replace(/\s+/g, '-');
@@ -284,6 +296,24 @@
         const timeoutHandle = setTimeout(() => controller.abort(), GROUPING_LOOKUP_TIMEOUT_MS);
 
         try {
+            // Get the actual preview text (the target MLS number) from Alpine state
+            // Target the element that actually holds the x-data
+            const modalEl = document.querySelector('[x-data^="fileNumberGenerator"]');
+            const state = modalEl?._x_dataStack ? modalEl._x_dataStack[0] : {};
+            const targetMlsNumber = state.preview || '';
+            
+            // Find registry name if possible
+            const registrySelect = document.getElementById('mlsfRegistry');
+            const registryName = registrySelect?.options[registrySelect.selectedIndex]?.text || 'Lands Registry';
+
+            const payload = { 
+                mls_file_number: targetMlsNumber || '-',
+                awaiting_file_number: fileNumber,
+                registry: registryName
+            };
+            
+            console.log('Grouping Lookup Request:', payload);
+
             const response = await fetch("{{ route('api.grouping.link-mls') }}", {
                 method: 'POST',
                 headers: {
@@ -291,19 +321,19 @@
                     'X-CSRF-TOKEN': csrfToken
                 },
                 signal: controller.signal,
-                body: JSON.stringify({ mls_file_number: fileNumber })
+                body: JSON.stringify(payload)
             });
 
             clearTimeout(timeoutHandle);
 
-            const payload = await response.json();
+            const responseData = await response.json();
 
             if (groupingLookupState.inFlightRequestId !== requestId) {
                 return;
             }
 
-            if (response.ok && payload.success) {
-                const trackingId = (payload.data?.tracking_id ?? '').trim();
+            if (response.ok && responseData.success) {
+                const trackingId = (responseData.data?.tracking_id ?? '').trim();
                 applyTrackingIdToDisplay(trackingId, '--');
 
                 groupingLookupState.lastSuccessfulNumber = fileNumber;
@@ -319,7 +349,7 @@
                     });
                 }
             } else {
-                handleGroupingLookupError(payload, response.status);
+                handleGroupingLookupError(responseData, response.status);
             }
         } catch (error) {
             clearTimeout(timeoutHandle);
@@ -3104,6 +3134,7 @@
             copApplicantName: '',
             copCurrentLandUse: '',
             copNewPurpose: '',
+            newPurpose: '', // Added missing property to fix ReferenceError
 
             // Batch Mode Properties
             batchMode: false,

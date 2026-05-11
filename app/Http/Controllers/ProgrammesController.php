@@ -255,6 +255,8 @@ class ProgrammesController extends Controller
         $primaryInitialBills = DB::connection('sqlsrv')->table('mother_applications')
             ->select(
                 'id',
+                'id as application_id',
+                DB::raw('NULL as sub_application_id'),
                 'applicationID',
                 'application_fee as primary_application_fee',
                 'processing_fee as primary_processing_fee',
@@ -285,6 +287,7 @@ class ProgrammesController extends Controller
         $unitInitialBills = DB::connection('sqlsrv')->table('subapplications')
             ->select(
                 'id',
+                'id as sub_application_id',
                 'main_application_id as application_id',
                 'application_fee as unit_application_fee',
                 'processing_fee as unit_processing_fee',

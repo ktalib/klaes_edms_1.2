@@ -195,163 +195,78 @@ class PropertySearchController extends Controller
         $connection = DB::connection('sqlsrv');
         $transactions = collect();
 
-        // --- file_history_staging ---
-        $fhQuery = $connection->table('file_history_staging')
-            ->select([
-                'id',
-                DB::raw("COALESCE(mlsFNo, fileno) AS file_number"),
-                'transaction_type',
-                'transaction_date',
-                'party_1',
-                'party_2',
-                'party_3',
-                DB::raw("Assignor AS assignor"),
-                DB::raw("Assignee AS assignee"),
-                DB::raw("Mortgagor AS mortgagor"),
-                DB::raw("Mortgagee AS mortgagee"),
-                DB::raw("Grantor AS grantor"),
-                DB::raw("Grantee AS grantee"),
-                DB::raw("Surrenderor AS surrenderor"),
-                DB::raw("Surrenderee AS surrenderee"),
-                DB::raw("Lessor AS lessor"),
-                DB::raw("Lessee AS lessee"),
-                'land_use',
-                'location',
-                DB::raw("serialNo AS serial_no"),
-                DB::raw("pageNo AS page_no"),
-                DB::raw("volumeNo AS volume_no"),
-                'regNo',
-                'prop_id',
-                'comments',
-                DB::raw("'file_history_staging' AS source_table"),
-            ]);
+        // --- 1. Fetch raw rows from all sources ---
+        $fhQuery = $connection->table('file_history_staging')->where(fn($q) => $q->whereNull('is_deleted')->orWhere('is_deleted', 0));
         $this->applyFileOrPropFilter($fhQuery, $fileNumber, $propId, ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno']);
-        $fhRows = $fhQuery->get()->map(fn($r) => $this->normalizeTimelineRow($r, 'file_history_staging'));
+        $fhRows = $fhQuery->get();
 
-        // --- CofO_staging ---
-        $cofoQuery = $connection->table('CofO_staging')
-            ->select([
-                'id',
-                DB::raw("COALESCE(mlsFNo, fileno) AS file_number"),
-                'transaction_type',
-                'transaction_date',
-                DB::raw("NULL AS party_1"),
-                DB::raw("NULL AS party_2"),
-                DB::raw("NULL AS party_3"),
-                DB::raw("Assignor AS assignor"),
-                DB::raw("Assignee AS assignee"),
-                DB::raw("Mortgagor AS mortgagor"),
-                DB::raw("Mortgagee AS mortgagee"),
-                DB::raw("Grantor AS grantor"),
-                DB::raw("Grantee AS grantee"),
-                DB::raw("Surrenderor AS surrenderor"),
-                DB::raw("Surrenderee AS surrenderee"),
-                DB::raw("Lessor AS lessor"),
-                DB::raw("Lessee AS lessee"),
-                'land_use',
-                'location',
-                DB::raw("serialNo AS serial_no"),
-                DB::raw("pageNo AS page_no"),
-                DB::raw("volumeNo AS volume_no"),
-                'regNo',
-                'prop_id',
-                'comments',
-                DB::raw("'CofO_staging' AS source_table"),
-            ]);
+        $cofoQuery = $connection->table('CofO_staging')->whereNull('deleted_at');
         $this->applyFileOrPropFilter($cofoQuery, $fileNumber, $propId, ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno']);
-        $cofoRows = $cofoQuery->get()->map(fn($r) => $this->normalizeTimelineRow($r, 'CofO_staging'));
+        $cofoRows = $cofoQuery->get();
 
-        // --- pra ---
-        $praQuery = $connection->table('pra')
-            ->select([
-                'id',
-                DB::raw("COALESCE(mlsFNo, fileno) AS file_number"),
-                'transaction_type',
-                'transaction_date',
-                'party_1',
-                'party_2',
-                'party_3',
-                DB::raw("Assignor AS assignor"),
-                DB::raw("Assignee AS assignee"),
-                DB::raw("Mortgagor AS mortgagor"),
-                DB::raw("Mortgagee AS mortgagee"),
-                DB::raw("Grantor AS grantor"),
-                DB::raw("Grantee AS grantee"),
-                DB::raw("Surrenderor AS surrenderor"),
-                DB::raw("Surrenderee AS surrenderee"),
-                DB::raw("Lessor AS lessor"),
-                DB::raw("Lessee AS lessee"),
-                'land_use',
-                'location',
-                DB::raw("serialNo AS serial_no"),
-                DB::raw("pageNo AS page_no"),
-                DB::raw("volumeNo AS volume_no"),
-                'regNo',
-                'prop_id',
-                DB::raw("comments"),
-                DB::raw("'pra' AS source_table"),
-            ]);
+        $praQuery = $connection->table('pra')->where(fn($q) => $q->whereNull('is_deleted')->orWhere('is_deleted', 0));
         $this->applyFileOrPropFilter($praQuery, $fileNumber, $propId, ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno']);
-        $praRows = $praQuery->get()->map(fn($r) => $this->normalizeTimelineRow($r, 'pra'));
+        $praRows = $praQuery->get();
 
-        // --- deed_registrations (uses deeds_date as transaction_date) ---
-        $deedQuery = $connection->table('deed_registrations')
-            ->select([
-                'id',
-                DB::raw("fileno AS file_number"),
-                DB::raw("instrument_type AS transaction_type"),
-                DB::raw("deeds_date AS transaction_date"),
-                DB::raw("grantor AS party_1"),
-                DB::raw("grantee AS party_2"),
-                DB::raw("NULL AS party_3"),
-                DB::raw("NULL AS assignor"),
-                DB::raw("NULL AS assignee"),
-                DB::raw("NULL AS mortgagor"),
-                DB::raw("NULL AS mortgagee"),
-                DB::raw("grantor"),
-                DB::raw("grantee"),
-                DB::raw("NULL AS surrenderor"),
-                DB::raw("NULL AS surrenderee"),
-                DB::raw("NULL AS lessor"),
-                DB::raw("NULL AS lessee"),
-                DB::raw("NULL AS land_use"),
-                DB::raw("COALESCE(district, lga) AS location"),
-                'serial_no',
-                'page_no',
-                'volume_no',
-                DB::raw("registration_number AS regNo"),
-                'prop_id',
-                DB::raw("property_description AS comments"),
-                DB::raw("'deed_registrations' AS source_table"),
-            ]);
+        $deedQuery = $connection->table('deed_registrations')->where(fn($q) => $q->whereNull('is_deleted')->orWhere('is_deleted', 0));
         $this->applyFileOrPropFilter($deedQuery, $fileNumber, $propId, ['fileno', 'parent_fileno']);
+        $deedRows = $deedQuery->get();
 
-        $deedRows = $deedQuery->get()->map(fn($r) => $this->normalizeTimelineRow($r, 'deed_registrations'));
+        // --- 2. Normalize and Deduplicate using Service ---
+        $allRawNormalized = [];
+        foreach ($fhRows as $r) $allRawNormalized[] = $this->timelineService->normalizeRow($r, 'file_history_staging');
+        foreach ($cofoRows as $r) $allRawNormalized[] = $this->timelineService->normalizeRow($r, 'CofO_staging');
+        foreach ($praRows as $r) $allRawNormalized[] = $this->timelineService->normalizeRow($r, 'pra');
+        foreach ($deedRows as $r) $allRawNormalized[] = $this->timelineService->normalizeRow($r, 'deed_registrations');
 
-        // Merge and sort chronologically
-        $transactions = $fhRows->concat($cofoRows)->concat($praRows)->concat($deedRows);
+        $analysis = $this->timelineService->getWeightingAnalysis($allRawNormalized);
+        $weightedRaw = $analysis['weighted'];
+        $omittedRaw = $analysis['omitted'];
 
-        $transactions = $transactions->sortBy(function ($t) {
-            if (!$t['sort_date']) {
-                return '9999-12-31';
-            }
-            return $t['sort_date'];
-        })->values();
+        // --- 3. Normalize for View ---
+        $normalizeForView = function ($row) {
+            $normalized = $this->normalizeTimelineRow((object)$row, $row['source_table']);
+            // Add weighting info for JS
+            $normalized['_ptl_weighting_status'] = $row['_ptl_weighting_status'] ?? null; 
+            return $normalized;
+        };
 
-        $displayFileNumber = $fileNumber ?: ($transactions->first()['file_number'] ?? $propId);
+        $weightedTxns = collect($weightedRaw)->map($normalizeForView);
+        $omittedTxns = collect($omittedRaw)->map($normalizeForView);
 
-        $firstTxn = $transactions->first();
-        $lastTxn = $transactions->last();
+        // --- 4. Sort Chronologically ---
+        $sortByDate = function ($transactions) {
+            return $transactions->sortBy(function ($t) {
+                if (!$t['sort_date']) {
+                    return '9999-12-31';
+                }
+                return $t['sort_date'];
+            })->values();
+        };
+
+        $weightedTxns = $sortByDate($weightedTxns);
+        $omittedTxns = $sortByDate($omittedTxns);
+
+        $allTransactions = $weightedTxns->concat($omittedTxns);
+
+        $displayFileNumber = $fileNumber ?: ($weightedTxns->first()['file_number'] ?? ($omittedTxns->first()['file_number'] ?? $propId));
+
+        $firstTxn = $weightedTxns->first() ?? $omittedTxns->first();
+        $lastTxn = $weightedTxns->last() ?? $omittedTxns->last();
 
         $historyPayload = [
             'fileNumber'        => $displayFileNumber,
             'propId'            => $propId ?: ($firstTxn['prop_id'] ?? null),
             'landuse'           => $firstTxn['land_use'] ?? null,
             'location'          => $firstTxn['location'] ?? null,
-            'totalTransactions' => $transactions->count(),
+            'totalTransactions' => $weightedTxns->count(), // Badge count is weighted
             'originalOwner'     => $firstTxn['primary_party'] ?? null,
             'currentOwner'      => $lastTxn['primary_party'] ?? null,
-            'transactions'      => $transactions->toArray(),
+            'transactions'      => $allTransactions->toArray(),
+            'weightedCount'     => $weightedTxns->count(),
+            'omittedCount'      => $omittedTxns->count(),
+            'weighted'          => $weightedTxns->toArray(),
+            'omitted'           => $omittedTxns->toArray(),
         ];
 
         $viewData = [

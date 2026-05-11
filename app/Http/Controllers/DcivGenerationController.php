@@ -80,21 +80,24 @@ class DcivGenerationController extends Controller
         $orderDir = strtolower($request->input('order.0.dir', 'desc')) === 'asc' ? 'ASC' : 'DESC';
 
         // Map DataTables column index to DB column (matches JS columns order)
+        // JS index 0 is S/N (not orderable)
         $columns = [
-            0 => 'full_file_number',
-            1 => 'related_fileno',
-            2 => 'file_name',
-            3 => 'plot_no',
+            0 => 'sn', // Placeholder
+            1 => 'full_file_number',
+            2 => 'related_fileno',
+            3 => 'file_name',
             4 => 'tp_no',
-            5 => 'lga',
-            6 => 'location',
-            7 => 'created_by_name',
-            8 => 'commissioning_time',
-            9 => 'record_created_at',
-            10 => 'source_table',
+            5 => 'plot_no',
+            6 => 'lga',
+            7 => 'location',
+            8 => 'created_by_name',
+            9 => 'commissioning_time',
+            10 => 'record_created_at',
+            11 => 'source_table',
         ];
+        
         $orderColumn = $columns[$orderColumnIndex] ?? 'record_created_at';
-        if (!in_array($orderColumn, $columns)) {
+        if ($orderColumn === 'sn' || !in_array($orderColumn, $columns)) {
             $orderColumn = 'record_created_at';
         }
 
@@ -176,7 +179,9 @@ class DcivGenerationController extends Controller
         }
 
         // Fetch paginated records with ordering
-        $dataSql = "SELECT * FROM ({$combinedSql}) as t {$searchWhere} ORDER BY [{$orderColumn}] {$orderDir} OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+        // Priority Sort: 'dciv_file_no' (COMMISSIONED) records come first (0), then 'file_indexings' (INDEXED FILE) (1).
+        $prioritySort = "CASE WHEN source_table = 'dciv_file_no' THEN 0 ELSE 1 END ASC";
+        $dataSql = "SELECT * FROM ({$combinedSql}) as t {$searchWhere} ORDER BY {$prioritySort}, [{$orderColumn}] {$orderDir} OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
         $records = $conn->select($dataSql, array_merge($bindings, [$start, $length]));
 
         // --- Batch pre-fetch: eliminates N+1 queries for related files and batch counts ---

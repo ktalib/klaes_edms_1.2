@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice - KANGIS File Tracker & Executive Dashboard</title>
+    <style>
+        body {
+            font-family: 'Times New Roman', Times, serif;
+            margin: 0;
+            padding: 40px;
+            color: #000;
+            line-height: 1.5;
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #000;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+
+        .header-left h1 {
+            margin: 0;
+            font-size: 24px;
+            text-transform: uppercase;
+        }
+
+        .project-meta {
+            margin-top: 10px;
+        }
+
+        .header-right {
+            text-align: right;
+        }
+
+        .total-box {
+            border: 2px solid #000;
+            padding: 5px 15px;
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        h2 {
+            font-size: 18px;
+            text-decoration: underline;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+        }
+
+        .section-content {
+            margin-left: 20px;
+        }
+
+        .item {
+            margin-bottom: 15px;
+        }
+
+        .item-title {
+            font-weight: bold;
+            font-size: 15px;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        ul {
+            margin: 5px 0;
+            padding-left: 25px;
+        }
+
+        li {
+            margin-bottom: 3px;
+        }
+
+        .footer {
+            margin-top: 50px;
+            border-top: 1px solid #000;
+            padding-top: 10px;
+            text-align: right;
+        }
+
+        .grand-total {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        @media print {
+            body {
+                padding: 20px;
+            }
+
+            .print-btn {
+                display: none;
+            }
+        }
+
+        .print-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #000;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: sans-serif;
+        }
+    </style>
+</head>
+
+<body>
+
+    <button class="print-btn" onclick="window.print()">Print to PDF</button>
+
+    <div class="container">
+        <header>
+            <div class="header-left">
+                <h1>Service Invoice</h1>
+                <div class="project-meta">
+                    <strong>Project:</strong> KLAES - LAnd ADmin Enterprise System<br>
+                    <strong>Module:</strong> KANGIS & File Tracking Infrastructure
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="total-box">₦ 12,000,000</div>
+                <div style="font-size: 12px; margin-top: 5px;">FINAL TOTAL</div>
+            </div>
+        </header>
+
+        <p>This document details the deliverables for the KANGIS File Tracking and Executive Dashboard development.</p>
+
+        <h2>I. Core KANGIS Components & Tracking</h2>
+        <div class="section-content">
+            <div class="item">
+                <span class="item-title">1. KANGIS Tracking (3 Streams)</span>
+                <ul>
+                    <li><strong>Existing File Tracking:</strong> Migration and live tracking for legacy land records.
+                    </li>
+                    <li><strong>New File Tracking:</strong> Dedicated portal for New KANGIS Files with 9 Stage Workflow.
+                    </li>
+                    <li><strong>Handshake Protocol:</strong> Routing logic for file movements between KANGIS and Land
+                        registry.</li>
+                </ul>
+            </div>
+
+            <div class="item">
+                <span class="item-title">2. Digital Archive & EDMS Integration</span>
+                <ul>
+                    <li><strong>Archival Repository:</strong> Digital vault for historical KANGIS Files.</li>
+                    <li><strong>EDMS:</strong> Direct linking for property file history retrieval within the tracking
+                        workflow.</li>
+                </ul>
+            </div>
+
+            <div class="item">
+                <span class="item-title">3. Recertification Module</span>
+                <ul>
+                    <li>Verification workflow for historical titles and automated document generation.</li>
+                </ul>
+            </div>
+
+            <div class="item">
+                <span class="item-title">4. LuC (Land Use Charge)</span>
+                <ul>
+                    <li>Development of the Land Use Charge billing module (Initial design and database integration
+                        phase).</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>II. Specialized Features & Executive Suite</h2>
+        <div class="section-content">
+            <div class="item">
+                <span class="item-title">1. KLAES-ArcMap Connection</span>
+                <ul>
+                    <li>Direct integration linking the KLAES database with spatial parcel layers for automated Demand
+                        Notice generation.</li>
+                </ul>
+            </div>
+
+            <div class="item">
+                <span class="item-title">2. Executive Oversight & Approval Dashboards</span>
+                <ul>
+                    <li><strong>DGIS:</strong> Approval and routing interface for the Director GIS.</li>
+                    <li><strong>DG:</strong> Global command center for the Director General to monitor all registry
+                        streams.</li>
+                </ul>
+            </div>
+
+            <div class="item">
+                <span class="item-title">3. Executive KPI Engine</span>
+                <ul>
+                    <li>Real-time analytics for throughput, volume, and requester metrics across all registries.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="footer">
+            <div class="grand-total">Total Project Cost: ₦ 12,000,000</div>
+            <p>Generated on May 11, 2026 | KLAES Land Administration System</p>
+        </div>
+    </div>
+
+</body>
+
+</html>

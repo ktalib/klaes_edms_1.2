@@ -8,14 +8,17 @@ use Illuminate\Support\Facades\Schema;
 
 class GroupingFileNumberService
 {
-    public function linkAwaitingToMls(string $fileNumber): array
+    public function linkAwaitingToMls(string $fileNumber, ?string $awaitingFileNumber = null, string $registryType = 'Lands Registry'): array
     {
         $fileNumber = trim($fileNumber);
-        $res = $this->bulkLinkAwaitingToMls([$fileNumber], true);
-        return $res[$fileNumber] ?? [
+        $awaitingFileNumber = $awaitingFileNumber ? trim($awaitingFileNumber) : $fileNumber;
+        
+        $res = $this->bulkLinkAwaitingToMls([$awaitingFileNumber], true, $registryType, $fileNumber);
+        
+        return $res[$awaitingFileNumber] ?? [
             'status' => 'error',
             'record' => null,
-            'meta' => ['message' => 'Processing failed for ' . $fileNumber]
+            'meta' => ['message' => 'Processing failed for ' . $awaitingFileNumber]
         ];
     }
 
@@ -25,7 +28,7 @@ class GroupingFileNumberService
      * @param array $fileNumbers
      * @param bool $returnFullRecords If false, skips fetching the updated record to save performance
      */
-    public function bulkLinkAwaitingToMls(array $fileNumbers, bool $returnFullRecords = true): array
+    public function bulkLinkAwaitingToMls(array $fileNumbers, bool $returnFullRecords = true, string $registryType = 'Lands Registry', ?string $overrideMls = null): array
     {
         $fileNumbers = array_unique(array_filter(array_map('trim', $fileNumbers)));
         if (empty($fileNumbers)) {
@@ -38,7 +41,6 @@ class GroupingFileNumberService
         // Auto-detect table based on the first file number to support bulk multi-table 
         // while assuming consistent batch registry (standard for batch ops)
         $firstFile = reset($fileNumbers);
-        $registryType = 'Lands Registry';
         $table = $this->getTableName($registryType, $firstFile);
         $fileNoColumn = $this->getColumnNameByTable($table);
         $mlsColumn = $this->getMlsColumnName($table);
@@ -88,7 +90,7 @@ class GroupingFileNumberService
             if (!$this->stringsEqual($currentMls, $fullFileNumber) || $currentMapping !== 1) {
                 $entry = [
                     'id' => $record->id,
-                    'mls_fileno' => $fullFileNumber,
+                    'mls_fileno' => $overrideMls ?? $fullFileNumber,
                 ];
                 // Auto-generate tracking_id if missing
                 $hasTrackingId = !empty($record->tracking_id ?? null);

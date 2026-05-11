@@ -573,22 +573,14 @@
                                         </label>
                                     </div>
 
-                                    <!-- Allocation Options - Row 2 (Hidden by default, shown only when OP is selected) -->
-                                    <div class="grid grid-cols-2 gap-2" x-show="_currentAllocationSourceType === 'op'" x-transition>
-                                        <!-- Resettlement -->
-                                        <label class="flex items-center justify-center p-2 rounded-md border border-gray-200 bg-white cursor-pointer hover:bg-gray-50 transition-colors">
-                                            <input type="radio" name="allocation_source_type" value="resettlement"
-                                                   class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                                                   @change="_currentAllocationSourceType = 'resettlement'; allocatedByFilter = ''; defaultAllocationType = 'resettlement'; openCommissionOpCaptureModal('resettlement')">
-                                            <span class="ml-2 text-xs font-medium text-gray-700 whitespace-nowrap">Resettlement</span>
-                                        </label>
-
-                                        <!-- Direct Allocation -->
-                                        <label class="flex items-center justify-center p-2 rounded-md border border-gray-200 bg-white cursor-pointer hover:bg-gray-50 transition-colors">
+                                    <!-- Allocation Options - Row 2 (Shown only when OP is selected) -->
+                                    <div class="grid grid-cols-1 gap-2" x-show="_currentAllocationSourceType === 'op'" x-transition>
+                                        <!-- New Applications (Existing OP Change of Name) -->
+                                        <label class="flex items-center justify-center p-3 rounded-md border border-blue-200 bg-blue-50/60 cursor-pointer hover:bg-blue-100 transition-colors">
                                             <input type="radio" name="allocation_source_type" value="direct"
                                                    class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                                                    @change="_currentAllocationSourceType = 'direct'; allocatedByFilter = ''; defaultAllocationType = 'direct'; openCommissionOpCaptureModal('direct')">
-                                            <span class="ml-2 text-xs font-medium text-gray-700 whitespace-nowrap">Direct Allocation</span>
+                                            <span class="ml-2 text-sm font-semibold text-gray-700 whitespace-nowrap">New Applications (Existing OP Change of Name)</span>
                                         </label>
                                     </div>
 
@@ -1358,7 +1350,7 @@
                                     <i data-lucide="info" class="w-8 h-8 text-blue-600"></i>
                                 </div>
                                 <h4 class="text-lg font-semibold text-gray-800 mb-2">Capture Occupancy Permit First</h4>
-                                <p class="text-gray-500 max-w-md mx-auto text-sm">Please select <strong>Direct Allocation</strong> or <strong>Resettlement</strong> above, then capture/select an Occupancy Permit (OP) record to continue with the commissioning process.</p>
+                                <p class="text-gray-500 max-w-md mx-auto text-sm">Please select <strong>New Applications (Existing OP Change of Name)</strong> above, then capture/select an Occupancy Permit (OP) record to continue with the commissioning process.</p>
                             </div>
                         </form>
                     </div>

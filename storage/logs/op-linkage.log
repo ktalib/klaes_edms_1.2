@@ -1,3 +1,0 @@
-[2026-05-11 03:19:58] local.INFO: Generate request received {"user_id":1,"application_type":"Direct Allocation","allocated_by_filter":null,"require_op_source":null,"source_instrument_capture_id":null,"source_op_serial_number":null,"source_registration_number":null} 
-[2026-05-11 03:19:58] local.INFO: Validated OP linkage payload {"application_type":"new","allocated_by_filter":null,"require_op_source":false,"source_instrument_capture_id":null,"source_pra_id":null,"source_prop_id":null,"source_original_owner":null} 
-[2026-05-11 03:19:59] local.INFO: Mirror decision computed {"file_number":"RES-2026-2097","should_mirror":false,"application_type":"new","allocated_by_filter":null,"source_instrument_capture_id":null,"source_pra_id":null} 

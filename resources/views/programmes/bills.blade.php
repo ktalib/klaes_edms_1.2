@@ -987,8 +987,10 @@
                     // Conversion bills matched by source_id (= JSI report id)
                     return bill.application_id == fileId || bill.source_id == fileId;
                 } else if (fileType === 'primary') {
-                    return bill.application_id == fileId;
+                    // Strictly match primary application bill (no sub_application_id)
+                    return bill.application_id == fileId && (!bill.sub_application_id || bill.sub_application_id == 'null');
                 } else {
+                    // Match specific unit/sua application bill
                     return bill.sub_application_id == fileId;
                 }
             });

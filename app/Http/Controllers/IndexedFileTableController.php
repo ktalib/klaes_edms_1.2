@@ -6,7 +6,7 @@ use App\Models\FileIndexing;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection; 
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -48,7 +48,7 @@ class IndexedFileTableController extends Controller
             $currentUser = Auth::user();
             if ($currentUser) {
                 $assignRole = strtolower((string) ($currentUser->assign_role ?? ''));
-                $isSuperAdmin = in_array($assignRole, ['super admin', 'supper admin', 'administrator', 'admin']);
+                $isSuperAdmin = in_array($assignRole, ['super admin', 'supper admin', 'administrator', 'admin', 'editor']);
 
                 if (!$isSuperAdmin) {
                     $registryUpper = strtoupper(trim((string) $registry));
@@ -209,9 +209,9 @@ class IndexedFileTableController extends Controller
         $currentUser = Auth::user();
         if ($currentUser) {
             $assignRole = strtolower((string) ($currentUser->assign_role ?? ''));
-            $isSuperAdmin = in_array($assignRole, ['super admin', 'supper admin', 'administrator', 'admin']);
+            $isSuperAdmin = in_array($assignRole, ['super admin', 'supper admin', 'administrator', 'admin', 'editor']);
 
-            if (!$isSuperAdmin && strtoupper(trim((string) ($request->input('registry', '')))) !== 'KANGIS') { 
+            if (!$isSuperAdmin && strtoupper(trim((string) ($request->input('registry', '')))) !== 'KANGIS') {
                 $userName = trim(sprintf('%s %s', $currentUser->first_name ?? '', $currentUser->last_name ?? ''));
                 if ($userName === '') {
                     $userName = $currentUser->name ?? $currentUser->email ?? null;
@@ -429,9 +429,9 @@ class IndexedFileTableController extends Controller
         $currentUser = Auth::user();
         if ($currentUser) {
             $assignRole = strtolower((string) ($currentUser->assign_role ?? ''));
-            $isSuperAdmin = in_array($assignRole, ['super admin', 'supper admin', 'administrator', 'admin']);
+            $isSuperAdmin = in_array($assignRole, ['super admin', 'supper admin', 'administrator', 'admin', 'editor']);
 
-            if (!$isSuperAdmin && strtoupper(trim((string) ($request->input('registry', '')))) !== 'KANGIS') { 
+            if (!$isSuperAdmin && strtoupper(trim((string) ($request->input('registry', '')))) !== 'KANGIS') {
                 $userName = trim(sprintf('%s %s', $currentUser->first_name ?? '', $currentUser->last_name ?? ''));
                 if ($userName === '') {
                     $userName = $currentUser->name ?? $currentUser->email ?? null;
@@ -779,7 +779,7 @@ class IndexedFileTableController extends Controller
      */
     public function checkKangisPlaceholder(Request $request): JsonResponse
     {
-        $raw       = trim((string) $request->query('file_number', $request->query('value', '')));
+        $raw = trim((string) $request->query('file_number', $request->query('value', '')));
         $excludeId = (int) $request->query('exclude_id', 0);
 
         if ($raw === '') {
@@ -824,15 +824,15 @@ class IndexedFileTableController extends Controller
         $firstCollision = $bareExists && $suffixedCount === 0;
 
         return response()->json([
-            'bare_exists'     => $bareExists,
-            'has_siblings'    => $bareExists || $suffixedCount > 0,
-            'count'           => $suffixedCount,
+            'bare_exists' => $bareExists,
+            'has_siblings' => $bareExists || $suffixedCount > 0,
+            'count' => $suffixedCount,
             'first_collision' => $firstCollision,
-            'siblings'        => $suffixedVariants->map(fn($r) => [
-                'id'          => $r->id,
+            'siblings' => $suffixedVariants->map(fn($r) => [
+                'id' => $r->id,
                 'file_number' => $r->file_number,
                 'placeholder' => $r->kangis_fileno_placeholder,
-                'resolved'    => $r->kangis_fileno_resolved,
+                'resolved' => $r->kangis_fileno_resolved,
             ])->values(),
         ]);
     }
@@ -872,7 +872,7 @@ class IndexedFileTableController extends Controller
             if ($key === '') {
                 continue;
             }
-            
+
             // Instead of scanning the entire root once, check if the specific 
             // file number folder exists in any of the registry roots.
             // Much faster for paginated results (e.g. 20-50 checks vs 50,000+).
@@ -930,13 +930,13 @@ class IndexedFileTableController extends Controller
                     : storage_path($path);
             };
 
-            $baseRoot  = realpath($resolveStoragePath('app/public/EDMS/UPLOAD/' . $registryFolder));
+            $baseRoot = realpath($resolveStoragePath('app/public/EDMS/UPLOAD/' . $registryFolder));
             if (!$baseRoot) {
                 return response()->json(['success' => true, 'has_files' => false, 'files' => [], 'file_number' => $fileNumber]);
             }
 
-            $folderPath  = $baseRoot . DIRECTORY_SEPARATOR . $fileNumber;
-            $realFolder  = realpath($folderPath);
+            $folderPath = $baseRoot . DIRECTORY_SEPARATOR . $fileNumber;
+            $realFolder = realpath($folderPath);
 
             // Security: prevent path traversal
             if (!$realFolder || strncmp($realFolder, $baseRoot, strlen($baseRoot)) !== 0) {
@@ -948,10 +948,10 @@ class IndexedFileTableController extends Controller
             $this->scanEdmsFolder($realFolder, $baseRoot, $storagePublicRoot, $files);
 
             return response()->json([
-                'success'     => true,
-                'has_files'   => !empty($files),
+                'success' => true,
+                'has_files' => !empty($files),
                 'file_number' => $fileNumber,
-                'files'       => $files,
+                'files' => $files,
             ]);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => 'Failed to load files.'], 500);
@@ -964,7 +964,7 @@ class IndexedFileTableController extends Controller
     private function scanEdmsFolder(string $dir, string $baseRoot, string $storagePublicRoot, array &$files): void
     {
         $allowed = ['jpg', 'jpeg', 'png', 'gif', 'tif', 'tiff', 'bmp', 'webp', 'pdf'];
-        $entries  = @scandir($dir) ?: [];
+        $entries = @scandir($dir) ?: [];
 
         foreach ($entries as $entry) {
             if ($entry === '.' || $entry === '..') {
@@ -990,9 +990,9 @@ class IndexedFileTableController extends Controller
                 $relative = ltrim(str_replace('\\', '/', substr($realPath, strlen($storagePublicRoot))), '/');
                 $files[] = [
                     'name' => $entry,
-                    'url'  => asset('storage/' . $relative),
+                    'url' => asset('storage/' . $relative),
                     'type' => in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'tif', 'tiff', 'bmp', 'webp'], true) ? 'image' : 'pdf',
-                    'ext'  => $ext,
+                    'ext' => $ext,
                 ];
             }
         }
