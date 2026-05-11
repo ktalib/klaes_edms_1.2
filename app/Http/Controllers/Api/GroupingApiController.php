@@ -420,15 +420,7 @@ class GroupingApiController extends Controller
             ], 404);
         }
 
-        if ($result['status'] === 'conflict') {
-            return response()->json([
-                'success' => false,
-                'status' => 'conflict',
-                'message' => 'Grouping record is already mapped to a different MLS file number.',
-                'data' => $result['record'],
-                'meta' => $result['meta'],
-            ], 409);
-        }
+
 
         $message = $result['status'] === 'updated'
             ? 'Grouping record updated successfully.'

@@ -512,16 +512,12 @@ class InstrumentRegistrationService
         }
 
         if (
-            stripos($normalized, 'Deed of Gift') !== false
-        ) {
-            return 'Deed of Gift';
-        }
-
-        if (
+            stripos($normalized, 'Deed of Gift') !== false ||
             stripos($normalized, 'Deed of Assignment') !== false
         ) {
             return 'Deed of Assignment';
         }
+
 
         if (
             stripos($normalized, 'Deed of Mortgage') !== false ||

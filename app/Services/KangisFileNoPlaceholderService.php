@@ -87,7 +87,7 @@ class KangisFileNoPlaceholderService
         $suffixedVariants = DB::connection('sqlsrv')
             ->table('file_indexings')
             ->where('id', '!=', $newFileIndexingId)
-            ->where('file_number', 'like', $selectedFileNumber . '_%')
+            ->where('file_number', 'like', str_replace('_', '[_]', $selectedFileNumber) . '[_]%')
             ->pluck('file_number')
             ->filter(function ($fn) use ($selectedFileNumber) {
                 $suffix = substr(trim((string) $fn), strlen($selectedFileNumber) + 1);

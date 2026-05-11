@@ -107,7 +107,7 @@ class InstrumentTypeController extends Controller
         $oldName = $type->name;
 
         // PROTECTED TYPES: Prevent renaming of types involved in shared vault logic
-        $protectedTypes = ['Power of Attorney', 'Deed of Surrender and Release'];
+        $protectedTypes = ['Power of Attorney', 'Deed of Surrender and Release', 'Deed of Assignment', 'Deed of Gift'];
         if (in_array($oldName, $protectedTypes) && $request->name !== $oldName) {
             return response()->json(['message' => 'This instrument type is a System Protected type and cannot be renamed.'], 403);
         }
@@ -164,7 +164,7 @@ class InstrumentTypeController extends Controller
         $type = NewInstrumentType::findOrFail($id);
 
         // PROTECTED TYPES: Prevent deletion
-        $protectedTypes = ['Power of Attorney', 'Deed of Surrender and Release'];
+        $protectedTypes = ['Power of Attorney', 'Deed of Surrender and Release', 'Deed of Assignment', 'Deed of Gift'];
         if (in_array($type->name, $protectedTypes)) {
             return response()->json(['message' => 'This instrument type is System Protected and cannot be deleted.'], 403);
         }

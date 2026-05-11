@@ -308,6 +308,7 @@
                     { 
                         id: Date.now(), 
                         title: '', 
+                        applicant_name: '',
                         plot_number: '', 
                         district: '', 
                         custom_district: '', 
@@ -333,6 +334,7 @@
                     this.fileParams.push({
                         id: Date.now() + Math.random(), 
                         title: '',
+                        applicant_name: '',
                         plot_number: '',
                         district: '',
                         custom_district: '',
@@ -450,8 +452,9 @@
                     if (this.fileParams.length > 0) {
                         const param = this.fileParams[0];
                         
-                        // File Title
-                        param.title = record.file_title || record.title || record.comments || param.title || '';
+                        // File Title & Applicant Name
+                        param.applicant_name = record.applicant_name || record.file_title || record.title || record.comments || param.applicant_name || '';
+                        param.title = param.applicant_name;
 
                         // Property Details
                         param.plot_number = record.plot_no || record.plot_number || param.plot_number || '';
@@ -532,6 +535,7 @@
                             this.fileParams = [{
                                 id: Date.now(),
                                 title: record.file_title,
+                                applicant_name: record.applicant_name || record.file_title,
                                 
                                 // Entity & Customer Details
                                 entity_type: record.entity_type,
@@ -568,6 +572,13 @@
 
                     // Watchers for title sync and batch apply
                     this.$watch('fileParams', (params, oldParams) => {
+                        // Sync applicant_name to title
+                        params.forEach(param => {
+                            if (param.applicant_name !== param.title) {
+                                param.title = param.applicant_name;
+                            }
+                        });
+
                         // Real-time batch apply for Property Details
                         if (this.indexing_type === 'Block' && this.applyPropertyToAll && params.length > 1) {
                             const current = params[this.activeTab];

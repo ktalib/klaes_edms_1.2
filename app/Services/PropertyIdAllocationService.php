@@ -81,11 +81,14 @@ class PropertyIdAllocationService
             if ($skipLookup) {
                 $freshId = $this->generateNextPropIdFromMaster();
 
-                // We MUST record this in Master to prevent the next call from getting the same ID.
-                // If the primary file number is already taken, use the temp_fileno as the primary key.
-                $masterPrimary = $identifierMap['primary_file_number'];
-                if ($this->findMasterRowByPrimary($masterPrimary)) {
-                    $masterPrimary = $identifierMap['temp_fileno'] ?? ($masterPrimary . '-REF-' . $freshId);
+                // If skip_lookup is true, we want a brand-new prop_id. We use the 
+                // preferred primary identifier, but if it's already taken, we'll
+                // let insertMasterRow handle the conflict by 'stealing' it from 
+                // the old row (moving the old row to a secondary/REF identifier).
+                $masterPrimary = $this->resolvePrimaryIdentifier($identifierMap);
+                
+                if ($masterPrimary === null) {
+                    $masterPrimary = $identifierMap['temp_fileno'] ?? ('AUTO-REF-' . $freshId);
                 }
 
                 $this->insertMasterRow($freshId, $identifierMap, $masterPrimary);
@@ -392,6 +395,7 @@ class PropertyIdAllocationService
             'mlsFNo' => $identifierMap['mlsFNo'] ?? null,
             'kangisFileNo' => $identifierMap['kangisFileNo'] ?? null,
             'NewKANGISFileno' => $identifierMap['NewKANGISFileno'] ?? null,
+            'temp_fileno' => $identifierMap['temp_fileno'] ?? null,
         ];
 
         foreach ($conflicts as $column => $value) {
@@ -402,6 +406,23 @@ class PropertyIdAllocationService
                 ->where('prop_id', '!=', $propId)
                 ->update([
                     $column => null,
+                    'updated_at' => $timestamp
+                ]);
+        }
+
+        // Specifically handle primary_file_number because it's NOT NULL in schema.
+        // If the new primary identifier is already used as a primary on another row,
+        // we move that old row to a reference identifier to allow the new one to take its place.
+        $existingPrimaryRow = DB::connection('sqlsrv')->table('PropID_Master')
+            ->where('primary_file_number', $primaryForMaster)
+            ->where('prop_id', '!=', $propId)
+            ->first();
+
+        if ($existingPrimaryRow) {
+            DB::connection('sqlsrv')->table('PropID_Master')
+                ->where('id', $existingPrimaryRow->id)
+                ->update([
+                    'primary_file_number' => $primaryForMaster . '-REF-' . ($existingPrimaryRow->prop_id ?? $existingPrimaryRow->id),
                     'updated_at' => $timestamp
                 ]);
         }

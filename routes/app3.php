@@ -566,6 +566,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::prefix('indexed-files')->name('indexed-files.')->group(function () {
         Route::get('/', [IndexedFileTableController::class, 'index'])->name('index');
+        Route::get('/find', [IndexedFileTableController::class, 'findFile'])->name('find');
     });
 
     Route::get('/kangis/indexed-files', function () {

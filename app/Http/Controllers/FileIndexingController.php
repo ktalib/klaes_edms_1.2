@@ -2923,7 +2923,7 @@ class FileIndexingController extends Controller
                 // Count existing _N suffixed variants.
                 $suffixedExistingCount = $baseFileNo ? DB::connection('sqlsrv')
                     ->table('file_indexings')
-                    ->where('file_number', 'like', $baseFileNo . '_%')
+                    ->where('file_number', 'like', str_replace('_', '[_]', $baseFileNo) . '[_]%')
                     ->pluck('file_number')
                     ->filter(function ($fn) use ($baseFileNo) {
                         $suffix = substr(trim((string) $fn), strlen($baseFileNo) + 1);

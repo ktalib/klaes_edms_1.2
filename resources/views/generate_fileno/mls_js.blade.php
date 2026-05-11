@@ -207,6 +207,37 @@
             displayEl.classList.remove('text-green-600', 'text-blue-600', 'text-gray-500');
             displayEl.classList.add('text-red-600');
             
+            // Detect prefix from Tracking ID (e.g. CON-COM from CON-COM-2026-262)
+            if (trackingId && trackingId.includes('-')) {
+                const modalEl = document.querySelector('[x-data^="fileNumberGenerator"]');
+                const state = modalEl?._x_dataStack ? modalEl._x_dataStack[0] : null;
+                
+                if (state) {
+                    const parts = trackingId.split('-');
+                    const yearIndex = parts.findIndex(p => /^(19|20)\d{2}$/.test(p));
+                    let detectedPrefix = '';
+                    if (yearIndex > 0) {
+                        detectedPrefix = parts.slice(0, yearIndex).join('-').toUpperCase();
+                    } else if (parts.length > 1) {
+                        // Fallback: take first part if no year found but hyphen exists
+                        detectedPrefix = parts[0].toUpperCase();
+                    }
+                    
+                    if (detectedPrefix && state.allAllPrefixes) {
+                        const bestMatch = state.allAllPrefixes.find(p => p.prefix === detectedPrefix);
+                        if (bestMatch) {
+                            state.prefix = bestMatch.prefix;
+                            // Small delay to ensure prefix is set before triggering change
+                            setTimeout(() => {
+                                if (typeof state.handlePrefixChange === 'function') {
+                                    state.handlePrefixChange();
+                                }
+                            }, 50);
+                        }
+                    }
+                }
+            }
+
             if (!trackingId) {
                 // Clear cache if not found so we can try again if user re-enters
                 groupingLookupState.lastSuccessfulNumber = null;
@@ -233,9 +264,9 @@
             preview = preview.split(' to ')[0].trim();
         }
 
-        // If we have an existing file number (from OP capture, subdivision, etc.),
+        // If we have an existing file number (from OP capture, subdivision, merger, etc.),
         // it's the primary candidate for finding the record in the grouping/index table.
-        if (existing !== '' && (fileOption === 'normal' || fileOption === 'temporary' || fileOption === 'extension')) {
+        if (existing !== '' && (fileOption === 'normal' || fileOption === 'temporary' || fileOption === 'extension' || fileOption === 'subdivision' || fileOption === 'merger')) {
             return existing;
         }
 
@@ -364,6 +395,7 @@
     function handleGroupingLookupError(payload, status) {
         resetTrackingIdDisplay('--');
 
+        /* 
         if (status === 409) {
             Swal.fire({
                 icon: 'warning',
@@ -373,6 +405,7 @@
             });
             return;
         }
+        */
 
         if (status === 404) {
             applyTrackingIdToDisplay('', 'Not Found');
@@ -3084,6 +3117,8 @@
             // Dependent Data
             purposes: [],
             prefixes: [],
+            allAllPrefixes: @json($allPrefixes),
+            landUses: @json($landUses),
             purpose: '',
             prefix: '',
             customerType: '',
@@ -3688,21 +3723,23 @@
                                         self.updateApplicationType();
                                     }
 
-                                    if (detectedPrefix && self.allAllPrefixes) {
-                                        // Find exact match first
-                                        let bestPrefix = self.allAllPrefixes.find(p => p.prefix === detectedPrefix);
-                                        
-                                        if (!bestPrefix) {
-                                            // Try partial match (e.g. if detected is IND-RC but only IND exists, or vice versa)
-                                            bestPrefix = self.allAllPrefixes.find(p => p.prefix.startsWith(detectedPrefix) || detectedPrefix.startsWith(p.prefix));
+                                    self.$nextTick(() => {
+                                        if (detectedPrefix && self.allAllPrefixes) {
+                                            // Find exact match first
+                                            let bestPrefix = self.allAllPrefixes.find(p => p.prefix === detectedPrefix);
+                                            
+                                            if (!bestPrefix) {
+                                                // Try partial match
+                                                bestPrefix = self.allAllPrefixes.find(p => p.prefix.startsWith(detectedPrefix) || detectedPrefix.startsWith(p.prefix));
+                                            }
+                                            
+                                            if (bestPrefix) {
+                                                self.prefix = bestPrefix.prefix;
+                                                // Sync landUseId and purposes
+                                                self.handlePrefixChange({ target: { value: self.prefix } });
+                                            }
                                         }
-                                        
-                                        if (bestPrefix) {
-                                            self.prefix = bestPrefix.prefix;
-                                            // Sync landUseId and purposes
-                                            self.handlePrefixChange({ target: { value: self.prefix } });
-                                        }
-                                    }
+                                    });
 
                                     // Fallback for landUseId if prefix match fails
                                     if (!self.prefix && self.landUses) {
@@ -3741,6 +3778,11 @@
                                     self.$nextTick(() => {
                                         if (typeof self.updatePreview === 'function') {
                                             self.updatePreview();
+                                        }
+                                        
+                                        // Also trigger grouping lookup for the selected subdivision file
+                                        if (typeof queueGroupingLookup === 'function') {
+                                            queueGroupingLookup(data.fileNumber);
                                         }
                                     });
                                     
@@ -3819,21 +3861,23 @@
                         self.updateApplicationType();
                     }
 
-                    if (detectedPrefix && self.allAllPrefixes) {
-                        // Find exact match first
-                        let bestPrefix = self.allAllPrefixes.find(p => p.prefix === detectedPrefix);
-                        
-                        if (!bestPrefix) {
-                            // Try partial match
-                            bestPrefix = self.allAllPrefixes.find(p => p.prefix.startsWith(detectedPrefix) || detectedPrefix.startsWith(p.prefix));
+                    self.$nextTick(() => {
+                        if (detectedPrefix && self.allAllPrefixes) {
+                            // Find exact match first
+                            let bestPrefix = self.allAllPrefixes.find(p => p.prefix === detectedPrefix);
+                            
+                            if (!bestPrefix) {
+                                // Try partial match
+                                bestPrefix = self.allAllPrefixes.find(p => p.prefix.startsWith(detectedPrefix) || detectedPrefix.startsWith(p.prefix));
+                            }
+                            
+                            if (bestPrefix) {
+                                self.prefix = bestPrefix.prefix;
+                                // Sync landUseId and purposes
+                                self.handlePrefixChange({ target: { value: self.prefix } });
+                            }
                         }
-                        
-                        if (bestPrefix) {
-                            self.prefix = bestPrefix.prefix;
-                            // Sync landUseId and purposes
-                            self.handlePrefixChange({ target: { value: self.prefix } });
-                        }
-                    }
+                    });
 
                     // Fallback for landUseId if prefix match fails
                     if (!self.prefix && self.landUses) {
@@ -3851,6 +3895,10 @@
                     self.isInherited = true;
 
                     self.updatePreview();
+                    // Trigger grouping lookup for the selected merger file
+                    if (typeof queueGroupingLookup === 'function') {
+                        queueGroupingLookup(data.temp_file_no || data.file_no);
+                    }
                     
                     Swal.fire({
                         icon: 'success',
@@ -4080,7 +4128,8 @@
 
                 // Trigger grouping lookup to enable/disable Generate button
                 if (typeof deriveGroupingLookupCandidate === 'function' && typeof queueGroupingLookup === 'function') {
-                    const lookupCandidate = deriveGroupingLookupCandidate(this.fileOption, previewText, this.existingFileNo);
+                    const candidate = this.existingFileNo || this.subdivisionFileNo || this.mergerFileNo || this.originalFileNo;
+                    const lookupCandidate = deriveGroupingLookupCandidate(this.fileOption, previewText, candidate);
                     if (lookupCandidate) {
                         queueGroupingLookup(lookupCandidate);
                     } else {
@@ -4223,8 +4272,12 @@
 
                 // Update preview to show range
                 const code = this.prefix || this.landUse;
-                if (this.fileOption === 'normal' && code && this.year) {
-                    this.preview = `${code}-${this.year}-${startSerial} to ${code}-${this.year}-${endSerial}`;
+                if (code && this.year && startSerial) {
+                    if (this.batchQuantity > 1) {
+                        this.preview = `${code}-${this.year}-${startSerial}-${endSerial}`;
+                    } else {
+                        this.preview = `${code}-${this.year}-${startSerial}`;
+                    }
                 }
 
                 // Perform batch grouping lookup

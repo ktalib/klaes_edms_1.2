@@ -1,3 +1,155 @@
-[2026-05-11 12:45:22] local.INFO: checkDuplicate API Called {"fileno":"TEMP-36061","type":"Occupancy Permit (OP)","date":"2026-05-11","prop_id":null,"party_1":null,"party_2":null,"op_serial":null,"reg_no":null} 
-[2026-05-11 13:07:16] local.INFO: Batch PRA creation skipped for non-OP source {"batch_size":2,"land_use":"IND-RC","source":"Direct Allocation"} 
-[2026-05-11 13:07:16] local.INFO: Batch MLS File Numbers Generated {"batch_size":2,"land_use":"IND-RC","serial_range":"5 to 6","files":["IND-RC-2026-5","IND-RC-2026-6"],"user":"Klaes Admin"} 
+[2026-05-11 15:04:19] local.WARNING: FFR existing capture: mother OP record not found, using request payload fallbacks {"source_file_no":"RES-2004-812","user_id":1} 
+[2026-05-11 15:04:19] local.INFO: FFR existing capture flow resolved {"source_file_no":"RES-2004-812","has_name_change":true,"original_allottee":"Unknown","entered_allottee":"DDDDod essage","transaction_type":"Transfer Of Title (OP)","instrument_type":"Transfer Of Title (OP)","inherited_reg_no":null,"inherited_reg_date":null,"inherited_reg_time":null,"user_id":1} 
+[2026-05-11 15:04:19] local.INFO: FFR existing capture initiated {"source_file_no":"RES-2004-812","op_type":"OP Resettlement","user_id":1} 
+[2026-05-11 15:04:19] local.ERROR: FFR existing capture failed {"source_file_no":"RES-2004-812","payload":{"source_file_no":"RES-2004-812","file_name":"DDDDod essage","location":"YARGAYA, Kano","lga":"Takai","customer_type":"Individual","land_use":"RES","purpose":"RESIDENTIAL","purpose_id":1,"phone_no":null,"address":null,"plot_no":null,"tp_no":"TP/KN/UC/DKD/14","op_type":"OP Resettlement","op_serial_number":"4","registration_number":"231/231/211","serial_no":"231","page_no":"231","volume_no":"211","transaction_date":null,"party_1":"KANO STATE GOVERNMENT","party_2":"DDDDod essage","tracking_id":"TRK-JFS393EJ-RJ49U","ffr_first_pra_prop_id":"85517","ffr_temp_fileno":"TEMP-33117","from_op_flow":"1"},"user_id":1,"error_message":"SQLSTATE[23000]: [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Cannot insert duplicate key row in object 'dbo.PropID_Master' with unique index 'UX_PropID_Master_primary_file_number'. The duplicate key value is (TEMP-33117). (SQL: insert into [PropID_Master] ([prop_id], [primary_file_number], [mlsFNo], [kangisFileNo], [NewKANGISFileno], [temp_fileno], [status], [created_at], [updated_at]) values (80000412, TEMP-33117, RES-2004-812, ?, ?, TEMP-33117, active, 2026-05-11 15:04:19.690, 2026-05-11 15:04:19.690))","error_file":"C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Database\\Connection.php","error_line":760,"trace":"#0 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Database\\Connection.php(720): Illuminate\\Database\\Connection->runQueryCallback('insert into [Pr...', Array, Object(Closure))
+#1 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Database\\Connection.php(534): Illuminate\\Database\\Connection->run('insert into [Pr...', Array, Object(Closure))
+#2 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Database\\Connection.php(498): Illuminate\\Database\\Connection->statement('insert into [Pr...', Array)
+#3 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Database\\Query\\Builder.php(3272): Illuminate\\Database\\Connection->insert('insert into [Pr...', Array)
+#4 C:\\wamp64\\www\\klaes\\app\\Services\\PropertyIdAllocationService.php(411): Illuminate\\Database\\Query\\Builder->insert(Array)
+#5 C:\\wamp64\\www\\klaes\\app\\Services\\PropertyIdAllocationService.php(91): App\\Services\\PropertyIdAllocationService->insertMasterRow(80000412, Array, 'TEMP-33117')
+#6 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Database\\Concerns\\ManagesTransactions.php(30): App\\Services\\PropertyIdAllocationService->App\\Services\\{closure}(Object(Illuminate\\Database\\SqlServerConnection))
+#7 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Database\\SqlServerConnection.php(30): Illuminate\\Database\\Connection->transaction(Object(Closure), 1)
+#8 C:\\wamp64\\www\\klaes\\app\\Services\\PropertyIdAllocationService.php(52): Illuminate\\Database\\SqlServerConnection->transaction(Object(Closure))
+#9 C:\\wamp64\\www\\klaes\\app\\Services\\Pra\\PraRecordService.php(353): App\\Services\\PropertyIdAllocationService->allocateOrRetrievePropId('RES-2004-812', 'RES-2004-812', NULL, NULL, Array)
+#10 C:\\wamp64\\www\\klaes\\app\\Services\\Pra\\PraRecordService.php(104): App\\Services\\Pra\\PraRecordService->allocatePropId(Array)
+#11 C:\\wamp64\\www\\klaes\\app\\Http\\Controllers\\LandsOneStopShop\\ApplicationController.php(2304): App\\Services\\Pra\\PraRecordService->createRecord(Array, 1)
+#12 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Database\\Concerns\\ManagesTransactions.php(30): App\\Http\\Controllers\\LandsOneStopShop\\ApplicationController->App\\Http\\Controllers\\LandsOneStopShop\\{closure}(Object(Illuminate\\Database\\SqlServerConnection))
+#13 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Database\\SqlServerConnection.php(30): Illuminate\\Database\\Connection->transaction(Object(Closure), 1)
+#14 C:\\wamp64\\www\\klaes\\app\\Http\\Controllers\\LandsOneStopShop\\ApplicationController.php(2083): Illuminate\\Database\\SqlServerConnection->transaction(Object(Closure))
+#15 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Routing\\Controller.php(54): App\\Http\\Controllers\\LandsOneStopShop\\ApplicationController->captureFfrExisting(Object(Illuminate\\Http\\Request), Object(App\\Services\\Pra\\PraRecordService))
+#16 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Routing\\ControllerDispatcher.php(43): Illuminate\\Routing\\Controller->callAction('captureFfrExist...', Array)
+#17 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Routing\\Route.php(259): Illuminate\\Routing\\ControllerDispatcher->dispatch(Object(Illuminate\\Routing\\Route), Object(App\\Http\\Controllers\\LandsOneStopShop\\ApplicationController), 'captureFfrExist...')
+#18 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Routing\\Route.php(205): Illuminate\\Routing\\Route->runController()
+#19 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Routing\\Router.php(798): Illuminate\\Routing\\Route->run()
+#20 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(141): Illuminate\\Routing\\Router->Illuminate\\Routing\\{closure}(Object(Illuminate\\Http\\Request))
+#21 C:\\wamp64\\www\\klaes\\app\\Http\\Middleware\\Verify2FA.php(26): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#22 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): App\\Http\\Middleware\\Verify2FA->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#23 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Routing\\Middleware\\SubstituteBindings.php(50): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#24 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\Routing\\Middleware\\SubstituteBindings->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#25 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Auth\\Middleware\\Authenticate.php(44): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#26 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\Auth\\Middleware\\Authenticate->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#27 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Http\\Middleware\\VerifyCsrfToken.php(78): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#28 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\Foundation\\Http\\Middleware\\VerifyCsrfToken->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#29 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\View\\Middleware\\ShareErrorsFromSession.php(49): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#30 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\View\\Middleware\\ShareErrorsFromSession->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#31 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Session\\Middleware\\StartSession.php(121): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#32 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Session\\Middleware\\StartSession.php(64): Illuminate\\Session\\Middleware\\StartSession->handleStatefulRequest(Object(Illuminate\\Http\\Request), Object(Illuminate\\Session\\Store), Object(Closure))
+#33 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\Session\\Middleware\\StartSession->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#34 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Cookie\\Middleware\\AddQueuedCookiesToResponse.php(37): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#35 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\Cookie\\Middleware\\AddQueuedCookiesToResponse->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#36 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Cookie\\Middleware\\EncryptCookies.php(67): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#37 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\Cookie\\Middleware\\EncryptCookies->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#38 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(116): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#39 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Routing\\Router.php(797): Illuminate\\Pipeline\\Pipeline->then(Object(Closure))
+#40 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Routing\\Router.php(776): Illuminate\\Routing\\Router->runRouteWithinStack(Object(Illuminate\\Routing\\Route), Object(Illuminate\\Http\\Request))
+#41 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Routing\\Router.php(740): Illuminate\\Routing\\Router->runRoute(Object(Illuminate\\Http\\Request), Object(Illuminate\\Routing\\Route))
+#42 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Routing\\Router.php(729): Illuminate\\Routing\\Router->dispatchToRoute(Object(Illuminate\\Http\\Request))
+#43 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Http\\Kernel.php(190): Illuminate\\Routing\\Router->dispatch(Object(Illuminate\\Http\\Request))
+#44 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(141): Illuminate\\Foundation\\Http\\Kernel->Illuminate\\Foundation\\Http\\{closure}(Object(Illuminate\\Http\\Request))
+#45 C:\\wamp64\\www\\klaes\\vendor\\livewire\\livewire\\src\\DisableBrowserCache.php(19): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#46 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Livewire\\DisableBrowserCache->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#47 C:\\wamp64\\www\\klaes\\app\\Http\\Middleware\\Cors.php(23): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#48 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): App\\Http\\Middleware\\Cors->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#49 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Http\\Middleware\\TransformsRequest.php(21): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#50 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Http\\Middleware\\ConvertEmptyStringsToNull.php(31): Illuminate\\Foundation\\Http\\Middleware\\TransformsRequest->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#51 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\Foundation\\Http\\Middleware\\ConvertEmptyStringsToNull->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#52 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Http\\Middleware\\TransformsRequest.php(21): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#53 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Http\\Middleware\\TrimStrings.php(40): Illuminate\\Foundation\\Http\\Middleware\\TransformsRequest->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#54 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\Foundation\\Http\\Middleware\\TrimStrings->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#55 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Http\\Middleware\\ValidatePostSize.php(27): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#56 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\Foundation\\Http\\Middleware\\ValidatePostSize->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#57 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Http\\Middleware\\PreventRequestsDuringMaintenance.php(86): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#58 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\Foundation\\Http\\Middleware\\PreventRequestsDuringMaintenance->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#59 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Http\\Middleware\\HandleCors.php(49): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#60 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\Http\\Middleware\\HandleCors->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#61 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Http\\Middleware\\TrustProxies.php(39): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#62 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(180): Illuminate\\Http\\Middleware\\TrustProxies->handle(Object(Illuminate\\Http\\Request), Object(Closure))
+#63 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Pipeline\\Pipeline.php(116): Illuminate\\Pipeline\\Pipeline->Illuminate\\Pipeline\\{closure}(Object(Illuminate\\Http\\Request))
+#64 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Http\\Kernel.php(165): Illuminate\\Pipeline\\Pipeline->then(Object(Closure))
+#65 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Http\\Kernel.php(134): Illuminate\\Foundation\\Http\\Kernel->sendRequestThroughRouter(Object(Illuminate\\Http\\Request))
+#66 C:\\wamp64\\www\\klaes\\public\\index.php(54): Illuminate\\Foundation\\Http\\Kernel->handle(Object(Illuminate\\Http\\Request))
+#67 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\resources\\server.php(16): require_once('C:\\\\wamp64\\\\www\\\\k...')
+#68 {main}"} 
+[2026-05-11 15:07:06] local.ERROR: PHP Parse error: Syntax error, unexpected T_NS_SEPARATOR on line 1 {"exception":"[object] (Psy\\Exception\\ParseErrorException(code: 0): PHP Parse error: Syntax error, unexpected T_NS_SEPARATOR on line 1 at C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Exception\\ParseErrorException.php:38)
+[stacktrace]
+#0 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\CodeCleaner.php(339): Psy\\Exception\\ParseErrorException::fromParseError(Object(PhpParser\\Error))
+#1 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\CodeCleaner.php(268): Psy\\CodeCleaner->parse('<?php foreach([...', false)
+#2 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php(860): Psy\\CodeCleaner->clean(Array, false)
+#3 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php(889): Psy\\Shell->addCode('foreach(['prima...', true)
+#4 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php(1343): Psy\\Shell->setCode('foreach(['prima...', true)
+#5 C:\\wamp64\\www\\klaes\\vendor\\laravel\\tinker\\src\\Console\\TinkerCommand.php(76): Psy\\Shell->execute('foreach(['prima...')
+#6 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(36): Laravel\\Tinker\\Console\\TinkerCommand->handle()
+#7 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\Util.php(41): Illuminate\\Container\\BoundMethod::Illuminate\\Container\\{closure}()
+#8 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(93): Illuminate\\Container\\Util::unwrapIfClosure(Object(Closure))
+#9 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(35): Illuminate\\Container\\BoundMethod::callBoundMethod(Object(Illuminate\\Foundation\\Application), Array, Object(Closure))
+#10 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\Container.php(661): Illuminate\\Container\\BoundMethod::call(Object(Illuminate\\Foundation\\Application), Array, Array, NULL)
+#11 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Command.php(183): Illuminate\\Container\\Container->call(Array)
+#12 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Command\\Command.php(326): Illuminate\\Console\\Command->execute(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Illuminate\\Console\\OutputStyle))
+#13 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Command.php(152): Symfony\\Component\\Console\\Command\\Command->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Illuminate\\Console\\OutputStyle))
+#14 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(1063): Illuminate\\Console\\Command->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#15 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(320): Symfony\\Component\\Console\\Application->doRunCommand(Object(Laravel\\Tinker\\Console\\TinkerCommand), Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#16 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(174): Symfony\\Component\\Console\\Application->doRun(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#17 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Application.php(102): Symfony\\Component\\Console\\Application->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#18 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Console\\Kernel.php(155): Illuminate\\Console\\Application->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#19 C:\\wamp64\\www\\klaes\\artisan(35): Illuminate\\Foundation\\Console\\Kernel->handle(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#20 {main}
+"} 
+[2026-05-11 15:09:40] local.WARNING: FFR existing capture: mother OP record not found, using request payload fallbacks {"source_file_no":"RES-2004-812","user_id":1} 
+[2026-05-11 15:09:40] local.INFO: FFR existing capture flow resolved {"source_file_no":"RES-2004-812","has_name_change":true,"original_allottee":"Unknown","entered_allottee":"DDDDod essage","transaction_type":"Transfer Of Title (OP)","instrument_type":"Transfer Of Title (OP)","inherited_reg_no":null,"inherited_reg_date":null,"inherited_reg_time":null,"user_id":1} 
+[2026-05-11 15:09:40] local.INFO: FFR existing capture initiated {"source_file_no":"RES-2004-812","op_type":"OP Resettlement","user_id":1} 
+[2026-05-11 15:09:41] local.INFO: FFR existing capture completed {"source_file_no":"RES-2004-812","user_id":1} 
+[2026-05-11 15:13:45] local.INFO: checkDuplicate API Called {"fileno":"TEMP-36065","type":"Occupancy Permit (OP)","date":"2026-05-11","prop_id":null,"party_1":null,"party_2":null,"op_serial":null,"reg_no":null} 
+[2026-05-11 15:14:08] local.INFO: checkDuplicate API Called {"fileno":"TEMP-36066","type":"Occupancy Permit (OP)","date":"2026-05-11","prop_id":null,"party_1":null,"party_2":null,"op_serial":"4","reg_no":null} 
+[2026-05-11 15:14:11] local.INFO: checkDuplicate API Called {"fileno":"TEMP-36067","type":"Occupancy Permit (OP)","date":"2026-05-11","prop_id":null,"party_1":null,"party_2":null,"op_serial":"4","reg_no":null} 
+[2026-05-11 15:19:20] local.INFO: checkDuplicate API Called {"fileno":"TEMP-11533","type":"Occupancy Permit (OP)","date":"2026-05-11","prop_id":null,"party_1":null,"party_2":null,"op_serial":"4","reg_no":null} 
+[2026-05-11 15:19:42] local.INFO: linkSourceOpRecord: source OP record linked {"table":"instrument_capture","id":"4521","updates":{"mlsFNo":"CON-COM-2025-758","temp_fileno":"TEMP-11533","updated_at":"2026-05-11 15:19:42"}} 
+[2026-05-11 15:19:42] local.INFO: PRA store: OP already in source – skipped duplicate {"source_table":"instrument_capture","source_id":"4521","prop_id":85517} 
+[2026-05-11 15:20:09] local.WARNING: FFR existing capture: mother OP record not found, using request payload fallbacks {"source_file_no":"CON-COM-2025-758","user_id":1} 
+[2026-05-11 15:20:09] local.INFO: FFR existing capture flow resolved {"source_file_no":"CON-COM-2025-758","has_name_change":true,"original_allottee":"Unknown","entered_allottee":"MR. GANIYU ADEOKE","transaction_type":"Transfer Of Title (OP)","instrument_type":"Transfer Of Title (OP)","inherited_reg_no":null,"inherited_reg_date":null,"inherited_reg_time":null,"user_id":1} 
+[2026-05-11 15:20:09] local.INFO: FFR existing capture initiated {"source_file_no":"CON-COM-2025-758","op_type":"OP Resettlement","user_id":1} 
+[2026-05-11 15:20:09] local.INFO: FFR existing capture completed {"source_file_no":"CON-COM-2025-758","user_id":1} 
+[2026-05-11 16:12:58] local.INFO: User 1 () logged in from  {"user_id":1,"ip_address":null,"device":"desktop"} 
+[2026-05-11 16:24:00] local.ERROR: PHP Parse error: Syntax error, unexpected T_STRING, expecting ')' on line 1 {"exception":"[object] (Psy\\Exception\\ParseErrorException(code: 0): PHP Parse error: Syntax error, unexpected T_STRING, expecting ')' on line 1 at C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Exception\\ParseErrorException.php:38)
+[stacktrace]
+#0 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\CodeCleaner.php(339): Psy\\Exception\\ParseErrorException::fromParseError(Object(PhpParser\\Error))
+#1 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\CodeCleaner.php(268): Psy\\CodeCleaner->parse('<?php print_r(D...', false)
+#2 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php(860): Psy\\CodeCleaner->clean(Array, false)
+#3 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php(889): Psy\\Shell->addCode('print_r(DB::con...', true)
+#4 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php(1343): Psy\\Shell->setCode('print_r(DB::con...', true)
+#5 C:\\wamp64\\www\\klaes\\vendor\\laravel\\tinker\\src\\Console\\TinkerCommand.php(76): Psy\\Shell->execute('print_r(DB::con...')
+#6 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(36): Laravel\\Tinker\\Console\\TinkerCommand->handle()
+#7 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\Util.php(41): Illuminate\\Container\\BoundMethod::Illuminate\\Container\\{closure}()
+#8 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(93): Illuminate\\Container\\Util::unwrapIfClosure(Object(Closure))
+#9 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(35): Illuminate\\Container\\BoundMethod::callBoundMethod(Object(Illuminate\\Foundation\\Application), Array, Object(Closure))
+#10 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\Container.php(661): Illuminate\\Container\\BoundMethod::call(Object(Illuminate\\Foundation\\Application), Array, Array, NULL)
+#11 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Command.php(183): Illuminate\\Container\\Container->call(Array)
+#12 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Command\\Command.php(326): Illuminate\\Console\\Command->execute(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Illuminate\\Console\\OutputStyle))
+#13 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Command.php(152): Symfony\\Component\\Console\\Command\\Command->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Illuminate\\Console\\OutputStyle))
+#14 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(1063): Illuminate\\Console\\Command->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#15 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(320): Symfony\\Component\\Console\\Application->doRunCommand(Object(Laravel\\Tinker\\Console\\TinkerCommand), Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#16 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(174): Symfony\\Component\\Console\\Application->doRun(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#17 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Application.php(102): Symfony\\Component\\Console\\Application->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#18 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Console\\Kernel.php(155): Illuminate\\Console\\Application->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#19 C:\\wamp64\\www\\klaes\\artisan(35): Illuminate\\Foundation\\Console\\Kernel->handle(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#20 {main}
+"} 
+[2026-05-11 16:24:13] local.ERROR: Unexpected end of input {"exception":"[object] (InvalidArgumentException(code: 0): Unexpected end of input at C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php:899)
+[stacktrace]
+#0 C:\\wamp64\\www\\klaes\\vendor\\psy\\psysh\\src\\Shell.php(1343): Psy\\Shell->setCode('print_r(DB::con...', true)
+#1 C:\\wamp64\\www\\klaes\\vendor\\laravel\\tinker\\src\\Console\\TinkerCommand.php(76): Psy\\Shell->execute('print_r(DB::con...')
+#2 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(36): Laravel\\Tinker\\Console\\TinkerCommand->handle()
+#3 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\Util.php(41): Illuminate\\Container\\BoundMethod::Illuminate\\Container\\{closure}()
+#4 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(93): Illuminate\\Container\\Util::unwrapIfClosure(Object(Closure))
+#5 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\BoundMethod.php(35): Illuminate\\Container\\BoundMethod::callBoundMethod(Object(Illuminate\\Foundation\\Application), Array, Object(Closure))
+#6 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Container\\Container.php(661): Illuminate\\Container\\BoundMethod::call(Object(Illuminate\\Foundation\\Application), Array, Array, NULL)
+#7 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Command.php(183): Illuminate\\Container\\Container->call(Array)
+#8 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Command\\Command.php(326): Illuminate\\Console\\Command->execute(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Illuminate\\Console\\OutputStyle))
+#9 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Command.php(152): Symfony\\Component\\Console\\Command\\Command->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Illuminate\\Console\\OutputStyle))
+#10 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(1063): Illuminate\\Console\\Command->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#11 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(320): Symfony\\Component\\Console\\Application->doRunCommand(Object(Laravel\\Tinker\\Console\\TinkerCommand), Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#12 C:\\wamp64\\www\\klaes\\vendor\\symfony\\console\\Application.php(174): Symfony\\Component\\Console\\Application->doRun(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#13 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Console\\Application.php(102): Symfony\\Component\\Console\\Application->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#14 C:\\wamp64\\www\\klaes\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Console\\Kernel.php(155): Illuminate\\Console\\Application->run(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#15 C:\\wamp64\\www\\klaes\\artisan(35): Illuminate\\Foundation\\Console\\Kernel->handle(Object(Symfony\\Component\\Console\\Input\\ArgvInput), Object(Symfony\\Component\\Console\\Output\\ConsoleOutput))
+#16 {main}
+"} 

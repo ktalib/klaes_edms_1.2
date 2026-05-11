@@ -801,7 +801,7 @@ class IndexedFileTableController extends Controller
         // Count existing _N suffixed variants (file_number = raw + '_' + digits).
         $suffixedQuery = DB::connection('sqlsrv')
             ->table('file_indexings')
-            ->where('file_number', 'like', $raw . '_%');
+            ->where('file_number', 'like', str_replace('_', '[_]', $raw) . '[_]%');
 
         if ($excludeId > 0) {
             $suffixedQuery->where('id', '!=', $excludeId);
@@ -1017,6 +1017,18 @@ class IndexedFileTableController extends Controller
                 ], 422);
             }
 
+            $fileIndexing = \Illuminate\Support\Facades\DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('id', $fileId)
+                ->first();
+
+            if (!$fileIndexing) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Indexed file not found.',
+                ], 404);
+            }
+
             $affected = \Illuminate\Support\Facades\DB::connection('sqlsrv')
                 ->table('file_indexings')
                 ->where('id', $fileId)
@@ -1025,11 +1037,19 @@ class IndexedFileTableController extends Controller
                     'updated_at' => now(),
                 ]);
 
-            if ($affected === 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Indexed file not found.',
-                ], 404);
+            // Also update kangis_grouping table if matching record exists
+            $fileNumber = $fileIndexing->file_number;
+            if ($fileNumber) {
+                // Strip suffix if any (e.g. KNML 1_2 -> KNML 1)
+                $baseFileNumber = preg_replace('/_\d+$/', '', $fileNumber);
+                
+                \Illuminate\Support\Facades\DB::connection('sqlsrv')
+                    ->table('kangis_grouping')
+                    ->where('kangis_awaiting_fileno', $baseFileNumber)
+                    ->update([
+                        'kangis_fileno_placeholder' => $placeholder,
+                        'updated_at' => now(),
+                    ]);
             }
 
             return response()->json([
@@ -1040,6 +1060,43 @@ class IndexedFileTableController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update placeholder.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function findFile(Request $request): JsonResponse
+    {
+        try {
+            $fileNumber = trim((string) $request->query('file_number', ''));
+            if ($fileNumber === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File number is required.',
+                ], 422);
+            }
+
+            $file = \Illuminate\Support\Facades\DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('file_number', $fileNumber)
+                ->orWhere('kangis_fileno_placeholder', $fileNumber)
+                ->first();
+
+            if (!$file) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File not found.',
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $file,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Search failed.',
                 'error' => $e->getMessage(),
             ], 500);
         }

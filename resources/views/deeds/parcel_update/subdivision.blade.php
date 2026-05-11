@@ -320,7 +320,7 @@
                     </div>
                     <div class="md:col-span-1">
                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">File Title <span class="text-red-500">*</span></label>
-                        <input type="text" name="file_title" id="file_title" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-bold">
+                        <input type="text" name="file_title" id="file_title" readonly class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold">
                     </div>
                     <div class="md:col-span-1">
                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Applicant Name</label>
@@ -570,8 +570,9 @@
                     if (data.fileNumber) {
                         document.getElementById('file_no').value = data.fileNumber;
                         if (data.record) {
-                            if (data.record.file_name) document.getElementById('file_title').value = data.record.file_name;
-                            if (data.record.applicant_name) document.getElementById('applicant_name').value = data.record.applicant_name;
+                            let commonName = data.record.file_name || data.record.applicant_name || '';
+                            document.getElementById('file_title').value = commonName;
+                            document.getElementById('applicant_name').value = commonName;
                             
                             // Backfill location details
                             if (data.record.plot_no) document.getElementById('loc_plot_no').value = data.record.plot_no;

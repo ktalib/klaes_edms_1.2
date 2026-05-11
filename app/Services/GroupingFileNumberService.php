@@ -74,7 +74,8 @@ class GroupingFileNumberService
             $currentMapping = $record->mapping !== null ? (int) $record->mapping : null;
             $currentMls = $record->mls_fileno ?? null;
 
-            // Conflict check
+            // Conflict check - REMOVED per user request to allow re-mapping
+            /*
             if ($currentMapping === 1 && !$this->stringsEqual($currentMls, $fullFileNumber) && !empty($currentMls)) {
                 $results[$fullFileNumber] = [
                     'status' => 'conflict',
@@ -86,6 +87,7 @@ class GroupingFileNumberService
                 ];
                 continue;
             }
+            */
 
             if (!$this->stringsEqual($currentMls, $fullFileNumber) || $currentMapping !== 1) {
                 $entry = [

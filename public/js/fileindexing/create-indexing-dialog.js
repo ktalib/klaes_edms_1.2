@@ -666,10 +666,10 @@
         }
 
         setAutoFilledValue('file-title', record.file_title ?? '', { lock: false });
-        
+
         // Populate Original Holder
         setAutoFilledValue('original-holder', record.original_holder ?? '', { lock: false });
-        
+
         // Populate Current Holder(s)
         // If record has current_holder data, use it; otherwise use file_title
         if (record.current_holder) {
@@ -677,7 +677,7 @@
             if (holdersWrapper) {
                 // Clear existing holders
                 holdersWrapper.innerHTML = '';
-                
+
                 // Handle both array and string formats
                 let holders = record.current_holder;
                 if (typeof holders === 'string' && holders.trim().startsWith('[') && holders.trim().endsWith(']')) {
@@ -689,11 +689,11 @@
                     }
                 }
                 const holdersArray = Array.isArray(holders) ? holders : [holders];
-                
+
                 holdersArray.forEach((holder, index) => {
                     const holderRow = document.createElement('div');
                     holderRow.className = 'current-holder-row flex gap-2';
-                    
+
                     const input = document.createElement('input');
                     input.type = 'text';
                     input.name = 'current_holder[]';
@@ -702,7 +702,7 @@
                     if (index === 0) {
                         input.id = 'current-holder';
                     }
-                    
+
                     const buttonContainer = document.createElement('div');
                     if (index === 0) {
                         const addBtn = document.createElement('button');
@@ -718,12 +718,12 @@
                         removeBtn.innerHTML = '<i data-lucide="trash-2" class="h-4 w-4 text-red-600"></i>';
                         buttonContainer.appendChild(removeBtn);
                     }
-                    
+
                     holderRow.appendChild(input);
                     holderRow.appendChild(buttonContainer);
                     holdersWrapper.appendChild(holderRow);
                 });
-                
+
                 // Reinitialize lucide icons
                 if (window.lucide && typeof window.lucide.createIcons === 'function') {
                     window.lucide.createIcons();
@@ -737,7 +737,7 @@
                 currentHolderInput.dispatchEvent(new Event('input', { bubbles: true }));
             }
         }
-        
+
         if (record.land_use_type || record.landuse) {
             populateLandUseFromRecord(record.land_use_type ?? record.landuse, 0);
         }
@@ -760,7 +760,7 @@
         }
 
         // Sync hidden input and visible select for file_type (Customer Type)
-        (function() {
+        (function () {
             const fileTypeValue = record.file_type ?? '';
             const hiddenInput = document.getElementById('file_type');
             const selectEl = document.getElementById('file_type_select');
@@ -785,7 +785,7 @@
         setAutoFilledValue('country-code-0', record.country_code ?? '+234', { lock: false });
         setAutoFilledValue('phone-0', record.phone ?? '', { lock: false });
         setAutoFilledValue('residence_address-0', record.residence_address ?? '', { lock: false });
-        
+
         // Trigger input events for personal details
         ['file-type-0', 'dob-0', 'nin-0', 'tin-0', 'rc-no-0', 'phone-0', 'residence_address-0'].forEach(id => {
             const el = document.getElementById(id);
@@ -798,7 +798,7 @@
         if (record.entity_type) setRadioGroupValue('entity_type[0]', record.entity_type);
         setAutoFilledValue('entity-name-0', record.entity_name ?? '', { lock: false });
         setAutoFilledValue('entity-physical-address-0', record.entity_physical_address ?? '', { lock: false });
-        
+
         if (record.customer_type) setRadioGroupValue('customer_type[0]', record.customer_type);
         setAutoFilledValue('customer-name-0', record.customer_name ?? '', { lock: false });
         setAutoFilledValue('customer-account-no-0', record.customer_account_no ?? '', { lock: false });
@@ -820,7 +820,7 @@
         setAutoFilledValue('awaiting-file-no', awaitingValue ?? '', { lock: false });
 
         setAutoFilledValue('tracking-id', record.tracking_id ?? '', { lock: false });
-        
+
         // General Registry Fix
         const genRegistrySelect = document.getElementById('general-registry');
         if (genRegistrySelect) {
@@ -909,14 +909,14 @@
                 if (wrapper) {
                     // Clear existing rows
                     wrapper.innerHTML = '';
-                    
+
                     relatedFiles.forEach((fileNo, index) => {
                         const row = document.createElement('div');
                         row.className = 'related-file-row flex gap-2';
-                        
+
                         const inputContainer = document.createElement('div');
                         inputContainer.className = 'flex-grow';
-                        
+
                         const input = document.createElement('input');
                         input.type = 'text';
                         input.name = 'related_fileno[]';
@@ -924,30 +924,30 @@
                         input.className = 'related-file-input block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-gray-50';
                         input.readOnly = true;
                         inputContainer.appendChild(input);
-                        
+
                         const buttonContainer = document.createElement('div');
                         buttonContainer.className = 'flex gap-2';
-                        
+
                         const selectBtn = document.createElement('button');
                         selectBtn.type = 'button';
                         selectBtn.className = 'select-related-btn inline-flex items-center px-3 py-2 border border-indigo-600 text-indigo-600 rounded-md hover:bg-indigo-50';
                         selectBtn.title = 'Select File Number';
                         selectBtn.innerHTML = '<i data-lucide="search" class="h-4 w-4 text-indigo-600"></i>';
-                        
+
                         const clearBtn = document.createElement('button');
                         clearBtn.type = 'button';
                         clearBtn.className = 'clear-related-btn inline-flex items-center px-3 py-2 border border-red-600 text-red-600 rounded-md hover:bg-red-50';
                         clearBtn.title = 'Remove/Clear';
                         clearBtn.innerHTML = `<i data-lucide="${index === 0 ? 'eraser' : 'trash-2'}" class="h-4 w-4 text-red-600"></i>`;
-                        
+
                         buttonContainer.appendChild(selectBtn);
                         buttonContainer.appendChild(clearBtn);
-                        
+
                         row.appendChild(inputContainer);
                         row.appendChild(buttonContainer);
                         wrapper.appendChild(row);
                     });
-                    
+
                     if (window.lucide && typeof window.lucide.createIcons === 'function') {
                         window.lucide.createIcons();
                     }
@@ -3266,7 +3266,7 @@
         entityCustomerState.hasRecord = Boolean(entityRecord || customerRecord);
 
         if (entityCustomerState.hasRecord) {
-             document.querySelectorAll('.entity-customer-cards').forEach(el => el.classList.remove('hidden'));
+            document.querySelectorAll('.entity-customer-cards').forEach(el => el.classList.remove('hidden'));
         }
 
         resetPropertyAddressLinkState({ force: false });
@@ -3940,7 +3940,7 @@
         }
 
         if (record) {
-             document.querySelectorAll('.entity-customer-cards').forEach(el => el.classList.remove('hidden'));
+            document.querySelectorAll('.entity-customer-cards').forEach(el => el.classList.remove('hidden'));
         }
 
         // Dispatch event for Alpine to sync
@@ -5003,7 +5003,7 @@
                         confirmButtonColor: '#f59e0b'
                     }).then(() => {
                         firstEmptyTitle.focus();
-                        try { firstEmptyTitle.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+                        try { firstEmptyTitle.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { }
                     });
                 } else {
                     alert('Please enter a File Title before saving.');
@@ -5138,7 +5138,7 @@
         const customDistrictInput = document.getElementById('custom-district-input');
         const districtName = getDistrictValue();
         const districtId = getSelectedOptionId(districtSelectEl);
-        
+
         let lgaName = '';
         let lgaId = null;
         let lgaValue = lgaSelect ? lgaSelect.value : '';
@@ -5147,7 +5147,7 @@
         if (lgaSelect && lgaValue) {
             // First try selectedOptions (modern)
             let selectedOpt = lgaSelect.selectedOptions ? lgaSelect.selectedOptions[0] : null;
-            
+
             // Fallback: iterate if selectedOptions is empty but value exists
             if (!selectedOpt) {
                 for (let i = 0; i < lgaSelect.options.length; i++) {
@@ -5328,9 +5328,9 @@
                 return (prefix && serial) ? `${prefix} ${serial}` : null;
             })(),
             // New KANGIS fields
-            kangis_file_type:   document.getElementById('kangis_file_type')?.value || null,
-            mls_file_no:        document.getElementById('mls_file_no_hidden')?.value || null,
-            kangis_file_no:     document.getElementById('kangis_file_no_hidden')?.value || null,
+            kangis_file_type: document.getElementById('kangis_file_type')?.value || null,
+            mls_file_no: document.getElementById('mls_file_no_hidden')?.value || null,
+            kangis_file_no: document.getElementById('kangis_file_no_hidden')?.value || null,
             new_kangis_file_no: document.getElementById('new_kangis_file_no_hidden')?.value || null,
         };
 
@@ -5603,7 +5603,7 @@
                         // The store response doesn't echo back tracking_id/file_title,
                         // so read them from the DOM (they were set in the form before submit).
                         const domTrackingId = (document.getElementById('tracking-id')?.value || '').trim();
-                        const domFileTitle  = (document.querySelector('input[name="file_title[]"], #file-title')?.value || '').trim();
+                        const domFileTitle = (document.querySelector('input[name="file_title[]"], #file-title')?.value || '').trim();
                         const fileIndexingData = {
                             ...propertyModalPayload,
                             tracking_id: domTrackingId || propertyModalPayload.tracking_id || '',
@@ -6770,6 +6770,10 @@
                 title: 'Data populated from Grouping records'
             });
         }
+        // Trigger variant check if it's a KANGIS file
+        if (typeof window.checkKangisPlaceholderSiblings === 'function') {
+            window.checkKangisPlaceholderSiblings();
+        }
     }
     window.populateFromGroupingRecord = populateFromGroupingRecord;
 
@@ -6874,6 +6878,7 @@
                     // Mark the serial input as required (the hidden field is assembled by JS)
                     if (kangisPlaceholderPrefix) kangisPlaceholderPrefix.setAttribute('required', 'required');
                     if (kangisPlaceholderSerial) kangisPlaceholderSerial.setAttribute('required', 'required');
+                    checkKangisPlaceholderSiblings();
                 } else {
                     kangisPlaceholderWrapper.classList.add('hidden');
                     if (kangisPlaceholderPrefix) {
@@ -6896,17 +6901,19 @@
             if (fb) fb.classList.add('hidden');
         }
 
-        async function checkKangisPlaceholderSiblings(value) {
+        async function checkKangisPlaceholderSiblings() {
             const fb = document.getElementById('kangis-placeholder-feedback');
             const fbText = document.getElementById('kangis-placeholder-feedback-text');
-            if (!fb || !fbText || !value.trim()) {
-                hidekangisPlaceholderFeedback();
-                return;
-            }
+            if (!fb || !fbText) return;
 
-            // Use the SELECTED file number (awaiting_fileno from grouping) as the sibling key
-            const selectedFileNumber = groupingState.record?.awaiting_fileno || '';
-            if (!selectedFileNumber) {
+            // Use the SELECTED file number (awaiting_fileno from grouping) or the main fileno input
+            const selectedFileNumber = groupingState.record?.awaiting_fileno || document.getElementById('fileno')?.value || '';
+
+            // Only show feedback for KANGIS registry files
+            const registrySelect = document.getElementById('general-registry');
+            const isKangis = registrySelect && registrySelect.value && registrySelect.value.toUpperCase().includes('KANGIS');
+
+            if (!isKangis || !selectedFileNumber.trim()) {
                 hidekangisPlaceholderFeedback();
                 return;
             }
@@ -6946,6 +6953,7 @@
                 hidekangisPlaceholderFeedback();
             }
         }
+        window.checkKangisPlaceholderSiblings = checkKangisPlaceholderSiblings;
 
         // Track which file numbers have already shown the "first variant" Swal
         let kangisFirstVariantShown = new Set();
@@ -6955,15 +6963,15 @@
         function onKangisInputChange() {
             const assembled = assembleKangisPlaceholder();
             clearTimeout(kangisDebounceTimer);
-            hidekangisPlaceholderFeedback();
+            // We don't hide immediately if we have a file selected, just let the debounce run
             kangisDebounceTimer = setTimeout(() => {
-                if (assembled) checkKangisPlaceholderSiblings(assembled);
+                checkKangisPlaceholderSiblings();
             }, 600);
         }
         function onKangisInputBlur() {
             const assembled = assembleKangisPlaceholder();
             clearTimeout(kangisDebounceTimer);
-            if (assembled) checkKangisPlaceholderSiblings(assembled);
+            checkKangisPlaceholderSiblings();
         }
 
         if (kangisPlaceholderPrefix) {
@@ -6986,15 +6994,15 @@
 
     /** Manage the New KANGIS File section (KN Series) in the file identification card. */
     function initializeNewKangisFields() {
-        const registrySelect     = document.getElementById('general-registry');
-        const newKangisWrapper   = document.getElementById('new-kangis-wrapper');
-        const isNewKangisChk     = document.getElementById('is-new-kangis-file');
-        const newKangisFields    = document.getElementById('new-kangis-fields');
-        const kangisFileTypeHid  = document.getElementById('kangis_file_type');
-        const knInput            = document.getElementById('new_kangis_file_no_input');
-        const knHidden           = document.getElementById('new_kangis_file_no_hidden');
-        const knList             = document.getElementById('kn-autocomplete-list');
-        const knStatus           = document.getElementById('kn-fileno-status');
+        const registrySelect = document.getElementById('general-registry');
+        const newKangisWrapper = document.getElementById('new-kangis-wrapper');
+        const isNewKangisChk = document.getElementById('is-new-kangis-file');
+        const newKangisFields = document.getElementById('new-kangis-fields');
+        const kangisFileTypeHid = document.getElementById('kangis_file_type');
+        const knInput = document.getElementById('new_kangis_file_no_input');
+        const knHidden = document.getElementById('new_kangis_file_no_hidden');
+        const knList = document.getElementById('kn-autocomplete-list');
+        const knStatus = document.getElementById('kn-fileno-status');
 
         if (!registrySelect || !newKangisWrapper) return;
 
@@ -7032,7 +7040,7 @@
                 } else {
                     if (newKangisFields) newKangisFields.classList.add('hidden');
                     // Clear hidden fields
-                    ['kangis_file_type','mls_file_no_hidden','kangis_file_no_hidden','new_kangis_file_no_hidden','kangis_applicant_phone_hidden'].forEach(id => {
+                    ['kangis_file_type', 'mls_file_no_hidden', 'kangis_file_no_hidden', 'new_kangis_file_no_hidden', 'kangis_applicant_phone_hidden'].forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.value = '';
                     });
@@ -7065,36 +7073,36 @@
                 fetch(`/api/kn-grouping/search?q=${encodeURIComponent(q)}`, {
                     headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' }
                 })
-                .then(r => r.ok ? r.json() : { data: [] })
-                .then(data => {
-                    const items = data.data || data || [];
-                    if (!items.length) {
-                        knList.innerHTML = '<div class="px-4 py-2 text-xs text-gray-400">No matches found</div>';
+                    .then(r => r.ok ? r.json() : { data: [] })
+                    .then(data => {
+                        const items = data.data || data || [];
+                        if (!items.length) {
+                            knList.innerHTML = '<div class="px-4 py-2 text-xs text-gray-400">No matches found</div>';
+                            knList.classList.remove('hidden');
+                            return;
+                        }
+                        knList.innerHTML = items.map(item =>
+                            `<div class="kn-autocomplete-item px-4 py-2 text-sm cursor-pointer hover:bg-green-50 font-mono font-semibold text-green-800 border-b border-gray-100" data-value="${item.kn_awaiting_fileno}">${item.kn_awaiting_fileno}</div>`
+                        ).join('');
                         knList.classList.remove('hidden');
-                        return;
-                    }
-                    knList.innerHTML = items.map(item =>
-                        `<div class="kn-autocomplete-item px-4 py-2 text-sm cursor-pointer hover:bg-green-50 font-mono font-semibold text-green-800 border-b border-gray-100" data-value="${item.kn_awaiting_fileno}">${item.kn_awaiting_fileno}</div>`
-                    ).join('');
-                    knList.classList.remove('hidden');
-                    knList.querySelectorAll('.kn-autocomplete-item').forEach(el => {
-                        el.addEventListener('click', function () {
-                            const val = this.getAttribute('data-value');
-                            knInput.value = val;
-                            if (knHidden) knHidden.value = val;
-                            knList.innerHTML = '';
-                            knList.classList.add('hidden');
-                            if (knStatus) {
-                                knStatus.textContent = `✓ Selected: ${val}`;
-                                knStatus.className = 'mt-1 text-xs text-green-700 font-semibold';
-                            }
+                        knList.querySelectorAll('.kn-autocomplete-item').forEach(el => {
+                            el.addEventListener('click', function () {
+                                const val = this.getAttribute('data-value');
+                                knInput.value = val;
+                                if (knHidden) knHidden.value = val;
+                                knList.innerHTML = '';
+                                knList.classList.add('hidden');
+                                if (knStatus) {
+                                    knStatus.textContent = `✓ Selected: ${val}`;
+                                    knStatus.className = 'mt-1 text-xs text-green-700 font-semibold';
+                                }
+                            });
                         });
+                    })
+                    .catch(() => {
+                        knList.innerHTML = '';
+                        knList.classList.add('hidden');
                     });
-                })
-                .catch(() => {
-                    knList.innerHTML = '';
-                    knList.classList.add('hidden');
-                });
             }, 350);
         });
 
@@ -7146,16 +7154,16 @@
             // Ensure icons have correct colors
             const searchIcon = newRow.querySelector('.select-related-btn i');
             if (searchIcon) searchIcon.classList.add('text-indigo-600');
-            
+
             const actionIcon = newRow.querySelector('.clear-related-btn i');
-            if(actionIcon) {
+            if (actionIcon) {
                 actionIcon.setAttribute('data-lucide', 'trash-2');
                 actionIcon.classList.add('text-red-600');
             }
 
             wrapper.appendChild(newRow);
             if (window.lucide) window.lucide.createIcons();
-            
+
             // If we added a row, make sure the checkbox is checked and visible
             if (!hasRelatedCheckbox.checked) {
                 hasRelatedCheckbox.checked = true;
@@ -7246,13 +7254,13 @@
                 const rows = relatedWrapper.querySelectorAll('.related-file-row');
                 for (let i = currentRelated - 1; i >= targetRelated; i--) {
                     if (i > 0) { // Keep at least the first one if we can
-                         rows[i].remove();
+                        rows[i].remove();
                     } else {
                         // If we are down to index 0, just clear it if target is 0
                         if (targetRelated === 0) {
                             const input = rows[0].querySelector('.related-file-input');
                             if (input) input.value = '';
-                            
+
                             // Also uncheck the checkbox if we are back to 1 holder
                             const hasRelatedCheckbox = document.getElementById('has-related-file');
                             if (hasRelatedCheckbox && hasRelatedCheckbox.checked) {
@@ -7283,7 +7291,7 @@
                     `;
                     holdersWrapper.appendChild(row);
                     if (window.lucide) window.lucide.createIcons();
-                    
+
                     // Sync related files
                     syncRelatedFilesToHolders();
 
@@ -7293,7 +7301,7 @@
                     }
                 } else if (removeBtnHit) {
                     removeBtnHit.closest('.current-holder-row').remove();
-                    
+
                     // Sync related files
                     syncRelatedFilesToHolders();
 
@@ -7304,7 +7312,7 @@
             });
 
             // Delegate input for holders to update button visibility
-            holdersWrapper.addEventListener('input', function(e) {
+            holdersWrapper.addEventListener('input', function (e) {
                 if (e.target.classList.contains('current-holder-input')) {
                     if (typeof updateRelatedButtonVisibility === 'function') {
                         updateRelatedButtonVisibility();
@@ -7346,11 +7354,11 @@
             const isBlock = this.value === 'Block';
             const addBtn = getAddBtn();
             const addOriginalBtn = getAddOriginalBtn();
-            
+
             // Toggle add button
             if (addBtn) addBtn.style.display = isBlock ? 'inline-flex' : 'none';
             if (addOriginalBtn) addOriginalBtn.style.display = isBlock ? 'inline-flex' : 'none';
-            
+
             if (!isBlock) {
                 // Reset to single holder in Regular mode
                 if (holdersWrapper) {
@@ -7367,10 +7375,10 @@
                 }
                 syncFirstHolder();
             }
-            
+
             // Sync related files
             syncRelatedFilesToHolders();
-            
+
             // Refresh Related Details button visibility
             if (typeof updateRelatedButtonVisibility === 'function') {
                 updateRelatedButtonVisibility();
@@ -7393,7 +7401,7 @@
         const addOriginalBtnInitial = getAddOriginalBtn();
         if (addBtnInitial) addBtnInitial.style.display = isBlockInitial ? 'inline-flex' : 'none';
         if (addOriginalBtnInitial) addOriginalBtnInitial.style.display = isBlockInitial ? 'inline-flex' : 'none';
-        
+
         if (!isBlockInitial) {
             syncFirstHolder();
         } else {
@@ -7443,9 +7451,9 @@
             sections.forEach(section => {
                 const indexingTypeSelect = document.getElementById('indexing-type');
                 const isBlock = indexingTypeSelect && indexingTypeSelect.value === 'Block';
-                
-                const key = isBlock 
-                    ? section.querySelector('input[name$="][holder]"]')?.value 
+
+                const key = isBlock
+                    ? section.querySelector('input[name$="][holder]"]')?.value
                     : section.querySelector('input[name$="][file_number]"]')?.value;
 
                 if (!key) return;
@@ -7472,9 +7480,9 @@
         function updateButtonVisibility() {
             const indexingTypeSelect = document.getElementById('indexing-type');
             const isBlock = indexingTypeSelect && indexingTypeSelect.value === 'Block';
-            
+
             let hasValue = false;
-            
+
             if (isBlock) {
                 const holderInputs = document.querySelectorAll('.current-holder-input');
                 holderInputs.forEach(input => {
@@ -7494,7 +7502,7 @@
                 openBtn.classList.add('hidden');
             }
         }
-        
+
         // Expose to higher scope for holders adjustment
         window.updateRelatedButtonVisibility = updateButtonVisibility;
 
@@ -7506,7 +7514,7 @@
                 setTimeout(updateButtonVisibility, 100);
             });
         }
-        
+
         // Initial check
         updateButtonVisibility();
 
@@ -7517,16 +7525,16 @@
 
             const indexingTypeSelect = document.getElementById('indexing-type');
             const isBlock = indexingTypeSelect && indexingTypeSelect.value === 'Block';
-            
+
             let items = [];
-            
+
             if (isBlock) {
                 const holderInputs = document.querySelectorAll('.current-holder-input');
                 holderInputs.forEach(input => {
                     const val = input.value.trim();
                     if (val) items.push({ type: 'holder', name: val });
                 });
-                
+
                 if (items.length === 0) {
                     alert('Please enter at least one Current Holder for Block Indexing.');
                     return;
@@ -7537,7 +7545,7 @@
                     const val = input.value.trim();
                     if (val) items.push({ type: 'file', fileNo: val });
                 });
-                
+
                 if (items.length === 0) {
                     alert('Please enter at least one related file number first.');
                     return;
@@ -7552,12 +7560,12 @@
 
                 const section = document.createElement('div');
                 section.className = 'bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden mb-6 last:mb-0';
-                
+
                 const title = isBlock ? `Record for Holder: ${item.name}` : `Related File: ${item.fileNo}`;
                 const icon = isBlock ? 'user' : 'file-text';
-                
+
                 // For block indexing, we don't need to re-enter the file number per holder
-                const fileNoHtml = isBlock 
+                const fileNoHtml = isBlock
                     ? `<input type="hidden" name="related_details[${index}][holder]" value="${item.name}">`
                     : `<input type="hidden" name="related_details[${index}][file_number]" value="${item.fileNo}">`;
 
@@ -7641,7 +7649,7 @@
             openBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4 mr-2"></i> Details Staged';
             openBtn.classList.add('bg-green-50', 'text-green-700', 'border-green-300');
             if (window.lucide) window.lucide.createIcons();
-            
+
             setTimeout(() => {
                 openBtn.innerHTML = originalHtml;
                 openBtn.classList.remove('bg-green-50', 'text-green-700', 'border-green-300');
@@ -7686,9 +7694,9 @@
 
             // 3. Bidirectional sync: dedicated KN input <-> main File Number field
             const fileNoDisplay = document.getElementById('file-number-display');
-            const fileNoHidden  = document.getElementById('fileno');
-            const knInput       = document.getElementById('new_kangis_file_no_input');
-            const knHidden      = document.getElementById('new_kangis_file_no_hidden');
+            const fileNoHidden = document.getElementById('fileno');
+            const knInput = document.getElementById('new_kangis_file_no_input');
+            const knHidden = document.getElementById('new_kangis_file_no_hidden');
 
             const isKnFormat = (val) => /^KN[\s_-]*\d/i.test((val || '').replace(/\s+/g, ''));
 
@@ -7702,14 +7710,14 @@
                 } else {
                     // Non-KN value in main field (e.g. existing MLS loaded in edit mode):
                     // preserve it as the MLS reference if mls_file_no_input is still empty.
-                    const mlsInput  = document.getElementById('mls_file_no_input');
+                    const mlsInput = document.getElementById('mls_file_no_input');
                     const mlsHidden = document.getElementById('mls_file_no_hidden');
-                    if (mlsInput && !mlsInput.value)   mlsInput.value   = val;
-                    if (mlsHidden && !mlsHidden.value) mlsHidden.value  = val;
+                    if (mlsInput && !mlsInput.value) mlsInput.value = val;
+                    if (mlsHidden && !mlsHidden.value) mlsHidden.value = val;
                 }
             }
             if (fileNoDisplay) fileNoDisplay.addEventListener('change', syncFromMain);
-            if (fileNoHidden)  fileNoHidden.addEventListener('change', syncFromMain);
+            if (fileNoHidden) fileNoHidden.addEventListener('change', syncFromMain);
             if (fileNoDisplay) {
                 new MutationObserver(syncFromMain).observe(fileNoDisplay, { attributes: true, attributeFilter: ['value'] });
             }
@@ -7735,9 +7743,9 @@
             //    and clear the main File Number field so the user picks the new KN.
             const prefilled = (window.prefillFileNumber || '').trim();
             if (prefilled && !isKnFormat(prefilled) && !window.isEditMode) {
-                const mlsInput  = document.getElementById('mls_file_no_input');
+                const mlsInput = document.getElementById('mls_file_no_input');
                 const mlsHidden = document.getElementById('mls_file_no_hidden');
-                if (mlsInput && !mlsInput.value)  mlsInput.value  = prefilled;
+                if (mlsInput && !mlsInput.value) mlsInput.value = prefilled;
                 if (mlsHidden && !mlsHidden.value) mlsHidden.value = prefilled;
             }
         }
@@ -7765,13 +7773,13 @@
                         } else if (this._target === 'new_kangis') {
                             // Picking the new KN file number: update dedicated input,
                             // KN hidden, and the main File Number field/hidden.
-                            const knInp  = document.getElementById('new_kangis_file_no_input');
-                            const knHid  = document.getElementById('new_kangis_file_no_hidden');
+                            const knInp = document.getElementById('new_kangis_file_no_input');
+                            const knHid = document.getElementById('new_kangis_file_no_hidden');
                             const mainDisplay = document.getElementById('file-number-display');
-                            const mainHidden  = document.getElementById('fileno');
+                            const mainHidden = document.getElementById('fileno');
                             if (knInp) knInp.value = data.fileNumber;
                             if (knHid) knHid.value = data.fileNumber;
-                            if (mainHidden)  mainHidden.value  = data.fileNumber;
+                            if (mainHidden) mainHidden.value = data.fileNumber;
                             if (mainDisplay) {
                                 mainDisplay.value = data.fileNumber;
                                 mainDisplay.dispatchEvent(new Event('change'));
@@ -7818,7 +7826,7 @@
             } else {
                 const sltrSection = document.getElementById('sltr-grouping-details');
                 if (sltrSection) sltrSection.classList.add('hidden');
-                
+
                 // Also clear the inputs if not SLTR
                 const subPrefixInput = document.getElementById('sub_prefix');
                 const suffixInput = document.getElementById('suffix');
@@ -7842,7 +7850,7 @@
                     sltrSection.classList.remove('hidden');
                     if (subPrefixInput) subPrefixInput.value = data.data.sub_prefix || '';
                     if (suffixInput) suffixInput.value = data.data.suffix || '';
-                    
+
                     if (typeof Swal !== 'undefined' && !window.isEditMode) {
                         Swal.fire({
                             title: 'SLTR Details Found',

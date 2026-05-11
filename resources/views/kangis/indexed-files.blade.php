@@ -48,6 +48,35 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Quick Manage KANGIS Placeholder Card -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-4 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
+                            <i data-lucide="edit-3" class="w-5 h-5 text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white">KANGIS FileNo Placeholder</h3>
+                            <p class="text-xs text-purple-100 font-medium">Manage KANGIS FileNo Placeholder</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <p class="text-sm text-slate-500 mb-4">
+                        Search for an indexed file by its KANGIS number and update its physical placeholder mapping.
+                    </p>
+                    <div class="flex flex-col md:flex-row gap-4">
+                        <div class="flex-1 relative">
+                            <input type="text" id="quick-placeholder-search" placeholder="Enter KANGIS File No (e.g. MLKN 1)" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition outline-none">
+                        </div>
+                        <button type="button" id="quick-placeholder-btn" class="px-6 py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition shadow-lg shadow-purple-200 flex items-center justify-center gap-2">
+                            <i data-lucide="search" class="w-4 h-4"></i>
+                            Manage
+                        </button>
+                    </div>
+                </div>
+            </div>
 
             @include('components.indexed-files-table', ['config' => [
                 'registry' => 'KANGIS',
@@ -92,6 +121,50 @@
                     }
                 })
                 .catch(error => console.error('Error loading stats:', error));
+        });
+
+        // Quick Manage KANGIS Placeholder logic
+        document.getElementById('quick-placeholder-btn')?.addEventListener('click', async () => {
+            const btn = document.getElementById('quick-placeholder-btn');
+            const fileNo = document.getElementById('quick-placeholder-search').value.trim();
+            if (!fileNo) {
+                Swal.fire({ icon: 'warning', title: 'Input Required', text: 'Please enter a KANGIS File Number or Placeholder.' });
+                return;
+            }
+            
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i data-lucide="loader" class="h-4 w-4 animate-spin"></i><span>Searching...</span>';
+            btn.disabled = true;
+            if (window.lucide) window.lucide.createIcons();
+
+            try {
+                const response = await fetch("{{ route('indexed-files.find') }}?file_number=" + encodeURIComponent(fileNo), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const result = await response.json();
+                
+                if (result.success && result.data) {
+                    // Check if handleUpdatePlaceholder is available (it should be from indexed-files-table component)
+                    if (typeof handleUpdatePlaceholder === 'function') {
+                        const dummyBtn = document.createElement('button');
+                        dummyBtn.setAttribute('data-file-id', result.data.id);
+                        dummyBtn.setAttribute('data-placeholder', result.data.kangis_fileno_placeholder || '');
+                        handleUpdatePlaceholder(dummyBtn);
+                    } else {
+                        console.error('handleUpdatePlaceholder function not found. Table component might not be ready.');
+                        Swal.fire({ icon: 'error', title: 'Error', text: 'System component not ready. Please refresh.' });
+                    }
+                } else {
+                    Swal.fire({ icon: 'error', title: 'Not Found', text: result.message || 'No indexed file found with that number.' });
+                }
+            } catch (error) {
+                console.error('Error finding file:', error);
+                Swal.fire({ icon: 'error', title: 'Error', text: 'An error occurred while searching.' });
+            } finally {
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+                if (window.lucide) window.lucide.createIcons();
+            }
         });
     </script>
 @endsection

@@ -111,10 +111,10 @@
                                         class="text-red-500">*</span></label>
                                 <input type="text" id="typeName" x-model="formData.name"
                                     placeholder="e.g. Power of Attorney"
-                                    :disabled="formMode === 'edit' && ['Power of Attorney', 'Deed of Surrender and Release'].includes(formData.name)"
+                                    :disabled="formMode === 'edit' && ['Power of Attorney', 'Deed of Surrender and Release', 'Deed of Assignment', 'Deed of Gift'].includes(formData.name)"
                                     class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:text-gray-500" />
                                 <template
-                                    x-if="formMode === 'edit' && ['Power of Attorney', 'Deed of Surrender and Release'].includes(formData.name)">
+                                    x-if="formMode === 'edit' && ['Power of Attorney', 'Deed of Surrender and Release', 'Deed of Assignment', 'Deed of Gift'].includes(formData.name)">
                                     <p class="mt-1 text-xs text-amber-600">
                                         <i class="fas fa-lock mr-1"></i> System Protected Type (Cannot be renamed)
                                     </p>

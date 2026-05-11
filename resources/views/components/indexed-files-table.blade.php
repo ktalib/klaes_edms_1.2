@@ -365,6 +365,63 @@
     </div>
 </div>
 
+<!-- Update KANGIS Placeholder Modal -->
+<div id="update-placeholder-modal" class="hidden fixed inset-0 z-[140] overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" id="update-placeholder-backdrop"></div>
+        <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+        <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full border border-gray-100">
+            <input type="hidden" id="update-placeholder-id">
+
+            <div class="bg-purple-600 px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
+                        <i data-lucide="edit-3" class="w-5 h-5 text-white"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-white">KANGIS FileNo Placeholder</h3>
+                        <p class="text-xs text-purple-100 font-medium">Manage KANGIS FileNo Placeholder</p>
+                    </div>
+                </div>
+                <button type="button" id="close-update-placeholder-modal" class="text-white/70 hover:text-white transition-colors">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <div class="px-8 py-6 space-y-4">
+                <div class="space-y-1.5">
+                    <label class="text-xs font-bold text-purple-600 uppercase tracking-wider block">KANGIS FileNo Placeholder <span class="text-red-500">*</span></label>
+                    <div class="flex gap-2">
+                        <div class="w-1/3">
+                            <select id="update-placeholder-prefix" class="w-full px-3 py-3 rounded-xl border-2 border-purple-100 focus:border-purple-600 focus:ring-0 text-gray-800 font-semibold text-lg bg-white">
+                                <option value="">Select Prefix</option>
+                                <option value="KN">KN</option>
+                                <option value="KNGP">KNGP</option>
+                                <option value="KNML">KNML</option>
+                                <option value="MLKN">MLKN</option>
+                                <option value="MNKL">MNKL</option>
+                                <option value="OTHER">OTHER</option>
+                            </select>
+                        </div>
+                        <div class="flex-1">
+                            <input type="text" id="update-placeholder-serial" class="w-full px-4 py-3 rounded-xl border-2 border-purple-100 focus:border-purple-600 focus:ring-0 text-gray-800 font-semibold text-lg" placeholder="00000">
+                        </div>
+                    </div>
+                    <p class="text-[10px] text-gray-400 mt-1">Select the KANGIS prefix and enter the serial digits. Example: MLKN 00035</p>
+                </div>
+            </div>
+
+            <div class="bg-gray-50 px-8 py-5 flex items-center justify-end gap-3 rounded-b-2xl border-t border-gray-100">
+                <button type="button" id="cancel-update-placeholder" class="px-6 py-2.5 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-200 transition-all">Cancel</button>
+                <button type="button" id="submit-update-placeholder" class="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-purple-600 hover:bg-purple-700 shadow-lg shadow-purple-500/25 transition-all flex items-center gap-2">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Update
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @push('scripts')
     @include('components.global-fileno-modal')
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
