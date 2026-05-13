@@ -5,10 +5,18 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Yajra\DataTables\Facades\DataTables;
+use App\Services\TimelineWeightingService;
 use Carbon\Carbon;
 
 class MortgageController extends Controller
 {
+    protected TimelineWeightingService $timelineService;
+
+    public function __construct(TimelineWeightingService $timelineService)
+    {
+        $this->timelineService = $timelineService;
+    }
+
     /**
      * Display the mortgage table view.
      */
@@ -44,6 +52,7 @@ class MortgageController extends Controller
         $icQuery = DB::connection('sqlsrv')->table('instrument_capture')
             ->select([
                 DB::raw("'ic_' + CAST(id AS NVARCHAR(50)) as id"),
+                'prop_id',
                 DB::raw("COALESCE(mlsFNo, kangisFileNo, NewKANGISFileno, temp_fileno) as file_number"),
                 DB::raw("registration_number as registration_particulars"),
                 'instrument_type',
@@ -61,6 +70,7 @@ class MortgageController extends Controller
         $praQuery = DB::connection('sqlsrv')->table('pra')
             ->select([
                 DB::raw("'pra_' + CAST(id AS NVARCHAR(50)) as id"),
+                'prop_id',
                 DB::raw("COALESCE(mlsFNo, kangisFileNo, NewKANGISFileno, fileno) as file_number"),
                 DB::raw("CAST(ISNULL(regNo, '') AS NVARCHAR(MAX)) as registration_particulars"),
                 'instrument_type',
@@ -78,6 +88,7 @@ class MortgageController extends Controller
         $fhsQuery = DB::connection('sqlsrv')->table('file_history_staging')
             ->select([
                 DB::raw("'fhs_' + CAST(id AS NVARCHAR(50)) as id"),
+                'prop_id',
                 DB::raw("COALESCE(mlsFNo, kangisFileNo, NewKANGISFileno, fileno, temp_fileno) as file_number"),
                 DB::raw("CAST(ISNULL(regNo, '') AS NVARCHAR(MAX)) as registration_particulars"),
                 'instrument_type',
@@ -107,6 +118,15 @@ class MortgageController extends Controller
             })
             ->filterColumn('registration_particulars', function($q, $kw) {
                 $q->where('registration_particulars', 'like', "%$kw%");
+            })
+            ->addColumn('timeline_count', function ($row) {
+                $propId = trim((string) ($row->prop_id ?? ''));
+                $fileNo = $row->file_number ?? '';
+                
+                if (!$propId && !$fileNo) return 1;
+
+                $rawRecords = $this->timelineService->getRawRecords($fileNo, $propId);
+                return max(1, $this->timelineService->getWeightedCount($rawRecords));
             })
             ->editColumn('date_captured', function ($row) {
                 try {

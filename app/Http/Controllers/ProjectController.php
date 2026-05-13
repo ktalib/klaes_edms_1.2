@@ -35,9 +35,21 @@ class ProjectController extends Controller
                 return $w->user;
             });
 
-        // Location data (reuse existing logic if possible, or fetch simple Kano lists)
-        $lgas = DB::connection('sqlsrv')->table('StatLGAs')->join('States', 'StatLGAs.StateID', '=', 'States.StateID')->where('States.StateName', 'Kano')->orderBy('LGAName')->get();
-        $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
+        // Location data
+        $lgas = DB::connection('sqlsrv')->table('StatLGAs')
+            ->join('States', 'StatLGAs.StateID', '=', 'States.StateID')
+            ->where('States.StateName', 'Kano')
+            ->orderBy('LGAName')
+            ->get();
+            
+        $lgaNames = $lgas->pluck('LGAName')->toArray();
+
+        $districts = DB::connection('sqlsrv')->table('districts')
+            ->where('is_active', 1)
+            ->whereNotIn('name', $lgaNames) // Filter out LGAs
+            ->orderBy('name')
+            ->get();
+
         $streets = \App\Models\StreetName::orderBy('name')->get();
 
         return view('valuation_compensations.projects.index', compact('projects', 'workers', 'lgas', 'districts', 'streets'));
@@ -76,6 +88,7 @@ class ProjectController extends Controller
                 'our_reference' => $request->our_reference,
                 'your_reference' => $request->your_reference,
                 'addressed_to' => $request->addressed_to,
+                'apply_percentage' => $request->apply_percentage ?? 10,
                 'user_id' => Auth::id(),
             ]);
 
@@ -160,6 +173,7 @@ class ProjectController extends Controller
                 'addressed_to' => $p->addressed_to,
                 'district' => $p->district,
                 'lga' => $p->lga,
+                'apply_percentage' => $p->apply_percentage,
                 'sub_projects' => $p->subProjects->map(function($sp) {
                     return [
                         'id' => $sp->id,

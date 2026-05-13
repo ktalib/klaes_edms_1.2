@@ -33,7 +33,7 @@ class ValuationCompensationController extends Controller
             ->orderBy('created_at', 'desc')
             ->get()
             ->groupBy('project_id');
-        
+
         // Statistics
         $stats = [
             'total_valuations' => ValuationCompensation::active()->count(),
@@ -50,9 +50,12 @@ class ValuationCompensationController extends Controller
             ->where('States.StateName', 'Kano')
             ->orderBy('LGAName')
             ->get();
+        $lgaNames = $lgas->pluck('LGAName')->toArray();
+
         $districts = DB::connection('sqlsrv')
             ->table('districts')
             ->where('is_active', 1)
+            ->whereNotIn('name', $lgaNames) // Filter out LGAs
             ->orderBy('name')
             ->get();
 
@@ -62,7 +65,7 @@ class ValuationCompensationController extends Controller
 
         $valuationItems = DB::connection('sqlsrv')->table('vfc_valuation_items')->where('is_active', 1)->get();
 
-        $banks = \App\Models\VfcBank::orderBy('name')->get()->map(function($b) {
+        $banks = \App\Models\VfcBank::orderBy('name')->get()->map(function ($b) {
             return [
                 'title' => $b->name,
                 'route' => asset('assets/' . $b->logo),
@@ -112,14 +115,22 @@ class ValuationCompensationController extends Controller
             'sub_project_id' => 'nullable|exists:sqlsrv.vfc_sub_projects,id',
             'project_fileno' => 'nullable|string',
             'worker_id' => 'required|string',
+            'length' => 'nullable|numeric|min:0',
+            'breadth' => 'nullable|numeric|min:0',
         ]);
 
         $data['user_id'] = Auth::id();
-        
+
         // Auto-generate file number if not provided
         if (empty($data['our_ref'])) {
             $project = \App\Models\Project::findOrFail($data['project_id']);
             $data['our_ref'] = $project->project_fileno;
+            $data['apply_percentage'] = $project->apply_percentage; // Capture current project percentage
+        } else {
+            // Even if ref exists, ensure we capture the project percentage for new records
+            $project = \App\Models\Project::find($data['project_id']);
+            if ($project)
+                $data['apply_percentage'] = $project->apply_percentage;
         }
 
         $record = ValuationCompensation::create($data);
@@ -183,6 +194,8 @@ class ValuationCompensationController extends Controller
             'sub_project_id' => 'nullable|exists:sqlsrv.vfc_sub_projects,id',
             'project_fileno' => 'nullable|string',
             'worker_id' => 'required|string',
+            'length' => 'nullable|numeric|min:0',
+            'breadth' => 'nullable|numeric|min:0',
         ]);
 
         $record->update($data);
@@ -220,7 +233,7 @@ class ValuationCompensationController extends Controller
     {
         $record = ValuationCompensation::active()->findOrFail($id);
         $oldData = $record->toArray();
-        
+
         $record->update(['is_deleted' => 1]);
 
         // Audit log
@@ -281,7 +294,7 @@ class ValuationCompensationController extends Controller
         }
 
         $project = $records->first()->project;
-        
+
         return view('valuation_compensations.batch_template', compact('records', 'project'));
     }
 }

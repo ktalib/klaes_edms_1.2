@@ -40,7 +40,10 @@ class ValuationCompensation extends Model
         'is_deleted',
         'user_id',
         'latitude',
-        'longitude'
+        'longitude',
+        'apply_percentage',
+        'length',
+        'breadth'
     ];
 
     protected $casts = [
@@ -51,7 +54,9 @@ class ValuationCompensation extends Model
         'compensation_amount' => 'decimal:2',
         'is_deleted' => 'integer',
         'latitude' => 'decimal:8',
-        'longitude' => 'decimal:8'
+        'longitude' => 'decimal:8',
+        'length' => 'decimal:2',
+        'breadth' => 'decimal:2'
     ];
 
     /**

@@ -58,6 +58,10 @@
                                     <span class="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">{{ $project->your_reference }}</span>
                                 </div>
                                 @endif
+                                <div class="flex items-center gap-2 border-l border-slate-200 pl-4">
+                                    <span class="text-[10px] font-bold text-blue-400 uppercase">Apply %:</span>
+                                    <span class="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shadow-sm">{{ $project->apply_percentage ?? 10 }}%</span>
+                                </div>
                             </div>
                         </div>
                         <!-- Template Rows Removed -->
@@ -69,7 +73,11 @@
                             <i data-lucide="users" class="h-4 w-4 text-slate-400"></i>
                             <span class="text-xs font-bold text-slate-500 uppercase">Assigned Workers ({{ $project->workers->count() }})</span>
                         </div>
-                        <button type="button" onclick='openManageWorkersModal({{ $project->id }}, "{{ $project->project_name }}", {!! json_encode($project->workers->map(function($w) { return ["id" => $w->id, "name" => $w->user->first_name . " " . $w->user->last_name, "code" => $w->worker_code]; })) !!})' 
+                        <button type="button" 
+                            data-project-id="{{ $project->id }}"
+                            data-project-name="{{ $project->project_name }}"
+                            data-workers="{{ json_encode($project->workers->map(function($w) { return ["id" => $w->id, "name" => $w->user->first_name . " " . $w->user->last_name, "code" => $w->worker_code]; })) }}"
+                            onclick="openManageWorkersModal(this.getAttribute('data-project-id'), this.getAttribute('data-project-name'), JSON.parse(this.getAttribute('data-workers')))" 
                             class="text-[10px] font-bold text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition flex items-center gap-1">
                             <i data-lucide="user-cog" class="h-3 w-3"></i> Manage
                         </button>
@@ -110,7 +118,10 @@
                             <span>Created {{ $project->created_at->format('d M, Y') }}</span>
                         </div>
                         <div class="flex gap-2">
-                            <button type="button" onclick='editProject({!! json_encode($project) !!})' class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Edit Project">
+                            <button type="button" 
+                                data-project="{{ json_encode($project) }}"
+                                onclick="editProject(JSON.parse(this.getAttribute('data-project')))" 
+                                class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Edit Project">
                                 <i data-lucide="edit-3" class="h-5 w-5"></i>
                             </button>
                             <a href="{{ route('valuation-compensations.projects.templates', $project->id) }}" target="_blank" class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Generate Templates">
@@ -237,12 +248,20 @@
 Ministry of Land and Physical
 Planning, Kano State</textarea>
                         </div>
-                        <div class="md:col-span-2">
+                        <div class="md:col-span-1">
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Number of Sub-Projects <span class="text-red-500">*</span></label>
                             <input type="number" name="number_of_sub_projects" id="number_of_sub_projects" min="1" value="1" required
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-bold"
                                 placeholder="e.g. 5">
-                            
+                        </div>
+                        <div class="md:col-span-1">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Apply % <span class="text-red-500">*</span></label>
+                            <input type="number" name="apply_percentage" id="apply_percentage" min="0" max="100" value="10" required
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-bold text-blue-600"
+                                placeholder="e.g. 10">
+                        </div>
+                        
+                        <div class="md:col-span-2">
                             <!-- Preview Container -->
                             <div id="sub_projects_preview" class="hidden mt-3 p-4 rounded-xl bg-indigo-50/50 border border-indigo-100/50">
                                 <p class="text-[10px] font-bold text-indigo-600 uppercase tracking-widest flex items-center gap-2 mb-2">
@@ -544,11 +563,13 @@ Planning, Kano State</textarea>
 
     // Refresh IDs if project code changes
     $('#project_code').on('input', function() {
-        const val = $(this).val();
-        $('#our_reference').val(val); // Backfill Our Reference
-        
         const num = $('#num_workers').val();
         if (num > 0) generateWorkerCards(num);
+    });
+
+    // Backfill Our Reference from FileNo
+    $('#project_fileno').on('input', function() {
+        $('#our_reference').val($(this).val());
     });
 
     function openProjectModal() {
@@ -566,7 +587,7 @@ Planning, Kano State</textarea>
         $.get("{{ route('valuation-compensations.projects.next-code') }}", function(data) {
             $('#project_code').val(data.code);
             $('#project_fileno').val(data.fileno);
-            $('#our_reference').val(data.code); // Backfill Our Reference
+            $('#our_reference').val(data.fileno); // Backfill Our Reference from FileNo
             
             // Refresh worker cards if number already entered
             const num = $('#num_workers').val();
@@ -591,6 +612,7 @@ Planning, Kano State</textarea>
         $('input[name="our_reference"]').val(project.our_reference);
         $('input[name="your_reference"]').val(project.your_reference);
         $('textarea[name="addressed_to"]').val(project.addressed_to);
+        $('#apply_percentage').val(project.apply_percentage || 10);
         $('#project_type').val(project.project_type).trigger('change');
         if (project.project_type === 'Other') {
             $('#project_type_other').val(project.project_type_other);

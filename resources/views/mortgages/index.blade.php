@@ -206,6 +206,29 @@
         text-decoration: underline;
     }
 
+    /* Timeline Badge Styles */
+    .timeline-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 36px;
+        padding: 2px 8px;
+        border-radius: 9999px;
+        font-size: 10px;
+        font-weight: 700;
+        border: 1px solid #bfdbfe;
+        background-color: #eff6ff;
+        color: #1e40af;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-top: 4px;
+        white-space: nowrap;
+    }
+    .timeline-badge:hover {
+        background-color: #dbeafe;
+        transform: scale(1.05);
+    }
+
     /* Animations */
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(10px); }
@@ -218,6 +241,7 @@
 @endpush
 
 @push('scripts')
+<script src="{{ asset('js/property-timeline-modal.js') }}"></script>
 <script>
 $(function() {
     const table = $('#mortgage_table').DataTable({
@@ -236,8 +260,26 @@ $(function() {
             { 
                 data: 'file_number', 
                 name: 'file_number',
-                render: function(data) {
-                    return `<span class="file-no-link">${data || '—'}</span>`;
+                render: function(data, type, row) {
+                    const fileNo = data || '—';
+                    const propId = row.prop_id || '';
+                    const count = row.timeline_count || 1;
+                    
+                    let html = `<div class="flex flex-col">
+                                    <span class="file-no-link">${fileNo}</span>`;
+                    
+                    if (fileNo !== '—' || propId) {
+                        html += `<div class="mt-1">
+                                    <button type="button" class="timeline-badge" 
+                                            onclick="openPropertyTimeline('${propId}', '${fileNo}')"
+                                            title="View full property timeline">
+                                        <i class="fas fa-history mr-1 opacity-70"></i> Timeline (${count})
+                                    </button>
+                                 </div>`;
+                    }
+                    
+                    html += `</div>`;
+                    return html;
                 }
             },
             { data: 'registration_particulars', name: 'registration_particulars', defaultContent: '0/0/0' },
@@ -285,5 +327,8 @@ $(function() {
         if (typeof lucide !== 'undefined') lucide.createIcons();
     });
 });
+
+ 
+
 </script>
 @endpush

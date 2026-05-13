@@ -1,10 +1,45 @@
-<style>
-    #valuation-form input[type="text"], 
+    <style>
+        #valuation-form input[type="text"], 
     #valuation-form textarea, 
     #valuation-form input[type="search"] {
         text-transform: uppercase !important;
     }
-</style>
+
+    /* Select2 Premium Styling for Valuation Modal */
+    .select2-container--default .select2-selection--multiple {
+        border-radius: 0.75rem !important;
+        border: 1px solid #e2e8f0 !important;
+        background-color: #f8fafc !important;
+        padding: 4px 8px !important;
+        min-height: 46px !important;
+        transition: all 0.2s ease !important;
+    }
+    .select2-container--default.select2-container--focus .select2-selection--multiple {
+        border-color: #3b82f6 !important;
+        background-color: #fff !important;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1) !important;
+    }
+    .select2-container--default .select2-selection--multiple .select2-selection__choice {
+        background-color: #eff6ff !important;
+        border: 1px solid #bfdbfe !important;
+        color: #1e40af !important;
+        border-radius: 0.5rem !important;
+        padding: 2px 8px !important;
+        font-weight: 700 !important;
+        font-size: 11px !important;
+        margin-top: 6px !important;
+    }
+    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+        color: #3b82f6 !important;
+        margin-right: 5px !important;
+    }
+    .select2-dropdown {
+        border-radius: 1rem !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+        overflow: hidden !important;
+    }
+    </style>
 <!-- Valuation for Compensation Modal -->
 <div id="valuation-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
     <!-- Background overlay -->
@@ -37,87 +72,101 @@
                         <h4 class="text-sm font-bold text-slate-700 uppercase tracking-wider">Project & Assignment</h4>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-6">
+                        <!-- Row 1: Project Selection -->
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Select Project <span class="text-red-500">*</span></label>
                             <select name="project_id" id="vfc_project_id" required
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
                                 <option value="">Select Project</option>
                             </select>
+                        </div>
 
-                            <div id="sub-project-section" class="hidden mt-6 pt-6 border-t border-slate-100">
-                                <label class="block text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2">Select Sub-Project <span class="text-red-500">*</span></label>
-                                <select name="sub_project_id" id="vfc_sub_project_id"
-                                    class="w-full px-4 py-3 rounded-xl border border-indigo-200 bg-indigo-50/30 focus:border-indigo-500 focus:bg-white transition text-sm font-bold text-indigo-700">
-                                    <option value="">Select Sub-Project</option>
-                                </select>
-                            </div>
-
-                            <div id="project-info" class="hidden mt-3 p-4 rounded-xl bg-blue-50/50 border border-blue-100/50">
-                                <p class="text-[10px] font-bold text-blue-600 uppercase tracking-widest flex items-center gap-2 mb-3 px-1">
-                                    <i data-lucide="info" class="h-3 w-3"></i> Project Summary
-                                </p>
-                                <div class="space-y-4">
-                                    <!-- Primary Identifiers -->
-                                    <div class="flex flex-wrap items-start gap-x-10 gap-y-3 pb-3.5 border-b border-blue-100/50">
-                                        <div class="flex flex-col">
-                                            <span class="text-[9px] text-blue-400 font-bold uppercase tracking-widest mb-1">Project FileNo</span>
-                                            <div class="flex items-center gap-2">
-                                                <i data-lucide="file-text" class="h-3.5 w-3.5 text-blue-500"></i>
-                                                <span id="proj_fileno_summary" class="text-[12px] font-bold text-blue-900 font-mono whitespace-nowrap">-</span>
-                                            </div>
-                                        </div>
-
-                                        <div class="flex flex-col">
-                                            <span class="text-[9px] text-amber-500/70 font-bold uppercase tracking-widest mb-1">Project Code</span>
-                                            <div class="flex items-center gap-2">
-                                                <i data-lucide="tag" class="h-3.5 w-3.5 text-amber-600"></i>
-                                                <span id="proj_code_summary" class="text-[12px] font-bold text-amber-800 font-mono whitespace-nowrap">-</span>
-                                            </div>
-                                        </div>
-
-                                        <div class="flex flex-col">
-                                            <span class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mb-1">Project ID</span>
-                                            <div class="flex items-center gap-2">
-                                                <i data-lucide="hash" class="h-3.5 w-3.5 text-slate-500"></i>
-                                                <span id="proj_id_summary" class="text-[12px] font-bold text-slate-700">-</span>
-                                            </div>
+                        <!-- Row 2: Project Summary (Full Width) -->
+                        <div id="project-info" class="hidden p-6 rounded-2xl bg-blue-50/50 border border-blue-100/50">
+                            <p class="text-[10px] font-bold text-blue-600 uppercase tracking-widest flex items-center gap-2 mb-4 px-1">
+                                <i data-lucide="info" class="h-3 w-3"></i> Project Summary
+                            </p>
+                            <div class="space-y-6">
+                                <!-- Primary Identifiers -->
+                                <div class="flex flex-wrap items-start justify-between gap-x-10 gap-y-4 pb-5 border-b border-blue-100/50">
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] text-blue-400 font-bold uppercase tracking-widest mb-1.5">Project FileNo</span>
+                                        <div class="flex items-center gap-2.5">
+                                            <i data-lucide="file-text" class="h-4 w-4 text-blue-500"></i>
+                                            <span id="proj_fileno_summary" class="text-[13px] font-black text-blue-900 font-mono whitespace-nowrap">-</span>
                                         </div>
                                     </div>
-                                    
-                                    <!-- Statistics -->
-                                    <div class="flex flex-wrap items-center gap-x-12 gap-y-3">
-                                        <div class="flex items-center gap-2.5">
-                                            <div class="h-8 w-8 rounded-lg bg-white border border-slate-100 shadow-sm flex items-center justify-center text-indigo-400">
-                                                <i data-lucide="users" class="h-4 w-4"></i>
-                                            </div>
-                                            <div class="flex flex-col">
-                                                <span class="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Total Workers</span>
-                                                <span id="proj_workers_summary" class="text-xs font-bold text-slate-800">0</span>
-                                            </div>
-                                        </div>
 
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] text-amber-500/70 font-bold uppercase tracking-widest mb-1.5">Project Code</span>
                                         <div class="flex items-center gap-2.5">
-                                            <div class="h-8 w-8 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-500">
-                                                <i data-lucide="clipboard-check" class="h-4 w-4"></i>
-                                            </div>
-                                            <div class="flex flex-col">
-                                                <span class="text-[9px] text-emerald-600/70 font-bold uppercase tracking-tight">Form filled</span>
-                                                <span id="proj_rem" class="text-xs font-bold text-emerald-600">0</span>
-                                            </div>
+                                            <i data-lucide="tag" class="h-4 w-4 text-amber-600"></i>
+                                            <span id="proj_code_summary" class="text-[13px] font-black text-amber-800 font-mono whitespace-nowrap">-</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mb-1.5">Project ID</span>
+                                        <div class="flex items-center gap-2.5">
+                                            <i data-lucide="hash" class="h-4 w-4 text-slate-500"></i>
+                                            <span id="proj_id_summary" class="text-[13px] font-black text-slate-700">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Statistics -->
+                                <div class="flex flex-wrap items-center gap-x-16 gap-y-4">
+                                    <div class="flex items-center gap-3">
+                                        <div class="h-10 w-10 rounded-xl bg-white border border-slate-100 shadow-sm flex items-center justify-center text-indigo-400">
+                                            <i data-lucide="users" class="h-5 w-5"></i>
+                                        </div>
+                                        <div class="flex flex-col">
+                                            <span class="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Total Workers</span>
+                                            <span id="proj_workers_summary" class="text-sm font-black text-slate-800">0</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center gap-3">
+                                        <div class="h-10 w-10 rounded-xl bg-white border border-slate-100 shadow-sm flex items-center justify-center text-emerald-400">
+                                            <i data-lucide="check-circle" class="h-5 w-5"></i>
+                                        </div>
+                                        <div class="flex flex-col">
+                                            <span class="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Forms Filled</span>
+                                            <span id="proj_valuations_summary" class="text-sm font-black text-emerald-700">0</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center gap-3">
+                                        <div class="h-10 w-10 rounded-xl bg-white border border-slate-100 shadow-sm flex items-center justify-center text-amber-400">
+                                            <i data-lucide="layers" class="h-5 w-5"></i>
+                                        </div>
+                                        <div class="flex flex-col">
+                                            <span class="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Sub-Projects</span>
+                                            <span id="proj_subprojects_summary" class="text-sm font-black text-amber-700">0</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Assigned Worker <span class="text-red-500">*</span></label>
-                            <select name="worker_id" id="vfc_worker_id" required
-                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
-                                <option value="">Select Worker (Select Project First)</option>
-                            </select>
-                            <p class="text-[10px] text-slate-400 mt-1 italic">The Worker ID will be automatically recorded.</p>
+                        <!-- Row 3: Worker & Sub-Project -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Assigned Worker <span class="text-red-500">*</span></label>
+                                <select name="worker_id" id="vfc_worker_id" required
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
+                                    <option value="">Select Worker (Select Project First)</option>
+                                </select>
+                                <p class="text-[10px] text-slate-400 mt-1 italic">The Worker ID will be automatically recorded.</p>
+                            </div>
+                            <div id="sub-project-section" class="hidden">
+                                <label class="block text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2">Select Sub-Project <span class="text-red-500">*</span></label>
+                                <select name="sub_project_id" id="vfc_sub_project_id"
+                                    class="w-full px-4 py-3 rounded-xl border border-indigo-200 bg-indigo-50/30 focus:border-indigo-500 focus:bg-white transition text-sm font-bold text-indigo-700">
+                                    <option value="">Select Sub-Project</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -212,19 +261,32 @@
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
                         </div>
 
-                        <div class="grid grid-cols-2 gap-4">
+                        <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Length (L) <span class="text-slate-400 font-normal italic">(m)</span></label>
+                                <input type="number" step="0.01" name="length" id="length"
+                                    class="calc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
+                                    placeholder="0.00">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Breadth (B) <span class="text-slate-400 font-normal italic">(m)</span></label>
+                                <input type="number" step="0.01" name="breadth" id="breadth"
+                                    class="calc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
+                                    placeholder="0.00">
+                            </div>
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Area Covered (m²) <span class="text-red-500">*</span></label>
                                 <input type="number" step="0.01" name="area_covered" id="area_covered" required
-                                    class="calc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
+                                    class="calc-trigger w-full px-4 py-3 rounded-xl border border-blue-100 bg-blue-50/50 text-sm font-bold text-blue-700 shadow-inner"
                                     placeholder="0.00">
                             </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Rate of Cost (₦) <span class="text-red-500">*</span></label>
-                                <input type="number" step="0.01" name="rate_of_cost" id="rate_of_cost" required
-                                    class="calc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
-                                    placeholder="0.00">
-                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Rate of Cost (₦) <span class="text-red-500">*</span></label>
+                            <input type="number" step="0.01" name="rate_of_cost" id="rate_of_cost" required
+                                class="calc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
+                                placeholder="0.00">
                         </div>
 
                         <div>
@@ -375,46 +437,39 @@
                     </div>
 
                     <div class="space-y-6">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="md:col-span-1">
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Plot Number</label>
                                 <input type="text" name="plot_no" id="plot_no"
                                     class="loc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
                                     placeholder="e.g. Plot 12A">
                             </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Street Name</label>
-                                <select name="street_name" id="street_name" data-id="street_name" class="loc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
-                                    <option value="">Select Street</option>
-                                    @foreach($streets as $street)
-                                        <option value="{{ $street->name }}">{{ $street->name }}</option>
+                            <div class="md:col-span-1">
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">District <span class="text-slate-400 font-normal italic">(Multi-select)</span></label>
+                                <select id="loc_district" multiple="multiple" class="loc-trigger vfc-select2 w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
+                                    @foreach($districts as $district)
+                                        <option value="{{ $district->name }}">{{ $district->name }}</option>
                                     @endforeach
-                                    <option value="Other">Other</option>
                                 </select>
-                                <input type="text" id="street_name_other" class="loc-trigger hidden mt-3 w-full px-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 text-sm font-medium" placeholder="Type street name...">
+                            </div>
+                            <div class="md:col-span-1">
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">LGA <span class="text-red-500">*</span> <span class="text-slate-400 font-normal italic">(Multi-select)</span></label>
+                                <select id="loc_lga" required multiple="multiple" class="loc-trigger vfc-select2 w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
+                                    @foreach($lgas as $lga)
+                                        <option value="{{ $lga->LGAName }}">{{ $lga->LGAName }}</option>
+                                    @endforeach
+                                </select>
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">District</label>
-                                <input type="text" id="loc_district" class="loc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. Nassarawa">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">LGA <span class="text-red-500">*</span></label>
-                                <input type="text" id="loc_lga" required class="loc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. Ungogo">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">State <span class="text-red-500">*</span></label>
-                                <select id="loc_state" required class="loc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
-                                    <option value="">Select State</option>
-                                    @foreach($states as $state)
-                                        <option value="{{ $state->StateName }}" {{ $state->StateName == 'Kano' ? 'selected' : '' }}>{{ $state->StateName }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                        </div>
-                        
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">State <span class="text-red-500">*</span></label>
+                            <select id="loc_state" required class="loc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
+                                <option value="">Select State</option>
+                                @foreach($states as $state)
+                                    <option value="{{ $state->StateName }}" {{ $state->StateName == 'Kano' ? 'selected' : '' }}>{{ $state->StateName }}</option>
+                                @endforeach
+                            </select>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Full Location Address <span class="text-red-500">*</span></label>
                             <textarea name="location" id="location" required rows="2"

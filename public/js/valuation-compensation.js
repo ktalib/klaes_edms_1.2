@@ -48,6 +48,16 @@ const VFC = {
     initEventListeners: function() {
         const self = this;
 
+        // Initialize Select2 globally for multi-selects with proper styling
+        if (typeof $.fn.select2 !== 'undefined') {
+            $('.vfc-select2').select2({
+                dropdownParent: $('#valuation-modal'),
+                width: '100%',
+                placeholder: 'Select items',
+                allowClear: true
+            });
+        }
+
         // Project Selection Change
         $('#vfc_project_id').on('change', function() {
             const projId = $(this).val();
@@ -60,12 +70,12 @@ const VFC = {
 
             const proj = self.projectsData.find(p => p.id == projId);
             if (proj) {
-                $('#proj_id_summary').text(proj.id);
+                $('#proj_id_summary').text('# ' + proj.id);
                 $('#proj_fileno_summary').text(proj.fileno);
                 $('#proj_code_summary').text(proj.code);
-                $('#proj_total').text(proj.total_items);
                 $('#proj_workers_summary').text(proj.workers_count || 0);
-                $('#proj_rem').text(proj.valuations_count || 0);
+                $('#proj_valuations_summary').text(proj.valuations_count || 0);
+                $('#proj_subprojects_summary').text(proj.sub_projects ? proj.sub_projects.length : 0);
                 
                 $('#project-info').removeClass('hidden');
                 if (window.lucide) window.lucide.createIcons();
@@ -83,7 +93,7 @@ const VFC = {
                 if (proj.sub_projects && proj.sub_projects.length > 0) {
                     $subProjSelect.html('<option value="">Select Sub-Project</option>');
                     proj.sub_projects.forEach(sp => {
-                        $subProjSelect.append(`<option value="${sp.id}">${sp.name} (${sp.code})</option>`);
+                        $subProjSelect.append(`<option value="${sp.id}">${sp.name}</option>`);
                     });
                     $subProjSection.removeClass('hidden');
                     $subProjSelect.prop('required', true);
@@ -93,16 +103,27 @@ const VFC = {
                 }
 
                 // Backfill location scope
+                const hasSelect2 = typeof $.fn.select2 !== 'undefined';
+                
                 if (proj.district) {
-                    $('#loc_district').val(proj.district).trigger('change');
-                    // If it's a select and doesn't have the value, we might need to set it manually or change to input
-                    if ($('#loc_district').val() !== proj.district) {
-                        // Fallback if it's a dropdown and doesn't match: we'll handle in buildLocation
-                    }
+                    const districts = proj.district.split(',').map(d => d.trim());
+                    $('#loc_district').val(districts);
+                    if (hasSelect2) $('#loc_district').trigger('change.select2');
+                } else {
+                    $('#loc_district').val(null);
+                    if (hasSelect2) $('#loc_district').trigger('change.select2');
                 }
+                
                 if (proj.lga) {
-                    $('#loc_lga').val(proj.lga).trigger('change');
+                    const lgas = proj.lga.split(',').map(l => l.trim());
+                    $('#loc_lga').val(lgas);
+                    if (hasSelect2) $('#loc_lga').trigger('change.select2');
+                } else {
+                    $('#loc_lga').val(null);
+                    if (hasSelect2) $('#loc_lga').trigger('change.select2');
                 }
+                
+                // Re-build the full location string
                 self.buildLocation();
             }
 
@@ -205,12 +226,6 @@ const VFC = {
             return false;
         });
 
-        // Project Group Toggle (Now opens modal)
-        $(document).on('click', '.project-group-header', function() {
-            const projectId = $(this).data('project-id');
-            self.openRecordsModal(projectId);
-        });
-
         // Records Modal Close
         $('.close-records-modal, #records-modal-overlay').on('click', function() {
             self.closeRecordsModal();
@@ -287,19 +302,18 @@ const VFC = {
 
     buildLocation: function() {
         const plot = $('#plot_no').val();
-        let street = $('#street_name').val();
-        if (street === 'Other') {
-            street = $('#street_name_other').val();
-        }
         
         let district = $('#loc_district').val();
-        const lga = $('#loc_lga').val();
+        if (Array.isArray(district)) district = district.join(', ');
+        
+        let lga = $('#loc_lga').val();
+        if (Array.isArray(lga)) lga = lga.join(', ');
+        
         const state = $('#loc_state').val();
         
         let loc = '';
-        if (plot) loc += plot;
-        if (street) loc += (loc ? ', ' : '') + street;
-        if (district && district !== 'Other') loc += (loc ? ', ' : '') + district;
+        if (plot) loc += "PLOT " + plot;
+        if (district) loc += (loc ? ', ' : '') + district;
         if (lga) loc += (loc ? ', ' : '') + lga;
         if (state) loc += (loc ? ', ' : '') + state + ' State';
         
@@ -309,6 +323,15 @@ const VFC = {
     },
 
     calculateCompensation: function() {
+        const length = parseFloat($('#length').val()) || 0;
+        const breadth = parseFloat($('#breadth').val()) || 0;
+        
+        // If L and B are provided, update Area Covered
+        if (length > 0 && breadth > 0) {
+            const areaVal = length * breadth;
+            $('#area_covered').val(areaVal.toFixed(2));
+        }
+
         const count = parseFloat($('#building_count').val()) || 0;
         const area = parseFloat($('#area_covered').val()) || 0;
         const rate = parseFloat($('#rate_of_cost').val()) || 0;
@@ -396,6 +419,7 @@ const VFC = {
     },
 
     openCreateModal: function() {
+        this.closeRecordsModal(); // Ensure records list is closed
         $('#modal-title').text('Valuation for Compensation Data Entry');
         $('#valuation-form')[0].reset();
         $('#record_id').val('');
@@ -421,6 +445,7 @@ const VFC = {
     },
 
     openEditModal: function(record) {
+        this.closeRecordsModal(); // Ensure records list is closed
         const self = this;
         $('#modal-title').text('Edit Valuation Record');
         $('#valuation-form')[0].reset();
@@ -454,6 +479,8 @@ const VFC = {
         }
 
         $('#building_count').val(record.building_count);
+        $('#length').val(record.length);
+        $('#breadth').val(record.breadth);
         $('#area_covered').val(record.area_covered);
         $('#rate_of_cost').val(record.rate_of_cost);
         $('#compensation_amount').val(record.compensation_amount);
@@ -534,51 +561,59 @@ const VFC = {
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
     },
 
+    openRecordsModalFromData: function(element) {
+        try {
+            const group = JSON.parse(element.getAttribute('data-records'));
+            if (!group || group.length === 0) return;
+
+            const project = group[0].project;
+            $('#records-modal-title').text(project ? project.project_name : 'Individual Records');
+            $('#records-modal-subtitle').text(project ? `${project.project_code} | ${project.project_fileno}` : '');
+            $('#print-batch-btn').data('project-id', project ? project.id : '');
+
+            let html = '';
+            group.forEach((record, index) => {
+                const bType = record.building_type === 'Other' ? (record.building_type_other || 'Other') : record.building_type;
+                html += `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-2 py-4 text-xs font-bold text-slate-400">${index + 1}</td>
+                        <td class="px-2 py-4 font-mono text-[10px] font-bold text-slate-400">${record.our_ref || 'N/A'}</td>
+                        <td class="px-2 py-4 font-bold text-slate-700 uppercase text-xs">${record.owner_name}</td>
+                        <td class="px-2 py-4 text-[10px] text-slate-500">${record.location ? (record.location.substring(0, 40) + (record.location.length > 40 ? '...' : '')) : 'N/A'}</td>
+                        <td class="px-2 py-4 text-[11px] text-slate-600">${bType}</td>
+                        <td class="px-2 py-4 font-bold text-teal-600 text-xs">₦${parseFloat(record.compensation_amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                        <td class="px-2 py-4 text-right">
+                            <div class="flex justify-end gap-1">
+                                <a href="${this.config.routes.store}/${record.id}" target="_blank" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="View/Print">
+                                    <i data-lucide="printer" class="h-3.5 w-3.5"></i>
+                                </a>
+                                <button onclick='VFC.openEditModal(${JSON.stringify(record).replace(/'/g, "&apos;")})' class="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg" title="Edit">
+                                    <i data-lucide="edit-3" class="h-3.5 w-3.5"></i>
+                                </button>
+                                <button onclick="VFC.deleteRecord(${record.id}, '${record.owner_name}')" class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg" title="Delete">
+                                    <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            $('#project-records-body').html(html);
+            if (window.lucide) window.lucide.createIcons();
+
+            $('#records-modal').removeClass('hidden').addClass('flex');
+            setTimeout(() => {
+                $('#records-modal-overlay').addClass('opacity-100');
+                $('#records-modal-container').removeClass('scale-95 opacity-0').addClass('scale-100 opacity-100');
+            }, 10);
+        } catch (e) {
+            console.error('Error parsing records data:', e);
+        }
+    },
+
     openRecordsModal: function(projectId) {
-        const group = this.records[projectId];
-        if (!group || group.length === 0) return;
-
-        const project = group[0].project;
-        $('#records-modal-title').text(project ? project.project_name : 'Individual Records');
-        $('#records-modal-subtitle').text(project ? `${project.project_code} | ${project.project_fileno}` : '');
-        $('#print-batch-btn').data('project-id', projectId);
-
-        let html = '';
-        group.forEach((record, index) => {
-            const bType = record.building_type === 'Other' ? (record.building_type_other || 'Other') : record.building_type;
-            html += `
-                <tr class="hover:bg-slate-50 transition-colors">
-                    <td class="px-2 py-4 text-xs font-bold text-slate-400">${index + 1}</td>
-                    <td class="px-2 py-4 font-mono text-[10px] font-bold text-slate-400">${record.our_ref || 'N/A'}</td>
-                    <td class="px-2 py-4 font-bold text-slate-700 uppercase text-xs">${record.owner_name}</td>
-                    <td class="px-2 py-4 text-[10px] text-slate-500">${record.location ? (record.location.substring(0, 40) + (record.location.length > 40 ? '...' : '')) : 'N/A'}</td>
-                    <td class="px-2 py-4 text-[11px] text-slate-600">${bType}</td>
-                    <td class="px-2 py-4 font-bold text-teal-600 text-xs">₦${parseFloat(record.compensation_amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td class="px-2 py-4 text-right">
-                        <div class="flex justify-end gap-1">
-                            <a href="${this.config.routes.store}/${record.id}" target="_blank" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="View/Print">
-                                <i data-lucide="printer" class="h-3.5 w-3.5"></i>
-                            </a>
-                            <button onclick='VFC.openEditModal(${JSON.stringify(record).replace(/'/g, "&apos;")})' class="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg" title="Edit">
-                                <i data-lucide="edit-3" class="h-3.5 w-3.5"></i>
-                            </button>
-                            <button onclick="VFC.deleteRecord(${record.id}, '${record.owner_name}')" class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg" title="Delete">
-                                <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        });
-
-        $('#project-records-body').html(html);
-        if (window.lucide) window.lucide.createIcons();
-
-        $('#records-modal').removeClass('hidden').addClass('flex');
-        setTimeout(() => {
-            $('#records-modal-overlay').addClass('opacity-100');
-            $('#records-modal-container').removeClass('scale-95 opacity-0').addClass('scale-100 opacity-100');
-        }, 10);
+        // Legacy support
     },
 
     closeRecordsModal: function() {

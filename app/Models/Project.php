@@ -26,6 +26,7 @@ class Project extends Model
         'our_reference',
         'your_reference',
         'addressed_to',
+        'apply_percentage',
         'user_id'
     ];
 

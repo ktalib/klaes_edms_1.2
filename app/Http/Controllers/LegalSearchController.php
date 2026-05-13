@@ -6,7 +6,7 @@ use Illuminate\Http\Request;
 use App\Services\LegalSearchService;
 use Illuminate\Support\Facades\DB;
 
-class LegalSearchController extends Controller
+class LegalSearchCocntroller extends Controller
 {
     protected LegalSearchService $searchService;
 
@@ -25,12 +25,12 @@ class LegalSearchController extends Controller
     protected function moduleConfig(): array
     {
         return [
-            'pageTitle'       => $this->pageTitle,
-            'viewPrefix'      => $this->viewPrefix,
+            'pageTitle' => $this->pageTitle,
+            'viewPrefix' => $this->viewPrefix,
             'searchRouteName' => $this->searchRouteName,
-            'watermarkText'   => $this->watermarkText,
+            'watermarkText' => $this->watermarkText,
             'printTemplateRouteName' => $this->printTemplateRouteName,
-            'printManagerDocType'    => $this->printManagerDocType,
+            'printManagerDocType' => $this->printManagerDocType,
         ];
     }
 
@@ -47,10 +47,10 @@ class LegalSearchController extends Controller
     public function search(Request $request)
     {
         $results = $this->searchService->search($request->all());
-        
+
         $searchParam = null;
         $searchValue = null;
-        
+
         $mappings = [
             'query' => 'File Number',
             'guarantorName' => 'Party 1',
@@ -75,11 +75,12 @@ class LegalSearchController extends Controller
         if ($searchParam) {
             $totalCount = $results['total_count'] ?? 0;
             $resultStatus = $totalCount > 0 ? 'Found' : 'Not Found';
-            
+
             // Collect query params for direct link
             $queryParams = $request->only(array_keys($mappings));
             // Filter out empty params
-            $queryParams = array_filter($queryParams, function($val) { return !empty($val); });
+            $queryParams = array_filter($queryParams, function ($val) {
+                return !empty($val); });
             $directLink = route('legal_search.index', $queryParams);
 
             \App\Models\LegalSearchLog::create([
@@ -152,13 +153,13 @@ class LegalSearchController extends Controller
     {
         $fileNo = trim((string) $request->query('file_number', ''));
         $propId = trim((string) $request->query('prop_id', ''));
-        $displayFileNumber   = trim((string) $request->query('display_file_number', ''));
-        $displayFileTitle    = trim((string) $request->query('display_file_title', ''));
+        $displayFileNumber = trim((string) $request->query('display_file_number', ''));
+        $displayFileTitle = trim((string) $request->query('display_file_title', ''));
         $displayDistrictLga = trim((string) $request->query('display_district_lga', ''));
-        $displayLandUse     = trim((string) $request->query('display_land_use', ''));
-        $displaySize        = trim((string) $request->query('display_size', ''));
-        $displayPlotNo      = trim((string) $request->query('display_plot_no', ''));
-        $displayTpno        = trim((string) $request->query('display_tpno', ''));
+        $displayLandUse = trim((string) $request->query('display_land_use', ''));
+        $displaySize = trim((string) $request->query('display_size', ''));
+        $displayPlotNo = trim((string) $request->query('display_plot_no', ''));
+        $displayTpno = trim((string) $request->query('display_tpno', ''));
 
         if ($fileNo === '' && $propId === '') {
             return response()->json(['success' => false, 'message' => 'file_number or prop_id is required'], 422);
@@ -180,7 +181,8 @@ class LegalSearchController extends Controller
             $fallback = DB::connection('sqlsrv')
                 ->table('file_history_staging')
                 ->where('prop_id', $propId)
-                ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+                ->where(function ($q) {
+                    $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
                 ->first();
 
             if ($fallback) {
@@ -205,16 +207,21 @@ class LegalSearchController extends Controller
         // Rule A: source-based dedup weights — which row wins when two sources have the same record
         $sourceBaseScore = function (array $row): float {
             $source = trim((string) ($row['source_table'] ?? ''));
-            if ($source === 'PRA') return 5.0;
-            if ($source === 'Deed Registration') return 5.0;
-            if ($source === 'CofO') return 5.0;
-            if ($source === 'File History') return 2.5;
+            if ($source === 'PRA')
+                return 5.0;
+            if ($source === 'Deed Registration')
+                return 5.0;
+            if ($source === 'CofO')
+                return 5.0;
+            if ($source === 'File History')
+                return 2.5;
             return 1.0;
         };
 
         $canonicalTransactionType = function ($value) use ($norm): string {
             $raw = $norm($value);
-            if ($raw === '') return '';
+            if ($raw === '')
+                return '';
 
             // ROFO variants
             if (str_contains($raw, 'right of occupancy') || str_contains($raw, 'right of occupanc')) {
@@ -232,16 +239,22 @@ class LegalSearchController extends Controller
             }
 
             // Occupancy Permit variants
-            if (str_contains($raw, 'occupancy permit')) return 'occupancy permit';
-            if (preg_replace('/\s+/', '', $raw) === 'op') return 'occupancy permit';
+            if (str_contains($raw, 'occupancy permit'))
+                return 'occupancy permit';
+            if (preg_replace('/\s+/', '', $raw) === 'op')
+                return 'occupancy permit';
 
             // Transfer of Title variants (incl. "Transfer Of Title (Op)")
-            if (str_contains($raw, 'transfer of title')) return 'transfer of title';
+            if (str_contains($raw, 'transfer of title'))
+                return 'transfer of title';
 
             // Mortgage variants → deed of mortgage
-            if ($raw === 'tripartite mortgage') return 'deed of mortgage';
-            if ($raw === 'legal mortgage')      return 'deed of mortgage';
-            if ($raw === 'equitable mortgage')  return 'deed of mortgage';
+            if ($raw === 'tripartite mortgage')
+                return 'deed of mortgage';
+            if ($raw === 'legal mortgage')
+                return 'deed of mortgage';
+            if ($raw === 'equitable mortgage')
+                return 'deed of mortgage';
 
             // Surrender/release variants → deed of surrender and release
             if ($raw === 'deed of surrender' || $raw === 'deed of release' || $raw === 'deed of surrender & release') {
@@ -252,16 +265,20 @@ class LegalSearchController extends Controller
             // Collapses "Power Of Attorney", "Irrevocable Power Of Attorney",
             // "Deed Of Power Of Attorney", "POA", etc. to one canonical key so
             // copies of the same instrument across PRA/FH dedupe correctly.
-            if (str_contains($raw, 'power of attorney')) return 'power of attorney';
-            if ($compact === 'poa' || $compact === 'ipoa') return 'power of attorney';
+            if (str_contains($raw, 'power of attorney'))
+                return 'power of attorney';
+            if ($compact === 'poa' || $compact === 'ipoa')
+                return 'power of attorney';
 
             return $raw;
         };
 
         $cleanNumericValue = function ($value): string {
-            if ($value === null) return '';
+            if ($value === null)
+                return '';
             $s = trim((string) $value);
-            if ($s === '') return '';
+            if ($s === '')
+                return '';
             return preg_replace('/\.0$/', '', $s);
         };
 
@@ -290,18 +307,23 @@ class LegalSearchController extends Controller
             $party1 = $row['party_1'] ?? '';
             $party2 = $row['party_2'] ?? '';
             $party3 = $row['party_3'] ?? '';
-            $date    = $row['transaction_date'] ?? ($row['deeds_date'] ?? ($row['reg_date'] ?? ''));
-            $regDate = $row['reg_date']  ?? ($row['deeds_date'] ?? '');
-            $regTime = $row['reg_time']  ?? ($row['deeds_time'] ?? ($row['transaction_time'] ?? ''));
-            $serialNo  = $row['serial_no'] ?? ($row['serialNo'] ?? '');
-            $pageNoVal = $row['page_no']   ?? ($row['pageNo'] ?? '');
-            $volumeNo  = $row['volume_no'] ?? ($row['volumeNo'] ?? '');
+            $date = $row['transaction_date'] ?? ($row['deeds_date'] ?? ($row['reg_date'] ?? ''));
+            $regDate = $row['reg_date'] ?? ($row['deeds_date'] ?? '');
+            $regTime = $row['reg_time'] ?? ($row['deeds_time'] ?? ($row['transaction_time'] ?? ''));
+            $serialNo = $row['serial_no'] ?? ($row['serialNo'] ?? '');
+            $pageNoVal = $row['page_no'] ?? ($row['pageNo'] ?? '');
+            $volumeNo = $row['volume_no'] ?? ($row['volumeNo'] ?? '');
 
-            if ($hasText($party1) || $hasText($party2) || $hasText($party3)) $score += 2;
-            if ($hasRegValue($serialNo) || $hasRegValue($pageNoVal) || $hasRegValue($volumeNo)) $score += 2;
-            if ($hasText($date))    $score += 2;
-            if ($hasText($regTime)) $score += 2;
-            if ($hasText($regDate)) $score += 2;
+            if ($hasText($party1) || $hasText($party2) || $hasText($party3))
+                $score += 2;
+            if ($hasRegValue($serialNo) || $hasRegValue($pageNoVal) || $hasRegValue($volumeNo))
+                $score += 2;
+            if ($hasText($date))
+                $score += 2;
+            if ($hasText($regTime))
+                $score += 2;
+            if ($hasText($regDate))
+                $score += 2;
 
             return $score;
         };
@@ -325,12 +347,12 @@ class LegalSearchController extends Controller
             // PRA stores deed execution date; File History stores registration date
             // for the same instrument — date-based keys caused them to never match.
             // Reg particulars (serial/page/volume) are source-neutral and authoritative.
-            $serialNo  = $cleanNumericValue($row['serial_no']  ?? null) ?: '0';
-            $pageNoVal = $cleanNumericValue($row['page_no']    ?? null) ?: '0';
-            $volumeNo  = $cleanNumericValue($row['volume_no']  ?? null) ?: '0';
-            $hasRealReg = ($serialNo  !== '0' && $serialNo  !== '') ||
-                          ($pageNoVal !== '0' && $pageNoVal !== '') ||
-                          ($volumeNo  !== '0' && $volumeNo  !== '');
+            $serialNo = $cleanNumericValue($row['serial_no'] ?? null) ?: '0';
+            $pageNoVal = $cleanNumericValue($row['page_no'] ?? null) ?: '0';
+            $volumeNo = $cleanNumericValue($row['volume_no'] ?? null) ?: '0';
+            $hasRealReg = ($serialNo !== '0' && $serialNo !== '') ||
+                ($pageNoVal !== '0' && $pageNoVal !== '') ||
+                ($volumeNo !== '0' && $volumeNo !== '');
 
             if ($hasRealReg) {
                 return 'reg|' . $transactionType . '|' . $serialNo . '/' . $pageNoVal . '/' . $volumeNo;
@@ -389,10 +411,12 @@ class LegalSearchController extends Controller
 
         $parseTimelineTimeValue = function ($value): array {
             $result = ['h' => 0, 'm' => 0, 's' => 0];
-            if ($value === null || $value === '' || $value === '-') return $result;
+            if ($value === null || $value === '' || $value === '-')
+                return $result;
 
             $text = trim((string) $value);
-            if ($text === '') return $result;
+            if ($text === '')
+                return $result;
 
             if (preg_match('/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)?$/i', $text, $m)) {
                 $hour = (int) $m[1];
@@ -400,8 +424,10 @@ class LegalSearchController extends Controller
                 $second = isset($m[3]) ? (int) $m[3] : 0;
                 $ampm = strtoupper((string) ($m[4] ?? ''));
 
-                if ($ampm === 'PM' && $hour < 12) $hour += 12;
-                if ($ampm === 'AM' && $hour === 12) $hour = 0;
+                if ($ampm === 'PM' && $hour < 12)
+                    $hour += 12;
+                if ($ampm === 'AM' && $hour === 12)
+                    $hour = 0;
 
                 return ['h' => $hour, 'm' => $minute, 's' => $second];
             }
@@ -415,10 +441,12 @@ class LegalSearchController extends Controller
         };
 
         $parseTimelineDateValue = function ($value, $timeValue = null) use ($parseTimelineTimeValue): ?int {
-            if ($value === null || $value === '' || $value === '-') return null;
+            if ($value === null || $value === '' || $value === '-')
+                return null;
 
             $text = trim((string) $value);
-            if ($text === '') return null;
+            if ($text === '')
+                return null;
 
             $time = $parseTimelineTimeValue($timeValue);
 
@@ -454,7 +482,8 @@ class LegalSearchController extends Controller
 
             foreach ($candidates as $candidate) {
                 $ts = $parseTimelineDateValue($candidate['date'], $candidate['time']);
-                if ($ts !== null) return $ts;
+                if ($ts !== null)
+                    return $ts;
             }
             return null;
         };
@@ -463,9 +492,12 @@ class LegalSearchController extends Controller
         // all others (incl. CofO) sorted chronologically by registration date.
         $getTransPriorityWeight = function (array $row) use ($norm, $canonicalTransactionType): int {
             $txType = $canonicalTransactionType($row['transaction_type'] ?? ($row['instrument_type'] ?? ''));
-            if ($txType === 'occupancy permit') return 10;
-            if ($txType === 'transfer of title') return 9;
-            if ($txType === 'right of occupancy') return 8;
+            if ($txType === 'occupancy permit')
+                return 10;
+            if ($txType === 'transfer of title')
+                return 9;
+            if ($txType === 'right of occupancy')
+                return 8;
             // CofO + all other instruments share weight 5; chronological order applies within this tie group.
             return 5;
         };
@@ -475,7 +507,8 @@ class LegalSearchController extends Controller
             $wb = $getTransPriorityWeight($b);
 
             // Priority group always before secondary group
-            if ($wa !== $wb) return $wb - $wa;
+            if ($wa !== $wb)
+                return $wb - $wa;
 
             // Within priority group: maintain weight order (already equal here,
             // so fall through to chronological for ties within the same instrument)
@@ -485,9 +518,12 @@ class LegalSearchController extends Controller
             if ($ta === null && $tb === null) {
                 return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
             }
-            if ($ta === null) return 1;
-            if ($tb === null) return -1;
-            if ($ta !== $tb) return $ta <=> $tb;
+            if ($ta === null)
+                return 1;
+            if ($tb === null)
+                return -1;
+            if ($ta !== $tb)
+                return $ta <=> $tb;
 
             return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
         });
@@ -503,10 +539,10 @@ class LegalSearchController extends Controller
         $timelineOrderRaw = trim((string) $request->query('timeline_order', ''));
         if ($timelineOrderRaw !== '') {
             $labelToDb = [
-                'PRA'                => 'pra',
-                'File History'       => 'file_history_staging',
-                'CofO'               => 'CofO_staging',
-                'Deed Registration'  => 'deed_registrations',
+                'PRA' => 'pra',
+                'File History' => 'file_history_staging',
+                'CofO' => 'CofO_staging',
+                'Deed Registration' => 'deed_registrations',
             ];
             $orderTokens = array_values(array_filter(array_map('trim', explode(',', $timelineOrderRaw))));
             $orderIndex = [];
@@ -541,7 +577,8 @@ class LegalSearchController extends Controller
 
         $parseRelatedFileno = function ($raw) {
             $text = trim((string) $raw);
-            if ($text === '') return null;
+            if ($text === '')
+                return null;
 
             $text = trim($text, "[]");
             $parts = preg_split('/[,;|]/', $text) ?: [];
@@ -551,11 +588,14 @@ class LegalSearchController extends Controller
                 return $p;
             }, $parts)));
 
-            if (empty($parts)) return null;
+            if (empty($parts))
+                return null;
 
             foreach ($parts as $p) {
-                if (preg_match('/^(CON-(COM|RES|AG|IND)|COM|RES|IND|AG)-\d{2,4}-\d+$/i', $p)
-                    || preg_match('/^(CON-(COM|RES|AG|IND)|COM|RES|IND|AG)-\d+$/i', $p)) {
+                if (
+                    preg_match('/^(CON-(COM|RES|AG|IND)|COM|RES|IND|AG)-\d{2,4}-\d+$/i', $p)
+                    || preg_match('/^(CON-(COM|RES|AG|IND)|COM|RES|IND|AG)-\d+$/i', $p)
+                ) {
                     return $p;
                 }
             }
@@ -565,7 +605,8 @@ class LegalSearchController extends Controller
 
         $fileNumber = $first['fileno'] ?: ($first['file_number'] ?: ($first['mlsFNo'] ?: '-'));
         $kangisNumber = $first['kangisFileNo'] ?? null;
-        if ($kangisNumber === '-') $kangisNumber = null;
+        if ($kangisNumber === '-')
+            $kangisNumber = null;
         $relatedMls = null;
 
         // Get file_title, plot_number, tp_no from file_indexings table
@@ -580,13 +621,14 @@ class LegalSearchController extends Controller
                 ->where(function ($q) use ($fileNumberCandidates) {
                     foreach ($fileNumberCandidates as $candidate) {
                         $q->orWhere('file_number', $candidate)
-                          ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
+                            ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
                     }
                 })
                 ->select('file_title', 'plot_number', 'tp_no', 'land_use_type', 'related_fileno')
                 ->first();
             if ($fi) {
-                if ($fi->file_title) $fileTitle = $tc($fi->file_title);
+                if ($fi->file_title)
+                    $fileTitle = $tc($fi->file_title);
                 $fiPlotNo = $fi->plot_number ?: null;
                 $fiTpNo = $fi->tp_no ?: null;
                 $fiLandUse = $fi->land_use_type ?: null;
@@ -611,8 +653,10 @@ class LegalSearchController extends Controller
         }
         $district = ($first['districtName'] ?? null) ?: null;
         $lga = ($first['lgsaOrCity'] ?? null) ?: null;
-        if ($district === '-') $district = null;
-        if ($lga === '-') $lga = null;
+        if ($district === '-')
+            $district = null;
+        if ($lga === '-')
+            $lga = null;
         $districtLga = $tc(implode(', ', array_filter([$district, $lga])) ?: ($first['location'] ?: '-'));
         // Plot No: prefer file_indexings, fallback to transaction data
         $plotNo = $fiPlotNo ?: ($first['plot_no'] ?: '-');
@@ -669,17 +713,26 @@ class LegalSearchController extends Controller
         foreach ($transactions as $idx => $t) {
             // Reg Date: prefer deeds_date, fallback to reg_date, then transaction_date
             $regDate = $t['deeds_date'] ?? null;
-            if (!$regDate) $regDate = $t['reg_date'] ?? null;
+            if (!$regDate)
+                $regDate = $t['reg_date'] ?? null;
             if ($regDate) {
-                try { $regDate = \Carbon\Carbon::parse($regDate)->format('M j, Y'); } catch (\Exception $e) { /* keep as-is */ }
+                try {
+                    $regDate = \Carbon\Carbon::parse($regDate)->format('M j, Y');
+                } catch (\Exception $e) { /* keep as-is */
+                }
             }
-            if (!$regDate) $regDate = $t['transaction_date'] ?: '-';
+            if (!$regDate)
+                $regDate = $t['transaction_date'] ?: '-';
 
             // Reg Time: prefer deeds_time, fallback to reg_time, format to 12-hour with AM/PM
             $regTime = $t['deeds_time'] ?? null;
-            if (!$regTime) $regTime = $t['reg_time'] ?? null;
+            if (!$regTime)
+                $regTime = $t['reg_time'] ?? null;
             if ($regTime && $regTime !== '-') {
-                try { $regTime = \Carbon\Carbon::parse($regTime)->format('g:i A'); } catch (\Exception $e) { /* keep as-is */ }
+                try {
+                    $regTime = \Carbon\Carbon::parse($regTime)->format('g:i A');
+                } catch (\Exception $e) { /* keep as-is */
+                }
             }
             $regTime = $regTime ?: '-';
 
@@ -851,13 +904,20 @@ class LegalSearchController extends Controller
         // Short hash QR data for verification
         $qrData = substr(hash_hmac('sha256', $fileNumber . $now->timestamp, config('app.key')), 0, 9);
 
-        if ($displayFileNumber !== '')   $fileNumberDisplay = $displayFileNumber;
-        if ($displayFileTitle !== '')    $fileTitle          = $tc($displayFileTitle);
-        if ($displayDistrictLga !== '')  $districtLga        = $tc($displayDistrictLga);
-        if ($displayLandUse !== '')      $landUse            = $tc($displayLandUse);
-        if ($displaySize !== '')         $size               = $displaySize;
-        if ($displayPlotNo !== '')       $plotNo             = $displayPlotNo;
-        if ($displayTpno !== '')         $tpno               = $displayTpno;
+        if ($displayFileNumber !== '')
+            $fileNumberDisplay = $displayFileNumber;
+        if ($displayFileTitle !== '')
+            $fileTitle = $tc($displayFileTitle);
+        if ($displayDistrictLga !== '')
+            $districtLga = $tc($displayDistrictLga);
+        if ($displayLandUse !== '')
+            $landUse = $tc($displayLandUse);
+        if ($displaySize !== '')
+            $size = $displaySize;
+        if ($displayPlotNo !== '')
+            $plotNo = $displayPlotNo;
+        if ($displayTpno !== '')
+            $tpno = $displayTpno;
 
         return response()->json([
             'success' => true,
@@ -896,10 +956,10 @@ class LegalSearchController extends Controller
     public function match(Request $request)
     {
         $request->validate([
-            'table'    => 'required|string',
-            'ids'      => 'required|array|min:1',
-            'ids.*'    => 'integer',
-            'prop_id'  => 'required|string|max:20',
+            'table' => 'required|string',
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer',
+            'prop_id' => 'required|string|max:20',
         ]);
 
         try {
@@ -912,7 +972,7 @@ class LegalSearchController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => "{$count} record(s) matched to prop_id {$request->input('prop_id')}.",
-                'data'    => ['affected' => $count],
+                'data' => ['affected' => $count],
             ]);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -925,9 +985,9 @@ class LegalSearchController extends Controller
     public function drop(Request $request)
     {
         $request->validate([
-            'table'  => 'required|string',
-            'ids'    => 'required|array|min:1',
-            'ids.*'  => 'integer',
+            'table' => 'required|string',
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer',
         ]);
 
         try {
@@ -939,7 +999,7 @@ class LegalSearchController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => "{$count} record(s) dropped from prop_id group.",
-                'data'    => ['affected' => $count],
+                'data' => ['affected' => $count],
             ]);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -952,9 +1012,9 @@ class LegalSearchController extends Controller
     public function remove(Request $request)
     {
         $request->validate([
-            'table'  => 'required|string',
-            'ids'    => 'required|array|min:1',
-            'ids.*'  => 'integer',
+            'table' => 'required|string',
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer',
         ]);
 
         try {
@@ -966,7 +1026,7 @@ class LegalSearchController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => "{$count} record(s) removed.",
-                'data'    => ['affected' => $count],
+                'data' => ['affected' => $count],
             ]);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -979,8 +1039,8 @@ class LegalSearchController extends Controller
     public function update(Request $request)
     {
         $request->validate([
-            'table'  => 'required|string',
-            'id'     => 'required|integer',
+            'table' => 'required|string',
+            'id' => 'required|integer',
             'fields' => 'required|array|min:1',
         ]);
 
@@ -994,7 +1054,7 @@ class LegalSearchController extends Controller
             return response()->json([
                 'success' => $updated,
                 'message' => $updated ? 'Record updated successfully.' : 'No changes made.',
-                'data'    => [],
+                'data' => [],
             ]);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -1039,7 +1099,7 @@ class LegalSearchController extends Controller
     {
         $request->validate([
             'table' => 'required|string',
-            'id'    => 'required|integer',
+            'id' => 'required|integer',
         ]);
 
         try {
@@ -1055,7 +1115,7 @@ class LegalSearchController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Record loaded.',
-                'data'    => $record,
+                'data' => $record,
             ]);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -1068,10 +1128,10 @@ class LegalSearchController extends Controller
     public function detectConflicts(Request $request)
     {
         $request->validate([
-            'selections'          => 'required|array|min:1',
-            'selections.*.table'  => 'required|string',
-            'selections.*.ids'    => 'required|array|min:1',
-            'selections.*.ids.*'  => 'integer',
+            'selections' => 'required|array|min:1',
+            'selections.*.table' => 'required|string',
+            'selections.*.ids' => 'required|array|min:1',
+            'selections.*.ids.*' => 'integer',
         ]);
 
         $propIds = $this->searchService->detectPropIdConflicts(
@@ -1079,9 +1139,9 @@ class LegalSearchController extends Controller
         );
 
         return response()->json([
-            'success'    => true,
+            'success' => true,
             'has_conflict' => count($propIds) > 1,
-            'prop_ids'   => $propIds,
+            'prop_ids' => $propIds,
         ]);
     }
 
@@ -1091,11 +1151,11 @@ class LegalSearchController extends Controller
     public function saveArrangement(Request $request)
     {
         $request->validate([
-            'prop_id'            => 'required|string|max:20',
-            'items'              => 'required|array|min:1',
-            'items.*.table'      => 'required|string',
-            'items.*.id'         => 'required|integer',
-            'items.*.order'      => 'required|integer|min:1',
+            'prop_id' => 'required|string|max:20',
+            'items' => 'required|array|min:1',
+            'items.*.table' => 'required|string',
+            'items.*.id' => 'required|integer',
+            'items.*.order' => 'required|integer|min:1',
         ]);
 
         try {
@@ -1108,7 +1168,7 @@ class LegalSearchController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Arrangement saved successfully.',
-                'data'    => ['affected' => $count],
+                'data' => ['affected' => $count],
             ]);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -1130,7 +1190,7 @@ class LegalSearchController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => ['arrangement' => $arrangement],
+            'data' => ['arrangement' => $arrangement],
         ]);
     }
 

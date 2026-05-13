@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\DataCollector\LoggerDataCollector;
 use Yajra\DataTables\Facades\DataTables;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -155,7 +156,7 @@ class MlsFileNoController extends Controller
                 ->leftJoin('purposes', 'mls_file_no.purpose_id', '=', 'purposes.id')
                 ->where(function ($q) {
                     $q->whereNull('fileNumber.is_deleted')->orWhere('fileNumber.is_deleted', 0);
-                }); 
+                });
 
             // Apply filters from DataTables
             if ($request->filled('year')) {
@@ -453,7 +454,7 @@ class MlsFileNoController extends Controller
                 ->table('file_indexings')
                 ->where(function ($query) use ($q) {
                     $query->where('file_number', 'LIKE', '%' . $q . '%')
-                          ->orWhere('file_title', 'LIKE', '%' . $q . '%');
+                        ->orWhere('file_title', 'LIKE', '%' . $q . '%');
                 })
                 ->where(function ($query) {
                     $query->whereNull('is_deleted')->orWhere('is_deleted', 0);
@@ -557,7 +558,7 @@ class MlsFileNoController extends Controller
                     $origPra = (clone $origPraQuery)
                         ->where(function ($q) {
                             $q->where('instrument_type', 'like', '%Occupancy Permit%')
-                              ->orWhere('source', 'like', '%Occupancy Permit%');
+                                ->orWhere('source', 'like', '%Occupancy Permit%');
                         })
                         ->orderBy('id')
                         ->first();
@@ -614,11 +615,11 @@ class MlsFileNoController extends Controller
                     ->where('prop_id', $propId)
                     ->where(function ($q) {
                         $q->where('instrument_type', 'like', '%Occupancy Permit%')
-                          ->orWhere('source', 'like', '%Occupancy Permit%');
+                            ->orWhere('source', 'like', '%Occupancy Permit%');
                     })
                     ->where(function ($q) {
                         $q->whereNull('instrument_type')
-                          ->orWhere('instrument_type', 'not like', '%Transfer of Title%');
+                            ->orWhere('instrument_type', 'not like', '%Transfer of Title%');
                     });
 
                 if ($sourceOpSerial !== '') {
@@ -1271,7 +1272,7 @@ class MlsFileNoController extends Controller
         return null;
     }
 
-     
+
     /**
      * Generate new MLS file number with land-use-based serial numbering
      */
@@ -1280,7 +1281,7 @@ class MlsFileNoController extends Controller
         try {
             $this->logPlotsWorkflow('info', 'Generate request received', [
                 'user_id' => Auth::id(),
-               // if the application type is new , the application_type should be "Direct Allocation", 
+                // if the application type is new , the application_type should be "Direct Allocation", 
                 'application_type' => ($request->input('application_type') === 'new') ? 'Direct Allocation' : $request->input('application_type'),
                 'allocated_by_filter' => $request->input('allocated_by_filter'),
                 'require_op_source' => $request->input('require_op_source'),
@@ -1357,7 +1358,7 @@ class MlsFileNoController extends Controller
                 }
             }
 
-            $requireOpSource = (bool)($validated['require_op_source'] ?? false);
+            $requireOpSource = (bool) ($validated['require_op_source'] ?? false);
             $this->logPlotsWorkflow('info', 'Validated OP linkage payload', [
                 'application_type' => $validated['application_type'] ?? null,
                 'allocated_by_filter' => $validated['allocated_by_filter'] ?? null,
@@ -1398,7 +1399,7 @@ class MlsFileNoController extends Controller
                     // 1. Generate new file number, consuming new serial
                     $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
                     $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial);
-                    
+
                     $commissionedBy = ($validated['commissioned_by'] ?? null) ?: ((Auth::user()->first_name . ' ' . Auth::user()->last_name) ?: Auth::user()->name ?: Auth::user()->email ?: 'System');
 
                     // 2. Fetch Old File Record
@@ -1406,7 +1407,7 @@ class MlsFileNoController extends Controller
                     if (!$oldFileNoRecord) {
                         throw new \Exception("Original file ($originalFileNo) not found in fileNumber records.");
                     }
-                    
+
                     $oldIndexing = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $originalFileNo)->first();
 
                     // 3. Decommission old file into decommissioned_files
@@ -1486,7 +1487,7 @@ class MlsFileNoController extends Controller
                     // 7. Send mapping down into PRA referencing old Prop ID
                     // Use prop_id from validated source_prop_id if available, otherwise grab from indexing
                     $propId = $validated['source_prop_id'] ?? ($oldIndexing->prop_id ?? null);
-                    
+
                     DB::connection('sqlsrv')->table('pra')->insert([
                         'Prop_id' => $propId,
                         'temp_fileno' => $fullFileNumber,
@@ -1519,35 +1520,35 @@ class MlsFileNoController extends Controller
                 }
 
                 $fileOption = $validated['file_option'] ?? 'normal';
-                
+
                 // Determine file number and serial based on option
                 if ($fileOption === 'temporary') {
                     // Logic for Temporary Files: Do NOT consume a serial number
                     $existingFileNo = $validated['existing_file_no'] ?? $validated['existing_file_no_manual'];
-                    
+
                     if (empty($existingFileNo)) {
                         throw new \Exception("Existing file number is required for temporary version.");
                     }
-                    
+
                     $serial = 0; // Use 0 to indicate no serial consumption
                     $fullFileNumber = $existingFileNo . '(T)';
-                    
+
                     // Check if this temporary file already exists to avoid duplicates
                     if (\App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists()) {
-                         throw new \Exception("This temporary file number already exists: {$fullFileNumber}");
+                        throw new \Exception("This temporary file number already exists: {$fullFileNumber}");
                     }
-                    
+
                 } elseif ($fileOption === 'extension') {
                     // Logic for Extension Files: Do NOT consume a serial number
                     $existingFileNo = $validated['existing_file_no'] ?? $validated['existing_file_no_manual'];
-                    
+
                     if (empty($existingFileNo)) {
                         throw new \Exception("Existing file number is required for extension.");
                     }
-                    
+
                     $serial = 0; // Use 0 to indicate no serial consumption
                     $fullFileNumber = $existingFileNo . ' AND EXTENSION';
-                    
+
                 } elseif ($fileOption === 'sit') {
                     // SIT files: auto-serial via MlsSerialControl, no land use, customer type is always Government
                     $landUse = 'SIT';
@@ -1561,7 +1562,7 @@ class MlsFileNoController extends Controller
                     // Normal Logic: Consume next available serial
                     // Get next serial for this land use/year combination
                     $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
-    
+
                     // Generate the full file number
                     $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial);
                 }
@@ -1595,8 +1596,10 @@ class MlsFileNoController extends Controller
 
                 // Resolve the source value based on allocation configuration
                 $appType = $validated['application_type'] ?? 'new';
-                if (!empty($validated['merger_app_id'])) $appType = 'merger';
-                if (!empty($validated['subdivision_app_id'])) $appType = 'subdivision';
+                if (!empty($validated['merger_app_id']))
+                    $appType = 'merger';
+                if (!empty($validated['subdivision_app_id']))
+                    $appType = 'subdivision';
 
                 $sourceValue = $this->resolveSourceValue(
                     $appType,
@@ -1657,7 +1660,7 @@ class MlsFileNoController extends Controller
                 if (!empty($validated['related_fileno'])) {
                     $fileNumberData['related_fileno'] = json_encode([$validated['related_fileno']]);
                 }
-                DB::connection('sqlsrv')->table('fileNumber')->insert($fileNumberData); 
+                DB::connection('sqlsrv')->table('fileNumber')->insert($fileNumberData);
 
                 // 3. Staging Logic for Entities and Customers
                 try {
@@ -1672,9 +1675,12 @@ class MlsFileNoController extends Controller
 
                     // Construct property address
                     $addressParts = [];
-                    if (!empty($validated['plot_no'])) $addressParts[] = "Plot " . $validated['plot_no'];
-                    if (!empty($validated['location'])) $addressParts[] = $validated['location'];
-                    if (!empty($validated['lga'])) $addressParts[] = $validated['lga'];
+                    if (!empty($validated['plot_no']))
+                        $addressParts[] = "Plot " . $validated['plot_no'];
+                    if (!empty($validated['location']))
+                        $addressParts[] = $validated['location'];
+                    if (!empty($validated['lga']))
+                        $addressParts[] = $validated['lga'];
                     $propertyAddress = implode(', ', $addressParts);
 
                     // Insert into customers_staging
@@ -1742,16 +1748,16 @@ class MlsFileNoController extends Controller
                 try {
                     $groupingService = app(\App\Services\GroupingFileNumberService::class);
                     $registryName = $validated['registry'] ?? 'Lands Registry';
-                    
+
                     $this->logPlotsWorkflow('info', 'MLS generate linking grouping record', [
-                        'file_number' => $fullFileNumber, 
+                        'file_number' => $fullFileNumber,
                         'lookup' => $lookupFileNumber,
                         'option' => $fileOption
                     ]);
-                    
+
                     // Finalize the linkage in grouping table
                     $groupingService->linkAwaitingToMls($fullFileNumber, $lookupFileNumber, $registryName);
-                    
+
                     $this->logPlotsWorkflow('info', 'MLS generate grouping link done', ['file_number' => $fullFileNumber]);
                 } catch (\Exception $e) {
                     $this->logPlotsWorkflow('warning', 'Failed to link grouping record', ['error' => $e->getMessage(), 'file' => $fullFileNumber]);
@@ -1801,6 +1807,33 @@ class MlsFileNoController extends Controller
                         ]);
                     }
 
+                    $parentPropId = null;
+                    if (!empty($validated['merger_app_id'])) {
+                        $mergerApp = \App\Models\PlotMergerApplication::find($validated['merger_app_id']);
+                        if ($mergerApp) {
+                            $sourceFiles = $mergerApp->plotSizes()->whereIn('type', ['source', 'merger_source'])->pluck('plot_number')->toArray();
+                            if (!empty($sourceFiles)) {
+                                $parentPropId = DB::connection('sqlsrv')->table('file_indexings')
+                                    ->whereIn('file_number', $sourceFiles)
+                                    ->whereNotNull('prop_id')
+                                    ->pluck('prop_id')
+                                    ->unique()
+                                    ->implode(',');
+                            }
+                        }
+                    } elseif (!empty($validated['subdivision_app_id'])) {
+                        $subdivisionApp = \App\Models\PlotSubdivisionApplication::find($validated['subdivision_app_id']);
+                        if ($subdivisionApp) {
+                            $parentPropId = DB::connection('sqlsrv')->table('file_indexings')
+                                ->where('file_number', $subdivisionApp->file_no)
+                                ->value('prop_id');
+                        }
+                    } elseif (($validated['file_option'] ?? '') === 'extension' && !empty($validated['existing_file_no'])) {
+                        $parentPropId = DB::connection('sqlsrv')->table('file_indexings')
+                            ->where('file_number', $validated['existing_file_no'])
+                            ->value('prop_id');
+                    }
+
                     $opPraMetadata = $this->resolveOpPraMetadata((string) $sourceValue);
 
                     // Create a basic PRA record for temp/new/extension file numbers
@@ -1808,74 +1841,75 @@ class MlsFileNoController extends Controller
                     // Skip if the OP already exists in IC/DR.
                     if (!$skipAutoPra && $opPraMetadata !== null) {
                         try {
-                        $propId = app(\App\Services\PropertyIdAllocationService::class)->allocateOrRetrievePropId(
-                            $fullFileNumber,
-                            $fullFileNumber,
-                            null,
-                            null,
-                            []
-                        );
+                            $propId = app(\App\Services\PropertyIdAllocationService::class)->allocateOrRetrievePropId(
+                                $fullFileNumber,
+                                $fullFileNumber,
+                                null,
+                                null,
+                                []
+                            );
 
-                        $praService = app(\App\Services\Pra\PraRecordService::class);
-                        $existingOp = $praService->findExistingOpInSource([
-                            'op_serial_number' => $validated['source_op_serial_number'] ?? null,
-                            'mlsFNo'           => $fullFileNumber,
-                            'fileno'           => $fullFileNumber,
-                            'source_op_id'     => $validated['source_instrument_capture_id'] ?? null,
-                            'source_op_table'  => !empty($validated['source_instrument_capture_id']) ? 'instrument_capture' : null,
-                        ]);
-
-                        if ($existingOp) {
-                            $praService->linkSourceOpRecord($existingOp, [
-                                'prop_id' => $propId,
-                                'mlsFNo'  => $fullFileNumber,
+                            $praService = app(\App\Services\Pra\PraRecordService::class);
+                            $existingOp = $praService->findExistingOpInSource([
+                                'op_serial_number' => $validated['source_op_serial_number'] ?? null,
+                                'mlsFNo' => $fullFileNumber,
+                                'fileno' => $fullFileNumber,
+                                'source_op_id' => $validated['source_instrument_capture_id'] ?? null,
+                                'source_op_table' => !empty($validated['source_instrument_capture_id']) ? 'instrument_capture' : null,
                             ]);
-                            Log::info('MLS generate: OP exists in IC/DR — skipped PRA, linked source', [
-                                'file_number'  => $fullFileNumber,
-                                'source_table' => $existingOp['_source_table'],
-                                'source_id'    => $existingOp['id'],
-                                'prop_id'      => $propId,
-                            ]);
-                        } else {
-                        // Lineage: when a source instrument_capture row drove
-                        // this commission, persist it on the PRA OP row so the
-                        // OP\u2194ToT lookup never has to fall back to prop_id.
-                        $sourceIcId = !empty($validated['source_instrument_capture_id'])
-                            ? (int) $validated['source_instrument_capture_id']
-                            : 0;
-                        $praPayload = [
-                            'mlsFNo' => $fullFileNumber,
-                            'fileno' => $fullFileNumber,
-                            'temp_fileno' => null,
-                            'transaction_type' => $opPraMetadata['transaction_type'],
-                            'transaction_date' => now()->toDateString(),
-                            'reg_date' => now()->toDateString(),
-                            'system_source' => 'OSSOPCHANGEOFNAME',
-                            'land_use' => $landUse,
-                            'plot_no' => (string) ($validated['plot_no'] ?? ''),
-                            'lgsaOrCity' => (string) ($validated['lga'] ?? ''),
-                            'location' => (string) ($validated['location'] ?? ''),
-                            'property_description' => (string) ($validated['location'] ?? ''),
-                            'instrument_type' => 'Occupancy Permit (OP)',
-                            'op_type' => $opPraMetadata['op_type'],
-                            'Grantor' => self::MLS_PRA_GRANTOR,
-                            'party_1' => self::MLS_PRA_GRANTOR,
-                            'Grantee' => (string) ($validated['file_name'] ?? ''),
-                            'prop_id' => $propId,
-                            'tracking_id' => $trackingId,
-                        ];
-                        if ($sourceIcId > 0) {
-                            $praPayload['source_op_table'] = 'instrument_capture';
-                            $praPayload['source_op_id'] = $sourceIcId;
-                        }
-                        $praService->createRecord($praPayload, Auth::id());
 
-                        Log::info('MLS generate basic PRA record created', [
-                            'file_number' => $fullFileNumber,
-                            'prop_id' => $propId,
-                            'transaction_type' => $opPraMetadata['transaction_type'],
-                        ]);
-                        } // end else (no existing IC/DR)
+                            if ($existingOp) {
+                                $praService->linkSourceOpRecord($existingOp, [
+                                    'prop_id' => $propId,
+                                    'mlsFNo' => $fullFileNumber,
+                                ]);
+                                Log::info('MLS generate: OP exists in IC/DR — skipped PRA, linked source', [
+                                    'file_number' => $fullFileNumber,
+                                    'source_table' => $existingOp['_source_table'],
+                                    'source_id' => $existingOp['id'],
+                                    'prop_id' => $propId,
+                                ]);
+                            } else {
+                                // Lineage: when a source instrument_capture row drove
+                                // this commission, persist it on the PRA OP row so the
+                                // OP\u2194ToT lookup never has to fall back to prop_id.
+                                $sourceIcId = !empty($validated['source_instrument_capture_id'])
+                                    ? (int) $validated['source_instrument_capture_id']
+                                    : 0;
+                                $praPayload = [
+                                    'mlsFNo' => $fullFileNumber,
+                                    'fileno' => $fullFileNumber,
+                                    'temp_fileno' => null,
+                                    'transaction_type' => $opPraMetadata['transaction_type'],
+                                    'transaction_date' => now()->toDateString(),
+                                    'reg_date' => now()->toDateString(),
+                                    'system_source' => 'OSSOPCHANGEOFNAME',
+                                    'land_use' => $landUse,
+                                    'plot_no' => (string) ($validated['plot_no'] ?? ''),
+                                    'lgsaOrCity' => (string) ($validated['lga'] ?? ''),
+                                    'location' => (string) ($validated['location'] ?? ''),
+                                    'property_description' => (string) ($validated['location'] ?? ''),
+                                    'instrument_type' => 'Occupancy Permit (OP)',
+                                    'op_type' => $opPraMetadata['op_type'],
+                                    'Grantor' => self::MLS_PRA_GRANTOR,
+                                    'party_1' => self::MLS_PRA_GRANTOR,
+                                    'Grantee' => (string) ($validated['file_name'] ?? ''),
+                                    'prop_id' => $propId,
+                                    'parent_prop_id' => $parentPropId,
+                                    'tracking_id' => $trackingId,
+                                ];
+                                if ($sourceIcId > 0) {
+                                    $praPayload['source_op_table'] = 'instrument_capture';
+                                    $praPayload['source_op_id'] = $sourceIcId;
+                                }
+                                $praService->createRecord($praPayload, Auth::id());
+
+                                Log::info('MLS generate basic PRA record created', [
+                                    'file_number' => $fullFileNumber,
+                                    'prop_id' => $propId,
+                                    'transaction_type' => $opPraMetadata['transaction_type'],
+                                ]);
+                            } // end else (no existing IC/DR)
                         } catch (\Exception $praError) {
                             Log::error('MLS generate basic PRA creation failed (non-critical)', [
                                 'error' => $praError->getMessage(),
@@ -1920,6 +1954,7 @@ class MlsFileNoController extends Controller
                                 'party_1' => $fileName,
                                 'party_2' => $fileName,
                                 'prop_id' => $propId,
+                                'parent_prop_id' => $parentPropId,
                                 'tracking_id' => $trackingId,
                                 'comments' => $plotTransactionType . " commissioning for " . $fullFileNumber . " (System Generated)",
                                 'remarks' => "Commissioned via " . $sourceValue . " workflow",
@@ -1974,23 +2009,23 @@ class MlsFileNoController extends Controller
                             ]);
                             $res = $workflowService->decommissionFiles($sourceFiles, "Plot Merger to $fullFileNumber", $commissionedBy);
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
-                            
+
                             Log::info('Plot workflow decommissioning completed', [
                                 'archived' => $res['archived'],
                                 'deleted' => $res['deleted'],
                                 'errors' => $res['errors']
                             ]);
-                            
+
                             // 3. Historical PropID Update for Merger
                             $newPropId = $propIdService->allocateOrRetrievePropId($fullFileNumber);
                             if (!empty($oldPropIds)) {
                                 $decommissionSummary['history_updated'] = $workflowService->updateHistoricalPropId($oldPropIds, $newPropId);
-                                
+
                                 // Set parent_prop_id on new record
                                 DB::connection('sqlsrv')->table('file_indexings')
                                     ->where('file_number', $fullFileNumber)
                                     ->update(['parent_prop_id' => implode(',', array_unique($oldPropIds))]);
-                                
+
                                 DB::connection('sqlsrv')->table('fileNumber')
                                     ->where('mlsfNo', $fullFileNumber)
                                     ->update(['parent_prop_id' => implode(',', array_unique($oldPropIds))]);
@@ -2012,13 +2047,13 @@ class MlsFileNoController extends Controller
                     if ($subdivisionApp) {
                         $motherFile = $subdivisionApp->file_no;
                         $motherIndexing = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->first();
-                        
+
                         if ($motherIndexing && $motherIndexing->prop_id) {
                             // Set parent_prop_id on new record
                             DB::connection('sqlsrv')->table('file_indexings')
                                 ->where('file_number', $fullFileNumber)
                                 ->update(['parent_prop_id' => $motherIndexing->prop_id]);
-                            
+
                             DB::connection('sqlsrv')->table('fileNumber')
                                 ->where('mlsfNo', $fullFileNumber)
                                 ->update(['parent_prop_id' => $motherIndexing->prop_id]);
@@ -2044,20 +2079,20 @@ class MlsFileNoController extends Controller
                 if (($validated['file_option'] ?? '') === 'extension' && !empty($validated['existing_file_no'])) {
                     $oldFile = $validated['existing_file_no'];
                     $oldIndexing = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $oldFile)->first();
-                    
+
                     if ($oldIndexing && $oldIndexing->prop_id) {
                         $newPropId = $propIdService->allocateOrRetrievePropId($fullFileNumber);
                         $decommissionSummary['history_updated'] = $workflowService->updateHistoricalPropId([$oldIndexing->prop_id], $newPropId);
-                        
+
                         DB::connection('sqlsrv')->table('file_indexings')
                             ->where('file_number', $fullFileNumber)
                             ->update(['parent_prop_id' => $oldIndexing->prop_id]);
-                        
+
                         DB::connection('sqlsrv')->table('fileNumber')
                             ->where('mlsfNo', $fullFileNumber)
                             ->update(['parent_prop_id' => $oldIndexing->prop_id]);
                     }
-                    
+
                     $res = $workflowService->decommissionFiles([$oldFile], "Plot Extension to $fullFileNumber", $commissionedBy);
                     $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
                 }
@@ -2096,8 +2131,8 @@ class MlsFileNoController extends Controller
                         'year' => $year,
                         'serial' => $serial,
                         'tracking_id' => $trackingId,
-                        'application_type' => in_array($validated['file_option'] ?? '', ['subdivision', 'merger', 'extension']) 
-                            ? $validated['file_option'] 
+                        'application_type' => in_array($validated['file_option'] ?? '', ['subdivision', 'merger', 'extension'])
+                            ? $validated['file_option']
                             : ($validated['application_type'] ?? 'new'),
                         'id' => $mlsRecord->id,
                         'source_pra_id' => $validated['source_pra_id'] ?? null
@@ -2220,8 +2255,10 @@ class MlsFileNoController extends Controller
 
                 // Resolve the source value based on allocation configuration
                 $appType = $validated['application_type'] ?? 'new';
-                if (!empty($validated['merger_app_id'])) $appType = 'merger';
-                if (!empty($validated['subdivision_app_id'])) $appType = 'subdivision';
+                if (!empty($validated['merger_app_id']))
+                    $appType = 'merger';
+                if (!empty($validated['subdivision_app_id']))
+                    $appType = 'subdivision';
 
                 $sourceValue = $this->resolveSourceValue(
                     $appType,
@@ -2236,7 +2273,8 @@ class MlsFileNoController extends Controller
                     $allFileNumbers[] = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $startSerial + $i);
                 }
 
-                // Create only one record in entities_staging for the entire batch
+                // Create all record in entities_staging for the entire batch
+
                 $entityId = DB::connection('sqlsrv')->table('entities_staging')->insertGetId([
                     'entity_type' => $validated['customer_type'] ?? 'Individual',
                     'entity_name' => $validated['file_name'] ?? 'N/A',
@@ -2253,7 +2291,7 @@ class MlsFileNoController extends Controller
                     $fileNoColumn = $groupingService->getFileNoColumnName('Lands Registry');
 
                     // Normalize search terms for a more robust lookup
-                    $normalizedSearchTerms = array_map(function($f) {
+                    $normalizedSearchTerms = array_map(function ($f) {
                         return strtoupper(preg_replace('/[^A-Z0-9]/i', '', $f));
                     }, $allFileNumbers);
 
@@ -2383,7 +2421,7 @@ class MlsFileNoController extends Controller
                         'is_updated' => false,
                         'is_deleted' => false,
                         'is_corresponding_file' => isset($correspondingCache[strtoupper(trim($fullFileNumber))]) ? 1 : 0,
-                        'corresponding_fileno'  => $correspondingCache[strtoupper(trim($fullFileNumber))] ?? null,
+                        'corresponding_fileno' => $correspondingCache[strtoupper(trim($fullFileNumber))] ?? null,
                         'created_at' => $now,
                         'updated_at' => $now
                     ];
@@ -2391,9 +2429,12 @@ class MlsFileNoController extends Controller
                     // Staging Logic for Customers (Run per entry in batch)
                     try {
                         $addressParts = [];
-                        if (!empty($entry['plotNo'])) $addressParts[] = "Plot " . $entry['plotNo'];
-                        if (!empty($entry['location'])) $addressParts[] = $entry['location'];
-                        if (!empty($entry['lga'])) $addressParts[] = $entry['lga'];
+                        if (!empty($entry['plotNo']))
+                            $addressParts[] = "Plot " . $entry['plotNo'];
+                        if (!empty($entry['location']))
+                            $addressParts[] = $entry['location'];
+                        if (!empty($entry['lga']))
+                            $addressParts[] = $entry['lga'];
                         $propertyAddress = implode(', ', $addressParts);
 
                         DB::connection('sqlsrv')->table('customers_staging')->insert([
@@ -2446,6 +2487,33 @@ class MlsFileNoController extends Controller
                     $propIdService = app(\App\Services\PropertyIdAllocationService::class);
                     $opPraMetadata = $this->resolveOpPraMetadata((string) $sourceValue);
 
+                    $parentPropId = null;
+                    if (!empty($validated['merger_app_id'])) {
+                        $mergerApp = \App\Models\PlotMergerApplication::find($validated['merger_app_id']);
+                        if ($mergerApp) {
+                            $sourceFiles = $mergerApp->plotSizes()->whereIn('type', ['source', 'merger_source'])->pluck('plot_number')->toArray();
+                            if (!empty($sourceFiles)) {
+                                $parentPropId = DB::connection('sqlsrv')->table('file_indexings')
+                                    ->whereIn('file_number', $sourceFiles)
+                                    ->whereNotNull('prop_id')
+                                    ->pluck('prop_id')
+                                    ->unique()
+                                    ->implode(',');
+                            }
+                        }
+                    } elseif (!empty($validated['subdivision_app_id'])) {
+                        $subdivisionApp = \App\Models\PlotSubdivisionApplication::find($validated['subdivision_app_id']);
+                        if ($subdivisionApp) {
+                            $parentPropId = DB::connection('sqlsrv')->table('file_indexings')
+                                ->where('file_number', $subdivisionApp->file_no)
+                                ->value('prop_id');
+                        }
+                    } elseif (($validated['file_option'] ?? '') === 'extension' && !empty($validated['existing_file_no'])) {
+                        $parentPropId = DB::connection('sqlsrv')->table('file_indexings')
+                            ->where('file_number', $validated['existing_file_no'])
+                            ->value('prop_id');
+                    }
+
                     if ($opPraMetadata !== null) {
                         foreach ($validated['location_entries'] as $index => $entry) {
                             $batchFileNumber = $allFileNumbers[$index];
@@ -2468,12 +2536,12 @@ class MlsFileNoController extends Controller
                             if ($existingOp) {
                                 $praService->linkSourceOpRecord($existingOp, [
                                     'prop_id' => $propId,
-                                    'mlsFNo'  => $batchFileNumber,
+                                    'mlsFNo' => $batchFileNumber,
                                 ]);
                                 $this->logPlotsWorkflow('info', 'Batch PRA: OP exists in IC/DR — skipped, linked source', [
-                                    'file_number'  => $batchFileNumber,
+                                    'file_number' => $batchFileNumber,
                                     'source_table' => $existingOp['_source_table'],
-                                    'source_id'    => $existingOp['id'],
+                                    'source_id' => $existingOp['id'],
                                 ]);
                                 continue;
                             }
@@ -2497,6 +2565,7 @@ class MlsFileNoController extends Controller
                                 'party_1' => self::MLS_PRA_GRANTOR,
                                 'Grantee' => (string) ($validated['file_name'] ?? ''),
                                 'prop_id' => $propId,
+                                'parent_prop_id' => $parentPropId,
                                 'tracking_id' => $batchTrackingId,
                             ], Auth::id());
                         }
@@ -2546,6 +2615,7 @@ class MlsFileNoController extends Controller
                                 'party_1' => $fileName,
                                 'party_2' => $fileName,
                                 'prop_id' => $propId,
+                                'parent_prop_id' => $parentPropId,
                                 'tracking_id' => $batchTrackingId,
                                 'comments' => $plotTransactionType . " batch commissioning for " . $batchFileNumber . " (System Generated)",
                                 'remarks' => "Batch commissioned via " . $sourceValue . " workflow",
@@ -2637,7 +2707,7 @@ class MlsFileNoController extends Controller
                                 DB::connection('sqlsrv')->table('file_indexings')
                                     ->whereIn('file_number', $allFileNumbers)
                                     ->update(['parent_prop_id' => implode(',', array_unique($oldPropIds))]);
-                                
+
                                 DB::connection('sqlsrv')->table('fileNumber')
                                     ->whereIn('mlsfNo', $allFileNumbers)
                                     ->update(['parent_prop_id' => implode(',', array_unique($oldPropIds))]);
@@ -2658,21 +2728,21 @@ class MlsFileNoController extends Controller
                     if ($subdivisionApp) {
                         $motherFile = $subdivisionApp->file_no;
                         $motherIndexing = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->first();
-                        
+
                         if ($motherIndexing && $motherIndexing->prop_id) {
                             DB::connection('sqlsrv')->table('file_indexings')
                                 ->whereIn('file_number', $allFileNumbers)
                                 ->update(['parent_prop_id' => $motherIndexing->prop_id]);
-                            
+
                             DB::connection('sqlsrv')->table('fileNumber')
                                 ->whereIn('mlsfNo', $allFileNumbers)
                                 ->update(['parent_prop_id' => $motherIndexing->prop_id]);
                         }
 
                         // Decommission mother if exists in registry
-                        $motherExists = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $motherFile)->exists() 
-                                     || DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->exists();
-                                     
+                        $motherExists = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $motherFile)->exists()
+                            || DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->exists();
+
                         if ($motherExists) {
                             $res = $workflowService->decommissionFiles([$motherFile], "Plot Subdivision into batch of " . count($allFileNumbers) . " fragments", $commissionedBy);
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
@@ -2709,8 +2779,8 @@ class MlsFileNoController extends Controller
                     'data' => [
                         'batch_size' => $batchQuantity,
                         'land_use' => $landUse,
-                        'application_type' => in_array($validated['file_option'] ?? '', ['subdivision', 'merger', 'extension']) 
-                            ? $validated['file_option'] 
+                        'application_type' => in_array($validated['file_option'] ?? '', ['subdivision', 'merger', 'extension'])
+                            ? $validated['file_option']
                             : ($validated['application_type'] ?? 'new'),
                         'year' => $year,
                         'serial_range' => "{$startSerial} to {$endSerial}"
@@ -2907,7 +2977,7 @@ class MlsFileNoController extends Controller
         $originalOwner = trim((string) (($validated['source_original_owner'] ?? null) ?: ($source->party_2_name ?? $source->party_1_name ?? '')));
         $newOwner = trim((string) ($validated['file_name'] ?? ''));
 
-       if ($originalOwner === '' || $newOwner === '') {
+        if ($originalOwner === '' || $newOwner === '') {
             throw new \RuntimeException('Original owner and new owner are required
         ');
         }
@@ -2934,28 +3004,28 @@ class MlsFileNoController extends Controller
         $praService = app(\App\Services\Pra\PraRecordService::class);
         $existingOp = $praService->findExistingOpInSource([
             'op_serial_number' => $opSerial,
-            'mlsFNo'           => $fullFileNumber,
-            'fileno'           => $fullFileNumber,
-            'source_op_id'     => $sourceId > 0 ? $sourceId : null,
-            'source_op_table'  => $sourceId > 0 ? 'instrument_capture' : null,
+            'mlsFNo' => $fullFileNumber,
+            'fileno' => $fullFileNumber,
+            'source_op_id' => $sourceId > 0 ? $sourceId : null,
+            'source_op_table' => $sourceId > 0 ? 'instrument_capture' : null,
         ]);
 
         if ($existingOp) {
             $praService->linkSourceOpRecord($existingOp, [
                 'prop_id' => $propId,
-                'mlsFNo'  => $fullFileNumber,
+                'mlsFNo' => $fullFileNumber,
             ]);
             Log::info('createResettlementLinkedRecords: OP exists in IC/DR — skipped PRA, linked source', [
                 'source_table' => $existingOp['_source_table'],
-                'source_id'    => $existingOp['id'],
-                'prop_id'      => $propId,
+                'source_id' => $existingOp['id'],
+                'prop_id' => $propId,
             ]);
         } else {
             // No existing IC/DR yet — but IC+DR will be created below, so skip
             // PRA OP row to avoid triplication.  The IC+DR records ARE the source.
             Log::info('createResettlementLinkedRecords: skipping PRA OP row — IC+DR will be created as source', [
                 'file_number' => $fullFileNumber,
-                'prop_id'     => $propId,
+                'prop_id' => $propId,
             ]);
         }
 
@@ -3121,7 +3191,7 @@ class MlsFileNoController extends Controller
      * Property to track generated tracking IDs within a request
      */
     private $generatedTrackingIds = [];
-   //
+    //
 
     /**
      * Generate a unique tracking ID
@@ -3241,7 +3311,7 @@ class MlsFileNoController extends Controller
             $groupingService = app(\App\Services\GroupingFileNumberService::class);
             // Normalize for the raw query in the service
             $normalized = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $fileNumber));
-            
+
             $result = $groupingService->findGroupingRecord(DB::connection('sqlsrv'), $fileNumber, $normalized);
 
             if ($result['record'] && !empty($result['record']->tracking_id)) {
@@ -3321,14 +3391,14 @@ class MlsFileNoController extends Controller
                 })
                 ->where(function ($q) {
                     // Exclude OSS / One-Stop Shop specific records
-                    $q->where(function($sq) {
+                    $q->where(function ($sq) {
                         $sq->where('mls_file_no.sub_source', '!=', 'OP Change of Name')
-                           ->orWhereNull('mls_file_no.sub_source');
+                            ->orWhereNull('mls_file_no.sub_source');
                     })
-                    ->where(function($sq) {
+                        ->where(function ($sq) {
                         // Also exclude OP Resettlement and OP Direct Allocation which are OSS sources
                         $sq->whereNotIn('mls_file_no.source', ['OP Resettlement', 'OP Direct Allocation'])
-                           ->orWhereNull('mls_file_no.source');
+                            ->orWhereNull('mls_file_no.source');
                     });
                 })
                 ->select([
@@ -3344,13 +3414,13 @@ class MlsFileNoController extends Controller
             } elseif ($scope === 'date' && $date) {
                 $query->where(function ($q) use ($date) {
                     $q->whereDate('mls_file_no.commissioning_date', $date)
-                      ->orWhereDate('mls_file_no.created_at', $date);
+                        ->orWhereDate('mls_file_no.created_at', $date);
                 })
-                ->orderBy('mls_file_no.serial_number', 'asc')
-                ->orderBy('mls_file_no.created_at', 'asc');
+                    ->orderBy('mls_file_no.serial_number', 'asc')
+                    ->orderBy('mls_file_no.created_at', 'asc');
             } else {
                 $query->where('mls_file_no.batch_no', $batchNo)
-                ->orderBy('mls_file_no.serial_number', 'asc')
+                    ->orderBy('mls_file_no.serial_number', 'asc')
                     ->orderBy('mls_file_no.created_at', 'asc');
             }
 
@@ -3453,12 +3523,12 @@ class MlsFileNoController extends Controller
 
                 $rows[] = [
                     'reference_number' => $fileNo,
-                    'document_type'    => $docType,
-                    'print_type'       => 'Batch',
-                    'status'           => 'Printed',
-                    'user_id'          => $userId,
-                    'created_at'       => $now,
-                    'updated_at'       => $now,
+                    'document_type' => $docType,
+                    'print_type' => 'Batch',
+                    'status' => 'Printed',
+                    'user_id' => $userId,
+                    'created_at' => $now,
+                    'updated_at' => $now,
                 ];
             }
 
@@ -3474,12 +3544,12 @@ class MlsFileNoController extends Controller
             if ($referenceLabel) {
                 $rows[] = [
                     'reference_number' => $referenceLabel,
-                    'document_type'    => $docType,
-                    'print_type'       => 'Date',
-                    'status'           => 'Printed',
-                    'user_id'          => $userId,
-                    'created_at'       => $now,
-                    'updated_at'       => $now,
+                    'document_type' => $docType,
+                    'print_type' => 'Date',
+                    'status' => 'Printed',
+                    'user_id' => $userId,
+                    'created_at' => $now,
+                    'updated_at' => $now,
                 ];
             }
 
@@ -3487,7 +3557,7 @@ class MlsFileNoController extends Controller
 
             return response()->json([
                 'success' => true,
-                'logged'  => count($rows),
+                'logged' => count($rows),
             ]);
         } catch (\Exception $e) {
             Log::error('markBatchPrinted error', [

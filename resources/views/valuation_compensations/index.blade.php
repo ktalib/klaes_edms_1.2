@@ -124,10 +124,12 @@
                             </td>
                             <td class="px-6 py-4 font-mono text-xs font-bold text-slate-500">{{ $project->project_code ?? 'N/A' }}</td>
                             <td class="px-6 py-4">
-                                <a href="javascript:void(0)" onclick="VFC.openRecordsModal({{ $projectId }})" 
-                                   class="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-mono font-bold text-[11px] shadow-sm hover:bg-blue-700 transition inline-flex items-center gap-2 group/btn">
+                                <a href="javascript:void(0)" 
+                                   data-records="{{ json_encode($group) }}"
+                                   onclick="VFC.openRecordsModalFromData(this)" 
+                                   class="px-2 py-1 rounded-lg bg-blue-50 text-blue-600 font-mono font-bold text-[11px] shadow-sm hover:bg-blue-600 hover:text-white transition inline-flex items-center gap-2 group/btn">
                                     {{ $project->project_fileno ?? 'N/A' }}
-                                    <i data-lucide="eye" class="h-3 w-3 opacity-0 group-hover/btn:opacity-100 transition-opacity"></i>
+                                    <i data-lucide="eye" class="h-3.5 w-3.5 transition-transform group-hover/btn:scale-110"></i>
                                 </a>
                             </td>
                             <td class="px-6 py-4">
@@ -137,9 +139,12 @@
                                 ₦{{ number_format($group->sum('compensation_amount'), 2) }}
                             </td>
                             <td class="px-6 py-4 text-right">
-                                <button onclick="VFC.openRecordsModal({{ $projectId }})" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Open Records">
+                                <a href="javascript:void(0)" 
+                                   data-records="{{ json_encode($group) }}"
+                                   onclick="VFC.openRecordsModalFromData(this)" 
+                                   class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors inline-flex" title="Open Records">
                                     <i data-lucide="external-link" class="h-4 w-4"></i>
-                                </button>
+                                </a>
                             </td>
                         </tr>
                     @empty
@@ -156,8 +161,12 @@
 {{-- Modals for creating records and viewing project-specific details --}}
 @include('valuation_compensations.partials.modal')
 @include('valuation_compensations.partials.records_modal')
+@push('styles')
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+@endpush
 
 @push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
     /* 
        VFC Frontend Configuration 
