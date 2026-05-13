@@ -164,7 +164,13 @@ class InstrumentRegistrationService
 
             Log::info("Instrument Registered: {$data['fileno']} as {$numberData['formatted']} (ID: $id)");
 
-            return $id;
+            // Propagate name changes to core tables for specific instrument types (Deed of Assignment/Gift)
+            $syncResult = $this->syncPartyNames($data['fileno'], $data['instrument_type'], $data['grantee']);
+
+            return [
+                'id' => $id,
+                'sync_result' => $syncResult
+            ];
         });
     }
 
@@ -565,5 +571,89 @@ class InstrumentRegistrationService
 
         // Default: 1-to-1 mapping
         return $instrumentType;
+    }
+
+    /**
+     * Synchronize party names (specifically party_2/Grantee) to core system tables.
+     * Targeted at 'Deed of Gift' and 'Deed of Assignment' instruments.
+     *
+     * @param string $fileNo
+     * @param string $instrumentType
+     * @param string $party2Name
+     * @return void
+     */
+    public function syncPartyNames(string $fileNo, string $instrumentType, string $party2Name): array
+    {
+        $normalizedType = $this->resolveVaultName($instrumentType);
+        $result = [
+            'synced' => false,
+            'old_name' => null,
+            'new_name' => $party2Name
+        ];
+
+        // We only sync for Deeds of Assignment, Deeds of Gift, and Irrevocable Power of Attorney
+        if ($normalizedType !== 'Deed of Assignment' && $normalizedType !== 'Power of Attorney') {
+            return $result;
+        }
+
+        if (empty($fileNo) || empty($party2Name)) {
+            return $result;
+        }
+
+        Log::info("Propagating party_2 name update for {$fileNo}", [
+            'instrument_type' => $instrumentType,
+            'new_name' => $party2Name
+        ]);
+
+        try {
+            return DB::transaction(function () use ($fileNo, $party2Name, &$result) {
+                // Get old name for feedback (from file_indexings as primary source)
+                $result['old_name'] = DB::connection('sqlsrv')->table('file_indexings')
+                    ->where('file_number', $fileNo)
+                    ->orWhere('mls_file_no', $fileNo)
+                    ->value('file_title');
+
+                // 1. Update file_indexings.file_title
+                DB::connection('sqlsrv')->table('file_indexings')
+                    ->where('file_number', $fileNo)
+                    ->orWhere('mls_file_no', $fileNo)
+                    ->update([
+                        'file_title' => $party2Name,
+                        'updated_at' => now()
+                    ]);
+
+                // 2. Update customers_staging.customer_name
+                DB::connection('sqlsrv')->table('customers_staging')
+                    ->where('file_number', $fileNo)
+                    ->update([
+                        'customer_name' => $party2Name,
+                        'updated_at' => now()
+                    ]);
+
+                // 3. Update entities_staging.entity_name
+                DB::connection('sqlsrv')->table('entities_staging')
+                    ->where('file_number', $fileNo)
+                    ->update([
+                        'entity_name' => $party2Name,
+                        'updated_at' => now()
+                    ]);
+
+                // 4. Update fileNumber.FileName
+                DB::connection('sqlsrv')->table('fileNumber')
+                    ->where('mlsfNo', $fileNo)
+                    ->orWhere('kangisFileNo', $fileNo)
+                    ->orWhere('NewKANGISFileNo', $fileNo)
+                    ->update([
+                        'FileName' => $party2Name
+                    ]);
+
+                $result['synced'] = true;
+                return $result;
+            });
+        } catch (\Exception $e) {
+            Log::error("Failed to sync party names for {$fileNo}: " . $e->getMessage());
+            // We return the result as is if it fails (or rethrow if critical)
+            return $result;
+        }
     }
 }

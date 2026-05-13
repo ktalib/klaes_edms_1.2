@@ -1,3 +1,10 @@
+<style>
+    #valuation-form input[type="text"], 
+    #valuation-form textarea, 
+    #valuation-form input[type="search"] {
+        text-transform: uppercase !important;
+    }
+</style>
 <!-- Valuation for Compensation Modal -->
 <div id="valuation-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
     <!-- Background overlay -->
@@ -37,6 +44,15 @@
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
                                 <option value="">Select Project</option>
                             </select>
+
+                            <div id="sub-project-section" class="hidden mt-6 pt-6 border-t border-slate-100">
+                                <label class="block text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2">Select Sub-Project <span class="text-red-500">*</span></label>
+                                <select name="sub_project_id" id="vfc_sub_project_id"
+                                    class="w-full px-4 py-3 rounded-xl border border-indigo-200 bg-indigo-50/30 focus:border-indigo-500 focus:bg-white transition text-sm font-bold text-indigo-700">
+                                    <option value="">Select Sub-Project</option>
+                                </select>
+                            </div>
+
                             <div id="project-info" class="hidden mt-3 p-4 rounded-xl bg-blue-50/50 border border-blue-100/50">
                                 <p class="text-[10px] font-bold text-blue-600 uppercase tracking-widest flex items-center gap-2 mb-3 px-1">
                                     <i data-lucide="info" class="h-3 w-3"></i> Project Summary
@@ -222,11 +238,28 @@
                         </div>
                     </div>
 
+                    <!-- Section 2.1: Structure Type -->
+                    <div class="pt-6 mb-6">
+                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-4">Structure Type</label>
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            @foreach($valuationItems->filter(fn($i) => in_array($i->name, ['Permanent', 'Semi-Permanent'])) as $item)
+                            <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 transition cursor-pointer group relative">
+                                <input type="radio" name="structure_type" value="{{ $item->name }}" 
+                                    class="structure-type-radio absolute top-3 right-3 w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500">
+                                <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-600 transition">
+                                    <i data-lucide="building" class="h-4 w-4"></i>
+                                </div>
+                                <span class="text-[11px] font-bold text-slate-600 group-hover:text-blue-700 leading-tight pr-5">{{ $item->name }}</span>
+                            </label>
+                            @endforeach
+                        </div>
+                    </div>
+
                     <!-- Compensated Items -->
                     <div class="pt-6">
                         <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-4">Items Considered During Valuation</label>
-                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                            @foreach($valuationItems as $item)
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            @foreach($valuationItems->filter(fn($i) => !in_array($i->name, ['Permanent', 'Semi-Permanent'])) as $item)
                             @php
                                 $icon = 'box';
                                 $lower = strtolower($item->name);
@@ -243,14 +276,23 @@
                                 if (str_contains($lower, 'wire') || str_contains($lower, 'mesh')) $icon = 'grid';
                                 if (str_contains($lower, 'dpc')) $icon = 'maximize';
                             @endphp
-                            <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 transition cursor-pointer group relative">
-                                <input type="checkbox" name="compensated_items_list[]" value="{{ $item->name }}" 
-                                    class="item-checkbox absolute top-3 right-3 w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500">
-                                <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-600 transition">
-                                    <i data-lucide="{{ $icon }}" class="h-4 w-4"></i>
+                            <div class="flex flex-col gap-2 p-3 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 transition group">
+                                <label class="flex items-center gap-3 cursor-pointer relative">
+                                    <input type="checkbox" name="compensated_items_list[]" value="{{ $item->name }}" 
+                                        class="item-checkbox absolute top-0 right-0 w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500">
+                                    <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-600 transition">
+                                        <i data-lucide="{{ $icon }}" class="h-4 w-4"></i>
+                                    </div>
+                                    <span class="text-[11px] font-bold text-slate-600 group-hover:text-blue-700 leading-tight pr-5">{{ $item->name }}</span>
+                                </label>
+                                <div class="item-amount-wrapper hidden mt-1">
+                                    <div class="relative">
+                                        <input type="number" step="0.01" class="item-amount-input w-full pl-7 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-blue-600 focus:border-blue-400 outline-none transition" 
+                                            placeholder="Amount" data-item-name="{{ $item->name }}">
+                                        <div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-blue-400 font-bold">₦</div>
+                                    </div>
                                 </div>
-                                <span class="text-[11px] font-bold text-slate-600 group-hover:text-blue-700 leading-tight pr-5">{{ $item->name }}</span>
-                            </label>
+                            </div>
                             @endforeach
                         </div>
                         <input type="text" name="compensated_items_other" id="compensated_items_other"
@@ -356,22 +398,11 @@
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">District</label>
-                                <select id="loc_district" class="loc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
-                                    <option value="">Select District</option>
-                                    @foreach($districts as $district)
-                                        <option value="{{ $district->name }}">{{ $district->name }}</option>
-                                    @endforeach
-                                    <option value="Other">Other</option>
-                                </select>
+                                <input type="text" id="loc_district" class="loc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. Nassarawa">
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">LGA <span class="text-red-500">*</span></label>
-                                <select id="loc_lga" required class="loc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
-                                    <option value="">Select LGA</option>
-                                    @foreach($lgas as $lga)
-                                        <option value="{{ $lga->LGAName }}">{{ $lga->LGAName }}</option>
-                                    @endforeach
-                                </select>
+                                <input type="text" id="loc_lga" required class="loc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. Ungogo">
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">State <span class="text-red-500">*</span></label>

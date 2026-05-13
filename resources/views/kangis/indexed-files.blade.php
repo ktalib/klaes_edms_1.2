@@ -50,7 +50,7 @@
             </div>
             
             <!-- Quick Manage KANGIS Placeholder Card -->
-            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow hidden">
                 <div class="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-4 flex items-center justify-between">
                     <div class="flex items-center gap-3">
                         <div class="bg-white/20 p-2 rounded-xl backdrop-blur-sm">

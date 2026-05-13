@@ -4904,7 +4904,9 @@
                     if (grantors.length > 1) {
                         combinedGrantor = grantors.slice(0, -1).join(', ') + ', & ' + grantors[grantors.length - 1];
                     } else {
-                        combinedGrantor = grantors[0] || thisGrantor || (details.allottee || details.second_party_name || '').toString().trim();
+                        // For Transfer of Title: combinedGrantor is the PREVIOUS holder.
+                        // We prioritize the allottee from the OP over the OP's own grantor (which is usually Government).
+                        combinedGrantor = grantors[0] || (details.allottee || details.second_party_name || '').toString().trim() || thisGrantor;
                     }
 
                     // Reset merger state

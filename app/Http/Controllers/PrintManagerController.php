@@ -29,6 +29,14 @@ class PrintManagerController extends Controller
             'user_id' => Auth::id(),
         ]);
 
+        if (str_contains($request->document_type, 'Legal Search')) {
+            \App\Models\LegalSearchLog::where('search_value', $request->reference_number)
+                ->where('user_id', Auth::id())
+                ->orderBy('created_at', 'desc')
+                ->limit(1)
+                ->update(['printed' => true]);
+        }
+
         return response()->json([
             'success' => true,
             'data' => $log

@@ -144,11 +144,11 @@
                         <thead>
                             <tr class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-50/80">
                                 <th class="px-4 py-3 text-left">#</th>
-                                <th class="px-4 py-3 text-left">Applicant</th>
+                                <th class="px-4 py-3 text-left">Applicant Name</th>
                                 <th class="px-4 py-3 text-left">Temp File No</th>
-                                <th class="px-4 py-3 text-left">File No</th>
-                                <th class="px-4 py-3 text-left">File Title</th>
-                                <th class="px-4 py-3 text-left">Merged Plots</th>
+                                <th class="px-4 py-3 text-left">Source Plots</th>
+                                <th class="px-4 py-3 text-left">Consolidated Title</th>
+                                <th class="px-4 py-3 text-left">Plots</th>
                                 <th class="px-4 py-3 text-left">Location</th>
                                 @if(request('mode') !== 'land')
                                 <th class="px-4 py-3 text-center">Actions</th>
@@ -159,10 +159,28 @@
                             @forelse($records as $record)
                                 <tr>
                                     <td class="px-4 py-3 font-mono text-xs text-slate-400">{{ $record->id }}</td>
-                                    <td class="px-4 py-3 text-slate-700 font-bold">{{ $record->applicant_name ?: '—' }}</td>
+                                    <td class="px-4 py-3">
+                                        <div class="font-bold text-slate-900">{{ $record->applicant_name ?: '—' }}</div>
+                                       
+                                    </td>
                                     <td class="px-4 py-3 font-bold text-orange-700">{{ $record->temp_file_no }}</td>
-                                    <td class="px-4 py-3 text-slate-700 font-semibold">{{ $record->file_no }}</td>
-                                    <td class="px-4 py-3 text-slate-600">{{ $record->file_title }}</td>
+                                    <td class="px-4 py-3">
+                                        <div class="flex flex-wrap gap-1 max-w-[200px]">
+                                            @php
+                                                $sourceFiles = $record->plotSizes->pluck('plot_number')->filter()->toArray();
+                                            @endphp
+                                            @forelse($sourceFiles as $file)
+                                                <span class="px-2 py-0.5 bg-blue-50 border border-blue-100 text-blue-700 rounded text-[10px] font-bold font-mono">{{ $file }}</span>
+                                            @empty
+                                                <span class="text-slate-400 font-semibold">{{ $record->file_no }}</span>
+                                            @endforelse
+                                        </div>
+                                        <div class="text-[9px] text-slate-400 uppercase tracking-tight mt-1">Source Plots to Merge</div>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <div class="text-slate-700 font-semibold leading-tight line-clamp-2" title="{{ $record->file_title }}">{{ $record->file_title }}</div>
+                                        <div class="text-[9px] text-slate-400 uppercase tracking-tight mt-0.5">Reference Title</div>
+                                    </td>
                                     <td class="px-4 py-3 text-slate-600">{{ $record->num_plots }}</td>
                                     <td class="px-4 py-3 text-slate-600 text-xs">
                                         {{ implode(', ', array_filter([
@@ -313,7 +331,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Temp File No <span class="text-red-500">*</span></label>
-                        <input type="text" name="temp_file_no" id="temp_file_no" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 text-sm font-bold font-mono" placeholder="AUTO-GEN">
+                        <input type="text" name="temp_file_no" id="temp_file_no" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 text-sm font-bold font-mono readonly" placeholder="AUTO-GEN" readonly>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Plots to Merge <span class="text-red-500">*</span></label>
@@ -432,7 +450,7 @@
         `;
         document.getElementById('totalSize').value = "0.00 Sqm";
         // Auto-gen temp file no if empty
-        document.getElementById('temp_file_no').value = 'TMP-' + Date.now().toString().slice(-6);
+        document.getElementById('temp_file_no').value = 'TEMP-' + Date.now().toString().slice(-6);
         
         clearSitePlan();
         
@@ -744,6 +762,25 @@
                 };
             }
         }
+
+        // Validate Source Files
+        let filesValid = true;
+        for (let i = 1; i <= num; i++) {
+            if (!locations[i] || !locations[i].source_file_no) {
+                filesValid = false;
+                const card = document.getElementById(`location_card_${i}`);
+                if (card) card.classList.add('ring-2', 'ring-red-500');
+            } else {
+                const card = document.getElementById(`location_card_${i}`);
+                if (card) card.classList.remove('ring-2', 'ring-red-500');
+            }
+        }
+
+        if (!filesValid) {
+            Swal.fire({ icon: 'warning', title: 'Missing Source Files', text: 'Please select a source file number for each plot being merged.' });
+            return;
+        }
+
         formData.append('location_details_json', JSON.stringify(locations));
 
         try {

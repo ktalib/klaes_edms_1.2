@@ -35,7 +35,7 @@
           </a> --}}
 
           <a href="{{route('file-index-view.index')}}"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-index-view.index') && !request()->has('url') ? 'active' : '' }}">
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-index-view.index') && !request()->has('url') && !request()->has('sltr') ? 'active' : '' }}">
             <i data-lucide="eye" class="h-3.5 w-3.5 text-emerald-400"></i>
             <span>File History View</span>
           </a>

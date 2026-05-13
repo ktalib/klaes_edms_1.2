@@ -924,6 +924,7 @@ class CreateFileTrackerController extends Controller
             $tracker->setAttribute('next_step', $tracker->getNextStepDefinition());
         }
 
+        $tracker->setAttribute('is_printed', (bool) $tracker->printed);
         return $tracker;
     }
 
@@ -1982,5 +1983,21 @@ class CreateFileTrackerController extends Controller
                 ],
             ],
         ]);
+    }
+    public function markAsPrinted($id)
+    {
+        try {
+            $tracker = FileTracker::on('sqlsrv')->find($id);
+            if (!$tracker) {
+                return response()->json(['success' => false, 'message' => 'Tracker not found'], 404);
+            }
+
+            $tracker->printed = true;
+            $tracker->save();
+
+            return response()->json(['success' => true]);
+        } catch (Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
     }
 }

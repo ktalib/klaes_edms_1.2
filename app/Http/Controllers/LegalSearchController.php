@@ -47,6 +47,54 @@ class LegalSearchController extends Controller
     public function search(Request $request)
     {
         $results = $this->searchService->search($request->all());
+        
+        $searchParam = null;
+        $searchValue = null;
+        
+        $mappings = [
+            'query' => 'File Number',
+            'guarantorName' => 'Party 1',
+            'guaranteeName' => 'Party 2',
+            'lga' => 'LGA',
+            'district' => 'District',
+            'location' => 'Location',
+            'plotNumber' => 'Plot Number',
+            'planNumber' => 'Plan Number',
+            'size' => 'Size',
+            'caveat' => 'Caveat',
+        ];
+
+        foreach ($mappings as $key => $label) {
+            if ($request->filled($key)) {
+                $searchParam = $label;
+                $searchValue = $request->input($key);
+                break;
+            }
+        }
+
+        if ($searchParam) {
+            $totalCount = $results['total_count'] ?? 0;
+            $resultStatus = $totalCount > 0 ? 'Found' : 'Not Found';
+            
+            // Collect query params for direct link
+            $queryParams = $request->only(array_keys($mappings));
+            // Filter out empty params
+            $queryParams = array_filter($queryParams, function($val) { return !empty($val); });
+            $directLink = route('legal_search.index', $queryParams);
+
+            \App\Models\LegalSearchLog::create([
+                'user_id' => auth()->id(),
+                'search_parameter' => $searchParam,
+                'search_value' => $searchValue,
+                'result_status' => $resultStatus,
+                'results_count' => $totalCount,
+                'lga' => $request->input('lga'),
+                'receipt_no' => $request->input('token'), // Maybe token is sent? 
+                'printed' => false,
+                'direct_link' => $directLink,
+            ]);
+        }
+
         return response()->json($results);
     }
 

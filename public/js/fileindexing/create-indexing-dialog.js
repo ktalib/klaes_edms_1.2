@@ -665,7 +665,11 @@
             }
         }
 
-        setAutoFilledValue('file-title', record.file_title ?? '', { lock: false });
+        const fileTitleInput = document.getElementById('file-title');
+        if (fileTitleInput) {
+            setAutoFilledValue(fileTitleInput, record.file_title ?? '', { lock: false });
+            applyAutofillLock([fileTitleInput.id], false);
+        }
 
         // Populate Original Holder
         setAutoFilledValue('original-holder', record.original_holder ?? '', { lock: false });
@@ -2782,6 +2786,7 @@
 
         if ('value' in element) {
             element.value = stringValue;
+            element.dispatchEvent(new Event('input', { bubbles: true }));
             element.dispatchEvent(new Event('change', { bubbles: true }));
         } else if ('textContent' in element) {
             element.textContent = stringValue;
@@ -4907,6 +4912,7 @@
         const form = document.getElementById('new-file-form');
         const createBtn = document.getElementById('create-file-btn');
         const cancelBtn = document.getElementById('cancel-btn');
+        const refreshBtn = document.getElementById('refresh-form-btn');
         const closeBtn = document.getElementById('close-dialog-btn');
         const overlay = document.getElementById('new-file-dialog-overlay');
 
@@ -4964,6 +4970,31 @@
                 });
             }
         });
+
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', function () {
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        title: 'Clear Form?',
+                        text: 'This will reset all fields in the form. Continue?',
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, Clear',
+                        cancelButtonText: 'No, Keep',
+                        confirmButtonColor: '#d97706',
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            resetFileIndexingForm();
+                            if (typeof showToast === 'function') {
+                                showToast('Form Cleared', 'All fields have been reset', 'success');
+                            }
+                        }
+                    });
+                } else if (confirm('Are you sure you want to clear the form?')) {
+                    resetFileIndexingForm();
+                }
+            });
+        }
 
         if (overlay) {
             overlay.addEventListener('click', function (e) {
@@ -5754,120 +5785,137 @@
         return registryField.value;
     }
 
+    function resetFileIndexingForm() {
+        const form = document.getElementById('new-file-form');
+        if (form) {
+            form.reset();
+        }
+
+        const fileNumberDisplay = document.getElementById('file-number-display');
+        const fileNumberInput = document.getElementById('fileno');
+        if (fileNumberDisplay) {
+            setAutoFilledValue(fileNumberDisplay, '', { lock: false });
+        }
+        if (fileNumberInput) {
+            fileNumberInput.value = '';
+        }
+
+        hideIndexedFeedback();
+        exitEditMode();
+        refreshSubmitButtonLabel();
+
+        const relatedDisplay = document.getElementById('related-file-number-display');
+        const relatedInput = document.getElementById('related-fileno');
+        if (relatedDisplay) {
+            setAutoFilledValue(relatedDisplay, '', { lock: false });
+        }
+        if (relatedInput) {
+            relatedInput.value = '';
+        }
+
+        if (typeof $ !== 'undefined' && typeof $.fn.select2 !== 'undefined') {
+            const $batchSelect = $('#batch-no');
+            if ($batchSelect.hasClass('select2-hidden-accessible')) {
+                $batchSelect.val(null).trigger('change');
+            }
+        } else {
+            const batchSelect = document.getElementById('batch-no');
+            if (batchSelect) {
+                batchSelect.value = '';
+            }
+        }
+
+        const shelfInput = document.getElementById('shelf-location');
+        if (shelfInput) {
+            setAutoFilledValue(shelfInput, '', { lock: false });
+            shelfInput.classList.remove('loading', 'success-border', 'error-border');
+        }
+
+        const customDistrictContainer = document.getElementById('custom-district-container');
+        const customDistrictInput = document.getElementById('custom-district-input');
+        if (customDistrictContainer && customDistrictInput) {
+            customDistrictContainer.classList.add('hidden');
+            customDistrictInput.value = '';
+        }
+
+        const districtSelect = document.getElementById('district-select');
+        if (districtSelect) {
+            if (referenceDataStore.isLoaded) {
+                populateDistrictSelect(referenceDataStore.districts);
+            }
+            districtSelect.value = '';
+        }
+
+        const fileTitleInput = document.getElementById('file-title');
+        if (fileTitleInput) {
+            setAutoFilledValue(fileTitleInput, '', { lock: false });
+        }
+
+        const lgaSelect = document.getElementById('lga-city');
+        if (lgaSelect) {
+            if (referenceDataStore.isLoaded) {
+                populateLgaSelect(referenceDataStore.lgas);
+            }
+            lgaSelect.value = '';
+        }
+
+        clearArchiveFields();
+        resetGroupingState();
+        updateCreateButtonState();
+
+        const trackingIdInput = document.getElementById('tracking-id');
+        if (trackingIdInput) {
+            trackingIdInput.value = generateTrackingId();
+        }
+
+        const archiveFileNoInput = document.getElementById('archive-file-no');
+        if (archiveFileNoInput) archiveFileNoInput.value = '';
+
+        const hasCofoToggle = document.getElementById('has-cofo-toggle');
+        const cofoDetailsContainer = document.getElementById('cofo-details-container');
+        if (hasCofoToggle) {
+            hasCofoToggle.checked = false;
+        }
+        if (cofoDetailsContainer) {
+            cofoDetailsContainer.classList.add('hidden');
+        }
+        clearCofoFields();
+
+        const hasRofoToggleReset = document.getElementById('has-rofo-toggle');
+        const rofoDetailsContainerReset = document.getElementById('rofo-details-container');
+        if (hasRofoToggleReset) {
+            hasRofoToggleReset.checked = false;
+        }
+        if (rofoDetailsContainerReset) {
+            rofoDetailsContainerReset.classList.add('hidden');
+        }
+        clearRofoFields();
+
+        clearEntityCustomerFields({ silent: true });
+
+        if (typeof resetSmartFileSelector === 'function') {
+            resetSmartFileSelector();
+        }
+
+        if (typeof window.__updateLocationField === 'function') {
+            window.__updateLocationField();
+        }
+
+        // Clear dynamic party rows if any
+        const partyContainer = document.getElementById('party-rows-container');
+        if (partyContainer) {
+            const rows = partyContainer.querySelectorAll('.party-row');
+            rows.forEach((row, idx) => {
+                if (idx > 0) row.remove(); // Keep first row
+            });
+        }
+    }
+
     function closeFileIndexingDialog() {
         const overlay = document.getElementById('new-file-dialog-overlay');
         if (overlay) {
             overlay.classList.add('hidden');
-
-            const form = document.getElementById('new-file-form');
-            if (form) {
-                form.reset();
-            }
-
-            const fileNumberDisplay = document.getElementById('file-number-display');
-            const fileNumberInput = document.getElementById('fileno');
-            if (fileNumberDisplay) {
-                setAutoFilledValue(fileNumberDisplay, '', { lock: false });
-            }
-            if (fileNumberInput) {
-                fileNumberInput.value = '';
-            }
-
-            hideIndexedFeedback();
-            exitEditMode();
-            refreshSubmitButtonLabel();
-
-            const relatedDisplay = document.getElementById('related-file-number-display');
-            const relatedInput = document.getElementById('related-fileno');
-            if (relatedDisplay) {
-                setAutoFilledValue(relatedDisplay, '', { lock: false });
-            }
-            if (relatedInput) {
-                relatedInput.value = '';
-            }
-
-            if (typeof $ !== 'undefined' && typeof $.fn.select2 !== 'undefined') {
-                const $batchSelect = $('#batch-no');
-                if ($batchSelect.hasClass('select2-hidden-accessible')) {
-                    $batchSelect.val(null).trigger('change');
-                }
-            } else {
-                const batchSelect = document.getElementById('batch-no');
-                if (batchSelect) {
-                    batchSelect.value = '';
-                }
-            }
-
-            const shelfInput = document.getElementById('shelf-location');
-            if (shelfInput) {
-                setAutoFilledValue(shelfInput, '', { lock: false });
-                shelfInput.classList.remove('loading', 'success-border', 'error-border');
-            }
-
-            const customDistrictContainer = document.getElementById('custom-district-container');
-            const customDistrictInput = document.getElementById('custom-district-input');
-            if (customDistrictContainer && customDistrictInput) {
-                customDistrictContainer.classList.add('hidden');
-                customDistrictInput.value = '';
-            }
-
-            const districtSelect = document.getElementById('district-select');
-            if (districtSelect) {
-                if (referenceDataStore.isLoaded) {
-                    populateDistrictSelect(referenceDataStore.districts);
-                }
-                districtSelect.value = '';
-            }
-
-            const lgaSelect = document.getElementById('lga-city');
-            if (lgaSelect) {
-                if (referenceDataStore.isLoaded) {
-                    populateLgaSelect(referenceDataStore.lgas);
-                }
-                lgaSelect.value = '';
-            }
-
-            clearArchiveFields();
-            resetGroupingState();
-            updateCreateButtonState();
-
-            const trackingIdInput = document.getElementById('tracking-id');
-            if (trackingIdInput) {
-                trackingIdInput.value = generateTrackingId();
-            }
-
-            const archiveFileNoInput = document.getElementById('archive-file-no');
-            if (archiveFileNoInput) archiveFileNoInput.value = '';
-
-            const hasCofoToggle = document.getElementById('has-cofo-toggle');
-            const cofoDetailsContainer = document.getElementById('cofo-details-container');
-            if (hasCofoToggle) {
-                hasCofoToggle.checked = false;
-            }
-            if (cofoDetailsContainer) {
-                cofoDetailsContainer.classList.add('hidden');
-            }
-            clearCofoFields();
-
-            const hasRofoToggleReset = document.getElementById('has-rofo-toggle');
-            const rofoDetailsContainerReset = document.getElementById('rofo-details-container');
-            if (hasRofoToggleReset) {
-                hasRofoToggleReset.checked = false;
-            }
-            if (rofoDetailsContainerReset) {
-                rofoDetailsContainerReset.classList.add('hidden');
-            }
-            clearRofoFields();
-
-            clearEntityCustomerFields({ silent: true });
-
-            if (typeof resetSmartFileSelector === 'function') {
-                resetSmartFileSelector();
-            }
-
-            if (typeof window.__updateLocationField === 'function') {
-                window.__updateLocationField();
-            }
+            resetFileIndexingForm();
         }
     }
 
@@ -6281,7 +6329,7 @@
                             if (!isEditing && !isKangisVariantMode()) {
                                 const fileTitleInput = document.getElementById('file-title');
                                 if (fileTitleInput) {
-                                    setAutoFilledValue(fileTitleInput, record?.file_name ?? '');
+                                    setAutoFilledValue(fileTitleInput, record?.file_name ?? '', { lock: false });
                                 }
 
                                 // Auto-populate Current Holder from file name/title

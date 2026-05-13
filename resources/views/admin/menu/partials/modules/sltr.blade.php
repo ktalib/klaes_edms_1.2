@@ -38,7 +38,7 @@
             <span>File Indexing Assistant</span>
           </a>
           <!-- ii. File History View -->
-          <a href="{{ route('sltr.indexed-files') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
+          <a href="/file-index-view?url=sltr" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-index-view.index') && request()->has('sltr') ? 'active' : '' }}">
             <i data-lucide="history" class="h-3.5 w-3.5 text-violet-400"></i>
             <span>File History View</span>
           </a>

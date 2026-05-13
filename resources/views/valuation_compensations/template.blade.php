@@ -199,7 +199,18 @@
     </div>
 
     <div class="location-banner">
-        LOCATION: <span style="text-decoration: underline;">{{ $record->location }}</span>
+        LOCATION SCOPE: 
+        <span style="text-decoration: underline;">
+            @if($record->project)
+                {{ $record->project->project_name }} - 
+            @endif
+            {{ $record->location }}
+        </span>
+        @if($record->compensated_items)
+            <div style="font-size: 12px; font-weight: normal; text-transform: none; margin-top: 10px; color: #444;">
+                <strong>Items Considered:</strong> {{ $record->compensated_items }}
+            </div>
+        @endif
     </div>
 
     <table>

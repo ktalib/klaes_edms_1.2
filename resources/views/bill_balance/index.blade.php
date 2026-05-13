@@ -38,7 +38,7 @@
       </div>
 
       {{-- Stats Cards --}}
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {{-- Generated Today Card --}}
         <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
           <div class="flex items-start gap-4">
@@ -77,6 +77,20 @@
               <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Pending Bills</p>
               <p class="text-3xl font-bold text-slate-900">{{ number_format($stats['pending_count']) }}</p>
               <p class="text-xs text-slate-400 mt-1 uppercase">Awaiting Payment</p>
+            </div>
+          </div>
+        </div>
+
+        {{-- Total Revenue Card --}}
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <div class="flex items-start gap-3">
+            <div class="p-2.5 bg-emerald-50 rounded-xl border border-emerald-100 shrink-0">
+              <i data-lucide="banknote" class="h-5 w-5 text-emerald-600"></i>
+            </div>
+            <div class="flex-1">
+              <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Total Revenue</p>
+              <p class="text-xl font-bold text-slate-900 whitespace-nowrap">₦{{ number_format($stats['total_revenue'], 2) }}</p>
+              <p class="text-xs text-slate-400 mt-1 uppercase">Collected</p>
             </div>
           </div>
         </div>

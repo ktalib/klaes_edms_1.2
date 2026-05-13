@@ -104,7 +104,7 @@ class BillBalanceController extends Controller
         // Statistics
         $stats = [
             'total' => BillBalance::count(),
-            'total_amount' => BillBalance::sum('amount'),
+            'total_amount' => BillBalance::sum(DB::raw("CAST(amount AS DECIMAL(18,2))")),
             'paid_count' => BillBalance::query()
                 ->join('billing', 'billing.id', '=', 'deeds_bill_balances_metadata.billing_id')
                 ->where('billing.Payment_Status', 'Paid')
@@ -117,6 +117,9 @@ class BillBalanceController extends Controller
                 })
                 ->count(),
             'generated_today' => BillBalance::whereDate('created_at', Carbon::today())->count(),
+            'total_revenue' => BillBalance::query()
+                ->join('billing', 'billing.id', '=', 'deeds_bill_balances_metadata.billing_id')
+                ->sum(DB::raw("CAST(billing.Penalty_Fees AS DECIMAL(18,2))")),
         ];
 
         return view('bill_balance.index', [

@@ -336,6 +336,7 @@ class UserController extends Controller
                 $user->lang = 'english';
                 $user->parent_id = parentId();
                 $user->assign_role = isset($request->user_role) ? implode(',', $request->user_role) : null;
+                $user->user_actions = isset($request->user_actions) ? implode(',', $request->user_actions) : null;
                 $user->save();
                 
                 $module = 'user_create';
@@ -532,6 +533,7 @@ class UserController extends Controller
                     : ($structureId ? 'structure' : null);
                 $user->type = $request->user_type;
                 $user->assign_role = isset($request->user_role) ? implode(',', $request->user_role) : null;
+                $user->user_actions = isset($request->user_actions) ? implode(',', $request->user_actions) : null;
                 if ($request->filled('password')) {
                     $user->password = Hash::make($request->password);
                 }

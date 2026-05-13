@@ -34,6 +34,7 @@ class ValuationCompensation extends Model
         'compensated_items',
         'compensated_items_other',
         'project_id',
+        'sub_project_id',
         'project_fileno',
         'worker_id',
         'is_deleted',
@@ -72,5 +73,10 @@ class ValuationCompensation extends Model
     public function project()
     {
         return $this->belongsTo(Project::class, 'project_id');
+    }
+
+    public function subProject()
+    {
+        return $this->belongsTo(SubProject::class, 'sub_project_id');
     }
 }

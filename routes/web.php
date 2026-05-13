@@ -91,6 +91,13 @@ Route::get('/clear-all-caches', function () {
     }
 });
 
+// ToT Maintenance Routes
+Route::group(['prefix' => 'maintenance/tot', 'middleware' => ['auth']], function () {
+    Route::get('/', [\App\Http\Controllers\Maintenance\ToTStagingController::class, 'index'])->name('maintenance.tot.index');
+    Route::post('/generate', [\App\Http\Controllers\Maintenance\ToTStagingController::class, 'generate'])->name('maintenance.tot.generate');
+    Route::post('/ignore', [\App\Http\Controllers\Maintenance\ToTStagingController::class, 'ignore'])->name('maintenance.tot.ignore');
+});
+
 // Test routes for new controller
 Route::get('/fix-db-schema', function () {
     try {
@@ -1569,6 +1576,7 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'create-file-tracker'
     // KANGIS 3-Step Workflow
     Route::get('/workflow-definition', [App\Http\Controllers\CreateFileTrackerController::class, 'workflowDefinition'])->name('create-file-tracker.workflow-definition');
     Route::get('/workflow-progress/{id}', [App\Http\Controllers\CreateFileTrackerController::class, 'workflowProgress'])->name('create-file-tracker.workflow-progress');
+    Route::post('/{id}/mark-printed', [App\Http\Controllers\CreateFileTrackerController::class, 'markAsPrinted'])->name('create-file-tracker.mark-printed');
 });
 
 // File Tracker API Routes for AJAX calls (Web session auth OR Sanctum Bearer token)

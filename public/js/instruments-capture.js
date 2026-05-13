@@ -4919,8 +4919,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 resetRegistrationState({ hideDialog: false, resetInstrumentType: false });
 
                 // REDESIGNED: Premium COMPACT Light Theme Success Modal
+                const isSyncActive = (data.instrument_type || currentInstrumentType || "").includes("Deed of Gift") ||
+                    (data.instrument_type || currentInstrumentType || "").includes("Deed of Assignment") ||
+                    (data.instrument_type || currentInstrumentType || "").includes("Power of Attorney");
+
                 Swal.fire({
-                    width: '420px',
+                    width: '720px',
                     html: `
                         <div class="text-left">
                             <!-- Success Header (Compact) -->
@@ -4935,7 +4939,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             </div>
 
                             <!-- Context Details (Compact) -->
-                            <div class="grid grid-cols-2 gap-2 mb-4">
+                            <div class="grid grid-cols-2 gap-2 mb-6">
                                 <div class="bg-gray-50/80 p-2 rounded-xl border border-gray-100">
                                     <span class="block text-[8px] text-gray-400 uppercase font-bold mb-0.5">Instrument Type</span>
                                     <span class="font-bold text-gray-700 text-xs truncate block">${data.instrument_type || currentInstrumentType}</span>
@@ -4946,48 +4950,82 @@ document.addEventListener('DOMContentLoaded', function () {
                                 </div>
                             </div>
 
-                            <!-- Permanent Registry Card (Compact Premium) -->
-                            <div class="bg-gradient-to-br from-indigo-50 to-blue-50/30 rounded-[2rem] border border-blue-100 p-5 shadow-inner-sm relative overflow-hidden group">
-                                <div class="relative z-10">
-                                  
-
-                                    <div class="mb-5 text-center">
-                                        <span class="block text-[9px] text-blue-400/80 mb-1 font-bold tracking-tight">REGISTRATION PARTICULARS</span>
-                                        <div class="text-3xl font-black font-mono tracking-tighter text-blue-900 bg-white inline-block px-4 py-1.5 rounded-xl shadow-sm border border-blue-50">
-                                           ${data.registration_number || data.reg_number || 'N/A'}
+                            <div class="grid grid-cols-2 gap-4">
+                                ${isSyncActive ? `
+                                <!-- Detailed Sync Notification -->
+                                <div class="p-4 bg-blue-50/50 border border-blue-100 rounded-3xl flex flex-col justify-between">
+                                    <div>
+                                        <div class="flex items-center gap-2 mb-3">
+                                            <div class="bg-blue-500 text-white p-1 rounded-lg">
+                                                <i data-lucide="refresh-cw" class="h-3 w-3"></i>
+                                            </div>
+                                            <span class="text-[10px] font-black text-blue-700 uppercase tracking-tight">System Records Synchronized</span>
                                         </div>
+
+                                        ${data.sync_result && data.sync_result.synced ? `
+                                        <div class="mb-4 space-y-2">
+                                            <div class="flex justify-between items-center bg-white/60 p-2 rounded-xl border border-blue-100/50 shadow-sm">
+                                                <span class="text-[7px] text-blue-400 font-black uppercase tracking-wider">Old File Name</span>
+                                                <span class="text-[9px] text-slate-500 font-bold truncate max-w-[150px] ml-2 text-right">${data.sync_result.old_name || 'N/A'}</span>
+                                            </div>
+                                            <div class="flex justify-between items-center bg-emerald-50/60 p-2 rounded-xl border border-emerald-200/50 shadow-sm">
+                                                <span class="text-[7px] text-emerald-600 font-black uppercase tracking-wider">New File Name</span>
+                                                <span class="text-[9px] text-emerald-900 font-black truncate max-w-[150px] ml-2 text-right">${data.sync_result.new_name || 'N/A'}</span>
+                                            </div>
+                                        </div>
+                                        ` : ''}
                                     </div>
 
-                                    <!-- REORDERED: Serial, Page, Volume -->
-                                    <div class="grid grid-cols-3 gap-2">
-                                        <div class="p-2 rounded-xl bg-white/60 text-center border border-white/80 shadow-sm">
-                                            <span class="block text-[8px] text-gray-400 uppercase font-bold mb-0.5">Serial</span>
-                                            <span class="text-base font-black text-slate-700">${data.serial_no || '-'}</span>
-                                        </div>
-                                        <div class="p-2 rounded-xl bg-white/60 text-center border border-white/80 shadow-sm">
-                                            <span class="block text-[8px] text-gray-400 uppercase font-bold mb-0.5">Page</span>
-                                            <span class="text-base font-black text-slate-700">${data.page_no || '-'}</span>
-                                        </div>
-                                        <div class="p-2 rounded-xl bg-white/60 text-center border border-white/80 shadow-sm">
-                                            <span class="block text-[8px] text-gray-400 uppercase font-bold mb-0.5">Vol</span>
-                                            <span class="text-base font-black text-slate-700">${data.volume_no || '-'}</span>
-                                        </div>
-                                    </div>
+                                    <ul class="text-[9px] text-blue-600 space-y-1 font-bold pt-3 border-t border-blue-100/50 mt-auto">
+                                        <li>. File Indexing: Updated File Title</li>
+                                        <li>. Customer: Updated Customer Name</li>
+                                        <li>. Entity: Updated Entity Name</li>
+                                        <li>. FileNumber: Updated File Name</li>
+                                    </ul>
+                                </div>
+                                ` : ''}
 
-                                    <!-- Integrated Date/Time -->
-                                    <div class="mt-4 pt-3 border-t border-blue-100/50 space-y-1">
-                                     <div class="flex justify-between items-center text-[10px]">
-                                            <span class="text-blue-400 font-medium">Deed Registration Time:</span>
-                                            <span class="text-blue-900 font-bold">${data.deeds_time || '-'}</span>
+                                <!-- Permanent Registry Card (Compact Premium) -->
+                                <div class="${isSyncActive ? '' : 'col-span-2'} bg-gradient-to-br from-indigo-50 to-blue-50/30 rounded-[2rem] border border-blue-100 p-5 shadow-inner-sm relative overflow-hidden group">
+                                    <div class="relative z-10">
+                                        <div class="mb-5 text-center">
+                                            <span class="block text-[9px] text-blue-400/80 mb-1 font-bold tracking-tight">REGISTRATION PARTICULARS</span>
+                                            <div class="text-3xl font-black font-mono tracking-tighter text-blue-900 bg-white inline-block px-4 py-1.5 rounded-xl shadow-sm border border-blue-50">
+                                               ${data.registration_number || data.reg_number || 'N/A'}
+                                            </div>
                                         </div>
-                                        <div class="flex justify-between items-center text-[10px]">
-                                            <span class="text-blue-400 font-medium">Deed Registration Date:</span>
-                                            <span class="text-blue-900 font-bold">${data.deeds_date || '-'}</span>
+
+                                        <!-- REORDERED: Serial, Page, Volume -->
+                                        <div class="grid grid-cols-3 gap-2">
+                                            <div class="p-2 rounded-xl bg-white/60 text-center border border-white/80 shadow-sm">
+                                                <span class="block text-[8px] text-gray-400 uppercase font-bold mb-0.5">Serial</span>
+                                                <span class="text-base font-black text-slate-700">${data.serial_no || '-'}</span>
+                                            </div>
+                                            <div class="p-2 rounded-xl bg-white/60 text-center border border-white/80 shadow-sm">
+                                                <span class="block text-[8px] text-gray-400 uppercase font-bold mb-0.5">Page</span>
+                                                <span class="text-base font-black text-slate-700">${data.page_no || '-'}</span>
+                                            </div>
+                                            <div class="p-2 rounded-xl bg-white/60 text-center border border-white/80 shadow-sm">
+                                                <span class="block text-[8px] text-gray-400 uppercase font-bold mb-0.5">Vol</span>
+                                                <span class="text-base font-black text-slate-700">${data.volume_no || '-'}</span>
+                                            </div>
                                         </div>
-                                       
+
+                                        <!-- Integrated Date/Time -->
+                                        <div class="mt-4 pt-3 border-t border-blue-100/50 space-y-1">
+                                            <div class="flex justify-between items-center text-[10px]">
+                                                <span class="text-blue-400 font-medium">Deed Registration Time:</span>
+                                                <span class="text-blue-900 font-bold">${data.deeds_time || '-'}</span>
+                                            </div>
+                                            <div class="flex justify-between items-center text-[10px]">
+                                                <span class="text-blue-400 font-medium">Deed Registration Date:</span>
+                                                <span class="text-blue-900 font-bold">${data.deeds_date || '-'}</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+                        </div>
 
                             <!-- RDS & CoR Action Buttons -->
                             <div class="mt-4 grid grid-cols-2 gap-2">

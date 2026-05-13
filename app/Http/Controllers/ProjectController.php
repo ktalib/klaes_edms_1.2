@@ -49,6 +49,7 @@ class ProjectController extends Controller
             'project_name' => 'required|string',
             'number_of_items' => 'required|integer|min:1',
             'project_type' => 'required|string',
+            'number_of_sub_projects' => 'required|integer|min:1',
             'our_reference' => 'required|string',
             'your_reference' => 'nullable|string',
             'addressed_to' => 'nullable|string',
@@ -67,8 +68,8 @@ class ProjectController extends Controller
                 'project_fileno' => $projectFileNo,
                 'number_of_items' => $request->number_of_items,
                 'street' => $request->street,
-                'district' => $request->district,
-                'lga' => $request->lga,
+                'district' => is_array($request->district) ? implode(', ', $request->district) : $request->district,
+                'lga' => is_array($request->lga) ? implode(', ', $request->lga) : $request->lga,
                 'state' => $request->state ?? 'Kano',
                 'project_type' => $request->project_type,
                 'project_type_other' => $request->project_type_other,
@@ -77,6 +78,16 @@ class ProjectController extends Controller
                 'addressed_to' => $request->addressed_to,
                 'user_id' => Auth::id(),
             ]);
+
+            // Create Sub-Projects
+            $subProjectCount = intval($request->number_of_sub_projects ?? 0);
+            for ($i = 1; $i <= $subProjectCount; $i++) {
+                \App\Models\SubProject::create([
+                    'project_id' => $project->id,
+                    'name' => "Sub-Project A{$i}",
+                    'code' => "{$project->project_code}-A{$i}"
+                ]);
+            }
 
             foreach ($request->worker_assignments as $index => $assignment) {
                 $workerIndex = str_pad($index + 1, 3, '0', STR_PAD_LEFT);
@@ -118,8 +129,8 @@ class ProjectController extends Controller
             'project_name' => $request->project_name,
             'number_of_items' => $request->number_of_items,
             'street' => $request->street,
-            'district' => $request->district,
-            'lga' => $request->lga,
+            'district' => is_array($request->district) ? implode(', ', $request->district) : $request->district,
+            'lga' => is_array($request->lga) ? implode(', ', $request->lga) : $request->lga,
             'state' => $request->state ?? 'Kano',
             'project_type' => $request->project_type,
             'project_type_other' => $request->project_type_other,
@@ -147,6 +158,15 @@ class ProjectController extends Controller
                 'our_reference' => $p->our_reference,
                 'your_reference' => $p->your_reference,
                 'addressed_to' => $p->addressed_to,
+                'district' => $p->district,
+                'lga' => $p->lga,
+                'sub_projects' => $p->subProjects->map(function($sp) {
+                    return [
+                        'id' => $sp->id,
+                        'name' => $sp->name,
+                        'code' => $sp->code
+                    ];
+                })
             ];
         });
 

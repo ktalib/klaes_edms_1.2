@@ -203,7 +203,7 @@
         <img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Header Right">
     </div>
 
-    <h1>COMPENSATION VALUATION (BATCH REPORT)</h1>
+    <h1>COMPENSATION VALUATION</h1>
 
     <div class="header-meta">
         <div>
@@ -219,10 +219,28 @@
             @endforeach
         </div>
         <div style="text-align: right;">
-            Our Ref: <span class="underline-field">{{ $project->project_fileno ?? 'N/A' }}</span><br>
-            Your Ref: <span class="underline-field">N/A</span><br>
+            Our Ref: <span class="underline-field">{{ $project->our_reference ?? ($project->project_fileno ?? 'N/A') }}</span><br>
+            Your Ref: <span class="underline-field">{{ $project->your_reference ?? 'N/A' }}</span><br>
             Date: <span class="underline-field">{{ now()->format('jS F, Y') }}</span>
         </div>
+    </div>
+
+    <div class="location-banner">
+        @php
+            $projLocation = "";
+            if ($project->project_name) $projLocation .= $project->project_name;
+            
+            $addr = "";
+            if ($project->street) $addr .= $project->street;
+            if ($project->district) $addr .= ($addr ? ", " : "") . $project->district;
+            if ($project->lga) $addr .= ($addr ? ", " : "") . $project->lga;
+            if ($project->state) $addr .= ($addr ? ", " : "") . $project->state . " State";
+            
+            if ($addr) {
+                $projLocation .= ($projLocation ? " - " : "") . $addr;
+            }
+        @endphp
+        LOCATION SCOPE: <span style="text-decoration: underline;">{{ $projLocation ?: ($records->first()->location ?? 'N/A') }}</span>
     </div>
 
     <table>

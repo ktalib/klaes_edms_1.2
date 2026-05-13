@@ -56,6 +56,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'base_salary_source',
         'rank',
         'signature',
+        'user_actions',
     ];
 
     public function sendEmailVerificationNotification()

@@ -413,8 +413,12 @@ class PropertyIdAllocationService
         // Specifically handle primary_file_number because it's NOT NULL in schema.
         // If the new primary identifier is already used as a primary on another row,
         // we move that old row to a reference identifier to allow the new one to take its place.
+        $normalizedPrimary = strtoupper(trim($primaryForMaster));
         $existingPrimaryRow = DB::connection('sqlsrv')->table('PropID_Master')
-            ->where('primary_file_number', $primaryForMaster)
+            ->where(function($q) use ($primaryForMaster, $normalizedPrimary) {
+                $q->where('primary_file_number', $primaryForMaster)
+                  ->orWhereRaw('UPPER(LTRIM(RTRIM(primary_file_number))) = ?', [$normalizedPrimary]);
+            })
             ->where('prop_id', '!=', $propId)
             ->first();
 

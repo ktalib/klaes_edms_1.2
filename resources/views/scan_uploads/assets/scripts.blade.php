@@ -1,5 +1,5 @@
 <script>
-    // Initialize PDF.js worker
+    // Initialize PDF.js service worker
     if (typeof pdfjsLib !== "undefined") {
         pdfjsLib.GlobalWorkerOptions.workerSrc =
             "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -5717,8 +5717,60 @@
         rotateRight();
     }
 
-    function selectIndexedFileTemp(fileId) {
+    function selectIndexedFileTemp(fileId, skipWarning = false) {
         const normalizedId = String(fileId);
+        const selectedFile = findIndexedFileById(normalizedId);
+
+        // Check if the file already has uploads and show warning if not skipped
+        if (!skipWarning && selectedFile && selectedFile.has_scans) {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    title: 'Existing Uploads Detected',
+                    text: `The file number "${selectedFile.fileNumber}" already has ${selectedFile.scans_count} uploaded document(s). Do you want to continue and upload more?`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#3085d6',
+                    cancelButtonColor: '#d33',
+                    confirmButtonText: 'Yes, upload more',
+                    cancelButtonText: 'No, cancel',
+                    reverseButtons: true
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // Re-run this function but skip the warning to proceed with selection
+                        selectIndexedFileTemp(fileId, true);
+                        renderIndexedFiles();
+                    } else {
+                        // Reset selection if canceled
+                        const selectElement = elements.globalSelectedFileNoSelect;
+                        if (selectElement) {
+                            if (typeof $ !== 'undefined' && typeof $.fn.select2 !== 'undefined' && $(selectElement).data('select2')) {
+                                $(selectElement).val(null).trigger('change');
+                            } else {
+                                selectElement.value = '';
+                            }
+                        }
+                        clearIndexedFileSelection();
+                        renderIndexedFiles();
+                    }
+                });
+                return;
+            } else {
+                // Fallback to native confirm if Swal is not available
+                if (!confirm(`The file number "${selectedFile.fileNumber}" already has ${selectedFile.scans_count} uploaded document(s). Do you want to continue and upload more?`)) {
+                    const selectElement = elements.globalSelectedFileNoSelect;
+                    if (selectElement) {
+                        if (typeof $ !== 'undefined' && typeof $.fn.select2 !== 'undefined' && $(selectElement).data('select2')) {
+                            $(selectElement).val(null).trigger('change');
+                        } else {
+                            selectElement.value = '';
+                        }
+                    }
+                    clearIndexedFileSelection();
+                    renderIndexedFiles();
+                    return;
+                }
+            }
+        }
 
         document.querySelectorAll('#indexed-files-list > div').forEach(item => {
             const id = item.getAttribute('data-id');
@@ -5734,7 +5786,6 @@
 
         state.selectedIndexedFile = normalizedId;
 
-        const selectedFile = findIndexedFileById(normalizedId);
         state.selectedFileNumberForUpload = selectedFile ? selectedFile.fileNumber : null;
         applyDefinitionToStagedDocs();
 

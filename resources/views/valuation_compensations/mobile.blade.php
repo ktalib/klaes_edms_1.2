@@ -45,6 +45,12 @@
             overscroll-behavior-y: contain;
         }
 
+        input[type="text"], 
+        textarea, 
+        input[type="search"] {
+            text-transform: uppercase !important;
+        }
+
         /* ── TOP BAR ── */
         .topbar {
             position: sticky;
@@ -859,15 +865,11 @@
                     </div>
                     <div class="field">
                         <label>District</label>
-                        <select name="district" id="districtSelect" class="inp loc-trigger">
-                            <option value="">Select District</option>
-                        </select>
+                        <input type="text" id="districtSelect" class="inp loc-trigger" placeholder="e.g. Nassarawa">
                     </div>
                     <div class="field">
                         <label>LGA <span class="req">*</span></label>
-                        <select name="lga" id="lgaSelect" class="inp loc-trigger" required>
-                            <option value="">Select LGA</option>
-                        </select>
+                        <input type="text" id="lgaSelect" class="inp loc-trigger" required placeholder="e.g. Ungogo">
                     </div>
                     <div class="field">
                         <label>Full Address <span class="req">*</span></label>
@@ -1144,6 +1146,15 @@
                     const infoPanel = document.getElementById('mobile-project-info');
                     if (infoPanel) infoPanel.classList.remove('hidden');
                     if (window.lucide) window.lucide.createIcons();
+
+                    // Backfill location scope
+                    if (proj.district) {
+                        document.getElementById('districtSelect').value = proj.district;
+                    }
+                    if (proj.lga) {
+                        document.getElementById('lgaSelect').value = proj.lga;
+                    }
+                    buildAddress();
                 }
             }
 
@@ -1389,6 +1400,13 @@
                     }
                 });
             }
+
+            // Auto-capitalize all text inputs
+            document.querySelectorAll('input[type="text"], textarea, input[type="search"]').forEach(input => {
+                input.addEventListener('input', function() {
+                    this.value = this.value.toUpperCase();
+                });
+            });
         });
 
         /* ── MAP LOGIC ── */

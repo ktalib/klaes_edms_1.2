@@ -54,6 +54,9 @@ class FileIndexViewController extends Controller
         $connection = DB::connection('sqlsrv');
 
         $urlContext = strtolower(trim((string) $request->input('url', '')));
+        if (empty($urlContext) && $request->has('sltr')) {
+            $urlContext = 'sltr';
+        }
 
         $baseQuery = $this->buildFileHistoryBaseQuery($connection, $urlContext);
 
@@ -465,9 +468,10 @@ class FileIndexViewController extends Controller
         // start with one of the KANGIS prefixes (KNML, MLKN, KNGP).
         $kangisPrefixes = ['KNML', 'MLKN', 'KNGP'];
         $applyKangisFilter = $urlContext === 'kangis';
+        $applySltrFilter = $urlContext === 'sltr';
 
         return $connection->query()
-            ->fromSub(function ($sub) use ($partitionExpression, $applyKangisFilter, $kangisPrefixes) {
+            ->fromSub(function ($sub) use ($partitionExpression, $applyKangisFilter, $kangisPrefixes, $applySltrFilter) {
                 $sub->from('file_history_staging')
                     ->select('*')
                     ->selectRaw("ROW_NUMBER() OVER (PARTITION BY {$partitionExpression} ORDER BY id DESC) as prop_rank")
@@ -481,6 +485,8 @@ class FileIndexViewController extends Controller
                             }
                         }
                     });
+                } elseif ($applySltrFilter) {
+                    $sub->where('mlsFNo', 'like', 'sltr%');
                 }
             }, 'ranked_files')
             ->where('prop_rank', 1);

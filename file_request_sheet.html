@@ -16,35 +16,31 @@
         .page {
             width: 210mm;
             height: 297mm;
-            padding: 5mm 10mm;
-            margin: 10mm auto;
+            padding: 2mm 10mm;
+            margin: 0 auto;
             background: white;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
             box-sizing: border-box;
             position: relative;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
+            justify-content: flex-start;
         }
 
         .sheet {
-            height: 92mm;
-            border-bottom: 1px dashed #ccc;
-            padding-bottom: 5mm;
-            padding-top: 5mm;
+            height: 148.5mm;
+            padding-bottom: 2mm;
+            padding-top: 2mm;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
-        }
-
-        .sheet:last-child {
-            border-bottom: none;
+            overflow: hidden;
         }
 
         .header {
             font-weight: bold;
-            font-size: 14px;
-            margin-bottom: 5px;
+            font-size: 12px;
+            margin-bottom: 2px;
             text-transform: uppercase;
             text-align: center;
         }
@@ -52,14 +48,14 @@
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
         }
 
         td {
             border: 1px solid black;
-            padding: 4px 10px;
-            font-size: 12px;
-            height: 20px;
+            padding: 2px 8px;
+            font-size: 10px;
+            height: 14px;
         }
 
         .label {
@@ -71,7 +67,7 @@
             display: flex;
             justify-content: space-between;
             margin-top: auto;
-            padding-bottom: 5px;
+            padding-bottom: 2px;
         }
 
         .sig-box {
@@ -81,19 +77,20 @@
 
         .sig-line {
             border-top: 1px solid #1a73e8;
-            margin-bottom: 3px;
+            margin-top: 15px;
+            margin-bottom: 2px;
         }
 
         .sig-text {
-            font-size: 10px;
-            line-height: 1.2;
+            font-size: 9px;
+            line-height: 1.1;
         }
 
         .footer {
             display: flex;
             justify-content: flex-end;
             align-items: center;
-            margin-top: 2px;
+            margin-top: 1px;
         }
 
         @media print {
@@ -130,137 +127,7 @@
     <button class="print-btn" onclick="window.print()">Print</button>
 
     <div class="page">
-        <!-- SHEET 1 -->
-        <div class="sheet">
-            <div class="header">KLAES FILE REQUEST SHEET</div>
-
-            <table>
-                <tr>
-                    <td class="label">File Number</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label">File Title</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label">File Request Priority</td>
-                    <td>High / Medium / Low</td>
-                </tr>
-                <tr>
-                    <td class="label">Registry (Origin)</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label">Destination Office (Department)</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label">Receiving Office</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label">Receiving Officer</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label">Officer's Rank</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label" style="height: 40px; vertical-align: top;">Remark(s)</td>
-                    <td></td>
-                </tr>
-            </table>
-
-            <div class="signatures">
-                <div class="sig-box">
-                    <div class="sig-line"></div>
-                    <div class="sig-text">
-                        Signature and Date<br>
-                        <strong>Requester</strong>
-                    </div>
-                </div>
-                <div class="sig-box">
-                    <div class="sig-line"></div>
-                    <div class="sig-text">
-                        Signature and Date<br>
-                        <strong>Director Lands</strong>
-                    </div>
-                </div>
-            </div>
-
-            <div class="footer">
-                <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES Logo" style="height: 25px;">
-            </div>
-        </div>
-
-        <!-- SHEET 2 -->
-        <div class="sheet">
-            <div class="header">KLAES FILE REQUEST SHEET</div>
-
-            <table>
-                <tr>
-                    <td class="label">File Number</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label">File Title</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label">File Request Priority</td>
-                    <td>High / Medium / Low</td>
-                </tr>
-                <tr>
-                    <td class="label">Registry (Origin)</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label">Destination Office (Department)</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label">Receiving Office</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label">Receiving Officer</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label">Officer's Rank</td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td class="label" style="height: 40px; vertical-align: top;">Remark(s)</td>
-                    <td></td>
-                </tr>
-            </table>
-
-            <div class="signatures">
-                <div class="sig-box">
-                    <div class="sig-line"></div>
-                    <div class="sig-text">
-                        Signature and Date<br>
-                        <strong>Requester</strong>
-                    </div>
-                </div>
-                <div class="sig-box">
-                    <div class="sig-line"></div>
-                    <div class="sig-text">
-                        Signature and Date<br>
-                        <strong>Director Lands</strong>
-                    </div>
-                </div>
-            </div>
-
-            <div class="footer">
-                <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES Logo" style="height: 25px;">
-            </div>
-        </div>
-
-        <!-- SHEET 3 -->
+        <!-- SINGLE HALF-PAGE SHEET -->
         <div class="sheet">
             <div class="header">KLAES FILE REQUEST SHEET</div>
 

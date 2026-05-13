@@ -46,6 +46,7 @@ class FileTracker extends Model
         'workflow_type',
         'workflow_step',
         'workflow_config',
+        'printed',
     ];
 
     protected $casts = [
@@ -56,6 +57,7 @@ class FileTracker extends Model
         'movement_log' => 'array',
         'assignment_accepted_at' => 'datetime',
         'workflow_config' => 'array',
+        'printed' => 'boolean',
     ];
 
     // Priority constants

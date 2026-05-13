@@ -65,13 +65,13 @@ class PropertySearchController extends Controller
                 $escaped = str_replace(['%', '_'], ['\\%', '\\_'], $searchValue);
                 $baseQuery->where(function ($q) use ($escaped) {
                     $q->where('file_number', 'LIKE', "%{$escaped}%")
-                      ->orWhere('party_1', 'LIKE', "%{$escaped}%")
-                      ->orWhere('party_2', 'LIKE', "%{$escaped}%")
-                      ->orWhere('transaction_type', 'LIKE', "%{$escaped}%")
-                      ->orWhere('land_use', 'LIKE', "%{$escaped}%")
-                      ->orWhere('location', 'LIKE', "%{$escaped}%")
-                      ->orWhere('registration', 'LIKE', "%{$escaped}%")
-                      ->orWhere('source_table', 'LIKE', "%{$escaped}%");
+                        ->orWhere('party_1', 'LIKE', "%{$escaped}%")
+                        ->orWhere('party_2', 'LIKE', "%{$escaped}%")
+                        ->orWhere('transaction_type', 'LIKE', "%{$escaped}%")
+                        ->orWhere('land_use', 'LIKE', "%{$escaped}%")
+                        ->orWhere('location', 'LIKE', "%{$escaped}%")
+                        ->orWhere('registration', 'LIKE', "%{$escaped}%")
+                        ->orWhere('source_table', 'LIKE', "%{$escaped}%");
                 });
             }
 
@@ -86,39 +86,39 @@ class PropertySearchController extends Controller
             $data = $records->map(function ($row) {
                 $propId = trim((string) ($row->prop_id_raw ?? ''));
                 $fileNo = trim((string) ($row->file_number ?? ''));
-                
+
                 $rawRecords = $this->timelineService->getRawRecords($fileNo, $propId);
                 $weightedCount = $this->timelineService->getWeightedCount($rawRecords);
 
                 return [
-                    'file_number'       => $row->file_number ?: 'N/A',
-                    'party_1'           => $row->party_1 ?: 'N/A',
-                    'party_2'           => $row->party_2 ?: 'N/A',
-                    'transaction_type'  => $row->transaction_type ?: 'N/A',
-                    'land_use'          => $row->land_use ?: 'N/A',
-                    'registration'      => $row->registration ?: 'N/A',
-                    'transaction_date'  => $this->formatDate($row->transaction_date),
-                    'location'          => $row->location ?: 'N/A',
-                    'source_table'      => $row->source_table,
-                    'timeline_count'    => max(1, $weightedCount),
-                    'prop_id'           => $row->prop_id_raw,
+                    'file_number' => $row->file_number ?: 'N/A',
+                    'party_1' => $row->party_1 ?: 'N/A',
+                    'party_2' => $row->party_2 ?: 'N/A',
+                    'transaction_type' => $row->transaction_type ?: 'N/A',
+                    'land_use' => $row->land_use ?: 'N/A',
+                    'registration' => $row->registration ?: 'N/A',
+                    'transaction_date' => $this->formatDate($row->transaction_date),
+                    'location' => $row->location ?: 'N/A',
+                    'source_table' => $row->source_table,
+                    'timeline_count' => max(1, $weightedCount),
+                    'prop_id' => $row->prop_id_raw,
                 ];
             });
 
             return response()->json([
-                'draw'            => $draw,
-                'recordsTotal'    => $recordsTotal,
+                'draw' => $draw,
+                'recordsTotal' => $recordsTotal,
                 'recordsFiltered' => $recordsFiltered,
-                'data'            => $data,
+                'data' => $data,
             ]);
         } catch (\Exception $e) {
             Log::error('PropertySearchController::data error', ['error' => $e->getMessage()]);
 
             return response()->json([
-                'draw'            => $draw,
-                'recordsTotal'    => 0,
+                'draw' => $draw,
+                'recordsTotal' => 0,
                 'recordsFiltered' => 0,
-                'data'            => [],
+                'data' => [],
             ]);
         }
     }
@@ -214,10 +214,14 @@ class PropertySearchController extends Controller
 
         // --- 2. Normalize and Deduplicate using Service ---
         $allRawNormalized = [];
-        foreach ($fhRows as $r) $allRawNormalized[] = $this->timelineService->normalizeRow($r, 'file_history_staging');
-        foreach ($cofoRows as $r) $allRawNormalized[] = $this->timelineService->normalizeRow($r, 'CofO_staging');
-        foreach ($praRows as $r) $allRawNormalized[] = $this->timelineService->normalizeRow($r, 'pra');
-        foreach ($deedRows as $r) $allRawNormalized[] = $this->timelineService->normalizeRow($r, 'deed_registrations');
+        foreach ($fhRows as $r)
+            $allRawNormalized[] = $this->timelineService->normalizeRow($r, 'file_history_staging');
+        foreach ($cofoRows as $r)
+            $allRawNormalized[] = $this->timelineService->normalizeRow($r, 'CofO_staging');
+        foreach ($praRows as $r)
+            $allRawNormalized[] = $this->timelineService->normalizeRow($r, 'pra');
+        foreach ($deedRows as $r)
+            $allRawNormalized[] = $this->timelineService->normalizeRow($r, 'deed_registrations');
 
         $analysis = $this->timelineService->getWeightingAnalysis($allRawNormalized);
         $weightedRaw = $analysis['weighted'];
@@ -225,9 +229,9 @@ class PropertySearchController extends Controller
 
         // --- 3. Normalize for View ---
         $normalizeForView = function ($row) {
-            $normalized = $this->normalizeTimelineRow((object)$row, $row['source_table']);
+            $normalized = $this->normalizeTimelineRow((object) $row, $row['source_table']);
             // Add weighting info for JS
-            $normalized['_ptl_weighting_status'] = $row['_ptl_weighting_status'] ?? null; 
+            $normalized['_ptl_weighting_status'] = $row['_ptl_weighting_status'] ?? null;
             return $normalized;
         };
 
@@ -255,24 +259,24 @@ class PropertySearchController extends Controller
         $lastTxn = $weightedTxns->last() ?? $omittedTxns->last();
 
         $historyPayload = [
-            'fileNumber'        => $displayFileNumber,
-            'propId'            => $propId ?: ($firstTxn['prop_id'] ?? null),
-            'landuse'           => $firstTxn['land_use'] ?? null,
-            'location'          => $firstTxn['location'] ?? null,
+            'fileNumber' => $displayFileNumber,
+            'propId' => $propId ?: ($firstTxn['prop_id'] ?? null),
+            'landuse' => $firstTxn['land_use'] ?? null,
+            'location' => $firstTxn['location'] ?? null,
             'totalTransactions' => $weightedTxns->count(), // Badge count is weighted
-            'originalOwner'     => $firstTxn['primary_party'] ?? null,
-            'currentOwner'      => $lastTxn['primary_party'] ?? null,
-            'transactions'      => $allTransactions->toArray(),
-            'weightedCount'     => $weightedTxns->count(),
-            'omittedCount'      => $omittedTxns->count(),
-            'weighted'          => $weightedTxns->toArray(),
-            'omitted'           => $omittedTxns->toArray(),
+            'originalOwner' => $firstTxn['primary_party'] ?? null,
+            'currentOwner' => $lastTxn['primary_party'] ?? null,
+            'transactions' => $allTransactions->toArray(),
+            'weightedCount' => $weightedTxns->count(),
+            'omittedCount' => $omittedTxns->count(),
+            'weighted' => $weightedTxns->toArray(),
+            'omitted' => $omittedTxns->toArray(),
         ];
 
         $viewData = [
-            'PageTitle'      => 'Property Transaction Timeline',
+            'PageTitle' => 'Property Transaction Timeline',
             'historyPayload' => $historyPayload,
-            'fileNumber'     => $displayFileNumber,
+            'fileNumber' => $displayFileNumber,
         ];
 
         // Support ?mode=partial for AJAX modal loading (no layout wrapper)
@@ -433,43 +437,43 @@ class PropertySearchController extends Controller
         }
 
         // Determine primary parties
-        $party1 = $row->party_1 ?: ($row->assignor ?: ($row->mortgagor ?: ($row->grantor ?: ($row->surrenderor ?: ($row->lessor ?? null)))));
-        $party2 = $row->party_2 ?: ($row->assignee ?: ($row->mortgagee ?: ($row->grantee ?: ($row->surrenderee ?: ($row->lessee ?? null)))));
+        $party1 = ($row->party_1 ?? null) ?: (($row->assignor ?? null) ?: (($row->mortgagor ?? null) ?: (($row->grantor ?? null) ?: (($row->surrenderor ?? null) ?: ($row->lessor ?? null)))));
+        $party2 = ($row->party_2 ?? null) ?: (($row->assignee ?? null) ?: (($row->mortgagee ?? null) ?: (($row->grantee ?? null) ?: (($row->surrenderee ?? null) ?: ($row->lessee ?? null)))));
 
         $parties = [];
         foreach (['assignor', 'assignee', 'mortgagor', 'mortgagee', 'grantor', 'grantee', 'surrenderor', 'surrenderee', 'lessor', 'lessee'] as $role) {
             $value = $row->{$role} ?? null;
-            if ($value && trim($value) !== '') {
-                $parties[ucfirst($role)] = trim($value);
+            if ($value && trim((string) $value) !== '') {
+                $parties[ucfirst($role)] = trim((string) $value);
             }
         }
 
-        $regParts = explode('/', $row->regNo ?? '');
-        $serialNo = $row->serial_no ?: ($regParts[0] ?? null);
-        $pageNo = $row->page_no ?: ($regParts[1] ?? null);
-        $volumeNo = $row->volume_no ?: ($regParts[2] ?? null);
+        $regParts = explode('/', (string) ($row->regNo ?? ''));
+        $serialNo = ($row->serial_no ?? null) ?: ($regParts[0] ?? null);
+        $pageNo = ($row->page_no ?? null) ?: ($regParts[1] ?? null);
+        $volumeNo = ($row->volume_no ?? null) ?: ($regParts[2] ?? null);
 
         return [
-            'id'                => $row->id,
-            'file_number'       => $row->file_number,
-            'transaction_type'  => $row->transaction_type ?: 'Transaction',
-            'transaction_date'  => $displayDate,
-            'sort_date'         => $sortDate,
-            'primary_party'     => $party1 ?: ($party2 ?: 'Unknown'),
-            'secondary_party'   => $party2,
-            'party_1'           => $party1,
-            'party_2'           => $party2,
-            'party_3'           => $row->party_3 ?? null,
-            'parties'           => $parties,
-            'land_use'          => $row->land_use ?? null,
-            'location'          => $row->location ?? null,
-            'serial_no'         => $serialNo,
-            'page_no'           => $pageNo,
-            'volume_no'         => $volumeNo,
-            'regNo'             => $row->regNo ?? null,
-            'prop_id'           => $row->prop_id ?? null,
-            'comments'          => $row->comments ?? null,
-            'source_table'      => $source,
+            'id' => $row->id,
+            'file_number' => $row->file_number ?? 'N/A',
+            'transaction_type' => ($row->transaction_type ?? null) ?: 'Transaction',
+            'transaction_date' => $displayDate,
+            'sort_date' => $sortDate,
+            'primary_party' => $party1 ?: ($party2 ?: 'Unknown'),
+            'secondary_party' => $party2,
+            'party_1' => $party1,
+            'party_2' => $party2,
+            'party_3' => $row->party_3 ?? null,
+            'parties' => $parties,
+            'land_use' => $row->land_use ?? null,
+            'location' => $row->location ?? null,
+            'serial_no' => $serialNo,
+            'page_no' => $pageNo,
+            'volume_no' => $volumeNo,
+            'regNo' => $row->regNo ?? null,
+            'prop_id' => $row->prop_id ?? null,
+            'comments' => $row->comments ?? null,
+            'source_table' => $source,
         ];
     }
 

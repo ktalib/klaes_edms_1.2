@@ -264,9 +264,10 @@
             preview = preview.split(' to ')[0].trim();
         }
 
-        // If we have an existing file number (from OP capture, subdivision, merger, etc.),
+        // If we have an existing file number (from OP capture, etc.),
         // it's the primary candidate for finding the record in the grouping/index table.
-        if (existing !== '' && (fileOption === 'normal' || fileOption === 'temporary' || fileOption === 'extension' || fileOption === 'subdivision' || fileOption === 'merger')) {
+        // For subdivision and merger, we use the selected File Options (preview) instead of the temp app number.
+        if (existing !== '' && (fileOption === 'normal' || fileOption === 'temporary' || fileOption === 'extension')) {
             return existing;
         }
 
@@ -2196,15 +2197,74 @@
                         );
                     }
 
+                    let successTitle = 'File Number Generated!';
+                    if (data.data?.application_type === 'subdivision') successTitle = 'Subdivision Completed!';
+                    else if (data.data?.application_type === 'merger') successTitle = 'Merger Completed!';
+                    else if (data.data?.application_type === 'extension') successTitle = 'Extension Completed!';
+
                     Swal.fire({
                         icon: 'success',
-                        title: 'File Number Generated!',
+                        title: successTitle,
                         html: `<div class="text-left">
-                            <p class="text-2xl font-black font-mono text-blue-700 text-center mb-3">${generatedFileNumber || data.message}</p>
-                            ${data.data?.tracking_id ? `<p class="text-xs text-slate-500 text-center mb-3">Tracking ID: <span class="font-mono font-semibold">${data.data.tracking_id}</span></p>` : ''}
-                            ${data.mirror_created ? '<p class="mt-2 text-emerald-700 text-sm font-semibold text-center">&#10003;.</p>' : ''}
+                            <div class="mb-4 text-sm text-gray-700">
+                                ${data.message}. The new file has been commissioned and synchronized.
+                            </div>
+
+                            ${data.data?.application_type === 'subdivision' ? 
+                                `<div class="mb-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg">
+                                    <h4 class="text-xs font-black text-blue-800 uppercase tracking-wider mb-2">Subdivision Summary</h4>
+                                    <ul class="text-[11px] text-blue-700 space-y-1.5">
+                                        <li class="flex items-start gap-2"><i data-lucide="archive" class="w-3.5 h-3.5 mt-0.5"></i> <span>Mother plot retired and moved to secure archives.</span></li>
+                                        <li class="flex items-start gap-2"><i data-lucide="layers" class="w-3.5 h-3.5 mt-0.5"></i> <span>New plot fragment commissioned successfully into registry.</span></li>
+                                        <li class="flex items-start gap-2"><i data-lucide="link" class="w-3.5 h-3.5 mt-0.5"></i> <span>Lineage established via Parent Property ID linkage.</span></li>
+                                    </ul>
+                                </div>` : ''}
+
+                            ${data.data?.application_type === 'merger' ? 
+                                `<div class="mb-4 p-4 bg-indigo-50 border-l-4 border-indigo-500 rounded-r-lg">
+                                    <h4 class="text-xs font-black text-indigo-800 uppercase tracking-wider mb-2">Merger Summary</h4>
+                                    <ul class="text-[11px] text-indigo-700 space-y-1.5">
+                                        <li class="flex items-start gap-2"><i data-lucide="archive" class="w-3.5 h-3.5 mt-0.5"></i> <span><b>${data.decommission_summary?.archived?.length || 0}</b> source plots retired and archived.</span></li>
+                                        <li class="flex items-start gap-2"><i data-lucide="plus-square" class="w-3.5 h-3.5 mt-0.5"></i> <span>Merged plot commissioned as new consolidated record.</span></li>
+                                        <li class="flex items-start gap-2"><i data-lucide="git-merge" class="w-3.5 h-3.5 mt-0.5"></i> <span>Historical search trail preserved via PropID migration.</span></li>
+                                    </ul>
+                                </div>` : ''}
+
+                            <div class="mb-4 py-4 border-y border-slate-100 flex flex-col items-center justify-center">
+                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">New Commissioned File Number</p>
+                                <p class="text-2xl font-black font-mono text-blue-700 text-center">${generatedFileNumber || data.message}</p>
+                                ${data.data?.tracking_id ? `<p class="text-[10px] text-slate-400 mt-1">Tracking ID: <span class="font-mono font-semibold">${data.data.tracking_id}</span></p>` : ''}
+                            </div>
+
+                            ${data.mirror_created ? 
+                                `<div class="mb-3 flex items-center gap-2 text-emerald-700 text-xs font-bold justify-center bg-emerald-50 py-1.5 rounded-full border border-emerald-100">
+                                    <i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Mirrored to PRA & Deed Registry.
+                                </div>` : ''}
+
+                            ${data.decommission_summary && data.decommission_summary.archived.length > 0 ? 
+                                `<div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <i data-lucide="trash-2" class="w-4 h-4 text-amber-600"></i>
+                                        <p class="text-xs font-bold text-amber-800">Retired Files Archived & Deleted:</p>
+                                    </div>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        ${data.decommission_summary.archived.map(f => `<span class="px-2 py-0.5 bg-white border border-amber-200 text-[10px] font-bold text-amber-700 rounded-md shadow-sm">${f}</span>`).join('')}
+                                    </div>
+                                    <p class="mt-2 text-[9px] text-amber-600 italic">These files are no longer in the active registry.</p>
+                                </div>` : ''}
+
+                            ${data.decommission_summary && data.decommission_summary.history_updated > 0 ? 
+                                `<div class="mt-3 flex items-center justify-center gap-2 py-2 px-4 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100 shadow-sm">
+                                    <i data-lucide="check-circle" class="w-4 h-4"></i>
+                                    <p class="text-[11px] font-black uppercase tracking-tight">${data.decommission_summary.history_updated} Historical Records Synced</p>
+                                </div>` : ''}
                         </div>`,
-                        confirmButtonColor: '#10b981'
+                        confirmButtonColor: '#10b981',
+                        confirmButtonText: 'Great, Continue',
+                        width: '500px',
+                        didOpen: () => {
+                            if (typeof lucide !== 'undefined') lucide.createIcons();
+                        }
                     }).then(() => {
                         // If table has no AJAX source (server-rendered), full page reload
                         if (!table.ajax || !table.ajax.url()) {
@@ -2362,7 +2422,12 @@
             customer_type: alpineData.customerType,
             purpose_id: alpineData.purpose,
             sub_source: alpineData.subSource || '',
-            // New fields
+            allocated_by_filter: alpineData.allocatedByFilter || '',
+            default_allocation_type: alpineData.defaultAllocationType || null,
+            // Plot management app IDs — critical for decommissioning and lineage
+            subdivision_app_id: alpineData.subdivisionAppId || null,
+            merger_app_id: alpineData.mergerAppId || null,
+            // Contact fields
             phone_no: document.getElementById('generatePhoneNo')?.value || '',
             address: document.getElementById('generateAddress')?.value || '',
             rep_phone_no: document.getElementById('generateRepPhoneNo')?.value || '',
@@ -2403,12 +2468,68 @@
                         headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content') }
                     }).catch(e => console.warn('Cache clear failed:', e));
 
+                    let batchSuccessTitle = 'Batch Generated!';
+                    if (data.data?.application_type === 'subdivision') batchSuccessTitle = 'Subdivision Completed!';
+                    else if (data.data?.application_type === 'merger') batchSuccessTitle = 'Merger Completed!';
+                    else if (data.data?.application_type === 'extension') batchSuccessTitle = 'Extension Completed!';
+
                     Swal.fire({
                         icon: 'success',
-                        title: 'Batch Generated!',
-                        html: `<p>${data.message}</p><p class="text-sm text-gray-600 mt-2">Generated files: ${data.files.join(', ')}</p>`,
+                        title: batchSuccessTitle,
+                        html: `<div class="text-left">
+                            <div class="mb-4 text-sm text-gray-700">
+                                ${data.message}. The files have been successfully commissioned and are ready for use.
+                            </div>
+
+                            ${data.data?.application_type === 'subdivision' ? 
+                                `<div class="mb-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg">
+                                    <h4 class="text-xs font-black text-blue-800 uppercase tracking-wider mb-2">Subdivision Summary</h4>
+                                    <ul class="text-[11px] text-blue-700 space-y-1.5">
+                                        <li class="flex items-start gap-2"><i data-lucide="archive" class="w-3.5 h-3.5 mt-0.5"></i> <span>Mother plot retired and moved to secure archives.</span></li>
+                                        <li class="flex items-start gap-2"><i data-lucide="layers" class="w-3.5 h-3.5 mt-0.5"></i> <span><b>${data.files.length}</b> new plot fragments commissioned into registry.</span></li>
+                                        <li class="flex items-start gap-2"><i data-lucide="link" class="w-3.5 h-3.5 mt-0.5"></i> <span>Lineage established via Parent Property ID linkage.</span></li>
+                                    </ul>
+                                </div>` : ''}
+
+                            ${data.data?.application_type === 'merger' ? 
+                                `<div class="mb-4 p-4 bg-indigo-50 border-l-4 border-indigo-500 rounded-r-lg">
+                                    <h4 class="text-xs font-black text-indigo-800 uppercase tracking-wider mb-2">Merger Summary</h4>
+                                    <ul class="text-[11px] text-indigo-700 space-y-1.5">
+                                        <li class="flex items-start gap-2"><i data-lucide="archive" class="w-3.5 h-3.5 mt-0.5"></i> <span><b>${data.decommission_summary?.archived?.length || 0}</b> source plots retired and archived.</span></li>
+                                        <li class="flex items-start gap-2"><i data-lucide="plus-square" class="w-3.5 h-3.5 mt-0.5"></i> <span>Merged plot commissioned as new consolidated record.</span></li>
+                                        <li class="flex items-start gap-2"><i data-lucide="git-merge" class="w-3.5 h-3.5 mt-0.5"></i> <span>Historical search trail preserved via PropID migration.</span></li>
+                                    </ul>
+                                </div>` : ''}
+
+                            <div class="mb-3">
+                                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Generated Files</p>
+                                <p class="text-xs font-mono font-bold text-gray-800 bg-gray-100 p-2 rounded border border-gray-200">${data.files.join(', ')}</p>
+                            </div>
+
+                            ${data.decommission_summary && data.decommission_summary.archived.length > 0 ? 
+                                `<div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <i data-lucide="trash-2" class="w-4 h-4 text-amber-600"></i>
+                                        <p class="text-xs font-bold text-amber-800">Source Files Decommissioned & Deleted:</p>
+                                    </div>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        ${data.decommission_summary.archived.map(f => `<span class="px-2 py-0.5 bg-white border border-amber-200 text-[10px] font-bold text-amber-700 rounded-md shadow-sm">${f}</span>`).join('')}
+                                    </div>
+                                    <p class="mt-2 text-[9px] text-amber-600 italic">These files are no longer in the active registry but are stored in the archives.</p>
+                                </div>` : ''}
+
+                            ${data.decommission_summary && data.decommission_summary.history_updated > 0 ? 
+                                `<div class="mt-3 flex items-center justify-center gap-2 py-2 px-4 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100 shadow-sm">
+                                    <i data-lucide="check-circle" class="w-4 h-4"></i>
+                                    <p class="text-[11px] font-black uppercase tracking-tight">${data.decommission_summary.history_updated} Historical Records Synced to New PropID</p>
+                                </div>` : ''}
+                        </div>`,
                         confirmButtonColor: '#10b981',
-                        width: '600px'
+                        confirmButtonText: 'Great, Continue',
+                        width: '550px',
+                        didOpen: () => {
+                            if (typeof lucide !== 'undefined') lucide.createIcons();
+                        }
                     });
 
                     // Close modals and reset
@@ -3717,11 +3838,13 @@
                                         }
                                     }
 
-                                    // Auto-detect Conversion type
+                                    /* 
+                                    // Auto-detect Conversion type - REMOVED: Transaction type should remain subdivision/merger
                                     if (detectedPrefix.startsWith('CON-')) {
                                         self.applicationType = 'conversion';
                                         self.updateApplicationType();
                                     }
+                                    */
 
                                     self.$nextTick(() => {
                                         if (detectedPrefix && self.allAllPrefixes) {
@@ -3778,11 +3901,6 @@
                                     self.$nextTick(() => {
                                         if (typeof self.updatePreview === 'function') {
                                             self.updatePreview();
-                                        }
-                                        
-                                        // Also trigger grouping lookup for the selected subdivision file
-                                        if (typeof queueGroupingLookup === 'function') {
-                                            queueGroupingLookup(data.fileNumber);
                                         }
                                     });
                                     
@@ -3855,11 +3973,13 @@
                         }
                     }
 
-                    // Auto-detect Conversion type
+                    /*
+                    // Auto-detect Conversion type - REMOVED: Transaction type should remain subdivision/merger
                     if (detectedPrefix.startsWith('CON-')) {
                         self.applicationType = 'conversion';
                         self.updateApplicationType();
                     }
+                    */
 
                     self.$nextTick(() => {
                         if (detectedPrefix && self.allAllPrefixes) {
@@ -3895,10 +4015,6 @@
                     self.isInherited = true;
 
                     self.updatePreview();
-                    // Trigger grouping lookup for the selected merger file
-                    if (typeof queueGroupingLookup === 'function') {
-                        queueGroupingLookup(data.temp_file_no || data.file_no);
-                    }
                     
                     Swal.fire({
                         icon: 'success',

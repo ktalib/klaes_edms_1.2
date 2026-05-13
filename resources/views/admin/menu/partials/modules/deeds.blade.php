@@ -139,7 +139,7 @@
           @endif
         </div>
       @endif
-
+ 
       <!-- f. Encumbrance -->
       @if($hasRole('Deeds - Encumbrance') || $hasRole('Supper Admin'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
@@ -156,6 +156,18 @@
               class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('caveat.*') ? 'active' : '' }}">
               <i data-lucide="shield-alert" class="h-3.5 w-3.5 text-teal-400"></i>
               <span>Caveat</span>
+            </a>
+            
+            <a href="{{route('mortgages.index')}}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('mortgages.*') ? 'active' : '' }}">
+              <i data-lucide="landmark" class="h-3.5 w-3.5 text-teal-400"></i>
+              <span>Mortgage</span>
+            </a>
+
+            <a href="#"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
+              <i data-lucide="lock" class="h-3.5 w-3.5 text-teal-400"></i>
+              <span>Lien</span>
             </a>
           @endif
         </div>

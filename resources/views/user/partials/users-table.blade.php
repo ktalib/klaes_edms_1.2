@@ -10,6 +10,7 @@
                 <th class="text-center">{{ __('Work Days') }}</th>
                 <th class="text-center">{{ __('Man Hours') }}</th>
                 <th class="text-center">{{ __('Staff Type') }}</th>
+                <th>{{ __('User Actions') }}</th>
                 <th>{{ __('Actions') }}</th>
             </tr>
         </thead>
@@ -148,6 +149,29 @@
                             </span>
                         @else
                             <span class="text-sm text-gray-400">{{ __('N/A') }}</span>
+                        @endif
+                    </td>
+                    <td class="px-6 py-5 whitespace-nowrap">
+                        @if(!empty($user->user_actions))
+                            @php
+                                $actions = explode(',', $user->user_actions);
+                                $actionColors = [
+                                    'create' => 'bg-green-100 text-green-800 border-green-200',
+                                    'view' => 'bg-blue-100 text-blue-800 border-blue-200',
+                                    'view_all' => 'bg-cyan-100 text-cyan-800 border-cyan-200',
+                                    'update' => 'bg-yellow-100 text-yellow-800 border-yellow-200',
+                                    'delete' => 'bg-red-100 text-red-800 border-red-200',
+                                ];
+                            @endphp
+                            <div class="flex flex-wrap gap-1">
+                                @foreach($actions as $action)
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border {{ $actionColors[strtolower(trim($action))] ?? 'bg-gray-100 text-gray-800 border-gray-200' }}">
+                                        {{ ucwords(str_replace('_', ' ', trim($action))) }}
+                                    </span>
+                                @endforeach
+                            </div>
+                        @else
+                            <span class="text-xs text-gray-400 italic">{{ __('None') }}</span>
                         @endif
                     </td>
                     <td class="px-4 py-5 whitespace-nowrap text-sm font-medium">

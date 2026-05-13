@@ -21,11 +21,16 @@ class FileDecommissioningController extends Controller
             })
             ->count();
 
-        $totalDecommissionedFiles = FileNumber::decommissioned()
+        $decommissionedFromFileNumber = FileNumber::decommissioned()
             ->where(function($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
             ->count();
+
+        $decommissionedFromArchive = \Illuminate\Support\Facades\DB::connection('sqlsrv')
+            ->table('decommissioned_files')->count();
+
+        $totalDecommissionedFiles = $decommissionedFromFileNumber + $decommissionedFromArchive;
 
         return view('file_decommissioning.index', compact('totalActiveFiles', 'totalDecommissionedFiles'));
     }
@@ -150,31 +155,31 @@ class FileDecommissioningController extends Controller
             $length = $request->input('length', 10);
             $searchValue = $request->input('search.value', '');
 
-            // Base query for decommissioned files (from fileNumber table)
-            $baseQuery = FileNumber::decommissioned()
-                ->where(function($q) {
+            $conn = \Illuminate\Support\Facades\DB::connection('sqlsrv');
+
+            // Query 1: From the decommissioned_files archive table (hard-deleted via PlotWorkflowService)
+            $archiveQuery = $conn->table('decommissioned_files')
+                ->select([
+                    'id',
+                    'mls_file_no as mlsfNo',
+                    'kangis_file_no as kangisFileNo',
+                    'new_kangis_file_no as NewKANGISFileNo',
+                    'file_name as FileName',
+                    'commissioning_date',
+                    'decommissioning_date',
+                    'decommissioning_reason',
+                    'decommissioned_by',
+                    'created_at',
+                    \Illuminate\Support\Facades\DB::raw("'archive' as _source"),
+                ]);
+
+            // Query 2: From the fileNumber table (soft-decommissioned via is_decommissioned flag)
+            $fileNumberQuery = $conn->table('fileNumber')
+                ->where('is_decommissioned', 1)
+                ->where(function ($q) {
                     $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
-                });
-
-            // Get total count
-            $totalRecords = $baseQuery->count();
-
-            // Apply search if provided
-            if (!empty($searchValue)) {
-                $baseQuery->where(function($query) use ($searchValue) {
-                    $query->where('mlsfNo', 'like', "%{$searchValue}%")
-                          ->orWhere('kangisFileNo', 'like', "%{$searchValue}%")
-                          ->orWhere('NewKANGISFileNo', 'like', "%{$searchValue}%")
-                          ->orWhere('FileName', 'like', "%{$searchValue}%")
-                          ->orWhere('decommissioning_reason', 'like', "%{$searchValue}%");
-                });
-            }
-
-            // Get filtered count
-            $filteredRecords = $baseQuery->count();
-
-            // Get the actual data with ordering and pagination
-            $data = $baseQuery->select([
+                })
+                ->select([
                     'id',
                     'mlsfNo',
                     'kangisFileNo',
@@ -183,34 +188,57 @@ class FileDecommissioningController extends Controller
                     'commissioning_date',
                     'decommissioning_date',
                     'decommissioning_reason',
-                    'updated_by',
-                    'created_by',
-                    'updated_at',
-                    'created_at'
-                ])
-                ->orderBy('decommissioning_date', 'desc')
+                    \Illuminate\Support\Facades\DB::raw("COALESCE(updated_by, created_by, 'System') as decommissioned_by"),
+                    'created_at',
+                    \Illuminate\Support\Facades\DB::raw("'filenumber' as _source"),
+                ]);
+
+            // UNION both sources
+            $unionQuery = $archiveQuery->unionAll($fileNumberQuery);
+
+            // Wrap in a subquery for counting/searching/pagination
+            $baseQuery = $conn->table(\Illuminate\Support\Facades\DB::raw("({$unionQuery->toSql()}) as combined"))
+                ->mergeBindings($unionQuery);
+
+            // Total count (before search)
+            $totalRecords = $baseQuery->count();
+
+            // Apply search
+            if (!empty($searchValue)) {
+                $baseQuery->where(function ($query) use ($searchValue) {
+                    $query->where('mlsfNo', 'like', "%{$searchValue}%")
+                        ->orWhere('kangisFileNo', 'like', "%{$searchValue}%")
+                        ->orWhere('NewKANGISFileNo', 'like', "%{$searchValue}%")
+                        ->orWhere('FileName', 'like', "%{$searchValue}%")
+                        ->orWhere('decommissioning_reason', 'like', "%{$searchValue}%")
+                        ->orWhere('decommissioned_by', 'like', "%{$searchValue}%");
+                });
+            }
+
+            $filteredRecords = $baseQuery->count();
+
+            // Get data with pagination, ordered by decommissioning_date desc
+            $data = $baseQuery
+                ->orderByDesc('decommissioning_date')
                 ->skip($start)
                 ->take($length)
                 ->get();
 
-            // Format the data
-            $formattedData = $data->map(function($row) {
-                $decommissionedBy = trim($row->updated_by ?? '') ?: (trim($row->created_by ?? '') ?: 'System');
-
+            // Format for DataTables
+            $formattedData = $data->map(function ($row) {
                 return [
                     'id' => $row->id,
                     'mls_file_no' => trim($row->mlsfNo ?? '') ?: 'N/A',
                     'kangis_file_no' => trim($row->kangisFileNo ?? '') ?: 'N/A',
-                    'new_kangis_file_no' => trim($row->NewKANGISFileNo ?? '') ?: 'N/A',
                     'file_name' => trim($row->FileName ?? '') ?: 'N/A',
                     'commissioning_date' => $row->commissioning_date ? Carbon::parse($row->commissioning_date)->format('d M Y, h:i A') : 'N/A',
                     'decommissioning_date' => $row->decommissioning_date ? Carbon::parse($row->decommissioning_date)->format('d M Y, h:i A') : 'N/A',
-                    'decommissioning_reason' => strlen((string) $row->decommissioning_reason) > 50 ? 
-                        substr($row->decommissioning_reason, 0, 50) . '...' : 
-                        ($row->decommissioning_reason ?? 'N/A'),
-                    'decommissioned_by' => $decommissionedBy,
+                    'decommissioned_by' => trim($row->decommissioned_by ?? '') ?: 'System',
+                    'decommissioning_reason' => strlen((string) ($row->decommissioning_reason ?? '')) > 50
+                        ? substr($row->decommissioning_reason, 0, 50) . '...'
+                        : ($row->decommissioning_reason ?? 'N/A'),
                     'action' => '<div class="flex justify-center space-x-2">
-                        <button onclick="viewDecommissionedFile(' . $row->id . ')" 
+                        <button onclick="viewDecommissionedFile(' . $row->id . ', \'' . ($row->_source ?? 'archive') . '\')" 
                                 class="text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded hover:bg-blue-50" title="View Details">
                             <i data-lucide="eye" class="w-4 h-4"></i>
                         </button>
@@ -227,7 +255,7 @@ class FileDecommissioningController extends Controller
 
         } catch (\Exception $e) {
             \Log::error('Error in FileDecommissioningController getDecommissionedFilesData: ' . $e->getMessage());
-            
+
             return response()->json([
                 'draw' => intval($request->input('draw')),
                 'recordsTotal' => 0,
@@ -465,6 +493,8 @@ class FileDecommissioningController extends Controller
     public function getStatistics()
     {
         try {
+            $conn = \Illuminate\Support\Facades\DB::connection('sqlsrv');
+
             $totalFiles = FileNumber::where(function($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })->count();
@@ -475,23 +505,34 @@ class FileDecommissioningController extends Controller
                 })
                 ->count();
 
-            $decommissionedFiles = FileNumber::decommissioned()
+            // Count from both sources
+            $decommissionedFromFileNumber = FileNumber::decommissioned()
                 ->where(function($q) {
                     $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
                 })
                 ->count();
 
-            $recentDecommissioned = FileNumber::decommissioned()
+            $decommissionedFromArchive = $conn->table('decommissioned_files')->count();
+
+            $decommissionedFiles = $decommissionedFromFileNumber + $decommissionedFromArchive;
+
+            $recentFromFileNumber = FileNumber::decommissioned()
                 ->where(function($q) {
                     $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
                 })
                 ->where('decommissioning_date', '>=', now()->subDays(30))
                 ->count();
 
+            $recentFromArchive = $conn->table('decommissioned_files')
+                ->where('decommissioning_date', '>=', now()->subDays(30))
+                ->count();
+
+            $recentDecommissioned = $recentFromFileNumber + $recentFromArchive;
+
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'total_files' => $totalFiles,
+                    'total_files' => $totalFiles + $decommissionedFromArchive,
                     'active_files' => $activeFiles,
                     'decommissioned_files' => $decommissionedFiles,
                     'recent_decommissioned' => $recentDecommissioned

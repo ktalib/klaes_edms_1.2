@@ -56,6 +56,7 @@ use App\Http\Controllers\KangisPrintLabelController;
 use App\Http\Controllers\SltrPrintLabelController;
 use App\Http\Controllers\DcivPrintLabelController;
 use App\Http\Controllers\LegalSearchTokenController;
+use App\Http\Controllers\MortgageController;
 
 /*
 |--------------------------------------------------------------------------
@@ -67,6 +68,12 @@ use App\Http\Controllers\LegalSearchTokenController;
 */
 
 Route::middleware(['auth'])->group(function () {
+
+    // Mortgage Table Routes
+    Route::prefix('mortgages')->name('mortgages.')->group(function () {
+        Route::get('/', [MortgageController::class, 'index'])->name('index');
+        Route::get('/data', [MortgageController::class, 'getData'])->name('data');
+    });
 
     // OPs Dashboard
     Route::prefix('ops-dashboard')->name('ops-dashboard.')->group(function () {
@@ -876,6 +883,7 @@ Route::middleware(['auth'])->group(function () {
     // Legal Search Reports
     Route::prefix('legalsearchreports')->group(function () {
         Route::get('/', [LegalsearchreportsController::class, 'index'])->name('legalsearchreports.index');
+        Route::get('/data', [LegalsearchreportsController::class, 'data'])->name('legalsearchreports.data');
     });
 
     // KANGIS Print Labels

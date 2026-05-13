@@ -1,4 +1,4 @@
-﻿// Use server-provided data instead of sample data
+// Use server-provided data instead of sample data
 let cofoData = [];
 
 // Base URL for API endpoints defined in blade
@@ -1493,9 +1493,35 @@ function submitSingleRegistration() {
     .then(r => r.json())
     .then(res => {
       if (res.success) {
-        Swal.fire('Success', res.message, 'success');
-        closeSingleRegisterModal();
-        window.location.reload();
+        let itype = document.getElementById('instrumentType').value;
+        let isSyncable = itype.includes('Deed of Gift') || itype.includes('Deed of Assignment') || itype.includes('Power of Attorney');
+        
+        if (isSyncable) {
+          Swal.fire({
+            title: 'Registration Successful',
+            icon: 'success',
+            html: `
+              <p class="mb-3">${res.message}</p>
+              <div class="text-left bg-blue-50 p-3 rounded-lg border border-blue-100">
+                <p class="text-xs font-bold text-blue-800 mb-2"><i class="fas fa-sync-alt mr-1"></i> SYSTEM SYNCHRONIZATION:</p>
+                <ul class="text-[11px] text-blue-700 space-y-1 list-disc pl-4">
+                  <li><strong>file_indexings:</strong> updated file_title</li>
+                  <li><strong>customers_staging:</strong> updated customer_name</li>
+                  <li><strong>entities_staging:</strong> updated entity_name</li>
+                  <li><strong>fileNumber:</strong> updated FileName</li>
+                </ul>
+              </div>
+            `
+          }).then(() => {
+            closeSingleRegisterModal();
+            window.location.reload();
+          });
+        } else {
+          Swal.fire('Success', res.message, 'success').then(() => {
+            closeSingleRegisterModal();
+            window.location.reload();
+          });
+        }
       } else {
         Swal.fire('Error', res.error || res.message, 'error');
         if (registerBtn) {
@@ -1646,9 +1672,22 @@ function submitBatchRegistration() {
       console.log('Registration response:', res);
       Swal.close();
       if (res.success) {
-        const successHtml = res.batch_session_id
-          ? `${res.message}<br><br><strong>Batch Session:</strong> ${res.batch_session_id}`
+        let successHtml = res.batch_session_id
+          ? `<p class="mb-2">${res.message}</p><strong>Batch Session:</strong> ${res.batch_session_id}`
           : res.message;
+        
+        successHtml += `
+          <div class="mt-4 text-left bg-blue-50 p-3 rounded-lg border border-blue-100">
+            <p class="text-xs font-bold text-blue-800 mb-2"><i class="fas fa-sync-alt mr-1"></i> BATCH SYNCHRONIZATION:</p>
+            <p class="text-[10px] text-blue-700 mb-2">Applicable deed party names synchronized across:</p>
+            <ul class="text-[10px] text-blue-700 space-y-1 list-disc pl-4">
+              <li><strong>file_indexings:</strong> file_title updated</li>
+              <li><strong>customers_staging:</strong> customer_name updated</li>
+              <li><strong>entities_staging:</strong> entity_name updated</li>
+              <li><strong>fileNumber:</strong> FileName updated</li>
+            </ul>
+          </div>
+        `;
 
         Swal.fire({
           title: 'Success',

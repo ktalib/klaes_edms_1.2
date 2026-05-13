@@ -1070,10 +1070,7 @@
 
                                         <!-- Action Buttons -->
                                         <div class="flex justify-end gap-2">
-                                            <button id="resetFormBtn"
-                                                class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                                                Reset
-                                            </button>
+
                                             @if(($module ?? '') === 'kangis')
                                             <button id="saveFileLogBtn"
                                                 class="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 min-w-[170px]">
@@ -1531,18 +1528,6 @@
                                             class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
                                         <p class="text-xs text-gray-500">These notes are shared with the next officer.</p>
                                     </div>
-{{--                                     <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
-                                        <label class="flex items-start gap-2 text-sm text-amber-800">
-                                            <input type="checkbox" id="movement-override-toggle"
-                                                class="mt-1 rounded border-amber-300 text-amber-600 focus:ring-amber-500">
-                                            <span>
-                                                Receiver is beside me — mark this file as accepted immediately.
-                                                <span id="movement-override-help"
-                                                    class="block text-xs text-amber-700 mt-1">Only use this when the
-                                                    receiving officer physically confirms the handover in person.</span>
-                                            </span>
-                                        </label>
-                                    </div> --}}
                                     <div id="movement-error"
                                         class="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                                     </div>
@@ -1790,10 +1775,15 @@
                                         class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                                         Close
                                     </button>
-                                    <button id="print-details-btn"
-                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                                    <button id="print-workflow-btn"
+                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
                                         <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
-                                        Print Details
+                                        <span>Print Request</span>
+                                    </button>
+                                    <button id="print-details-btn"
+                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700">
+                                        <i data-lucide="file-check" class="h-4 w-4 mr-2"></i>
+                                        <span>Print Request Sheet</span>
                                     </button>
                                 </div>
                             </div>

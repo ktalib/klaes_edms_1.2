@@ -109,6 +109,7 @@ class ValuationCompensationController extends Controller
             'compensated_items' => 'nullable|string',
             'compensated_items_other' => 'nullable|string',
             'project_id' => 'required|exists:sqlsrv.vfc_projects,id',
+            'sub_project_id' => 'nullable|exists:sqlsrv.vfc_sub_projects,id',
             'project_fileno' => 'nullable|string',
             'worker_id' => 'required|string',
         ]);
@@ -179,6 +180,7 @@ class ValuationCompensationController extends Controller
             'compensated_items' => 'nullable|string',
             'compensated_items_other' => 'nullable|string',
             'project_id' => 'required|exists:sqlsrv.vfc_projects,id',
+            'sub_project_id' => 'nullable|exists:sqlsrv.vfc_sub_projects,id',
             'project_fileno' => 'nullable|string',
             'worker_id' => 'required|string',
         ]);

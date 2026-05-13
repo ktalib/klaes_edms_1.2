@@ -319,28 +319,15 @@
             <input type="text" value="Group Title" disabled class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 text-gray-500 sm:text-sm">
         </div>
 
-        <!-- Applicant Name -->
-        <div class="form-group mt-6">
-            <label class="block text-sm font-medium text-gray-700 mb-2 required">Applicant Name</label>
-            <template x-for="(param, index) in fileParams" :key="'app-' + param.id">
-                <div class="flex gap-2 mb-2">
-                    <input type="text" name="applicant_name[]" x-model="param.applicant_name" 
-                        :id="index === 0 ? 'applicant-name' : 'applicant-name-' + index"
-                        placeholder="Enter applicant name"
-                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" required>
-                </div>
-            </template>
-        </div>
-
         <!-- File Title -->
-        <div class="form-group mt-2">
+        <div class="form-group mt-6">
             <label class="block text-sm font-medium text-gray-700 mb-2 required">File Title</label>
             <template x-for="(param, index) in fileParams" :key="param.id">
                 <div class="flex gap-2 mb-2">
                     <input type="text" name="file_title[]" x-model="param.title" 
                         :id="index === 0 ? 'file-title' : 'file-title-' + index"
-                        placeholder="File title (auto-fills from applicant name)"
-                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 text-gray-500 sm:text-sm" readonly required>
+                        placeholder="Enter file title"
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" required>
                     
                     <button type="button" @click="addFileParam()" x-show="index === fileParams.length - 1 && indexing_type === 'Block'"
                         class="inline-flex items-center px-3 py-2 border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50" title="Add another file title">

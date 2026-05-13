@@ -39,6 +39,11 @@ class Project extends Model
         return $this->hasMany(ValuationCompensation::class, 'project_id');
     }
 
+    public function subProjects()
+    {
+        return $this->hasMany(SubProject::class, 'project_id');
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'user_id');

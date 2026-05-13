@@ -5,6 +5,11 @@
 @endsection
 
 @section('content')
+{{-- 
+    Valuation for Compensation (VFC) Dashboard
+    - This view serves as the central hub for managing compensation records.
+    - It provides high-level statistics and groups individual valuation records by project.
+--}}
 <div x-data="{}" class="flex-1 overflow-auto bg-slate-50/60">
     @include('admin.header', [
         'PageTitle' => 'Valuation for Compensation',
@@ -12,7 +17,11 @@
     ])
 
     <div class="p-6 space-y-8 max-w-7xl mx-auto">
-        <!-- Header & Statistics -->
+        <!-- 
+            Navigation and Actions Header 
+            - Allows access to Workers and Project Management consoles.
+            - "CFV Data entry" triggers the creation modal.
+        -->
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
                 <h1 class="text-3xl font-bold text-slate-900">Valuation for Compensation</h1>
@@ -34,7 +43,10 @@
             </div>
         </div>
 
-    <!-- Stats Cards -->
+    <!-- 
+        Statistics Cards 
+        - Visual summary of the system state including total records, financial exposure, and recent activity.
+    -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
             <div class="h-12 w-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
@@ -77,7 +89,11 @@
         </div>
     </div>
 
-    <!-- Data Table -->
+    <!-- 
+        Project Valuation Summary Table 
+        - Records are grouped by project to simplify management of large-scale acquisition tasks.
+        - Each row provides summary data for a project and access to individual valuation details.
+    -->
     <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
         <div class="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
             <h2 class="text-lg font-semibold text-slate-800">Project Valuation Summary</h2>
@@ -137,11 +153,16 @@
     </div>
 </div>
 
+{{-- Modals for creating records and viewing project-specific details --}}
 @include('valuation_compensations.partials.modal')
 @include('valuation_compensations.partials.records_modal')
 
 @push('scripts')
 <script>
+    /* 
+       VFC Frontend Configuration 
+       - Passes necessary backend data and routes to the valuation-compensation.js handler.
+    */
     window.VFC_CONFIG = {
         csrf: '{{ csrf_token() }}',
         routes: {

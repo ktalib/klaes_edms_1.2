@@ -284,8 +284,10 @@
         <!-- Dashboard Content -->
         <div class="p-6">
             <script src="https://cdn.tailwindcss.com"></script>
-<!-- Lucide Icons -->
- <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+            <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
+            <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+            <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
  
 <div  >
@@ -395,17 +397,19 @@
                         </div>
                         <div class="p-6 w-full overflow-x-auto">
                             <div class="rounded-md border min-w-full">
-                                <table class="table min-w-full">
+                                <table id="legal-search-logs-table" class="table min-w-full table-bordered table-striped" style="width:100%">
                                     <thead>
                                         <tr>
-                                            <th style="width: 60px;">S/N</th>
-                                            <th style="width: 100px;">Date</th>
-                                            <th style="width: 150px;">Search Parameter</th>
-                                            <th style="width: 200px;">Search Value</th>
-                                            <th style="width: 100px;">Result</th>
-                                            <th style="width: 120px;">LGA</th>
-                                            <th style="width: 120px;">Receipt No.</th>
-                                            <th style="width: 120px;">Staff</th>
+                                            <th>S/N</th>
+                                            <th>Date</th>
+                                            <th>Search Parameter</th>
+                                            <th>Search Value</th>
+                                            <th>Result</th>
+                                            <th>LGA</th>
+                                            <th>Receipt No.</th>
+                                            <th>Staff</th>
+                                            <th>Printed</th>
+                                            <th>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody id="transactions-table-body">
@@ -1016,7 +1020,35 @@
     function renderData() {
         const stats = calculateStatistics(reportData);
         
-        renderTransactionsTable(reportData);
+        // Initialize DataTable instead of static render
+        if ($.fn.DataTable.isDataTable('#legal-search-logs-table')) {
+            $('#legal-search-logs-table').DataTable().destroy();
+        }
+        
+        $('#legal-search-logs-table').DataTable({
+            processing: true,
+            serverSide: true,
+            ajax: '{{ route("legalsearchreports.data") }}',
+            columns: [
+                { data: 'DT_RowIndex', name: 'DT_RowIndex', orderable: false, searchable: false },
+                { data: 'date', name: 'created_at' },
+                { data: 'search_parameter', name: 'search_parameter' },
+                { data: 'search_value', name: 'search_value' },
+                { data: 'result_display', name: 'result_status' },
+                { data: 'lga', name: 'lga' },
+                { data: 'receipt_no', name: 'receipt_no' },
+                { data: 'staff', name: 'user.first_name' },
+                { data: 'printed_status', name: 'printed' },
+                { data: 'action', name: 'action', orderable: false, searchable: false }
+            ],
+            order: [[1, 'desc']],
+            pageLength: 25,
+            responsive: true,
+            language: {
+                searchPlaceholder: "Search records..."
+            }
+        });
+
         renderSummaryView(stats);
         
         if (currentTab === 'charts') {

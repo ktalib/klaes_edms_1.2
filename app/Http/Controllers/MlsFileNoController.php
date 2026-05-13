@@ -17,6 +17,9 @@ use App\Models\Prefix;
 use App\Models\PlotMergerApplication;
 use App\Models\PlotSubdivisionApplication;
 use App\Models\ChangeOfPurposeApplication;
+use App\Models\PlotExtensionApplication;
+use App\Services\PlotWorkflowService;
+use App\Services\PropertyIdAllocationService;
 
 class MlsFileNoController extends Controller
 {
@@ -1188,7 +1191,7 @@ class MlsFileNoController extends Controller
      * - Direct Allocation + Default + Resettlement → "OP Resettlement"
      * - Direct Allocation + Default (no sub-option) → "Direct Allocation"
      */
-    private function resolveSourceValue($applicationType, $allocatedByFilter, $defaultAllocationType)
+    private function resolveSourceValue($applicationType, $allocatedByFilter, $defaultAllocationType, $fileOption = 'normal')
     {
         // If application type is "conversion", always return "Conversion"
         if ($applicationType === 'conversion') {
@@ -1197,6 +1200,18 @@ class MlsFileNoController extends Controller
 
         if ($applicationType === 'change_of_purpose') {
             return 'Change of Purpose';
+        }
+
+        if ($applicationType === 'subdivision') {
+            return 'Subdivision';
+        }
+
+        if ($applicationType === 'merger') {
+            return 'Merger';
+        }
+
+        if ($applicationType === 'extension') {
+            return 'Extension';
         }
 
         // applicationType === 'new' (Direct Allocation)
@@ -1213,6 +1228,18 @@ class MlsFileNoController extends Controller
             if ($defaultAllocationType === 'direct') {
                 return 'OP Direct Allocation';
             }
+        }
+
+        if ($fileOption === 'subdivision') {
+            return 'Subdivision';
+        }
+
+        if ($fileOption === 'merger') {
+            return 'Merger';
+        }
+
+        if ($fileOption === 'extension') {
+            return 'Extension';
         }
 
         // Default case: no sub-option selected
@@ -1251,7 +1278,7 @@ class MlsFileNoController extends Controller
     public function generateMlsFileNumber(Request $request)
     {
         try {
-            $this->logOpLinkage('info', 'Generate request received', [
+            $this->logPlotsWorkflow('info', 'Generate request received', [
                 'user_id' => Auth::id(),
                // if the application type is new , the application_type should be "Direct Allocation", 
                 'application_type' => ($request->input('application_type') === 'new') ? 'Direct Allocation' : $request->input('application_type'),
@@ -1307,9 +1334,11 @@ class MlsFileNoController extends Controller
                 'merger_app_id' => 'nullable|integer',
                 'subdivision_app_id' => 'nullable|integer',
                 'change_of_purpose_app_id' => 'nullable|integer',
+                'file_option' => 'nullable|string|max:50',
             ]);
 
             $landUse = $validated['land_use'] ?? null;
+            $fileOption = $validated['file_option'] ?? 'normal';
             $year = date('Y');
 
             // Require related file info for Recertification (-RC) prefixes
@@ -1329,7 +1358,7 @@ class MlsFileNoController extends Controller
             }
 
             $requireOpSource = (bool)($validated['require_op_source'] ?? false);
-            $this->logOpLinkage('info', 'Validated OP linkage payload', [
+            $this->logPlotsWorkflow('info', 'Validated OP linkage payload', [
                 'application_type' => $validated['application_type'] ?? null,
                 'allocated_by_filter' => $validated['allocated_by_filter'] ?? null,
                 'require_op_source' => $requireOpSource,
@@ -1344,7 +1373,7 @@ class MlsFileNoController extends Controller
                 && empty($validated['source_instrument_capture_id'])
                 && empty($validated['source_pra_id'])
             ) {
-                $this->logOpLinkage('warning', 'Blocked generate due to missing required source OP');
+                $this->logPlotsWorkflow('warning', 'Blocked generate due to missing required source OP');
                 return response()->json([
                     'success' => false,
                     'message' => 'Source OP record is required before commissioning. Please select an existing OP and continue.',
@@ -1469,7 +1498,7 @@ class MlsFileNoController extends Controller
                         'Reg_Date' => now()
                     ]);
 
-                    $this->logOpLinkage('info', 'Change of Purpose completed seamlessly', [
+                    $this->logPlotsWorkflow('info', 'Change of Purpose completed seamlessly', [
                         'old_file' => $originalFileNo,
                         'new_file' => $fullFileNumber,
                         'prop_id' => $propId
@@ -1548,6 +1577,9 @@ class MlsFileNoController extends Controller
                 } elseif ($fileOption === 'extension') {
                     // Strip AND EXTENSION suffix for extension files
                     $lookupFileNumber = preg_replace('/\s+AND\s+EXTENSION\s*$/i', '', $fullFileNumber);
+                } elseif ($fileOption === 'merger' || $fileOption === 'subdivision') {
+                    // For Merger/Subdivision, use the commissioned file number directly for lookup
+                    $lookupFileNumber = $fullFileNumber;
                 }
 
                 // Try to fetch tracking ID from grouping table if not provided
@@ -1562,11 +1594,22 @@ class MlsFileNoController extends Controller
                 }
 
                 // Resolve the source value based on allocation configuration
+                $appType = $validated['application_type'] ?? 'new';
+                if (!empty($validated['merger_app_id'])) $appType = 'merger';
+                if (!empty($validated['subdivision_app_id'])) $appType = 'subdivision';
+
                 $sourceValue = $this->resolveSourceValue(
-                    $validated['application_type'] ?? 'new',
+                    $appType,
                     $validated['allocated_by_filter'] ?? '',
-                    $validated['default_allocation_type'] ?? null
+                    $validated['default_allocation_type'] ?? null,
+                    $fileOption
                 );
+
+                Log::info('MLS generate resolved source value', [
+                    'file_number' => $fullFileNumber,
+                    'app_type' => $appType,
+                    'source_value' => $sourceValue
+                ]);
 
                 // Override source for temporary and extension file options
                 if ($fileOption === 'temporary') {
@@ -1698,11 +1741,20 @@ class MlsFileNoController extends Controller
 
                 try {
                     $groupingService = app(\App\Services\GroupingFileNumberService::class);
-                    Log::info('MLS generate linking grouping record', ['file_number' => $fullFileNumber]);
-                    $groupingService->linkAwaitingToMls($fullFileNumber);
-                    Log::info('MLS generate grouping link done', ['file_number' => $fullFileNumber]);
+                    $registryName = $validated['registry'] ?? 'Lands Registry';
+                    
+                    $this->logPlotsWorkflow('info', 'MLS generate linking grouping record', [
+                        'file_number' => $fullFileNumber, 
+                        'lookup' => $lookupFileNumber,
+                        'option' => $fileOption
+                    ]);
+                    
+                    // Finalize the linkage in grouping table
+                    $groupingService->linkAwaitingToMls($fullFileNumber, $lookupFileNumber, $registryName);
+                    
+                    $this->logPlotsWorkflow('info', 'MLS generate grouping link done', ['file_number' => $fullFileNumber]);
                 } catch (\Exception $e) {
-                    Log::warning('Failed to link grouping record', ['error' => $e->getMessage()]);
+                    $this->logPlotsWorkflow('warning', 'Failed to link grouping record', ['error' => $e->getMessage(), 'file' => $fullFileNumber]);
                 }
 
                 // Update allocation list status if provided
@@ -1716,10 +1768,10 @@ class MlsFileNoController extends Controller
                     // Capture Existing OP should write to PRA only.
                     $shouldMirror = false;
                 }
-                $this->logOpLinkage('info', 'Mirror decision computed', [
+                $this->logPlotsWorkflow('info', 'Mirror decision computed', [
                     'file_number' => $fullFileNumber,
                     'should_mirror' => $shouldMirror,
-                    'application_type' => $validated['application_type'] ?? null,
+                    'application_type' => $appType,
                     'allocated_by_filter' => $validated['allocated_by_filter'] ?? null,
                     'source_instrument_capture_id' => $validated['source_instrument_capture_id'] ?? null,
                     'source_pra_id' => $validated['source_pra_id'] ?? null,
@@ -1732,14 +1784,14 @@ class MlsFileNoController extends Controller
                 ]);
 
                 if ($shouldMirror) {
-                    $this->logOpLinkage('info', 'Mirror execution start', [
+                    $this->logPlotsWorkflow('info', 'Mirror execution start', [
                         'file_number' => $fullFileNumber,
                         'source_instrument_capture_id' => $validated['source_instrument_capture_id'] ?? null,
                     ]);
                     Log::info('MLS generate resettlement mirror start', ['file_number' => $fullFileNumber]);
                     $this->createResettlementLinkedRecords($validated, $fullFileNumber, $trackingId, $commissionedBy);
                     Log::info('MLS generate resettlement mirror done', ['file_number' => $fullFileNumber]);
-                    $this->logOpLinkage('info', 'Mirror execution completed', ['file_number' => $fullFileNumber]);
+                    $this->logPlotsWorkflow('info', 'Mirror execution completed', ['file_number' => $fullFileNumber]);
                 } else {
                     $skipAutoPra = !empty($validated['source_pra_id']);
                     if ($skipAutoPra) {
@@ -1830,6 +1882,60 @@ class MlsFileNoController extends Controller
                                 'file_number' => $fullFileNumber,
                             ]);
                         }
+                    } elseif (!$skipAutoPra && in_array($sourceValue, ['Subdivision', 'Merger', 'Extension'])) {
+                        // Create PRA transaction records for Subdivision/Merger/Extension
+                        try {
+                            $plotTransactionType = $sourceValue === 'Extension' ? 'Plot Extension' : $sourceValue;
+                            $fileName = (string) ($validated['file_name'] ?? '');
+
+                            $propId = app(\App\Services\PropertyIdAllocationService::class)->allocateOrRetrievePropId(
+                                $fullFileNumber,
+                                $fullFileNumber,
+                                null,
+                                null,
+                                []
+                            );
+
+                            $praService = app(\App\Services\Pra\PraRecordService::class);
+                            $praService->createRecord([
+                                'mlsFNo' => $fullFileNumber,
+                                'fileno' => $fullFileNumber,
+                                'temp_fileno' => null,
+                                'transaction_type' => $plotTransactionType,
+                                'instrument_type' => $plotTransactionType,
+                                'transaction_date' => now()->toDateString(),
+                                'reg_date' => '0/0/0',
+                                'regNo' => '0/0/0',
+                                'serialNo' => '0',
+                                'pageNo' => '0',
+                                'volumeNo' => '0',
+                                'system_source' => 'MLS_PLOT_WORKFLOW',
+                                'land_use' => $landUse,
+                                'plot_no' => (string) ($validated['plot_no'] ?? ''),
+                                'lgsaOrCity' => (string) ($validated['lga'] ?? ''),
+                                'location' => (string) ($validated['location'] ?? ''),
+                                'property_description' => (string) ($validated['location'] ?? ''),
+                                'Grantor' => $fileName,
+                                'Grantee' => $fileName,
+                                'party_1' => $fileName,
+                                'party_2' => $fileName,
+                                'prop_id' => $propId,
+                                'tracking_id' => $trackingId,
+                                'comments' => $plotTransactionType . " commissioning for " . $fullFileNumber . " (System Generated)",
+                                'remarks' => "Commissioned via " . $sourceValue . " workflow",
+                            ], Auth::id());
+
+                            Log::info("PRA record created for {$sourceValue}", [
+                                'file_number' => $fullFileNumber,
+                                'prop_id' => $propId,
+                                'transaction_type' => $plotTransactionType,
+                            ]);
+                        } catch (\Exception $praError) {
+                            Log::error("PRA creation failed for {$sourceValue} (non-critical)", [
+                                'error' => $praError->getMessage(),
+                                'file_number' => $fullFileNumber,
+                            ]);
+                        }
                     } elseif (!$skipAutoPra) {
                         Log::info('MLS generate basic PRA creation skipped for non-OP source', [
                             'file_number' => $fullFileNumber,
@@ -1838,26 +1944,122 @@ class MlsFileNoController extends Controller
                     }
                 }
 
+                $workflowService = app(PlotWorkflowService::class);
+                $propIdService = app(PropertyIdAllocationService::class);
+                $decommissionSummary = [
+                    'archived' => [],
+                    'history_updated' => 0
+                ];
+
                 // Handle Merger Application Linkage
                 if (!empty($validated['merger_app_id'])) {
-                    PlotMergerApplication::where('id', $validated['merger_app_id'])
-                        ->update([
+                    $mergerApp = PlotMergerApplication::find($validated['merger_app_id']);
+                    if ($mergerApp) {
+                        $sourceFiles = $mergerApp->plotSizes()
+                            ->whereIn('type', ['source', 'merger_source'])
+                            ->pluck('plot_number')
+                            ->toArray();
+                        if (!empty($sourceFiles)) {
+                            // 1. Get old PropIDs from indexings BEFORE they are deleted
+                            $oldPropIds = DB::connection('sqlsrv')->table('file_indexings')
+                                ->whereIn('file_number', $sourceFiles)
+                                ->whereNotNull('prop_id')
+                                ->pluck('prop_id')
+                                ->toArray();
+
+                            // 2. Decommission
+                            Log::info('Plot workflow decommissioning source files', [
+                                'new_file' => $fullFileNumber,
+                                'source_files' => $sourceFiles
+                            ]);
+                            $res = $workflowService->decommissionFiles($sourceFiles, "Plot Merger to $fullFileNumber", $commissionedBy);
+                            $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
+                            
+                            Log::info('Plot workflow decommissioning completed', [
+                                'archived' => $res['archived'],
+                                'deleted' => $res['deleted'],
+                                'errors' => $res['errors']
+                            ]);
+                            
+                            // 3. Historical PropID Update for Merger
+                            $newPropId = $propIdService->allocateOrRetrievePropId($fullFileNumber);
+                            if (!empty($oldPropIds)) {
+                                $decommissionSummary['history_updated'] = $workflowService->updateHistoricalPropId($oldPropIds, $newPropId);
+                                
+                                // Set parent_prop_id on new record
+                                DB::connection('sqlsrv')->table('file_indexings')
+                                    ->where('file_number', $fullFileNumber)
+                                    ->update(['parent_prop_id' => implode(',', array_unique($oldPropIds))]);
+                                
+                                DB::connection('sqlsrv')->table('fileNumber')
+                                    ->where('mlsfNo', $fullFileNumber)
+                                    ->update(['parent_prop_id' => implode(',', array_unique($oldPropIds))]);
+                            }
+                        }
+
+                        $mergerApp->update([
                             'status' => PlotMergerApplication::STATUS_COMMISSIONED,
                             'remarks' => "Commissioned to File No: {$fullFileNumber} on " . now()->toDateTimeString(),
                             'updated_by' => Auth::id()
                         ]);
+                    }
                     Log::info('Merger application marked as commissioned', ['app_id' => $validated['merger_app_id'], 'file_no' => $fullFileNumber]);
                 }
 
                 // Handle Subdivision Application Linkage
                 if (!empty($validated['subdivision_app_id'])) {
-                    PlotSubdivisionApplication::where('id', $validated['subdivision_app_id'])
-                        ->update([
+                    $subdivisionApp = PlotSubdivisionApplication::find($validated['subdivision_app_id']);
+                    if ($subdivisionApp) {
+                        $motherFile = $subdivisionApp->file_no;
+                        $motherIndexing = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->first();
+                        
+                        if ($motherIndexing && $motherIndexing->prop_id) {
+                            // Set parent_prop_id on new record
+                            DB::connection('sqlsrv')->table('file_indexings')
+                                ->where('file_number', $fullFileNumber)
+                                ->update(['parent_prop_id' => $motherIndexing->prop_id]);
+                            
+                            DB::connection('sqlsrv')->table('fileNumber')
+                                ->where('mlsfNo', $fullFileNumber)
+                                ->update(['parent_prop_id' => $motherIndexing->prop_id]);
+                        }
+
+                        // Decommission mother if not already done
+                        $motherRecord = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $motherFile)->first();
+                        if ($motherRecord && !$motherRecord->is_decommissioned) {
+                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Subdivision into fragments (e.g. $fullFileNumber)", $commissionedBy);
+                            $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
+                        }
+
+                        $subdivisionApp->update([
                             'status' => PlotSubdivisionApplication::STATUS_COMMISSIONED,
-                            'remarks' => "Commissioned to File No: {$fullFileNumber} on " . now()->toDateTimeString(),
+                            'remarks' => "Commissioned fragment: {$fullFileNumber} on " . now()->toDateTimeString(),
                             'updated_by' => Auth::id()
                         ]);
+                    }
                     Log::info('Subdivision application marked as commissioned', ['app_id' => $validated['subdivision_app_id'], 'file_no' => $fullFileNumber]);
+                }
+
+                // Handle Normal Commissioning (Extension flow)
+                if (($validated['file_option'] ?? '') === 'extension' && !empty($validated['existing_file_no'])) {
+                    $oldFile = $validated['existing_file_no'];
+                    $oldIndexing = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $oldFile)->first();
+                    
+                    if ($oldIndexing && $oldIndexing->prop_id) {
+                        $newPropId = $propIdService->allocateOrRetrievePropId($fullFileNumber);
+                        $decommissionSummary['history_updated'] = $workflowService->updateHistoricalPropId([$oldIndexing->prop_id], $newPropId);
+                        
+                        DB::connection('sqlsrv')->table('file_indexings')
+                            ->where('file_number', $fullFileNumber)
+                            ->update(['parent_prop_id' => $oldIndexing->prop_id]);
+                        
+                        DB::connection('sqlsrv')->table('fileNumber')
+                            ->where('mlsfNo', $fullFileNumber)
+                            ->update(['parent_prop_id' => $oldIndexing->prop_id]);
+                    }
+                    
+                    $res = $workflowService->decommissionFiles([$oldFile], "Plot Extension to $fullFileNumber", $commissionedBy);
+                    $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
                 }
 
                 // Handle Change of Purpose Application Linkage
@@ -1886,6 +2088,7 @@ class MlsFileNoController extends Controller
                     'success' => true,
                     'message' => 'File number generated successfully',
                     'mirror_created' => $shouldMirror,
+                    'decommission_summary' => $decommissionSummary,
                     'data' => [
                         'file_number' => $fullFileNumber,
                         'file_name' => $validated['file_name'] ?? ($mlsRecord->file_name ?? null),
@@ -1893,6 +2096,9 @@ class MlsFileNoController extends Controller
                         'year' => $year,
                         'serial' => $serial,
                         'tracking_id' => $trackingId,
+                        'application_type' => in_array($validated['file_option'] ?? '', ['subdivision', 'merger', 'extension']) 
+                            ? $validated['file_option'] 
+                            : ($validated['application_type'] ?? 'new'),
                         'id' => $mlsRecord->id,
                         'source_pra_id' => $validated['source_pra_id'] ?? null
                     ]
@@ -1900,7 +2106,7 @@ class MlsFileNoController extends Controller
 
             } catch (\Exception $e) {
                 DB::connection('sqlsrv')->rollBack();
-                $this->logOpLinkage('error', 'Generate transaction failed', [
+                $this->logPlotsWorkflow('error', 'Generate transaction failed', [
                     'message' => $e->getMessage(),
                     'file' => $e->getFile(),
                     'line' => $e->getLine(),
@@ -1920,7 +2126,7 @@ class MlsFileNoController extends Controller
                 'errors' => $e->errors()
             ], 422);
         } catch (\Exception $e) {
-            $this->logOpLinkage('error', 'Generate endpoint failed', [
+            $this->logPlotsWorkflow('error', 'Generate endpoint failed', [
                 'error' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
@@ -2013,10 +2219,15 @@ class MlsFileNoController extends Controller
                 $commissionedBy = ($validated['commissioned_by'] ?? null) ?: ((Auth::user()->first_name . ' ' . Auth::user()->last_name) ?: Auth::user()->name ?: Auth::user()->email ?: 'System');
 
                 // Resolve the source value based on allocation configuration
+                $appType = $validated['application_type'] ?? 'new';
+                if (!empty($validated['merger_app_id'])) $appType = 'merger';
+                if (!empty($validated['subdivision_app_id'])) $appType = 'subdivision';
+
                 $sourceValue = $this->resolveSourceValue(
-                    $validated['application_type'] ?? 'new',
+                    $appType,
                     $validated['allocated_by_filter'] ?? '',
-                    $validated['default_allocation_type'] ?? null
+                    $validated['default_allocation_type'] ?? null,
+                    $validated['file_option'] ?? 'normal'
                 );
 
                 // 1. Generate all full file numbers first
@@ -2035,22 +2246,28 @@ class MlsFileNoController extends Controller
                 ]);
 
                 // 2. Pre-fetch ALL grouping data in ONE query (Saves massive time on 7M row table)
-                $groupingCache = []; // key: fileNumber -> {id, tracking_id, mls_fileno, mapping}
+                $groupingCache = []; // key: normalized(fileNumber) -> {id, tracking_id, mls_fileno, mapping}
                 try {
                     $groupingService = app(\App\Services\GroupingFileNumberService::class);
                     $tableName = $groupingService->getTableName('Lands Registry', $allFileNumbers[0]);
                     $fileNoColumn = $groupingService->getFileNoColumnName('Lands Registry');
 
+                    // Normalize search terms for a more robust lookup
+                    $normalizedSearchTerms = array_map(function($f) {
+                        return strtoupper(preg_replace('/[^A-Z0-9]/i', '', $f));
+                    }, $allFileNumbers);
+
                     $existingGroupings = DB::connection('sqlsrv')->table($tableName)
-                        ->whereIn($fileNoColumn, $allFileNumbers)
+                        ->whereRaw("REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER({$fileNoColumn}), '-', ''), '/', ''), ' ', ''), '\\', ''), '.', '') IN ('" . implode("','", $normalizedSearchTerms) . "')")
                         ->select(['id', $fileNoColumn, 'tracking_id', 'mls_fileno', 'mapping'])
                         ->get();
 
                     foreach ($existingGroupings as $grouping) {
-                        $groupingCache[$grouping->$fileNoColumn] = $grouping;
+                        $key = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $grouping->$fileNoColumn));
+                        $groupingCache[$key] = $grouping;
                     }
                 } catch (\Exception $e) {
-                    Log::warning('Bulk grouping lookup failed', ['error' => $e->getMessage()]);
+                    $this->logPlotsWorkflow('warning', 'Bulk grouping lookup failed', ['error' => $e->getMessage()]);
                 }
 
                 // Pre-fetch corresponding file matches for the batch
@@ -2064,7 +2281,7 @@ class MlsFileNoController extends Controller
                         $correspondingCache[strtoupper(trim($m->fileno))] = $m->fileno;
                     }
                 } catch (\Exception $e) {
-                    Log::warning('Bulk corresponding_fileno lookup failed', ['error' => $e->getMessage()]);
+                    $this->logPlotsWorkflow('warning', 'Bulk corresponding_fileno lookup failed', ['error' => $e->getMessage()]);
                 }
 
                 // 3. Count how many new tracking IDs we need (only if not found in grouping or request)
@@ -2085,7 +2302,8 @@ class MlsFileNoController extends Controller
                 foreach ($validated['location_entries'] as $index => $entry) {
                     $serial = $startSerial + $index;
                     $fullFileNumber = $allFileNumbers[$index];
-                    $cached = $groupingCache[$fullFileNumber] ?? null;
+                    $normalizedKey = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $fullFileNumber));
+                    $cached = $groupingCache[$normalizedKey] ?? null;
 
                     // Priority: 1. Manual, 2. Cached from grouping, 3. New Pool
                     $trackingId = $entry['tracking_id'] ?? ($cached->tracking_id ?? null);
@@ -2252,7 +2470,7 @@ class MlsFileNoController extends Controller
                                     'prop_id' => $propId,
                                     'mlsFNo'  => $batchFileNumber,
                                 ]);
-                                Log::info('Batch PRA: OP exists in IC/DR — skipped, linked source', [
+                                $this->logPlotsWorkflow('info', 'Batch PRA: OP exists in IC/DR — skipped, linked source', [
                                     'file_number'  => $batchFileNumber,
                                     'source_table' => $existingOp['_source_table'],
                                     'source_id'    => $existingOp['id'],
@@ -2283,20 +2501,71 @@ class MlsFileNoController extends Controller
                             ], Auth::id());
                         }
 
-                        Log::info('Batch PRA records created', [
+                        $this->logPlotsWorkflow('info', 'Batch PRA records created', [
                             'batch_size' => $batchQuantity,
                             'land_use' => $landUse,
                             'transaction_type' => $opPraMetadata['transaction_type'],
                         ]);
+                    } else if (in_array($sourceValue, ['Subdivision', 'Merger', 'Extension'])) {
+                        // Create PRA transaction records for Subdivision/Merger/Extension
+                        $plotTransactionType = $sourceValue === 'Extension' ? 'Plot Extension' : $sourceValue;
+                        $fileName = (string) ($validated['file_name'] ?? '');
+
+                        foreach ($validated['location_entries'] as $index => $entry) {
+                            $batchFileNumber = $allFileNumbers[$index];
+                            $batchTrackingId = $mlsData[$index]['tracking_id'] ?? null;
+
+                            $propId = $propIdService->allocateOrRetrievePropId(
+                                $batchFileNumber,
+                                $batchFileNumber,
+                                null,
+                                null,
+                                []
+                            );
+
+                            $praService->createRecord([
+                                'mlsFNo' => $batchFileNumber,
+                                'fileno' => $batchFileNumber,
+                                'temp_fileno' => null,
+                                'transaction_type' => $plotTransactionType,
+                                'instrument_type' => $plotTransactionType,
+                                'transaction_date' => now()->toDateString(),
+                                'reg_date' => '0/0/0',
+                                'regNo' => '0/0/0',
+                                'serialNo' => '0',
+                                'pageNo' => '0',
+                                'volumeNo' => '0',
+                                'system_source' => 'MLS_PLOT_WORKFLOW',
+                                'land_use' => $landUse,
+                                'plot_no' => (string) ($entry['plotNo'] ?? ''),
+                                'lgsaOrCity' => (string) ($entry['lga'] ?? ''),
+                                'location' => (string) ($entry['location'] ?? ''),
+                                'property_description' => (string) ($entry['location'] ?? ''),
+                                'Grantor' => $fileName,
+                                'Grantee' => $fileName,
+                                'party_1' => $fileName,
+                                'party_2' => $fileName,
+                                'prop_id' => $propId,
+                                'tracking_id' => $batchTrackingId,
+                                'comments' => $plotTransactionType . " batch commissioning for " . $batchFileNumber . " (System Generated)",
+                                'remarks' => "Batch commissioned via " . $sourceValue . " workflow",
+                            ], Auth::id());
+                        }
+
+                        $this->logPlotsWorkflow('info', "Batch PRA records created for {$sourceValue}", [
+                            'batch_size' => $batchQuantity,
+                            'land_use' => $landUse,
+                            'transaction_type' => $plotTransactionType,
+                        ]);
                     } else {
-                        Log::info('Batch PRA creation skipped for non-OP source', [
+                        $this->logPlotsWorkflow('info', 'Batch PRA creation skipped for non-OP source', [
                             'batch_size' => $batchQuantity,
                             'land_use' => $landUse,
                             'source' => $sourceValue,
                         ]);
                     }
                 } catch (\Exception $praError) {
-                    Log::error('Batch PRA creation failed (non-critical)', [
+                    $this->logPlotsWorkflow('error', 'Batch PRA creation failed (non-critical)', [
                         'error' => $praError->getMessage(),
                         'land_use' => $landUse,
                     ]);
@@ -2314,25 +2583,108 @@ class MlsFileNoController extends Controller
                     ]
                 );
 
+                $workflowService = app(PlotWorkflowService::class);
+                $decommissionSummary = [
+                    'archived' => [],
+                    'history_updated' => 0
+                ];
+
                 // Handle Application Linkage for Batch
+                $this->logPlotsWorkflow('info', 'Batch linkage check', [
+                    'merger_app_id' => $validated['merger_app_id'] ?? null,
+                    'subdivision_app_id' => $validated['subdivision_app_id'] ?? null,
+                    'file_option' => $validated['file_option'] ?? null,
+                    'source' => $sourceValue,
+                ]);
+
                 if (!empty($validated['merger_app_id'])) {
-                    PlotMergerApplication::where('id', $validated['merger_app_id'])
-                        ->update([
+                    $mergerApp = PlotMergerApplication::find($validated['merger_app_id']);
+                    $this->logPlotsWorkflow('info', 'Merger app lookup', [
+                        'app_id' => $validated['merger_app_id'],
+                        'found' => $mergerApp !== null,
+                        'status' => $mergerApp->status ?? 'N/A',
+                    ]);
+
+                    if ($mergerApp) {
+                        $sourceFiles = $mergerApp->plotSizes()
+                            ->whereIn('type', ['source', 'merger_source'])
+                            ->pluck('plot_number')
+                            ->toArray();
+                        $this->logPlotsWorkflow('info', 'Merger source files resolved', [
+                            'source_files' => $sourceFiles,
+                            'count' => count($sourceFiles),
+                        ]);
+
+                        if (!empty($sourceFiles)) {
+                            // 1. Get old PropIDs
+                            $oldPropIds = DB::connection('sqlsrv')->table('file_indexings')
+                                ->whereIn('file_number', $sourceFiles)
+                                ->whereNotNull('prop_id')
+                                ->pluck('prop_id')
+                                ->toArray();
+
+                            // 2. Decommission
+                            $res = $workflowService->decommissionFiles($sourceFiles, "Plot Merger to batch of " . count($allFileNumbers) . " files", $commissionedBy);
+                            $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
+
+                            $this->logPlotsWorkflow('info', 'Merger decommission result', [
+                                'archived' => $res['archived'],
+                                'errors' => $res['errors'],
+                            ]);
+
+                            // 3. Update parent_prop_id for all new files
+                            if (!empty($oldPropIds)) {
+                                DB::connection('sqlsrv')->table('file_indexings')
+                                    ->whereIn('file_number', $allFileNumbers)
+                                    ->update(['parent_prop_id' => implode(',', array_unique($oldPropIds))]);
+                                
+                                DB::connection('sqlsrv')->table('fileNumber')
+                                    ->whereIn('mlsfNo', $allFileNumbers)
+                                    ->update(['parent_prop_id' => implode(',', array_unique($oldPropIds))]);
+                            }
+                        }
+
+                        $mergerApp->update([
                             'status' => PlotMergerApplication::STATUS_COMMISSIONED,
                             'remarks' => "Commissioned to Batch of {$batchQuantity} files (First: {$allFileNumbers[0]}) on " . now()->toDateTimeString(),
                             'updated_by' => Auth::id()
                         ]);
-                    Log::info('Batch Merger application marked as commissioned', ['app_id' => $validated['merger_app_id']]);
+                    }
+                    $this->logPlotsWorkflow('info', 'Batch Merger application marked as commissioned', ['app_id' => $validated['merger_app_id']]);
                 }
 
                 if (!empty($validated['subdivision_app_id'])) {
-                    PlotSubdivisionApplication::where('id', $validated['subdivision_app_id'])
-                        ->update([
+                    $subdivisionApp = PlotSubdivisionApplication::find($validated['subdivision_app_id']);
+                    if ($subdivisionApp) {
+                        $motherFile = $subdivisionApp->file_no;
+                        $motherIndexing = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->first();
+                        
+                        if ($motherIndexing && $motherIndexing->prop_id) {
+                            DB::connection('sqlsrv')->table('file_indexings')
+                                ->whereIn('file_number', $allFileNumbers)
+                                ->update(['parent_prop_id' => $motherIndexing->prop_id]);
+                            
+                            DB::connection('sqlsrv')->table('fileNumber')
+                                ->whereIn('mlsfNo', $allFileNumbers)
+                                ->update(['parent_prop_id' => $motherIndexing->prop_id]);
+                        }
+
+                        // Decommission mother if exists in registry
+                        $motherExists = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $motherFile)->exists() 
+                                     || DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->exists();
+                                     
+                        if ($motherExists) {
+                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Subdivision into batch of " . count($allFileNumbers) . " fragments", $commissionedBy);
+                            $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
+                        }
+
+                        $subdivisionApp->update([
                             'status' => PlotSubdivisionApplication::STATUS_COMMISSIONED,
                             'remarks' => "Commissioned to Batch of {$batchQuantity} files (First: {$allFileNumbers[0]}) on " . now()->toDateTimeString(),
                             'updated_by' => Auth::id()
                         ]);
-                    Log::info('Batch Subdivision application marked as commissioned', ['app_id' => $validated['subdivision_app_id']]);
+                    }
+                    $this->logPlotsWorkflow('info', 'Batch Subdivision application marked as commissioned', ['app_id' => $validated['subdivision_app_id']]);
                 }
 
                 DB::connection('sqlsrv')->commit();
@@ -2353,9 +2705,13 @@ class MlsFileNoController extends Controller
                     'success' => true,
                     'message' => "Successfully generated {$batchQuantity} file numbers",
                     'files' => $generatedFiles,
+                    'decommission_summary' => $decommissionSummary,
                     'data' => [
                         'batch_size' => $batchQuantity,
                         'land_use' => $landUse,
+                        'application_type' => in_array($validated['file_option'] ?? '', ['subdivision', 'merger', 'extension']) 
+                            ? $validated['file_option'] 
+                            : ($validated['application_type'] ?? 'new'),
                         'year' => $year,
                         'serial_range' => "{$startSerial} to {$endSerial}"
                     ]
@@ -2534,14 +2890,14 @@ class MlsFileNoController extends Controller
     private function createResettlementLinkedRecords(array $validated, string $fullFileNumber, string $trackingId, string $commissionedBy): void
     {
         $sourceId = (int) ($validated['source_instrument_capture_id'] ?? 0);
-        $this->logOpLinkage('info', 'Loading source OP row for mirror', [
+        $this->logPlotsWorkflow('info', 'Loading source OP row for mirror', [
             'source_instrument_capture_id' => $sourceId,
             'file_number' => $fullFileNumber,
         ]);
         $source = DB::connection('sqlsrv')->table('instrument_capture')->where('id', $sourceId)->first();
 
         if (!$source) {
-            $this->logOpLinkage('error', 'Source OP row not found for mirror', [
+            $this->logPlotsWorkflow('error', 'Source OP row not found for mirror', [
                 'source_instrument_capture_id' => $sourceId,
                 'file_number' => $fullFileNumber,
             ]);
@@ -2640,7 +2996,7 @@ class MlsFileNoController extends Controller
             'propertyLocation' => (string) (($validated['location'] ?? null) ?: ($source->property_location ?? '')),
             'created_by' => $commissionedBy,
         ]);
-        $this->logOpLinkage('info', 'Instrument capture mirror row created', [
+        $this->logPlotsWorkflow('info', 'Instrument capture mirror row created', [
             'source_instrument_capture_id' => $sourceId,
             'new_instrument_capture_id' => $captureResult['id'] ?? null,
             'file_number' => $fullFileNumber,
@@ -2705,7 +3061,7 @@ class MlsFileNoController extends Controller
                 ->where('instrument_capture_id', $captureId)
                 ->update($safeDeedUpdates);
 
-            $this->logOpLinkage('info', 'Mirror updates applied to transaction tables', [
+            $this->logPlotsWorkflow('info', 'Mirror updates applied to transaction tables', [
                 'source_instrument_capture_id' => $sourceId,
                 'new_instrument_capture_id' => $captureId,
                 'file_number' => $fullFileNumber,
@@ -2743,17 +3099,17 @@ class MlsFileNoController extends Controller
         }
     }
 
-    private function logOpLinkage(string $level, string $message, array $context = []): void
+    private function logPlotsWorkflow(string $level, string $message, array $context = []): void
     {
         try {
             $logger = Log::build([
                 'driver' => 'single',
-                'path' => storage_path('logs/op-linkage.log'),
+                'path' => storage_path('logs/plots-workflow.log'),
                 'level' => 'debug',
             ]);
             $logger->{$level}($message, $context);
         } catch (\Throwable $e) {
-            Log::warning('Failed to write OP linkage log', [
+            Log::warning('Failed to write Plots workflow audit log', [
                 'message' => $message,
                 'error' => $e->getMessage(),
             ]);
@@ -2883,14 +3239,16 @@ class MlsFileNoController extends Controller
     {
         try {
             $groupingService = app(\App\Services\GroupingFileNumberService::class);
-            // Registry type doesn't strictly matter for tracking_id if it's the same column across tables
-            $result = $groupingService->findGroupingRecord(DB::connection('sqlsrv'), $fileNumber, $fileNumber);
+            // Normalize for the raw query in the service
+            $normalized = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $fileNumber));
+            
+            $result = $groupingService->findGroupingRecord(DB::connection('sqlsrv'), $fileNumber, $normalized);
 
             if ($result['record'] && !empty($result['record']->tracking_id)) {
                 return trim($result['record']->tracking_id);
             }
         } catch (\Exception $e) {
-            Log::warning('Error fetching tracking_id from grouping: ' . $e->getMessage());
+            Log::warning('Error fetching tracking_id from grouping for ' . $fileNumber . ': ' . $e->getMessage());
         }
 
         return null;

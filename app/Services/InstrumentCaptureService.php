@@ -327,7 +327,9 @@ class InstrumentCaptureService
                 $regData['grantee'] = $parties['party_2']['name'];
 
                 $regData['instrument_capture_id'] = $id;
-                $deedRegId = $this->regService->registerInstrument($regData, $regNumberData);
+                $regResult = $this->regService->registerInstrument($regData, $regNumberData);
+                $deedRegId = $regResult['id'];
+                $syncResult = $regResult['sync_result'];
             }
 
             // Mark temp file number as used
@@ -338,7 +340,7 @@ class InstrumentCaptureService
                     ->update(['is_used' => 1, 'updated_at' => now()]);
             }
 
-            return [
+            $finalResult = [
                 'success' => true,
                 'id' => $id,
                 'deed_registration_id' => $deedRegId ?? null,
@@ -355,6 +357,12 @@ class InstrumentCaptureService
                 'fileno' => $allocationPrimary,
                 'instrument_type' => $instrumentType
             ];
+
+            if (isset($syncResult)) {
+                $finalResult['sync_result'] = $syncResult;
+            }
+
+            return $finalResult;
         });
     }
 
@@ -641,10 +649,14 @@ class InstrumentCaptureService
                 ->where('id', $id)
                 ->update($updateData);
 
+            // Propagate name changes to core tables for specific instrument types (Deed of Assignment/Gift)
+            $syncResult = $this->regService->syncPartyNames($primary, $instrumentType, $parties['party_2']['name']);
+
             return [
                 'success' => true,
                 'message' => 'Instrument updated successfully',
-                'id' => $id
+                'id' => $id,
+                'sync_result' => $syncResult
             ];
         });
     }

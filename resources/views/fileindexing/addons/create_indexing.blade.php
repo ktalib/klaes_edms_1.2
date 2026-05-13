@@ -15,7 +15,7 @@
         <!-- Dashboard Content -->
         <div class="p-6">
 
-
+ 
             <div class="form-shell">
                 <!-- Standalone form content without modal wrapper -->
                 <div class="bg-white rounded-lg shadow-lg p-8 max-w-6xl mx-auto">
@@ -572,10 +572,10 @@
 
                     // Watchers for title sync and batch apply
                     this.$watch('fileParams', (params, oldParams) => {
-                        // Sync applicant_name to title
+                        // Sync title to applicant_name (instead of the reverse which was locking the field)
                         params.forEach(param => {
-                            if (param.applicant_name !== param.title) {
-                                param.title = param.applicant_name;
+                            if (param.title !== param.applicant_name) {
+                                param.applicant_name = param.title;
                             }
                         });
 

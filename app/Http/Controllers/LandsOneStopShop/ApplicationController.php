@@ -1926,6 +1926,27 @@ class ApplicationController extends Controller
         }
         $motherOpRecord = $this->resolveMotherOpRecord($sourceHistory);
 
+        // Fallback: If history lookup failed to find an OP (common in sequential FEFR capture),
+        // try to resolve the mother record directly by the temp file number if provided.
+        if (!$motherOpRecord && $ffrTempFileno !== '') {
+            $fallbackOp = DB::connection('sqlsrv')->table('pra')
+                ->where('temp_fileno', $ffrTempFileno)
+                ->where(function ($q) {
+                    $q->where('instrument_type', 'like', '%Occupancy Permit%')
+                        ->orWhere('transaction_type', 'like', '%Occupancy Permit%');
+                })
+                ->orderByDesc('id')
+                ->first();
+
+            if ($fallbackOp) {
+                $motherOpRecord = (array) $fallbackOp;
+                Log::info('FFR existing capture: resolved mother OP record via temp_fileno fallback', [
+                    'temp_fileno' => $ffrTempFileno,
+                    'prop_id' => $motherOpRecord['prop_id'] ?? null,
+                ]);
+            }
+        }
+
         if (!$motherOpRecord) {
             Log::warning('FFR existing capture: mother OP record not found, using request payload fallbacks', [
                 'source_file_no' => $sourceFileNo,

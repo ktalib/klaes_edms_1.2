@@ -225,7 +225,7 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Our Reference <span class="text-red-500">*</span></label>
-                            <input type="text" name="our_reference" required class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. LS/VAL/FGE/5KM">
+                            <input type="text" name="our_reference" id="our_reference" required class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. LS/VAL/FGE/5KM">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Your Reference</label>
@@ -236,6 +236,22 @@
                             <textarea name="addressed_to" rows="3" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="The Honourable Commissioner&#10;Ministry of Land and Physical&#10;Planning, Kano State">The Honourable Commissioner
 Ministry of Land and Physical
 Planning, Kano State</textarea>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Number of Sub-Projects <span class="text-red-500">*</span></label>
+                            <input type="number" name="number_of_sub_projects" id="number_of_sub_projects" min="1" value="1" required
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-bold"
+                                placeholder="e.g. 5">
+                            
+                            <!-- Preview Container -->
+                            <div id="sub_projects_preview" class="hidden mt-3 p-4 rounded-xl bg-indigo-50/50 border border-indigo-100/50">
+                                <p class="text-[10px] font-bold text-indigo-600 uppercase tracking-widest flex items-center gap-2 mb-2">
+                                    <i data-lucide="layers" class="h-3 w-3"></i> Sub-Projects to be Created
+                                </p>
+                                <div id="sub_projects_list" class="flex flex-wrap gap-2">
+                                    <!-- Dynamic items -->
+                                </div>
+                            </div>
                         </div>
                         <input type="hidden" name="number_of_items" value="10">
                         <div>
@@ -264,29 +280,16 @@ Planning, Kano State</textarea>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Street Name</label>
-                            <select name="street" id="proj_street" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
-                                <option value="">Select Street</option>
-                                @foreach($streets as $street)
-                                <option value="{{ $street->name }}">{{ $street->name }}</option>
-                                @endforeach
-                                <option value="Other">Other (Please Specify)</option>
-                            </select>
-                            <input type="text" name="street_other" id="proj_street_other" class="hidden mt-3 w-full px-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 text-sm font-medium" placeholder="Type street name...">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">District</label>
-                            <select name="district" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
-                                <option value="">Select District</option>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">District <span class="text-slate-400 font-normal italic">(Multi-select/Type)</span></label>
+                            <select name="district[]" id="proj_district" multiple="multiple" class="vfc-select2 w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
                                 @foreach($districts as $district)
                                 <option value="{{ $district->name }}">{{ $district->name }}</option>
                                 @endforeach
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">LGA</label>
-                            <select name="lga" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
-                                <option value="">Select LGA</option>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">LGA <span class="text-slate-400 font-normal italic">(Select multiple)</span></label>
+                            <select name="lga[]" id="proj_lga" multiple="multiple" class="vfc-select2 w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
                                 @foreach($lgas as $lga)
                                 <option value="{{ $lga->LGAName }}">{{ $lga->LGAName }}</option>
                                 @endforeach
@@ -357,6 +360,47 @@ Planning, Kano State</textarea>
     .select2-container--default .select2-selection--single .select2-selection__arrow {
         height: 44px;
     }
+    /* Select2 Custom Premium Styling */
+    .select2-container--default .select2-selection--multiple {
+        background-color: #f8fafc !important; /* slate-50 */
+        border: 1px solid #e2e8f0 !important; /* slate-200 */
+        border-radius: 0.75rem !important; /* rounded-xl */
+        padding: 4px 8px !important;
+        min-height: 48px !important;
+        transition: all 0.2s !important;
+    }
+    .select2-container--default.select2-container--focus .select2-selection--multiple {
+        border-color: #3b82f6 !important; /* blue-500 */
+        background-color: #ffffff !important;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1) !important;
+    }
+    .select2-container--default .select2-selection--multiple .select2-selection__choice {
+        background-color: #eff6ff !important; /* blue-50 */
+        border: 1px solid #dbeafe !important; /* blue-100 */
+        color: #1e40af !important; /* blue-800 */
+        border-radius: 0.5rem !important;
+        padding: 2px 10px !important;
+        font-weight: 600 !important;
+        font-size: 12px !important;
+        margin-top: 6px !important;
+    }
+    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+        color: #3b82f6 !important;
+        margin-right: 5px !important;
+        border-right: 0 !important;
+    }
+    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+        background-color: transparent !important;
+        color: #ef4444 !important;
+    }
+    .select2-container--default .select2-search--inline .select2-search__field {
+        margin-top: 8px !important;
+        font-family: inherit !important;
+    }
+    #project-form input[type="text"], 
+    #project-form textarea {
+        text-transform: uppercase !important;
+    }
 </style>
 <script>
     function toggleWorkers(projectId, btn) {
@@ -388,21 +432,41 @@ Planning, Kano State</textarea>
             }
         });
 
-        $('#proj_street').on('change', function() {
-            if ($(this).val() === 'Other') {
-                $('#proj_street_other').removeClass('hidden').prop('required', true).focus();
-            } else {
-                $('#proj_street_other').addClass('hidden').prop('required', false);
-            }
+        $('#proj_district').select2({
+            dropdownParent: $('#project-modal'),
+            width: '100%',
+            placeholder: 'Select or type Districts',
+            tags: true,
+            tokenSeparators: [',']
         });
 
-        $('#proj_street').select2({
+        $('#proj_lga').select2({
             dropdownParent: $('#project-modal'),
-            width: '100%'
+            width: '100%',
+            placeholder: 'Select LGAs'
         });
 
         $('#num_workers').on('input', function() {
             generateWorkerCards($(this).val());
+        });
+
+        $('#number_of_sub_projects').on('input', function() {
+            const count = parseInt($(this).val()) || 0;
+            const $preview = $('#sub_projects_preview');
+            const $list = $('#sub_projects_list');
+
+            if (count > 0) {
+                $preview.removeClass('hidden');
+                let html = '';
+                for (let i = 1; i <= count; i++) {
+                    html += `<span class="px-2 py-1 bg-white border border-indigo-100 rounded-md text-[10px] font-bold text-indigo-700 shadow-sm">Sub-Project A${i}</span>`;
+                }
+                $list.html(html);
+                if (window.lucide) window.lucide.createIcons();
+            } else {
+                $preview.addClass('hidden');
+                $list.html('');
+            }
         });
 
         $('#project-form').on('submit', function(e) {
@@ -445,10 +509,44 @@ Planning, Kano State</textarea>
             dropdownParent: $('#project-modal'),
             width: '100%'
         });
+
+        // Exclusion logic
+        $('.worker-select').on('change', function() {
+            updateWorkerSelections();
+        });
+    }
+
+    function updateWorkerSelections() {
+        const selectedValues = [];
+        $('.worker-select').each(function() {
+            const val = $(this).val();
+            if (val) selectedValues.push(val);
+        });
+
+        $('.worker-select').each(function() {
+            const $currentSelect = $(this);
+            const currentVal = $currentSelect.val();
+            
+            $currentSelect.find('option').each(function() {
+                const $opt = $(this);
+                const optVal = $opt.val();
+                if (optVal && optVal !== currentVal && selectedValues.includes(optVal)) {
+                    $opt.attr('disabled', 'disabled');
+                } else {
+                    $opt.removeAttr('disabled');
+                }
+            });
+            
+            // Note: Select2 doesn't always live-update disabled status without re-init or trigger
+            $currentSelect.trigger('change.select2');
+        });
     }
 
     // Refresh IDs if project code changes
     $('#project_code').on('input', function() {
+        const val = $(this).val();
+        $('#our_reference').val(val); // Backfill Our Reference
+        
         const num = $('#num_workers').val();
         if (num > 0) generateWorkerCards(num);
     });
@@ -468,6 +566,8 @@ Planning, Kano State</textarea>
         $.get("{{ route('valuation-compensations.projects.next-code') }}", function(data) {
             $('#project_code').val(data.code);
             $('#project_fileno').val(data.fileno);
+            $('#our_reference').val(data.code); // Backfill Our Reference
+            
             // Refresh worker cards if number already entered
             const num = $('#num_workers').val();
             if (num > 0) generateWorkerCards(num);
@@ -495,12 +595,19 @@ Planning, Kano State</textarea>
         if (project.project_type === 'Other') {
             $('#project_type_other').val(project.project_type_other);
         }
-        $('#proj_street').val(project.street).trigger('change');
-        if (project.street === 'Other') {
-            $('#proj_street_other').val(project.street_other);
+        if (project.district) {
+            const districtArray = project.district.split(', ').filter(Boolean);
+            $('#proj_district').val(districtArray).trigger('change');
+        } else {
+            $('#proj_district').val([]).trigger('change');
         }
-        $('select[name="district"]').val(project.district);
-        $('select[name="lga"]').val(project.lga);
+
+        if (project.lga) {
+            const lgaArray = project.lga.split(', ').filter(Boolean);
+            $('#proj_lga').val(lgaArray).trigger('change');
+        } else {
+            $('#proj_lga').val([]).trigger('change');
+        }
 
         $('#project-modal').removeClass('hidden').addClass('flex');
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);

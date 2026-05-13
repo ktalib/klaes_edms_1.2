@@ -514,7 +514,7 @@
                                         <div class="flex items-center gap-2 mb-2">
                                             <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">File Type</span>
                                         </div>
-                                        <select id="quickFileOption" name="quick_file_option"
+                                        <select id="fileOption" name="file_option"
                                                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm font-medium text-gray-700"
                                                 @change="
                                                     let val = $event.target.value;

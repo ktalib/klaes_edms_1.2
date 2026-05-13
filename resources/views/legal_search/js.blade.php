@@ -114,6 +114,42 @@
         }
       };
     }
+
+    // Auto-search from URL params
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('query')) {
+        const queryVal = urlParams.get('query');
+        if (document.getElementById('fileNumber')) {
+            document.getElementById('fileNumber').value = queryVal;
+        }
+        
+        // Also map other filters if present
+        const otherFilters = ['guarantorName', 'guaranteeName', 'lga', 'district', 'location', 'plotNumber', 'planNumber', 'size', 'caveat'];
+        let hasOther = false;
+        otherFilters.forEach(f => {
+            if (urlParams.has(f) && urlParams.get(f)) {
+                if (filterSelector) {
+                    filterSelector.value = f;
+                    // Trigger addFilterRow
+                    if (typeof addFilterRow === 'function') addFilterRow(f);
+                    
+                    setTimeout(() => {
+                        if (document.getElementById(f)) {
+                            document.getElementById(f).value = urlParams.get(f);
+                        }
+                    }, 100);
+                }
+                hasOther = true;
+            }
+        });
+        
+        // Auto trigger search after a small delay
+        setTimeout(() => {
+            if (typeof performSearch === 'function') {
+                performSearch();
+            }
+        }, 500);
+    }
   });
 
   // State variables

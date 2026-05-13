@@ -6,6 +6,13 @@
             <i data-lucide="x-circle" class="h-4 w-4 mr-2"></i>
             Cancel
         </button>
+
+        <button type="button" 
+            class="inline-flex items-center px-8 py-3 border border-amber-300 text-sm font-medium rounded-lg shadow-sm text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 transition-all duration-200" 
+            id="refresh-form-btn">
+            <i data-lucide="refresh-cw" class="h-4 w-4 mr-2"></i>
+            Refresh
+        </button>
         <button
             type="button"
             class="inline-flex items-center px-8 py-3 border border-transparent text-sm font-medium rounded-lg shadow-lg text-white bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200 transform hover:scale-105"

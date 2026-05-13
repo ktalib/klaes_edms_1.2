@@ -20,6 +20,9 @@ class PlotMergerController extends Controller
         $search = trim((string) $request->input('search'));
 
         $records = PlotMergerApplication::query()
+            ->with(['plotSizes' => function($q) {
+                $q->whereIn('type', ['source', 'merger_source']);
+            }])
             ->where(function($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
@@ -103,11 +106,21 @@ class PlotMergerController extends Controller
                 $application->update(['site_plan' => $path]);
             }
 
+            $locationDetails = [];
+            if ($request->has('location_details_json')) {
+                $locationDetails = json_decode($request->location_details_json, true);
+            }
+
             foreach ($request->plot_sizes as $index => $size) {
+                $idx = $index + 1;
+                $sourceFileNo = (!empty($locationDetails[$idx]['source_file_no'])) 
+                    ? $locationDetails[$idx]['source_file_no'] 
+                    : ('Plot ' . $idx);
+                
                 PlotApplicationSize::create([
                     'application_id' => $application->id,
                     'application_type' => 'merger',
-                    'plot_number' => 'Plot ' . ($index + 1),
+                    'plot_number' => $sourceFileNo,
                     'plot_size' => $size,
                     'type' => 'merger_source',
                 ]);

@@ -14,8 +14,16 @@ const VFC = {
         this.initEventListeners();
         this.initDataTable();
         this.fetchBanks();
+        this.initCapitalization();
         
         if (window.lucide) window.lucide.createIcons();
+    },
+
+    initCapitalization: function() {
+        // Auto-capitalize all text inputs in VFC forms
+        $(document).on('input', '#valuation-form input[type="text"], #valuation-form textarea, #valuation-form input[type="search"], #project-form input[type="text"], #project-form textarea', function() {
+            this.value = this.value.toUpperCase();
+        });
     },
 
     fetchBanks: function() {
@@ -67,6 +75,35 @@ const VFC = {
                 $('#hidden_project_fileno').val(proj.fileno || proj.code);
                 $('#manual_our_ref').val(proj.our_reference || '');
                 $('#your_ref').val(proj.your_reference || '');
+
+                // Populate Sub-Projects
+                const $subProjSection = $('#sub-project-section');
+                const $subProjSelect = $('#vfc_sub_project_id');
+                
+                if (proj.sub_projects && proj.sub_projects.length > 0) {
+                    $subProjSelect.html('<option value="">Select Sub-Project</option>');
+                    proj.sub_projects.forEach(sp => {
+                        $subProjSelect.append(`<option value="${sp.id}">${sp.name} (${sp.code})</option>`);
+                    });
+                    $subProjSection.removeClass('hidden');
+                    $subProjSelect.prop('required', true);
+                } else {
+                    $subProjSection.addClass('hidden');
+                    $subProjSelect.prop('required', false).html('<option value="">No Sub-Projects</option>');
+                }
+
+                // Backfill location scope
+                if (proj.district) {
+                    $('#loc_district').val(proj.district).trigger('change');
+                    // If it's a select and doesn't have the value, we might need to set it manually or change to input
+                    if ($('#loc_district').val() !== proj.district) {
+                        // Fallback if it's a dropdown and doesn't match: we'll handle in buildLocation
+                    }
+                }
+                if (proj.lga) {
+                    $('#loc_lga').val(proj.lga).trigger('change');
+                }
+                self.buildLocation();
             }
 
             // Fetch workers for this project
@@ -102,14 +139,23 @@ const VFC = {
         $(document).on('change', '.item-checkbox', function() {
             const val = $(this).val();
             const isOther = val.toLowerCase().includes('other');
+            const $wrapper = $(this).closest('.flex-col').find('.item-amount-wrapper');
             
-            if (isOther) {
-                if ($(this).is(':checked')) {
-                    $('#compensated_items_other').removeClass('hidden').focus();
-                } else {
-                    $('#compensated_items_other').addClass('hidden');
-                }
+            if ($(this).is(':checked')) {
+                $wrapper.removeClass('hidden');
+                if (isOther) $('#compensated_items_other').removeClass('hidden').focus();
+            } else {
+                $wrapper.addClass('hidden');
+                if (isOther) $('#compensated_items_other').addClass('hidden');
             }
+            self.updateCompensatedItemsValue();
+        });
+
+        $(document).on('input', '.item-amount-input', function() {
+            self.updateCompensatedItemsValue();
+        });
+
+        $(document).on('change', '.structure-type-radio', function() {
             self.updateCompensatedItemsValue();
         });
 
@@ -209,18 +255,34 @@ const VFC = {
     },
 
     updateCompensatedItemsValue: function() {
-        let selected = [];
+        let selectedItems = [];
+        
+        // 1. Get Structure Type
+        const structType = $('.structure-type-radio:checked').val();
+        if (structType) {
+            selectedItems.push(`[Structure: ${structType}]`);
+        }
+
+        // 2. Get Selected Items and their Amounts
         $('.item-checkbox:checked').each(function() {
-            selected.push($(this).val());
+            const itemName = $(this).val();
+            const $wrapper = $(this).closest('.flex-col').find('.item-amount-wrapper');
+            const amount = $wrapper.find('.item-amount-input').val();
+            
+            if (amount) {
+                selectedItems.push(`${itemName} (₦${parseFloat(amount).toLocaleString()})`);
+            } else {
+                selectedItems.push(itemName);
+            }
         });
         
-        const hasOther = selected.some(s => s.toLowerCase().includes('other'));
+        const hasOther = $('.item-checkbox:checked').toArray().some(s => $(s).val().toLowerCase().includes('other'));
         if (hasOther) {
             const other = $('#compensated_items_other').val();
-            if (other) selected.push(other);
+            if (other) selectedItems.push(other);
         }
         
-        $('#compensated_items_val').val(selected.join(', '));
+        $('#compensated_items_val').val(selectedItems.join(', '));
     },
 
     buildLocation: function() {
@@ -350,6 +412,9 @@ const VFC = {
         if (window.lucide) window.lucide.createIcons();
         $('#building_type_other, #compensated_items_other').addClass('hidden');
         $('.item-checkbox').prop('checked', false);
+        $('.structure-type-radio').prop('checked', false);
+        $('.item-amount-wrapper').addClass('hidden');
+        $('.item-amount-input').val('');
         
         $('#valuation-modal').removeClass('hidden').addClass('flex');
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
@@ -366,6 +431,9 @@ const VFC = {
         
         setTimeout(() => {
             $('#vfc_worker_id').val(record.worker_id);
+            if (record.sub_project_id) {
+                $('#vfc_sub_project_id').val(record.sub_project_id);
+            }
         }, 500);
         
         $('#our_ref').val(record.project_fileno || record.our_ref);
@@ -408,27 +476,52 @@ const VFC = {
         $('#remarks').val(record.remarks);
         
         if (record.compensated_items) {
-            const items = record.compensated_items.split(', ').map(i => i.trim());
+            const rawItems = record.compensated_items.split(', ').map(i => i.trim());
             let otherItems = [];
             
-            items.forEach(item => {
-                const $cb = $(`.item-checkbox[value="${item}"]`);
+            rawItems.forEach(itemStr => {
+                // Handle Structure Type [Structure: Name]
+                if (itemStr.startsWith('[Structure: ') && itemStr.endsWith(']')) {
+                    const structName = itemStr.replace('[Structure: ', '').replace(']', '');
+                    $(`.structure-type-radio[value="${structName}"]`).prop('checked', true);
+                    return;
+                }
+
+                // Handle Items with amounts: Name (₦1,000)
+                let itemName = itemStr;
+                let amount = '';
+                if (itemStr.includes(' (₦')) {
+                    const parts = itemStr.split(' (₦');
+                    itemName = parts[0].trim();
+                    amount = parts[1].replace(')', '').replace(/,/g, '');
+                }
+
+                const $cb = $(`.item-checkbox[value="${itemName}"]`);
                 if ($cb.length > 0) {
                     $cb.prop('checked', true);
-                    if (item.toLowerCase().includes('other')) {
+                    const $wrapper = $cb.closest('.flex-col').find('.item-amount-wrapper');
+                    $wrapper.removeClass('hidden');
+                    if (amount) {
+                        $wrapper.find('.item-amount-input').val(amount);
+                    }
+                    if (itemName.toLowerCase().includes('other')) {
                         $('#compensated_items_other').removeClass('hidden');
                     }
                 } else {
-                    otherItems.push(item);
+                    otherItems.push(itemStr);
                 }
             });
             
             if (otherItems.length > 0 || record.compensated_items_other) {
-                $('.item-checkbox').filter(function() {
+                const $otherCb = $('.item-checkbox').filter(function() {
                     return $(this).val().toLowerCase().includes('other');
-                }).prop('checked', true);
+                });
                 
-                $('#compensated_items_other').val(record.compensated_items_other || otherItems.join(', ')).removeClass('hidden');
+                if (otherItems.length > 0) {
+                    $otherCb.prop('checked', true);
+                    $otherCb.closest('.flex-col').find('.item-amount-wrapper').removeClass('hidden');
+                    $('#compensated_items_other').val(record.compensated_items_other || otherItems.join(', ')).removeClass('hidden');
+                }
             }
             $('#compensated_items_val').val(record.compensated_items);
         }
