@@ -2626,7 +2626,7 @@ class PropertyRecordController extends Controller
 
             \Log::info('Built variants for file number search:', $variants);
 
-            // Search for existing property records in file_history_staging
+            // 1. Search for existing property records in file_history_staging (FH)
             $existingRecords = DB::connection('sqlsrv')->table(self::PROPERTY_TABLE)
                 ->where(function ($query) use ($variants) {
                     $query->whereIn('mlsFNo', $variants)
@@ -2637,9 +2637,27 @@ class PropertyRecordController extends Controller
                 ->orderByRaw("COALESCE(TRY_CONVERT(DATETIME, NULLIF(transaction_date, '')), TRY_CONVERT(DATETIME, NULLIF(reg_date, '')), created_at) ASC")
                 ->orderBy('id')
                 ->get()
+                ->map(function ($record) {
+                    $arr = (array) $record;
+                    // Normalize for frontend
+                    if (!isset($arr['transaction_type'])) {
+                        $arr['transaction_type'] = $arr['instrument_type'] ?? '';
+                    }
+                    if (!isset($arr['transaction_date'])) {
+                        $arr['transaction_date'] = $arr['reg_date'] ?? $arr['deeds_date'] ?? '';
+                    }
+                    if (!isset($arr['first_party'])) {
+                        $arr['first_party'] = $arr['party_1'] ?? $arr['Grantor'] ?? $arr['Assignor'] ?? $arr['Mortgagor'] ?? '';
+                    }
+                    if (!isset($arr['second_party'])) {
+                        $arr['second_party'] = $arr['party_2'] ?? $arr['Grantee'] ?? $arr['Assignee'] ?? $arr['Mortgagee'] ?? '';
+                    }
+                    $arr['_source'] = 'fh';
+                    return $arr;
+                })
                 ->toArray();
 
-            // Search for CofO records in CofO_staging table
+            // 2. Search for CofO records in CofO_staging table (COFO)
             $cofoRecords = DB::connection('sqlsrv')->table(self::COFO_TABLE)
                 ->where(function ($query) use ($variants) {
                     $query->whereIn('mlsFNo', $variants)
@@ -2652,6 +2670,9 @@ class PropertyRecordController extends Controller
                 ->get()
                 ->map(function ($record) {
                     $arr = (array) $record;
+                    if (!isset($arr['transaction_type'])) {
+                        $arr['transaction_type'] = $arr['instrument_type'] ?? 'Certificate of Occupancy';
+                    }
                     if (!isset($arr['first_party'])) {
                         $arr['first_party'] = $arr['Grantor'] ?? $arr['party_1'] ?? '';
                     }
@@ -2663,24 +2684,21 @@ class PropertyRecordController extends Controller
                 })
                 ->toArray();
 
-            // Also search for OP records in pra table
+            // 3. Search for PRA records in pra table (PRA)
+            // Note: Removed Occupancy Permit filter to show all PRA transactions per user request
             $praRecords = DB::connection('sqlsrv')->table(self::PRA_TABLE)
                 ->where(function ($query) use ($variants) {
                     $query->whereIn('mlsFNo', $variants)
                         ->orWhereIn('fileno', $variants);
                 })
-                ->where(function ($query) {
-                    $query->where('transaction_type', 'like', '%Occupancy Permit%')
-                        ->orWhere('instrument_type', 'like', '%Occupancy Permit%')
-                        ->orWhere('transaction_type', 'like', '%OP%');
-                })
                 ->orderByRaw("COALESCE(TRY_CONVERT(DATETIME, NULLIF(transaction_date, '')), created_at) ASC")
                 ->orderBy('id')
                 ->get()
                 ->map(function ($record) {
-                    // Normalize pra record to match file_history_staging field naming
                     $arr = (array) $record;
-                    // Map Grantor/Grantee to first_party/second_party if needed
+                    if (!isset($arr['transaction_type'])) {
+                        $arr['transaction_type'] = $arr['instrument_type'] ?? '';
+                    }
                     if (!isset($arr['first_party'])) {
                         $arr['first_party'] = $arr['Grantor'] ?? $arr['party_1'] ?? '';
                     }
@@ -2692,10 +2710,54 @@ class PropertyRecordController extends Controller
                 })
                 ->toArray();
 
-            // Merge all records; History first, then CofO, then PRA
-            $allRecords = array_merge($existingRecords, $cofoRecords, $praRecords);
+            // 4. Search for Deeds Reg records in deed_registrations table (Deeds Reg)
+            $deedsRecords = DB::connection('sqlsrv')->table('deed_registrations')
+                ->where(function ($query) use ($variants) {
+                    $query->whereIn('fileno', $variants)
+                        ->orWhereIn('parent_fileno', $variants);
+                })
+                ->where(function ($query) {
+                    $query->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                })
+                ->orderByRaw("COALESCE(TRY_CONVERT(DATETIME, NULLIF(deeds_date, '')), created_at) ASC")
+                ->orderBy('id')
+                ->get()
+                ->map(function ($record) {
+                    $arr = (array) $record;
+                    // Normalize fields for the UI modal
+                    if (!isset($arr['first_party'])) {
+                        $arr['first_party'] = $arr['grantor'] ?? '';
+                    }
+                    if (!isset($arr['second_party'])) {
+                        $arr['second_party'] = $arr['grantee'] ?? '';
+                    }
+                    if (!isset($arr['transaction_type'])) {
+                        $arr['transaction_type'] = $arr['instrument_type'] ?? '';
+                    }
+                    if (!isset($arr['transaction_date'])) {
+                        $arr['transaction_date'] = $arr['deeds_date'] ?? '';
+                    }
+                    if (!isset($arr['serialNo'])) {
+                        $arr['serialNo'] = $arr['serial_no'] ?? '';
+                    }
+                    if (!isset($arr['pageNo'])) {
+                        $arr['pageNo'] = $arr['page_no'] ?? '';
+                    }
+                    if (!isset($arr['volumeNo'])) {
+                        $arr['volumeNo'] = $arr['volume_no'] ?? '';
+                    }
+                    if (!isset($arr['regNo'])) {
+                        $arr['regNo'] = $arr['registration_number'] ?? '';
+                    }
+                    $arr['_source'] = 'deeds';
+                    return $arr;
+                })
+                ->toArray();
 
-            \Log::info('Found property records: ' . count($existingRecords) . ' (file_history), ' . count($cofoRecords) . ' (cofo), ' . count($praRecords) . ' (pra)');
+            // Merge all records: FH -> COFO -> PRA -> Deeds
+            $allRecords = array_merge($existingRecords, $cofoRecords, $praRecords, $deedsRecords);
+
+            \Log::info('Found property records: ' . count($existingRecords) . ' (FH), ' . count($cofoRecords) . ' (COFO), ' . count($praRecords) . ' (PRA), ' . count($deedsRecords) . ' (Deeds)');
 
             return response()->json([
                 'success' => true,

@@ -149,10 +149,12 @@ function renderRows(rows) {
         <td class="p-3 whitespace-nowrap font-medium text-blue-600">${escapeHtml(row.file_number)}</td>
         <td class="${standardCellClass}">
           ${row.has_related_files ? `
-            <button type="button" class="view-related-files-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all shadow-sm" data-id="${row.id}">
-              <i data-lucide="link" class="w-3 h-3"></i>
-              <span>View Related FileNo(s)</span>
-            </button>
+            <div class="flex flex-col gap-1">
+              <button type="button" class="view-related-files-btn inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all shadow-sm" data-id="${row.id}">
+                <i data-lucide="link" class="w-3 h-3"></i>
+                <span>${escapeHtml(row.related_file_display && row.related_file_display !== '-' ? row.related_file_display : 'View Related Files')}</span>
+              </button>
+            </div>
           ` : '<span class="text-gray-400 font-medium text-[10px] uppercase">None</span>'}
         </td>
         <td class="${standardCellClass}">${escapeHtml(row.file_title)}</td>

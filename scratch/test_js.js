@@ -1,123 +1,12 @@
-<!-- Custom Styles for Dropdown   -->
-<style>
-    .dropdown-menu {
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-        border-radius: 8px;
-        overflow: hidden;
-        animation: fadeIn 0.15s ease-out;
-    }
 
-    .dropdown-menu button {
-        transition: all 0.15s ease;
-    }
-
-    .dropdown-menu button:hover {
-        transform: translateX(2px);
-    }
-
-    @keyframes fadeIn {
-        from {
-            opacity: 0;
-            transform: translateY(-5px);
-        }
-
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    /* Ensure dropdown appears above DataTable elements */
-    .dropdown-menu,
-    .action-dropdown-menu {
-        z-index: 1050 !important;
-        background-color: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 0.5rem;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        min-width: 14rem;
-        padding-top: 0.25rem;
-        padding-bottom: 0.25rem;
-    }
-
-    /* Hide by default */
-    .action-dropdown-menu {
-        display: none;
-    }
-
-    .action-dropdown-menu.show {
-        display: block;
-    }
-
-    /* Initially hidden state for the JS toggle logic which uses 'hidden' class */
-    .action-dropdown-menu.hidden {
-        display: none;
-    }
-</style>
-
-<!-- jsPDF Library for PDF Generation -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">    </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.1/jspdf.plugin.autotable.min.js"></script>
-
-@php
-    // Fetch all commissioning sheets and build a normalized lookup map (trimmed, uppercased keys)
-    $commissioningSheetsRaw = \DB::connection('sqlsrv')
-        ->table('file_commissioning_sheets')
-        ->select('id', 'file_number')
-        ->get();
-    $commissioningSheets = [];
-    foreach ($commissioningSheetsRaw as $sheet) {
-        $key = strtoupper(trim($sheet->file_number));
-        $commissioningSheets[$key] = [
-            'id' => $sheet->id,
-            'file_number' => $sheet->file_number
-        ];
-    }
-@endphp
-
-<script>
     console.log('DEBUG: mls_js.blade.php script tag reached');
-    
-    function openGeneratorModalMain() {
-        console.log('openGeneratorModalMain() called');
-        const modalEl = document.getElementById('generateModal');
-        if (modalEl) {
-            modalEl.classList.remove('hidden');
-        }
-        
-        // Ensure Printer Manager is closed to prevent conflicts
-        if (typeof closePrinterManager === 'function') {
-            closePrinterManager();
-        }
-        
-        if (typeof resetTrackingIdDisplay === 'function') resetTrackingIdDisplay('--');
-        if (typeof setActionButtonsDisabled === 'function') setActionButtonsDisabled(true);
-        if (typeof resetForm === 'function') resetForm();
-
-        // Fetch latest serial numbers from database
-        if (typeof getNextSerialNumber === 'function') getNextSerialNumber();
-
-        // Set current time for commission time input
-        const now = new Date();
-        const hours = String(now.getHours()).padStart(2, '0');
-        const minutes = String(now.getMinutes()).padStart(2, '0');
-        const timeInput = document.getElementById('commissionTime');
-        if (timeInput) {
-            timeInput.value = `${hours}:${minutes}`;
-        }
-
-        // Ensure the serial number is properly set when modal opens
-        setTimeout(() => {
-            if (typeof updateAlpineSerialNumber === 'function') updateAlpineSerialNumber();
-        }, 100);
-    }
-
+    console.log('DEBUG: Alpine status:', window.Alpine ? 'Loaded' : 'NOT Loaded');
     // Create a JS object for quick lookup (normalized keys)
-    const commissioningSheetsMap = @json($commissioningSheets);
+    const commissioningSheetsMap = null;
 
     // Provide server time to prevent client-side time issues
     const getServerTime = () => {
-        const serverTime = "{{ date('Y-m-d H:i') }}";
+        const serverTime = """";
         const [datePart, timePart] = serverTime.split(' ');
         return { date: datePart, time: timePart };
     };
@@ -380,7 +269,7 @@
             
             console.log('Grouping Lookup Request:', payload);
 
-            const response = await fetch("{{ route('api.grouping.link-mls') }}", {
+            const response = await fetch("""", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -609,7 +498,7 @@
         console.log('Modal rect:', modal.getBoundingClientRect());
 
         // Fetch batch records
-        fetch('{{ route("mls-fileno.batch-records") }}', {
+        fetch('""', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -691,7 +580,7 @@
             stateSave: true, // Save pagination/sorting state
             stateDuration: 300, // 5 minutes state duration
             ajax: {
-                url: '{{ route("file-numbers.data") }}',
+                url: '""',
                 type: 'GET',
                 timeout: 120000, // 120 second timeout for large production datasets
                 data: function (d) {
@@ -1289,6 +1178,42 @@
         });
     });
 
+    function openGeneratorModalMain() {
+        console.log('openGeneratorModalMain() called');
+        const modalEl = document.getElementById('generateModal');
+        console.log('Generate Modal Element Found:', modalEl ? 'Yes' : 'No');
+        if (modalEl) {
+            console.log('Generate Modal x-data attribute:', modalEl.getAttribute('x-data'));
+        }
+        
+        // Ensure Printer Manager is closed to prevent conflicts
+        if (typeof closePrinterManager === 'function') {
+            closePrinterManager();
+        }
+        
+        resetTrackingIdDisplay('--');
+        setActionButtonsDisabled(true);
+        resetForm();
+        document.getElementById('generateModal').classList.remove('hidden');
+
+        // Fetch latest serial numbers from database
+        getNextSerialNumber();
+
+        // Set current time for commission time input
+        const now = new Date();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const timeInput = document.getElementById('commissionTime');
+        if (timeInput) {
+            timeInput.value = `${hours}:${minutes}`;
+        }
+
+        // Ensure the serial number is properly set when modal opens
+        setTimeout(() => {
+            updateAlpineSerialNumber();
+        }, 100);
+    }
+
     function closeGenerateModal() {
         document.getElementById('generateModal').classList.add('hidden');
     }
@@ -1729,7 +1654,7 @@
     }
 
     function loadExistingFileNumbers() {
-        fetch('{{ route("file-numbers.existing") }}')
+        fetch('""')
             .then(response => response.json())
             .then(data => {
                 // Populate extension dropdown
@@ -1768,7 +1693,7 @@
 
     function getNextSerialNumber() {
         // Fetch serial status for all land uses
-        fetch('{{ route("mls-fileno.serial-status") }}')
+        fetch('""')
             .then(response => response.json())
             .then(data => {
                 if (data.success && data.data) {
@@ -1898,7 +1823,7 @@
 
         const formData = new FormData(document.getElementById('migrationForm'));
 
-        fetch('{{ route("file-numbers.migrate") }}', {
+        fetch('""', {
             method: 'POST',
             body: formData,
             headers: {
@@ -2027,11 +1952,10 @@
         const formData = new FormData(document.getElementById('generateForm'));
 
         // Use prefix as land_use if available (for normal files)
-        const prefix = alpineData ? alpineData.prefix : document.getElementById('prefix')?.value;
-        const fileOption = alpineData ? alpineData.fileOption : document.getElementById('fileOption')?.value;
+        const prefix = document.getElementById('prefix')?.value;
+        const fileOption = document.getElementById('fileOption')?.value;
         if (prefix && fileOption === 'normal') {
             formData.set('land_use', prefix);
-            formData.set('file_option', 'normal');
         }
 
         // SIT files: force land_use to 'SIT' and customer_type to 'Government'
@@ -2130,7 +2054,7 @@
         const controller = new AbortController();
         const timeoutHandle = setTimeout(() => controller.abort(), GENERATE_REQUEST_TIMEOUT_MS);
 
-        fetch('{{ route("mls-fileno.generate") }}', {
+        fetch('""', {
             method: 'POST',
             body: formData,
             headers: {
@@ -2175,7 +2099,7 @@
                     getNextSerialNumber();
 
                     // Clear cache to ensure fresh data on next load
-                    fetch('{{ route("file-numbers.clear-cache") }}', {
+                    fetch('""', {
                         method: 'POST',
                         headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content') }
                     }).catch(e => console.warn('Cache clear failed:', e));
@@ -2194,7 +2118,6 @@
                             generatedFileNumber,
                             commissionedFileName
                         );
-                    }
                                    let successTitle = 'File Number Generated!';
                     let summaryTitle = 'Commission Summary';
                     let summaryIcon = 'layers';
@@ -2238,7 +2161,7 @@
                             </div>
 
                             <div class="mb-4 text-sm text-gray-600 leading-relaxed px-1">
-                                ${data.message}. The file has been successfully commissioned
+                                ${data.message}. The file has been successfully commissioned and is ready for use in the active registry.
                             </div>
 
                             <!-- Unified Summary Card -->
@@ -2283,7 +2206,7 @@
                                         ` : ''}
                                         <li class="flex items-start gap-2.5">
                                             <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
-                                            <span>Lineage established via Parent Property ID linkage${data.data.prop_id ? `: <b class="font-black text-${summaryColor}-900 underline decoration-2 underline-offset-2">${data.data.prop_id}</b>` : ''}.</span>
+                                            <span>Lineage established via Parent Property ID linkage.</span>
                                         </li>
                                     </ul>
                                 </div>
@@ -2308,6 +2231,7 @@
                                 <div class="flex flex-wrap gap-2">
                                     ${data.decommission_summary.archived.map(f => `<span class="px-2.5 py-1 bg-white border border-amber-200 text-[10px] font-black text-amber-700 rounded-lg shadow-sm">${f}</span>`).join('')}
                                 </div>
+                                <p class="mt-2 text-[10px] text-amber-600 italic font-medium px-1">These files are no longer in the active registry but are stored in the secure archives.</p>
                             </div>` : ''}
                         </div>`,
                         confirmButtonColor: '#10b981',
@@ -2494,7 +2418,7 @@
         };
 
         // Send batch generation request
-        fetch('{{ route("mls-fileno.generate-batch") }}', {
+        fetch('""', {
             method: 'POST',
             body: JSON.stringify(batchData),
             headers: {
@@ -2522,7 +2446,7 @@
                     getNextSerialNumber();
 
                     // Clear cache
-                    fetch('{{ route("file-numbers.clear-cache") }}', {
+                    fetch('""', {
                         method: 'POST',
                         headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content') }
                     }).catch(e => console.warn('Cache clear failed:', e));
@@ -2704,7 +2628,7 @@
         // Show loading while fetching record details
         showGlobalLoading('Loading record details...');
 
-        fetch(`{{ route("file-numbers.show", ":id") }}`.replace(':id', id))
+        fetch(`""`.replace(':id', id))
             .then(response => response.json())
             .then(data => {
                 hideGlobalLoading();
@@ -2826,7 +2750,7 @@
         const id = document.getElementById('editId').value;
         const formData = new FormData(document.getElementById('editForm'));
 
-        fetch(`{{ route("file-numbers.update", ":id") }}`.replace(':id', id), {
+        fetch(`""`.replace(':id', id), {
             method: 'POST',
             body: formData,
             headers: {
@@ -2881,7 +2805,7 @@
         // Show loading while fetching record details
         showGlobalLoading('Loading record details...');
 
-        fetch(`{{ route("file-numbers.show", ":id") }}`.replace(':id', id))
+        fetch(`""`.replace(':id', id))
             .then(response => response.json())
             .then(data => {
                 hideGlobalLoading();
@@ -2993,14 +2917,14 @@
 
         // Since it's direct allocation, we might not have file_name, but the controller requires file_name.
         // We will fetch the existing file name and append it to formData.
-        fetch(`{{ route("file-numbers.show", ":id") }}`.replace(':id', id))
+        fetch(`""`.replace(':id', id))
             .then(response => response.json())
             .then(data => {
                 if (data.FileName) {
                     formData.append('file_name', data.FileName);
                 }
                 
-                return fetch(`{{ route("file-numbers.update", ":id") }}`.replace(':id', id), {
+                return fetch(`""`.replace(':id', id), {
                     method: 'POST', // Form specifies @method('PUT') but we send as POST with _method=PUT from the blade directive
                     body: formData,
                     headers: {
@@ -3063,7 +2987,7 @@
             confirmButtonText: 'Yes, delete it!',
             showLoaderOnConfirm: true,
             preConfirm: () => {
-                return fetch(`{{ route("file-numbers.destroy", ":id") }}`.replace(':id', id), {
+                return fetch(`""`.replace(':id', id), {
                     method: 'DELETE',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -3108,7 +3032,7 @@
     }
 
     function updateStats() {
-        fetch('{{ route("file-numbers.stats") }}')
+        fetch('""')
             .then(response => response.json())
             .then(data => {
                 if (data.success && data.data) {
@@ -3130,7 +3054,7 @@
         // Show loading for database test
         showGlobalLoading('Testing database connection...');
 
-        fetch('{{ route("file-numbers.test-db") }}')
+        fetch('""')
             .then(response => response.json())
             .then(data => {
                 hideGlobalLoading();
@@ -3193,7 +3117,7 @@
         // Show loading for debug data
         showGlobalLoading('Debugging table data...');
 
-        fetch('{{ route("file-numbers.debug-data") }}')
+        fetch('""')
             .then(response => response.json())
             .then(data => {
                 hideGlobalLoading();
@@ -3298,9 +3222,9 @@
             document.getElementById('cs_created_by').value = createdBy;
         } else {
             // Fallback to current user
-            @if(Auth::check())
-                document.getElementById('cs_created_by').value = '{{ Auth::user()->first_name }} {{ Auth::user()->last_name }}';
-            @endif
+            )
+                document.getElementById('cs_created_by').value = '"" ""';
+            
         }
 
         // Open the modal
@@ -3359,8 +3283,8 @@
             // Dependent Data
             purposes: [],
             prefixes: [],
-            allAllPrefixes: @json($allPrefixes),
-            landUses: @json($landUses),
+            allAllPrefixes: null,
+            landUses: null,
             purpose: '',
             prefix: '',
             customerType: '',
@@ -3731,8 +3655,8 @@
 
             // Batch Mode Computed Properties
             // Initial Data
-            landUses: @json($landUses), // Available for lookups if needed
-            allAllPrefixes: @json($allPrefixes ?? []), // The full raw list from controller
+            landUses: null, // Available for lookups if needed
+            allAllPrefixes: null, // The full raw list from controller
 
             // Computed
             get filledEntriesCount() {
@@ -3800,11 +3724,8 @@
                         }
                         
                         // 2. Fetch Purposes for this Land Use ID
-                        if (this.landUseId == prefixObj.land_use_id && this.purposes.length === 0) {
-                            this.fetchDependentData(prefixObj.land_use_id);
-                        }
                         this.landUseId = prefixObj.land_use_id;
-                        // fetchDependentData will be triggered by watcher on landUseId if it changes
+                        // fetchDependentData will be triggered by watcher on landUseId
                      }
                 }
                 
@@ -3853,7 +3774,7 @@
 
                 showGlobalLoading('Fetching purposes...');
 
-                fetch(`{{ route('mls-fileno.get-dependent-data') }}?land_use_id=${landUseId}`)
+                fetch(`""?land_use_id=${landUseId}`)
                     .then(response => response.json())
                     .then(data => {
                         this.purposes = data.purposes || [];
@@ -3873,7 +3794,7 @@
             },
 
             fetchAllPurposes() {
-                fetch(`{{ route('mls-fileno.get-dependent-data') }}?land_use_id=all`)
+                fetch(`""?land_use_id=all`)
                     .then(response => response.json())
                     .then(data => {
                         this.purposes = data.purposes || [];
@@ -3928,13 +3849,12 @@
                         if (!data || !data.fileNumber) return;
                         
                         showGlobalLoading('Verifying subdivision...');
-                        fetch(`{{ route('plot-subdivision.find-by-file', '') }}/${encodeURIComponent(data.fileNumber)}`)
+                        fetch(`""/${encodeURIComponent(data.fileNumber)}`)
                             .then(response => response.json())
                             .then(res => {
                                 hideGlobalLoading();
                                 if (res.success) {
                                     self.subdivisionFileNo = data.fileNumber;
-                                    self.relatedFileNo = data.fileNumber;
                                     self.subdivisionAppId = res.data.id;
                                     
                                     // Backfill details
@@ -4071,16 +3991,6 @@
                 // Register callback
                 window._mergerCallback = (data) => {
                     self.mergerFileNo = data.temp_file_no; // Display Temp File No as Source
-                    
-                    // Use source file numbers for related link
-                    if (data.source_file_nos && Array.isArray(data.source_file_nos) && data.source_file_nos.length > 0) {
-                        self.relatedFileNo = data.source_file_nos.join(', ');
-                        self.relatedFileTitle = 'Consolidated Titles';
-                    } else {
-                        self.relatedFileNo = data.temp_file_no;
-                        self.relatedFileTitle = 'Source Merger File';
-                    }
-                    
                     self.mergerAppId = data.id;
                     
                     // Backfill details
@@ -4182,7 +4092,6 @@
                 // Register callback
                 window._copCallback = (data) => {
                     this.originalFileNo = data.file_no;
-                    this.relatedFileNo = data.file_no;
                     this.changeOfPurposeAppId = data.id;
                     this.copApplicantName = data.applicant_name;
                     
@@ -4346,7 +4255,7 @@
                     // SIT files don't have land use - show only purpose if selected
                     this.landUseFullText = '';
                 } else if (this.landUse) {
-                    const lu = (this.landUse || '').toUpperCase();
+                    const lu = this.landUse.toUpperCase();
                     if (lu.includes('COM')) {
                         this.landUseFullText = 'Commercial';
                     } else if (lu.includes('IND')) {
@@ -4597,7 +4506,7 @@
                 }
 
                 try {
-                    const response = await fetch("{{ route('api.grouping.bulk-lookup') }}", {
+                    const response = await fetch("""", {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -4843,7 +4752,7 @@
         
         try {
             // Use the centralized lookup endpoint (escaped for JS/Blade context)
-            const baseUrl = "{{ route('api.file-numbers.lookup') }}";
+            const baseUrl = """";
             const response = await fetch(`${baseUrl}?file_number=${encodeURIComponent(fileNumber)}`);
             const data = await response.json();
             
@@ -5018,9 +4927,9 @@
         document.getElementById('cs_date_created').value = new Date().toISOString().split('T')[0];
 
         // Set current user if available
-        @if(Auth::check())
-            document.getElementById('cs_created_by').value = '{{ Auth::user()->name }}';
-        @endif
+        )
+            document.getElementById('cs_created_by').value = '""';
+        
 
         // Set allottee field to same value as file name
         document.getElementById('cs_name_allottee').value = fileName || '';
@@ -5056,7 +4965,7 @@
 
         const formData = new FormData(document.getElementById('commissioningSheetForm'));
 
-        fetch('{{ route("commissioning-sheet.store") }}', {
+        fetch('""', {
             method: 'POST',
             body: formData,
             headers: {
@@ -5120,7 +5029,7 @@
         showGlobalLoading('Saving commissioning sheet...');
 
         // Save to DB first, then generate/print
-        fetch('{{ route("commissioning-sheet.store") }}', {
+        fetch('""', {
             method: 'POST',
             body: formData,
             headers: {
@@ -5426,7 +5335,7 @@
                 ? { scope: 'date', date: identifier }
                 : { batch_no: identifier };
 
-            const response = await fetch('{{ route("mls-fileno.batch-records") }}', {
+            const response = await fetch('""', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -5489,7 +5398,7 @@
         try {
             showGlobalLoading('Fetching all commissioned files for the last 24 hours...');
 
-            const response = await fetch('{{ route("mls-fileno.batch-records") }}', {
+            const response = await fetch('""', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -5693,7 +5602,7 @@
                 </tr>
             `;
 
-        fetch('{{ route("mls-fileno.serial-status") }}')
+        fetch('""')
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Failed to fetch serial status');
@@ -5911,11 +5820,11 @@
             }
         });
 
-        fetch('{{ route("mls-fileno.initialize-serial") }}', {
+        fetch('""', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                'X-CSRF-TOKEN': '""'
             },
             body: JSON.stringify({
                 land_use: landUse,
@@ -6120,7 +6029,7 @@
                     timerProgressBar: true,
                     showConfirmButton: false,
                     didClose: () => {
-                        let url = `{{ route("file-numbers.batch-conversion-application", ":batchNo") }}`.replace(':batchNo', batchNo) + `?method=${method}`;
+                        let url = `""`.replace(':batchNo', batchNo) + `?method=${method}`;
                         if (method === 'e' && other) {
                             url += `&other=${encodeURIComponent(other)}`;
                         }
@@ -6412,7 +6321,7 @@
         try {
             selector.innerHTML = '<option value="">Loading unprinted batches...</option>';
 
-            const response = await fetch('{{ route("mls-fileno.printable-batches") }}');
+            const response = await fetch('""');
             const payload = await response.json();
 
             if (!payload.success) {
@@ -6660,7 +6569,7 @@
                 return;
             }
 
-            const recordResponse = await fetch("{{ route('file-numbers.record-print') }}", {
+            const recordResponse = await fetch("""", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -6724,7 +6633,7 @@
         showGlobalLoading('Preparing Commissioning Sheet...');
 
         // Use the more robust mls-fileno.show which handles both ID and file number identifiers
-        fetch(`{{ route("mls-fileno.show", ":id") }}`.replace(':id', id))
+        fetch(`""`.replace(':id', id))
             .then(response => {
                 if (!response.ok) {
                     console.error('API responded with error status:', response.status);
@@ -6755,11 +6664,11 @@
                     formData.append('time_created', `${hours}:${minutes}`);
                     formData.append('date_created', now.toISOString().split('T')[0]);
 
-                    @if(Auth::check())
-                        formData.append('created_by', '{{ Auth::user()->first_name }} {{ Auth::user()->last_name }}');
-                    @else
+                    )
+                        formData.append('created_by', '"" ""');
+                    
                         formData.append('created_by', 'System User');
-                    @endif
+                    
 
                     // Generate PDF
                     const watermarkText = (status === 'Certified True Copy') ? 'CERTIFIED TRUE COPY' : 'ORIGINAL';
@@ -6777,8 +6686,8 @@
             });
     }
 
-</script>
-<script>
+
+
     /**
      * Opens the shared Capture Occupancy Permit modal from Commission modal
      * and preselects OP type based on Commission selection.
@@ -6843,7 +6752,7 @@
         if (printBtn) printBtn.disabled = true;
 
         try {
-            const response = await fetch("{{ route('mls-fileno.batch-records') }}", {
+            const response = await fetch("""", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -6929,7 +6838,7 @@
             await generateBatchPDF(selectedDate, "Original", "date");
 
             // ONLY record the print AFTER the PDF has been successfully generated
-            const recordResponse = await fetch("{{ route('file-numbers.record-print') }}", {
+            const recordResponse = await fetch("""", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrfToken },
                 body: JSON.stringify({ reference: selectedDate, type: "Date", doc_type: "Commissioning Sheet" })
@@ -6990,7 +6899,7 @@
         if (typeof lucide !== 'undefined') lucide.createIcons();
 
         try {
-            const response = await fetch(`{{ route("file-numbers.consolidation-report") }}?${params.toString()}`);
+            const response = await fetch(`""?${params.toString()}`);
             const result = await response.json();
 
             if (!result.success) {
@@ -7070,7 +6979,7 @@
     window.resetConsolidationFilters = function () {
         document.getElementById('crDateFrom').value = '';
         document.getElementById('crDateTo').value = '';
-        document.getElementById('crFileYear').value = '{{ date("Y") }}';
+        document.getElementById('crFileYear').value = '""';
         document.getElementById('crPrefix').value = '';
         document.getElementById('crExportBtns').classList.add('hidden');
         document.getElementById('crFilterSummary').classList.add('hidden');
@@ -7270,7 +7179,7 @@
         const tableBody = document.getElementById('mergerResultsTable');
         if (!tableBody) return;
 
-        fetch(`{{ route('plot-merger.approved-list') }}?search=${encodeURIComponent(query || '')}`)
+        fetch(`""?search=${encodeURIComponent(query || '')}`)
             .then(res => res.json())
             .then(res => {
                 if (res.success) {
@@ -7321,7 +7230,7 @@
             </div>
         `;
 
-        fetch(`{{ route("change-of-purpose.search-approved") }}?term=${encodeURIComponent(query)}`)
+        fetch(`""?term=${encodeURIComponent(query)}`)
             .then(response => response.json())
             .then(res => {
                 if (res.success && res.data && res.data.length > 0) {
@@ -7369,7 +7278,4 @@
         closeCopFileModal();
     };
 
-    // Explicitly export key functions to window for Alpine and global access
-    window.openGeneratorModalMain = openGeneratorModalMain;
-    window.fileNumberGenerator = fileNumberGenerator;
-</script>
+

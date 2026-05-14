@@ -354,9 +354,15 @@
 
         $sourceNormalized = strtolower(trim((string) ($report->source ?? '')));
         $fileNumberNormalized = strtoupper(trim((string) ($report->file_number ?? '')));
-        $isConversionReport = $sourceNormalized === 'conversion applications'
+        
+        // Robust detection: if it has a sub_application_id, it is definitely ST.
+        // Otherwise, check source and file number prefixes.
+        $hasSubApplication = !empty($report->sub_application_id);
+        $isConversionReport = !$hasSubApplication && (
+            $sourceNormalized === 'conversion applications'
             || str_starts_with($fileNumberNormalized, 'CON-')
-            || str_starts_with($fileNumberNormalized, 'RES-');
+            || (str_starts_with($fileNumberNormalized, 'RES-') && $sourceNormalized === 'conversion applications')
+        );
 
         $sharedAreasFromReport = $report->shared_utilities ?? [];
         if (is_string($sharedAreasFromReport)) {
@@ -700,9 +706,12 @@
 
     
         <div class="text-center mb-3">
-            <h1 class="heading text-base font-bold text-gray-800 mb-1 underline">SECTIONAL TITLING ONE STOP SHOP</h1>
+            @if($isConversionReport)
+                <h1 class="heading text-base font-bold text-gray-800 mb-1 underline uppercase">CONVERSION - PHYSICAL PLANNING DEPARTMENT</h1>
+            @else
+                <h1 class="heading text-base font-bold text-gray-800 mb-1 underline uppercase">SECTIONAL TITLING ONE STOP SHOP</h1>
+            @endif
             <h2 class="heading text-sm font-bold text-gray-800 mt-1 underline">JOINT SITE INSPECTION REPORT</h2>
-            
         </div>
         <br>
    <div class="text-left mb-3">

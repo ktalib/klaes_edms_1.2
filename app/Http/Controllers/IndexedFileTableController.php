@@ -170,6 +170,7 @@ class IndexedFileTableController extends Controller
                 'file_indexings.mls_file_no',
                 'file_indexings.kangis_file_no',
                 'file_indexings.new_kangis_file_no',
+                'file_indexings.related_fileno',
             ]);
 
         $isCorrespondingFile = filter_var($request->input('is_corresponding_file', false), FILTER_VALIDATE_BOOLEAN);
@@ -293,7 +294,28 @@ class IndexedFileTableController extends Controller
         $data = $items->map(function ($item) use ($scanningCounts, $pageTypingCounts, $creators, $groupingFallbacks, $relatedFileCounts, $edmsFolderMap) {
             $scanned = (int) ($scanningCounts->get($item->id) ?? 0);
             $typed = (int) ($pageTypingCounts->get($item->id) ?? 0);
-            $hasRelatedFiles = (int) ($relatedFileCounts->get($item->id) ?? 0) > 0;
+            $hasRelatedFilesFromLinks = (int) ($relatedFileCounts->get($item->id) ?? 0) > 0;
+            
+            // Check if there are related files in the JSON column
+            $jsonRelated = null;
+            if (!empty($item->related_fileno)) {
+                $jsonRelated = json_decode($item->related_fileno, true);
+            }
+            $hasRelatedFilesFromJson = !empty($jsonRelated) && is_array($jsonRelated);
+            
+            $hasRelatedFiles = $hasRelatedFilesFromLinks || $hasRelatedFilesFromJson;
+
+            $relatedFileDisplay = '-';
+            if ($hasRelatedFilesFromJson && count($jsonRelated) > 0) {
+                $relatedFileDisplay = $jsonRelated[0];
+                if (count($jsonRelated) > 1) {
+                    $relatedFileDisplay .= ' (+' . (count($jsonRelated) - 1) . ')';
+                }
+            } elseif ($hasRelatedFilesFromLinks) {
+                // We don't have the first link number easily here without another query or mapping, 
+                // so we'll let the JS handle the 'View' button or show a generic count.
+                $relatedFileDisplay = 'Linked Records';
+            }
 
             $status = 'Indexed';
             if ($typed > 0) {
@@ -339,9 +361,11 @@ class IndexedFileTableController extends Controller
                 'last_batch_id' => $item->last_batch_id ?? null,
                 'has_related_files' => $hasRelatedFiles,
                 'view_url' => route('fileindex.show', ['fileindex' => $item->id]),
+                'related_file_display' => $relatedFileDisplay,
             ];
 
             // Eloquent attributes are dynamic; avoid property_exists() here.
+            $rowData['related_file_no_json'] = $item->related_fileno ?? null;
             $rowData['related_file_no'] = $item->related_file_no ?? '-';
             $rowData['temp_file_no'] = $item->temp_file_no ?? null;
             $rowData['kangis_fileno_placeholder'] = $item->kangis_fileno_placeholder ?? null;
@@ -409,6 +433,7 @@ class IndexedFileTableController extends Controller
                 'file_indexings.general_registry',
                 'file_indexings.physical_registry',
                 'file_indexings.land_use_type',
+                'file_indexings.related_fileno',
                 DB::raw("'Kano' as state"),
             ]);
 
@@ -468,7 +493,25 @@ class IndexedFileTableController extends Controller
                 ->pluck('total', 'file_indexing_id');
 
         $data = $items->map(function ($item) use ($relatedFileCounts) {
-            $hasRelatedFiles = (int) ($relatedFileCounts->get($item->id) ?? 0) > 0;
+            $hasRelatedFilesFromLinks = (int) ($relatedFileCounts->get($item->id) ?? 0) > 0;
+            
+            $jsonRelated = null;
+            if (!empty($item->related_fileno)) {
+                $jsonRelated = json_decode($item->related_fileno, true);
+            }
+            $hasRelatedFilesFromJson = !empty($jsonRelated) && is_array($jsonRelated);
+            $hasRelatedFiles = $hasRelatedFilesFromLinks || $hasRelatedFilesFromJson;
+
+            $relatedFileDisplay = '-';
+            if ($hasRelatedFilesFromJson && count($jsonRelated) > 0) {
+                $relatedFileDisplay = $jsonRelated[0];
+                if (count($jsonRelated) > 1) {
+                    $relatedFileDisplay .= ' (+' . (count($jsonRelated) - 1) . ')';
+                }
+            } elseif ($hasRelatedFilesFromLinks) {
+                $relatedFileDisplay = 'Linked Records';
+            }
+            
             return [
                 'id' => (int) $item->id,
                 'registry' => $item->registry ?? 1,
@@ -486,6 +529,7 @@ class IndexedFileTableController extends Controller
                 'land_use_type' => $item->land_use_type ?? '-',
                 'state' => $item->state ?? 'Kano',
                 'has_related_files' => $hasRelatedFiles,
+                'related_file_display' => $relatedFileDisplay,
             ];
         });
 
@@ -577,7 +621,8 @@ class IndexedFileTableController extends Controller
     public function getRelatedFiles($id): JsonResponse
     {
         try {
-            $relatedFiles = DB::connection('sqlsrv')
+            // 1. Fetch links from the file_indexing_links table (usually children/subdivisions)
+            $relatedLinks = DB::connection('sqlsrv')
                 ->table('file_indexing_links as fil')
                 ->join('file_indexings as fi', 'fil.file_indexing_id', '=', 'fi.id')
                 ->where('fil.file_indexing_id', $id)
@@ -594,11 +639,76 @@ class IndexedFileTableController extends Controller
                     'fil.created_at',
                     'fi.file_number as main_file_number'
                 ])
-                ->get();
+                ->get()
+                ->toArray();
+
+            // 2. Fetch the main record to check for parent links in the JSON column
+            $mainRecord = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('id', $id)
+                ->select(['file_number', 'related_fileno', 'file_title'])
+                ->first();
+
+            $finalResults = $relatedLinks;
+
+            if ($mainRecord && !empty($mainRecord->related_fileno)) {
+                $rawRelated = trim($mainRecord->related_fileno);
+                $parents = json_decode($rawRelated, true);
+                
+                // If it's not valid JSON array, treat it as a plain string (legacy format)
+                if (!is_array($parents)) {
+                    // Check if it's a simple string like "FILE/NO" or "FILE/NO, FILE/NO2"
+                    if (str_contains($rawRelated, ',')) {
+                        $parents = array_map('trim', explode(',', $rawRelated));
+                    } else {
+                        $parents = [$rawRelated];
+                    }
+                }
+
+                if (is_array($parents)) {
+                    // Fetch all titles for these parent numbers in one query
+                    $parentTitles = DB::connection('sqlsrv')
+                        ->table('file_indexings')
+                        ->whereIn('file_number', $parents)
+                        ->pluck('file_title', 'file_number')
+                        ->toArray();
+
+                    foreach ($parents as $parentNo) {
+                        if (empty($parentNo) || $parentNo === '[]' || $parentNo === '-') continue;
+                        
+                        // Avoid duplicates if already in links
+                        $exists = false;
+                        foreach ($relatedLinks as $link) {
+                            $linkFn = is_object($link) ? ($link->file_number ?? '') : ($link['file_number'] ?? '');
+                            if (strtoupper(trim($linkFn)) === strtoupper(trim($parentNo))) {
+                                $exists = true;
+                                break;
+                            }
+                        }
+
+                        if (!$exists) {
+                            $finalResults[] = [
+                                'id' => 'json_' . md5($parentNo),
+                                'file_indexing_id' => $id,
+                                'file_number' => $parentNo,
+                                'file_title' => $parentTitles[$parentNo] ?? 'Related File',
+                                'plot_number' => '-',
+                                'tp_no' => '-',
+                                'lpkn_no' => '-',
+                                'location' => '-',
+                                'created_by' => 'System',
+                                'created_at' => null,
+                                'main_file_number' => $mainRecord->file_number,
+                                'is_json_parent' => true
+                            ];
+                        }
+                    }
+                }
+            }
 
             return response()->json([
                 'success' => true,
-                'data' => $relatedFiles,
+                'data' => $finalResults,
             ]);
         } catch (\Exception $e) {
             return response()->json([

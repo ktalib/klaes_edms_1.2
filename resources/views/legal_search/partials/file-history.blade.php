@@ -445,7 +445,6 @@
                     <tr>
                       <th style="width:36px;">S/N</th>
                       <th style="width:36px;">RW</th>
-                      <th style="width:36px;">TW</th>
                       <th style="text-align:left;">Instrument Type</th>
                       <th style="text-align:left;">Party 1</th>
                       <th style="min-width:110px;">Party 2</th>
@@ -470,7 +469,6 @@
                     <tr>
                       <th>S/N</th>
                       <th style="min-width:60px;">RW</th>
-                      <th style="min-width:60px;">TW</th>
                       <th>Reg Particulars</th>
                       <th>Issue Date</th>
                       <th>Holder Name</th>
@@ -553,13 +551,17 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
                 Weighing
               </button>
+              <button id="toggle-excluded-records-btn" class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium border bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hidden">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                Excluded Records (<span id="excluded-count-badge">0</span>)
+              </button>
               <button id="view-detailed-records-btn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-black hover:bg-black/90">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
                 View Detailed Records
               </button>
             </div>
           </div>
-          <div class="overflow-x-auto pb-32 min-h-[250px]">
+          <div class="overflow-x-auto pb-6 min-h-[250px]">
             <table class="w-full" id="timeline-table-wrapper">
               <thead>
                 <tr> 
@@ -586,6 +588,39 @@
                 <!-- Will be populated dynamically -->
               </tbody>
             </table>
+          </div>
+
+          {{-- Excluded Records Table --}}
+          <div id="excluded-records-section" class="mt-8 pt-8 border-t border-gray-100 hidden">
+            <div class="mb-4">
+              <h3 class="text-md font-semibold text-gray-700 flex items-center">
+                Excluded / Duplicate Records 
+                <span id="excluded-total-count" class="ml-2 inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] rounded-full bg-gray-100 text-gray-600 text-[10px] font-bold px-1.5">0</span>
+              </h3>
+              <p class="text-xs text-gray-500">Records bypassed by weighting or manually dropped</p>
+            </div>
+            <div class="overflow-x-auto pb-32">
+              <table class="w-full opacity-75 grayscale-[0.5]" id="excluded-table-wrapper">
+                <thead>
+                  <tr class="bg-gray-50/50"> 
+                    <th class="cleanup-col hidden w-8 text-center"><input type="checkbox" class="select-all-checkbox" data-table="excluded-table"></th>
+                    <th style="min-width:40px;">S/N</th>
+                    <th style="min-width:60px;">Source</th>
+                    <th style="min-width:70px;">Weight</th>
+                    <th style="min-width:110px;">Party 1</th>
+                    <th style="min-width:110px;">Party 2</th>
+                    <th style="min-width:120px;">Instrument Type</th>
+                    <th style="min-width:80px;">Reg Particulars</th>
+                    <th style="min-width:100px;">Transaction Date</th>
+                    <th style="min-width:120px;max-width:200px;">Comments</th>
+                    <th style="min-width:60px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="excluded-table" class="text-gray-500 text-xs">
+                  <!-- Will be populated dynamically -->
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {{-- Editable Comments & Remarks Section --}}

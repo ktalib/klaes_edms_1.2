@@ -24,6 +24,6 @@ Assign for the following the value of "**2**":
 ### 3. Timeline Weighing (Only for TL)
 * **OP** = 10
 * **TOT** = 9
-* **RORO** = 8
+* **ROFO** = 8
 * **All other instruments + COFO** =  5
 

@@ -33,6 +33,7 @@ class ValuationCompensation extends Model
         'remarks',
         'compensated_items',
         'compensated_items_other',
+        'structure_type',
         'project_id',
         'sub_project_id',
         'project_fileno',

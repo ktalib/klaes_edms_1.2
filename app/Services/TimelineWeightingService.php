@@ -170,8 +170,18 @@ class TimelineWeightingService
         $rowArr['source_table'] = $source;
         
         // Ensure consistent keys for weighting logic
-        $rowArr['transaction_type'] = $rowArr['transaction_type'] ?? ($rowArr['instrument_type'] ?? '');
-        $rowArr['transaction_date'] = $rowArr['transaction_date'] ?? ($rowArr['deeds_date'] ?? ($rowArr['reg_date'] ?? null));
+        $rawType = $rowArr['transaction_type'] ?? ($rowArr['instrument_type'] ?? '');
+        $transType = $this->getCanonicalInstrumentType($rawType);
+
+        // Date priority logic: For weight 5 (CofO, etc.), prioritize Reg Date. 
+        // For weight 10/9/8 (OP/TOT/ROFO), prioritize Transaction Date.
+        $isHighPriority = in_array($transType, ['occupancy permit', 'transfer of title', 'right of occupancy']);
+        
+        if ($isHighPriority) {
+            $rowArr['transaction_date'] = $rowArr['transaction_date'] ?? ($rowArr['deeds_date'] ?? ($rowArr['reg_date'] ?? null));
+        } else {
+            $rowArr['transaction_date'] = $rowArr['reg_date'] ?? ($rowArr['transaction_date'] ?? ($rowArr['deeds_date'] ?? null));
+        }
         
         // Resolve file number
         $rowArr['file_number'] = $rowArr['file_number'] ?? ($rowArr['mlsFNo'] ?? ($rowArr['fileno'] ?? ($rowArr['kangisFileNo'] ?? ($rowArr['NewKANGISFileno'] ?? ($rowArr['temp_fileno'] ?? '')))));
@@ -211,6 +221,7 @@ class TimelineWeightingService
         $rowArr['page_no'] = $p;
         $rowArr['volume_no'] = $v;
         $rowArr['regNo'] = $regNo;
+        $rowArr['timeline_weight'] = $this->getSourceBaseScore($rowArr);
         
         return $rowArr;
     }
@@ -292,9 +303,9 @@ class TimelineWeightingService
         if ($transType === 'occupancy permit') return 10.0;
         if ($transType === 'transfer of title') return 9.5;
         if ($transType === 'right of occupancy') return 9.0;
-        if ($source === 'CofO_staging' || $transType === 'certificate of occupancy') return 8.0;
+        if ($source === 'CofO_staging' || $transType === 'certificate of occupancy') return 5.0;
         if ($source === 'pra' || $source === 'deed_registrations') return 5.0;
-        if ($source === 'file_history_staging') return 2.5;
+        if ($source === 'file_history_staging') return 5.0;
         
         return 1.0;
     }

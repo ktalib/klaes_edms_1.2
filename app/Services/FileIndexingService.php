@@ -31,6 +31,8 @@ class FileIndexingService
             'workflow_status' => 'indexed',
             'is_updated' => false,
             'is_deleted' => false,
+            'parent_prop_id' => null,
+            'related_fileno' => null,
         ];
 
         $data = $this->enrichWithCorrespondingFile($data);
@@ -68,11 +70,13 @@ class FileIndexingService
             'location' => $data['location'] ?? null,
             'lga' => $data['lga'] ?? null,
             'created_by' => $data['created_by'] ?? 'System',
-            'current_holder' => $data['file_title'] ?? null,
-            'original_holder' => $data['file_title'] ?? null,
+            'current_holder' => $data['current_holder'] ?? ($data['file_title'] ?? null),
+            'original_holder' => $data['original_holder'] ?? ($data['file_title'] ?? null),
             'workflow_status' => 'indexed',
             'is_updated' => false,
             'is_deleted' => false,
+            'parent_prop_id' => $data['parent_prop_id'] ?? null,
+            'related_fileno' => $data['related_fileno'] ?? null,
         ];
 
         $indexingData = $this->enrichWithCorrespondingFile($indexingData);

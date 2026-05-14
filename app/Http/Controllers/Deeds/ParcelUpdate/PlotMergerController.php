@@ -247,6 +247,16 @@ class PlotMergerController extends Controller
                 'state'
             ]);
 
+        // Add source file numbers to each record
+        $records->transform(function($record) {
+            $record->source_file_nos = DB::connection('sqlsrv')->table('plot_application_sizes')
+                ->where('application_id', $record->id)
+                ->where('application_type', 'merger')
+                ->pluck('plot_number')
+                ->toArray();
+            return $record;
+        });
+
         return response()->json(['success' => true, 'data' => $records]);
     }
 
@@ -263,6 +273,12 @@ class PlotMergerController extends Controller
         if (!$record) {
             return response()->json(['success' => false, 'message' => 'No approved merger application found for this identifier.'], 404);
         }
+
+        $record->source_file_nos = DB::connection('sqlsrv')->table('plot_application_sizes')
+            ->where('application_id', $record->id)
+            ->where('application_type', 'merger')
+            ->pluck('plot_number')
+            ->toArray();
 
         return response()->json(['success' => true, 'data' => $record]);
     }

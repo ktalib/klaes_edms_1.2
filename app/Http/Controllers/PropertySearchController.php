@@ -232,19 +232,33 @@ class PropertySearchController extends Controller
             $normalized = $this->normalizeTimelineRow((object) $row, $row['source_table']);
             // Add weighting info for JS
             $normalized['_ptl_weighting_status'] = $row['_ptl_weighting_status'] ?? null;
+            $normalized['timeline_weight'] = $row['timeline_weight'] ?? 5.0;
             return $normalized;
         };
 
         $weightedTxns = collect($weightedRaw)->map($normalizeForView);
         $omittedTxns = collect($omittedRaw)->map($normalizeForView);
 
-        // --- 4. Sort Chronologically ---
+        // --- 4. Sort Chronologically (Weighted) ---
         $sortByDate = function ($transactions) {
-            return $transactions->sortBy(function ($t) {
-                if (!$t['sort_date']) {
-                    return '9999-12-31';
+            return $transactions->sort(function ($a, $b) {
+                // 1. Sort by weight descending (Rule B: OP=10, TOT=9, ROFO=8, Others=5)
+                $wa = (float) ($a['timeline_weight'] ?? 5.0);
+                $wb = (float) ($b['timeline_weight'] ?? 5.0);
+                if ($wa !== $wb) {
+                    return $wb <=> $wa;
                 }
-                return $t['sort_date'];
+
+                // 2. Chronological within weight tier
+                $da = $a['sort_date'] ?? '9999-12-31';
+                $db = $b['sort_date'] ?? '9999-12-31';
+                
+                if ($da !== $db) {
+                    return $da <=> $db;
+                }
+
+                // 3. Fallback to ID
+                return ($a['id'] ?? 0) <=> ($b['id'] ?? 0);
             })->values();
         };
 

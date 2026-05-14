@@ -157,6 +157,20 @@
   let selectedFile = null;
   let transactionToDelete = null;
   let searchResults = [];
+  
+  // Manual Deduplication Overrides
+  window._manualDroppedIds = new Set();
+  window._manualIncludedIds = new Set();
+  
+  const getRecordUid = (item) => {
+    const table = String(item.source_table || '').trim() === 'File History' ? 'file_history_staging' : 
+                  String(item.source_table || '').trim() === 'PRA' ? 'pra' :
+                  String(item.source_table || '').trim() === 'CofO' ? 'CofO_staging' :
+                  String(item.source_table || '').trim() === 'Deed Registration' ? 'deed_registrations' :
+                  String(item.source_table || '').trim();
+    return `${table}::${item.id}`;
+  };
+
   // The file number the user explicitly searched for (via the File Number
   // Selector modal or by typing). This is preserved across related-file
   // card clicks so the search header always reflects what the user picked.
@@ -1262,7 +1276,7 @@ const executeSearchAjax = (filters, searchData) => {
     if (txType === 'occupancy permit') return 10;
     if (txType === 'transfer of title') return 9;
     if (txType === 'right of occupancy') return 8;
-    return 1;
+    return 5;
   };
 
   // Rule A (Source/Table Weighting)
@@ -1426,99 +1440,74 @@ const executeSearchAjax = (filters, searchData) => {
     };
 
     // Pass 1: build deduped set with scoring
-    const deduped = [];
+    const preferred = [];
+    const excluded = [];
     const keyToIndex = new Map();
     const keyToAllRows = new Map(); // fingerprint -> [rows] for weighting data
 
-    transactions.forEach((row) => {
-      const key = recordKey(row);
-      if (!key) {
-        deduped.push(row);
+    // Handle Manual Overrides First
+    const filteredTransactions = transactions.filter(row => {
+      const uid = getRecordUid(row);
+      if (window._manualDroppedIds.has(uid)) {
+        excluded.push(row);
+        row._dedup_status = 'manual-excluded';
+        return false;
+      }
+      return true;
+    });
+
+    filteredTransactions.forEach((row) => {
+      const uid = getRecordUid(row);
+      if (window._manualIncludedIds.has(uid)) {
+        preferred.push(row);
+        row._dedup_status = 'manual-preferred';
         return;
       }
-      // Remember the fingerprint on the row so per-source tabs can dedupe
-      // within their own source without recomputing.
+
+      const key = recordKey(row);
+      if (!key) {
+        preferred.push(row);
+        return;
+      }
       row._dedup_fingerprint = key;
 
-      // Track all rows per fingerprint
       if (!keyToAllRows.has(key)) keyToAllRows.set(key, []);
       keyToAllRows.get(key).push(row);
  
       const existingIndex = keyToIndex.get(key);
       if (existingIndex === undefined) {
-        keyToIndex.set(key, deduped.length);
-        deduped.push(row);
+        keyToIndex.set(key, preferred.length);
+        preferred.push(row);
         return;
       }
 
-      const existing = deduped[existingIndex];
+      const existing = preferred[existingIndex];
       const rowRichness = recordRichnessScore(row);
       const existingRichness = recordRichnessScore(existing);
 
       if (rowRichness > existingRichness) {
-        deduped[existingIndex] = row;
+        excluded.push(existing);
+        preferred[existingIndex] = row;
       } else if (rowRichness === existingRichness && totalScore(row) > totalScore(existing)) {
-        deduped[existingIndex] = row;
+        excluded.push(existing);
+        preferred[existingIndex] = row;
+      } else {
+        excluded.push(row);
       }
     });
 
-    // Pass 2: tag every record in the original transactions with _dedup_status
-    // Build a set of winner IDs
-    const winnerIds = new Set();
-    deduped.forEach(row => {
-      const uid = (row.source_table || '') + '::' + (row.id || '');
-      winnerIds.add(uid);
-    });
-
-    // Build weighting data for the transparency table
-    const weightingData = [];
-
-    keyToAllRows.forEach((rows, fingerprint) => {
-      const isDuplicated = rows.length > 1;
-      rows.forEach(row => {
-        const uid = (row.source_table || '') + '::' + (row.id || '');
-        const isWinner = winnerIds.has(uid);
-        const base = sourceBaseScore(row);
-        const total = base;
-        const status = isDuplicated ? (isWinner ? 'preferred' : 'duplicate') : 'unique';
-
-        // Tag the original row
-        row._dedup_status = status;
-        row._dedup_score = total;
-
-        // Build fingerprint display
-        const transType = toProperCase(getMappedValue(row, 'transactionType')) || '-';
-        const p1 = toProperCase(row.party_1 || '-');
-        const p2 = toProperCase(row.party_2 || '-');
-        const date = getMappedValue(row, 'date') || '-';
-        const serialNo = cleanNumericValue(getMappedValue(row, 'serialNo'));
-        const pageNo = cleanNumericValue(getMappedValue(row, 'pageNo'));
-        const volumeNo = cleanNumericValue(getMappedValue(row, 'volumeNo'));
-        const regParts = formatRegParticulars(serialNo, pageNo, volumeNo);
-
-        weightingData.push({
-          fingerprint: `${transType} / ${p1}→${p2} / ${date}`,
-          source: sourceLabel(row),
-          recordToRecord: recordRichnessScore(row),
-          tableToTable: sourceBaseScore(row),
-          timeline: recordPriorityWeight(row),
-          status: status,
-          summary: `${transType}, ${regParts}`,
-        });
-      });
-    });
-
-    // Tag non-FH/PRA records as unique (they don't participate in dedup)
+    // Tag records
+    const preferredUids = new Set(preferred.map(r => getRecordUid(r)));
     transactions.forEach(row => {
-      if (!row._dedup_status) {
-        row._dedup_status = 'unique';
-        row._dedup_score = sourceBaseScore(row);
+      const uid = getRecordUid(row);
+      if (preferredUids.has(uid)) {
+        if (!row._dedup_status) row._dedup_status = 'preferred';
+      } else {
+        if (!row._dedup_status) row._dedup_status = 'excluded';
       }
     });
 
-    window._weightingData = weightingData;
-
-    return deduped;
+    return { preferred, excluded };
   };
 
   // Render card results - UPDATED FOR NEW FILE NUMBER STRUCTURE
@@ -1708,6 +1697,8 @@ const executeSearchAjax = (filters, searchData) => {
       type: 'POST',
       data: window.__lsLastSearchData,
       success: function (data) {
+        if (icon) icon.classList.remove('animate-spin');
+        
         const prevCount = searchResults.length;
         searchResults = data.transactions || [];
 
@@ -1755,7 +1746,7 @@ const executeSearchAjax = (filters, searchData) => {
           : 'No new records found';
 
         // Brief toast on the button
-        const origHtml = btn.innerHTML;
+        const origHtml = btn.innerHTML; // Now it won't have the spin class in its HTML because we removed it above
         btn.innerHTML = '<span class="text-xs">' + msg + '</span>';
         setTimeout(function () { btn.innerHTML = origHtml; btn.disabled = false; }, 2000);
       },
@@ -1861,7 +1852,10 @@ const executeSearchAjax = (filters, searchData) => {
     
     // Store both raw aggregate data and deduped merged data.
     window._allRelatedTransactions = relatedTransactions;
-    window._preferredRelatedTransactions = dedupeTransactionsForTimelineAndReport(relatedTransactions);
+    const dedupResult = dedupeTransactionsForTimelineAndReport(relatedTransactions);
+    window._preferredRelatedTransactions = dedupResult.preferred;
+    window._excludedRelatedTransactions = dedupResult.excluded;
+    
     window._currentPropId = selectedFile.prop_id || selectedFile.propId || '';
     window._currentFileNumber = selectedFile.mlsFNo || selectedFile.MLSFileNo || selectedFile.fileNo || selectedFile.fileno || '';
     // Preserve the user's explicit file-number selection across related-file
@@ -2168,6 +2162,9 @@ const executeSearchAjax = (filters, searchData) => {
 
     // Render timeline
     renderTimeline();
+    
+    // Render excluded/duplicate records
+    renderExcludedRows();
 
     // Load editable comments and show/hide sections based on data
     loadComments(window._currentFileNumber);
@@ -2244,7 +2241,7 @@ const executeSearchAjax = (filters, searchData) => {
     if (!selectedFile) return;
 
     // Get related transactions for the selected file
-    const relatedTransactions = dedupeTransactionsForTimelineAndReport(getRelatedTransactions(selectedFile));
+    const { preferred: relatedTransactions } = dedupeTransactionsForTimelineAndReport(getRelatedTransactions(selectedFile));
 
     // Helper to get Registration Particulars for each transaction
     function getRegistrationParticulars(transaction) {
@@ -2433,15 +2430,32 @@ const executeSearchAjax = (filters, searchData) => {
   };
 
   const getTransactionTimestamp = (item) => {
-    const candidates = [
-      item.transaction_date,
-      item.deeds_date,
-      item.reg_date,
-      item.cofo_date,
-      item.certificateDate,
-      item.approval_date,
-      item.date,
-    ];
+    const weight = recordPriorityWeight(item);
+    
+    let candidates;
+    if (weight === 5) {
+      // For default weight (5) records, prioritize Reg Date
+      candidates = [
+        item.reg_date,
+        item.transaction_date,
+        item.deeds_date,
+        item.cofo_date,
+        item.certificateDate,
+        item.approval_date,
+        item.date,
+      ];
+    } else {
+      // For high priority (OP, TOT, ROFO), prioritize Transaction Date
+      candidates = [
+        item.transaction_date,
+        item.deeds_date,
+        item.reg_date,
+        item.cofo_date,
+        item.certificateDate,
+        item.approval_date,
+        item.date,
+      ];
+    }
 
     for (const candidate of candidates) {
       const ts = parseTimelineDateValue(candidate);
@@ -2499,6 +2513,16 @@ const executeSearchAjax = (filters, searchData) => {
     });
   };
 
+  const sourceBadgeClass = (label) => {
+    const map = { 'PRA': 'source-badge-pra', 'File History': 'source-badge-fh', 'Deed Registration': 'source-badge-deed', 'CofO': 'source-badge-cofo' };
+    return map[label] || '';
+  };
+
+  const sourceRowTintClass = (label) => {
+    const map = { 'PRA': 'row-tint-pra', 'File History': 'row-tint-fh', 'Deed Registration': 'row-tint-deed', 'CofO': 'row-tint-cofo' };
+    return map[label] || '';
+  };
+
   const renderTimeline = async () => {
     let transactions = window._preferredRelatedTransactions || window._allRelatedTransactions || [];
     const timelineTable = document.getElementById('timeline-table');
@@ -2549,17 +2573,6 @@ const executeSearchAjax = (filters, searchData) => {
           || stripped.includes('surrender and release')
           || stripped.includes('surrender')
           || stripped.includes('release');
-    };
-
-  
-    const sourceBadgeClass = (label) => {
-      const map = { 'PRA': 'source-badge-pra', 'File History': 'source-badge-fh', 'Deed Registration': 'source-badge-deed', 'CofO': 'source-badge-cofo' };
-      return map[label] || '';
-    };
-
-    const sourceRowTintClass = (label) => {
-      const map = { 'PRA': 'row-tint-pra', 'File History': 'row-tint-fh', 'Deed Registration': 'row-tint-deed', 'CofO': 'row-tint-cofo' };
-      return map[label] || '';
     };
 
     // Expose for the one-time bound click handlers below.
@@ -2640,6 +2653,11 @@ const executeSearchAjax = (filters, searchData) => {
                 <i data-lucide="shield-check" class="w-3.5 h-3.5 mr-2 text-green-600"></i>
                 Remove Caveat
               </button>` : ''}
+              <div class="border-t border-gray-100 my-1"></div>
+              <button class="drop-record-btn flex items-center w-full px-3 py-2 text-xs text-amber-700 hover:bg-amber-50" data-uid="${getRecordUid(item)}">
+                <i data-lucide="arrow-down-left" class="w-3.5 h-3.5 mr-2"></i>
+                Drop (Exclude)
+              </button>
             </div>
           </div>
         </td>
@@ -2828,6 +2846,114 @@ const executeSearchAjax = (filters, searchData) => {
   document.addEventListener('click', () => {
     document.querySelectorAll('.timeline-action-menu').forEach(m => m.classList.add('hidden'));
   });
+
+  // ================================================================
+  // SECTION: Excluded Records
+  // ================================================================
+  const renderExcludedRows = () => {
+    const excludedTable = document.getElementById('excluded-table');
+    if (!excludedTable) return;
+    excludedTable.innerHTML = '';
+    
+    const transactions = window._excludedRelatedTransactions || [];
+    
+    // Update badge count
+    const badge = document.getElementById('excluded-count-badge');
+    if (badge) badge.textContent = transactions.length;
+    
+    const totalCount = document.getElementById('excluded-total-count');
+    if (totalCount) totalCount.textContent = transactions.length;
+
+    // Show/hide toggle button
+    const toggleBtn = document.getElementById('toggle-excluded-records-btn');
+    if (toggleBtn) {
+      if (transactions.length > 0) {
+        toggleBtn.classList.remove('hidden');
+      } else {
+        toggleBtn.classList.add('hidden');
+        document.getElementById('excluded-records-section')?.classList.add('hidden');
+      }
+    }
+
+    if (transactions.length === 0) {
+      excludedTable.innerHTML = '<tr><td colspan="13" class="text-center py-4 text-gray-400 italic">No duplicate or excluded records.</td></tr>';
+      return;
+    }
+
+    transactions.forEach((item, idx) => {
+      const date = getMappedValue(item, 'date');
+      const transType = toProperCase(getMappedValue(item, 'transactionType'));
+      const party1 = toProperCase(item.party_1 || '-');
+      const party2 = toProperCase(item.party_2 || '-');
+      const serialNo = getMappedValue(item, 'serialNo');
+      const pageNo = getMappedValue(item, 'pageNo');
+      const volumeNo = getMappedValue(item, 'volumeNo');
+      const regParticulars = formatRegParticulars(serialNo, pageNo, volumeNo);
+      const regDate = formatRegDate(item);
+      const regTime = formatRegTime(item);
+      const size = getMappedValue(item, 'size');
+      const uid = getRecordUid(item);
+      
+      const row = document.createElement('tr');
+      row.className = 'border-b border-gray-50 hover:bg-gray-50/50 transition-colors';
+      row.innerHTML = `
+        <td class="px-3 py-2 text-center"><input type="checkbox" class="row-checkbox" data-id="${item.id}" data-table="${timelineSourceToDbTable(item.source_table)}"></td>
+        <td class="px-3 py-2 text-center">${idx + 1}</td>
+        <td class="px-3 py-2"><span class="source-badge ${sourceBadgeClass(item.source_table)}">${item.source_table}</span></td>
+        <td class="px-3 py-2">${party1}</td>
+        <td class="px-3 py-2">${party2}</td>
+        <td class="px-3 py-2">${transType}</td>
+        <td class="px-3 py-2">${regParticulars}</td>
+        <td class="px-3 py-2">${date}</td>
+        <td class="px-3 py-2">${regTime}</td>
+        <td class="px-3 py-2">${regDate}</td>
+        <td class="px-3 py-2">${size}</td>
+        <td class="px-3 py-2 text-center">
+          <button class="restore-record-btn px-3 py-1 bg-indigo-50 text-indigo-700 rounded border border-indigo-100 hover:bg-indigo-100 font-medium transition-all" data-uid="${uid}">
+            Restore
+          </button>
+        </td>
+      `;
+      excludedTable.appendChild(row);
+    });
+  };
+
+  // Toggle Excluded Records Section
+  const toggleExcludedBtn = document.getElementById('toggle-excluded-records-btn');
+  if (toggleExcludedBtn) {
+    toggleExcludedBtn.addEventListener('click', () => {
+      const section = document.getElementById('excluded-records-section');
+      const isHidden = section.classList.contains('hidden');
+      section.classList.toggle('hidden');
+      toggleExcludedBtn.innerHTML = isHidden ? 
+        '<i data-lucide="eye-off" class="w-4 h-4 mr-2"></i> Hide Excluded Records' : 
+        '<i data-lucide="eye" class="w-4 h-4 mr-2"></i> Show Excluded Records';
+      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [toggleExcludedBtn] });
+    });
+  }
+
+  // Handle Drop Action in Timeline
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.drop-record-btn'); // Assuming you'll add this button
+    if (!btn) return;
+    const uid = btn.dataset.uid;
+    window._manualDroppedIds.add(uid);
+    window._manualIncludedIds.delete(uid);
+    renderTransactionTables();
+  });
+
+  // Handle Restore Action in Excluded Table
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.restore-record-btn');
+    if (!btn) return;
+    const uid = btn.dataset.uid;
+    window._manualIncludedIds.add(uid);
+    window._manualDroppedIds.delete(uid);
+    renderTransactionTables();
+  });
+
+  // Add Drop button to timeline action menu logic or as a direct button
+  // For simplicity and per request, let's update renderTimeline row HTML to include a Drop button.
 
   // ================================================================
   // SECTION: Place Caveat Modal (Legal Search)
@@ -3312,12 +3438,33 @@ const executeSearchAjax = (filters, searchData) => {
   const getSelectedCount = () => document.querySelectorAll('.row-checkbox:checked').length;
 
   const updateSelectionCount = () => {
-    const count = getSelectedCount();
+    const selected = document.querySelectorAll('.row-checkbox:checked');
+    const count = selected.length;
     const countEl = document.getElementById('cleanup-selection-count');
     if (countEl) {
       countEl.textContent = `${count} selected`;
       countEl.classList.toggle('hidden', count === 0);
     }
+    
+    // Check if any of the selected records are in the excluded table
+    let hasExcludedSelected = false;
+    selected.forEach(cb => {
+      if (cb.closest('#excluded-table')) hasExcludedSelected = true;
+    });
+
+    const buttons = ['cleanup-match-btn', 'cleanup-drop-btn', 'cleanup-remove-btn', 'cleanup-edit-btn'];
+    buttons.forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) {
+        if (id === 'cleanup-drop-btn' && hasExcludedSelected) {
+          btn.disabled = true;
+          btn.title = 'Selected records already in Excluded table';
+        } else {
+          btn.disabled = count === 0;
+          btn.title = '';
+        }
+      }
+    });
   };
 
   const toggleCleanupMode = (active) => {

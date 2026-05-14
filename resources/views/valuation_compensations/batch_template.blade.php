@@ -135,6 +135,14 @@
             object-contain: contain;
         }
 
+        .generation-info {
+            font-size: 10px;
+            color: #666;
+            margin-top: 10px;
+            text-align: center;
+            font-style: italic;
+        }
+
         /* PRINT SETTINGS */
         @media print {
             @page {
@@ -153,6 +161,14 @@
                 box-shadow: none;
                 border: 2px solid #00008B;
                 padding: 15px;
+                min-height: 95vh;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .footer-wrap {
+                margin-top: auto;
+                padding-top: 20px;
             }
 
             .no-print {
@@ -203,7 +219,7 @@
         <img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Header Right">
     </div>
 
-    <h1>COMPENSATION VALUATION</h1>
+    <h1>COMPENSATION VALUATION ({{ $project->project_fileno ?? 'N/A' }})</h1>
 
     <div class="header-meta">
         <div>
@@ -246,58 +262,122 @@
     <table>
         <thead>
             <tr>
-                <th style="width: 3%;">S/N</th>
+                <th style="width: 4%;">S/N</th>
                 <th style="width: 15%;">Name of Owner</th>
-                <th style="width: 10%;">Type of Building</th>
+                <th style="width: 12%;">Type of Building</th>
                 <th style="width: 6%;">No. of Building</th>
-                <th style="width: 8%;">Area in M<sup>2</sup></th>
-                <th style="width: 8%;">Rate ₦</th>
-                <th style="width: 12%;">Amount ₦</th>
-                <th style="width: 10%;">Account No</th>
-                <th style="width: 10%;">Phone</th>
-                <th style="width: 10%;">Ref No</th>
-                <th style="width: 8%;">Remarks</th>
+                <th style="width: 8%;">Area Covered in M<sup>2</sup></th>
+                <th style="width: 9%;">Rate of Cost ₦</th>
+                <th style="width: 12%;">Amount of Compensation ₦</th>
+                <th style="width: 10%;">Account Number</th>
+                <th style="width: 10%;">Phone Number</th>
+                <th style="width: 8%;">Ref No</th>
+                <th style="width: 6%;">Remarks</th>
             </tr>
         </thead>
         <tbody>
-            @foreach($records as $index => $record)
-            <tr>
-                <td>{{ $index + 1 }}</td>
-                <td style="font-weight: bold; text-align: left; padding-left: 5px;">{{ $record->owner_name }}</td>
-                <td>{{ $record->building_type }}</td>
-                <td>{{ $record->building_count }}</td>
-                <td>{{ number_format($record->area_covered, 2) }}</td>
-                <td>{{ number_format($record->rate_of_cost, 2) }}</td>
-                <td style="font-weight: bold;">{{ number_format($record->compensation_amount, 2) }}</td>
-                <td>{{ $record->account_number }}</td>
-                <td>{{ $record->phone_number }}</td>
-                <td style="font-size: 10px;">{{ $record->our_ref }}</td>
-                <td style="font-size: 10px;">{{ Str::limit($record->remarks, 20) }}</td>
-            </tr>
+            @php 
+                $globalIndex = 1;
+                $groupedRecords = $records->groupBy(function($record) {
+                    return $record->owner_name . '_' . ($record->account_number ?? 'no_acc');
+                });
+            @endphp
+
+            @foreach($groupedRecords as $ownerKey => $group)
+                @php 
+                    $ownerSubTotal = $group->sum('compensation_amount');
+                    $rowCount = $group->count();
+                    $firstRecord = $group->first();
+                @endphp
+
+                @foreach($group as $itemIndex => $record)
+                <tr>
+                    @if($itemIndex === 0)
+                        <td rowspan="{{ $rowCount + 1 }}" style="vertical-align: top; padding-top: 15px;">{{ $globalIndex++ }}</td>
+                        <td rowspan="{{ $rowCount + 1 }}" style="vertical-align: top; padding-top: 15px; font-weight: bold; text-align: left; padding-left: 8px;">
+                            {{ $record->owner_name }}
+                        </td>
+                    @endif
+                    
+                    <td style="text-align: left; padding-left: 8px;">{{ $record->building_type }}</td>
+                    <td>{{ $record->building_count }}</td>
+                    <td>{{ $record->area_covered > 0 ? number_format($record->area_covered, 2) : 'Allow' }}</td>
+                    <td style="text-align: right; padding-right: 8px;">{{ number_format($record->rate_of_cost, 2) }}</td>
+                    <td style="text-align: right; padding-right: 8px; {{ $itemIndex === $rowCount - 1 ? 'border-bottom: none;' : '' }}">
+                        {{ number_format($record->compensation_amount, 2) }}
+                    </td>
+
+                    @if($itemIndex === 0)
+                        <td rowspan="{{ $rowCount + 1 }}" style="vertical-align: top; padding-top: 15px; font-size: 11px;">
+                            <div style="font-weight: bold;">{{ $record->account_number }}</div>
+                            <div style="color: #666; margin-top: 4px;">{{ $record->bank_name }}</div>
+                        </td>
+                        <td rowspan="{{ $rowCount + 1 }}" style="vertical-align: top; padding-top: 15px;">{{ $record->phone_number }}</td>
+                        <td rowspan="{{ $rowCount + 1 }}" style="vertical-align: top; padding-top: 15px; font-size: 9px; color: #666;">{{ $record->our_ref }}</td>
+                        <td rowspan="{{ $rowCount + 1 }}" style="vertical-align: top; padding-top: 15px; font-size: 9px; text-align: left;">{{ Str::limit($record->remarks, 50) }}</td>
+                    @endif
+                </tr>
+                @endforeach
+                
+                <!-- Owner Sub-total separator row -->
+                <tr>
+                    <td colspan="4" style="border-top: none; border-right: none;"></td>
+                    <td style="font-weight: bold; text-align: right; padding-right: 8px; border-top: 2px solid black; font-size: 14px; background-color: #f8fafc;">
+                        {{ number_format($ownerSubTotal, 2) }}
+                    </td>
+                </tr>
             @endforeach
             
-            <tr style="background-color: #f8fafc; font-weight: bold;">
-                <td colspan="6" style="text-align: right; padding-right: 10px;">TOTAL COMPENSATION</td>
-                <td colspan="5" style="text-align: left; padding-left: 10px; color: #0d9488; font-size: 14px;">
-                    ₦{{ number_format($records->sum('compensation_amount'), 2) }}
+            @php
+                $totalValuation = $records->sum('compensation_amount');
+                $percent = $customPercentage ?? ($project->apply_percentage ?? 100);
+                $finalTotal = ($totalValuation * $percent) / 100;
+            @endphp
+            
+            <tr style="background-color: #f1f5f9; font-weight: bold;">
+                <td colspan="6" style="text-align: right; padding-right: 15px; height: 50px; font-size: 14px;">TOTAL VALUATION (100%)</td>
+                <td colspan="5" style="text-align: left; padding-left: 15px; font-size: 18px; color: #1e293b;">
+                    ₦{{ number_format($totalValuation, 2) }}
                 </td>
             </tr>
+
+            @if($percent != 100)
+            <tr style="background-color: #f0fdf4; font-weight: bold; border: 3px solid #0d9488;">
+                <td colspan="6" style="text-align: right; padding-right: 15px; height: 60px; font-size: 16px;">APPLY {{ $percent }}% TO TOTAL</td>
+                <td colspan="5" style="text-align: left; padding-left: 15px; color: #0d9488; font-size: 24px;">
+                    ₦{{ number_format($finalTotal, 2) }}
+                </td>
+            </tr>
+            @else
+            <tr style="background-color: #f0fdf4; font-weight: bold; border-top: 2px solid #0d9488;">
+                <td colspan="6" style="text-align: right; padding-right: 15px; height: 60px; font-size: 16px;">FINAL TOTAL COMPENSATION</td>
+                <td colspan="5" style="text-align: left; padding-left: 15px; color: #0d9488; font-size: 24px;">
+                    ₦{{ number_format($finalTotal, 2) }}
+                </td>
+            </tr>
+            @endif
         </tbody>
     </table>
 
-    <div class="footer-signatures">
-        <div class="sig-row">
-            <div class="sig-line">Head of Valuation</div>
-            <div class="sig-line">Director Deeds</div>
+    <div class="footer-wrap">
+        <div class="footer-signatures">
+            <div class="sig-row">
+                <div class="sig-line">Head of Valuation</div>
+                <div class="sig-line">Director Deeds</div>
+            </div>
+            <div class="perm-sec-wrap">
+                <div class="sig-line" style="width: 350px;">Permanent Secretary</div>
+            </div>
         </div>
-        <div class="perm-sec-wrap">
-            <div class="sig-line" style="width: 350px;">Permanent Secretary</div>
-        </div>
-    </div>
 
-    <div class="logo-footer">
-        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Footer Left">
-        <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="Footer Right">
+        <div class="logo-footer">
+            <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Footer Left">
+            <div class="generation-info">
+                Generated by {{ Auth::user()->first_name ?? 'Klaes' }} {{ Auth::user()->last_name ?? 'Admin' }} 
+                at {{ now()->format('g:i A') }} & {{ now()->format('d/m/Y') }}
+            </div>
+            <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="Footer Right">
+        </div>
     </div>
 </div>
 

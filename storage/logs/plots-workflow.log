@@ -1,23 +1,10 @@
-[2026-05-13 15:15:58] local.INFO: Generate request received {"user_id":1,"application_type":"Direct Allocation","allocated_by_filter":null,"require_op_source":null,"source_instrument_capture_id":null,"source_op_serial_number":null,"source_registration_number":null} 
-[2026-05-13 15:15:58] local.INFO: Validated OP linkage payload {"application_type":"new","allocated_by_filter":null,"require_op_source":false,"source_instrument_capture_id":null,"source_pra_id":null,"source_prop_id":null,"source_original_owner":null} 
-[2026-05-13 15:15:58] local.INFO: MLS generate linking grouping record {"file_number":"IND-2026-28","lookup":"IND-2026-28","option":"normal"} 
-[2026-05-13 15:15:59] local.INFO: MLS generate grouping link done {"file_number":"IND-2026-28"} 
-[2026-05-13 15:15:59] local.INFO: Mirror decision computed {"file_number":"IND-2026-28","should_mirror":false,"application_type":"merger","allocated_by_filter":null,"source_instrument_capture_id":null,"source_pra_id":null} 
-[2026-05-13 15:16:01] local.INFO: File decommissioned and archived: IND-1982-66 {"reason":"Plot Merger to IND-2026-28"} 
-[2026-05-13 15:16:02] local.INFO: File decommissioned and archived: IND-1982-6 {"reason":"Plot Merger to IND-2026-28"} 
-[2026-05-13 15:32:23] local.INFO: Batch PRA records created for Subdivision {"batch_size":2,"land_use":"COM","transaction_type":"Subdivision"} 
-[2026-05-13 15:32:23] local.INFO: Batch linkage check {"merger_app_id":null,"subdivision_app_id":8,"file_option":"subdivision","source":"Subdivision"} 
-[2026-05-13 15:32:23] local.INFO: File decommissioned and archived: COM-2026-204 {"reason":"Plot Subdivision into batch of 2 fragments"} 
-[2026-05-13 15:32:23] local.INFO: Batch Subdivision application marked as commissioned {"app_id":8} 
-[2026-05-13 16:13:02] local.INFO: Generate request received {"user_id":1,"application_type":"Direct Allocation","allocated_by_filter":null,"require_op_source":null,"source_instrument_capture_id":null,"source_op_serial_number":null,"source_registration_number":null} 
-[2026-05-13 16:13:02] local.INFO: Validated OP linkage payload {"application_type":"new","allocated_by_filter":null,"require_op_source":false,"source_instrument_capture_id":null,"source_pra_id":null,"source_prop_id":null,"source_original_owner":null} 
-[2026-05-13 16:13:02] local.INFO: MLS generate linking grouping record {"file_number":"IND-2026-29","lookup":"IND-2026-29","option":"normal"} 
-[2026-05-13 16:13:04] local.INFO: MLS generate grouping link done {"file_number":"IND-2026-29"} 
-[2026-05-13 16:13:04] local.INFO: Mirror decision computed {"file_number":"IND-2026-29","should_mirror":false,"application_type":"merger","allocated_by_filter":null,"source_instrument_capture_id":null,"source_pra_id":null} 
-[2026-05-13 16:35:41] local.INFO: Generate request received {"user_id":1,"application_type":"Direct Allocation","allocated_by_filter":null,"require_op_source":null,"source_instrument_capture_id":null,"source_op_serial_number":null,"source_registration_number":null} 
-[2026-05-13 16:35:41] local.INFO: Validated OP linkage payload {"application_type":"new","allocated_by_filter":null,"require_op_source":false,"source_instrument_capture_id":null,"source_pra_id":null,"source_prop_id":null,"source_original_owner":null} 
-[2026-05-13 16:35:41] local.INFO: MLS generate linking grouping record {"file_number":"RES-2026-2110","lookup":"RES-2026-2110","option":"normal"} 
-[2026-05-13 16:35:43] local.INFO: MLS generate grouping link done {"file_number":"RES-2026-2110"} 
-[2026-05-13 16:35:43] local.INFO: Mirror decision computed {"file_number":"RES-2026-2110","should_mirror":false,"application_type":"merger","allocated_by_filter":null,"source_instrument_capture_id":null,"source_pra_id":null} 
-[2026-05-13 16:35:45] local.INFO: File decommissioned and archived: RES-1997-926 {"reason":"Plot Merger to RES-2026-2110"} 
-[2026-05-13 16:35:45] local.INFO: File decommissioned and archived: RES-1997-928 {"reason":"Plot Merger to RES-2026-2110"} 
+[2026-05-14 11:51:33] local.INFO: Generate request received {"user_id":1,"application_type":"conversion","allocated_by_filter":null,"require_op_source":null,"source_instrument_capture_id":null,"source_op_serial_number":null,"source_registration_number":null} 
+[2026-05-14 11:51:33] local.INFO: Validated OP linkage payload {"application_type":"conversion","allocated_by_filter":null,"require_op_source":false,"source_instrument_capture_id":null,"source_pra_id":null,"source_prop_id":null,"source_original_owner":null} 
+[2026-05-14 11:51:33] local.INFO: MLS generate linking grouping record {"file_number":"CON-RES-2026-1038","lookup":"CON-RES-2026-1038","option":"normal"} 
+[2026-05-14 11:51:36] local.INFO: MLS generate grouping link done {"file_number":"CON-RES-2026-1038"} 
+[2026-05-14 11:51:36] local.INFO: Mirror decision computed {"file_number":"CON-RES-2026-1038","should_mirror":false,"application_type":"conversion","allocated_by_filter":null,"source_instrument_capture_id":null,"source_pra_id":null} 
+[2026-05-14 11:56:09] local.INFO: Generate request received {"user_id":1,"application_type":"conversion","allocated_by_filter":null,"require_op_source":null,"source_instrument_capture_id":null,"source_op_serial_number":null,"source_registration_number":null} 
+[2026-05-14 11:56:09] local.INFO: Validated OP linkage payload {"application_type":"conversion","allocated_by_filter":null,"require_op_source":false,"source_instrument_capture_id":null,"source_pra_id":null,"source_prop_id":null,"source_original_owner":null} 
+[2026-05-14 11:56:09] local.INFO: MLS generate linking grouping record {"file_number":"CON-COM-2026-271","lookup":"CON-COM-2026-271","option":"normal"} 
+[2026-05-14 11:56:11] local.INFO: MLS generate grouping link done {"file_number":"CON-COM-2026-271"} 
+[2026-05-14 11:56:11] local.INFO: Mirror decision computed {"file_number":"CON-COM-2026-271","should_mirror":false,"application_type":"conversion","allocated_by_filter":null,"source_instrument_capture_id":null,"source_pra_id":null} 

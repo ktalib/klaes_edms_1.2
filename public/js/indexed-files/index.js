@@ -243,10 +243,12 @@ function renderRows(rows) {
         ${col('corresponding_fileno', `<td class="${standardCellClass}">${row.corresponding_fileno ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">${escapeHtml(row.corresponding_fileno)}</span>` : '<span class="text-gray-400">-</span>'}</td>`)}
         ${col('related_file_no', `<td class="${standardCellClass}">
           ${row.has_related_files ? `
-            <button type="button" class="view-related-files-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all shadow-sm" data-id="${row.id}">
-              <i data-lucide="link" class="w-3 h-3"></i>
-              <span>View Related FileNo(s)</span>
-            </button>
+            <div class="flex flex-col gap-1">
+              <button type="button" class="view-related-files-btn inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all shadow-sm" data-id="${row.id}">
+                <i data-lucide="link" class="w-3 h-3"></i>
+                <span>${escapeHtml(row.related_file_display && row.related_file_display !== '-' ? row.related_file_display : 'View Related Files')}</span>
+              </button>
+            </div>
           ` : '<span class="text-gray-400 font-medium text-[10px] uppercase">None</span>'}
         </td>`)}
         ${col('temp_file_no', `<td class="${standardCellClass}">
@@ -688,12 +690,11 @@ function openRelatedFilesModal(id) {
   tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-sm"><i data-lucide="loader" class="h-5 w-5 animate-spin inline-block mr-2"></i>Loading related files...</td></tr>';
   if (window.lucide) window.lucide.createIcons();
 
-  // Close handlers
+  // Close handler is now managed by the global delegated listener at the bottom of the file
+  // but we can keep a local reference if we need to do specific cleanup.
   const close = () => {
     modal.classList.add('hidden');
-    closeBtns.forEach(btn => btn?.removeEventListener('click', close));
   };
-  closeBtns.forEach(btn => btn?.addEventListener('click', close));
 
   // Fetch data
   const url = `${window.location.origin}/api/indexed-files/related-files/${id}`;
@@ -782,8 +783,8 @@ function openEdmsFilesModal(id, fileNumber, registryFolder) {
   modal.classList.remove('hidden');
   if (window.lucide) window.lucide.createIcons();
 
+  // Close handler is now managed by the global delegated listener at the bottom of the file
   const close = () => modal.classList.add('hidden');
-  closeBtn?.addEventListener('click', close, { once: true });
   backdrop?.addEventListener('click', close, { once: true });
 
   fetch(`${window.location.origin}/api/indexed-files/edms-files/${id}?folder=${encodeURIComponent(registryFolder)}`, {
@@ -1701,6 +1702,27 @@ function formatNumber(value) {
   }
   return number.toLocaleString();
 }
+
+// Global delegated modal close handler to fix "close buttons not working"
+// This works even if modals are moved in the DOM or re-rendered.
+document.addEventListener('click', (e) => {
+  // 1. Check for Close Related Modal
+  if (e.target.closest('#close-related-modal-btn') || e.target.closest('#close-related-modal-footer-btn')) {
+    document.getElementById('related-files-modal')?.classList.add('hidden');
+  }
+  // 2. Check for Close Edit Related Modal
+  if (e.target.closest('#close-edit-related-modal') || e.target.closest('#cancel-edit-related')) {
+    document.getElementById('edit-related-file-modal')?.classList.add('hidden');
+  }
+  // 3. Check for Close Temp File Modal
+  if (e.target.closest('#close-temp-file-modal') || e.target.closest('#cancel-temp-file')) {
+    document.getElementById('temp-file-modal')?.classList.add('hidden');
+  }
+  // 4. Check for Close EDMS Files Modal
+  if (e.target.closest('#close-edms-files-modal') || e.target.closest('#close-edms-files-modal-footer')) {
+    document.getElementById('edms-files-modal')?.classList.add('hidden');
+  }
+});
 
 function bootstrap() {
   if (dom.perPageSelect) {

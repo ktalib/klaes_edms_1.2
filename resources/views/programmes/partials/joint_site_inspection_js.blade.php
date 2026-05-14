@@ -115,24 +115,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Remove previous context classes
         header.classList.remove(
-            'bg-amber-50', 'border-amber-200',
-            'bg-blue-50', 'border-blue-200'
+            'bg-amber-50', 'bg-amber-100', 'border-amber-200',
+            'bg-blue-50', 'bg-blue-100', 'border-blue-200'
         );
         if (title) {
-            title.classList.remove('text-amber-800', 'text-blue-800', 'text-gray-800');
+            title.classList.remove('text-amber-800', 'text-amber-900', 'text-blue-800', 'text-blue-900', 'text-gray-800');
         }
 
         if (isConversion) {
-            header.classList.add('bg-amber-50', 'border-amber-200');
+            header.classList.add('bg-amber-100', 'border-b', 'border-amber-300');
             if (title) {
-                title.classList.add('text-amber-800');
-                title.textContent = 'Joint Site Inspection Report — Conversion';
+                title.classList.add('text-amber-900', 'font-bold');
+                title.innerHTML = '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-amber-200 text-amber-800 mr-2 uppercase tracking-tight">Conversion</span> Joint Site Inspection Report';
             }
         } else {
-            header.classList.add('bg-blue-50', 'border-blue-200');
+            header.classList.add('bg-blue-100', 'border-b', 'border-blue-300');
             if (title) {
-                title.classList.add('text-blue-800');
-                title.textContent = 'Joint Site Inspection Report — ST One Stop Shop';
+                title.classList.add('text-blue-900', 'font-bold');
+                title.innerHTML = '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-blue-200 text-blue-800 mr-2 uppercase tracking-tight">ST Unit</span> Joint Site Inspection Report';
             }
         }
     }

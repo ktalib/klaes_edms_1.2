@@ -109,11 +109,11 @@
             <span>Upload Indexed Files</span>
           </a>
 
-          <a href="http://klaes.com.ng/scanning/unindexed"
+          {{-- <a href="#"
             class="sidebar-item disabled flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
             <i data-lucide="upload" class="h-3.5 w-3.5 text-emerald-400"></i>
             <span>Upload Unindexed Files</span>
-          </a>
+          </a> --}}
         </div>
       @endif
 

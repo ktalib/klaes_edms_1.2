@@ -145,13 +145,12 @@
                                     <tr>
                                         <th class="text-left whitespace-nowrap">File No</th>
                                         <th class="text-left whitespace-nowrap">Reg Particulars</th>
-                                        <th class="text-left whitespace-nowrap">OP SerialNo</th>
+                                        <th class="text-left whitespace-nowrap">Instrument Type</th>
                                         <th class="text-left">Party 1</th>
                                         <th class="text-left">Party 2</th>
                                         <th class="text-left">Party 3</th>
                                        
                                         <th class="text-left">Solicitor</th>
-                                         <th class="text-left">Instrument Type</th>
                                         <th class="text-left">Land Use</th>
                                          <th class="text-left">Reg Time/Date</th>
                                         <th class="text-left">Time/Date Captured</th>
@@ -177,34 +176,6 @@
                                             @else
                                                 <span class="text-gray-400 text-xs">Unregistered</span>
                                             @endif
-                                        </td>
-                                        <td class="align-top whitespace-nowrap">
-                                            @if(!empty($instrument->op_serial_number))
-                                                <span class="px-2 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-md font-mono text-xs">
-                                                    {{ $instrument->op_serial_number }}
-                                                </span>
-                                            @else
-                                                <span class="text-gray-300 text-xs">—</span>
-                                            @endif
-                                        </td>
-                                        <td class="align-top text-proper">{{ $instrument->party_1_name ? ucwords(strtolower($instrument->party_1_name)) : '' }}</td>
-                                        <td class="align-top text-proper">{{ $instrument->party_2_name ? ucwords(strtolower($instrument->party_2_name)) : '' }}</td>
-                                        <td class="align-top text-proper">{{ $instrument->party_3_name ? ucwords(strtolower($instrument->party_3_name)) : '' }}</td>
-                                        <td class="align-top">
-                                            <div class="flex flex-col" style="max-width: 180px;" x-data="{ expanded: false }">
-                                                <div :class="expanded ? 'whitespace-normal' : 'truncate block'" class="font-bold text-gray-800 text-proper leading-tight w-full" :title="expanded ? '' : '{{ addslashes($instrument->solicitor_name) }}'">
-                                                    {{ $instrument->solicitor_name ? ucwords(strtolower($instrument->solicitor_name)) : '' }}
-                                                </div>
-                                                <div :class="expanded ? 'whitespace-normal' : 'truncate block'" class="text-xs text-gray-500 text-proper mt-0.5 w-full" style="font-size: 11px;" :title="expanded ? '' : '{{ addslashes($instrument->solicitor_address) }}'">
-                                                    {{ $instrument->solicitor_address ? ucwords(strtolower($instrument->solicitor_address)) : '' }}
-                                                </div>
-                                                @if((strlen($instrument->solicitor_name ?? '') > 25) || (strlen($instrument->solicitor_address ?? '') > 35))
-                                                    <button type="button" @click.stop="expanded = !expanded" class="text-xs text-blue-600 font-bold hover:underline mt-1 self-start flex items-center bg-blue-50/50 px-1.5 py-0.5 rounded border border-blue-100/50" style="font-size: 10px;">
-                                                        <span x-text="expanded ? 'View Less' : 'View More'"></span>
-                                                        <i :data-lucide="expanded ? 'chevron-up' : 'chevron-down'" class="ml-1" style="width: 12px; height: 12px;"></i>
-                                                    </button>
-                                                @endif
-                                            </div>
                                         </td>
                                         <td class="align-top">
                                             @php
@@ -234,15 +205,42 @@
                                                         => 'bg-teal-100 text-teal-800 border-teal-200',
                                                     default => 'bg-blue-100 text-blue-800 border-blue-200',
                                                 };
+                                                $isOP = stripos($itype, 'Occupancy Permit') !== false;
                                             @endphp
                                             <div class="flex flex-col gap-1">
                                                 <span class="badge border {{ $itypeBadge }} self-start whitespace-nowrap">
-                                                    {{ $itype }}
+                                                    {{ $itype ?: '—' }}
                                                 </span>
-                                                @if(stripos($itype, 'Occupancy Permit') !== false && !empty($instrument->op_type))
-                                                    <span class="text-[10px] tracking-wider text-orange-600 font-bold px-1 uppercase">
-                                                        {{ ucwords(strtolower($instrument->op_type)) }}
-                                                    </span>
+                                                @if($isOP)
+                                                    @if(!empty($instrument->op_type))
+                                                        <span class="text-[10px] tracking-wider text-orange-600 font-bold px-1 uppercase">
+                                                            {{ ucwords(strtolower($instrument->op_type)) }}
+                                                        </span>
+                                                    @endif
+                                                    @if(!empty($instrument->op_serial_number))
+                                                        <span class="px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-100 rounded text-[10px] font-mono mt-0.5 self-start">
+                                                            OP Serial: {{ $instrument->op_serial_number }}
+                                                        </span>
+                                                    @endif
+                                                @endif
+                                            </div>
+                                        </td>
+                                        <td class="align-top text-proper">{{ $instrument->party_1_name ? ucwords(strtolower($instrument->party_1_name)) : '' }}</td>
+                                        <td class="align-top text-proper">{{ $instrument->party_2_name ? ucwords(strtolower($instrument->party_2_name)) : '' }}</td>
+                                        <td class="align-top text-proper">{{ $instrument->party_3_name ? ucwords(strtolower($instrument->party_3_name)) : '' }}</td>
+                                        <td class="align-top">
+                                            <div class="flex flex-col" style="max-width: 180px;" x-data="{ expanded: false }">
+                                                <div :class="expanded ? 'whitespace-normal' : 'truncate block'" class="font-bold text-gray-800 text-proper leading-tight w-full" :title="expanded ? '' : '{{ addslashes($instrument->solicitor_name) }}'">
+                                                    {{ $instrument->solicitor_name ? ucwords(strtolower($instrument->solicitor_name)) : '' }}
+                                                </div>
+                                                <div :class="expanded ? 'whitespace-normal' : 'truncate block'" class="text-xs text-gray-500 text-proper mt-0.5 w-full" style="font-size: 11px;" :title="expanded ? '' : '{{ addslashes($instrument->solicitor_address) }}'">
+                                                    {{ $instrument->solicitor_address ? ucwords(strtolower($instrument->solicitor_address)) : '' }}
+                                                </div>
+                                                @if((strlen($instrument->solicitor_name ?? '') > 25) || (strlen($instrument->solicitor_address ?? '') > 35))
+                                                    <button type="button" @click.stop="expanded = !expanded" class="text-xs text-blue-600 font-bold hover:underline mt-1 self-start flex items-center bg-blue-50/50 px-1.5 py-0.5 rounded border border-blue-100/50" style="font-size: 10px;">
+                                                        <span x-text="expanded ? 'View Less' : 'View More'"></span>
+                                                        <i :data-lucide="expanded ? 'chevron-up' : 'chevron-down'" class="ml-1" style="width: 12px; height: 12px;"></i>
+                                                    </button>
                                                 @endif
                                             </div>
                                         </td>
@@ -532,9 +530,9 @@
                 paging: false,
                 info: false,
                 lengthChange: false,
-                order: [[9, 'desc']], // sort by Date Captured descending by default
+                order: [[8, 'desc']], // sort by Date Captured descending by default
                 columnDefs: [
-                    { orderable: false, targets: [10] }  // Actions column not sortable
+                    { orderable: false, targets: [-1] }  // Actions column not sortable
                 ],
                 // Move the native DT search & export buttons into our header bar
                 initComplete: function () {
@@ -597,7 +595,7 @@
                     if (settings.nTable.id !== 'instrumentsTable') return true;
                     
                     var row = table.row(dataIndex).node();
-                    var typeContent = $(row).find('td:eq(6)').text().trim(); // Index 6 is now Instrument Type
+                    var typeContent = $(row).find('td:eq(2)').text().trim(); // Index 2 is now Instrument Type
                     var rowVolume = $(row).data('volume') ? String($(row).data('volume')) : '';
                     
                     // Matches if type matches OR if it's an OP sub-type

@@ -281,7 +281,7 @@ class ValuationCompensationController extends Controller
     /**
      * Print all records for a project in a single template.
      */
-    public function projectPrint($projectId)
+    public function projectPrint(\Illuminate\Http\Request $request, $projectId)
     {
         $records = ValuationCompensation::active()
             ->where('project_id', $projectId)
@@ -294,7 +294,8 @@ class ValuationCompensationController extends Controller
         }
 
         $project = $records->first()->project;
+        $customPercentage = $request->query('apply_percentage');
 
-        return view('valuation_compensations.batch_template', compact('records', 'project'));
+        return view('valuation_compensations.batch_template', compact('records', 'project', 'customPercentage'));
     }
 }

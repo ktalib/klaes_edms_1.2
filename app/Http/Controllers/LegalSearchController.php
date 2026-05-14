@@ -6,7 +6,7 @@ use Illuminate\Http\Request;
 use App\Services\LegalSearchService;
 use Illuminate\Support\Facades\DB;
 
-class LegalSearchCocntroller extends Controller
+class LegalSearchController extends Controller
 {
     protected LegalSearchService $searchService;
 
@@ -80,7 +80,8 @@ class LegalSearchCocntroller extends Controller
             $queryParams = $request->only(array_keys($mappings));
             // Filter out empty params
             $queryParams = array_filter($queryParams, function ($val) {
-                return !empty($val); });
+                return !empty($val);
+            });
             $directLink = route('legal_search.index', $queryParams);
 
             \App\Models\LegalSearchLog::create([
@@ -182,7 +183,8 @@ class LegalSearchCocntroller extends Controller
                 ->table('file_history_staging')
                 ->where('prop_id', $propId)
                 ->where(function ($q) {
-                    $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+                    $q->where('is_deleted', 0)->orWhereNull('is_deleted');
+                })
                 ->first();
 
             if ($fallback) {

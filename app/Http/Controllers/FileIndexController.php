@@ -2689,6 +2689,7 @@ class FileIndexController extends Controller
                 'file_indexings.location',
                 'file_indexings.district',
                 'file_indexings.registry',
+                'file_indexings.general_registry',
                 'file_indexings.lga',
                 'file_indexings.land_use_type',
                 'file_indexings.sys_batch_no',
@@ -2702,6 +2703,9 @@ class FileIndexController extends Controller
                 'file_indexings.batch_generated_by',
                 'file_indexings.created_by',
                 'file_indexings.has_cofo',
+                'file_indexings.related_fileno',
+                'file_indexings.corresponding_fileno',
+                'file_indexings.temp_file_no',
                 'creators.first_name as creator_first_name',
                 'creators.last_name as creator_last_name',
             ]);
@@ -2793,6 +2797,7 @@ class FileIndexController extends Controller
                     'id' => $row->id,
                     'tracking_id' => $row->tracking_id,
                     'shelf_location' => $shelfLocation,
+                    'general_registry' => $row->general_registry,
                     'registry' => $registry,
                     'registry_batch_no' => $registryBatch,
                     'sys_batch_no' => $sysBatch,
@@ -2818,6 +2823,10 @@ class FileIndexController extends Controller
                     'batch_generated_by' => $row->batch_generated_by,
                     'scanning_count' => $scannedCount,
                     'page_typing_count' => $typedCount,
+                    'related_file_no' => $row->related_fileno,
+                    'has_related_files' => !empty($row->related_fileno) && $row->related_fileno !== '[]',
+                    'corresponding_fileno' => $row->corresponding_fileno,
+                    'temp_file_no' => $row->temp_file_no,
                 ];
             })->values();
 

@@ -655,10 +655,31 @@
 
                                     <!-- File Options Section - 2x2 Grid -->
                                     <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                                        <label class="block text-sm font-semibold text-gray-700 mb-3">
-                                            <i data-lucide="settings" class="w-4 h-4 inline mr-1"></i>
-                                            File Options
-                                        </label>
+                                        <div class="flex items-center justify-between mb-3">
+                                            <div class="flex items-center space-x-2">
+                                                <i data-lucide="settings" class="w-4 h-4 inline mr-1"></i>
+                                                <label class="block text-sm font-semibold text-gray-700">File Options</label>
+                                                <!-- Entry Counter (shown in batch mode) -->
+                                                <span x-show="batchMode" class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
+                                                    Applicant <span x-text="currentEntryIndex + 1"></span> of <span x-text="batchQuantity"></span>
+                                                </span>
+                                            </div>
+                                            <!-- Applicant Navigation (shown in batch mode) -->
+                                            <div x-show="batchMode" class="flex items-center space-x-2">
+                                                <button type="button" @click="previousEntry()" 
+                                                        :disabled="currentEntryIndex === 0"
+                                                        :class="currentEntryIndex === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-100'"
+                                                        class="p-1 rounded-md text-blue-600 transition-colors">
+                                                    <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                                                </button>
+                                                <button type="button" @click="nextEntry()" 
+                                                        :disabled="currentEntryIndex >= batchQuantity - 1"
+                                                        :class="currentEntryIndex >= batchQuantity - 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-100'"
+                                                        class="p-1 rounded-md text-blue-600 transition-colors">
+                                                    <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                                                </button>
+                                            </div>
+                                        </div>
 
                                         <!-- 2x2 Grid Layout -->
                                         <div class="grid grid-cols-2 gap-4">
@@ -744,6 +765,7 @@
                                                 <!-- Hidden input to ensure value is submitted if select is disabled -->
                                                 <input type="hidden" name="land_use" x-model="landUse">
                                                 <select id="landUse" x-model="landUse"
+                                                        @change="landUseId = $event.target.options[$event.target.selectedIndex].getAttribute('data-id'); updatePreview();"
                                                         class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
                                                     <option value="">(Auto-selected)</option>
                                                     @foreach($landUses as $lu)
@@ -960,6 +982,10 @@
                                                         <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">New Purpose</div>
                                                         <div class="font-semibold text-emerald-700" x-text="copNewPurpose || '—'"></div>
                                                     </div>
+                                                    <div x-show="relatedFileNo">
+                                                        <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Related File Number</div>
+                                                        <div class="font-bold text-blue-700" x-text="relatedFileNo"></div>
+                                                    </div>
                                                 </div>
                                                 
                                                 <div class="mt-4 pt-3 border-t border-gray-100 flex justify-end">
@@ -1024,6 +1050,10 @@
                                                             class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-bold"
                                                             placeholder="--">
                                                     </div>
+                                                    <div x-show="relatedFileNo" class="col-span-2">
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">Related File Number</label>
+                                                        <div class="px-3 py-2 border border-gray-200 rounded-md bg-white text-blue-700 font-bold" x-text="relatedFileNo"></div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1048,6 +1078,10 @@
                                                         <input type="text" readonly x-model="mergerFileNo"
                                                             class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-mono"
                                                             placeholder="No file selected">
+                                                    </div>
+                                                    <div x-show="relatedFileNo">
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">Related File Number</label>
+                                                        <div class="px-3 py-2 border border-gray-200 rounded-md bg-white text-blue-700 font-bold" x-text="relatedFileNo"></div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1318,6 +1352,11 @@
                                     </div>
 
                                     </div><!-- end location+commissioning grid -->
+                                    
+                                    <!-- Hidden Related File Data -->
+                                    <input type="hidden" name="related_fileno" x-model="relatedFileNo">
+                                    <input type="hidden" name="related_file_indexing_id" x-model="relatedFileIndexingId">
+                                    <input type="hidden" name="related_file_title" x-model="relatedFileTitle">
 
                             <!-- Form Actions -->
                             <div class="flex justify-between border-t border-gray-200 mt-4">
@@ -2242,10 +2281,6 @@
         </style>
 
 
-     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-        @include('generate_fileno.mls_js')
-        @include('generate_fileno.view_batches')
 
     <script>
         async function syncInputsWithNetworkTime() {
@@ -2481,6 +2516,10 @@
     <!-- ===== /Batch Print Modal ===== -->
 
     @push('scripts')
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+        @include('generate_fileno.mls_js')
+        @include('generate_fileno.view_batches')
         <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
         <script>
             $(document).ready(function() {
