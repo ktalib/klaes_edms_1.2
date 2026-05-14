@@ -3,37 +3,50 @@
  * Handles modal management, auto-calculations, location building, and AJAX submissions.
  */
 
-window.onerror = function(msg, url, lineNo, columnNo, error) {
+window.onerror = function (msg, url, lineNo, columnNo, error) {
     const errorMsg = 'VFC JS Error: ' + msg + '\nLine: ' + lineNo + '\nURL: ' + url;
     console.error(errorMsg);
     return false;
 };
 console.log('VFC: Script loaded at ' + new Date().toLocaleTimeString());
 
-const VFC = {
+if (!window.VFC) window.VFC = {};
+window.VFC = {
+    initialized: false,
     config: window.VFC_CONFIG || {},
     allBanks: window.VFC_BANKS || [],
     records: window.VFC_RECORDS || {},
     projectsData: [],
     currentProjectSubTotal: 0,
     currentProjectApplyPercentage: 100,
+    pendingSubProjectId: null,
+    pendingWorkerId: null,
 
-    init: function() {
+    init: function () {
+        if (this.initialized) {
+            console.log('VFC: Already initialized.');
+            return;
+        }
         console.log('VFC: Initializing system...');
+        this.initialized = true;
+
+        // Ensure config is fresh
+        this.config = window.VFC_CONFIG || {};
+        this.allBanks = window.VFC_BANKS || [];
         this.loadProjects();
         this.initEventListeners();
         this.initDataTable();
         this.fetchBanks();
         this.initCapitalization();
         this.initBatchWorkflow();
-        
+
         if (window.lucide) {
             console.log('VFC: Lucide detected, creating icons...');
             window.lucide.createIcons();
         } else {
             console.warn('VFC: Lucide not found!');
         }
-        
+
         // Update debug info if panel exists
         const $status = $('#debug-vfc-status');
         const $count = $('#debug-records-count');
@@ -45,67 +58,86 @@ const VFC = {
         console.log('VFC: System initialized successfully.');
     },
 
-    initBatchWorkflow: function() {
+    initBatchWorkflow: function () {
         const self = this;
 
         // Generate Batch Button Click
-        $(document).on('click', '#generate-batch-btn', function() {
+        $(document).on('click', '#generate-batch-btn', function () {
             console.log('VFC: Generate Batch button clicked. Opening modal...');
             self.openApplyPercentModal();
         });
 
         // Percentage Input Change
-        $(document).on('input', '#apply-percentage-input', function() {
+        $(document).on('input', '#apply-percentage-input', function () {
             self.updateFinalTotalInModal();
         });
 
         // Cancel Apply Percent
-        $(document).on('click', '#cancel-apply-percent', function() {
+        $(document).on('click', '#cancel-apply-percent', function () {
             self.closeApplyPercentModal();
         });
 
         // Confirm Apply Percent
-        $(document).on('click', '#confirm-apply-percent', function() {
+        $(document).on('click', '#confirm-apply-percent', function () {
             const percent = parseFloat($('#apply-percentage-input').val()) || 100;
             self.currentProjectApplyPercentage = percent;
-            
+
             console.log('VFC: Calculation confirmed. Applied percentage:', percent);
 
-            // Switch buttons IN MODAL
+            // Switch buttons (affects both modals)
             $('#confirm-apply-percent').addClass('hidden');
-            $('#print-batch-btn').removeClass('hidden').data('apply-percentage', percent);
-            
+            $('#generate-batch-btn').addClass('hidden'); // Hide generate button after use
+            $('.print-batch-btn').removeClass('hidden').data('apply-percentage', percent);
+
+            // Close the Apply Percent modal so user sees the Records Modal with the now-visible Print button
+            self.closeApplyPercentModal();
+
             Swal.fire({
                 title: 'Calculation Applied',
                 text: `Valuation adjustment of ${percent}% has been applied. You can now print the Compensation Sheet.`,
                 icon: 'success',
-                timer: 2000,
-                showConfirmButton: false
+                timer: 3000,
+                showConfirmButton: true,
+                confirmButtonText: 'OK'
             });
         });
 
         // Print Batch Button Click
-        $(document).on('click', '#print-batch-btn', function() {
-            const projectId = $(this).data('project-id');
-            const percent = $(this).data('apply-percentage') || 100;
-            console.log(`VFC: Printing batch for project ${projectId} with ${percent}%`);
-            const url = `${self.config.routes.projectPrint}/${projectId}?apply_percentage=${percent}`;
-            window.open(url, '_blank');
+        $(document).on('click', '.print-batch-btn', function () {
+            self.printBatch(this);
         });
     },
 
-    initCapitalization: function() {
+    printBatch: function (btn) {
+        const $btn = $(btn);
+        const projectId = $btn.data('project-id');
+        const percent = $btn.data('apply-percentage') || 100;
+        console.log('VFC: printBatch called', { projectId, percent });
+
+        if (!projectId) {
+            Swal.fire('Error', 'Project ID missing. Please reload and try again.', 'error');
+            return;
+        }
+
+        const routes = this.config.routes || {};
+        const route = routes.projectPrint || (routes.store ? routes.store + '/project-print' : '/valuation-compensations/project-print');
+        const url = `${route}/${projectId}?apply_percentage=${percent}`;
+        console.log('VFC: Opening print URL:', url);
+        window.open(url, '_blank');
+    },
+
+    initCapitalization: function () {
         // Auto-capitalize all text inputs in VFC forms
-        $(document).on('input', '#valuation-form input[type="text"], #valuation-form textarea, #valuation-form input[type="search"], #project-form input[type="text"], #project-form textarea', function() {
+        $(document).on('input', '#valuation-form input[type="text"], #valuation-form textarea, #valuation-form input[type="search"], #project-form input[type="text"], #project-form textarea', function () {
             this.value = this.value.toUpperCase();
         });
     },
 
-    fetchBanks: function() {
+    fetchBanks: function () {
         console.log('VFC: Banks loaded from database:', this.allBanks.length);
     },
 
-    async loadProjects() {
+    loadProjects: async function () {
         try {
             console.log('VFC: Loading projects for selection...');
             const response = await fetch(this.config.routes.projectSelection);
@@ -122,7 +154,7 @@ const VFC = {
         }
     },
 
-    initEventListeners: function() {
+    initEventListeners: function () {
         console.log('VFC: Binding event listeners...');
         const self = this;
 
@@ -137,7 +169,7 @@ const VFC = {
         }
 
         // Project Selection Change
-        $('#vfc_project_id').on('change', function() {
+        $('#vfc_project_id').on('change', function () {
             const projId = $(this).val();
             if (!projId) {
                 $('#project-info').addClass('hidden');
@@ -154,10 +186,10 @@ const VFC = {
                 $('#proj_workers_summary').text(proj.workers_count || 0);
                 $('#proj_valuations_summary').text(proj.valuations_count || 0);
                 $('#proj_subprojects_summary').text(proj.sub_projects ? proj.sub_projects.length : 0);
-                
+
                 $('#project-info').removeClass('hidden');
                 if (window.lucide) window.lucide.createIcons();
-                
+
                 $('#our_ref').val(proj.fileno || proj.code);
                 $('#project_code_display').val(proj.code);
                 $('#hidden_project_fileno').val(proj.fileno || proj.code);
@@ -167,7 +199,7 @@ const VFC = {
                 // Populate Sub-Projects
                 const $subProjSection = $('#sub-project-section');
                 const $subProjSelect = $('#vfc_sub_project_id');
-                
+
                 if (proj.sub_projects && proj.sub_projects.length > 0) {
                     $subProjSelect.html('<option value="">Select Sub-Project</option>');
                     proj.sub_projects.forEach(sp => {
@@ -180,9 +212,16 @@ const VFC = {
                     $subProjSelect.prop('required', false).html('<option value="">No Sub-Projects</option>');
                 }
 
+                // If we have a pending sub-project ID (from Edit modal), apply it now
+                if (self.pendingSubProjectId) {
+                    console.log('VFC: Applying pending sub-project ID:', self.pendingSubProjectId);
+                    $subProjSelect.val(self.pendingSubProjectId);
+                    self.pendingSubProjectId = null;
+                }
+
                 // Backfill location scope
                 const hasSelect2 = typeof $.fn.select2 !== 'undefined';
-                
+
                 if (proj.district) {
                     const districts = proj.district.split(',').map(d => d.trim());
                     $('#loc_district').val(districts);
@@ -191,7 +230,7 @@ const VFC = {
                     $('#loc_district').val(null);
                     if (hasSelect2) $('#loc_district').trigger('change.select2');
                 }
-                
+
                 if (proj.lga) {
                     const lgas = proj.lga.split(',').map(l => l.trim());
                     $('#loc_lga').val(lgas);
@@ -200,33 +239,40 @@ const VFC = {
                     $('#loc_lga').val(null);
                     if (hasSelect2) $('#loc_lga').trigger('change.select2');
                 }
-                
+
                 // Re-build the full location string
                 self.buildLocation();
             }
 
             // Fetch workers for this project
-            $.get(`${self.config.routes.projectWorkers}/${projId}/workers`, function(workers) {
+            $.get(`${self.config.routes.projectWorkers}/${projId}/workers`, function (workers) {
                 const $workerSelect = $('#vfc_worker_id');
                 $workerSelect.html('<option value="">Select Worker</option>');
                 workers.forEach(w => {
                     $workerSelect.append(`<option value="${w.worker_code}">${w.user.first_name} ${w.user.last_name} (${w.worker_code})</option>`);
                 });
+
+                // If we have a pending worker ID (from Edit modal), apply it now
+                if (self.pendingWorkerId) {
+                    console.log('VFC: Applying pending worker ID:', self.pendingWorkerId);
+                    $workerSelect.val(self.pendingWorkerId);
+                    self.pendingWorkerId = null;
+                }
             });
         });
 
         // Location Auto-builder (Using delegated events for robustness)
-        $(document).on('change input', '.loc-trigger, #loc_district, #loc_lga, #loc_state', function() {
+        $(document).on('change input', '.loc-trigger, #loc_district, #loc_lga, #loc_state', function () {
             self.buildLocation();
         });
 
         // Auto-calculation
-        $('.calc-trigger').on('input', function() {
+        $('.calc-trigger').on('input', function () {
             self.calculateCompensation();
         });
 
         // Building Type 'Other' logic
-        $('#building_type').on('change', function() {
+        $('#building_type').on('change', function () {
             if ($(this).val() === 'Other') {
                 $('#building_type_other').removeClass('hidden').prop('required', true).focus();
             } else {
@@ -235,11 +281,11 @@ const VFC = {
         });
 
         // Compensated Items logic
-        $(document).on('change', '.item-checkbox', function() {
+        $(document).on('change', '.item-checkbox', function () {
             const val = $(this).val();
             const isOther = val.toLowerCase().includes('other');
             const $wrapper = $(this).closest('.flex-col').find('.item-amount-wrapper');
-            
+
             if ($(this).is(':checked')) {
                 $wrapper.removeClass('hidden');
                 if (isOther) $('#compensated_items_other').removeClass('hidden').focus();
@@ -250,15 +296,15 @@ const VFC = {
             self.updateCompensatedItemsValue();
         });
 
-        $(document).on('input', '.item-amount-input', function() {
+        $(document).on('input', '.item-amount-input', function () {
             self.updateCompensatedItemsValue();
         });
 
-        $(document).on('change', '.structure-type-radio', function() {
+        $(document).on('change', '.structure-type-radio', function () {
             self.updateCompensatedItemsValue();
         });
 
-        $('#compensated_items_other').on('input', function() {
+        $('#compensated_items_other').on('input', function () {
             self.updateCompensatedItemsValue();
         });
 
@@ -268,16 +314,16 @@ const VFC = {
         const $bankNameHidden = $('#bank_name_val');
         const $bankLogo = $('#selected_bank_logo');
 
-        $(document).on('focus', '#bank_search', function() {
+        $(document).on('focus', '#bank_search', function () {
             self.renderBanks($(this).val());
             $('#bank_dropdown').removeClass('hidden');
         });
 
-        $(document).on('input', '#bank_search', function() {
+        $(document).on('input', '#bank_search', function () {
             self.renderBanks($(this).val());
         });
 
-        $(document).on('click', '.bank-option', function() {
+        $(document).on('click', '.bank-option', function () {
             const name = $(this).data('name');
             const logo = $(this).data('logo');
             $bankSearch.val(name);
@@ -286,57 +332,50 @@ const VFC = {
             $bankDropdown.addClass('hidden');
         });
 
-        $(document).on('click', function(e) {
+        $(document).on('click', function (e) {
             if (!$(e.target).closest('.relative.group').length) {
                 $bankDropdown.addClass('hidden');
             }
         });
 
         // Modal close buttons (Using delegated binding for reliability when moved to body)
-        $(document).on('click', '.close-modal, #modal-overlay', function() {
+        $(document).on('click', '.close-modal, #modal-overlay', function () {
+            console.log('VFC: Close Modal clicked');
             self.closeModal();
         });
 
-        $(document).on('click', '.close-records-modal, #records-modal-overlay', function() {
+        $(document).on('click', '.close-records-modal, #records-modal-overlay', function () {
+            console.log('VFC: Close Records Modal clicked');
             self.closeRecordsModal();
         });
 
         // Form submission (Using delegated binding for better reliability)
-        $(document).on('submit', '#valuation-form', function(e) {
+        $(document).on('submit', '#valuation-form', function (e) {
             e.preventDefault();
             self.saveRecord();
             return false;
         });
 
-        // Records Modal Close (Using delegated binding)
-        $(document).on('click', '.close-records-modal, #records-modal-overlay', function() {
-            self.closeRecordsModal();
-        });
+
 
         // Open Records Modal (Delegated for DataTable compatibility)
-        $(document).on('click', '.vfc-view-project', function(e) {
+        $(document).on('click', '.vfc-view-project', function (e) {
             e.preventDefault();
             const projectId = $(this).data('project-id');
             self.openRecordsModal(projectId);
         });
 
         // Open Records Modal (Legacy support for other triggers)
-        $(document).on('click', '.vfc-open-records', function(e) {
+        $(document).on('click', '.vfc-open-records', function (e) {
             e.preventDefault();
             self.openRecordsModalFromData(this);
         });
 
-        // Print Batch
-        $(document).on('click', '#print-batch-btn', function() {
-            const projectId = $(this).data('project-id');
-            if (projectId) {
-                window.open(`${self.config.routes.store}/project-print/${projectId}`, '_blank');
-            }
-        });
+
         console.log('VFC: Event listeners bound.');
     },
 
-    renderBanks: function(filter = '') {
+    renderBanks: function (filter = '') {
         const filtered = this.allBanks.filter(b => b.title.toLowerCase().includes(filter.toLowerCase()));
         let html = '';
         filtered.forEach(bank => {
@@ -353,11 +392,11 @@ const VFC = {
         $('#bank_dropdown').html(html);
     },
 
-    initDataTable: function() {
+    initDataTable: function () {
         if ($.fn.DataTable.isDataTable('#valuationTable')) {
             $('#valuationTable').DataTable().destroy();
         }
-        
+
         $('#valuationTable').DataTable({
             responsive: true,
             order: [[0, 'asc']], // Order by S/N
@@ -377,9 +416,9 @@ const VFC = {
         });
     },
 
-    updateCompensatedItemsValue: function() {
+    updateCompensatedItemsValue: function () {
         let selectedItems = [];
-        
+
         // 1. Get Structure Type
         const structType = $('.structure-type-radio:checked').val();
         if (structType) {
@@ -387,53 +426,53 @@ const VFC = {
         }
 
         // 2. Get Selected Items and their Amounts
-        $('.item-checkbox:checked').each(function() {
+        $('.item-checkbox:checked').each(function () {
             const itemName = $(this).val();
             const $wrapper = $(this).closest('.flex-col').find('.item-amount-wrapper');
             const amount = $wrapper.find('.item-amount-input').val();
-            
+
             if (amount) {
                 selectedItems.push(`${itemName} (₦${parseFloat(amount).toLocaleString()})`);
             } else {
                 selectedItems.push(itemName);
             }
         });
-        
+
         const hasOther = $('.item-checkbox:checked').toArray().some(s => $(s).val().toLowerCase().includes('other'));
         if (hasOther) {
             const other = $('#compensated_items_other').val();
             if (other) selectedItems.push(other);
         }
-        
+
         $('#compensated_items_val').val(selectedItems.join(', '));
     },
 
-    buildLocation: function() {
+    buildLocation: function () {
         const plot = $('#plot_no').val();
-        
+
         let district = $('#loc_district').val();
         if (Array.isArray(district)) district = district.join(', ');
-        
+
         let lga = $('#loc_lga').val();
         if (Array.isArray(lga)) lga = lga.join(', ');
-        
+
         const state = $('#loc_state').val();
-        
+
         let loc = '';
         if (plot) loc += "PLOT " + plot;
         if (district) loc += (loc ? ', ' : '') + district;
         if (lga) loc += (loc ? ', ' : '') + lga;
         if (state) loc += (loc ? ', ' : '') + state + ' State';
-        
+
         if (loc) {
             $('#location').val(loc);
         }
     },
 
-    calculateCompensation: function() {
+    calculateCompensation: function () {
         const length = parseFloat($('#length').val()) || 0;
         const breadth = parseFloat($('#breadth').val()) || 0;
-        
+
         // If L and B are provided, update Area Covered
         if (length > 0 && breadth > 0) {
             const areaVal = length * breadth;
@@ -447,11 +486,11 @@ const VFC = {
         $('#compensation_amount').val(total.toFixed(2));
     },
 
-    saveRecord: function() {
+    saveRecord: function () {
         const id = $('#record_id').val();
         const url = id ? `${this.config.routes.store}/${id}` : this.config.routes.store;
         const method = 'POST';
-        
+
         let formData = $('#valuation-form').serializeArray();
         if (id) {
             formData.push({ name: '_method', value: 'PUT' });
@@ -475,14 +514,14 @@ const VFC = {
             headers: {
                 'X-CSRF-TOKEN': this.config.csrf
             },
-            success: function(response) {
+            success: function (response) {
                 if (response.success) {
                     Swal.fire('Success!', response.message, 'success').then(() => {
                         window.location.reload();
                     });
                 }
             },
-            error: function(xhr) {
+            error: function (xhr) {
                 let msg = 'Something went wrong.';
                 if (xhr.status === 422) {
                     const errors = xhr.responseJSON.errors;
@@ -493,7 +532,7 @@ const VFC = {
         });
     },
 
-    deleteRecord: function(id, name) {
+    deleteRecord: function (id, name) {
         const self = this;
         Swal.fire({
             title: 'Are you sure?',
@@ -511,14 +550,14 @@ const VFC = {
                     data: {
                         _token: self.config.csrf
                     },
-                    success: function(response) {
+                    success: function (response) {
                         if (response.success) {
                             Swal.fire('Deleted!', response.message, 'success').then(() => {
                                 window.location.reload();
                             });
                         }
                     },
-                    error: function(xhr) {
+                    error: function (xhr) {
                         Swal.fire('Error!', 'Something went wrong.', 'error');
                     }
                 });
@@ -526,7 +565,7 @@ const VFC = {
         });
     },
 
-    openCreateModal: function() {
+    openCreateModal: function () {
         this.closeRecordsModal(); // Ensure records list is closed
         const $modal = $('#valuation-modal');
         if ($modal.parent().is('body') === false) {
@@ -541,7 +580,7 @@ const VFC = {
         $('#project_code_display').val('').attr('placeholder', 'Select project...');
         $('#manual_our_ref').val('');
         $('#your_ref').val('');
-        
+
         $('#project-selection-section').removeClass('hidden');
         $('#vfc_project_id').val('').trigger('change');
         $('#project-info').addClass('hidden');
@@ -553,12 +592,12 @@ const VFC = {
         $('.structure-type-radio').prop('checked', false);
         $('.item-amount-wrapper').addClass('hidden');
         $('.item-amount-input').val('');
-        
+
         $('#valuation-modal').removeClass('hidden').addClass('flex');
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
     },
 
-    openEditModal: function(record) {
+    openEditModal: function (record) {
         // We don't necessarily close the records modal so user can go back
         const $modal = $('#valuation-modal');
         if ($modal.parent().is('body') === false) {
@@ -571,24 +610,22 @@ const VFC = {
         $('#modal-title').text('Edit Valuation Record');
         $('#valuation-form')[0].reset();
         $('#record_id').val(record.id);
-        
+
         $('#project-selection-section').removeClass('hidden');
+        
+        // Track pending IDs to be applied once the dropdowns are populated
+        this.pendingSubProjectId = record.sub_project_id;
+        this.pendingWorkerId = record.worker_id;
+
         $('#vfc_project_id').val(record.project_id).trigger('change');
-        
-        setTimeout(() => {
-            $('#vfc_worker_id').val(record.worker_id);
-            if (record.sub_project_id) {
-                $('#vfc_sub_project_id').val(record.sub_project_id);
-            }
-        }, 500);
-        
+
         $('#our_ref').val(record.project_fileno || record.our_ref);
         $('#project_code_display').val(record.project ? record.project.project_code : 'N/A');
         $('#manual_our_ref').val(record.our_ref);
         $('#your_ref').val(record.your_ref);
         $('#valuation_date').val(record.valuation_date.split('T')[0]);
         $('#owner_name').val(record.owner_name);
-        
+
         const bTypeSelect = $('#building_type');
         const typeExists = bTypeSelect.find(`option[value="${record.building_type}"]`).length > 0;
         if (typeExists) {
@@ -602,19 +639,19 @@ const VFC = {
         if (record.structure_type) {
             $(`.structure-type-radio[value="${record.structure_type}"]`).prop('checked', true);
         }
- 
+
         $('#building_count').val(record.building_count);
         $('#length').val(record.length);
         $('#breadth').val(record.breadth);
         $('#area_covered').val(record.area_covered);
         $('#rate_of_cost').val(record.rate_of_cost);
         $('#compensation_amount').val(record.compensation_amount);
-        
+
         $('#account_name').val(record.account_name);
         $('#account_number').val(record.account_number);
         $('#bank_name').val(record.bank_name);
         $('#bank_search').val(record.bank_name);
-        
+
         const bank = this.allBanks.find(b => b.title === record.bank_name);
         if (bank) {
             $('#selected_bank_logo').html(`<img src="${bank.route}" alt="${bank.title}" class="w-full h-full object-contain">`);
@@ -622,15 +659,15 @@ const VFC = {
             $('#selected_bank_logo').html('<i data-lucide="building-2" class="h-4 w-4 text-slate-400"></i>');
             if (window.lucide) window.lucide.createIcons();
         }
- 
+
         $('#phone_number').val(record.phone_number);
         $('#nin').val(record.nin);
         $('#remarks').val(record.remarks);
-        
+
         if (record.compensated_items) {
             const rawItems = record.compensated_items.split(', ').map(i => i.trim());
             let otherItems = [];
-            
+
             rawItems.forEach(itemStr => {
                 // Handle Structure Type [Structure: Name]
                 if (itemStr.startsWith('[Structure: ') && itemStr.endsWith(']')) {
@@ -638,7 +675,7 @@ const VFC = {
                     $(`.structure-type-radio[value="${structName}"]`).prop('checked', true);
                     return;
                 }
- 
+
                 // Handle Items with amounts: Name (₦1,000)
                 let itemName = itemStr;
                 let amount = '';
@@ -647,7 +684,7 @@ const VFC = {
                     itemName = parts[0].trim();
                     amount = parts[1].replace(')', '').replace(/,/g, '');
                 }
- 
+
                 const $cb = $(`.item-checkbox[value="${itemName}"]`);
                 if ($cb.length > 0) {
                     $cb.prop('checked', true);
@@ -663,12 +700,12 @@ const VFC = {
                     otherItems.push(itemStr);
                 }
             });
-            
+
             if (otherItems.length > 0 || record.compensated_items_other) {
-                const $otherCb = $('.item-checkbox').filter(function() {
+                const $otherCb = $('.item-checkbox').filter(function () {
                     return $(this).val().toLowerCase().includes('other');
                 });
-                
+
                 if (otherItems.length > 0) {
                     $otherCb.prop('checked', true);
                     $otherCb.closest('.flex-col').find('.item-amount-wrapper').removeClass('hidden');
@@ -677,41 +714,43 @@ const VFC = {
             }
             $('#compensated_items_val').val(record.compensated_items);
         }
- 
+
         $('#plot_no').val(record.plot_no);
         $('#street_name').val(record.street_name);
         $('#location').val(record.location);
- 
+
         $('#valuation-modal').removeClass('hidden').addClass('flex');
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
     },
- 
-    openRecordsModal: function(projectId) {
+
+    openRecordsModal: function (projectId) {
         // Handle potential type mismatch (integer vs string) or null/empty
         const targetId = (projectId === null || projectId === undefined || projectId === '') ? "" : projectId;
         console.log('VFC: Requesting records for Project ID:', targetId);
-        
+
         // Lookup group in the pre-loaded window.VFC_RECORDS
         const records = window.VFC_RECORDS || {};
         const group = records[targetId];
- 
+
         if (!group || group.length === 0) {
             console.error('VFC: No records found for Project ID:', targetId);
             console.log('VFC: Available record keys in VFC_RECORDS:', Object.keys(records));
             Swal.fire('No Records', 'Could not find valuation records for this selection.', 'info');
             return;
         }
- 
+
         try {
             console.log('VFC: Rendering modal content for project ID:', targetId);
             const project = group[0].project;
             console.log('VFC: Project Object:', project);
-            
+
             $('#records-modal-title').text(project ? project.project_name : 'Individual Records');
             $('#records-modal-subtitle').text(project ? `${project.project_code} | ${project.project_fileno}` : '');
-            $('#generate-batch-btn').data('project-id', project ? project.id : '');
-            $('#print-batch-btn').data('project-id', project ? project.id : '');
- 
+
+            // Reset buttons visibility
+            $('#generate-batch-btn').removeClass('hidden').data('project-id', project ? project.id : '');
+            $('.print-batch-btn').addClass('hidden').data('project-id', project ? project.id : '');
+
             // Group records by sub-project and aggregate items
             const subProjectGroups = {};
             group.forEach(record => {
@@ -732,7 +771,7 @@ const VFC = {
                     const items = record.compensated_items.split(', ');
                     items.forEach(itemStr => {
                         if (itemStr.startsWith('[Structure: ')) return; // Skip structure type in items summary
-                        
+
                         let name = itemStr;
                         let amount = 0;
                         if (itemStr.includes(' (₦')) {
@@ -769,30 +808,54 @@ const VFC = {
                 `;
 
                 // 2. Records
-                subGroup.records.forEach((record, index) => {
+                subGroup.records.forEach((record, recordIndex) => {
                     const bType = record.building_type === 'Other' ? (record.building_type_other || 'Other') : record.building_type;
-                    const sType = record.structure_type || '<span class="text-slate-300">N/A</span>';
-                    const itemsText = record.compensated_items || 'No items recorded';
-                    const itemsPreview = record.compensated_items ? (record.compensated_items.substring(0, 30) + (record.compensated_items.length > 30 ? '...' : '')) : 'N/A';
                     
+                    // Prepare sub-items from compensated_items string
+                    const subItems = [];
+                    if (record.compensated_items) {
+                        const items = record.compensated_items.split(', ');
+                        items.forEach(itemStr => {
+                            if (itemStr.startsWith('[Structure: ')) return; // Skip main structure tag
+                            
+                            let name = itemStr;
+                            let amount = 0;
+                            if (itemStr.includes(' (₦')) {
+                                const parts = itemStr.split(' (₦');
+                                name = parts[0].trim();
+                                amount = parseFloat(parts[1].replace(')', '').replace(/,/g, '')) || 0;
+                            }
+                            
+                            if (amount > 0 || name) {
+                                subItems.push({ name, amount });
+                            }
+                        });
+                    }
+
+                    const totalRows = 1 + subItems.length;
+
+                    // Row 1: Main building details
                     html += `
-                        <tr class="hover:bg-blue-50/30 transition-colors group/row border-b border-slate-50">
-                            <td class="px-2 py-4 text-xs font-bold text-slate-400">${index + 1}</td>
-                            <td class="px-2 py-4 font-mono text-[10px] font-bold text-slate-400">${record.our_ref || 'N/A'}</td>
-                            <td class="px-2 py-4 font-bold text-slate-700 uppercase text-xs">${record.owner_name}</td>
-                            <td class="px-2 py-4 text-[9px] font-bold text-indigo-400 uppercase opacity-60">${subGroup.name.substring(0, 12)}${subGroup.name.length > 12 ? '...' : ''}</td>
-                            <td class="px-2 py-4 text-[10px] text-slate-500">${record.location ? (record.location.substring(0, 30) + (record.location.length > 30 ? '...' : '')) : 'N/A'}</td>
-                            <td class="px-2 py-4 text-[10px]">
-                                <button type="button" onclick="VFC.showItemsDetails('${record.owner_name.replace(/'/g, "\\'")}', '${itemsText.replace(/'/g, "\\'")}')" 
-                                    class="text-slate-400 italic hover:text-blue-600 transition-colors flex items-center gap-1 group/items text-left">
-                                    <span class="max-w-[120px] truncate" title="Click to view all">${itemsPreview}</span>
-                                    <i data-lucide="maximize-2" class="h-2.5 w-2.5 opacity-0 group-hover/items:opacity-100 transition-opacity"></i>
-                                </button>
+                        <tr class="hover:bg-blue-50/10 transition-colors group/row border-b border-slate-50">
+                            <td rowspan="${totalRows}" class="px-2 py-4 text-xs font-bold text-slate-400 align-top">${recordIndex + 1}</td>
+                            <td rowspan="${totalRows}" class="px-2 py-4 font-bold text-slate-700 uppercase text-[11px] align-top">
+                                ${record.owner_name}
+                                <div class="text-[9px] font-normal text-slate-400 mt-1 font-mono">${record.our_ref || ''}</div>
                             </td>
-                            <td class="px-2 py-4 text-[10px] font-bold text-slate-500 uppercase">${sType}</td>
-                            <td class="px-2 py-4 text-[11px] text-slate-600">${bType}</td>
-                            <td class="px-2 py-4 font-bold text-teal-600 text-xs">₦${parseFloat(record.compensation_amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                            <td class="px-2 py-4 text-right">
+                            
+                            <td class="px-2 py-4 text-[11px] text-slate-600 font-bold">${bType}</td>
+                            <td class="px-2 py-4 text-[11px] text-center text-slate-500">${record.building_count}</td>
+                            <td class="px-2 py-4 text-[11px] text-center text-slate-500">${record.area_covered > 0 ? record.area_covered : 'Allow'}</td>
+                            <td class="px-2 py-4 text-[11px] text-right text-slate-500 font-mono">₦${parseFloat(record.rate_of_cost).toLocaleString()}</td>
+                            <td class="px-2 py-4 text-[11px] text-right text-slate-700 font-bold font-mono">₦${parseFloat(record.compensation_amount - subItems.reduce((acc, i) => acc + i.amount, 0)).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+
+                            <td rowspan="${totalRows}" class="px-2 py-4 align-top">
+                                <div class="text-[10px] font-bold text-slate-600">${record.account_number || 'N/A'}</div>
+                                <div class="text-[9px] text-slate-400">${record.bank_name || ''}</div>
+                            </td>
+                            <td rowspan="${totalRows}" class="px-2 py-4 text-[10px] text-slate-500 align-top">${record.phone_number || 'N/A'}</td>
+                            
+                            <td rowspan="${totalRows}" class="px-2 py-4 text-right align-top">
                                 <div class="flex justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
                                     <a href="${this.config.routes.store}/${record.id}" target="_blank" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="View/Print">
                                         <i data-lucide="printer" class="h-3.5 w-3.5"></i>
@@ -807,6 +870,29 @@ const VFC = {
                             </td>
                         </tr>
                     `;
+
+                    // Sub-Rows for items
+                    subItems.forEach(item => {
+                        html += `
+                            <tr class="hover:bg-blue-50/10 border-b border-slate-50/50 bg-slate-50/20">
+                                <td class="px-2 py-1.5 text-[9px] text-indigo-400 italic font-medium pl-4">• ${item.name}</td>
+                                <td class="px-2 py-1.5 text-[9px] text-center text-slate-400 font-mono">1</td>
+                                <td class="px-2 py-1.5 text-[9px] text-center text-slate-400 font-mono">Allow</td>
+                                <td class="px-2 py-1.5 text-[9px] text-right text-slate-400 font-mono">₦${item.amount.toLocaleString()}</td>
+                                <td class="px-2 py-1.5 text-[9px] text-right text-indigo-500/70 font-bold font-mono">₦${item.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                            </tr>
+                        `;
+                    });
+
+                    // Owner Total Row (Optional, but helps with visual grouping)
+                    if (totalRows > 1) {
+                        html += `
+                            <tr class="bg-slate-50/30">
+                                <td colspan="4" class="px-2 py-1.5 text-[9px] text-right font-bold text-slate-400 uppercase tracking-tighter">Record Total:</td>
+                                <td class="px-2 py-1.5 text-[10px] text-right font-black text-slate-700 border-t border-slate-200 font-mono">₦${parseFloat(record.compensation_amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                            </tr>
+                        `;
+                    }
                 });
 
                 // 3. Sub-Project Group Footer (Total)
@@ -817,7 +903,7 @@ const VFC = {
                         </td>
                         <td class="px-2 py-4">
                             <div class="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-teal-200 shadow-sm">
-                                <span class="text-xs font-black text-teal-700">₦${subGroup.total.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                                <span class="text-xs font-black text-teal-700">₦${subGroup.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
                         </td>
                         <td></td>
@@ -831,7 +917,7 @@ const VFC = {
 
             // Reset Batch Workflow Buttons
             $('#generate-batch-btn').removeClass('hidden');
-            $('#print-batch-btn').addClass('hidden').removeData('apply-percentage');
+            $('.print-batch-btn').addClass('hidden').removeData('apply-percentage');
 
             html += `
                 <tr class="bg-white border-t-2 border-slate-200">
@@ -840,18 +926,18 @@ const VFC = {
                     </td>
                     <td class="px-2 py-6">
                         <div class="inline-flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-2xl border border-emerald-200 shadow-sm">
-                            <span class="text-sm font-black text-emerald-700">₦${projectGrandTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                            <span class="text-sm font-black text-emerald-700">₦${projectGrandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                         </div>
                     </td>
                     <td></td>
                 </tr>
             `;
- 
+
             $('#project-records-body').html(html);
             if (window.lucide) window.lucide.createIcons();
-            
+
             console.log('VFC: Displaying modal elements...');
-            
+
             // 1. Move the modal to body to break out of any stacking context traps
             const $modal = $('#records-modal');
             if ($modal.parent().is('body') === false) {
@@ -875,10 +961,10 @@ const VFC = {
             setTimeout(() => {
                 $overlay.attr('style', 'opacity: 1 !important; visibility: visible !important;');
                 $container.attr('style', 'opacity: 1 !important; transform: scale(1) !important; visibility: visible !important; display: flex !important; background: white !important;');
-                
+
                 $overlay.addClass('opacity-100');
                 $container.addClass('scale-100 opacity-100').removeClass('scale-95 opacity-0');
-                
+
                 console.log('VFC: Modal forced visible at body root.');
             }, 50);
         } catch (e) {
@@ -887,17 +973,17 @@ const VFC = {
         }
     },
 
-    openApplyPercentModal: function() {
+    openApplyPercentModal: function () {
         const self = this;
-        $('#modal-sub-total').text('₦' + self.currentProjectSubTotal.toLocaleString(undefined, {minimumFractionDigits: 2}));
+        $('#modal-sub-total').text('₦' + self.currentProjectSubTotal.toLocaleString(undefined, { minimumFractionDigits: 2 }));
         $('#apply-percentage-input').val(self.currentProjectApplyPercentage);
         this.updateFinalTotalInModal();
 
         const $modal = $('#apply-percent-modal');
-        
+
         // Reset Buttons in Modal
         $('#confirm-apply-percent').removeClass('hidden');
-        $('#print-batch-btn').addClass('hidden');
+        $('.print-batch-btn').addClass('hidden');
 
         // Move to body if not already there
         if ($modal.parent().is('body') === false) {
@@ -909,7 +995,7 @@ const VFC = {
 
         $modal.removeClass('hidden').addClass('flex');
         $modal.attr('style', 'display: flex !important; z-index: 99999 !important;');
-        
+
         setTimeout(() => {
             $overlay.addClass('opacity-100');
             $container.addClass('scale-100 opacity-100').removeClass('scale-95 opacity-0');
@@ -917,7 +1003,7 @@ const VFC = {
         }, 50);
     },
 
-    closeApplyPercentModal: function() {
+    closeApplyPercentModal: function () {
         const $modal = $('#apply-percent-modal');
         const $overlay = $('#apply-percent-overlay');
         const $container = $('#apply-percent-container');
@@ -929,13 +1015,14 @@ const VFC = {
         }, 300);
     },
 
-    updateFinalTotalInModal: function() {
+    updateFinalTotalInModal: function () {
         const percent = parseFloat($('#apply-percentage-input').val()) || 0;
-        const finalTotal = (this.currentProjectSubTotal * percent) / 100;
-        $('#modal-final-total').text('₦' + finalTotal.toLocaleString(undefined, {minimumFractionDigits: 2}));
+        const appliedAmount = (this.currentProjectSubTotal * percent) / 100;
+        const finalTotal = this.currentProjectSubTotal + appliedAmount;
+        $('#modal-final-total').text('₦' + finalTotal.toLocaleString(undefined, { minimumFractionDigits: 2 }));
     },
 
-    closeRecordsModal: function() {
+    closeRecordsModal: function () {
         $('#records-modal-overlay').removeClass('opacity-100').attr('style', '');
         $('#records-modal-container').addClass('scale-95 opacity-0').removeClass('scale-100 opacity-100').attr('style', '');
         setTimeout(() => {
@@ -943,14 +1030,14 @@ const VFC = {
         }, 300);
     },
 
-    closeModal: function() {
+    closeModal: function () {
         $('#modal-overlay').removeClass('opacity-100').attr('style', '');
         setTimeout(() => {
             $('#valuation-modal').addClass('hidden').removeClass('flex').attr('style', 'display: none !important;');
         }, 300);
     },
 
-    showItemsDetails: function(owner, items) {
+    showItemsDetails: function (owner, items) {
         Swal.fire({
             title: `<div class="text-slate-800 font-black text-xl uppercase tracking-tight">Compensated Items</div>`,
             html: `
@@ -984,4 +1071,8 @@ const VFC = {
     }
 };
 
-$(document).ready(() => VFC.init());
+$(document).ready(function () {
+    if (window.VFC) {
+        window.VFC.init();
+    }
+});

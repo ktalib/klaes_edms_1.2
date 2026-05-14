@@ -77,23 +77,23 @@ Route::middleware(['auth'])->group(function () {
 
     // OPs Dashboard
     Route::prefix('ops-dashboard')->name('ops-dashboard.')->group(function () {
-        Route::get('/',                  [OpsDashboardController::class, 'index'])->name('index');
-        Route::get('/stats',             [OpsDashboardController::class, 'stats'])->name('stats');
-        Route::get('/chart-land-use',    [OpsDashboardController::class, 'chartLandUse'])->name('chart-land-use');
-        Route::get('/chart-op-type',     [OpsDashboardController::class, 'chartOpType'])->name('chart-op-type');
-        Route::get('/table-all-ops',     [OpsDashboardController::class, 'tableAllOps'])->name('table-all-ops');
-        Route::get('/table-pra',         [OpsDashboardController::class, 'tablePra'])->name('table-pra');
+        Route::get('/', [OpsDashboardController::class, 'index'])->name('index');
+        Route::get('/stats', [OpsDashboardController::class, 'stats'])->name('stats');
+        Route::get('/chart-land-use', [OpsDashboardController::class, 'chartLandUse'])->name('chart-land-use');
+        Route::get('/chart-op-type', [OpsDashboardController::class, 'chartOpType'])->name('chart-op-type');
+        Route::get('/table-all-ops', [OpsDashboardController::class, 'tableAllOps'])->name('table-all-ops');
+        Route::get('/table-pra', [OpsDashboardController::class, 'tablePra'])->name('table-pra');
         Route::get('/table-change-of-name', [OpsDashboardController::class, 'tableChangeOfName'])->name('table-change-of-name');
-        Route::get('/table-deeds',       [OpsDashboardController::class, 'tableDeeds'])->name('table-deeds');
+        Route::get('/table-deeds', [OpsDashboardController::class, 'tableDeeds'])->name('table-deeds');
     });
 
     // RofO Staging Dashboard (Letter of Grant / RofO)
     Route::prefix('rofo-staging')->name('rofo-staging.')->group(function () {
-        Route::get('/',                      [RofoStagingDashboardController::class, 'index'])->name('index');
-        Route::get('/stats',                 [RofoStagingDashboardController::class, 'stats'])->name('stats');
-        Route::get('/chart-land-use',        [RofoStagingDashboardController::class, 'chartLandUse'])->name('chart-land-use');
+        Route::get('/', [RofoStagingDashboardController::class, 'index'])->name('index');
+        Route::get('/stats', [RofoStagingDashboardController::class, 'stats'])->name('stats');
+        Route::get('/chart-land-use', [RofoStagingDashboardController::class, 'chartLandUse'])->name('chart-land-use');
         Route::get('/chart-instrument-type', [RofoStagingDashboardController::class, 'chartInstrumentType'])->name('chart-instrument-type');
-        Route::get('/table-all',             [RofoStagingDashboardController::class, 'tableAll'])->name('table-all');
+        Route::get('/table-all', [RofoStagingDashboardController::class, 'tableAll'])->name('table-all');
     });
 
     // Final Conveyance Routes
@@ -251,10 +251,10 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('plot-extension')->name('plot-extension.')->group(function () {
         Route::get('/', [PlotExtensionController::class, 'index'])->name('index');
         Route::post('/', [PlotExtensionController::class, 'store'])->name('store');
-        Route::post('/{id}/approve',     [PlotExtensionController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
-        Route::post('/{id}/reject',      [PlotExtensionController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
+        Route::post('/{id}/approve', [PlotExtensionController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
+        Route::post('/{id}/reject', [PlotExtensionController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
         Route::post('/{id}/generate-application', [PlotExtensionController::class, 'generateApplication'])->name('generate-application')->where('id', '[0-9]+');
-        Route::get('/{id}/print-application',    [PlotExtensionController::class, 'printApplication'])->name('print-application')->where('id', '[0-9]+');
+        Route::get('/{id}/print-application', [PlotExtensionController::class, 'printApplication'])->name('print-application')->where('id', '[0-9]+');
         Route::post('/{id}/generate-recommendation', [PlotExtensionController::class, 'generateRecommendation'])->name('generate-recommendation')->where('id', '[0-9]+');
         Route::get('/{id}/print-recommendation', [PlotExtensionController::class, 'printRecommendation'])->name('print-recommendation')->where('id', '[0-9]+');
         Route::post('/{id}/knupda', [PlotExtensionController::class, 'updateKnupda'])->name('knupda')->where('id', '[0-9]+');
@@ -269,7 +269,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/approve', [PlotSubdivisionController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
         Route::post('/{id}/reject', [PlotSubdivisionController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
         Route::post('/{id}/generate-application', [PlotSubdivisionController::class, 'generateApplication'])->name('generate-application')->where('id', '[0-9]+');
-        Route::get('/{id}/print-application',    [PlotSubdivisionController::class, 'printApplication'])->name('print-application')->where('id', '[0-9]+');
+        Route::get('/{id}/print-application', [PlotSubdivisionController::class, 'printApplication'])->name('print-application')->where('id', '[0-9]+');
         Route::post('/{id}/generate-recommendation', [PlotSubdivisionController::class, 'generateRecommendation'])->name('generate-recommendation')->where('id', '[0-9]+');
         Route::get('/{id}/print-recommendation', [PlotSubdivisionController::class, 'printRecommendation'])->name('print-recommendation')->where('id', '[0-9]+');
         Route::post('/{id}/knupda', [PlotSubdivisionController::class, 'updateKnupda'])->name('knupda')->where('id', '[0-9]+');
@@ -286,7 +286,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/approve', [PlotMergerController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
         Route::post('/{id}/reject', [PlotMergerController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
         Route::post('/{id}/generate-application', [PlotMergerController::class, 'generateApplication'])->name('generate-application')->where('id', '[0-9]+');
-        Route::get('/{id}/print-application',    [PlotMergerController::class, 'printApplication'])->name('print-application')->where('id', '[0-9]+');
+        Route::get('/{id}/print-application', [PlotMergerController::class, 'printApplication'])->name('print-application')->where('id', '[0-9]+');
         Route::post('/{id}/generate-recommendation', [PlotMergerController::class, 'generateRecommendation'])->name('generate-recommendation')->where('id', '[0-9]+');
         Route::get('/{id}/print-recommendation', [PlotMergerController::class, 'printRecommendation'])->name('print-recommendation')->where('id', '[0-9]+');
         Route::get('/find-by-file/{fileNumber}', [PlotMergerController::class, 'findByFileNo'])->name('find-by-file');
@@ -303,38 +303,38 @@ Route::middleware(['auth'])->group(function () {
     });
 
     Route::prefix('change-of-purpose')->name('change-of-purpose.')->group(function () {
-        Route::get('/',         [ChangeOfPurposeController::class, 'index'])->name('index');
-        Route::post('/',        [ChangeOfPurposeController::class, 'store'])->name('store');
-        Route::get('/search',   [ChangeOfPurposeController::class, 'searchFileNumbers'])->name('search');
+        Route::get('/', [ChangeOfPurposeController::class, 'index'])->name('index');
+        Route::post('/', [ChangeOfPurposeController::class, 'store'])->name('store');
+        Route::get('/search', [ChangeOfPurposeController::class, 'searchFileNumbers'])->name('search');
         Route::get('/search-approved', [ChangeOfPurposeController::class, 'searchApproved'])->name('search-approved');
         Route::get('/verify-commission', [ChangeOfPurposeController::class, 'verifyForCommission'])->name('verify-commission');
         Route::post('/preview', [ChangeOfPurposeController::class, 'preview'])->name('preview');
         // Record-specific actions — must appear before wildcard /{id} routes
-        Route::post('/{id}/approve',     [ChangeOfPurposeController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
-        Route::post('/{id}/reject',      [ChangeOfPurposeController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
+        Route::post('/{id}/approve', [ChangeOfPurposeController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
+        Route::post('/{id}/reject', [ChangeOfPurposeController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
         Route::get('/{id}/acknowledgement', [ChangeOfPurposeController::class, 'acknowledgement'])->name('acknowledgement')->where('id', '[0-9]+');
         Route::get('/{id}/acknowledgement/print', [ChangeOfPurposeController::class, 'printAcknowledgement'])->name('acknowledgement.print')->where('id', '[0-9]+');
         Route::post('/{id}/generate-application', [ChangeOfPurposeController::class, 'generateApplication'])->name('generate-application')->where('id', '[0-9]+');
-        Route::get('/{id}/print-application',    [ChangeOfPurposeController::class, 'printApplication'])->name('print-application')->where('id', '[0-9]+');
+        Route::get('/{id}/print-application', [ChangeOfPurposeController::class, 'printApplication'])->name('print-application')->where('id', '[0-9]+');
         Route::post('/{id}/generate-recommendation', [ChangeOfPurposeController::class, 'generateRecommendation'])->name('generate-recommendation')->where('id', '[0-9]+');
         Route::get('/{id}/print-recommendation', [ChangeOfPurposeController::class, 'printRecommendation'])->name('print-recommendation')->where('id', '[0-9]+');
         Route::post('/{id}/knupda', [ChangeOfPurposeController::class, 'updateKnupda'])->name('knupda')->where('id', '[0-9]+');
-        Route::post('/{id}/commission',  [ChangeOfPurposeController::class, 'commissionFileNumber'])->name('commission')->where('id', '[0-9]+');
-        Route::get('/{id}',     [ChangeOfPurposeController::class, 'show'])->name('show')->where('id', '[0-9]+');
-        Route::put('/{id}',     [ChangeOfPurposeController::class, 'update'])->name('update')->where('id', '[0-9]+');
-        Route::delete('/{id}',  [ChangeOfPurposeController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
+        Route::post('/{id}/commission', [ChangeOfPurposeController::class, 'commissionFileNumber'])->name('commission')->where('id', '[0-9]+');
+        Route::get('/{id}', [ChangeOfPurposeController::class, 'show'])->name('show')->where('id', '[0-9]+');
+        Route::put('/{id}', [ChangeOfPurposeController::class, 'update'])->name('update')->where('id', '[0-9]+');
+        Route::delete('/{id}', [ChangeOfPurposeController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
     });
 
     Route::prefix('change-of-name')->name('change-of-name.')->group(function () {
-        Route::get('/',         [ChangeOfNameController::class, 'index'])->name('index');
-        Route::post('/',        [ChangeOfNameController::class, 'store'])->name('store');
-        Route::get('/search',   [ChangeOfNameController::class, 'searchFileNumbers'])->name('search');
-        Route::post('/{id}/approve',     [ChangeOfNameController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
-        Route::post('/{id}/reject',      [ChangeOfNameController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
+        Route::get('/', [ChangeOfNameController::class, 'index'])->name('index');
+        Route::post('/', [ChangeOfNameController::class, 'store'])->name('store');
+        Route::get('/search', [ChangeOfNameController::class, 'searchFileNumbers'])->name('search');
+        Route::post('/{id}/approve', [ChangeOfNameController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
+        Route::post('/{id}/reject', [ChangeOfNameController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
         Route::get('/{id}/acknowledgement/print', [ChangeOfNameController::class, 'printAcknowledgement'])->name('acknowledgement.print')->where('id', '[0-9]+');
-        Route::get('/{id}',     [ChangeOfNameController::class, 'show'])->name('show')->where('id', '[0-9]+');
-        Route::put('/{id}',     [ChangeOfNameController::class, 'update'])->name('update')->where('id', '[0-9]+');
-        Route::delete('/{id}',  [ChangeOfNameController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
+        Route::get('/{id}', [ChangeOfNameController::class, 'show'])->name('show')->where('id', '[0-9]+');
+        Route::put('/{id}', [ChangeOfNameController::class, 'update'])->name('update')->where('id', '[0-9]+');
+        Route::delete('/{id}', [ChangeOfNameController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
     });
 
     Route::prefix('temporary-file')->name('temporary-file.')->group(function () {
@@ -740,7 +740,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/create', [App\Http\Controllers\ValuationCompensationController::class, 'create'])->name('create');
         Route::post('/', [App\Http\Controllers\ValuationCompensationController::class, 'store'])->name('store');
         Route::get('/project-print/{projectId}', [App\Http\Controllers\ValuationCompensationController::class, 'projectPrint'])->name('project-print');
-        
+
         // Workers Pool Console Routes
         Route::prefix('workers')->name('workers.')->group(function () {
             Route::get('/', [App\Http\Controllers\VfcWorkerController::class, 'index'])->name('index');
@@ -888,48 +888,51 @@ Route::middleware(['auth'])->group(function () {
 
     // KANGIS Print Labels
     Route::prefix('kangis-printlabel')->name('kangis-printlabel.')->group(function () {
-        Route::get('/',                          [KangisPrintLabelController::class, 'index'])->name('index');
-        Route::get('/print-template',            function () { return view('kangis_printlabel.print-file-lab'); })->name('print-template');
-        Route::get('/api/prefixes',              [KangisPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
-        Route::get('/api/prefix-next-range',     [KangisPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
-        Route::get('/api/files',                 [KangisPrintLabelController::class, 'getAvailableFiles'])->name('api.files');
-        Route::get('/api/rack-label/status',     [KangisPrintLabelController::class, 'getRackLabelStatus'])->name('api.rack-label.status');
-        Route::post('/api/batch',                [KangisPrintLabelController::class, 'createBatch'])->name('api.batch.store');
-        Route::get('/api/batches',               [KangisPrintLabelController::class, 'getBatches'])->name('api.batches');
-        Route::get('/api/batch/{id}/print',      [KangisPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');
-        Route::patch('/api/batch/{id}/print',    [KangisPrintLabelController::class, 'markBatchAsPrinted'])->name('api.batch.mark-printed');
-        Route::delete('/api/batch/{id}',         [KangisPrintLabelController::class, 'deleteBatch'])->name('api.batch.delete');
+        Route::get('/', [KangisPrintLabelController::class, 'index'])->name('index');
+        Route::get('/print-template', function () {
+            return view('kangis_printlabel.print-file-lab'); })->name('print-template');
+        Route::get('/api/prefixes', [KangisPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
+        Route::get('/api/prefix-next-range', [KangisPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
+        Route::get('/api/files', [KangisPrintLabelController::class, 'getAvailableFiles'])->name('api.files');
+        Route::get('/api/rack-label/status', [KangisPrintLabelController::class, 'getRackLabelStatus'])->name('api.rack-label.status');
+        Route::post('/api/batch', [KangisPrintLabelController::class, 'createBatch'])->name('api.batch.store');
+        Route::get('/api/batches', [KangisPrintLabelController::class, 'getBatches'])->name('api.batches');
+        Route::get('/api/batch/{id}/print', [KangisPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');
+        Route::patch('/api/batch/{id}/print', [KangisPrintLabelController::class, 'markBatchAsPrinted'])->name('api.batch.mark-printed');
+        Route::delete('/api/batch/{id}', [KangisPrintLabelController::class, 'deleteBatch'])->name('api.batch.delete');
     });
 
     // SLTR Print Labels
     Route::prefix('sltr-printlabel')->name('sltr-printlabel.')->group(function () {
-        Route::get('/',                          [SltrPrintLabelController::class, 'index'])->name('index');
-        Route::get('/print-template',            function () { return view('sltr_printlabel.print-file-lab'); })->name('print-template');
-        Route::get('/api/prefixes',              [SltrPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
-        Route::get('/api/sub-prefixes',          [SltrPrintLabelController::class, 'getSubPrefixes'])->name('api.sub-prefixes');
-        Route::get('/api/prefix-next-range',     [SltrPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
-        Route::get('/api/files',                 [SltrPrintLabelController::class, 'getAvailableFiles'])->name('api.files');
-        Route::get('/api/rack-label/status',     [SltrPrintLabelController::class, 'getRackLabelStatus'])->name('api.rack-label.status');
-        Route::post('/api/batch',                [SltrPrintLabelController::class, 'createBatch'])->name('api.batch.store');
-        Route::get('/api/batches',               [SltrPrintLabelController::class, 'getBatches'])->name('api.batches');
-        Route::get('/api/batch/{id}/print',      [SltrPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');
-        Route::patch('/api/batch/{id}/print',    [SltrPrintLabelController::class, 'markBatchAsPrinted'])->name('api.batch.mark-printed');
-        Route::delete('/api/batch/{id}',         [SltrPrintLabelController::class, 'deleteBatch'])->name('api.batch.delete');
+        Route::get('/', [SltrPrintLabelController::class, 'index'])->name('index');
+        Route::get('/print-template', function () {
+            return view('sltr_printlabel.print-file-lab'); })->name('print-template');
+        Route::get('/api/prefixes', [SltrPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
+        Route::get('/api/sub-prefixes', [SltrPrintLabelController::class, 'getSubPrefixes'])->name('api.sub-prefixes');
+        Route::get('/api/prefix-next-range', [SltrPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
+        Route::get('/api/files', [SltrPrintLabelController::class, 'getAvailableFiles'])->name('api.files');
+        Route::get('/api/rack-label/status', [SltrPrintLabelController::class, 'getRackLabelStatus'])->name('api.rack-label.status');
+        Route::post('/api/batch', [SltrPrintLabelController::class, 'createBatch'])->name('api.batch.store');
+        Route::get('/api/batches', [SltrPrintLabelController::class, 'getBatches'])->name('api.batches');
+        Route::get('/api/batch/{id}/print', [SltrPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');
+        Route::patch('/api/batch/{id}/print', [SltrPrintLabelController::class, 'markBatchAsPrinted'])->name('api.batch.mark-printed');
+        Route::delete('/api/batch/{id}', [SltrPrintLabelController::class, 'deleteBatch'])->name('api.batch.delete');
     });
 
     // DCIV Print Labels
     Route::prefix('dciv-printlabel')->name('dciv-printlabel.')->group(function () {
-        Route::get('/',                          [DcivPrintLabelController::class, 'index'])->name('index');
-        Route::get('/print-template',            function () { return view('dciv_printlabel.print-file-lab'); })->name('print-template');
-        Route::get('/api/prefixes',              [DcivPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
-        Route::get('/api/prefix-next-range',     [DcivPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
-        Route::get('/api/files',                 [DcivPrintLabelController::class, 'getAvailableFiles'])->name('api.files');
-        Route::get('/api/rack-label/status',     [DcivPrintLabelController::class, 'getRackLabelStatus'])->name('api.rack-label.status');
-        Route::post('/api/batch',                [DcivPrintLabelController::class, 'createBatch'])->name('api.batch.store');
-        Route::get('/api/batches',               [DcivPrintLabelController::class, 'getBatches'])->name('api.batches');
-        Route::get('/api/batch/{id}/print',      [DcivPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');
-        Route::patch('/api/batch/{id}/print',    [DcivPrintLabelController::class, 'markBatchAsPrinted'])->name('api.batch.mark-printed');
-        Route::delete('/api/batch/{id}',         [DcivPrintLabelController::class, 'deleteBatch'])->name('api.batch.delete');
+        Route::get('/', [DcivPrintLabelController::class, 'index'])->name('index');
+        Route::get('/print-template', function () {
+            return view('dciv_printlabel.print-file-lab'); })->name('print-template');
+        Route::get('/api/prefixes', [DcivPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
+        Route::get('/api/prefix-next-range', [DcivPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
+        Route::get('/api/files', [DcivPrintLabelController::class, 'getAvailableFiles'])->name('api.files');
+        Route::get('/api/rack-label/status', [DcivPrintLabelController::class, 'getRackLabelStatus'])->name('api.rack-label.status');
+        Route::post('/api/batch', [DcivPrintLabelController::class, 'createBatch'])->name('api.batch.store');
+        Route::get('/api/batches', [DcivPrintLabelController::class, 'getBatches'])->name('api.batches');
+        Route::get('/api/batch/{id}/print', [DcivPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');
+        Route::patch('/api/batch/{id}/print', [DcivPrintLabelController::class, 'markBatchAsPrinted'])->name('api.batch.mark-printed');
+        Route::delete('/api/batch/{id}', [DcivPrintLabelController::class, 'deleteBatch'])->name('api.batch.delete');
     });
 });
 
@@ -939,7 +942,7 @@ Route::prefix('valuation-compensations/mobile')->name('valuation-compensations.m
     Route::post('/login', [App\Http\Controllers\ValuationMobileAuthController::class, 'login'])->name('login.submit');
     Route::post('/logout', [App\Http\Controllers\ValuationMobileAuthController::class, 'logout'])->name('logout');
 
-    Route::middleware(['auth'])->group(function() {
+    Route::middleware(['auth'])->group(function () {
         Route::get('/', [App\Http\Controllers\ValuationMobileController::class, 'index'])->name('index');
         Route::get('/lookup', [App\Http\Controllers\ValuationMobileController::class, 'getLookupData'])->name('lookup');
         Route::get('/workers/{projectId}', [App\Http\Controllers\ValuationMobileController::class, 'getProjectWorkers'])->name('workers');

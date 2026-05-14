@@ -1840,7 +1840,7 @@ class PlanningRecommendationController extends Controller
         $printMode = $request->boolean('print');
 
         if ($printMode) {
-            return view('actions.JOINT-SITE-INSPECTION-REPORT-CLONE', [
+            return view('actions.JOINT-SITE-INSPECTION-REPORT', [
                 'application' => $application,
                 'report' => $report,
                 'dimensions' => $dimensions,
@@ -2105,7 +2105,7 @@ class PlanningRecommendationController extends Controller
         $printMode = $request->boolean('print');
 
         if ($printMode) {
-            return view('actions.JOINT-SITE-INSPECTION-REPORT-CLONE', [
+            return view('actions.JOINT-SITE-INSPECTION-REPORT', [
                 'application' => $subApplication,
                 'report' => $report,
                 'dimensions' => $dimensions,

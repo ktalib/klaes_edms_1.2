@@ -29,7 +29,7 @@ class ValuationCompensationController extends Controller
     public function index()
     {
         $records = ValuationCompensation::active()
-            ->with('project')
+            ->with(['project', 'subProject'])
             ->orderBy('created_at', 'desc')
             ->get()
             ->groupBy('project_id');
@@ -285,7 +285,7 @@ class ValuationCompensationController extends Controller
     {
         $records = ValuationCompensation::active()
             ->where('project_id', $projectId)
-            ->with('project')
+            ->with(['project', 'subProject'])
             ->orderBy('created_at', 'asc')
             ->get();
 

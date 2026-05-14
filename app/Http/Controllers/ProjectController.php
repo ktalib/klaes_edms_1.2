@@ -24,7 +24,7 @@ class ProjectController extends Controller
 
     public function index()
     {
-        $projects = Project::with('workers.user')->orderBy('created_at', 'desc')->get();
+        $projects = Project::with(['workers.user', 'subProjects'])->orderBy('created_at', 'desc')->get();
         
         // Fetch all workers from the VFC pool
         $workers = \App\Models\VfcWorker::with('user')
@@ -133,6 +133,8 @@ class ProjectController extends Controller
             'project_name' => 'required|string',
             'number_of_items' => 'required|integer|min:1',
             'project_type' => 'required|string',
+            'number_of_sub_projects' => 'required|integer|min:1',
+            'apply_percentage' => 'required|numeric|min:0|max:100',
             'our_reference' => 'required|string',
             'your_reference' => 'nullable|string',
             'addressed_to' => 'nullable|string',
@@ -150,7 +152,22 @@ class ProjectController extends Controller
             'our_reference' => $request->our_reference,
             'your_reference' => $request->your_reference,
             'addressed_to' => $request->addressed_to,
+            'apply_percentage' => $request->apply_percentage ?? 10,
         ]);
+
+        // Sync Sub-Projects (Only Add New Ones if count increased)
+        $newCount = intval($request->number_of_sub_projects ?? 0);
+        $currentCount = $project->subProjects()->count();
+        
+        if ($newCount > $currentCount) {
+            for ($i = $currentCount + 1; $i <= $newCount; $i++) {
+                \App\Models\SubProject::create([
+                    'project_id' => $project->id,
+                    'name' => "Sub-Project A{$i}",
+                    'code' => "{$project->project_code}-A{$i}"
+                ]);
+            }
+        }
 
         $this->auditService->logAction('UPDATED', 'Project', $project->id, $oldData, $project->toArray(), "Updated project {$project->project_name}");
 

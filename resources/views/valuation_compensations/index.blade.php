@@ -10,6 +10,7 @@
     - This view serves as the central hub for managing compensation records.
     - It provides high-level statistics and groups individual valuation records by project.
 --}}
+<script>window.VFC = {};</script>
 <div x-data="{}" class="flex-1 overflow-auto bg-slate-50/60">
     @include('admin.header', [
         'PageTitle' => 'Valuation for Compensation',
@@ -156,6 +157,7 @@
 {{-- Modals for creating records and viewing project-specific details --}}
 @include('valuation_compensations.partials.modal')
 @include('valuation_compensations.partials.records_modal')
+@include('valuation_compensations.partials.apply_percent_modal')
 @push('styles')
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 @endpush
@@ -171,6 +173,7 @@
         csrf: '{{ csrf_token() }}',
         routes: {
             store: "{{ url('valuation-compensations') }}",
+            projectPrint: "{{ url('valuation-compensations/project-print') }}",
             projectSelection: "{{ route('valuation-compensations.projects.selection') }}",
             projectWorkers: "{{ url('valuation-compensations/projects') }}"
         }
@@ -179,5 +182,12 @@
     window.VFC_RECORDS = @json($records ?? []);
 </script>
 <script src="{{ asset('js/valuation-compensation.js') }}"></script>
+<script>
+    // Force initialization if not already done by the script itself
+    if (window.VFC && typeof window.VFC.init === 'function') {
+        console.log('VFC: Explicitly calling init from index.blade.php');
+        window.VFC.init();
+    }
+</script>
 @endpush
 @endsection

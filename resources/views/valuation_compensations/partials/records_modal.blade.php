@@ -11,7 +11,7 @@
                     <h2 class="text-xl font-bold text-slate-800" id="records-modal-title">Project Valuation Records</h2>
                     <p class="text-sm text-slate-500 font-medium uppercase tracking-wider mt-1" id="records-modal-subtitle"></p>
                 </div>
-                <button type="button" class="close-records-modal p-2 rounded-xl hover:bg-white hover:shadow-sm text-slate-400 hover:text-slate-600 transition-all">
+                <button type="button" onclick="VFC.closeRecordsModal()" class="close-records-modal p-2 rounded-xl hover:bg-white hover:shadow-sm text-slate-400 hover:text-slate-600 transition-all">
                     <i data-lucide="x" class="h-6 w-6"></i>
                 </button>
             </div>
@@ -23,11 +23,14 @@
                         <thead>
                             <tr class="text-slate-400 text-[10px] uppercase tracking-widest font-bold border-b border-slate-100">
                                 <th class="pb-4 px-2">S/N</th>
-                                <th class="pb-4 px-2">Ref No</th>
-                                <th class="pb-4 px-2">Owner Name</th>
-                                <th class="pb-4 px-2">Location</th>
-                                <th class="pb-4 px-2">Building Type</th>
-                                <th class="pb-4 px-2">Amount (₦)</th>
+                                <th class="pb-4 px-2">Name of Owner</th>
+                                <th class="pb-4 px-2">Type of Building</th>
+                                <th class="pb-4 px-2 text-center">No. of Building</th>
+                                <th class="pb-4 px-2 text-center">Area (M²)</th>
+                                <th class="pb-4 px-2 text-right">Rate (₦)</th>
+                                <th class="pb-4 px-2 text-right">Amount (₦)</th>
+                                <th class="pb-4 px-2">Account Details</th>
+                                <th class="pb-4 px-2">Phone</th>
                                 <th class="pb-4 px-2 text-right">Actions</th>
                             </tr>
                         </thead>
@@ -45,11 +48,15 @@
                     <span>Select "Print Batch" to generate a single report for all records.</span>
                 </div>
                 <div class="flex items-center gap-3">
-                    <button type="button" id="print-batch-btn" class="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-teal-600 text-white font-semibold hover:bg-teal-700 shadow-sm transition-all">
+                    <button type="button" id="generate-batch-btn" class="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 shadow-sm transition-all">
+                        <i data-lucide="calculator" class="h-4 w-4"></i>
+                        Generate
+                    </button>
+                    <button type="button" id="print-batch-btn" onclick="VFC.printBatch(this)" class="hidden print-batch-btn items-center gap-2 px-6 py-2.5 rounded-xl bg-teal-600 text-white font-semibold hover:bg-teal-700 shadow-sm transition-all">
                         <i data-lucide="printer" class="h-4 w-4"></i>
                         Print Records
                     </button>
-                    <button type="button" class="close-records-modal px-6 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-white hover:shadow-sm transition-all">
+                    <button type="button" onclick="VFC.closeRecordsModal()" class="close-records-modal px-6 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-white hover:shadow-sm transition-all">
                         Close
                     </button>
                 </div>

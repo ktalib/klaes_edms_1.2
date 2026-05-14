@@ -69,9 +69,15 @@
                 </div>
                 <div class="p-6">
                     <div class="flex items-center justify-between mb-4">
-                        <div class="flex items-center gap-2">
-                            <i data-lucide="users" class="h-4 w-4 text-slate-400"></i>
-                            <span class="text-xs font-bold text-slate-500 uppercase">Assigned Workers ({{ $project->workers->count() }})</span>
+                        <div class="flex items-center gap-4">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="users" class="h-4 w-4 text-slate-400"></i>
+                                <span class="text-xs font-bold text-slate-500 uppercase">Workers ({{ $project->workers->count() }})</span>
+                            </div>
+                            <div class="flex items-center gap-2 border-l border-slate-200 pl-4">
+                                <i data-lucide="layers" class="h-4 w-4 text-slate-400"></i>
+                                <span class="text-xs font-bold text-slate-500 uppercase">Sub-Projects ({{ $project->subProjects->count() }})</span>
+                            </div>
                         </div>
                         <button type="button" 
                             data-project-id="{{ $project->id }}"
@@ -611,8 +617,14 @@ Planning, Kano State</textarea>
         $('#project_code').val(project.project_code);
         $('input[name="our_reference"]').val(project.our_reference);
         $('input[name="your_reference"]').val(project.your_reference);
+        $('input[name="number_of_items"]').val(project.number_of_items || 10);
         $('textarea[name="addressed_to"]').val(project.addressed_to);
         $('#apply_percentage').val(project.apply_percentage || 10);
+        
+        // Populate Sub-Projects Count
+        const subProjectCount = project.sub_projects ? project.sub_projects.length : 0;
+        $('#number_of_sub_projects').val(subProjectCount).trigger('input');
+        
         $('#project_type').val(project.project_type).trigger('change');
         if (project.project_type === 'Other') {
             $('#project_type_other').val(project.project_type_other);

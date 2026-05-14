@@ -289,10 +289,10 @@
             configurePrintSettings();
             
             const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('print')) {
+            if (urlParams.get('print') && window.top === window.self) {
                 setTimeout(function() {
                     window.print();
-                }, 500); // Small delay to ensure page is fully loaded
+                }, 800); // Slightly more delay to ensure everything is rendered
             }
         });
     </script>
@@ -714,8 +714,12 @@
             <h2 class="heading text-sm font-bold text-gray-800 mt-1 underline">JOINT SITE INSPECTION REPORT</h2>
         </div>
         <br>
-   <div class="text-left mb-3">
-            <p class="text-sm font-semibold text-gray-700">THE COORDINATOR OSS,</p>
+        <div class="text-left mb-3">
+            @if($isConversionReport)
+                <p class="text-sm font-semibold text-gray-700">THE DIRECTOR,</p>
+            @else
+                <p class="text-sm font-semibold text-gray-700">THE COORDINATOR OSS,</p>
+            @endif
         </div>
 
         
