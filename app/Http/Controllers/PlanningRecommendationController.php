@@ -1445,13 +1445,28 @@ class PlanningRecommendationController extends Controller
                 return;
             }
 
+            // Clean up any accidental meta entries from previous saves for this application
+            try {
+                DB::connection('sqlsrv')
+                    ->table('shared_utilities')
+                    ->where('application_id', $applicationId)
+                    ->where('sub_application_id', $subApplicationId)
+                    ->whereRaw("LEFT(utility_type, 2) = '__'")
+                    ->delete();
+            } catch (\Exception $e) {
+                \Log::warning('Failed to clean up legacy meta entries from shared_utilities', [
+                    'error' => $e->getMessage(),
+                    'application_id' => $applicationId
+                ]);
+            }
+
             foreach ($measurementEntries as $index => $entry) {
                 $utilityType = $entry['description'] ?? null;
                 $dimension = $entry['dimension'] ?? null;
                 $measurementDimension = $entry['measurement_dimension'] ?? null;
 
-                // Skip entries without both utility type and dimension
-                if (empty($utilityType)) {
+                // Skip entries without utility type or meta entries starting with __
+                if (empty($utilityType) || str_starts_with(trim($utilityType), '__')) {
                     continue;
                 }
 

@@ -445,6 +445,10 @@
 
                 return $normalized;
             })
+            ->filter(function ($item) {
+                $desc = strtolower(trim((string) ($item->description ?? '')));
+                return $desc !== '' && !str_starts_with($desc, '__');
+            })
             ->groupBy(function ($item) {
                 $descriptionNormalized = preg_replace('/\s+/', ' ', strtolower(trim(str_replace(['_', '-'], ' ', (string) ($item->description ?? '')))));
                 $measurementDimensionNormalized = preg_replace('/\s+/', ' ', strtolower(trim((string) ($item->measurement_dimension ?? ''))));
@@ -598,6 +602,18 @@
             ->values();
 
         $unitDimensionRaw = $report->unit_dimension ?? null;
+
+        $needForEiaValue = null;
+        if ($isConversionReport) {
+            $eiaEntry = collect($report->existing_site_measurement_entries ?? [])->first(function($item) {
+                $desc = strtolower(trim((string)data_get($item, 'description')));
+                return $desc === '__need_for_eia__';
+            });
+            if ($eiaEntry) {
+                $needForEiaValue = ((int)data_get($eiaEntry, 'count')) === 1 ? 'Yes' : 'No';
+            }
+        }
+
         $unitDimensionFormatted = null;
         $unitDimensionAppendsUnit = false;
 
@@ -863,6 +879,9 @@
 
                           <div class="mb-3 border border-gray-200 rounded p-2 bg-gray-50 text-xs space-y-2">
             <div class="flex"><span class="font-semibold mr-2">Existing Road reservation:</span> <span>{{ $report->road_reservation ?? 'Not specified' }}</span></div>
+            @if($isConversionReport && $needForEiaValue)
+                <div class="flex"><span class="font-semibold mr-2">Need for EIA Report:</span> <span class="{{ $needForEiaValue === 'Yes' ? 'text-red-600 font-bold' : '' }}">{{ $needForEiaValue }}</span></div>
+            @endif
             <div class="flex"><span class="font-semibold mr-2">Prevailing Land use:</span> <span>{{ $report->prevailing_land_use ?? 'Not specified' }}</span></div>
             <div class="flex"><span class="font-semibold mr-2">Applied land use:</span> <span>{{ $report->applied_land_use ?? ($application->land_use ?? 'Not specified') }}</span></div>
         </div>

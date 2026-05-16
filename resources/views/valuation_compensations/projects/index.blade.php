@@ -58,10 +58,7 @@
                                     <span class="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">{{ $project->your_reference }}</span>
                                 </div>
                                 @endif
-                                <div class="flex items-center gap-2 border-l border-slate-200 pl-4">
-                                    <span class="text-[10px] font-bold text-blue-400 uppercase">Apply %:</span>
-                                    <span class="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shadow-sm">{{ $project->apply_percentage ?? 10 }}%</span>
-                                </div>
+
                             </div>
                         </div>
                         <!-- Template Rows Removed -->
@@ -82,7 +79,7 @@
                         <button type="button" 
                             data-project-id="{{ $project->id }}"
                             data-project-name="{{ $project->project_name }}"
-                            data-workers="{{ json_encode($project->workers->map(function($w) { return ["id" => $w->id, "name" => $w->user->first_name . " " . $w->user->last_name, "code" => $w->worker_code]; })) }}"
+                            data-workers="{{ json_encode($project->workers->map(function($w) { return ["id" => $w->id, "name" => ($w->user->first_name ?? 'Unknown') . " " . ($w->user->last_name ?? 'Worker'), "code" => $w->worker_code]; })) }}"
                             onclick="openManageWorkersModal(this.getAttribute('data-project-id'), this.getAttribute('data-project-name'), JSON.parse(this.getAttribute('data-workers')))" 
                             class="text-[10px] font-bold text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition flex items-center gap-1">
                             <i data-lucide="user-cog" class="h-3 w-3"></i> Manage
@@ -90,6 +87,7 @@
                     </div>
                     <div class="flex flex-wrap gap-2 mb-6">
                         @foreach($project->workers->take(3) as $worker)
+                        @if($worker->user)
                         <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-100" title="{{ $worker->user->phone_number }}">
                             <div class="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[10px] text-white font-bold">
                                 {{ substr($worker->user->first_name, 0, 1) }}{{ substr($worker->user->last_name, 0, 1) }}
@@ -97,11 +95,19 @@
                             <span class="text-xs font-semibold text-slate-700">{{ $worker->user->first_name }} {{ $worker->user->last_name }}</span>
                             <span class="text-[10px] text-emerald-600 font-black font-mono bg-emerald-50 px-1.5 py-0.5 rounded tracking-tighter">{{ $worker->worker_code }}</span>
                         </div>
+                        @else
+                        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-100" title="User record missing">
+                            <div class="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center text-[10px] text-white font-bold">?</div>
+                            <span class="text-xs font-semibold text-red-700">Deleted User</span>
+                            <span class="text-[10px] text-red-600 font-black font-mono bg-red-50 px-1.5 py-0.5 rounded tracking-tighter">{{ $worker->worker_code }}</span>
+                        </div>
+                        @endif
                         @endforeach
 
                         @if($project->workers->count() > 3)
                         <div id="more-workers-{{ $project->id }}" class="hidden flex flex-wrap gap-2 w-full mt-2">
                             @foreach($project->workers->slice(3) as $worker)
+                            @if($worker->user)
                             <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-100" title="{{ $worker->user->phone_number }}">
                                 <div class="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[10px] text-white font-bold">
                                     {{ substr($worker->user->first_name, 0, 1) }}{{ substr($worker->user->last_name, 0, 1) }}
@@ -109,6 +115,13 @@
                                 <span class="text-xs font-semibold text-slate-700">{{ $worker->user->first_name }} {{ $worker->user->last_name }}</span>
                                 <span class="text-[10px] text-emerald-600 font-black font-mono bg-emerald-50 px-1.5 py-0.5 rounded tracking-tighter">{{ $worker->worker_code }}</span>
                             </div>
+                            @else
+                            <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-100">
+                                <div class="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center text-[10px] text-white font-bold">?</div>
+                                <span class="text-xs font-semibold text-red-700">Deleted User</span>
+                                <span class="text-[10px] text-red-600 font-black font-mono bg-red-50 px-1.5 py-0.5 rounded tracking-tighter">{{ $worker->worker_code }}</span>
+                            </div>
+                            @endif
                             @endforeach
                         </div>
                         <button type="button" onclick="toggleWorkers({{ $project->id }}, this)" class="text-[11px] font-bold text-blue-600 hover:text-blue-700 mt-2 flex items-center gap-1 transition-all py-1 px-2 rounded-lg hover:bg-blue-50">
@@ -254,17 +267,11 @@
 Ministry of Land and Physical
 Planning, Kano State</textarea>
                         </div>
-                        <div class="md:col-span-1">
+                        <div class="md:col-span-2">
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Number of Sub-Projects <span class="text-red-500">*</span></label>
                             <input type="number" name="number_of_sub_projects" id="number_of_sub_projects" min="1" value="1" required
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-bold"
                                 placeholder="e.g. 5">
-                        </div>
-                        <div class="md:col-span-1">
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Apply % <span class="text-red-500">*</span></label>
-                            <input type="number" name="apply_percentage" id="apply_percentage" min="0" max="100" value="10" required
-                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-bold text-blue-600"
-                                placeholder="e.g. 10">
                         </div>
                         
                         <div class="md:col-span-2">
@@ -273,7 +280,7 @@ Planning, Kano State</textarea>
                                 <p class="text-[10px] font-bold text-indigo-600 uppercase tracking-widest flex items-center gap-2 mb-2">
                                     <i data-lucide="layers" class="h-3 w-3"></i> Sub-Projects to be Created
                                 </p>
-                                <div id="sub_projects_list" class="flex flex-wrap gap-2">
+                                <div id="sub_projects_list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                     <!-- Dynamic items -->
                                 </div>
                             </div>
@@ -475,8 +482,7 @@ Planning, Kano State</textarea>
             generateWorkerCards($(this).val());
         });
 
-        $('#number_of_sub_projects').on('input', function() {
-            const count = parseInt($(this).val()) || 0;
+        function generateSubProjectInputs(count, existingNames = []) {
             const $preview = $('#sub_projects_preview');
             const $list = $('#sub_projects_list');
 
@@ -484,7 +490,12 @@ Planning, Kano State</textarea>
                 $preview.removeClass('hidden');
                 let html = '';
                 for (let i = 1; i <= count; i++) {
-                    html += `<span class="px-2 py-1 bg-white border border-indigo-100 rounded-md text-[10px] font-bold text-indigo-700 shadow-sm">Sub-Project A${i}</span>`;
+                    const name = existingNames[i-1] || '';
+                    html += `
+                        <input type="text" name="sub_project_names[]" 
+                            value="${name}" 
+                            class="w-full px-3 py-2 rounded-lg border border-indigo-100 bg-white text-[11px] font-bold text-indigo-700 focus:border-indigo-400 outline-none shadow-sm transition"
+                            placeholder="Sub-Project Name #${i}">`;
                 }
                 $list.html(html);
                 if (window.lucide) window.lucide.createIcons();
@@ -492,6 +503,10 @@ Planning, Kano State</textarea>
                 $preview.addClass('hidden');
                 $list.html('');
             }
+        }
+
+        $('#number_of_sub_projects').on('input', function() {
+            generateSubProjectInputs(parseInt($(this).val()) || 0);
         });
 
         $('#project-form').on('submit', function(e) {
@@ -602,6 +617,9 @@ Planning, Kano State</textarea>
 
         $('#project-modal').removeClass('hidden').addClass('flex');
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
+        
+        // Trigger sub-projects preview for default count of 1
+        $('#number_of_sub_projects').trigger('input');
     }
 
     function editProject(project) {
@@ -619,11 +637,14 @@ Planning, Kano State</textarea>
         $('input[name="your_reference"]').val(project.your_reference);
         $('input[name="number_of_items"]').val(project.number_of_items || 10);
         $('textarea[name="addressed_to"]').val(project.addressed_to);
-        $('#apply_percentage').val(project.apply_percentage || 10);
         
-        // Populate Sub-Projects Count
-        const subProjectCount = project.sub_projects ? project.sub_projects.length : 0;
-        $('#number_of_sub_projects').val(subProjectCount).trigger('input');
+        // Populate Sub-Projects Count and Names
+        const subProjects = project.sub_projects || [];
+        const subProjectCount = subProjects.length || 0;
+        const subProjectNames = subProjects.map(sp => sp.sub_project_name);
+        
+        $('#number_of_sub_projects').val(subProjectCount);
+        generateSubProjectInputs(subProjectCount, subProjectNames);
         
         $('#project_type').val(project.project_type).trigger('change');
         if (project.project_type === 'Other') {
@@ -650,7 +671,7 @@ Planning, Kano State</textarea>
     function closeModal() {
         $('#modal-overlay').removeClass('opacity-100');
         setTimeout(() => {
-            $('#project-modal').addClass('hidden').removeClass('flex');
+            $('#project-modal').addClass('hidden').removeClass('flex').attr('style', 'display: none !important;');
         }, 300);
     }
 
@@ -676,7 +697,7 @@ Planning, Kano State</textarea>
         const $container = $('#manage-modal-container');
         $container.addClass('scale-95 opacity-0').removeClass('scale-100 opacity-100');
         setTimeout(() => {
-            $modal.addClass('hidden').removeClass('flex');
+            $modal.addClass('hidden').removeClass('flex').attr('style', 'display: none !important;');
         }, 300);
     }
 

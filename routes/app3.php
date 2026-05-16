@@ -739,6 +739,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [App\Http\Controllers\ValuationCompensationController::class, 'index'])->name('index');
         Route::get('/create', [App\Http\Controllers\ValuationCompensationController::class, 'create'])->name('create');
         Route::post('/', [App\Http\Controllers\ValuationCompensationController::class, 'store'])->name('store');
+        Route::post('/batch-store', [App\Http\Controllers\ValuationCompensationController::class, 'batchStore'])->name('batch-store');
         Route::get('/project-print/{projectId}', [App\Http\Controllers\ValuationCompensationController::class, 'projectPrint'])->name('project-print');
 
         // Workers Pool Console Routes

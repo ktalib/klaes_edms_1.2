@@ -25,5 +25,5 @@ Assign for the following the value of "**2**":
 * **OP** = 10
 * **TOT** = 9
 * **ROFO** = 8
-* **All other instruments + COFO** =  5
+* **All other instruments + COFO** =  1
 

@@ -445,6 +445,7 @@
                     <tr>
                       <th style="width:36px;">S/N</th>
                       <th style="width:36px;">RW</th>
+                      <th style="width:36px;">TW</th>
                       <th style="text-align:left;">Instrument Type</th>
                       <th style="text-align:left;">Party 1</th>
                       <th style="min-width:110px;">Party 2</th>
@@ -469,6 +470,7 @@
                     <tr>
                       <th>S/N</th>
                       <th style="min-width:60px;">RW</th>
+                      <th style="min-width:60px;">TW</th>
                       <th>Reg Particulars</th>
                       <th>Issue Date</th>
                       <th>Holder Name</th>
@@ -490,73 +492,76 @@
       {{-- Section 3: Timeline View --}}
       <div id="timeline-section" class="mt-6 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div class="p-6">
-          <div class="flex items-center justify-between mb-4">
+          <div class="flex flex-col gap-3 mb-4">
             <div>
               <h3 class="text-lg font-semibold flex items-center">Timeline <span id="timeline-total-count" class="ml-2 inline-flex items-center justify-center min-w-[1.5rem] h-[1.5rem] rounded-full bg-blue-100 text-blue-800 text-xs font-bold px-2">0</span></h3>
               <p class="text-sm text-gray-500">Combined chronological view of all transactions</p>
             </div>
-            <div class="flex items-center gap-2 flex-wrap">
+            <div class="flex items-center gap-2 overflow-x-auto min-w-0 pb-1 whitespace-nowrap">
               {{-- Cleanup Mode Toggle --}}
               <div class="flex items-center gap-2 mr-2">
                 <label for="cleanup-mode-toggle" class="text-xs font-medium text-gray-700 cursor-pointer select-none">Cleanup</label>
                 <button type="button" id="cleanup-mode-toggle" role="switch" aria-checked="false"
-                  class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-gray-200"
+                  class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-none border-2 border-black transition-colors duration-200 ease-in-out bg-black"
                 >
                   <span class="sr-only">Toggle Cleanup Mode</span>
-                  <span id="cleanup-toggle-dot" class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0"></span>
+                  <span id="cleanup-toggle-dot" class="pointer-events-none inline-block h-5 w-5 transform rounded-none bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-6"></span>
                 </button>
               </div>
               {{-- Cleanup Mode Action Buttons --}}
               <div id="cleanup-actions" class="flex items-center gap-2">
                 <button id="cleanup-match-btn" disabled
-                  class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium border transition-colors
+                  class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border transition-colors
                          disabled:opacity-40 disabled:cursor-not-allowed
-                         bg-orange-50 border-orange-200 text-orange-600 hover:bg-orange-100 disabled:hover:bg-orange-50"
-                  style="color: rgb(234 88 12);">
+                         bg-white border-orange-200 text-orange-400 hover:bg-orange-50 disabled:hover:bg-white">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" /></svg>
                   Match
                 </button>
                 <button id="cleanup-drop-btn" disabled
-                  class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium border transition-colors
+                  class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border transition-colors
                          disabled:opacity-40 disabled:cursor-not-allowed
-                         bg-orange-50 border-orange-200 text-orange-600 hover:bg-orange-100 disabled:hover:bg-orange-50"
-                  style="color: rgb(234 88 12);">
+                         bg-white border-orange-200 text-orange-400 hover:bg-orange-50 disabled:hover:bg-white">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
                   Drop
                 </button>
-                <button id="cleanup-remove-btn" disabled
-                  class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium border transition-colors
+                <button id="smart-demote-btn" disabled
+                  class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border transition-colors
                          disabled:opacity-40 disabled:cursor-not-allowed
-                         bg-orange-50 border-orange-200 text-orange-600 hover:bg-orange-100 disabled:hover:bg-orange-50"
-                  style="color: rgb(234 88 12);">
+                         bg-white border-amber-200 text-amber-500 hover:bg-amber-50 disabled:hover:bg-white">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13l-3 3m0 0l-3-3m3 3V8m0 13a9 9 0 110-18 9 9 0 010 18z" /></svg>
+                  Smart Demote
+                </button>
+                <button id="cleanup-remove-btn" disabled
+                  class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border transition-colors
+                         disabled:opacity-40 disabled:cursor-not-allowed
+                         bg-white border-orange-200 text-orange-400 hover:bg-orange-50 disabled:hover:bg-white">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   Remove
                 </button>
                 <button id="cleanup-edit-btn" disabled
-                  class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium border transition-colors
+                  class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border transition-colors
                          disabled:opacity-40 disabled:cursor-not-allowed
-                         bg-orange-50 border-orange-200 text-orange-600 hover:bg-orange-100 disabled:hover:bg-orange-50"
-                  style="color: rgb(234 88 12);">
+                         bg-white border-orange-200 text-orange-400 hover:bg-orange-50 disabled:hover:bg-white">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                   Edit
                 </button>
                 <span id="cleanup-selection-count" class="text-xs text-gray-500 ml-2 hidden">0 selected</span>
               </div>
 
-              <button id="arrange-mode-btn" class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium border bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100">
+              <button id="arrange-mode-btn" class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border bg-white border-purple-200 text-purple-600 hover:bg-purple-50">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" /></svg>
                 Arrange
               </button>
-              <button id="show-weighting-btn" class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium border bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100">
+              <button id="show-weighting-btn" class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border bg-white border-blue-200 text-blue-600 hover:bg-blue-50">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
                 Weighing
               </button>
-              <button id="toggle-excluded-records-btn" class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium border bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hidden">
+              <button id="toggle-excluded-records-btn" class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hidden">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                 Excluded Records (<span id="excluded-count-badge">0</span>)
               </button>
-              <button id="view-detailed-records-btn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-black hover:bg-black/90">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+              <button id="view-detailed-records-btn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-none shadow-sm text-sm font-medium text-white bg-black hover:bg-black/90">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" /></svg>
                 View Detailed Records
               </button>
             </div>
@@ -592,13 +597,22 @@
 
           {{-- Excluded Records Table --}}
           <div id="excluded-records-section" class="mt-8 pt-8 border-t border-gray-100 hidden">
-            <div class="mb-4">
-              <h3 class="text-md font-semibold text-gray-700 flex items-center">
-                Excluded / Duplicate Records 
-                <span id="excluded-total-count" class="ml-2 inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] rounded-full bg-gray-100 text-gray-600 text-[10px] font-bold px-1.5">0</span>
-              </h3>
-              <p class="text-xs text-gray-500">Records bypassed by weighting or manually dropped</p>
-            </div>
+              <div class="flex items-center justify-between mb-4">
+                <div>
+                  <h3 class="text-md font-semibold text-gray-700 flex items-center">
+                    Excluded / Duplicate Records 
+                    <span id="excluded-total-count" class="ml-2 inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] rounded-full bg-gray-100 text-gray-600 text-[10px] font-bold px-1.5">0</span>
+                  </h3>
+                  <p class="text-xs text-gray-500">Records bypassed by weighting or manually dropped</p>
+                </div>
+                <button id="smart-replace-promote-btn" disabled
+                  class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border transition-colors
+                         disabled:opacity-40 disabled:cursor-not-allowed
+                         bg-green-50 border-green-200 text-green-700 hover:bg-green-100 disabled:hover:bg-green-50">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11l3-3m0 0l3 3m-3-3v8m0 5a9 9 0 110-18 9 9 0 010 18z" /></svg>
+                  Smart Promote
+                </button>
+              </div>
             <div class="overflow-x-auto pb-32">
               <table class="w-full opacity-75 grayscale-[0.5]" id="excluded-table-wrapper">
                 <thead>
@@ -613,7 +627,6 @@
                     <th style="min-width:80px;">Reg Particulars</th>
                     <th style="min-width:100px;">Transaction Date</th>
                     <th style="min-width:120px;max-width:200px;">Comments</th>
-                    <th style="min-width:60px;">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="excluded-table" class="text-gray-500 text-xs">

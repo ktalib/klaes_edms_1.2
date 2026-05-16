@@ -1407,6 +1407,12 @@ class MlsFileNoController extends Controller
                     $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
                     $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial);
 
+                    // Check for duplicates in both modern and legacy tables
+                    if (\App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() || 
+                        DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()) {
+                        throw new \Exception("The generated file number already exists: {$fullFileNumber}. Please check serial synchronization.");
+                    }
+
                     $commissionedBy = ($validated['commissioned_by'] ?? null) ?: ((Auth::user()->first_name . ' ' . Auth::user()->last_name) ?: Auth::user()->name ?: Auth::user()->email ?: 'System');
 
                     // 2. Fetch Old File Record
@@ -1530,19 +1536,23 @@ class MlsFileNoController extends Controller
 
                 // Determine file number and serial based on option
                 if ($fileOption === 'temporary') {
-                    // Logic for Temporary Files: Do NOT consume a serial number
+                    // Logic for Temporary Files: Now consumes a serial number as per user requirement
                     $existingFileNo = $validated['existing_file_no'] ?? $validated['existing_file_no_manual'];
 
                     if (empty($existingFileNo)) {
                         throw new \Exception("Existing file number is required for temporary version.");
                     }
 
-                    $serial = 0; // Use 0 to indicate no serial consumption
-                    $fullFileNumber = $existingFileNo . '(T)';
+                    // Get next serial for this land use/year combination
+                    $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
+
+                    // Generate the full file number (based on next serial) and append (T)
+                    $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial) . '(T)';
 
                     // Check if this temporary file already exists to avoid duplicates
-                    if (\App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists()) {
-                        throw new \Exception("This temporary file number already exists: {$fullFileNumber}");
+                    if (\App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() || 
+                        DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()) {
+                        throw new \Exception("The generated temporary file number already exists: {$fullFileNumber}. Please check serial synchronization.");
                     }
 
                 } elseif ($fileOption === 'extension') {
@@ -1572,6 +1582,12 @@ class MlsFileNoController extends Controller
 
                     // Generate the full file number
                     $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial);
+
+                    // Final safety check for duplicates across both modern and legacy systems
+                    if (\App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() || 
+                        DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()) {
+                        throw new \Exception("The generated file number already exists: {$fullFileNumber}. Please ensure the serial counter is correctly synchronized.");
+                    }
                 }
 
                 $commissionedBy = ($validated['commissioned_by'] ?? null) ?: ((Auth::user()->first_name . ' ' . Auth::user()->last_name) ?: Auth::user()->name ?: Auth::user()->email ?: 'System');
@@ -1580,8 +1596,8 @@ class MlsFileNoController extends Controller
                 // For temporary and extension files, strip the suffix to get the base file number
                 $lookupFileNumber = $fullFileNumber;
                 if ($fileOption === 'temporary') {
-                    // Strip (T) suffix for temporary files
-                    $lookupFileNumber = preg_replace('/\(T\)\s*$/', '', $fullFileNumber);
+                    // Use the original source file number for tracking ID lookup
+                    $lookupFileNumber = $existingFileNo;
                 } elseif ($fileOption === 'extension') {
                     // Strip AND EXTENSION suffix for extension files
                     $lookupFileNumber = preg_replace('/\s+AND\s+EXTENSION\s*$/i', '', $fullFileNumber);

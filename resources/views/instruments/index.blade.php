@@ -219,7 +219,7 @@
                                                     @endif
                                                     @if(!empty($instrument->op_serial_number))
                                                         <span class="px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-100 rounded text-[10px] font-mono mt-0.5 self-start">
-                                                            OP Serial: {{ $instrument->op_serial_number }}
+                                                            {{ $instrument->op_serial_number }}
                                                         </span>
                                                     @endif
                                                 @endif

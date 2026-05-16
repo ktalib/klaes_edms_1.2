@@ -278,139 +278,191 @@
         <tbody>
             @php 
                 $globalIndex = 1;
-                // Group by owner name to ensure multiple records for one person are listed together
-                $groupedRecords = $records->groupBy('owner_name');
+                $projectWorkers = $project->workers()->with('user')->get()->keyBy('worker_code');
+                
+                // Group by sub-project first
+                $recordsBySubProject = $records->groupBy('sub_project_id');
+                $totalValuation = 0;
             @endphp
 
-            @foreach($groupedRecords as $ownerName => $group)
-                @php 
-                    $ownerSubTotal = $group->sum('compensation_amount');
-                    $rowCount = $group->count();
-                    $firstRecord = $group->first();
+            @foreach($recordsBySubProject as $subProjectId => $subProjectRecords)
+                @php
+                    $subProject = $subProjectRecords->first()->subProject;
+                    $subProjectName = $subProject ? $subProject->name : 'General';
+                    $subProjectTotal = 0;
                 @endphp
 
-                @foreach($group as $record)
-                    @php 
-                        // Prepare sub-items from compensated_items string
-                        $subItems = [];
-                        if ($record->compensated_items) {
-                            $items = explode(', ', $record->compensated_items);
-                            foreach($items as $itemStr) {
-                                if (strpos($itemStr, '[Structure: ') === 0) continue;
-                                
-                                if (strpos($itemStr, ' (₦') !== false) {
-                                    $parts = explode(' (₦', $itemStr);
-                                    $name = trim($parts[0]);
-                                    $amount = (float)str_replace([')', ','], '', $parts[1]);
-                                    $subItems[] = ['name' => $name, 'amount' => $amount];
-                                }
-                            }
-                        }
-                        $totalRecordRows = 1 + count($subItems);
-                        $mainAmount = $record->compensation_amount - collect($subItems)->sum('amount');
+                <!-- Sub-Project Header Row -->
+                <tr style="border-top: 2px solid #000;">
+                    <td colspan="1" style="font-weight: bold;"></td>
+                    <td colspan="9" style="text-align: left; padding-left: 15px; font-weight: bold; text-transform: uppercase; background-color: #f8fafc;">
+                        {{ $subProjectName }}
+                    </td>
+                </tr>
+
+                @php
+                    // Group by worker within this sub-project
+                    $recordsByWorker = $subProjectRecords->groupBy('worker_id');
+                @endphp
+
+                @foreach($recordsByWorker as $workerId => $workerRecords)
+                    @php
+                        $worker = $workerRecords->first()->worker;
+                        $workerName = ($worker && $worker->user) ? $worker->user->first_name : 'Unknown';
+                        $workerCode = $worker ? $worker->worker_code : 'N/A';
+                        $workerTotal = 0;
                     @endphp
 
-                    <!-- Main Record Row -->
-                    <tr>
-                        @if($loop->first)
+                    <!-- Worker Header Row -->
+                    <tr style="border-bottom: 2px solid #000;">
+                        <td colspan="1" style="font-weight: bold;"></td>
+                        <td colspan="9" style="text-align: left; padding-left: 15px; font-weight: bold; text-transform: uppercase; font-size: 10px; color: #475569;">
+                            WORKER: {{ $workerName }} ({{ $workerCode }})
+                        </td>
+                    </tr>
+
+                    @php
+                        // Group by owner within this worker
+                        $recordsByOwner = $workerRecords->groupBy('owner_name');
+                    @endphp
+
+                    @foreach($recordsByOwner as $ownerName => $ownerRecords)
+                        @php
+                            $ownerSubTotal = 0;
+                            $ownerRecordCount = count($ownerRecords);
+                        @endphp
+
+                        @foreach($ownerRecords as $record)
                             @php 
-                                // Calculate total rows for the WHOLE owner group (including all items of all records)
-                                $ownerGroupRows = $group->count();
-                                foreach($group as $r) {
-                                    if ($r->compensated_items) {
-                                        $itms = explode(', ', $r->compensated_items);
-                                        foreach($itms as $i) {
-                                            if (strpos($i, '[Structure: ') === 0) continue;
-                                            if (strpos($i, ' (₦') !== false) $ownerGroupRows++;
+                                $recordTotal = (float)$record->compensation_amount;
+                                $ownerSubTotal += $recordTotal;
+                                
+                                // Prepare sub-items from compensated_items string
+                                $subItems = [];
+                                if ($record->compensated_items) {
+                                    $items = explode(', ', $record->compensated_items);
+                                    foreach($items as $itemStr) {
+                                        if (strpos($itemStr, '[') === 0) continue;
+                                        if (strpos($itemStr, ' (₦') !== false) {
+                                            $parts = explode(' (₦', $itemStr);
+                                            $name = trim($parts[0]);
+                                            $amount = (float)str_replace([')', ','], '', $parts[1]);
+                                            $subItems[] = ['name' => $name, 'amount' => $amount];
                                         }
                                     }
                                 }
-                                // Add 1 for the owner subtotal row
-                                $ownerGroupRows++; 
+                                $mainAmount = $record->compensation_amount - collect($subItems)->sum('amount');
                             @endphp
-                            <td rowspan="{{ $ownerGroupRows }}" style="vertical-align: top; padding-top: 15px;">{{ $globalIndex++ }}</td>
-                            <td rowspan="{{ $ownerGroupRows }}" style="vertical-align: top; padding-top: 15px; font-weight: bold; text-align: left; padding-left: 8px;">
-                                {{ $ownerName }}
-                            </td>
-                        @endif
+
+                            <!-- Main Record Row -->
+                            <tr>
+                                <td>{{ $globalIndex++ }}</td>
+                                <td style="font-weight: bold; text-align: left; padding-left: 8px;">{{ $record->owner_name }}</td>
+                                <td style="text-align: left; padding-left: 8px;">{{ $record->building_type === 'Other' ? $record->building_type_other : $record->building_type }}</td>
+                                <td>{{ $record->building_count }}</td>
+                                <td>{{ $record->area_covered > 0 ? number_format($record->area_covered, 2) : 'Allow' }}</td>
+                                <td style="text-align: right; padding-right: 8px;">{{ number_format($record->rate_of_cost, 2) }}</td>
+                                <td style="text-align: right; padding-right: 8px;">{{ number_format($mainAmount, 2) }}</td>
+                                <td style="font-size: 11px;">
+                                    <div style="font-weight: bold;">{{ $record->account_number }}</div>
+                                    <div style="color: #666;">{{ $record->bank_name }}</div>
+                                </td>
+                                <td>{{ $record->phone_number }}</td>
+                                <td style="font-size: 9px; text-align: left;">{{ Str::limit($record->remarks, 50) }}</td>
+                            </tr>
+
+                            <!-- Sub-items Rows -->
+                            @foreach($subItems as $sub)
+                            <tr style="font-size: 10px; color: #444; font-style: italic;">
+                                <td></td>
+                                <td style="text-align: left; padding-left: 20px;">• {{ $sub['name'] }}</td>
+                                <td></td>
+                                <td>1</td>
+                                <td>Allow</td>
+                                <td style="text-align: right; padding-right: 8px;">{{ number_format($sub['amount'], 2) }}</td>
+                                <td style="text-align: right; padding-right: 8px;">{{ number_format($sub['amount'], 2) }}</td>
+                                <td colspan="3"></td>
+                            </tr>
+                            @endforeach
+
+                            <!-- Owner Total Row -->
+                            @if($ownerRecordCount > 1 || count($subItems) > 0)
+                            <tr>
+                                <td colspan="6" style="text-align: right; padding-right: 15px; font-weight: bold; font-size: 10px; color: #555;">
+                                    Sub Total {{ $ownerName }} ({{ $subProjectName }})
+                                </td>
+                                <td style="font-weight: bold; text-align: right; padding-right: 8px; border-top: 1px solid #999; font-size: 11px;">
+                                    {{ number_format($ownerSubTotal, 2) }}
+                                </td>
+                                <td colspan="3"></td>
+                            </tr>
+                            @endif
+                        @endforeach
                         
-                        <td style="text-align: left; padding-left: 8px;">{{ $record->building_type === 'Other' ? $record->building_type_other : $record->building_type }}</td>
-                        <td>{{ $record->building_count }}</td>
-                        <td>{{ $record->area_covered > 0 ? number_format($record->area_covered, 2) : 'Allow' }}</td>
-                        <td style="text-align: right; padding-right: 8px;">{{ number_format($record->rate_of_cost, 2) }}</td>
-                        <td style="text-align: right; padding-right: 8px;">
-                            {{ number_format($mainAmount, 2) }}
-                        </td>
-
-                        @if($loop->first)
-                            <td rowspan="{{ $ownerGroupRows }}" style="vertical-align: top; padding-top: 15px; font-size: 11px;">
-                                <div style="font-weight: bold;">{{ $record->account_number }}</div>
-                                <div style="color: #666; margin-top: 4px;">{{ $record->bank_name }}</div>
-                            </td>
-                            <td rowspan="{{ $ownerGroupRows }}" style="vertical-align: top; padding-top: 15px;">{{ $record->phone_number }}</td>
-             
-                            <td rowspan="{{ $ownerGroupRows }}" style="vertical-align: top; padding-top: 15px; font-size: 9px; text-align: left;">{{ Str::limit($record->remarks, 50) }}</td>
-                        @endif
-                    </tr>
-
-                    <!-- Item Sub-Rows -->
-                    @foreach($subItems as $item)
-                    <tr style="background-color: #fafafa;">
-                        <td style="text-align: left; padding-left: 20px; font-style: italic; font-size: 10px; color: #555;">• {{ $item['name'] }}</td>
-                        <td style="font-size: 10px; color: #666;">1</td>
-                        <td style="font-size: 10px; color: #666;">Allow</td>
-                        <td style="text-align: right; padding-right: 8px; font-size: 10px; color: #666;">{{ number_format($item['amount'], 2) }}</td>
-                        <td style="text-align: right; padding-right: 8px; font-size: 10px; font-weight: bold; color: #444;">{{ number_format($item['amount'], 2) }}</td>
-                    </tr>
+                        @php $workerTotal += $ownerSubTotal; @endphp
                     @endforeach
+
+                    <!-- Worker Sub-total row -->
+                    @if(count($recordsByWorker) > 1)
+                    <tr style="border-top: 1.5px solid #000; background-color: #f1f5f9;">
+                        <td colspan="6" style="text-align: right; padding-right: 15px; height: 30px; font-weight: bold; text-transform: uppercase; font-size: 10px;">
+                            Sub Total {{ $workerName }} ({{ count($recordsByOwner) }})
+                        </td>
+                        <td style="text-align: right; padding-right: 8px; font-size: 12px; font-weight: bold; border-bottom: 2px solid #000;">
+                            {{ number_format($workerTotal, 2) }}
+                        </td>
+                        <td colspan="3"></td>
+                    </tr>
+                    @endif
+
+                    @php $subProjectTotal += $workerTotal; @endphp
                 @endforeach
-                
-                <!-- Owner Sub-total row -->
-                <tr style="background-color: #f8fafc;">
-                    <td colspan="4" style="border-top: 1px solid #ccc; border-right: none; font-weight: bold; text-align: right; padding-right: 10px;"></td>
-                    <td style="font-weight: bold; text-align: right; padding-right: 8px; border-top: 2px solid black; font-size: 14px; border-bottom: 3px double black;">
-                        {{ number_format($ownerSubTotal, 2) }}
+
+                <!-- Sub-Project Sub-total row -->
+                <tr style="border-top: 1.5px solid #000;">
+                    <td colspan="6" style="text-align: right; padding-right: 15px; height: 35px; font-weight: bold; text-transform: uppercase; font-size: 11px;">
+                        Sub Total {{ $subProjectName }}
                     </td>
+                    <td style="text-align: right; padding-right: 8px; font-size: 14px; font-weight: bold; border-bottom: 3px double #000;">
+                        {{ number_format($subProjectTotal, 2) }}
+                    </td>
+                    <td colspan="3"></td>
                 </tr>
+
+                @php $totalValuation += $subProjectTotal; @endphp
             @endforeach
             
             @php
-                $totalValuation = $records->sum('compensation_amount');
                 $percent = $customPercentage ?? ($project->apply_percentage ?? 0);
-                // The user wants the whole total plus the N%
                 $appliedAmount = ($totalValuation * $percent) / 100;
                 $finalTotal = $totalValuation + $appliedAmount;
             @endphp
             
-            <tr style="background-color: #f8fafc; font-weight: bold; border-top: 2px solid #cbd5e1;">
-                <td colspan="6" style="text-align: right; padding-right: 15px; height: 45px; font-size: 14px; color: #475569;">Sub Total</td>
-                <td colspan="5" style="text-align: left; padding-left: 15px; font-size: 16px; color: #1e293b;">
+            <tr style="font-weight: bold; border-top: 2px solid #000;">
+                <td colspan="6" style="text-align: right; padding-right: 15px; height: 45px; font-size: 14px;">Sub Total</td>
+                <td style="text-align: right; padding-right: 8px; font-size: 16px;">
                     ₦{{ number_format($totalValuation, 2) }}
                 </td>
+                <td colspan="3"></td>
             </tr>
 
             @if($percent > 0)
-            <tr style="background-color: #f8fafc; font-weight: bold; border-top: 1px dashed #e2e8f0;">
-                <td colspan="6" style="text-align: right; padding-right: 15px; height: 45px; font-size: 14px; color: #64748b;">APPLY {{ $percent }}% TO TOTAL</td>
-                <td colspan="5" style="text-align: left; padding-left: 15px; font-size: 16px; color: #64748b;">
+            <tr style="font-weight: bold; border-top: 1px solid #000;">
+                <td colspan="6" style="text-align: right; padding-right: 15px; height: 40px; font-size: 14px;">{{ $percent }}%</td>
+                <td style="text-align: right; padding-right: 8px; font-size: 16px;">
                     ₦{{ number_format($appliedAmount, 2) }}
                 </td>
-            </tr>
-
-            <tr style="background-color: #f0fdf4; font-weight: bold; border: 3px solid #0d9488;">
-                <td colspan="6" style="text-align: right; padding-right: 15px; height: 60px; font-size: 16px; color: #115e59;">GRAND TOTAL</td>
-                <td colspan="5" style="text-align: left; padding-left: 15px; color: #0d9488; font-size: 24px;">
-                    ₦{{ number_format($finalTotal, 2) }}
-                </td>
-            </tr>
-            @else
-            <tr style="background-color: #f0fdf4; font-weight: bold; border: 3px solid #0d9488;">
-                <td colspan="6" style="text-align: right; padding-right: 15px; height: 60px; font-size: 16px; color: #115e59;">GRAND TOTAL</td>
-                <td colspan="5" style="text-align: left; padding-left: 15px; color: #0d9488; font-size: 24px;">
-                    ₦{{ number_format($totalValuation, 2) }}
-                </td>
+                <td colspan="3"></td>
             </tr>
             @endif
+
+            <tr style="font-weight: bold; border: 2px solid #000;">
+                <td colspan="6" style="text-align: right; padding-right: 15px; height: 60px; font-size: 16px;">Grand Total</td>
+                <td style="text-align: right; padding-right: 8px; font-size: 20px;">
+                    ₦{{ number_format($finalTotal, 2) }}
+                </td>
+                <td colspan="3"></td>
+            </tr>
         </tbody>
     </table>
 

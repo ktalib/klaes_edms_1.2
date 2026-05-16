@@ -377,21 +377,25 @@
                                     </div>
                                     <div>
                                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Street Name</label>
-                                        <select name="location_details[1][street_name]" id="loc_street_name" onchange="updateLocationPreview(1)" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm loc-street">
+                                        <select name="location_details[1][street_name]" id="loc_street_name" onchange="toggleOtherInput(this); updateLocationPreview(1)" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm loc-street">
                                             <option value="">Select Street</option>
                                             @foreach($streetNames as $street)
                                                 <option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>
                                             @endforeach
+                                            <option value="OTHER">OTHER</option>
                                         </select>
+                                        <input type="text" name="location_details[1][street_name_other]" id="loc_street_name_other" class="hidden mt-2 w-full px-4 py-2.5 rounded-xl border border-blue-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm" placeholder="Specify Street Name" oninput="updateLocationPreview(1)">
                                     </div>
                                     <div>
                                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">District</label>
-                                        <select name="location_details[1][district]" id="loc_district" onchange="updateLocationPreview(1)" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm loc-district">
+                                        <select name="location_details[1][district]" id="loc_district" onchange="toggleOtherInput(this); updateLocationPreview(1)" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm loc-district">
                                             <option value="">Select District</option>
                                             @foreach($districts as $district)
                                                 <option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>
                                             @endforeach
+                                            <option value="OTHER">OTHER</option>
                                         </select>
+                                        <input type="text" name="location_details[1][district_other]" id="loc_district_other" class="hidden mt-2 w-full px-4 py-2.5 rounded-xl border border-blue-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm" placeholder="Specify District" oninput="updateLocationPreview(1)">
                                     </div>
                                     <div>
                                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">LGA</label>
@@ -462,6 +466,20 @@
 <script>
     let currentLocationStep = 1;
 
+    function toggleOtherInput(select) {
+        const otherInputId = select.id + '_other';
+        const otherInput = document.getElementById(otherInputId);
+        if (otherInput) {
+            if (select.value.toUpperCase() === 'OTHER') {
+                otherInput.classList.remove('hidden');
+                otherInput.focus();
+            } else {
+                otherInput.classList.add('hidden');
+                otherInput.value = '';
+            }
+        }
+    }
+
     function openCreateModal() {
         document.getElementById('create-form').reset();
         document.getElementById('fragmentsContainer').innerHTML = '<p class="col-span-full text-slate-400 text-xs italic">Enter "No. of Plots" above to define fragment sizes.</p>';
@@ -527,8 +545,8 @@
     };
 
     // Pre-store options to avoid losing them when clearing container
-    const streetOpts = `<option value="">Select Street</option>@foreach($streetNames as $street)<option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>@endforeach`;
-    const districtOpts = `<option value="">Select District</option>@foreach($districts as $district)<option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>@endforeach`;
+    const streetOpts = `<option value="">Select Street</option>@foreach($streetNames as $street)<option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>@endforeach<option value="OTHER">OTHER</option>`;
+    const districtOpts = `<option value="">Select District</option>@foreach($districts as $district)<option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>@endforeach<option value="OTHER">OTHER</option>`;
     const lgaOpts = `<option value="">Select LGA</option>@foreach($lgas as $lga)<option value="{{ $lga->name }}">{{ strtoupper($lga->name) }}</option>@endforeach`;
     const stateOpts = `@foreach($states as $state)<option value="{{ $state->StateName }}" @selected($state->StateName == 'Kano')>{{ strtoupper($state->StateName) }}</option>@endforeach`;
 
@@ -597,8 +615,13 @@
         // Map location fields to top-level for controller compatibility
         formData.append('plot_no', document.getElementById('loc_plot_no')?.value || '');
         formData.append('house_no', document.getElementById('loc_house_no')?.value || '');
-        formData.append('street_name', document.getElementById('loc_street_name')?.value || '');
-        formData.append('district', document.getElementById('loc_district')?.value || '');
+        
+        const streetVal = document.getElementById('loc_street_name')?.value;
+        formData.append('street_name', streetVal?.toUpperCase() === 'OTHER' ? (document.getElementById('loc_street_name_other')?.value || 'OTHER') : (streetVal || ''));
+        
+        const districtVal = document.getElementById('loc_district')?.value;
+        formData.append('district', districtVal?.toUpperCase() === 'OTHER' ? (document.getElementById('loc_district_other')?.value || 'OTHER') : (districtVal || ''));
+        
         formData.append('lga', document.getElementById('loc_lga')?.value || '');
         formData.append('state', document.getElementById('loc_state')?.value || '');
 
@@ -630,8 +653,17 @@
         
         const plot = card.querySelector(`[name="location_details[${index}][plot_no]"]`)?.value || '';
         const house = card.querySelector(`[name="location_details[${index}][house_no]"]`)?.value || '';
-        const street = card.querySelector(`[name="location_details[${index}][street_name]"]`)?.value || '';
-        const district = card.querySelector(`[name="location_details[${index}][district]"]`)?.value || '';
+        
+        let street = card.querySelector(`[name="location_details[${index}][street_name]"]`)?.value || '';
+        if (street.toUpperCase() === 'OTHER') {
+            street = card.querySelector(`[name="location_details[${index}][street_name_other]"]`)?.value || 'OTHER';
+        }
+        
+        let district = card.querySelector(`[name="location_details[${index}][district]"]`)?.value || '';
+        if (district.toUpperCase() === 'OTHER') {
+            district = card.querySelector(`[name="location_details[${index}][district_other]"]`)?.value || 'OTHER';
+        }
+        
         const lga = card.querySelector(`[name="location_details[${index}][lga]"]`)?.value || '';
         const state = card.querySelector(`[name="location_details[${index}][state]"]`)?.value || '';
         

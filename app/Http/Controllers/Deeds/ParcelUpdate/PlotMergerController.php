@@ -116,11 +116,19 @@ class PlotMergerController extends Controller
                 $sourceFileNo = (!empty($locationDetails[$idx]['source_file_no'])) 
                     ? $locationDetails[$idx]['source_file_no'] 
                     : ('Plot ' . $idx);
+                $sourcePlotNo = (!empty($locationDetails[$idx]['plot_no'])) 
+                    ? $locationDetails[$idx]['plot_no'] 
+                    : '—';
+                $sourceFileTitle = (!empty($locationDetails[$idx]['source_file_title'])) 
+                    ? $locationDetails[$idx]['source_file_title'] 
+                    : '—';
                 
                 PlotApplicationSize::create([
                     'application_id' => $application->id,
                     'application_type' => 'merger',
-                    'plot_number' => $sourceFileNo,
+                    'plot_number' => $sourcePlotNo,
+                    'source_file_no' => $sourceFileNo,
+                    'source_file_title' => $sourceFileTitle,
                     'plot_size' => $size,
                     'type' => 'merger_source',
                 ]);

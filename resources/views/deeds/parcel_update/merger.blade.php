@@ -164,18 +164,29 @@
                                        
                                     </td>
                                     <td class="px-4 py-3 font-bold text-orange-700">{{ $record->temp_file_no }}</td>
-                                    <td class="px-4 py-3">
-                                        <div class="flex flex-wrap gap-1 max-w-[200px]">
-                                            @php
-                                                $sourceFiles = $record->plotSizes->pluck('plot_number')->filter()->toArray();
-                                            @endphp
-                                            @forelse($sourceFiles as $file)
-                                                <span class="px-2 py-0.5 bg-blue-50 border border-blue-100 text-blue-700 rounded text-[10px] font-bold font-mono">{{ $file }}</span>
-                                            @empty
-                                                <span class="text-slate-400 font-semibold">{{ $record->file_no }}</span>
-                                            @endforelse
+                                    <td class="px-4 py-3 whitespace-nowrap">
+                                        @php
+                                            $sourceFilesData = $record->plotSizes->map(fn($p) => [
+                                                'number' => $p->source_file_no ?? $p->plot_number, // File Number (fallback to plot_number for old records)
+                                                'plot_no' => $p->source_file_no ? $p->plot_number : '—', // Plot No (if new record)
+                                                'title'  => $p->source_file_title ?? '—',
+                                                'size'   => $p->plot_size ?? 0
+                                            ])->filter(fn($p) => !empty($p['number']))->values()->toArray();
+                                            $count = count($sourceFilesData);
+                                            $firstFile = $sourceFilesData[0]['number'] ?? $record->file_no;
+                                        @endphp
+                                        
+                                        <div class="flex flex-col items-start gap-0.5">
+                                            @if($firstFile)
+                                                <a href="javascript:void(0)" 
+                                                   onclick="showSourcePlotsModal({{ $record->id }}, {{ json_encode($sourceFilesData) }})" 
+                                                   class="text-blue-600 hover:text-blue-800 font-bold font-mono text-sm underline decoration-blue-100 underline-offset-4 hover:decoration-blue-400 transition-all">
+                                                    {{ $firstFile }} @if($count > 1) (+{{ $count - 1 }}) @endif
+                                                </a>
+                                            @else
+                                                <span class="text-xs font-bold text-slate-400 italic">No Source Data</span>
+                                            @endif
                                         </div>
-                                        <div class="text-[9px] text-slate-400 uppercase tracking-tight mt-1">Source Plots to Merge</div>
                                     </td>
                                     <td class="px-4 py-3">
                                         <div class="text-slate-700 font-semibold leading-tight line-clamp-2" title="{{ $record->file_title }}">{{ $record->file_title }}</div>
@@ -421,6 +432,51 @@
         </div>
     </div>
 
+    {{-- Source Plots Modal --}}
+    <div id="source-plots-modal" class="fixed inset-0 z-[10000] hidden flex items-center justify-center p-4">
+        <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="closeSourcePlotsModal()"></div>
+        <div class="relative bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in duration-200">
+            <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+                        <i data-lucide="layers" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-black text-slate-900 tracking-tight leading-none">Source Plots</h3>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">List of merged files</p>
+                    </div>
+                </div>
+                <button type="button" class="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300 transition shadow-sm" onclick="closeSourcePlotsModal()">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="p-8">
+                <div class="overflow-hidden border border-slate-200 rounded-[1.5rem] shadow-inner-sm bg-slate-50/30">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="bg-slate-50/80 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
+                                <th class="px-6 py-4 text-left">S/N</th>
+                                <th class="px-6 py-4 text-left">File Number</th>
+                                <th class="px-6 py-4 text-left">File Title</th>
+                                <th class="px-6 py-4 text-left">Plot No</th>
+                                <th class="px-6 py-4 text-right">Size</th>
+                            </tr>
+                        </thead>
+                        <tbody id="source-plots-table-body" class="divide-y divide-slate-100 bg-white">
+                            <!-- Dynamic content -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="mt-6 flex justify-center">
+                    <button type="button" onclick="closeSourcePlotsModal()" class="px-8 py-2.5 rounded-2xl bg-slate-900 text-white text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition shadow-lg shadow-slate-900/20">
+                        Close Details
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     @include('components.global-fileno-modal')
     @include('admin.footer')
 </div>
@@ -433,9 +489,23 @@
     let selectedFileData = null;
     let addedFilesCount = 0;
 
+    function toggleOtherInput(select) {
+        const container = select.parentElement;
+        const otherInput = container.querySelector('input[type="text"]');
+        if (otherInput) {
+            if (select.value.toUpperCase() === 'OTHER') {
+                otherInput.classList.remove('hidden');
+                otherInput.focus();
+            } else {
+                otherInput.classList.add('hidden');
+                otherInput.value = '';
+            }
+        }
+    }
+
     // Pre-store options to avoid losing them when clearing container
-    const streetOpts = `<option value="">Select Street</option>@foreach($streetNames as $street)<option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>@endforeach`;
-    const districtOpts = `<option value="">Select District</option>@foreach($districts as $district)<option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>@endforeach`;
+    const streetOpts = `<option value="">Select Street</option>@foreach($streetNames as $street)<option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>@endforeach<option value="OTHER">OTHER</option>`;
+    const districtOpts = `<option value="">Select District</option>@foreach($districts as $district)<option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>@endforeach<option value="OTHER">OTHER</option>`;
     const lgaOpts = `<option value="">Select LGA</option>@foreach($lgas as $lga)<option value="{{ $lga->name }}">{{ strtoupper($lga->name) }}</option>@endforeach`;
     const stateOpts = `@foreach($states as $state)<option value="{{ $state->StateName }}" @selected($state->StateName == 'Kano')>{{ strtoupper($state->StateName) }}</option>@endforeach`;
 
@@ -557,15 +627,17 @@
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Street Name</label>
-                        <select name="location_details[${index}][street_name]" onchange="updateLocationPreview(${index})" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
+                        <select name="location_details[${index}][street_name]" onchange="toggleOtherInput(this); updateLocationPreview(${index})" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
                             ${streetOpts}
                         </select>
+                        <input type="text" name="location_details[${index}][street_name_other]" class="hidden mt-2 w-full px-4 py-2.5 rounded-xl border border-blue-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm" placeholder="Specify Street Name" oninput="updateLocationPreview(${index})">
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">District</label>
-                        <select name="location_details[${index}][district]" onchange="updateLocationPreview(${index})" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
+                        <select name="location_details[${index}][district]" onchange="toggleOtherInput(this); updateLocationPreview(${index})" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
                             ${districtOpts}
                         </select>
+                        <input type="text" name="location_details[${index}][district_other]" class="hidden mt-2 w-full px-4 py-2.5 rounded-xl border border-blue-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm" placeholder="Specify District" oninput="updateLocationPreview(${index})">
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">LGA</label>
@@ -651,8 +723,17 @@
 
         const plot = card.querySelector(`input[name="location_details[${index}][plot_no]"]`)?.value || '';
         const house = card.querySelector(`input[name="location_details[${index}][house_no]"]`)?.value || '';
-        const street = card.querySelector(`select[name="location_details[${index}][street_name]"]`)?.value || '';
-        const district = card.querySelector(`select[name="location_details[${index}][district]"]`)?.value || '';
+        
+        let street = card.querySelector(`select[name="location_details[${index}][street_name]"]`)?.value || '';
+        if (street.toUpperCase() === 'OTHER') {
+            street = card.querySelector(`input[name="location_details[${index}][street_name_other]"]`)?.value || 'OTHER';
+        }
+        
+        let district = card.querySelector(`select[name="location_details[${index}][district]"]`)?.value || '';
+        if (district.toUpperCase() === 'OTHER') {
+            district = card.querySelector(`input[name="location_details[${index}][district_other]"]`)?.value || 'OTHER';
+        }
+        
         const lga = card.querySelector(`select[name="location_details[${index}][lga]"]`)?.value || '';
         const state = card.querySelector(`select[name="location_details[${index}][state]"]`)?.value || '';
         
@@ -755,8 +836,16 @@
                     source_file_title: card.querySelector(`input[name="location_details[${i}][source_file_title]"]`)?.value || '',
                     plot_no: card.querySelector(`input[name="location_details[${i}][plot_no]"]`)?.value || '',
                     house_no: card.querySelector(`input[name="location_details[${i}][house_no]"]`)?.value || '',
-                    street_name: card.querySelector(`select[name="location_details[${i}][street_name]"]`)?.value || '',
-                    district: card.querySelector(`select[name="location_details[${i}][district]"]`)?.value || '',
+                    street_name: (function() {
+                        const sel = card.querySelector(`select[name="location_details[${i}][street_name]"]`);
+                        if (sel?.value.toUpperCase() === 'OTHER') return card.querySelector(`input[name="location_details[${i}][street_name_other]"]`)?.value || 'OTHER';
+                        return sel?.value || '';
+                    })(),
+                    district: (function() {
+                        const sel = card.querySelector(`select[name="location_details[${i}][district]"]`);
+                        if (sel?.value.toUpperCase() === 'OTHER') return card.querySelector(`input[name="location_details[${i}][district_other]"]`)?.value || 'OTHER';
+                        return sel?.value || '';
+                    })(),
                     lga: card.querySelector(`select[name="location_details[${i}][lga]"]`)?.value || '',
                     state: card.querySelector(`select[name="location_details[${i}][state]"]`)?.value || ''
                 };
@@ -847,7 +936,11 @@
             const result = await response.json();
             if (result.success) {
                 const data = result.data;
-                let plotSizesHtml = data.plot_sizes.map(p => `<li>${p.plot_number}: <strong>${p.plot_size} Sqm</strong></li>`).join('');
+                let plotSizesHtml = data.plot_sizes.map(p => {
+                    const plotNo = p.source_file_no ? p.plot_number : '—';
+                    const fileNo = p.source_file_no ?? p.plot_number;
+                    return `<li>Plot ${plotNo} in ${fileNo} <span class="text-[10px] text-slate-400">(${p.source_file_title || '—'})</span>: <strong>${p.plot_size} Sqm</strong></li>`;
+                }).join('');
                 
                 Swal.fire({
                     title: 'Merger Details',
@@ -1129,6 +1222,50 @@
                 Swal.fire('Error!', 'An error occurred.', 'error');
             }
         }
+    }
+
+    function showSourcePlotsModal(recordId, plots) {
+        const tbody = document.getElementById('source-plots-table-body');
+        tbody.innerHTML = '';
+        
+        if (Array.isArray(plots) && plots.length > 0) {
+            plots.forEach((plot, index) => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-slate-50 transition-colors';
+                row.innerHTML = `
+                    <td class="px-6 py-4 text-slate-400 font-mono text-[11px] font-bold">${String(index + 1).padStart(2, '0')}</td>
+                    <td class="px-6 py-4 font-black font-mono text-blue-700 text-sm whitespace-nowrap">${plot.number}</td>
+                    <td class="px-6 py-4">
+                        <span class="text-xs font-bold text-slate-500 uppercase truncate max-w-[250px] block" title="${plot.title}">${plot.title}</span>
+                    </td>
+                    <td class="px-6 py-4 font-black text-slate-700 text-sm whitespace-nowrap">${plot.plot_no}</td>
+                    <td class="px-6 py-4 text-right">
+                        <span class="text-sm font-black text-slate-800 whitespace-nowrap">${new Intl.NumberFormat('en-US', {minimumFractionDigits: 2}).format(plot.size)}</span>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        } else {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="px-6 py-12 text-center text-slate-400 italic text-sm">
+                        No source plots found for this record.
+                    </td>
+                </tr>
+            `;
+        }
+        
+        document.getElementById('source-plots-modal').classList.remove('hidden');
+        if (window.lucide) window.lucide.createIcons();
+        
+        // Disable body scroll
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeSourcePlotsModal() {
+        document.getElementById('source-plots-modal').classList.add('hidden');
+        // Re-enable body scroll
+        document.body.style.overflow = '';
     }
 
     document.addEventListener('DOMContentLoaded', function() {

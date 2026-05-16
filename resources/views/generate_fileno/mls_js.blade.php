@@ -1808,7 +1808,7 @@
     // Function to update Alpine.js component with new serial number
     function updateAlpineSerialNumber() {
         // Try to update via Alpine component method
-        const modalContainer = document.querySelector('[x-data="fileNumberGenerator()"]');
+        const modalContainer = document.querySelector('[x-data^="fileNumberGenerator"]');
         if (modalContainer && modalContainer._x_dataStack && modalContainer._x_dataStack[0]) {
             const component = modalContainer._x_dataStack[0];
             if (component.refreshSerialNumber) {
@@ -3579,18 +3579,6 @@
                 this.fileName = '';
                 this.address = '';
 
-                // OP mode (default allocation source) does not allow batch generation.
-                if (this.applicationType === 'new' && this.allocatedByFilter === '') {
-                    this.batchMode = false;
-                    this.locationEntries = [];
-                    this.currentEntryIndex = 0;
-                    this.serialRangePreview = '-';
-                } else {
-                    // Leaving OP mode – clear stale flags.
-                    this.requireOpSource = false;
-                    window.ossOpContext = false;
-                }
-                
                 if (this.allocatedByFilter !== '') {
                     this.$nextTick(() => {
                         this.initAllocationSelect2();
@@ -3721,12 +3709,8 @@
             },
 
             get isBatchModeLocked() {
-                // Batch mode is only locked when current selection is OP mode
-                // (Default allocation source under Direct Allocation type).
-                // Do NOT check requireOpSource / ossOpContext here – those
-                // flags persist globally and would wrongly lock batch mode
-                // after the user switches to Conversion or Allocation List.
-                return this.applicationType === 'new' && this.allocatedByFilter === '';
+                // Batch mode is no longer locked for any mode.
+                return false;
             },
 
             // Batch Mode Computed Properties
@@ -3909,10 +3893,10 @@
 
                 // Enforce OP rule after app type change.
                 if (this.applicationType === 'new' && this.allocatedByFilter === '') {
-                    this.batchMode = false;
-                    this.locationEntries = [];
-                    this.currentEntryIndex = 0;
-                    this.serialRangePreview = '-';
+                    // this.batchMode = false; // Allow batch mode for direct allocation
+                    // this.locationEntries = [];
+                    // this.currentEntryIndex = 0;
+                    // this.serialRangePreview = '-';
                 }
                 this.updatePreview();
             },
@@ -4293,8 +4277,8 @@
             },
 
             updatePreview() {
-                // Auto-update serial number when land use changes for normal, subdivision, and merger files
-                if (['normal', 'subdivision', 'merger'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
+                // Auto-update serial number when land use changes for normal, subdivision, merger, and temporary files
+                if (['normal', 'subdivision', 'merger', 'temporary'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
                     const newSerial = getNextSerialForLandUse(this.prefix || this.landUse);
                     if (this.serialNo !== newSerial) {
                         this.serialNo = newSerial;
@@ -4323,7 +4307,8 @@
                 if (this.fileOption === 'extension') {
                     previewText = (this.existingFileNo || baseFileNumber).trim().replace(/-$/, '') + ' AND EXTENSION';
                 } else if (this.fileOption === 'temporary') {
-                    previewText = (this.existingFileNo || baseFileNumber) + '(T)';
+                    // For temporary files, use baseFileNumber (next available) + (T) as per user request
+                    previewText = baseFileNumber + '(T)';
                 } else if (this.fileOption === 'miscellaneous' && this.middlePrefix && this.serialNo && this.year) {
                     previewText = `MISC-${this.middlePrefix}-${this.year}-${this.serialNo}`;
                 } else if (this.fileOption === 'old_mls' && this.serialNo) {
@@ -4403,8 +4388,11 @@
             // Method to refresh serial number from external call
             refreshSerialNumber() {
                 if ((this.fileOption === 'normal' || this.fileOption === '') && !isOverrideMode) {
-                    this.serialNo = nextSerialNo;
-                    this.updatePreview();
+                    const code = this.prefix || this.landUse;
+                    if (code) {
+                        this.serialNo = getNextSerialForLandUse(code);
+                        this.updatePreview();
+                    }
                 }
             },
 
@@ -4719,6 +4707,12 @@
                                 if (window.Alpine) {
                                     const data = window.Alpine.$data(modalEl);
                                     data.existingFileNo = cleanedFileNumber;
+                                    
+                                    // For temporary files, we DO NOT extract serial/year from existing file anymore.
+                                    // Instead, we use the current year and the next available serial.
+                                    // data.year and data.serialNo will be handled by updatePreview() 
+                                    // which now includes 'temporary' in its auto-update logic.
+
                                     data.updatePreview();
                                     console.log('[FileNumberGenerator] Alpine data updated, existing file no:', data.existingFileNo);
                                 } else {

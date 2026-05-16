@@ -173,6 +173,7 @@
         csrf: '{{ csrf_token() }}',
         routes: {
             store: "{{ url('valuation-compensations') }}",
+            batchStore: "{{ route('valuation-compensations.batch-store') }}",
             projectPrint: "{{ url('valuation-compensations/project-print') }}",
             projectSelection: "{{ route('valuation-compensations.projects.selection') }}",
             projectWorkers: "{{ url('valuation-compensations/projects') }}"

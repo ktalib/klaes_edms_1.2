@@ -594,7 +594,7 @@
             <p class="text-xs text-gray-500 mt-1">This note appears before the site measurement list in the generated report.</p>
         </div>
 
-        <div class="space-y-2 border border-emerald-200 bg-emerald-50 rounded-md p-3">
+        <div id="needForEiaSection" class="space-y-2 border border-emerald-200 bg-emerald-50 rounded-md p-3">
             <p class="text-xs font-medium text-gray-700">Need for Environmental Impact Analysis Report (EIAR) <span class="text-red-500">*</span></p>
             <div class="flex items-center space-x-4" id="needForEiaRadioGroup">
                 <label class="inline-flex items-center text-sm text-gray-700">

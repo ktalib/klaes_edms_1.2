@@ -60,6 +60,7 @@
             .action-dropdown-menu {
                 right: auto;
                 left: 0;
+ 
             }
         }
     </style>
@@ -1103,9 +1104,16 @@
 
                                         <!-- Serial Number -->
                                         <div>
-                                            <label for="serialNo" class="block text-sm font-medium text-gray-700 mb-2">
-                                                <i data-lucide="hash" class="w-4 h-4 inline mr-1"></i>
-                                                Serial No.
+                                            <label for="serialNo" class="block text-sm font-medium text-gray-700 mb-2 flex justify-between items-center">
+                                                <span>
+                                                    <i data-lucide="hash" class="w-4 h-4 inline mr-1"></i>
+                                                    Serial No.
+                                                </span>
+                                                <template x-if="['normal', 'subdivision', 'merger', 'temporary'].includes(fileOption)">
+                                                    <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100" 
+                                                          x-text="'Next: ' + getNextSerialForLandUse(prefix || landUse)">
+                                                    </span>
+                                                </template>
                                             </label>
                                             <input :type="serialFieldType" id="serialNo" name="serial_no" 
                                                    x-model="serialNo" 

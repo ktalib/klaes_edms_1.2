@@ -14,7 +14,7 @@ use Illuminate\Validation\ValidationException;
 
 class SltrPrintLabelController extends Controller
 {
-    const RACK_SHELF_CAPACITY = 100;
+    const RACK_SHELF_CAPACITY = 999999;
     const MAX_BATCH_SELECTION = 500;
 
     const PREFIX = 'SLTR';
@@ -151,6 +151,22 @@ class SltrPrintLabelController extends Controller
                 });
             }
 
+            // Exclude files that are already in a batch (already generated/printed)
+            $query->whereNotExists(function ($q) {
+                $q->select(DB::raw(1))
+                    ->from('sltr_print_label_batch_items')
+                    ->whereColumn('sltr_print_label_batch_items.file_number', 'file_indexings.file_number');
+            });
+
+            // Handle exclude_assigned parameter (Skip Assigned Shelves)
+            if ($request->boolean('exclude_assigned')) {
+                $query->where(function ($q) {
+                    $q->whereNull('shelf_location')
+                      ->orWhere('shelf_location', '')
+                      ->orWhere('shelf_location', 'like', '%N/A%');
+                });
+            }
+
             $rows = $query->orderBy('file_number')->get();
 
             if ($rows->isEmpty()) {
@@ -170,14 +186,7 @@ class SltrPrintLabelController extends Controller
             // Check if this sub_prefix already has a generated batch (optional, logic might need adjustment)
             $batchAlreadyUsed = false; // We can relax this for sub_prefix or implement similar logic if needed
 
-            $alreadyBatched = DB::connection('sqlsrv')
-                ->table('sltr_print_label_batch_items')
-                ->whereIn('file_number', $rows->pluck('file_number')->all())
-                ->pluck('file_number')
-                ->flip()
-                ->all();
-
-            $mapped = $rows->map(function ($r) use ($alreadyBatched) {
+            $mapped = $rows->map(function ($r) {
                 return [
                     'id'              => $r->id,
                     'file_number'     => $r->file_number,
@@ -190,7 +199,7 @@ class SltrPrintLabelController extends Controller
                     'tracking_id'     => $r->tracking_id,
                     'sub_prefix'      => $r->sub_prefix,
                     'suffix'          => $r->suffix,
-                    'already_batched' => isset($alreadyBatched[$r->file_number]),
+                    'already_batched' => false,
                 ];
             });
 

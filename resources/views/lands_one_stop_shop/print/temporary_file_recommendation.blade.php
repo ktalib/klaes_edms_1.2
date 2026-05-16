@@ -103,7 +103,7 @@
         .input-line { 
             border: none; 
             background: transparent; 
-            border-bottom: 1px solid #000; 
+            border-bottom: 1px dotted #000; 
             font-size: 1em; 
             font-family: inherit; 
             flex-grow: 1;
@@ -144,7 +144,22 @@
         .bold-caps { font-weight: bold; text-transform: uppercase; }
         .red-text { color: var(--accent-red); font-weight: bold; }
 
+        .print-footer {
+            margin-top: auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding-bottom: 5px;
+        }
+        .print-footer .footer-logo {
+            width: auto;
+            object-fit: contain;
+        }
+        .print-footer .footer-logo.left { height: 40px; }
+        .print-footer .footer-logo.right { height: 32px; }
+
         @media print {
+            .no-print { display: none !important; }
             body { background: none; margin: 0; padding: 0; }
             .a4-page { box-shadow: none; margin: 0; border: none; }
             @page { size: A4; margin: 0; }
@@ -152,6 +167,12 @@
     </style>
 </head>
 <body>
+    <div class="no-print" style="position: fixed; top: 20px; right: 20px; z-index: 9999;">
+        <button onclick="window.print()" style="background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: bold; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); display: flex; align-items: center; gap: 8px; font-family: sans-serif;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+            Print Document
+        </button>
+    </div>
 
     <div class="a4-page">
         <div class="left-sidebar"></div>
@@ -181,7 +202,7 @@
                 <div class="sig-row">
                     <div class="sig-item">
                         <span class="line-label">Name:</span> 
-                        <input type="text" class="input-line" value="">
+                        <input type="text" class="input-line" value="{{ auth()->user()->first_name }} {{ auth()->user()->last_name }}">
                     </div>
                     <div class="sig-item">
                         <span class="line-label">Counter Sign:</span> 
@@ -195,7 +216,7 @@
                         <input type="text" class="input-line" value="">
                     </div>
                     <div class="sig-item">
-                        <span class="line-label">Director Land:</span> 
+                        <span class="line-label">Director Deeds:</span> 
                         <input type="text" class="input-line">
                     </div>
                 </div>
@@ -258,6 +279,11 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div class="print-footer">
+                <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Left Logo" class="footer-logo left">
+                <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="Right Logo" class="footer-logo right">
             </div>
 
         </div>

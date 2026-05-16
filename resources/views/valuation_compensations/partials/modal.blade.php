@@ -250,7 +250,7 @@
                                 @endforeach
                                 <option value="Other">Other (Please specify)</option>
                             </select>
-                            <input type="text" id="building_type_other" 
+                            <input type="text" name="building_type_other" id="building_type_other" 
                                 class="hidden w-full mt-3 px-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
                                 placeholder="Specify building type...">
                         </div>
@@ -277,7 +277,7 @@
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Area Covered (m²) <span class="text-red-500">*</span></label>
                                 <input type="number" step="0.01" name="area_covered" id="area_covered" required
-                                    class="calc-trigger w-full px-4 py-3 rounded-xl border border-blue-100 bg-blue-50/50 text-sm font-bold text-blue-700 shadow-inner"
+                                    class="calc-trigger w-full px-4 py-3 rounded-xl border border-blue-100 bg-blue-50/50 focus:border-blue-500 focus:bg-white text-sm font-bold text-blue-700 shadow-inner transition"
                                     placeholder="0.00">
                             </div>
                         </div>
@@ -301,62 +301,253 @@
                     </div>
 
                     <!-- Section 2.1: Structure Type -->
-                    <div class="pt-6 mb-6">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-4">Structure Type</label>
-                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                            @foreach($valuationItems->filter(fn($i) => in_array($i->name, ['Permanent', 'Semi-Permanent'])) as $item)
-                            <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 transition cursor-pointer group relative">
-                                <input type="radio" name="structure_type" value="{{ $item->name }}" 
-                                    class="structure-type-radio absolute top-3 right-3 w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500">
-                                <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-600 transition">
-                                    <i data-lucide="building" class="h-4 w-4"></i>
-                                </div>
-                                <span class="text-[11px] font-bold text-slate-600 group-hover:text-blue-700 leading-tight pr-5">{{ $item->name }}</span>
-                            </label>
-                            @endforeach
+                    <div class="pt-6 mb-8">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
+                            <!-- Structure Type -->
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Structure Type</label>
+                                <select name="structure_type" id="structure_type_select" 
+                                    class="structure-type-dropdown w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-[11px] font-bold text-slate-700">
+                                    <option value="">Select Structure Type</option>
+                                    @foreach($valuationItems->where('type', 'StructureType') as $item)
+                                        <option value="{{ $item->name }}">{{ $item->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <!-- Completion Stage -->
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Completion Stage</label>
+                                <select name="completion_stage" id="completion_stage_select" 
+                                    class="structure-type-dropdown w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-[11px] font-bold text-slate-700">
+                                    <option value="">Select Stage</option>
+                                    @foreach($valuationItems->where('type', 'CompletionStage') as $item)
+                                        <option value="{{ $item->name }}">{{ $item->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Compensated Items -->
-                    <div class="pt-6">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-4">Items Considered During Valuation</label>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            @foreach($valuationItems->filter(fn($i) => !in_array($i->name, ['Permanent', 'Semi-Permanent'])) as $item)
-                            @php
-                                $icon = 'box';
-                                $lower = strtolower($item->name);
-                                if (str_contains($lower, 'building') || str_contains($lower, 'permanent') || str_contains($lower, 'warehouse')) $icon = 'building';
-                                if (str_contains($lower, 'wall') || str_contains($lower, 'fence')) $icon = 'fence';
-                                if (str_contains($lower, 'pavement') || str_contains($lower, 'court yard')) $icon = 'layers';
-                                if (str_contains($lower, 'borehole') || str_contains($lower, 'well')) $icon = 'droplets';
-                                if (str_contains($lower, 'soackaway') || str_contains($lower, 'pitlatrine')) $icon = 'trash-2';
-                                if (str_contains($lower, 'reservoir') || str_contains($lower, 'pond')) $icon = 'container';
-                                if (str_contains($lower, 'hut') || str_contains($lower, 'shed') || str_contains($lower, 'cage')) $icon = 'home';
-                                if (str_contains($lower, 'nest') || str_contains($lower, 'animal') || str_contains($lower, 'fish')) $icon = 'ghost';
-                                if (str_contains($lower, 'granary')) $icon = 'archive';
-                                if (str_contains($lower, 'fuel') || str_contains($lower, 'pump')) $icon = 'fuel';
-                                if (str_contains($lower, 'wire') || str_contains($lower, 'mesh')) $icon = 'grid';
-                                if (str_contains($lower, 'dpc')) $icon = 'maximize';
-                            @endphp
-                            <div class="flex flex-col gap-2 p-3 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 transition group">
-                                <label class="flex items-center gap-3 cursor-pointer relative">
-                                    <input type="checkbox" name="compensated_items_list[]" value="{{ $item->name }}" 
-                                        class="item-checkbox absolute top-0 right-0 w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500">
-                                    <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-600 transition">
-                                        <i data-lucide="{{ $icon }}" class="h-4 w-4"></i>
+                    <div class="pt-6 space-y-8">
+                        <div class="flex items-center justify-between">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider">Structures Considered During Valuation</label>
+                            <span class="text-[10px] text-slate-400 font-medium italic">Select items and enter measurements where required</span>
+                        </div>
+
+                        @php
+                            // Items categorized as 'Other' (not in the dropdowns above)
+                            $filteredItems = $valuationItems->where('type', 'Other');
+                            
+                            $linearItemsList = ['Cornstalk Fence', 'Sandcare Wall', 'Wire mesh'];
+                            $volumeItemsList = ['Pavement', 'Mass concrete pavement', 'Interlock Court yard', 'DPC', 'Mud Wall', 'Fish pond'];
+                            $shedItemsList   = []; 
+
+                            $groups = [
+                                [
+                                    'title' => 'Linear Measurements (Fencing/Walls)',
+                                    'subtitle' => 'L × Rate',
+                                    'icon' => 'maximize-2',
+                                    'color' => 'amber',
+                                    'is_exclusive' => false,
+                                    'items' => $filteredItems->filter(fn($i) => in_array($i->name, $linearItemsList))
+                                ],
+                                [
+                                    'title' => 'Volume Measurements (Pavement/DPC)',
+                                    'subtitle' => 'L×W×H × Rate',
+                                    'icon' => 'box',
+                                    'color' => 'indigo',
+                                    'is_exclusive' => false,
+                                    'items' => $filteredItems->filter(fn($i) => in_array($i->name, $volumeItemsList))
+                                ],
+                                [
+                                    'title' => 'Other Structures',
+                                    'subtitle' => 'Standard & Area Based',
+                                    'icon' => 'archive',
+                                    'color' => 'blue',
+                                    'is_exclusive' => false,
+                                    'items' => $filteredItems->filter(fn($i) => 
+                                        !in_array($i->name, $linearItemsList) && 
+                                        !in_array($i->name, $volumeItemsList)
+                                    )
+                                ]
+                            ];
+                        @endphp
+
+                        @foreach($groups as $group)
+                            @if($group['items']->count() > 0)
+                                <div class="space-y-4">
+                                    <div class="flex items-center gap-3">
+                                        <div class="h-px flex-1 bg-slate-100"></div>
+                                        <div class="flex items-center gap-2 px-3 py-1 rounded-full bg-{{ $group['color'] }}-50 border border-{{ $group['color'] }}-100">
+                                            <i data-lucide="{{ $group['icon'] }}" class="h-3 w-3 text-{{ $group['color'] }}-500"></i>
+                                            <span class="text-[10px] font-bold text-{{ $group['color'] }}-700 uppercase tracking-widest">{{ $group['title'] }}</span>
+                                            <span class="text-[9px] font-medium text-{{ $group['color'] }}-400 bg-white px-1.5 py-0.5 rounded border border-{{ $group['color'] }}-50">{{ $group['subtitle'] }}</span>
+                                        </div>
+                                        <div class="h-px flex-1 bg-slate-100"></div>
                                     </div>
-                                    <span class="text-[11px] font-bold text-slate-600 group-hover:text-blue-700 leading-tight pr-5">{{ $item->name }}</span>
-                                </label>
-                                <div class="item-amount-wrapper hidden mt-1">
-                                    <div class="relative">
-                                        <input type="number" step="0.01" class="item-amount-input w-full pl-7 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-blue-600 focus:border-blue-400 outline-none transition" 
-                                            placeholder="Amount" data-item-name="{{ $item->name }}">
-                                        <div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-blue-400 font-bold">₦</div>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        @foreach($group['items'] as $item)
+                                            @php
+                                                $icon = 'box';
+                                                $lower = strtolower($item->name);
+                                                if (str_contains($lower, 'building') || str_contains($lower, 'permanent') || str_contains($lower, 'warehouse')) $icon = 'building';
+                                                if (str_contains($lower, 'wall') || str_contains($lower, 'fence')) $icon = 'fence';
+                                                if (str_contains($lower, 'pavement') || str_contains($lower, 'court yard')) $icon = 'layers';
+                                                if (str_contains($lower, 'borehole') || str_contains($lower, 'well')) $icon = 'droplets';
+                                                if (str_contains($lower, 'soackaway') || str_contains($lower, 'pitlatrine')) $icon = 'trash-2';
+                                                if (str_contains($lower, 'reservoir') || str_contains($lower, 'pond')) $icon = 'container';
+                                                if (str_contains($lower, 'hut') || str_contains($lower, 'shed') || str_contains($lower, 'cage')) $icon = 'home';
+                                                if (str_contains($lower, 'nest') || str_contains($lower, 'animal') || str_contains($lower, 'fish')) $icon = 'ghost';
+                                                if (str_contains($lower, 'granary')) $icon = 'archive';
+                                                if (str_contains($lower, 'fuel') || str_contains($lower, 'pump')) $icon = 'fuel';
+                                                if (str_contains($lower, 'wire') || str_contains($lower, 'mesh')) $icon = 'grid';
+                                                if (str_contains($lower, 'dpc')) $icon = 'maximize';
+                                                
+                                                // Determine calculation type per item
+                                                $calcType = 'standard';
+                                                if (in_array($item->name, $linearItemsList)) $calcType = 'linear';
+                                                elseif (in_array($item->name, $volumeItemsList)) $calcType = 'volume';
+                                                elseif (in_array($item->name, $shedItemsList)) $calcType = 'shed';
+
+                                                $itemColor = $group['color'];
+                                                $itemFormulaBadge = null;
+                                                
+                                                if ($calcType === 'shed') {
+                                                    $itemColor = 'emerald';
+                                                    $itemFormulaBadge = 'L × W × Rate';
+                                                } elseif ($calcType === 'linear') {
+                                                    $itemFormulaBadge = 'L × Rate';
+                                                } elseif ($calcType === 'volume') {
+                                                    $itemFormulaBadge = 'L×W×H × Rate';
+                                                }
+                                            @endphp
+
+                                            <div class="flex flex-col gap-2 p-3 rounded-xl border border-slate-100 hover:border-{{ $itemColor }}-200 hover:bg-{{ $itemColor }}-50/30 transition group item-container bg-white shadow-sm">
+                                                <label class="flex items-center gap-3 cursor-pointer relative">
+                                                    <input type="checkbox" name="compensated_items_list[]" value="{{ $item->name }}"
+                                                        class="item-checkbox absolute top-0 right-0 w-4 h-4 text-{{ $itemColor }}-600 border-slate-300 rounded focus:ring-{{ $itemColor }}-500">
+                                                    <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-{{ $itemColor }}-100 group-hover:text-{{ $itemColor }}-600 transition flex-shrink-0">
+                                                        <i data-lucide="{{ $icon }}" class="h-4 w-4"></i>
+                                                    </div>
+                                                    <div class="flex flex-col gap-0.5 pr-5 min-w-0">
+                                                        <span class="text-[11px] font-bold text-slate-600 group-hover:text-{{ $itemColor }}-700 leading-tight">{{ $item->name }}</span>
+                                                        @if($itemFormulaBadge)
+                                                            <span class="text-[8px] font-bold uppercase tracking-wider text-{{ $itemColor }}-500">{{ $itemFormulaBadge }}</span>
+                                                        @endif
+                                                    </div>
+                                                </label>
+
+                                                <div class="item-amount-wrapper hidden mt-1">
+                                         @if($calcType === 'linear')
+                                        {{-- Linear: Total Length = a + b + ... N --}}
+                                        <div class="space-y-2">
+                                            <div>
+                                                <label class="block text-[9px] font-bold text-amber-500 uppercase tracking-wider mb-1">Dimensions (Sum: a + b + ... N)</label>
+                                                <input type="text"
+                                                    class="sub-calc-trigger sub-length-formula w-full px-2 py-2 rounded-lg border border-amber-200 bg-white text-[11px] font-bold text-slate-700 focus:border-amber-400 outline-none transition"
+                                                    placeholder="e.g. 15.5 + 10 + 5" data-item-name="{{ $item->name }}">
+                                            </div>
+                                            
+                                            <div class="grid grid-cols-2 gap-2">
+                                                <div class="flex flex-col justify-center px-2 py-1.5 bg-amber-50/50 rounded-lg border border-amber-100">
+                                                    <span class="text-[8px] font-bold text-amber-500 uppercase tracking-tight">Total Length (X)</span>
+                                                    <span class="sub-total-length-display text-[11px] font-black text-amber-700">0.00m</span>
+                                                    <input type="hidden" class="sub-length" value="0">
+                                                </div>
+                                                <div>
+                                                    <label class="block text-[9px] font-bold text-amber-500 uppercase tracking-wider mb-1">Rate (₦/m)</label>
+                                                    <div class="relative">
+                                                        <input type="number" step="0.01" min="0"
+                                                            class="sub-calc-trigger sub-rate w-full pl-5 pr-2 py-2 rounded-lg border border-amber-200 bg-white text-[11px] font-bold text-slate-700 focus:border-amber-400 outline-none transition"
+                                                            placeholder="0.00" data-item-name="{{ $item->name }}">
+                                                        <span class="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] text-amber-400 font-bold">₦</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div class="flex items-center gap-2 px-2 py-1.5 bg-amber-100/50 rounded-lg border border-amber-200">
+                                                <div class="flex flex-col">
+                                                    <span class="text-[8px] font-black text-amber-600 uppercase">Total Length = X [RATE] = Amount</span>
+                                                    <div class="relative mt-0.5">
+                                                        <span class="absolute left-0 top-1/2 -translate-y-1/2 text-[10px] text-amber-600 font-bold">₦</span>
+                                                        <input type="number" step="0.01" readonly
+                                                            class="item-amount-input w-full bg-transparent text-[12px] font-black text-amber-800 outline-none pl-4"
+                                                            placeholder="0.00" data-item-name="{{ $item->name }}">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>                                     
+                                        @elseif($calcType === 'volume')
+                                            {{-- Volume: Total Volume = V [RATE] = Amount --}}
+                                            <div class="space-y-2">
+                                                <div class="grid grid-cols-3 gap-1.5">
+                                                    <div>
+                                                        <label class="block text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-1">L (m)</label>
+                                                        <input type="number" step="0.01" min="0"
+                                                            class="sub-calc-trigger sub-length w-full px-2 py-1.5 rounded-lg border border-indigo-200 bg-white text-[11px] font-bold text-slate-700 focus:border-indigo-400 outline-none transition"
+                                                            placeholder="0.00" data-item-name="{{ $item->name }}">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-1">W (m)</label>
+                                                        <input type="number" step="0.01" min="0"
+                                                            class="sub-calc-trigger sub-width w-full px-2 py-1.5 rounded-lg border border-indigo-200 bg-white text-[11px] font-bold text-slate-700 focus:border-indigo-400 outline-none transition"
+                                                            placeholder="0.00" data-item-name="{{ $item->name }}">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-1">H (m)</label>
+                                                        <input type="number" step="0.01" min="0"
+                                                            class="sub-calc-trigger sub-height w-full px-2 py-1.5 rounded-lg border border-indigo-200 bg-white text-[11px] font-bold text-slate-700 focus:border-indigo-400 outline-none transition"
+                                                            placeholder="0.00" data-item-name="{{ $item->name }}">
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="grid grid-cols-2 gap-2">
+                                                    <div class="flex flex-col justify-center px-2 py-1.5 bg-indigo-50/50 rounded-lg border border-indigo-100">
+                                                        <span class="text-[8px] font-bold text-indigo-500 uppercase tracking-tight">Total Volume (V)</span>
+                                                        <span class="sub-total-volume-display text-[11px] font-black text-indigo-700">0.000 m³</span>
+                                                        <input type="hidden" class="sub-volume-val" value="0">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-1">Rate (₦/m³)</label>
+                                                        <div class="relative">
+                                                            <input type="number" step="0.01" min="0"
+                                                                class="sub-calc-trigger sub-rate w-full pl-5 pr-2 py-2 rounded-lg border border-indigo-200 bg-white text-[11px] font-bold text-slate-700 focus:border-indigo-400 outline-none transition"
+                                                                placeholder="0.00" data-item-name="{{ $item->name }}">
+                                                            <span class="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] text-indigo-400 font-bold">₦</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div class="flex items-center gap-2 px-2 py-1.5 bg-indigo-100/50 rounded-lg border border-indigo-200">
+                                                    <div class="flex flex-col">
+                                                        <span class="text-[8px] font-black text-indigo-600 uppercase">Total Volume = V [RATE] = Amount</span>
+                                                        <div class="relative mt-0.5">
+                                                            <span class="absolute left-0 top-1/2 -translate-y-1/2 text-[10px] text-indigo-600 font-bold">₦</span>
+                                                            <input type="number" step="0.01" readonly
+                                                                class="item-amount-input w-full bg-transparent text-[12px] font-black text-indigo-800 outline-none pl-4"
+                                                                placeholder="0.00" data-item-name="{{ $item->name }}">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                                    @else
+                                                        <div class="relative">
+                                                            <input type="number" step="0.01" class="item-amount-input w-full pl-7 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-blue-600 focus:border-blue-400 outline-none transition"
+                                                                placeholder="Amount" data-item-name="{{ $item->name }}">
+                                                            <div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-blue-400 font-bold">₦</div>
+                                                        </div>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        @endforeach
                                     </div>
                                 </div>
-                            </div>
-                            @endforeach
-                        </div>
+                            @endif
+                        @endforeach
+
                         <input type="text" name="compensated_items_other" id="compensated_items_other"
                             class="hidden mt-4 w-full px-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
                             placeholder="Specify other items (separate with commas)...">
@@ -446,7 +637,7 @@
                             </div>
                             <div class="md:col-span-1">
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">District <span class="text-slate-400 font-normal italic">(Multi-select)</span></label>
-                                <select id="loc_district" multiple="multiple" class="loc-trigger vfc-select2 w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
+                                <select name="district[]" id="loc_district" multiple="multiple" class="loc-trigger vfc-select2 w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
                                     @foreach($districts as $district)
                                         <option value="{{ $district->name }}">{{ $district->name }}</option>
                                     @endforeach
@@ -454,7 +645,7 @@
                             </div>
                             <div class="md:col-span-1">
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">LGA <span class="text-red-500">*</span> <span class="text-slate-400 font-normal italic">(Multi-select)</span></label>
-                                <select id="loc_lga" required multiple="multiple" class="loc-trigger vfc-select2 w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
+                                <select name="lga[]" id="loc_lga" required multiple="multiple" class="loc-trigger vfc-select2 w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
                                     @foreach($lgas as $lga)
                                         <option value="{{ $lga->LGAName }}">{{ $lga->LGAName }}</option>
                                     @endforeach
@@ -464,12 +655,13 @@
 
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">State <span class="text-red-500">*</span></label>
-                            <select id="loc_state" required class="loc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
+                            <select name="state" id="loc_state" required class="loc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
                                 <option value="">Select State</option>
                                 @foreach($states as $state)
                                     <option value="{{ $state->StateName }}" {{ $state->StateName == 'Kano' ? 'selected' : '' }}>{{ $state->StateName }}</option>
                                 @endforeach
                             </select>
+                        </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Full Location Address <span class="text-red-500">*</span></label>
                             <textarea name="location" id="location" required rows="2"
@@ -479,19 +671,74 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Batch Entry Section (Visible when items added) -->
+                <div id="batch-list-section" class="hidden pt-10 mt-10 border-t-4 border-slate-900">
+                    <div class="flex items-center justify-between mb-6">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-lg">
+                                <i data-lucide="layers" class="h-5 w-5"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-sm font-black text-slate-900 uppercase tracking-tighter">Staged Records Queue</h4>
+                                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest"><span id="batch-count">0</span> records pending commitment</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="VFC.clearBatch()" class="text-[10px] font-black text-slate-400 hover:text-red-600 uppercase tracking-widest border-b-2 border-transparent hover:border-red-100 transition-all pb-0.5">
+                            Clear Queue
+                        </button>
+                    </div>
+                    
+                    <div class="overflow-hidden rounded-2xl border-2 border-slate-900 bg-white shadow-sm">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-900 text-[10px] font-black text-white uppercase tracking-widest">
+                                    <th class="px-6 py-4">Beneficiary / Owner</th>
+                                    <th class="px-6 py-4">Asset Type</th>
+                                    <th class="px-6 py-4 text-right">Compensation Amount</th>
+                                    <th class="px-6 py-4 text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="batch-table-body" class="text-xs text-slate-800 divide-y-2 divide-slate-50">
+                                <!-- Dynamically populated -->
+                            </tbody>
+                            <tfoot>
+                                <tr class="bg-slate-50 font-black text-slate-900">
+                                    <td colspan="2" class="px-6 py-5 text-right text-[10px] uppercase tracking-widest border-t-2 border-slate-900">Total Batch Value:</td>
+                                    <td class="px-6 py-5 text-right text-sm border-t-2 border-slate-900 font-mono" id="batch-total-amount">₦0.00</td>
+                                    <td class="border-t-2 border-slate-900"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
             </div>
         </form>
 
         <!-- Footer -->
-        <div class="px-8 py-6 border-t border-slate-100 flex items-center justify-end gap-3 bg-white shrink-0 shadow-inner">
-            <button type="button" class="close-modal px-6 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition">
-                Cancel
-            </button>
-            <button type="submit" form="valuation-form" id="submit-btn"
-                class="px-8 py-3 rounded-xl bg-blue-600 text-white font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition flex items-center gap-2">
-                <span>Submit</span>
-                <i data-lucide="send" class="h-4 w-4"></i>
-            </button>
+        <div class="px-8 py-6 border-t-2 border-slate-100 flex items-center justify-between bg-white shrink-0">
+            <div class="flex items-center gap-2">
+                <button type="button" class="close-modal px-4 py-2 rounded-xl text-slate-400 font-black uppercase tracking-widest hover:text-slate-900 transition text-[10px]">
+                    Discard
+                </button>
+            </div>
+            <div class="flex items-center gap-3">
+                <button type="button" onclick="VFC.addToBatch()" id="add-to-batch-btn"
+                    class="px-6 py-3 rounded-xl border-2 border-slate-900 text-slate-900 font-black hover:bg-slate-900 hover:text-white transition-all flex items-center gap-2 text-xs uppercase tracking-widest">
+                    <i data-lucide="plus" class="h-4 w-4"></i>
+                    <span>Add to List</span>
+                </button>
+                <button type="button" onclick="VFC.saveAllBatch()" id="save-batch-btn"
+                    class="hidden px-8 py-3 rounded-xl bg-slate-900 text-white font-black shadow-xl shadow-slate-200 hover:bg-slate-800 transition-all flex items-center gap-2 text-xs uppercase tracking-widest">
+                    <span>Commit Batch to Database</span>
+                    <i data-lucide="database" class="h-4 w-4"></i>
+                </button>
+                <button type="submit" form="valuation-form" id="submit-btn"
+                    class="px-8 py-3 rounded-xl bg-slate-900 text-white font-black shadow-xl shadow-slate-200 hover:bg-slate-800 transition-all flex items-center gap-2 text-xs uppercase tracking-widest">
+                    <span>Save Single Record</span>
+                    <i data-lucide="save" class="h-4 w-4"></i>
+                </button>
+            </div>
         </div>
     </div>
 </div>

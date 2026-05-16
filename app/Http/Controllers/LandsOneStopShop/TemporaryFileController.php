@@ -60,6 +60,11 @@ class TemporaryFileController extends Controller
         }
 
         $data                = $validator->validated();
+        
+        if ($data['district'] === 'OTHER' && $request->filled('district_specify')) {
+            $data['district'] = $request->input('district_specify');
+        }
+
         $data['captured_by'] = Auth::id() ?? 1;
         $data['status']      = 'Pending';
 
@@ -86,6 +91,11 @@ class TemporaryFileController extends Controller
         }
 
         $data               = $validator->validated();
+
+        if ($data['district'] === 'OTHER' && $request->filled('district_specify')) {
+            $data['district'] = $request->input('district_specify');
+        }
+
         $data['updated_by'] = Auth::id() ?? 1;
 
         $record->update($data);
@@ -150,6 +160,7 @@ class TemporaryFileController extends Controller
             'file_no'        => 'required|string|max:255',
             'plot_no'        => 'nullable|string|max:100',
             'district'       => 'nullable|string|max:255',
+            'district_specify' => 'nullable|string|max:255',
             'lga'            => 'nullable|string|max:255',
             'phone'          => 'nullable|string|max:50',
             'address'        => 'nullable|string|max:2000',

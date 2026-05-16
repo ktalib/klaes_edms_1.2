@@ -150,11 +150,18 @@ document.addEventListener('DOMContentLoaded', function() {
             conversionSection.classList.toggle('hidden', !isConversion);
         }
 
-        // Sections/measurement/shared areas: show for ST OSS, hide for conversion
+        // Sections/measurement/shared areas/EIAR: show for ST OSS, hide for conversion
+        // NOTE: EIAR is now for Conversion only per user request.
+        const needForEiaSection = document.getElementById('needForEiaSection');
+
         [sectionsCountGroup, nonConversionReservationSection, measurementEntriesSection, measurementSummarySection, sharedAreasSection].forEach(section => {
             if (!section) return;
             section.classList.toggle('hidden', isConversion);
         });
+
+        if (needForEiaSection) {
+            needForEiaSection.classList.toggle('hidden', !isConversion);
+        }
 
         // The old scheme number group is now always hidden — ST OSS uses the simple row, Conversion doesn't need it
         if (schemeNumberGroup) {
@@ -2563,10 +2570,12 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        const needForEiaSelected = document.querySelector('input[name="need_for_eia"]:checked');
-        if (!needForEiaSelected) {
-            const needForEiaAnchor = document.querySelector('input[name="need_for_eia"]');
-            pushError(needForEiaAnchor, 'Need for Environmental Impact Analysis Report (EIAR) selection is required.');
+        if (jsiContext.isConversion) {
+            const needForEiaSelected = document.querySelector('input[name="need_for_eia"]:checked');
+            if (!needForEiaSelected) {
+                const needForEiaAnchor = document.querySelector('input[name="need_for_eia"]');
+                pushError(needForEiaAnchor, 'Need for Environmental Impact Analysis Report (EIAR) selection is required.');
+            }
         }
 
         renderValidationErrors(errors);
@@ -3821,47 +3830,59 @@ document.addEventListener('DOMContentLoaded', function() {
         const nonMetaMeasurementEntries = measurementEntriesArray.filter(entry => !isMetaMeasurementDescription(entry?.description || ''));
         const existingStructurePayload = collectExistingStructurePayload();
         const existingStructureMetaEntry = buildExistingStructureMetaEntry(existingStructurePayload);
-        const needForEiaPayload = collectNeedForEiaPayload();
-        const needForEiaMetaEntry = buildNeedForEiaMetaEntry(needForEiaPayload);
-        const conversionPurposeLutPayload = collectConversionPurposeLutPayload();
-        const conversionPurposeLutMetaEntry = buildConversionPurposeLutMetaEntry(conversionPurposeLutPayload);
-        const conversionReservationPayload = collectConversionReservationPayload();
-        const conversionReservationMetaEntry = buildConversionReservationMetaEntry(conversionReservationPayload);
-
+        
         if (existingStructureMetaEntry) {
             nonMetaMeasurementEntries.unshift(existingStructureMetaEntry);
         }
 
-        if (needForEiaMetaEntry) {
-            nonMetaMeasurementEntries.unshift(needForEiaMetaEntry);
-        }
+        // Only add conversion-specific meta entries for conversion applications
+        if (jsiContext.isConversion) {
+            const needForEiaPayload = collectNeedForEiaPayload();
+            const needForEiaMetaEntry = buildNeedForEiaMetaEntry(needForEiaPayload);
+            const conversionPurposeLutPayload = collectConversionPurposeLutPayload();
+            const conversionPurposeLutMetaEntry = buildConversionPurposeLutMetaEntry(conversionPurposeLutPayload);
+            const conversionReservationPayload = collectConversionReservationPayload();
+            const conversionReservationMetaEntry = buildConversionReservationMetaEntry(conversionReservationPayload);
 
-        if (conversionPurposeLutMetaEntry) {
-            nonMetaMeasurementEntries.unshift(conversionPurposeLutMetaEntry);
-        }
+            if (needForEiaMetaEntry) {
+                nonMetaMeasurementEntries.unshift(needForEiaMetaEntry);
+            }
 
-        if (conversionReservationMetaEntry) {
-            nonMetaMeasurementEntries.unshift(conversionReservationMetaEntry);
+            if (conversionPurposeLutMetaEntry) {
+                nonMetaMeasurementEntries.unshift(conversionPurposeLutMetaEntry);
+            }
+
+            if (conversionReservationMetaEntry) {
+                nonMetaMeasurementEntries.unshift(conversionReservationMetaEntry);
+            }
+            
+            // Also set the specific form fields for conversion
+            formData.set('need_for_eia', needForEiaPayload.selection ?? '');
+            formData.set('detailed_land_use_id', conversionPurposeLutPayload.detailed_land_use_id || '');
+            formData.set('purpose_lut', conversionPurposeLutPayload.purpose_lut || '');
+            formData.set('purpose_lut_option', conversionPurposeLutPayload.purpose_lut_option || '');
+            formData.set('purpose_lut_other', conversionPurposeLutPayload.purpose_lut_other || '');
+            formData.set('reservation_required', conversionReservationPayload.reservation_required ?? '');
+            formData.set('road_category', conversionReservationPayload.road_category || '');
+            formData.set('observed_road_category', conversionReservationPayload.observed_road_category || '');
+            formData.set('road_category_other', conversionReservationPayload.road_category_other || '');
+            formData.set('right_of_way', conversionReservationPayload.right_of_way || '');
+            formData.set('right_of_way_other', conversionReservationPayload.right_of_way_other || '');
+            formData.set('existing_road_reservation', conversionReservationPayload.right_of_way || '');
+            formData.set('recommended_road_reservation', conversionReservationPayload.recommended_reservation || '');
+            formData.set('recommended_comment_status', conversionReservationPayload.recommended_comment_status || '');
+            formData.set('how_many_meters', conversionReservationPayload.how_many_meters || '');
+        } else {
+            // For non-conversion (ST), ensure these are empty/null
+            formData.set('need_for_eia', '');
+            formData.set('detailed_land_use_id', '');
+            formData.set('purpose_lut', '');
+            formData.set('reservation_required', '');
         }
 
         formData.set('existing_structure', existingStructurePayload.selection ?? '');
         formData.set('existing_structure_dimensions', existingStructurePayload.dimensions || '');
         formData.set('existing_structure_amount', Number.isFinite(existingStructurePayload.amount) ? Number(existingStructurePayload.amount).toFixed(2) : '');
-        formData.set('need_for_eia', needForEiaPayload.selection ?? '');
-        formData.set('detailed_land_use_id', conversionPurposeLutPayload.detailed_land_use_id || '');
-        formData.set('purpose_lut', conversionPurposeLutPayload.purpose_lut || '');
-        formData.set('purpose_lut_option', conversionPurposeLutPayload.purpose_lut_option || '');
-        formData.set('purpose_lut_other', conversionPurposeLutPayload.purpose_lut_other || '');
-        formData.set('reservation_required', conversionReservationPayload.reservation_required ?? '');
-        formData.set('road_category', conversionReservationPayload.road_category || '');
-        formData.set('observed_road_category', conversionReservationPayload.observed_road_category || '');
-        formData.set('road_category_other', conversionReservationPayload.road_category_other || '');
-        formData.set('right_of_way', conversionReservationPayload.right_of_way || '');
-        formData.set('right_of_way_other', conversionReservationPayload.right_of_way_other || '');
-        formData.set('existing_road_reservation', conversionReservationPayload.right_of_way || '');
-        formData.set('recommended_road_reservation', conversionReservationPayload.recommended_reservation || '');
-        formData.set('recommended_comment_status', conversionReservationPayload.recommended_comment_status || '');
-        formData.set('how_many_meters', conversionReservationPayload.how_many_meters || '');
 
         console.log('Measurement entries being sent:', nonMetaMeasurementEntries);
         

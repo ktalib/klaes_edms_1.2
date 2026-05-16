@@ -14,6 +14,7 @@ class ValuationReport extends Model
         'inspection_date',
         'land_use_purpose',
         'valuation_purpose',
+        'valuation_type',
         'full_name',
         'address',
         'property_no',

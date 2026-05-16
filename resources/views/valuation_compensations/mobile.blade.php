@@ -418,6 +418,33 @@
             gap: 10px;
         }
 
+        .items-section-header {
+            grid-column: 1 / -1;
+            padding: 12px 4px 6px 4px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 4px;
+            margin-top: 10px;
+        }
+
+        .items-section-header h3 {
+            font-size: 10px;
+            font-weight: 800;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .items-section-header p {
+            font-size: 9px;
+            color: var(--text-dim);
+            font-style: italic;
+            margin-top: 2px;
+            font-weight: 500;
+        }
+
         .check-item {
             background: var(--surface2);
             border: 1.5px solid var(--border);
@@ -465,6 +492,78 @@
         .check-label {
             font-size: 12px;
             font-weight: 600;
+        }
+
+        .calc-box {
+            grid-column: 1 / -1;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-top: none;
+            border-bottom-left-radius: var(--radius-sm);
+            border-bottom-right-radius: var(--radius-sm);
+            padding: 12px;
+            margin-top: -12px;
+            margin-bottom: 8px;
+            display: none;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .calc-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .calc-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .calc-field label {
+            font-size: 9px;
+            font-weight: 800;
+            color: var(--text-dim);
+            text-transform: uppercase;
+        }
+
+        .calc-inp {
+            width: 100%;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px;
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .calc-result {
+            grid-column: 1 / -1;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .calc-total-label {
+            font-size: 10px;
+            font-weight: 800;
+            color: var(--accent);
+        }
+
+        .calc-total-val {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--success);
         }
 
         /* ── FOOTER BAR ── */
@@ -698,6 +797,12 @@
                         </div>
                     </div>
                     <div class="field">
+                        <label>Sub-Project <span class="req">*</span></label>
+                        <select name="sub_project_id" id="subProjectSelect" class="inp" required disabled>
+                            <option value="">Select Project First</option>
+                        </select>
+                    </div>
+                    <div class="field">
                         <label>Assigned Worker <span class="req">*</span></label>
                         <select name="worker_id" id="workerSelect" class="inp" required disabled>
                             <option value="">Select Project First</option>
@@ -757,6 +862,22 @@
                     <h2>Building Assessment</h2>
                 </div>
                 <div class="section-body">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                        <div class="field" style="margin-bottom: 0;">
+                            <label>Structure Type</label>
+                            <select name="structure_type" id="structureType" class="inp struct-dropdown">
+                                <option value="">Select</option>
+                            </select>
+                            <input type="text" id="structureTypeOther" class="inp hidden mt-2" placeholder="Specify Structure Type...">
+                        </div>
+                        <div class="field" style="margin-bottom: 0;">
+                            <label>Completion Stage</label>
+                            <select name="completion_stage" id="completionStage" class="inp struct-dropdown">
+                                <option value="">Select</option>
+                            </select>
+                            <input type="text" id="completionStageOther" class="inp hidden mt-2" placeholder="Specify Stage...">
+                        </div>
+                    </div>
                     <div class="field">
                         <label>Building Type <span class="req">*</span></label>
                         <select name="building_type" id="buildingType" class="inp" required>
@@ -987,17 +1108,96 @@
                 // Banks
                 allBanks = data.banks || [];
 
-                // Populate Valuation Items
+                // Populate Valuation Items and Dropdowns
                 const itemGrid = document.getElementById('valuationItemsGrid');
+                const structSel = document.getElementById('structureType');
+                const compSel = document.getElementById('completionStage');
+                
                 itemGrid.innerHTML = '';
+                structSel.innerHTML = '<option value="">Select</option>';
+                compSel.innerHTML = '<option value="">Select</option>';
+
                 if (data.valuationItems) {
+                    const linearItems = ['Cornstalk Fence', 'Sandcare Wall', 'Wire mesh'];
+                    const volumeItems = ['Pavement', 'Mass concrete pavement', 'Interlock Court yard', 'DPC', 'Mud Wall', 'Fish pond'];
+                    
+                    const sections = {
+                        linear: { title: 'Linear Measurements', sub: 'L × Rate', icon: 'maximize-2', items: [] },
+                        volume: { title: 'Volume Measurements', sub: 'L×W×H × Rate', icon: 'box', items: [] },
+                        other: { title: 'Other Structures', sub: 'Standard & Area Based', icon: 'archive', items: [] }
+                    };
+
                     data.valuationItems.forEach(item => {
-                        itemGrid.innerHTML += `
-                            <div class="check-item ${item.name === 'Others' ? 'special-other' : ''}" data-val="${item.name}">
-                                <div class="check-box"><i data-lucide="check" style="width:10px;height:10px;"></i></div>
-                                <span class="check-label">${item.name}</span>
-                            </div>
-                        `;
+                        if (item.type === 'StructureType') {
+                            structSel.innerHTML += `<option value="${item.name}">${item.name}</option>`;
+                        } else if (item.type === 'CompletionStage') {
+                            compSel.innerHTML += `<option value="${item.name}">${item.name}</option>`;
+                        } else {
+                            if (linearItems.includes(item.name)) sections.linear.items.push(item);
+                            else if (volumeItems.includes(item.name)) sections.volume.items.push(item);
+                            else sections.other.items.push(item);
+                        }
+                    });
+
+                    Object.values(sections).forEach(sec => {
+                        if (sec.items.length > 0) {
+                            itemGrid.innerHTML += `
+                                <div class="items-section-header">
+                                    <h3><i data-lucide="${sec.icon}" style="width:10px;"></i> ${sec.title}</h3>
+                                    <p>${sec.sub}</p>
+                                </div>
+                            `;
+                            sec.items.forEach(item => {
+                                let type = 'standard';
+                                if (linearItems.includes(item.name)) type = 'linear';
+                                else if (volumeItems.includes(item.name)) type = 'volume';
+
+                                itemGrid.innerHTML += `
+                                    <div class="check-item ${item.name === 'Others' || item.name === 'Other' ? 'special-other' : ''}" data-val="${item.name}" data-type="${type}">
+                                        <div class="check-box"><i data-lucide="check" style="width:10px;height:10px;"></i></div>
+                                        <span class="check-label">${item.name}</span>
+                                    </div>
+                                    <div class="calc-box" id="calc-${item.name.replace(/\s+/g, '-')}">
+                                        <div class="calc-grid">
+                                            ${type === 'linear' ? `
+                                                <div class="calc-field" style="grid-column: 1/-1;">
+                                                    <label>Length (L)</label>
+                                                    <input type="number" class="calc-inp l-val" placeholder="0.00" step="0.01">
+                                                </div>
+                                            ` : ''}
+                                            ${type === 'volume' ? `
+                                                <div class="calc-field">
+                                                    <label>Length (L)</label>
+                                                    <input type="number" class="calc-inp l-val" placeholder="0.00" step="0.01">
+                                                </div>
+                                                <div class="calc-field">
+                                                    <label>Width (W)</label>
+                                                    <input type="number" class="calc-inp w-val" placeholder="0.00" step="0.01">
+                                                </div>
+                                                <div class="calc-field" style="grid-column: 1/-1;">
+                                                    <label>Height (H)</label>
+                                                    <input type="number" class="calc-inp h-val" placeholder="0.00" step="0.01">
+                                                </div>
+                                            ` : ''}
+                                            ${type === 'standard' ? `
+                                                <div class="calc-field" style="grid-column: 1/-1;">
+                                                    <label>Quantity / Area</label>
+                                                    <input type="number" class="calc-inp q-val" value="1" step="0.01">
+                                                </div>
+                                            ` : ''}
+                                            <div class="calc-field" style="grid-column: 1/-1;">
+                                                <label>Rate (₦)</label>
+                                                <input type="number" class="calc-inp r-val" placeholder="0.00" step="0.01">
+                                            </div>
+                                            <div class="calc-result">
+                                                <span class="calc-total-label">SUB AMOUNT</span>
+                                                <span class="calc-total-val">₦0.00</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                        }
                     });
                     
                     // Re-initialize click listeners for new items
@@ -1076,22 +1276,89 @@
                 item.onclick = function() {
                     this.classList.toggle('active');
                     const val = this.dataset.val;
+                    const type = this.dataset.type;
+                    const calcBox = document.getElementById(`calc-${val.replace(/\s+/g, '-')}`);
                     
                     if (this.classList.contains('active')) {
                         if (!selectedItems.includes(val)) selectedItems.push(val);
                         if (val === 'Others' || val === 'Other') {
                             document.getElementById('compItemsOtherText').classList.remove('hidden');
                         }
+                        if (calcBox) calcBox.style.display = 'block';
                     } else {
                         selectedItems = selectedItems.filter(i => i !== val);
                         if (val === 'Others' || val === 'Other') {
                             document.getElementById('compItemsOtherText').classList.add('hidden');
                         }
+                        if (calcBox) {
+                            calcBox.style.display = 'none';
+                            // Reset values in calc box
+                            calcBox.querySelectorAll('input').forEach(inp => inp.value = '');
+                            calcBox.querySelector('.calc-total-val').textContent = '₦0.00';
+                        }
                     }
                     
-                    document.getElementById('compItemsVal').value = selectedItems.join(', ');
+                    updateItemsValue();
+                    calculateAllCompensation();
                 };
             });
+
+            // Add input listeners for all calc inputs
+            document.querySelectorAll('.calc-inp').forEach(inp => {
+                inp.addEventListener('input', function() {
+                    const box = this.closest('.calc-box');
+                    if (!box) return;
+
+                    const type = box.previousElementSibling.dataset.type;
+                    const l = parseFloat(box.querySelector('.l-val')?.value) || 0;
+                    const w = parseFloat(box.querySelector('.w-val')?.value) || 0;
+                    const h = parseFloat(box.querySelector('.h-val')?.value) || 0;
+                    const q = parseFloat(box.querySelector('.q-val')?.value) || 1;
+                    const r = parseFloat(box.querySelector('.r-val')?.value) || 0;
+
+                    let total = 0;
+                    if (type === 'linear') total = l * r;
+                    else if (type === 'volume') total = l * w * h * r;
+                    else total = q * r;
+
+                    box.querySelector('.calc-total-val').textContent = '₦' + total.toLocaleString(undefined, {minimumFractionDigits: 2});
+                    box.dataset.total = total;
+
+                    updateItemsValue();
+                    calculateAllCompensation();
+                });
+            });
+        }
+
+        function updateItemsValue() {
+            const finalItems = [];
+            document.querySelectorAll('.check-item.active').forEach(item => {
+                const name = item.dataset.val;
+                const box = document.getElementById(`calc-${name.replace(/\s+/g, '-')}`);
+                if (box && box.dataset.total && parseFloat(box.dataset.total) > 0) {
+                    finalItems.push(`${name} (₦${parseFloat(box.dataset.total).toLocaleString()})`);
+                } else {
+                    finalItems.push(name);
+                }
+            });
+            document.getElementById('compItemsVal').value = finalItems.join(', ');
+        }
+
+        function calculateAllCompensation() {
+            // Base calculation
+            const count = parseFloat(document.getElementById('buildingCount').value) || 0;
+            const area = parseFloat(document.getElementById('areaCovered').value) || 0;
+            const rate = parseFloat(document.getElementById('rateOfCost').value) || 0;
+            let total = count * area * rate;
+
+            // Add sub-item totals
+            document.querySelectorAll('.calc-box').forEach(box => {
+                if (box.style.display === 'block') {
+                    total += parseFloat(box.dataset.total) || 0;
+                }
+            });
+
+            document.getElementById('compensation_amount').value = total.toFixed(2);
         }
 
         // Street/District Other Logic (if needed)
@@ -1105,13 +1372,16 @@
         document.getElementById('projectSelect').addEventListener('change', async function() {
             const pId = this.value;
             const wSel = document.getElementById('workerSelect');
+            const spSel = document.getElementById('subProjectSelect');
             const wBadge = document.getElementById('workerBadge');
             const ourRef = document.getElementById('mobile_our_ref');
             const yourRef = document.getElementById('mobile_your_ref');
             
             if (!pId) {
                 wSel.disabled = true;
+                spSel.disabled = true;
                 wSel.innerHTML = '<option value="">Select Project First</option>';
+                spSel.innerHTML = '<option value="">Select Project First</option>';
                 wBadge.classList.add('hidden');
                 document.getElementById('mobile-project-info').classList.add('hidden');
                 ourRef.value = '';
@@ -1146,6 +1416,18 @@
                     const infoPanel = document.getElementById('mobile-project-info');
                     if (infoPanel) infoPanel.classList.remove('hidden');
                     if (window.lucide) window.lucide.createIcons();
+
+                    // Populate Sub-projects
+                    spSel.disabled = false;
+                    spSel.innerHTML = '<option value="">Select Sub-Project</option>';
+                    if (proj.sub_projects && proj.sub_projects.length > 0) {
+                        proj.sub_projects.forEach(sp => {
+                            spSel.innerHTML += `<option value="${sp.id}">${sp.name}</option>`;
+                        });
+                    } else {
+                        spSel.innerHTML = '<option value="">No Sub-Projects Found</option>';
+                        spSel.disabled = true;
+                    }
 
                     // Backfill location scope
                     if (proj.district) {
@@ -1184,34 +1466,26 @@
             }
         });
 
-        // Calculation
-        function calculateTotal() {
-            const count = parseFloat(document.getElementById('buildingCount').value) || 0;
-            const area = parseFloat(document.getElementById('areaCovered').value) || 0;
-            const rate = parseFloat(document.getElementById('rateOfCost').value) || 0;
-            const total = count * area * rate;
-            
-            // Only auto-update if the user hasn't manually modified it or if we want to provide an estimate
-            // In most cases for VFC, the auto-calculation is the baseline.
-            document.getElementById('compensation_amount').value = total.toFixed(2);
-        }
-
-        ['buildingCount', 'areaCovered', 'rateOfCost'].forEach(id => {
-            document.getElementById(id).addEventListener('input', calculateTotal);
+        // Other Specify Logic for Dropdowns
+        ['structureType', 'completionStage'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('change', function() {
+                    const otherField = document.getElementById(id + 'Other');
+                    if (otherField) {
+                        if (this.value.toLowerCase().includes('other')) {
+                            otherField.classList.remove('hidden');
+                        } else {
+                            otherField.classList.add('hidden');
+                        }
+                    }
+                });
+            }
         });
 
-        // Items Selection
-        document.querySelectorAll('.check-item').forEach(item => {
-            item.addEventListener('click', function() {
-                this.classList.toggle('active');
-                const val = this.dataset.val;
-                if (this.classList.contains('active')) {
-                    selectedItems.push(val);
-                } else {
-                    selectedItems = selectedItems.filter(i => i !== val);
-                }
-                document.getElementById('compItemsVal').value = selectedItems.join(', ');
-            });
+        // Calculation
+        ['buildingCount', 'areaCovered', 'rateOfCost'].forEach(id => {
+            document.getElementById(id).addEventListener('input', calculateAllCompensation);
         });
 
         // Address Builder
@@ -1299,18 +1573,16 @@
             btn.disabled = true;
             btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:2px;"></div> Saving...';
 
-            const formData = new FormData(form);
-            
-            // Explicitly add 'Other' specify values if they are visible
-            const btOther = document.getElementById('buildingTypeOther');
-            if (!btOther.classList.contains('hidden')) {
-                formData.set('building_type_other', btOther.value);
-            }
-            
-            const ciOther = document.getElementById('compItemsOtherText');
-            if (!ciOther.classList.contains('hidden')) {
-                formData.set('compensated_items_other', ciOther.value);
-            }
+            // Combine dropdowns and checkboxes for compensated_items
+            let finalItems = [...selectedItems];
+            document.querySelectorAll('.struct-dropdown').forEach(sel => {
+                const val = sel.value;
+                const label = sel.previousElementSibling.textContent.trim();
+                if (val) {
+                    finalItems.unshift(`[${label}: ${val}]`);
+                }
+            });
+            formData.set('compensated_items', finalItems.join(', '));
 
             const data = Object.fromEntries(formData.entries());
 
@@ -1358,6 +1630,13 @@
             }
 
             document.getElementById('workerBadge').classList.add('hidden');
+            
+            // Hide other specify fields
+            ['structureTypeOther', 'completionStageOther', 'buildingTypeOther', 'compItemsOtherText'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('hidden');
+            });
+
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 

@@ -13,6 +13,8 @@ class PlotApplicationSize extends Model
         'application_id',
         'application_type',
         'plot_number',
+        'source_file_no',
+        'source_file_title',
         'plot_size',
         'type',
     ];

@@ -2,7 +2,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     if (typeof lucide !== 'undefined') lucide.createIcons();
 
-    const LABEL_CAPACITY = 100;
+    const LABEL_CAPACITY = 999999;
     const SLTR_PREFIX = 'SLTR';
 
     let state = {
@@ -70,11 +70,11 @@ document.addEventListener('DOMContentLoaded', function() {
         var se = document.getElementById('rackLabelStatusText');
         if (!ce||!se) return;
         var st = state.rackLabelStatus;
-        if (!st) { ce.textContent='0 / '+LABEL_CAPACITY; se.textContent='Awaiting selection'; se.className='text-slate-500'; return; }
-        var c = Math.max(0,parseInt(st.counter)||0), r = Math.max(0,LABEL_CAPACITY-c);
-        ce.textContent = c+' / '+LABEL_CAPACITY;
-        if(st.is_full){se.textContent='Full \u2014 choose next shelf';se.className='text-red-600';}
-        else{se.textContent=r+' slots remaining';se.className='text-slate-500';}
+        if (!st) { ce.textContent='0'; se.textContent='Awaiting selection'; se.className='text-slate-500'; return; }
+        var c = Math.max(0,parseInt(st.counter)||0);
+        ce.textContent = c;
+        se.textContent = 'Files on this label';
+        se.className = 'text-slate-500';
     }
     async function fetchRackLabelStatus(label) {
         var n=(label||'').trim(); if(!n){state.rackLabelStatus=null;updateRackLabelStatusDisplay();return;}
@@ -302,8 +302,7 @@ document.addEventListener('DOMContentLoaded', function() {
             var tb=file.tracking_id?'<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">Tracking: '+file.tracking_id+'</span>':'';
             var lb=file.land_use_type?'<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">'+file.land_use_type+'</span>':'';
             var bb=file.batch_no?'<span class="text-xs text-gray-500">Batch: '+file.batch_no+'</span>':'';
-            var ab=file.already_batched?'<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Already batched</span>':'';
-            var det=[tb,bb,ab].filter(Boolean).join(' ');
+            var det=[tb,bb].filter(Boolean).join(' ');
             var sd=file.shelf_location?buildShelfDisplayLabel(file.shelf_location):'';
             var sb=sd?'<span class="text-xs text-gray-500">Shelf: '+sd+'</span>':'';
             return'<div class="flex items-center p-4"><input type="checkbox" id="'+file.id+'" class="file-checkbox mr-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" '+(state.selectedFiles.includes(file.id)?'checked':'')+'><div class="flex flex-1 items-center gap-3"><i data-lucide="file-text" class="h-8 w-8 text-blue-500"></i><div class="flex-1"><div class="flex items-center gap-2"><p class="font-medium text-blue-600">'+(file.file_number||'No file number')+'</p>'+lb+'</div><div class="flex flex-wrap items-center gap-2 mt-1">'+det+' '+sb+'</div></div></div></div>';

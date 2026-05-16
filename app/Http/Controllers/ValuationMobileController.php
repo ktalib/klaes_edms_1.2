@@ -30,7 +30,7 @@ class ValuationMobileController extends Controller
     public function getLookupData()
     {
         return Cache::remember('vfc_mobile_lookup_data', 60 * 60 * 24, function() {
-            $projects = Project::withCount(['valuations', 'workers'])->orderBy('project_name')->get()->map(function($p) {
+            $projects = Project::with(['subProjects', 'valuations', 'workers'])->withCount(['valuations', 'workers'])->orderBy('project_name')->get()->map(function($p) {
                 return [
                     'id' => $p->id,
                     'name' => $p->project_name,
@@ -41,6 +41,13 @@ class ValuationMobileController extends Controller
                     'workers_count' => $p->workers_count,
                     'our_reference' => $p->our_reference,
                     'your_reference' => $p->your_reference,
+                    'sub_projects' => $p->subProjects->map(function($sp) {
+                        return [
+                            'id' => $sp->id,
+                            'name' => $sp->name,
+                            'code' => $sp->code
+                        ];
+                    })
                 ];
             });
 

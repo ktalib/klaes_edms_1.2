@@ -25,7 +25,7 @@ class MortgageController extends Controller
         $today = Carbon::today();
         
         $baseFilters = function($q) {
-            $q->where('instrument_type', 'Deed of Mortgage')
+            $q->whereIn('instrument_type', ['Deed of Mortgage', 'Tripartite Mortgage'])
               ->where(function ($q2) { $q2->whereNull('is_deleted')->orWhere('is_deleted', 0); });
         };
 
@@ -64,7 +64,7 @@ class MortgageController extends Controller
                 'created_at as date_captured',
                 DB::raw("'Instrument Capture' as source_table")
             ])
-            ->where('instrument_type', 'Deed of Mortgage')
+            ->whereIn('instrument_type', ['Deed of Mortgage', 'Tripartite Mortgage'])
             ->where(function ($q) { $q->whereNull('is_deleted')->orWhere('is_deleted', 0); });
 
         $praQuery = DB::connection('sqlsrv')->table('pra')
@@ -82,7 +82,7 @@ class MortgageController extends Controller
                 'created_at as date_captured',
                 DB::raw("'Property Records' as source_table")
             ])
-            ->where('instrument_type', 'Deed of Mortgage')
+            ->whereIn('instrument_type', ['Deed of Mortgage', 'Tripartite Mortgage'])
             ->where(function ($q) { $q->whereNull('is_deleted')->orWhere('is_deleted', 0); });
 
         $fhsQuery = DB::connection('sqlsrv')->table('file_history_staging')
@@ -100,7 +100,7 @@ class MortgageController extends Controller
                 'created_at as date_captured',
                 DB::raw("'File History Staging' as source_table")
             ])
-            ->where('instrument_type', 'Deed of Mortgage')
+            ->whereIn('instrument_type', ['Deed of Mortgage', 'Tripartite Mortgage'])
             ->where(function ($q) { $q->whereNull('is_deleted')->orWhere('is_deleted', 0); });
 
         $unionQuery = $icQuery->unionAll($praQuery)->unionAll($fhsQuery);

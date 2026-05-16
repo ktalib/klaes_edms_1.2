@@ -81,11 +81,11 @@ class TimelineWeightingService
 
         foreach ($records as $row) {
             $key = $this->getRecordKey($row);
-            
+
             // Rows that can't be keyed for dedup are always "unique" (weighted)
             if ($key === null) {
                 $row['_ptl_weighting_status'] = 'unique';
-                $weightedMap[spl_object_hash((object)$row)] = $row;
+                $weightedMap[spl_object_hash((object) $row)] = $row;
                 continue;
             }
 
@@ -113,7 +113,7 @@ class TimelineWeightingService
                 // The previous winner is now an omitted record
                 $existing['_ptl_weighting_status'] = 'duplicate';
                 $omitted[] = $existing;
-                
+
                 $row['_ptl_weighting_status'] = 'preferred';
                 $weightedMap[$key] = $row;
             } else {
@@ -141,7 +141,7 @@ class TimelineWeightingService
 
         return [
             'weighted' => $finalWeighted,
-            'omitted'  => $omitted,
+            'omitted' => $omitted,
         ];
     }
 
@@ -158,7 +158,7 @@ class TimelineWeightingService
                 $q->orWhere('prop_id', $propId);
             }
         });
-        
+
         // Exclude deleted if column exists
         // (Note: Schema check is omitted for performance here, 
         // but adding it if we want to be safe like the controllers)
@@ -168,21 +168,21 @@ class TimelineWeightingService
     {
         $rowArr = (array) $row;
         $rowArr['source_table'] = $source;
-        
+
         // Ensure consistent keys for weighting logic
         $rawType = $rowArr['transaction_type'] ?? ($rowArr['instrument_type'] ?? '');
         $transType = $this->getCanonicalInstrumentType($rawType);
 
-        // Date priority logic: For weight 5 (CofO, etc.), prioritize Reg Date. 
+        // Date priority logic: For weight 1 (CofO, etc.), prioritize Reg Date. 
         // For weight 10/9/8 (OP/TOT/ROFO), prioritize Transaction Date.
         $isHighPriority = in_array($transType, ['occupancy permit', 'transfer of title', 'right of occupancy']);
-        
+
         if ($isHighPriority) {
             $rowArr['transaction_date'] = $rowArr['transaction_date'] ?? ($rowArr['deeds_date'] ?? ($rowArr['reg_date'] ?? null));
         } else {
             $rowArr['transaction_date'] = $rowArr['reg_date'] ?? ($rowArr['transaction_date'] ?? ($rowArr['deeds_date'] ?? null));
         }
-        
+
         // Resolve file number
         $rowArr['file_number'] = $rowArr['file_number'] ?? ($rowArr['mlsFNo'] ?? ($rowArr['fileno'] ?? ($rowArr['kangisFileNo'] ?? ($rowArr['NewKANGISFileno'] ?? ($rowArr['temp_fileno'] ?? '')))));
 
@@ -192,7 +192,7 @@ class TimelineWeightingService
         // Party Mapping (Handle both CamelCase and lowercase)
         $rowArr['party_1'] = $rowArr['party_1'] ?? ($rowArr['Grantor'] ?? ($rowArr['grantor'] ?? ($rowArr['Assignor'] ?? ($rowArr['assignor'] ?? ($rowArr['Mortgagor'] ?? ($rowArr['mortgagor'] ?? ''))))));
         $rowArr['party_2'] = $rowArr['party_2'] ?? ($rowArr['Grantee'] ?? ($rowArr['grantee'] ?? ($rowArr['Assignee'] ?? ($rowArr['assignee'] ?? ($rowArr['Mortgagee'] ?? ($rowArr['mortgagee'] ?? ''))))));
-        
+
         // Ensure lowercase aliases exist for normalizeTimelineRow compatibility
         $roles = ['Assignor', 'Assignee', 'Mortgagor', 'Mortgagee', 'Grantor', 'Grantee', 'Surrenderor', 'Surrenderee', 'Lessor', 'Lessee'];
         foreach ($roles as $role) {
@@ -204,7 +204,7 @@ class TimelineWeightingService
 
         // registration_number is used in deed_registrations
         $regNo = $rowArr['regNo'] ?? ($rowArr['registration_number'] ?? ($rowArr['registration'] ?? ''));
-        
+
         $s = $rowArr['serialNo'] ?? ($rowArr['serial_no'] ?? '');
         $p = $rowArr['pageNo'] ?? ($rowArr['page_no'] ?? '');
         $v = $rowArr['volumeNo'] ?? ($rowArr['volume_no'] ?? '');
@@ -212,9 +212,12 @@ class TimelineWeightingService
         // If regNo has slashes, prioritize its parts for consistency (often richer/canonical)
         if (str_contains($regNo, '/')) {
             $parts = explode('/', $regNo);
-            if (count($parts) >= 1 && trim($parts[0]) !== '' && trim($parts[0]) !== '0') $s = trim($parts[0]);
-            if (count($parts) >= 2 && trim($parts[1]) !== '' && trim($parts[1]) !== '0') $p = trim($parts[1]);
-            if (count($parts) >= 3 && trim($parts[2]) !== '' && trim($parts[2]) !== '0') $v = trim($parts[2]);
+            if (count($parts) >= 1 && trim($parts[0]) !== '' && trim($parts[0]) !== '0')
+                $s = trim($parts[0]);
+            if (count($parts) >= 2 && trim($parts[1]) !== '' && trim($parts[1]) !== '0')
+                $p = trim($parts[1]);
+            if (count($parts) >= 3 && trim($parts[2]) !== '' && trim($parts[2]) !== '0')
+                $v = trim($parts[2]);
         }
 
         $rowArr['serial_no'] = $s;
@@ -222,7 +225,7 @@ class TimelineWeightingService
         $rowArr['volume_no'] = $v;
         $rowArr['regNo'] = $regNo;
         $rowArr['timeline_weight'] = $this->getSourceBaseScore($rowArr);
-        
+
         return $rowArr;
     }
 
@@ -240,12 +243,12 @@ class TimelineWeightingService
         }
 
         $serialNo = $this->cleanNumericValue($row['serial_no'] ?? '') ?: '0';
-        $pageNo   = $this->cleanNumericValue($row['page_no'] ?? '') ?: '0';
+        $pageNo = $this->cleanNumericValue($row['page_no'] ?? '') ?: '0';
         $volumeNo = $this->cleanNumericValue($row['volume_no'] ?? '') ?: '0';
-        
+
         $hasRealReg = ($serialNo !== '0' && $serialNo !== '' && $serialNo !== '-') ||
-                       ($pageNo !== '0' && $pageNo !== '' && $pageNo !== '-') ||
-                       ($volumeNo !== '0' && $volumeNo !== '' && $volumeNo !== '-');
+            ($pageNo !== '0' && $pageNo !== '' && $pageNo !== '-') ||
+            ($volumeNo !== '0' && $volumeNo !== '' && $volumeNo !== '-');
 
         if ($hasRealReg) {
             return 'reg|' . $transType . '|' . $serialNo . '/' . $pageNo . '/' . $volumeNo;
@@ -254,7 +257,7 @@ class TimelineWeightingService
         // Fallback key: party + date
         $party1 = $this->normalizeString($row['party_1'] ?? '');
         $party2 = $this->normalizeString($row['party_2'] ?? '');
-        
+
         // Match JS: ignore date for Right of Occupancy
         $date = ($transType === 'right of occupancy') ? '' : $this->normalizeString($row['transaction_date'] ?? ($row['deeds_date'] ?? ''));
 
@@ -268,29 +271,40 @@ class TimelineWeightingService
     protected function calculateRichnessScore(array $item): float
     {
         $score = 0.0;
-        $hasText = fn($v) => !empty($v) && trim((string)$v) !== '-' && trim((string)$v) !== '0' && trim((string)$v) !== 'N/A';
-        
+        $hasText = fn($v) => !empty($v) && trim((string) $v) !== '-' && trim((string) $v) !== '0' && trim((string) $v) !== 'N/A';
+
         // Primary parties (critical for identity)
-        if ($hasText($item['party_1'] ?? null)) $score += 2;
-        if ($hasText($item['party_2'] ?? null)) $score += 2;
-        
+        if ($hasText($item['party_1'] ?? null))
+            $score += 2;
+        if ($hasText($item['party_2'] ?? null))
+            $score += 2;
+
         // Registration particulars (critical for legal identity)
         $serial = $item['serial_no'] ?? '';
         $page = $item['page_no'] ?? '';
         $volume = $item['volume_no'] ?? '';
-        if ($hasText($serial)) $score += 1.5;
-        if ($hasText($page)) $score += 1.5;
-        if ($hasText($volume)) $score += 1.5;
-        
+        if ($hasText($serial))
+            $score += 1.5;
+        if ($hasText($page))
+            $score += 1.5;
+        if ($hasText($volume))
+            $score += 1.5;
+
         // Dates (critical for chronological accuracy)
-        if ($hasText($item['transaction_date'] ?? null) || $hasText($item['deeds_date'] ?? null)) $score += 3;
-        if ($hasText($item['reg_date'] ?? null)) $score += 1;
-        if ($hasText($item['reg_time'] ?? null) || $hasText($item['deeds_time'] ?? null)) $score += 0.5;
+        if ($hasText($item['transaction_date'] ?? null) || $hasText($item['deeds_date'] ?? null))
+            $score += 3;
+        if ($hasText($item['reg_date'] ?? null))
+            $score += 1;
+        if ($hasText($item['reg_time'] ?? null) || $hasText($item['deeds_time'] ?? null))
+            $score += 0.5;
 
         // Contextual richness
-        if ($hasText($item['location'] ?? null) || $hasText($item['district'] ?? null)) $score += 1;
-        if ($hasText($item['property_description'] ?? null) || $hasText($item['comments'] ?? null)) $score += 1;
-        if ($hasText($item['land_use'] ?? null)) $score += 0.5;
+        if ($hasText($item['location'] ?? null) || $hasText($item['district'] ?? null))
+            $score += 1;
+        if ($hasText($item['property_description'] ?? null) || $hasText($item['comments'] ?? null))
+            $score += 1;
+        if ($hasText($item['land_use'] ?? null))
+            $score += 0.5;
 
         return $score;
     }
@@ -300,50 +314,70 @@ class TimelineWeightingService
         $source = $row['source_table'];
         $transType = $this->getCanonicalInstrumentType($row['transaction_type'] ?? '');
 
-        if ($transType === 'occupancy permit') return 10.0;
-        if ($transType === 'transfer of title') return 9.5;
-        if ($transType === 'right of occupancy') return 9.0;
-        if ($source === 'CofO_staging' || $transType === 'certificate of occupancy') return 5.0;
-        if ($source === 'pra' || $source === 'deed_registrations') return 5.0;
-        if ($source === 'file_history_staging') return 5.0;
-        
+        if ($transType === 'occupancy permit')
+            return 10.0;
+        if ($transType === 'transfer of title')
+            return 9.5;
+        if ($transType === 'right of occupancy')
+            return 9.0;
+        if ($source === 'CofO_staging' || $transType === 'certificate of occupancy')
+            return 1.0;
+        if ($source === 'pra' || $source === 'deed_registrations')
+            return 1.0;
+        if ($source === 'file_history_staging')
+            return 1.0;
+
         return 1.0;
     }
 
     protected function getCanonicalInstrumentType(string $value): string
     {
         $raw = $this->normalizeString($value);
-        if (!$raw || $raw === '-') return '';
+        if (!$raw || $raw === '-')
+            return '';
 
         // Right of Occupancy
-        if (str_contains($raw, 'right of occupancy') || str_contains($raw, 'right of occupanc')) return 'right of occupancy';
-        if (preg_match('/^r\s*of\s*o$/i', $raw)) return 'right of occupancy';
+        if (str_contains($raw, 'right of occupancy') || str_contains($raw, 'right of occupanc'))
+            return 'right of occupancy';
+        if (preg_match('/^r\s*of\s*o$/i', $raw))
+            return 'right of occupancy';
         $compact = preg_replace('/[^a-z0-9]/', '', $raw);
-        if (preg_match('/^r[o0]f[o0]$/', $compact) || str_starts_with($compact, 'r0f0occupanc') || str_starts_with($compact, 'rofoccupanc')) return 'right of occupancy';
-        if ($raw === 'statutory right of occupancy' || $raw === 'customary right of occupancy') return 'right of occupancy';
+        if (preg_match('/^r[o0]f[o0]$/', $compact) || str_starts_with($compact, 'r0f0occupanc') || str_starts_with($compact, 'rofoccupanc'))
+            return 'right of occupancy';
+        if ($raw === 'statutory right of occupancy' || $raw === 'customary right of occupancy')
+            return 'right of occupancy';
 
         // CofO
-        if (str_contains($raw, 'certificate of occupancy') || str_contains($raw, 'cert of occupancy')) return 'certificate of occupancy';
-        if (preg_match('/^c\s*of\s*o$/i', $raw) || $compact === 'cofo' || $compact === 'c0f0') return 'certificate of occupancy';
+        if (str_contains($raw, 'certificate of occupancy') || str_contains($raw, 'cert of occupancy'))
+            return 'certificate of occupancy';
+        if (preg_match('/^c\s*of\s*o$/i', $raw) || $compact === 'cofo' || $compact === 'c0f0')
+            return 'certificate of occupancy';
 
         // OP
-        if (str_contains($raw, 'occupancy permit')) return 'occupancy permit';
-        if ($raw === 'op' || $compact === 'op') return 'occupancy permit';
+        if (str_contains($raw, 'occupancy permit'))
+            return 'occupancy permit';
+        if ($raw === 'op' || $compact === 'op')
+            return 'occupancy permit';
 
         // Transfer
-        if (str_contains($raw, 'transfer of title')) return 'transfer of title';
+        if (str_contains($raw, 'transfer of title'))
+            return 'transfer of title';
 
         // Mortgage
-        if (in_array($raw, ['mortgage', 'deed of mortgage', 'tripartite mortgage', 'legal mortgage', 'equitable mortgage'])) return 'deed of mortgage';
-        
+        if (in_array($raw, ['mortgage', 'deed of mortgage', 'tripartite mortgage', 'legal mortgage', 'equitable mortgage']))
+            return 'deed of mortgage';
+
         // Assignment
-        if (str_contains($raw, 'assignment') && !str_contains($raw, 'sub-assignment') && !str_contains($raw, 're-assignment') && !str_contains($raw, 'reassignment')) return 'deed of assignment';
+        if (str_contains($raw, 'assignment') && !str_contains($raw, 'sub-assignment') && !str_contains($raw, 're-assignment') && !str_contains($raw, 'reassignment'))
+            return 'deed of assignment';
 
         // Surrender
-        if (in_array($raw, ['deed of surrender', 'deed of release', 'deed of surrender and release', 'deed of surrender & release'])) return 'deed of surrender and release';
+        if (in_array($raw, ['deed of surrender', 'deed of release', 'deed of surrender and release', 'deed of surrender & release']))
+            return 'deed of surrender and release';
 
         // POA
-        if (str_contains($raw, 'power of attorney') || $raw === 'poa' || $raw === 'ipoa' || $compact === 'poa' || $compact === 'ipoa') return 'power of attorney';
+        if (str_contains($raw, 'power of attorney') || $raw === 'poa' || $raw === 'ipoa' || $compact === 'poa' || $compact === 'ipoa')
+            return 'power of attorney';
 
         return $raw;
     }
@@ -353,7 +387,7 @@ class TimelineWeightingService
         $v = trim(strtolower($value));
         $v = preg_replace('/\s+/', ' ', $v);
         $v = str_replace([',', '.'], '', $v);
-        
+
         // Strip common titles for better party matching
         $titles = ['alhaii', 'alhaji', 'alh', 'hajiya', 'haj', 'malam', 'mallam', 'mal', 'dr', 'prof', 'mr', 'mrs', 'chief', 'architect', 'arc', 'engr', 'engineer'];
         foreach ($titles as $title) {
@@ -363,15 +397,17 @@ class TimelineWeightingService
 
         // Standardize common name variants
         $v = preg_replace('/\b(muhammad|mohammad|muhammed|mohd)\b/i', 'mohammed', $v);
-        
+
         return trim($v);
     }
 
     protected function cleanNumericValue($value): string
     {
-        if ($value === null) return '';
+        if ($value === null)
+            return '';
         $s = trim((string) $value);
-        if ($s === '' || $s === 'null' || $s === 'n/a') return '';
+        if ($s === '' || $s === 'null' || $s === 'n/a')
+            return '';
         return preg_replace('/\.0$/', '', $s);
     }
 }

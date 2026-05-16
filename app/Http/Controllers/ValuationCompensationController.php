@@ -153,6 +153,53 @@ class ValuationCompensationController extends Controller
     }
 
     /**
+     * Store multiple records in batch.
+     */
+    public function batchStore(Request $request)
+    {
+        $request->validate([
+            'records' => 'required|array|min:1',
+        ]);
+
+        $createdCount = 0;
+        DB::beginTransaction();
+        try {
+            foreach ($request->records as $data) {
+                $data['user_id'] = Auth::id();
+                
+                $project = \App\Models\Project::find($data['project_id']);
+                if ($project) {
+                    $data['apply_percentage'] = $project->apply_percentage;
+                    if (empty($data['our_ref'])) {
+                        $data['our_ref'] = $project->project_fileno;
+                    }
+                }
+
+                $record = ValuationCompensation::create($data);
+                
+                $this->auditService->logAction(
+                    'BATCH_CREATED',
+                    'ValuationCompensation',
+                    $record->id,
+                    null,
+                    $record->toArray(),
+                    'Batch created valuation for ' . $record->owner_name
+                );
+                
+                $createdCount++;
+            }
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => "Successfully saved {$createdCount} records in batch."
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Show the form for editing the specified resource.
      */
     public function edit($id)

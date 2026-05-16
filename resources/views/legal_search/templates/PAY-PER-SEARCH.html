@@ -473,7 +473,7 @@
       <div class="signature-section">
         <div class="sig-row">
           <div class="sig-box">
-            <div>Name:...............................................</div>
+            <div>Name: <span id="report-full-name" style="border-bottom: 1px dotted #000; min-width: 200px; display: inline-block; padding: 0 4px;"></span></div>
             <div>Rank:...............................................</div>
             <div>Sign:............................ Date:................</div>
           </div>
@@ -484,7 +484,7 @@
           </div>
           <div class="sig-box">
             <div>Sign:............................ Date:................</div>
-            <div style="font-weight:bold">Director Lands</div>
+            <div style="font-weight:bold">Director Deeds</div>
             <div style="font-size:9px">(for Permanent Secretary/Hon. Commissioner)</div>
           </div>
         </div>
@@ -562,6 +562,7 @@
           setText('report-plot-description', d.plot_description);
           setText('report-tpno', d.tpno);
           setText('report-generated-by', d.generated_by);
+          setText('report-full-name', d.full_name);
 
           const tsEl = document.getElementById('report-timestamp');
           if (tsEl) {

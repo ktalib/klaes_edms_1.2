@@ -103,11 +103,11 @@
                             </div>
                         </div>
                         <div class="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                            <span class="inline-flex items-center gap-2 rounded-full border border-orange-100 bg-orange-50 px-3 py-1 font-medium text-orange-700">
+                            <span class="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 font-medium text-blue-700">
                                 <i data-lucide="gauge" class="h-3.5 w-3.5"></i>
-                                100 labels per shelf
+                                Freestyle Capacity
                             </span>
-                            <span class="leading-relaxed">Each shelf holds 100 labels. The counter tracks remaining slots and overflow automatically rolls to the next shelf.</span>
+                            <span class="leading-relaxed">Each shelf has unlimited capacity. The counter tracks how many files are currently occupying this label.</span>
                         </div>
                     </div>
                     <div class="p-6">
@@ -191,7 +191,7 @@
                                             <p class="text-sm text-slate-600 mt-1">Track how many files are already occupying this label.</p>
                                         </div>
                                         <div class="text-right">
-                                            <div id="rackLabelCounterDisplay" class="text-lg font-semibold text-blue-600">0 / 100</div>
+                                            <div id="rackLabelCounterDisplay" class="text-lg font-semibold text-blue-600">0</div>
                                             <span id="rackLabelStatusText" class="text-xs text-slate-500">Awaiting selection</span>
                                         </div>
                                     </div>

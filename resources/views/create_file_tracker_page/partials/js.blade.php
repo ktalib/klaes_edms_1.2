@@ -5243,34 +5243,6 @@
 
         currentDetailsTracker = tracker;
 
-        // Update Print Buttons state
-        const printWorkflowBtn = document.getElementById('print-workflow-btn');
-        const printDetailsBtn = document.getElementById('print-details-btn');
-
-        if (printWorkflowBtn) {
-            // Workflow print can always be active or also tracked? 
-            // User said Request Sheet printed AFTER main.
-            // For now, let's keep workflow print active.
-            printWorkflowBtn.disabled = false;
-        }
-
-        if (printDetailsBtn) {
-            if (tracker.is_printed || tracker.printed) {
-                printDetailsBtn.disabled = true;
-                printDetailsBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                printDetailsBtn.classList.remove('bg-emerald-600', 'hover:bg-emerald-700');
-                printDetailsBtn.classList.add('bg-gray-400');
-                printDetailsBtn.title = 'This document has already been printed.';
-                printDetailsBtn.querySelector('span').textContent = 'Already Printed';
-            } else {
-                printDetailsBtn.disabled = false;
-                printDetailsBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
-                printDetailsBtn.classList.add('bg-emerald-600', 'hover:bg-emerald-700');
-                printDetailsBtn.title = '';
-                printDetailsBtn.querySelector('span').textContent = 'Print Request Sheet';
-            }
-        }
-
         const priorityClass = `priority-${tracker.priority}`;
         const priorityText = tracker.priority.charAt(0) + tracker.priority.slice(1).toLowerCase();
         const receivingOfficer = tracker.receivingOfficer || {};
@@ -5360,10 +5332,6 @@
                                         <span class="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 font-mono whitespace-nowrap">${trackerFileNoSafe}</span>
                                     </div>
 
-                                    <div class="flex items-center justify-between gap-4">
-                                        <span class="text-xs font-semibold text-gray-500 uppercase">Tracking ID:</span>
-                                        <span class="text-sm font-mono font-semibold text-blue-600 text-right whitespace-nowrap tracking-id-text">${trackerTrackingIdSafe}</span>
-                                    </div>
                                     <div class="flex items-center justify-between gap-4">
                                         <span class="text-xs font-semibold text-gray-500 uppercase">Priority:</span>
                                         <span class="font-medium ${priorityClass} px-2 py-0.5 rounded text-xs whitespace-nowrap">${priorityText}</span>
@@ -5883,134 +5851,528 @@
 
     // Print tracker details - routes to KANGIS landscape version for ?url=kangis, otherwise uses general portrait format
     function printFileTrackerDetails(tracker) {
-        if (!tracker) return;
+        const urlView = new URLSearchParams(window.location.search).get('url');
+        if (urlView === 'kangis') {
+            printFileTrackerDetailsKangis(tracker);
+            return;
+        }
 
-        const baseUrl = (document.querySelector('meta[name="app-base-url"]')?.content || '').replace(/\/$/, '');
-        const fileNo = tracker.fileNo || '-';
-        const fileName = tracker.fileName || '-';
-        const priority = tracker.priority || '-';
-        const originRegistry = tracker.originOfficeName || tracker.originRegistry || '-';
-        const destinationOffice = tracker.department || tracker.office?.name || '-';
-        const receivingOffice = tracker.receivingOfficeName || tracker.currentOffice || '-';
-        const receivingOfficer = tracker.receivingOfficerName || tracker.receiving_officer_name || '-';
-        const officerRank = tracker.receivingOfficer?.type || tracker.receivingOfficer?.user_level || '-';
-        const remarks = tracker.notes || '-';
-        
-        // Resolve requester name
-        const requesterName = tracker.creator 
-            ? ([tracker.creator.first_name, tracker.creator.last_name].filter(Boolean).join(' ') || tracker.creator.name || 'Unknown')
-            : (tracker.createdBy || '-');
+        // General portrait File Request Sheet
+        const priorityText = tracker.priority.charAt(0) + tracker.priority.slice(1).toLowerCase();
+        const now = new Date();
+        const currentDateTime = now.toLocaleString();
+        const generatedDateText = now.toLocaleDateString();
+        const generatedByName = [window.currentUser?.first_name, window.currentUser?.last_name]
+            .filter(Boolean)
+            .join(' ')
+            .trim() || window.currentUser?.name || 'System';
+        const generatedBySafe = escapeHtml(generatedByName);
+        const generatedDateSafe = escapeHtml(generatedDateText);
+        const originOffice = tracker.originOffice || {};
+        const originOfficeName = originOffice.name || tracker.originOfficeName || tracker.originRegistry || '-';
+        const originOfficeDepartment = originOffice.department || tracker.originOfficeDepartment || tracker.originRegistryDepartment || '-';
+        const trackingQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(tracker.trackingId || '')}`;
+        const officeNameForPrint = escapeHtml(tracker.currentOffice || tracker.office?.name || tracker.currentOfficeId || '-');
+        const fileNameValue = escapeHtml(tracker.fileName || '-');
+        const fileNoValue = escapeHtml(tracker.fileNo || '-');
+        const priorityValue = escapeHtml(tracker.priority || '-');
+        const createdValue = tracker.createdAt ? escapeHtml(new Date(tracker.createdAt).toLocaleString()) : '-';
+        const currentOfficeValue = escapeHtml(tracker.currentOffice || '-');
+        const receivingOfficerValue = escapeHtml(tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name || tracker.handler || '-');
+        const originRegistryValue = escapeHtml(originOfficeName || '-');
+        const rackShelfValue = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '-');
 
         const printContent = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Request Sheet - ${tracker.trackingId}</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: white; }
-        .page { width: 210mm; height: 297mm; padding: 2mm 10mm; margin: 0 auto; background: white; box-sizing: border-box; position: relative; display: flex; flex-direction: column; justify-content: flex-start; }
-        .sheet { height: 148.5mm; padding-bottom: 2mm; padding-top: 2mm; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; border-bottom: 1px dashed #ccc; }
-        .header { font-weight: bold; font-size: 14px; margin-bottom: 10px; text-transform: uppercase; text-align: center; border-bottom: 2px solid black; padding-bottom: 5px; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-        td { border: 1px solid black; padding: 6px 10px; font-size: 11px; height: 24px; }
-        .label { width: 35%; font-weight: bold; background-color: #f9f9f9; }
-        .signatures { display: flex; justify-content: space-between; margin-top: auto; padding-bottom: 20px; }
-        .sig-box { width: 45%; text-align: center; }
-        .sig-line { border-top: 1px solid black; margin-top: 40px; margin-bottom: 5px; }
-        .sig-text { font-size: 10px; line-height: 1.2; }
-        .footer { display: flex; justify-content: flex-end; align-items: center; margin-top: 5px; }
-        @media print { body { background: none; } .page { margin: 0; box-shadow: none; } }
-    </style>
-</head>
-<body>
-    <div class="page">
-        <div class="sheet">
-            <div class="header">KLAES FILE REQUEST SHEET</div>
-            <table>
-                <tr><td class="label">File Number</td><td>${escapeHtml(fileNo)}</td></tr>
-                <tr><td class="label">File Title</td><td>${escapeHtml(fileName)}</td></tr>
-                <tr><td class="label">File Request Priority</td><td>${escapeHtml(priority)}</td></tr>
-                <tr><td class="label">Registry (Origin)</td><td>${escapeHtml(originRegistry)}</td></tr>
-                <tr><td class="label">Destination Office (Department)</td><td>${escapeHtml(destinationOffice)}</td></tr>
-                <tr><td class="label">Receiving Office</td><td>${escapeHtml(receivingOffice)}</td></tr>
-                <tr><td class="label">Receiving Officer</td><td>${escapeHtml(receivingOfficer)}</td></tr>
-                <tr><td class="label">Officer's Rank</td><td>${escapeHtml(officerRank)}</td></tr>
-                <tr><td class="label" style="height: 60px; vertical-align: top;">Remark(s)</td><td>${escapeHtml(remarks)}</td></tr>
-            </table>
-            <div class="signatures">
-                <div class="sig-box">
-                    <div class="sig-text" style="margin-bottom: 5px; font-weight: bold;">${escapeHtml(receivingOfficer)}</div>
-                    <div class="sig-line" style="margin-top: 0;"></div>
-                    <div class="sig-text"><strong>Requester</strong></div>
-                </div>
-                <div class="sig-box">
-                    <div class="sig-text" style="margin-bottom: 5px; font-weight: bold;">&nbsp;</div>
-                    <div class="sig-line" style="margin-top: 0;"></div>
-                    <div class="sig-text"><strong>Director Lands</strong></div>
-                </div>
-            </div>
-            <div class="footer">
-                <img src="${baseUrl}/assets/logo/logo.png" alt="KLAES Logo" style="height: 35px;" onerror="this.style.display='none'">
-            </div>
-        </div>
-    </div>
-</body>
-</html>`;
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>File Request Sheet - ${tracker.trackingId}</title>
+                    <style>
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        @page { size: A4; margin: 0.3in; }
+                        body { font-family: Arial, sans-serif; color: #333; line-height: 1.4; background: white; font-size: 12px; }
+                        .print-container { max-width: 8.2in; margin: 0 auto; padding: 0.35in; background: white; }
+                        .header { text-align: center; margin-bottom: 1.2rem; padding-bottom: 0.75rem; border-bottom: 3px solid #2563eb; }
+                        .header .logo { width: 120px; height: auto; margin: 0 auto 0.75rem auto; display: block; }
+                        .header h1 { font-size: 1.25rem; margin-bottom: 0.5rem; color: #1f2937; }
+                        .header-meta { display: grid; grid-template-columns: 1fr auto; gap: 1.25rem; align-items: center; justify-items: start; margin-top: 1rem; font-size: 0.9rem; color: #666; }
+                        .header-meta .file-meta { text-align: left; }
+                        .header-meta .file-meta div { margin: 0.15rem 0; }
+                        .qr-wrapper { text-align: center; justify-self: end; }
+                        .qr-wrapper img { width: 65px; height: 65px; display: block; margin: 0 auto; }
+                        .section { margin-bottom: 1.1rem; page-break-inside: avoid; }
+                        .section-title { font-size: 0.95rem; font-weight: bold; color: #1f2937; background: #f3f4f6; padding: 0.4rem; margin-bottom: 0.75rem; border-left: 4px solid #2563eb; }
+                        .section-content { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+                        .info-group { page-break-inside: avoid; padding: 0.35rem 0.4rem; }
+                        .info-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 0.25rem; padding: 0.2rem 0; border-bottom: 1px solid #e5e7eb; font-size: 0.85rem; align-items: center; }
+                        .info-row:last-child { border-bottom: none; }
+                        .info-row.compact { grid-template-columns: 150px minmax(0, 1fr); }
+                        .info-label { font-weight: 600; color: #6b7280; letter-spacing: 0.03em; text-transform: uppercase; font-family: Arial, sans-serif; font-size: 0.68rem; }
+                        .info-value { color: #111827; font-family: Arial, sans-serif; word-break: normal; font-weight: 600; font-size: 0.8rem; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; justify-self: start; }
+                        .info-value.data-value { font-weight: 700; color: #111; }
+                        .info-value.placeholder { font-weight: 400; color: #9ca3af; }
+                        .table-section { grid-column: 1 / -1; }
+                        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+                        table th { background: #f3f4f6; border: 1px solid #d1d5db; padding: 0.35rem; text-align: left; font-weight: bold; color: #1f2937; }
+                        table td { border: 1px solid #e5e7eb; padding: 0.35rem; vertical-align: top; }
+                        table tr:nth-child(even) { background: #f9fafb; }
+                        .status-in-transit { color: #2563eb; font-weight: bold; }
+                        .status-archive { color: #f59e0b; font-weight: bold; }
+                        .status-archived { color: #16a34a; font-weight: bold; }
+                        .priority-HIGH { color: #dc2626; font-weight: bold; }
+                        .priority-MEDIUM { color: #f59e0b; font-weight: bold; }
+                        .priority-LOW { color: #10b981; font-weight: bold; }
+                        .footer { text-align: center; font-size: 0.8rem; color: #999; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; }
+                        .footer .generated-meta { margin-top: 0.3rem; font-size: 0.75rem; font-style: italic; color: #6b7280; }
+                        .signatories { margin-top: 2rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+                        .signatory { text-align: center; }
+                        .signatory .line { margin-top: 2.5rem; border-top: 1px solid #999; padding-top: 0.35rem; font-weight: 600; }
+                        @media print {
+                            body { margin: 0; padding: 0; font-size: 10px; }
+                            .print-container { max-width: 100%; margin: 0; padding: 0.5in; }
+                            table th, table td { padding: 0.3rem; }
+                            .footer { position: relative; page-break-after: always; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="print-container">
+                        <div class="header">
+                            <img class="logo" src="/assets/logo/logo.png" alt="Organization Logo">
+                            <h1>File Request Sheet</h1>
+                            <div class="header-meta">
+                                <div class="file-meta">
+                                    <div><strong>File No:</strong> ${fileNoValue}</div>
+                                    <div><strong>Print Date:</strong> ${currentDateTime}</div>
+                                </div>
+                                <div class="qr-wrapper">
+                                    <img src="${trackingQrUrl}" alt="Tracking ID QR">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section">
+                            <div class="section-title">File Information</div>
+                            <div class="section-content" style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 1.5rem; position: relative;">
+                                <div class="info-group">
+                                    <div class="info-row">
+                                        <span class="info-label">FILE NO:</span>
+                                        <span class="info-value ${fileNoValue === '-' ? 'placeholder' : 'data-value'}">${fileNoValue}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">FILE NAME:</span>
+                                        <span class="info-value ${fileNameValue === '-' ? 'placeholder' : 'data-value'}" style="white-space:pre-line;word-break:break-word;max-width:320px;display:inline-block;">
+                                            ${fileNameValue.replace(/(.{40,}?)(\s|$)/g, '$1\n')}
+                                        </span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">RACK/SHELF:</span>
+                                        <span class="info-value ${rackShelfValue === '-' ? 'placeholder' : 'data-value'}">${rackShelfValue}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">DATE CREATED:</span>
+                                        <span class="info-value ${createdValue === '-' ? 'placeholder' : 'data-value'}">${createdValue}</span>
+                                    </div>
+                                </div>
+                                <div style="width: 2px; background: linear-gradient(to bottom, #e5e7eb, #3b82f6, #e5e7eb); height: 100%; position: relative;"></div>
+                                <div class="info-group">
+                                    <div class="info-row">
+                                        <span class="info-label">ORIGIN REGISTRY:</span>
+                                        <span class="info-value ${originRegistryValue === '-' ? 'placeholder' : 'data-value'}">${originRegistryValue}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">CURRENT OFFICE:</span>
+                                        <span class="info-value ${currentOfficeValue === '-' ? 'placeholder' : 'data-value'}">${currentOfficeValue}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">DESTINATION (OFFICE):</span>
+                                        <span class="info-value ${officeNameForPrint === '-' ? 'placeholder' : 'data-value'}">${officeNameForPrint}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">RECEIVING OFFICER:</span>
+                                        <span class="info-value ${receivingOfficerValue === '-' ? 'placeholder' : 'data-value'}">${receivingOfficerValue}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="display: flex; justify-content: center; align-items: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+                                <div class="info-row" style="display: flex; justify-content: center; align-items: center; gap: 1rem;">
+                                    <span class="info-label" style="color: #6b7280;">PRIORITY:</span>
+                                    <span class="info-value ${priorityValue === '-' ? 'placeholder' : 'data-value'} priority-${tracker.priority}" style="font-weight: 700; font-size: 1.1em;">${priorityText}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section table-section">
+                            <div class="section-title">Movement History</div>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Date &amp; Time</th>
+                                        <th>Office</th>
+                                        <th>Receiving Officer</th>
+                                        <th>Log Out</th>
+                                        <th>Log In</th>
+                                        <th>Status</th>
+                                        <th>Notes</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${tracker.logEntries && tracker.logEntries.length > 0 ? tracker.logEntries.map(entry => {
+                                        const formatDateTime = (value) => {
+                                            if (!value) return '-';
+                                            const date = new Date(value);
+                                            if (Number.isNaN(date.getTime())) return value;
+                                            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+                                        };
+                                        const createdAtRaw = entry.created_at || entry.createdAt || tracker.createdAt || tracker.created_at || '';
+                                        const dateTimeRaw = entry.logInDate && entry.logInTime
+                                            ? entry.logInDate + ' ' + entry.logInTime
+                                            : (createdAtRaw || entry.logInDate || entry.logInTime || '-');
+                                        const dateTime = formatDateTime(dateTimeRaw);
+                                        const logOut = entry.logOutDate && entry.logOutTime
+                                            ? entry.logOutDate + ' ' + entry.logOutTime
+                                            : '-';
+                                        const logIn = entry.logInDate && entry.logInTime
+                                            ? entry.logInDate + ' ' + entry.logInTime
+                                            : (entry.logInDate || entry.logInTime || '-');
+                                        const hasLogIn = Boolean(entry.logInDate || entry.logInTime);
+                                        const statusRaw = (entry.status || '').toLowerCase();
+                                        const statusLabel = !hasLogIn ? 'In Transit'
+                                            : statusRaw === 'active' ? 'In Transit'
+                                            : statusRaw === 'archive' ? 'Archive'
+                                            : 'Archived (Completed)';
+                                        const statusClass = !hasLogIn ? 'status-in-transit'
+                                            : statusRaw === 'active' ? 'status-in-transit'
+                                            : statusRaw === 'archive' ? 'status-archive'
+                                            : 'status-archived';
+                                        return '<tr>'
+                                            + '<td>' + dateTime + '</td>'
+                                            + '<td>' + (entry.officeName || '-') + '</td>'
+                                            + '<td>' + (entry.receivingOfficerName || tracker.receivingOfficer?.name || 'N/A') + '</td>'
+                                            + '<td>' + logOut + '</td>'
+                                            + '<td>' + logIn + '</td>'
+                                            + '<td><span class="' + statusClass + '">' + statusLabel + '</span></td>'
+                                            + '<td>' + (entry.notes || '-') + '</td>'
+                                            + '</tr>';
+                                    }).join('') : '<tr><td colspan="7" style="text-align:center;">No movement history available</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="footer">
+                            <div class="signatories">
+                                <div class="signatory"><div class="line">Director Deeds</div></div>
+                                <div class="signatory"><div class="line">Permanent Secretary</div></div>
+                                <div class="signatory"><div class="line">Honorable Commissioner</div></div>
+                            </div>
+                            <p style="font-style: italic; margin-top: 0.5rem;">This file is now being tracked!</p>
+                            <p class="generated-meta">Generated on ${generatedDateSafe} by ${generatedBySafe}</p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `;
 
         const printWindow = window.open('', '_blank');
         if (!printWindow) {
-            Swal.fire({ icon: 'warning', title: 'Popup Blocked', text: 'Please allow popups to print.' });
+            Swal.fire({ icon: 'warning', title: 'Popup Blocked', text: 'Unable to open print preview. Please allow popups for this site.' });
+            return;
+        }
+        printWindow.document.write(printContent);
+        printWindow.document.close();
+        const invokePrint = () => { try { printWindow.focus(); printWindow.print(); } catch (e) { console.error('Print failed:', e); } };
+        const waitForQrAndPrint = () => {
+            const qrImg = printWindow.document.querySelector('.qr-wrapper img');
+            if (qrImg && !qrImg.complete) {
+                const onReady = () => setTimeout(invokePrint, 100);
+                qrImg.addEventListener('load', onReady, { once: true });
+                qrImg.addEventListener('error', onReady, { once: true });
+            } else {
+                setTimeout(invokePrint, 100);
+            }
+        };
+        if (printWindow.document.readyState === 'complete') {
+            waitForQrAndPrint();
+        } else {
+            printWindow.addEventListener('load', waitForQrAndPrint, { once: true });
+        }
+    }
+
+    // KANGIS-specific landscape File Request Sheet (?url=kangis only)
+    function printFileTrackerDetailsKangis(tracker) {
+        const baseUrl = (document.querySelector('meta[name="app-base-url"]')?.content || '').replace(/\/$/, '');
+        const priorityText = tracker.priority.charAt(0) + tracker.priority.slice(1).toLowerCase();
+        const now = new Date();
+        const currentDateTime = now.toLocaleString();
+        const generatedDateText = now.toLocaleDateString();
+        const generatedByName = [window.currentUser?.first_name, window.currentUser?.last_name]
+            .filter(Boolean)
+            .join(' ')
+            .trim() || window.currentUser?.name || 'System';
+        const generatedBySafe = escapeHtml(generatedByName);
+        const generatedDateSafe = escapeHtml(generatedDateText);
+        const originOffice = tracker.originOffice || {};
+        const originOfficeName = originOffice.name || tracker.originOfficeName || tracker.originRegistry || '-';
+        const originOfficeDepartment = originOffice.department || tracker.originOfficeDepartment || tracker.originRegistryDepartment || '-';
+        const trackingQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(tracker.trackingId || '')}`;
+        const officeNameForPrint = escapeHtml(tracker.department || '-');
+        const fileNameValue = escapeHtml(tracker.fileName || '-');
+        const fileNoValue = escapeHtml(tracker.fileNo || '-');
+        const priorityValue = escapeHtml(tracker.priority || '-');
+        const createdValue = tracker.createdAt ? escapeHtml(new Date(tracker.createdAt).toLocaleString()) : '-';
+        const wfCfgKangis = tracker.workflowConfig || tracker.workflow_config || {};
+        const QUEUE_LABEL = 'Department Queue';
+        const resolvedCurrentOffice = wfCfgKangis.original_destination_office_name
+            || (wfCfgKangis.destination_office_name && wfCfgKangis.destination_office_name !== QUEUE_LABEL ? wfCfgKangis.destination_office_name : '')
+            || (tracker.currentOffice && tracker.currentOffice !== QUEUE_LABEL ? tracker.currentOffice : '')
+            || (tracker.department && tracker.department !== QUEUE_LABEL ? tracker.department : '')
+            || '-';
+        const currentOfficeValue = escapeHtml(resolvedCurrentOffice);
+        const receivingOfficerValue = escapeHtml(tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name || tracker.handler || '-');
+        const originRegistryValue = escapeHtml(originOfficeName || '-');
+        const rackShelfValue = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '-');
+
+        const printContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>File Request Sheet - ${tracker.trackingId}</title>
+                    <style>
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        @page { size: A4 landscape; margin: 0; }
+                        body { background: #525659; font-family: Arial, sans-serif; color: #1f2937; font-size: 11px; padding: 12px; }
+                        .paper { width: 297mm; min-height: 210mm; height: 210mm; margin: 0 auto; padding: 10mm 14mm; background: #fff; box-shadow: 0 0 10px rgba(0,0,0,0.45); display: flex; flex-direction: column; }
+                        .paper-body { flex: 1; }
+
+                        /* Header */
+                        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.6rem; border-bottom: 2px solid #111; padding-bottom: 0.4rem; }
+                        .logo-wrap { width: 58px; height: 58px; display: flex; align-items: center; justify-content: center; }
+                        .logo-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+                        .header-center { text-align: center; flex: 1; padding: 2px 10px 0; }
+                        .header-center h1 { font-size: 0.72rem; color: #111827; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; margin-bottom: 0.1rem; }
+                        .header-center h2 { font-size: 0.65rem; color: #374151; text-transform: uppercase; letter-spacing: 0.9px; font-weight: 700; margin-bottom: 0.2rem; }
+                        .header-center h3 { font-size: 0.85rem; color: #111827; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 800; }
+                        .header-right { display: flex; align-items: flex-start; gap: 8px; }
+                        .qr-wrap img { width: 55px; height: 55px; display: block; }
+
+                        /* Meta bar */
+                        .meta-bar { display: flex; gap: 2rem; font-size: 0.78rem; color: #4b5563; margin-bottom: 0.6rem; padding-bottom: 0.4rem; border-bottom: 1px solid #e5e7eb; }
+                        .meta-bar span { display: flex; gap: 0.3rem; }
+                        .meta-bar strong { color: #111; }
+
+                        /* Info grid */
+                        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 2rem; margin-bottom: 0.7rem; }
+                        .info-row { display: grid; grid-template-columns: 140px 1fr; gap: 0.3rem; padding: 0.2rem 0; border-bottom: 1px solid #f3f4f6; font-size: 0.8rem; align-items: start; }
+                        .info-row:last-child { border-bottom: none; }
+                        .info-label { font-weight: 600; color: #6b7280; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.03em; padding-top: 0.05rem; }
+                        .info-value { color: #111827; font-weight: 700; word-break: break-word; }
+                        .info-value.muted { color: #9ca3af; font-weight: 400; }
+
+                        /* Priority badge */
+                        .priority-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-weight: 700; font-size: 0.8rem; }
+                        .priority-HIGH { background: #fee2e2; color: #dc2626; }
+                        .priority-MEDIUM { background: #fef3c7; color: #d97706; }
+                        .priority-LOW { background: #d1fae5; color: #059669; }
+
+                        /* Movement table */
+                        .section-title { font-size: 0.78rem; font-weight: bold; color: #1f2937; background: #f3f4f6; padding: 0.3rem 0.5rem; margin-bottom: 0.4rem; border-left: 3px solid #2563eb; }
+                        table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+                        table th { background: #f3f4f6; border: 1px solid #d1d5db; padding: 0.3rem 0.4rem; text-align: left; font-weight: bold; color: #1f2937; }
+                        table td { border: 1px solid #e5e7eb; padding: 0.3rem 0.4rem; vertical-align: top; }
+                        table tr:nth-child(even) td { background: #f9fafb; }
+
+                        /* Signatures */
+                        .sig-grid { display: flex; justify-content: space-around; margin-top: 3.5rem; }
+                        .sig-box { flex: 1; text-align: center; padding: 0 0.5rem; }
+                        .sig-line { margin-top: 2rem; border-top: 1px solid #374151; padding-top: 0.3rem; font-size: 0.75rem; font-weight: 700; color: #111827; text-transform: uppercase; letter-spacing: 0.05em; }
+                        .sig-sub { font-size: 0.68rem; font-weight: 400; color: #6b7280; margin-top: 0.1rem; }
+
+                        /* Footer */
+                        .footer { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding-top: 0.5rem; border-top: 1px solid #e5e7eb; font-size: 0.68rem; color: #9ca3af; margin-top: auto; }
+                        .footer-logo { width: 80px; height: 80px; object-fit: contain; }
+                        .footer-logo-las { width: 110px; height: 110px; object-fit: contain; }
+                        .footer-center { text-align: center; }
+                        .footer-right { text-align: right; }
+
+                        @media print {
+                            body { background: none; padding: 0; }
+                            .paper { box-shadow: none; margin: 0; width: 100%; height: 210mm; min-height: auto; padding: 8mm 12mm; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="paper">
+                        <!-- Header -->
+                        <div class="header">
+                            <div class="logo-wrap">
+                                <img src="${baseUrl}/assets/logo/logo1.jpg" alt="Ministry Logo" onerror="this.style.display='none'">
+                            </div>
+                            <div class="header-center">
+                                <h1>Kano State Geographic Information Service</h1>
+                                <h2>KANGIS Registry</h2>
+                                <h3>File Request Sheet</h3>
+                            </div>
+                            <div class="header-right">
+                                <div class="qr-wrap">
+                                    <img src="${trackingQrUrl}" alt="Tracking QR">
+                                </div>
+                                <div class="logo-wrap">
+                                    <img src="${baseUrl}/assets/logo/kangis.jpg" alt="KANGIS Logo" onerror="this.style.display='none'">
+                                </div>
+                            </div>
+                        </div>
+
+
+                        <!-- File info -->
+                        <div class="info-grid">
+                            <div class="info-row">
+                                <span class="info-label">File Name</span>
+                                <span class="info-value ${fileNameValue === '-' ? 'muted' : ''}">${fileNameValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Origin Registry</span>
+                                <span class="info-value ${originRegistryValue === '-' ? 'muted' : ''}">${originRegistryValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">File No</span>
+                                <span class="info-value ${fileNoValue === '-' ? 'muted' : ''}">${fileNoValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Current Office</span>
+                                <span class="info-value ${currentOfficeValue === '-' ? 'muted' : ''}">${currentOfficeValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Date Created</span>
+                                <span class="info-value ${createdValue === '-' ? 'muted' : ''}">${createdValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Destination Dept</span>
+                                <span class="info-value ${officeNameForPrint === '-' ? 'muted' : ''}">${officeNameForPrint}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Receiving Officer</span>
+                                <span class="info-value ${receivingOfficerValue === '-' ? 'muted' : ''}">${receivingOfficerValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Rack / Shelf</span>
+                                <span class="info-value ${rackShelfValue === '-' ? 'muted' : ''}">${rackShelfValue}</span>
+                            </div>
+                        </div>
+
+                        <!-- Movement history — single aggregated row -->
+                        <div class="section-title">
+                            Movement History &mdash; <span style="font-weight:600;">(PRIORITY: <span class="priority-${escapeHtml(tracker.priority || '')}">${priorityText}</span>)</span>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>S/N</th>
+                                    <th>Origin</th>
+                                    <th>Director GIS</th>
+                                    <th>Director General</th>
+                                    <th>Destination</th>
+                                    <th>Receiving Officer</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${(() => {
+                                    const allE = tracker.logEntries || [];
+                                    const approvalPurposes = ['recommendation', 'approval'];
+                                    const physE = allE.filter(e => !approvalPurposes.includes((e.purpose || '').toLowerCase()));
+                                    const appE  = allE.filter(e => approvalPurposes.includes((e.purpose || '').toLowerCase()));
+                                    if (!physE.length) return '<tr><td colspan="7" style="text-align:center;color:#9ca3af;">No movement history available</td></tr>';
+
+                                    const first = physE[0];
+                                    const wfCfgFRS = tracker.workflowConfig || {};
+                                    const destFRS = escapeHtml(tracker.department || wfCfgFRS.destination_office_name || '-');
+
+                                    const recE = appE.find(e => (e.purpose || '').toLowerCase() === 'recommendation');
+                                    const appAE = appE.find(e => (e.purpose || '').toLowerCase() === 'approval');
+
+                                    const directGis = recE
+                                        ? `<span style="font-weight:700;color:#4338ca;">Recommended</span><br><span style="font-size:0.72rem;color:#6b7280;">${escapeHtml(recE.logInDate || '')}${recE.logInTime ? ' @ ' + escapeHtml(toAmPm(recE.logInTime)) : ''}</span>`
+                                        : '—';
+                                    const directorGis = appAE
+                                        ? `<span style="font-weight:700;color:#059669;">Approved</span><br><span style="font-size:0.72rem;color:#6b7280;">${escapeHtml(appAE.logInDate || '')}${appAE.logInTime ? ' @ ' + escapeHtml(toAmPm(appAE.logInTime)) : ''}</span>`
+                                        : '—';
+
+                                    const logIn = first.logInDate ? `${escapeHtml(first.logInDate)}${first.logInTime ? ' @ ' + escapeHtml(toAmPm(first.logInTime)) : ''}` : '';
+                                    return `<tr>
+                                        <td>1</td>
+                                        <td><strong>${escapeHtml(tracker.originOfficeName || tracker.originRegistry || first.officeName || '-')}</strong></td>
+                                        <td>${directGis}</td>
+                                        <td>${directorGis}</td>
+                                        <td><strong>${destFRS}</strong>${logIn ? `<br><span style="font-size:0.72rem;color:#6b7280;">${logIn}</span>` : ''}</td>
+                                        <td>${escapeHtml(tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name || '-')}</td>
+                                        <td><span style="font-weight:700;color:#16a34a;">Log-out</span></td>
+                                    </tr>`;
+                                })()}
+                            </tbody>
+                        </table>
+
+                        <!-- Signatures -->
+                        <div class="sig-grid">
+                            <div class="sig-box">
+                                <div class="sig-line">Registry Staff</div>
+                            </div>
+                            <div class="sig-box">
+                                <div class="sig-line">Director GIS</div>
+                            </div>
+                            <div class="sig-box">
+                                <div class="sig-line">DG</div>
+                            </div>
+                        </div>
+
+                        <!-- Footer -->
+                        <div class="footer">
+                            <img class="footer-logo" src="${baseUrl}/assets/logo/klaes.png" alt="KLAES" onerror="this.style.display='none'">
+                            <span class="footer-center">KLAES — Kano Land Administration Enterprise System<br><span style="font-size:0.62rem;">Generated on ${generatedDateSafe} by ${generatedBySafe}</span></span>
+                            <img class="footer-logo footer-logo-las" src="${baseUrl}/assets/logo/las.jpg" alt="LAS" style="margin-left:auto;" onerror="this.style.display='none'">
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `;
+
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            Swal.fire({ icon: 'warning', title: 'Popup Blocked', text: 'Unable to open print preview. Please allow popups for this site.' });
             return;
         }
 
         printWindow.document.write(printContent);
         printWindow.document.close();
 
-        // Wait for content and trigger print
-        const triggerPrint = () => {
-            printWindow.focus();
-            printWindow.print();
-            
-            // Mark as printed in the database
-            fetch(`${baseUrl}/create-file-tracker/${tracker.id}/mark-printed`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
-                    'Accept': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    tracker.is_printed = true;
-                    tracker.printed = true;
-                    
-                    const printBtn = document.getElementById('print-details-btn');
-                    if (printBtn && currentDetailsTracker && currentDetailsTracker.id === tracker.id) {
-                        printBtn.disabled = true;
-                        printBtn.classList.add('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
-                        printBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-                        printBtn.querySelector('span').textContent = 'Already Printed';
-                    }
-
-                    const globalTracker = fileTrackers.find(t => t.id === tracker.id);
-                    if (globalTracker) {
-                        globalTracker.is_printed = true;
-                        globalTracker.printed = true;
-                    }
-                }
-            })
-            .catch(err => console.error('Error marking as printed:', err));
+        const invokePrint = () => {
+            try {
+                printWindow.focus();
+                printWindow.print();
+            } catch (error) {
+                console.error('Print invocation failed:', error);
+            }
         };
 
-        // Use a small delay to ensure styles and images are ready
-        setTimeout(triggerPrint, 500);
+        const waitForQrAndPrint = () => {
+            const qrImg = printWindow.document.querySelector('.qr-wrap img, .qr-wrapper img');
+            if (qrImg && !qrImg.complete) {
+                const onReady = () => setTimeout(invokePrint, 100);
+                qrImg.addEventListener('load', onReady, { once: true });
+                qrImg.addEventListener('error', onReady, { once: true });
+            } else {
+                setTimeout(invokePrint, 100);
+            }
+        };
+
+        if (printWindow.document.readyState === 'complete') {
+            waitForQrAndPrint();
+        } else {
+            printWindow.onload = waitForQrAndPrint;
+        }
     }
-
-    // KANGIS-specific landscape File Request Sheet (?url=kangis only)
-
 
     function setupAddLogSelects() {
         document.querySelectorAll('.add-log-select').forEach(select => {
@@ -6329,7 +6691,7 @@
     const updateLogSaveButton = document.getElementById('update-log-save');
     if (updateLogSaveButton) {
         updateLogSaveButton.addEventListener('click', submitUpdateLogForm);
-}
+    }
 
     // Details dialog event listeners
     document.getElementById('close-details')?.addEventListener('click', () => {
@@ -6338,30 +6700,10 @@
     document.getElementById('close-details-btn')?.addEventListener('click', () => {
         document.getElementById('details-dialog')?.classList.remove('show');
     });
-
-    // Bind Main Workflow Print Button
-    $(document).on('click', '#print-workflow-btn', function() {
-        if (typeof printWorkflowApproval === 'function' && currentDetailsTracker) {
-            printWorkflowApproval(currentDetailsTracker);
-        } else {
-            Swal.fire({ icon: 'warning', title: 'No Data', text: 'No tracker data available to print.' });
-        }
-    });
-
-    // Bind Request Sheet Print Button
-    $(document).on('click', '#print-details-btn', function() {
+    document.getElementById('print-details-btn')?.addEventListener('click', () => {
         if (currentDetailsTracker) {
             printFileTrackerDetails(currentDetailsTracker);
         } else {
-            // Fallback: scrape tracking ID if tracker object missing
-            const trackingId = $('.tracking-id-text').first().text().trim();
-            if (trackingId) {
-                const tracker = (window.fileTrackers || []).find(t => t.trackingId === trackingId);
-                if (tracker) {
-                    printFileTrackerDetails(tracker);
-                    return;
-                }
-            }
             Swal.fire({ icon: 'warning', title: 'No Data', text: 'No tracker data available to print.' });
         }
     });

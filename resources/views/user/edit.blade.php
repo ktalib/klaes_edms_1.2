@@ -492,51 +492,6 @@
 
                             </div>
 
-                            @php
-                                $userActions = !empty($user->user_actions) ? explode(',', $user->user_actions) : [];
-                            @endphp
-                            
-                            {{-- User Actions Section --}}
-                            <div class="mb-6 p-6 rounded-lg border border-purple-200 bg-purple-50">
-                                <h4 class="text-md font-medium text-purple-800 mb-3">
-                                    <i class="fas fa-tasks mr-2"></i>User Actions (user_actions)
-                                </h4>
-                                <p class="text-xs text-purple-600 mb-4">Select the specific actions this user is permitted to perform.</p>
-                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4" x-data="{ viewChecked: {{ in_array('view', $userActions) ? 'true' : 'false' }} }">
-                                    <div class="flex items-center">
-                                        <input type="checkbox" name="user_actions[]" value="create" id="action_create" 
-                                            {{ in_array('create', $userActions) ? 'checked' : '' }}
-                                            class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
-                                        <label for="action_create" class="ml-2 text-sm font-medium text-gray-700">Create</label>
-                                    </div>
-                                    <div class="flex items-center space-x-4">
-                                        <div class="flex items-center">
-                                            <input type="checkbox" name="user_actions[]" value="view" id="action_view" 
-                                                class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                                                x-model="viewChecked">
-                                            <label for="action_view" class="ml-2 text-sm font-medium text-gray-700">View</label>
-                                        </div>
-                                        <div class="flex items-center" x-show="viewChecked" style="display: none;">
-                                            <input type="checkbox" name="user_actions[]" value="view_all" id="action_view_all" 
-                                                {{ in_array('view_all', $userActions) ? 'checked' : '' }}
-                                                class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
-                                            <label for="action_view_all" class="ml-2 text-sm font-medium text-gray-700">View All</label>
-                                        </div>
-                                    </div>
-                                    <div class="flex items-center">
-                                        <input type="checkbox" name="user_actions[]" value="update" id="action_update" 
-                                            {{ in_array('update', $userActions) ? 'checked' : '' }}
-                                            class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
-                                        <label for="action_update" class="ml-2 text-sm font-medium text-gray-700">Update</label>
-                                    </div>
-                                    <div class="flex items-center">
-                                        <input type="checkbox" name="user_actions[]" value="delete" id="action_delete" 
-                                            {{ in_array('delete', $userActions) ? 'checked' : '' }}
-                                            class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
-                                        <label for="action_delete" class="ml-2 text-sm font-medium text-gray-700">Delete</label>
-                                    </div>
-                                </div>
-                            </div>
 
                             {{-- Hierarchical Role Management Section --}}
                             <div class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
@@ -612,6 +567,52 @@
                                             • User → Lowest<br>
                                             • ALL → Lowest
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            @php
+                                $userActions = !empty($user->user_actions) ? explode(',', $user->user_actions) : [];
+                            @endphp
+                            
+                            {{-- User Actions Section --}}
+                            <div class="mb-6 p-6 rounded-lg border border-purple-200 bg-purple-50">
+                                <h4 class="text-md font-medium text-purple-800 mb-3">
+                                    <i class="fas fa-tasks mr-2"></i>User Actions (user_actions)
+                                </h4>
+                                <p class="text-xs text-purple-600 mb-4">Select the specific actions this user is permitted to perform.</p>
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4" x-data="{ viewChecked: {{ in_array('view', $userActions) ? 'true' : 'false' }} }">
+                                    <div class="flex items-center">
+                                        <input type="checkbox" name="user_actions[]" value="create" id="action_create" 
+                                            {{ in_array('create', $userActions) ? 'checked' : '' }}
+                                            class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                                        <label for="action_create" class="ml-2 text-sm font-medium text-gray-700">Create</label>
+                                    </div>
+                                    <div class="flex items-center space-x-4">
+                                        <div class="flex items-center">
+                                            <input type="checkbox" name="user_actions[]" value="view" id="action_view" 
+                                                class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                                x-model="viewChecked">
+                                            <label for="action_view" class="ml-2 text-sm font-medium text-gray-700">View</label>
+                                        </div>
+                                        <div class="flex items-center" x-show="viewChecked" style="display: none;">
+                                            <input type="checkbox" name="user_actions[]" value="view_all" id="action_view_all" 
+                                                {{ in_array('view_all', $userActions) ? 'checked' : '' }}
+                                                class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                                            <label for="action_view_all" class="ml-2 text-sm font-medium text-gray-700">View All</label>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center">
+                                        <input type="checkbox" name="user_actions[]" value="update" id="action_update" 
+                                            {{ in_array('update', $userActions) ? 'checked' : '' }}
+                                            class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                                        <label for="action_update" class="ml-2 text-sm font-medium text-gray-700">Update</label>
+                                    </div>
+                                    <div class="flex items-center">
+                                        <input type="checkbox" name="user_actions[]" value="delete" id="action_delete" 
+                                            {{ in_array('delete', $userActions) ? 'checked' : '' }}
+                                            class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                                        <label for="action_delete" class="ml-2 text-sm font-medium text-gray-700">Delete</label>
                                     </div>
                                 </div>
                             </div>

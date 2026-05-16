@@ -25,9 +25,9 @@ class InstrumentController extends Controller
 
         // Base statistics query (independent)
         $statsBase = DB::connection('sqlsrv')->table('instrument_capture')
-            ->where(function($q) {
+            ->where(function ($q) {
                 $q->where('is_deleted', 0)
-                  ->orWhereNull('is_deleted');
+                    ->orWhereNull('is_deleted');
             });
         $totalCount = (clone $statsBase)->count();
         $pendingCount = (clone $statsBase)->whereNull('registration_number')->count();
@@ -36,18 +36,19 @@ class InstrumentController extends Controller
 
         // Load only one page from DB to avoid rendering the full dataset in the browser
         $instruments = DB::connection('sqlsrv')->table('instrument_capture as ic')
-            ->leftJoin('deed_registrations as dr', function($join) {
+            ->leftJoin('deed_registrations as dr', function ($join) {
                 $join->on('ic.registration_number', '=', 'dr.registration_number')
-                     ->on('ic.instrument_type', '=', 'dr.instrument_type');
+                    ->on('ic.instrument_type', '=', 'dr.instrument_type');
             })
-            ->where(function($q) {
+            ->where(function ($q) {
                 $q->where('ic.is_deleted', 0)
-                  ->orWhereNull('ic.is_deleted');
+                    ->orWhereNull('ic.is_deleted');
             })
             ->leftJoin('users as u', 'ic.created_by', '=', 'u.id')
-            ->select('ic.*', 
-                'dr.volume_no', 
-                'dr.page_no', 
+            ->select(
+                'ic.*',
+                'dr.volume_no',
+                'dr.page_no',
                 'dr.serial_no',
                 'dr.deeds_date',
                 'dr.deeds_time',
@@ -57,7 +58,8 @@ class InstrumentController extends Controller
                 // Blade guards like @if(!empty($instrument->registered_instrument_id)) skip the
                 // row until it has been registered.
                 DB::raw("CASE WHEN dr.id IS NULL THEN NULL ELSE CONCAT('deed_reg_', dr.id) END as registered_instrument_id"),
-                DB::raw("ISNULL(u.first_name, '') + ' ' + ISNULL(u.last_name, '') as created_by_name"))
+                DB::raw("ISNULL(u.first_name, '') + ' ' + ISNULL(u.last_name, '') as created_by_name")
+            )
             ->orderBy('ic.created_at', 'desc')
             ->orderBy('dr.deeds_date', 'desc')
             ->orderBy('ic.id', 'desc')
@@ -65,15 +67,15 @@ class InstrumentController extends Controller
             ->withQueryString();
 
         // Prepare data for JS for the current page only
-        $fullDataForJs = collect($instruments->items())->map(function($item) {
-            return (array)$item;
+        $fullDataForJs = collect($instruments->items())->map(function ($item) {
+            return (array) $item;
         });
 
         // Fetch unique instrument types for filtering
         $baseTypes = DB::connection('sqlsrv')->table('instrument_capture')
-            ->where(function($q) {
+            ->where(function ($q) {
                 $q->where('is_deleted', 0)
-                  ->orWhereNull('is_deleted');
+                    ->orWhereNull('is_deleted');
             })
             ->whereNotNull('instrument_type')
             ->distinct()
@@ -81,15 +83,15 @@ class InstrumentController extends Controller
 
         $opTypes = DB::connection('sqlsrv')->table('instrument_capture')
             ->where('instrument_type', 'Occupancy Permit (OP)')
-            ->where(function($q) {
+            ->where(function ($q) {
                 $q->where('is_deleted', 0)
-                  ->orWhereNull('is_deleted');
+                    ->orWhereNull('is_deleted');
             })
             ->whereNotNull('op_type')
             ->distinct()
             ->pluck('op_type')
-            ->map(function($t) { 
-                return str_starts_with($t, 'OP ') ? $t : 'OP ' . $t; 
+            ->map(function ($t) {
+                return str_starts_with($t, 'OP ') ? $t : 'OP ' . $t;
             })->toArray();
 
         // Merge and unique
@@ -293,9 +295,9 @@ class InstrumentController extends Controller
             $cleanFileno = preg_replace('/[^A-Z0-9]/', '', $normalizedFileno);
             if ($cleanFileno) {
                 $q->orWhereRaw("REPLACE(REPLACE(REPLACE(mlsFNo, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
-                  ->orWhereRaw("REPLACE(REPLACE(REPLACE(kangisFileNo, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
-                  ->orWhereRaw("REPLACE(REPLACE(REPLACE(NewKANGISFileno, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
-                  ->orWhereRaw("REPLACE(REPLACE(REPLACE(fileno, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno]);
+                    ->orWhereRaw("REPLACE(REPLACE(REPLACE(kangisFileNo, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
+                    ->orWhereRaw("REPLACE(REPLACE(REPLACE(NewKANGISFileno, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
+                    ->orWhereRaw("REPLACE(REPLACE(REPLACE(fileno, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno]);
             }
 
             // If we found an instrument with a prop_id, include that in the search
@@ -335,29 +337,29 @@ class InstrumentController extends Controller
         // Map instrument type to consent_type for accurate party matching
         $consentTypeMap = [
             'Deed of Assignment' => 'Assignment',
-            'Deed of Gift'       => 'Gift',
-            'Deed of Mortgage'   => 'Mortgage',
+            'Deed of Gift' => 'Gift',
+            'Deed of Mortgage' => 'Mortgage',
             'Tripartite Mortgage' => 'Mortgage',
         ];
 
         // Normalize fileno for more robust matching
         $normalizedFileno = strtoupper(trim($fileno));
-        
+
         $consentQuery = DB::connection('sqlsrv')->table('consent_applications')
-            ->where(function($q) use ($fileno, $normalizedFileno) {
+            ->where(function ($q) use ($fileno, $normalizedFileno) {
                 $q->where('file_number', $fileno)
-                  ->orWhere('file_number', $normalizedFileno)
-                  ->orWhere('c_of_o_no', $fileno)
-                  ->orWhere('c_of_o_no', $normalizedFileno)
-                  ->orWhere('right_of_occupancy_number', $fileno)
-                  ->orWhere('right_of_occupancy_number', $normalizedFileno);
-                
+                    ->orWhere('file_number', $normalizedFileno)
+                    ->orWhere('c_of_o_no', $fileno)
+                    ->orWhere('c_of_o_no', $normalizedFileno)
+                    ->orWhere('right_of_occupancy_number', $fileno)
+                    ->orWhere('right_of_occupancy_number', $normalizedFileno);
+
                 // Fuzzy match by removing spaces and dashes for cases like "KNML 4155" vs "KNML-4155"
                 $cleanFileno = preg_replace('/[^A-Z0-9]/', '', $normalizedFileno);
                 if ($cleanFileno) {
                     $q->orWhereRaw("REPLACE(REPLACE(REPLACE(file_number, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
-                      ->orWhereRaw("REPLACE(REPLACE(REPLACE(c_of_o_no, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
-                      ->orWhereRaw("REPLACE(REPLACE(REPLACE(right_of_occupancy_number, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno]);
+                        ->orWhereRaw("REPLACE(REPLACE(REPLACE(c_of_o_no, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
+                        ->orWhereRaw("REPLACE(REPLACE(REPLACE(right_of_occupancy_number, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno]);
                 }
             });
 
@@ -374,11 +376,11 @@ class InstrumentController extends Controller
                 $requestedType = $consentTypeMap[$type];
                 $consentGroups = [
                     'Assignment' => ['Assignment', 'Gift'],
-                    'Gift'       => ['Assignment', 'Gift'],
-                    'Mortgage'   => ['Mortgage'],
+                    'Gift' => ['Assignment', 'Gift'],
+                    'Mortgage' => ['Mortgage'],
                 ];
                 $allowedFallbackTypes = $consentGroups[$requestedType] ?? [$requestedType];
-                
+
                 $consentApp = (clone $consentQuery)
                     ->whereIn('consent_type', $allowedFallbackTypes)
                     ->orderBy('created_at', 'desc')
@@ -412,14 +414,14 @@ class InstrumentController extends Controller
                 $cleanFileno = preg_replace('/[^A-Z0-9]/', '', $normalizedFileno);
                 if ($cleanFileno) {
                     $q->orWhereRaw("REPLACE(REPLACE(REPLACE(mlsFNo, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
-                      ->orWhereRaw("REPLACE(REPLACE(REPLACE(kangisFileNo, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
-                      ->orWhereRaw("REPLACE(REPLACE(REPLACE(NewKANGISFileno, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
-                      ->orWhereRaw("REPLACE(REPLACE(REPLACE(temp_fileno, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno]);
+                        ->orWhereRaw("REPLACE(REPLACE(REPLACE(kangisFileNo, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
+                        ->orWhereRaw("REPLACE(REPLACE(REPLACE(NewKANGISFileno, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
+                        ->orWhereRaw("REPLACE(REPLACE(REPLACE(temp_fileno, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno]);
                 }
             })
-            ->where(function($q) {
+            ->where(function ($q) {
                 $q->where('is_deleted', 0)
-                  ->orWhereNull('is_deleted');
+                    ->orWhereNull('is_deleted');
             });
 
         // Exclude the exact duplicate so prior_instrument is always a different record
@@ -812,8 +814,10 @@ class InstrumentController extends Controller
                     $pid = $normalize($row->prop_id ?? '');
                     $fno = $normalize($row->fileno ?? $row->temp_fileno ?? '');
                     $displayFno = $row->mlsFNo ?? $row->fileno ?? $row->temp_fileno ?? '';
-                    if ($pid !== '') $transferPropIds[$pid] = $displayFno;
-                    if ($fno !== '') $transferFilenos[$fno] = $displayFno;
+                    if ($pid !== '')
+                        $transferPropIds[$pid] = $displayFno;
+                    if ($fno !== '')
+                        $transferFilenos[$fno] = $displayFno;
                 }
             }
 
@@ -829,8 +833,10 @@ class InstrumentController extends Controller
                         $pid = $normalize($rawItem['prop_id'] ?? '');
                         $fno = $normalize($rawItem['fileno'] ?? '');
                         $displayFno = $rawItem['mlsFNo'] ?? $rawItem['fileno'] ?? '';
-                        if ($pid !== '') $transferPropIds[$pid] = $displayFno;
-                        if ($fno !== '') $transferFilenos[$fno] = $displayFno;
+                        if ($pid !== '')
+                            $transferPropIds[$pid] = $displayFno;
+                        if ($fno !== '')
+                            $transferFilenos[$fno] = $displayFno;
                     }
                 }
             }
@@ -867,7 +873,7 @@ class InstrumentController extends Controller
                         ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(CAST(merger_group_id AS NVARCHAR(36)),\\'\\')))) = ?", [strtoupper($mergerGroupId)])
                         ->where(function ($q) {
                             $q->whereRaw("UPPER(ISNULL(instrument_type,'')) LIKE '%TRANSFER%'")
-                              ->orWhereRaw("UPPER(ISNULL(transaction_type,'')) LIKE '%TRANSFER%'");
+                                ->orWhereRaw("UPPER(ISNULL(transaction_type,'')) LIKE '%TRANSFER%'");
                         })
                         ->select(['mlsFNo', 'fileno'])
                         ->first();
@@ -902,7 +908,7 @@ class InstrumentController extends Controller
                             })
                             ->where(function ($q) {
                                 $q->whereRaw("UPPER(ISNULL(instrument_type,'')) LIKE '%TRANSFER%'")
-                                  ->orWhereRaw("UPPER(ISNULL(transaction_type,'')) LIKE '%TRANSFER%'");
+                                    ->orWhereRaw("UPPER(ISNULL(transaction_type,'')) LIKE '%TRANSFER%'");
                             });
                         $transferCount = $tcQuery->count();
                         $row->transfer_count = $transferCount;
@@ -940,7 +946,8 @@ class InstrumentController extends Controller
                     // Available first, then used
                     $aUsed = !empty($a->already_used) ? 1 : 0;
                     $bUsed = !empty($b->already_used) ? 1 : 0;
-                    if ($aUsed !== $bUsed) return $aUsed - $bUsed;
+                    if ($aUsed !== $bUsed)
+                        return $aUsed - $bUsed;
                     // Then by created_at descending
                     return strcmp($b->created_at ?? '', $a->created_at ?? '');
                 })
@@ -1173,7 +1180,7 @@ class InstrumentController extends Controller
             // INSERT so it can never be handed out twice.
             $sequenceId = DB::connection('sqlsrv')->table('temp_fileno_sequence')->insertGetId([
                 'created_by' => Auth::id(),
-                'is_used'    => 1,
+                'is_used' => 1,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -1251,23 +1258,23 @@ class InstrumentController extends Controller
     {
         $type = $request->query('instrument_type');
         $opType = $request->query('op_type');
-        
+
         if (!$type) {
-             return response()->json(['success' => false, 'message' => 'Instrument type required'], 400);
+            return response()->json(['success' => false, 'message' => 'Instrument type required'], 400);
         }
 
         try {
-             $service = app(\App\Services\InstrumentRegistrationService::class);
-             $preview = $service->previewNextNumber($type, $opType);
+            $service = app(\App\Services\InstrumentRegistrationService::class);
+            $preview = $service->previewNextNumber($type, $opType);
 
-             return response()->json([
-                 'success' => true,
-                 'preview' => $preview,
-                 'deeds_date' => $preview['deeds_date'] ?? null,
-                 'deeds_time' => $preview['deeds_time'] ?? null
-             ]);
+            return response()->json([
+                'success' => true,
+                'preview' => $preview,
+                'deeds_date' => $preview['deeds_date'] ?? null,
+                'deeds_time' => $preview['deeds_time'] ?? null
+            ]);
         } catch (\Exception $e) {
-             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
@@ -1281,13 +1288,13 @@ class InstrumentController extends Controller
             $volumeNo = $request->query('volume_no');
 
             $query = DB::connection('sqlsrv')->table('instrument_capture as ic')
-                ->leftJoin('deed_registrations as dr', function($join) {
+                ->leftJoin('deed_registrations as dr', function ($join) {
                     $join->on('ic.registration_number', '=', 'dr.registration_number')
-                         ->on('ic.instrument_type', '=', 'dr.instrument_type');
+                        ->on('ic.instrument_type', '=', 'dr.instrument_type');
                 })
-                ->where(function($q) {
+                ->where(function ($q) {
                     $q->where('ic.is_deleted', 0)
-                      ->orWhereNull('ic.is_deleted');
+                        ->orWhereNull('ic.is_deleted');
                 })
                 ->select(
                     'ic.*',
@@ -1302,10 +1309,10 @@ class InstrumentController extends Controller
                     $query->where('ic.instrument_type', 'Occupancy Permit (OP)');
                 } elseif (str_starts_with($instrumentType, 'OP ')) {
                     $query->where('ic.instrument_type', 'Occupancy Permit (OP)')
-                          ->where(function($q) use ($instrumentType) {
-                              $q->where('ic.op_type', $instrumentType)
+                        ->where(function ($q) use ($instrumentType) {
+                            $q->where('ic.op_type', $instrumentType)
                                 ->orWhere('ic.op_type', str_replace('OP ', '', $instrumentType));
-                          });
+                        });
                 } else {
                     $query->where('ic.instrument_type', $instrumentType);
                 }
@@ -1369,13 +1376,13 @@ class InstrumentController extends Controller
     public function resolveOpDuplicates(Request $request)
     {
         $validated = $request->validate([
-            'selected_source_op_id'    => 'required|integer|min:1',
+            'selected_source_op_id' => 'required|integer|min:1',
             'selected_source_op_table' => 'required|in:instrument_capture,deed_registrations',
         ]);
 
-        $selectedId    = (int) $validated['selected_source_op_id'];
+        $selectedId = (int) $validated['selected_source_op_id'];
         $selectedTable = $validated['selected_source_op_table'];
-        $selectedCol   = $selectedTable === 'deed_registrations' ? 'fileno' : 'temp_fileno';
+        $selectedCol = $selectedTable === 'deed_registrations' ? 'fileno' : 'temp_fileno';
 
         try {
             $selected = DB::connection('sqlsrv')
@@ -1391,44 +1398,37 @@ class InstrumentController extends Controller
             }
 
             $tempValue = $selected->temp_value ?? null;
-            $propId    = $selected->prop_id ?? null;
+            $propId = $selected->prop_id ?? null;
 
             if (!$tempValue || !$propId) {
                 return response()->json([
-                    'success'    => true,
+                    'success' => true,
                     'reassigned' => [],
-                    'message'    => 'Selected row has no temp_fileno + prop_id pair to deduplicate.',
+                    'message' => 'Selected row has no temp_fileno + prop_id pair to deduplicate.',
                 ]);
             }
 
             $tempValueNorm = strtoupper(trim((string) $tempValue));
             if (!preg_match('/^TEMP-/i', $tempValueNorm)) {
                 return response()->json([
-                    'success'    => true,
+                    'success' => true,
                     'reassigned' => [],
-                    'message'    => 'Selected row already uses an official file number; no reassignment performed.',
+                    'message' => 'Selected row already uses an official file number; no reassignment performed.',
                 ]);
             }
 
             $propIdAllocator = new \App\Services\PropertyIdAllocationService();
-            $reassigned      = [];
+            $reassigned = [];
 
             $tablesAndCols = [
                 'instrument_capture' => 'temp_fileno',
                 'deed_registrations' => 'fileno',
             ];
 
-            DB::connection('sqlsrv')->transaction(function () use (
-                $tablesAndCols,
-                $selectedTable,
-                $selectedId,
-                $tempValueNorm,
-                $propId,
-                $propIdAllocator,
-                &$reassigned
-            ) {
+            DB::connection('sqlsrv')->transaction(function () use ($tablesAndCols, $selectedTable, $selectedId, $tempValueNorm, $propId, $propIdAllocator, &$reassigned) {
                 foreach ($tablesAndCols as $table => $col) {
-                    if (!Schema::connection('sqlsrv')->hasTable($table)
+                    if (
+                        !Schema::connection('sqlsrv')->hasTable($table)
                         || !Schema::connection('sqlsrv')->hasColumn($table, $col)
                         || !Schema::connection('sqlsrv')->hasColumn($table, 'prop_id')
                     ) {
@@ -1455,7 +1455,7 @@ class InstrumentController extends Controller
                     foreach ($duplicates as $dup) {
                         $seqId = DB::connection('sqlsrv')->table('temp_fileno_sequence')->insertGetId([
                             'created_by' => Auth::id(),
-                            'is_used'    => 1,
+                            'is_used' => 1,
                             'created_at' => now(),
                             'updated_at' => now(),
                         ]);
@@ -1467,14 +1467,14 @@ class InstrumentController extends Controller
                             null,
                             null,
                             [
-                                'temp_fileno'     => $newTempFileno,
+                                'temp_fileno' => $newTempFileno,
                                 'allow_temp_only' => true,
-                                'skip_lookup'     => true,
+                                'skip_lookup' => true,
                             ]
                         );
 
                         $update = [
-                            $col      => $newTempFileno,
+                            $col => $newTempFileno,
                             'prop_id' => $newPropId,
                         ];
                         if (Schema::connection('sqlsrv')->hasColumn($table, 'updated_at')) {
@@ -1486,42 +1486,42 @@ class InstrumentController extends Controller
                             ->update($update);
 
                         $reassigned[] = [
-                            'table'           => $table,
-                            'id'              => $dup->id,
+                            'table' => $table,
+                            'id' => $dup->id,
                             'old_temp_fileno' => $dup->temp_value,
-                            'old_prop_id'     => $dup->prop_id,
+                            'old_prop_id' => $dup->prop_id,
                             'new_temp_fileno' => $newTempFileno,
-                            'new_prop_id'     => $newPropId,
+                            'new_prop_id' => $newPropId,
                         ];
                     }
                 }
             });
 
             Log::info('OP duplicate resolver completed', [
-                'user_id'           => Auth::id(),
-                'selected_table'    => $selectedTable,
-                'selected_id'       => $selectedId,
-                'kept_temp_fileno'  => $tempValueNorm,
-                'kept_prop_id'      => $propId,
-                'reassigned_count'  => count($reassigned),
-                'reassigned'        => $reassigned,
+                'user_id' => Auth::id(),
+                'selected_table' => $selectedTable,
+                'selected_id' => $selectedId,
+                'kept_temp_fileno' => $tempValueNorm,
+                'kept_prop_id' => $propId,
+                'reassigned_count' => count($reassigned),
+                'reassigned' => $reassigned,
             ]);
 
             return response()->json([
                 'success' => true,
-                'kept'    => [
-                    'table'       => $selectedTable,
-                    'id'          => $selectedId,
+                'kept' => [
+                    'table' => $selectedTable,
+                    'id' => $selectedId,
                     'temp_fileno' => $tempValueNorm,
-                    'prop_id'     => $propId,
+                    'prop_id' => $propId,
                 ],
                 'reassigned' => $reassigned,
             ]);
         } catch (\Throwable $e) {
             Log::error('resolveOpDuplicates failed: ' . $e->getMessage(), [
-                'selected_id'    => $selectedId,
+                'selected_id' => $selectedId,
                 'selected_table' => $selectedTable,
-                'trace'          => $e->getTraceAsString(),
+                'trace' => $e->getTraceAsString(),
             ]);
             return response()->json([
                 'success' => false,

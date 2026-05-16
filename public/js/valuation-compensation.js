@@ -300,11 +300,56 @@ window.VFC = {
             self.updateCompensatedItemsValue();
         });
 
-        $(document).on('change', '.structure-type-radio', function () {
+        $(document).on('change', '.structure-type-dropdown', function () {
             self.updateCompensatedItemsValue();
         });
 
         $('#compensated_items_other').on('input', function () {
+            self.updateCompensatedItemsValue();
+        });
+
+        // Sub-Item Calculations (Linear, Volume, Area/Shed)
+        $(document).on('input', '.sub-calc-trigger', function () {
+            const $container = $(this).closest('.item-container');
+            // Formula parsing for Linear items (e.g. "10 + 20.5 + 5")
+            const $formulaInput = $container.find('.sub-length-formula');
+            let length = 0;
+
+            if ($formulaInput.length > 0) {
+                const formula = $formulaInput.val() || "";
+                // Split by + and sum up segments
+                const segments = formula.split('+');
+                segments.forEach(s => {
+                    const val = parseFloat(s.trim());
+                    if (!isNaN(val)) length += val;
+                });
+                $container.find('.sub-total-length-display').text(length > 0 ? length.toFixed(2) + 'm' : '0.00m');
+                $container.find('.sub-length').val(length); // Update hidden input for calc
+            } else {
+                length = parseFloat($container.find('.sub-length').val()) || 0;
+            }
+
+            const width = parseFloat($container.find('.sub-width').val()) || 0;
+            const height = parseFloat($container.find('.sub-height').val()) || 0;
+            const rate = parseFloat($container.find('.sub-rate').val()) || 0;
+
+            let total = 0;
+
+            if ($container.find('.sub-height').length > 0) {
+                // Volume Group: L × W × H × Rate
+                const vol = length * width * height;
+                $container.find('.sub-total-volume-display').text(vol > 0 ? vol.toFixed(3) + ' m³' : '0.000 m³');
+                $container.find('.sub-volume-val').val(vol);
+                total = vol * rate;
+            } else if ($container.find('.sub-width').length > 0) {
+                // Shed/Area Group: L × W × Rate
+                total = length * width * rate;
+            } else if ($container.find('.sub-length').length > 0 || $formulaInput.length > 0) {
+                // Linear Group: L × Rate
+                total = length * rate;
+            }
+
+            $container.find('.item-amount-input').val(total > 0 ? total.toFixed(2) : '');
             self.updateCompensatedItemsValue();
         });
 
@@ -419,16 +464,19 @@ window.VFC = {
     updateCompensatedItemsValue: function () {
         let selectedItems = [];
 
-        // 1. Get Structure Type
-        const structType = $('.structure-type-radio:checked').val();
-        if (structType) {
-            selectedItems.push(`[Structure: ${structType}]`);
-        }
+        // 1. Get Categorized Dropdown Values
+        $('.structure-type-dropdown').each(function() {
+            const val = $(this).val();
+            const label = $(this).prev('label').text().trim();
+            if (val) {
+                selectedItems.push(`[${label}: ${val}]`);
+            }
+        });
 
         // 2. Get Selected Items and their Amounts
         $('.item-checkbox:checked').each(function () {
             const itemName = $(this).val();
-            const $wrapper = $(this).closest('.flex-col').find('.item-amount-wrapper');
+            const $wrapper = $(this).closest('.item-container').find('.item-amount-wrapper');
             const amount = $wrapper.find('.item-amount-input').val();
 
             if (amount) {
@@ -589,9 +637,13 @@ window.VFC = {
         if (window.lucide) window.lucide.createIcons();
         $('#building_type_other, #compensated_items_other').addClass('hidden');
         $('.item-checkbox').prop('checked', false);
-        $('.structure-type-radio').prop('checked', false);
+        $('.structure-type-dropdown').val(''); // Clear new dropdowns
         $('.item-amount-wrapper').addClass('hidden');
-        $('.item-amount-input').val('');
+        $('.item-amount-input, .sub-length, .sub-width, .sub-height, .sub-rate, .sub-length-formula, .sub-volume-val').val('');
+        $('.sub-total-volume-display').text('0.000 m³');
+        $('.sub-total-length-display').text('0.00m');
+
+        this.clearBatch();
 
         $('#valuation-modal').removeClass('hidden').addClass('flex');
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
@@ -612,7 +664,7 @@ window.VFC = {
         $('#record_id').val(record.id);
 
         $('#project-selection-section').removeClass('hidden');
-        
+
         // Track pending IDs to be applied once the dropdowns are populated
         this.pendingSubProjectId = record.sub_project_id;
         this.pendingWorkerId = record.worker_id;
@@ -669,10 +721,18 @@ window.VFC = {
             let otherItems = [];
 
             rawItems.forEach(itemStr => {
-                // Handle Structure Type [Structure: Name]
-                if (itemStr.startsWith('[Structure: ') && itemStr.endsWith(']')) {
-                    const structName = itemStr.replace('[Structure: ', '').replace(']', '');
-                    $(`.structure-type-radio[value="${structName}"]`).prop('checked', true);
+                // Handle Categorized Dropdowns [Label: Value]
+                if (itemStr.startsWith('[') && itemStr.includes(': ') && itemStr.endsWith(']')) {
+                    const content = itemStr.replace('[', '').replace(']', '');
+                    const [label, val] = content.split(': ').map(s => s.trim());
+                    
+                    // Match by label (Structure Type, Wall Type, etc.)
+                    $('.structure-type-dropdown').each(function() {
+                        const dropdownLabel = $(this).prev('label').text().trim();
+                        if (dropdownLabel === label) {
+                            $(this).val(val);
+                        }
+                    });
                     return;
                 }
 
@@ -721,6 +781,18 @@ window.VFC = {
 
         $('#valuation-modal').removeClass('hidden').addClass('flex');
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
+        if (window.lucide) window.lucide.createIcons();
+    },
+
+    openEditModalFromBase64: function (base64) {
+        try {
+            const json = decodeURIComponent(escape(atob(base64)));
+            const record = JSON.parse(json);
+            this.openEditModal(record);
+        } catch (e) {
+            console.error('VFC: Failed to parse base64 record', e);
+            Swal.fire('Error', 'Failed to load record for editing.', 'error');
+        }
     },
 
     openRecordsModal: function (projectId) {
@@ -810,14 +882,14 @@ window.VFC = {
                 // 2. Records
                 subGroup.records.forEach((record, recordIndex) => {
                     const bType = record.building_type === 'Other' ? (record.building_type_other || 'Other') : record.building_type;
-                    
+
                     // Prepare sub-items from compensated_items string
                     const subItems = [];
                     if (record.compensated_items) {
                         const items = record.compensated_items.split(', ');
                         items.forEach(itemStr => {
                             if (itemStr.startsWith('[Structure: ')) return; // Skip main structure tag
-                            
+
                             let name = itemStr;
                             let amount = 0;
                             if (itemStr.includes(' (₦')) {
@@ -825,7 +897,7 @@ window.VFC = {
                                 name = parts[0].trim();
                                 amount = parseFloat(parts[1].replace(')', '').replace(/,/g, '')) || 0;
                             }
-                            
+
                             if (amount > 0 || name) {
                                 subItems.push({ name, amount });
                             }
@@ -847,7 +919,7 @@ window.VFC = {
                             <td class="px-2 py-4 text-[11px] text-center text-slate-500">${record.building_count}</td>
                             <td class="px-2 py-4 text-[11px] text-center text-slate-500">${record.area_covered > 0 ? record.area_covered : 'Allow'}</td>
                             <td class="px-2 py-4 text-[11px] text-right text-slate-500 font-mono">₦${parseFloat(record.rate_of_cost).toLocaleString()}</td>
-                            <td class="px-2 py-4 text-[11px] text-right text-slate-700 font-bold font-mono">₦${parseFloat(record.compensation_amount - subItems.reduce((acc, i) => acc + i.amount, 0)).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                            <td class="px-2 py-4 text-[11px] text-right text-slate-700 font-bold font-mono">₦${parseFloat(record.compensation_amount - subItems.reduce((acc, i) => acc + i.amount, 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
 
                             <td rowspan="${totalRows}" class="px-2 py-4 align-top">
                                 <div class="text-[10px] font-bold text-slate-600">${record.account_number || 'N/A'}</div>
@@ -856,11 +928,11 @@ window.VFC = {
                             <td rowspan="${totalRows}" class="px-2 py-4 text-[10px] text-slate-500 align-top">${record.phone_number || 'N/A'}</td>
                             
                             <td rowspan="${totalRows}" class="px-2 py-4 text-right align-top">
-                                <div class="flex justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                <div class="flex justify-end gap-1 transition-opacity">
                                     <a href="${this.config.routes.store}/${record.id}" target="_blank" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="View/Print">
                                         <i data-lucide="printer" class="h-3.5 w-3.5"></i>
                                     </a>
-                                    <button onclick='VFC.openEditModal(${JSON.stringify(record).replace(/'/g, "&apos;")})' class="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg" title="Edit">
+                                    <button onclick='VFC.openEditModalFromBase64("${btoa(unescape(encodeURIComponent(JSON.stringify(record))))}")' class="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg" title="Edit">
                                         <i data-lucide="edit-3" class="h-3.5 w-3.5"></i>
                                     </button>
                                     <button onclick="VFC.deleteRecord(${record.id}, '${record.owner_name}')" class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg" title="Delete">
@@ -879,7 +951,7 @@ window.VFC = {
                                 <td class="px-2 py-1.5 text-[9px] text-center text-slate-400 font-mono">1</td>
                                 <td class="px-2 py-1.5 text-[9px] text-center text-slate-400 font-mono">Allow</td>
                                 <td class="px-2 py-1.5 text-[9px] text-right text-slate-400 font-mono">₦${item.amount.toLocaleString()}</td>
-                                <td class="px-2 py-1.5 text-[9px] text-right text-indigo-500/70 font-bold font-mono">₦${item.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                                <td class="px-2 py-1.5 text-[9px] text-right text-indigo-500/70 font-bold font-mono">₦${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                             </tr>
                         `;
                     });
@@ -889,7 +961,7 @@ window.VFC = {
                         html += `
                             <tr class="bg-slate-50/30">
                                 <td colspan="4" class="px-2 py-1.5 text-[9px] text-right font-bold text-slate-400 uppercase tracking-tighter">Record Total:</td>
-                                <td class="px-2 py-1.5 text-[10px] text-right font-black text-slate-700 border-t border-slate-200 font-mono">₦${parseFloat(record.compensation_amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                                <td class="px-2 py-1.5 text-[10px] text-right font-black text-slate-700 border-t border-slate-200 font-mono">₦${parseFloat(record.compensation_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                             </tr>
                         `;
                     }
@@ -957,6 +1029,7 @@ window.VFC = {
             // 2. Force visibility via CSS with !important where possible
             $modal.attr('style', 'display: flex !important; position: fixed !important; inset: 0 !important; z-index: 100 !important; background: rgba(0,0,0,0.5) !important;');
             $modal.removeClass('hidden');
+            if (window.lucide) window.lucide.createIcons();
 
             setTimeout(() => {
                 $overlay.attr('style', 'opacity: 1 !important; visibility: visible !important;');
@@ -1011,7 +1084,7 @@ window.VFC = {
         $overlay.removeClass('opacity-100');
         $container.addClass('scale-95 opacity-0').removeClass('scale-100 opacity-100');
         setTimeout(() => {
-            $modal.addClass('hidden').removeClass('flex');
+            $modal.addClass('hidden').removeClass('flex').attr('style', 'display: none !important;');
         }, 300);
     },
 
@@ -1023,15 +1096,15 @@ window.VFC = {
     },
 
     closeRecordsModal: function () {
-        $('#records-modal-overlay').removeClass('opacity-100').attr('style', '');
-        $('#records-modal-container').addClass('scale-95 opacity-0').removeClass('scale-100 opacity-100').attr('style', '');
+        $('#records-modal-overlay').removeClass('opacity-100').removeAttr('style');
+        $('#records-modal-container').addClass('scale-95 opacity-0').removeClass('scale-100 opacity-100').removeAttr('style');
         setTimeout(() => {
             $('#records-modal').addClass('hidden').removeClass('flex').attr('style', 'display: none !important;');
         }, 300);
     },
 
     closeModal: function () {
-        $('#modal-overlay').removeClass('opacity-100').attr('style', '');
+        $('#modal-overlay').removeClass('opacity-100').removeAttr('style');
         setTimeout(() => {
             $('#valuation-modal').addClass('hidden').removeClass('flex').attr('style', 'display: none !important;');
         }, 300);
@@ -1066,6 +1139,174 @@ window.VFC = {
             },
             hideClass: {
                 popup: 'animate__animated animate__zoomOut animate__faster'
+            }
+        });
+    },
+
+    // Batch Data Entry Logic
+    batchRecords: [],
+
+    addToBatch: function () {
+        console.log('VFC: Adding current form to batch...');
+        // 1. Validate form fields
+        const form = $('#valuation-form')[0];
+        if (!form.reportValidity()) {
+            console.warn('VFC: Form validation failed.');
+            return;
+        }
+
+        // 2. Gather form data
+        const formData = {};
+        $('#valuation-form').serializeArray().forEach(item => {
+            formData[item.name] = item.value;
+        });
+
+        // Handle 'Other' building type
+        if ($('#building_type').val() === 'Other') {
+            formData.building_type = $('#building_type_other').val();
+        }
+
+        console.log('VFC: Staging record:', formData.owner_name);
+
+        // 3. Add to batch array
+        this.batchRecords.push(formData);
+
+        // 4. Reset specific fields but keep project/worker/location context
+        $('#owner_name').val('');
+        $('#plot_no').val('');
+        $('#building_count').val(1);
+        $('#length, #breadth, #area_covered, #rate_of_cost, #compensation_amount').val('');
+        $('#account_name, #account_number, #phone_number, #nin, #remarks').val('');
+
+        // Reset compensated items
+        $('.item-checkbox').prop('checked', false);
+        $('.item-amount-wrapper').addClass('hidden');
+        $('.item-amount-input, .sub-length, .sub-width, .sub-height, .sub-rate, .sub-length-formula, .sub-volume-val').val('');
+        $('#compensated_items_val').val('');
+        $('#compensated_items_other').addClass('hidden').val('');
+
+        // 5. Update UI
+        this.renderBatchTable();
+
+        Swal.fire({
+            title: 'Added to Batch',
+            text: 'Record has been staged. You can add more or save all staged records.',
+            icon: 'success',
+            toast: true,
+            position: 'top-end',
+            timer: 3000,
+            showConfirmButton: false
+        });
+
+        // Removing scrollIntoView to prevent layout shift in fixed modals
+        // $('#batch-list-section')[0].scrollIntoView({ behavior: 'smooth' });
+    },
+
+    renderBatchTable: function () {
+        const $tableBody = $('#batch-table-body');
+        const $section = $('#batch-list-section');
+        const $count = $('#batch-count');
+        const $total = $('#batch-total-amount');
+        const $saveBtn = $('#save-batch-btn');
+        const $submitBtn = $('#submit-btn');
+
+        if (this.batchRecords.length === 0) {
+            $section.addClass('hidden');
+            $saveBtn.addClass('hidden');
+            $submitBtn.removeClass('hidden');
+            return;
+        }
+
+        $section.removeClass('hidden');
+        $saveBtn.removeClass('hidden');
+        $submitBtn.addClass('hidden'); // Hide single save button when batching
+        $count.text(this.batchRecords.length);
+
+        let html = '';
+        let grandTotal = 0;
+
+        this.batchRecords.forEach((record, index) => {
+            const amount = parseFloat(record.compensation_amount) || 0;
+            grandTotal += amount;
+            html += `
+                <tr class="hover:bg-slate-50/50 transition">
+                    <td class="px-6 py-4 font-black text-slate-900 uppercase tracking-tight">${record.owner_name}</td>
+                    <td class="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">${record.building_type}</td>
+                    <td class="px-6 py-4 text-right font-black text-slate-900 font-mono text-sm">₦${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td class="px-6 py-4 text-center">
+                        <button type="button" onclick="VFC.removeFromBatch(${index})" class="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all hover:scale-110 active:scale-90">
+                            <i data-lucide="trash-2" class="h-4 w-4"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        $tableBody.html(html);
+        $total.text('₦' + grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 }));
+        if (window.lucide) window.lucide.createIcons();
+    },
+
+    removeFromBatch: function (index) {
+        this.batchRecords.splice(index, 1);
+        this.renderBatchTable();
+    },
+
+    clearBatch: function () {
+        this.batchRecords = [];
+        this.renderBatchTable();
+    },
+
+    saveAllBatch: function () {
+        const self = this;
+        if (this.batchRecords.length === 0) return;
+
+        Swal.fire({
+            title: 'Save All Staged Records?',
+            text: `You are about to commit ${this.batchRecords.length} records to the database. This will save them all in a single batch.`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#059669',
+            confirmButtonText: 'Yes, Save All Staged',
+            cancelButtonText: 'Review More',
+            customClass: {
+                popup: 'rounded-[2rem]',
+                confirmButton: 'rounded-xl px-6 py-3 font-bold',
+                cancelButton: 'rounded-xl px-6 py-3 font-bold'
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    title: 'Saving Batch...',
+                    html: '<div class="mt-2 text-slate-500">Writing records to database, please wait...</div>',
+                    allowOutsideClick: false,
+                    didOpen: () => { Swal.showLoading(); }
+                });
+
+                $.ajax({
+                    url: self.config.routes.batchStore,
+                    type: 'POST',
+                    data: {
+                        _token: self.config.csrf,
+                        records: self.batchRecords
+                    },
+                    success: function (response) {
+                        if (response.success) {
+                            Swal.fire({
+                                title: 'Batch Saved!',
+                                text: response.message,
+                                icon: 'success',
+                                confirmButtonText: 'Great'
+                            }).then(() => {
+                                self.batchRecords = [];
+                                window.location.reload();
+                            });
+                        }
+                    },
+                    error: function (xhr) {
+                        Swal.fire('Batch Save Failed', xhr.responseJSON?.message || 'Something went wrong during bulk storage.', 'error');
+                    }
+                });
             }
         });
     }

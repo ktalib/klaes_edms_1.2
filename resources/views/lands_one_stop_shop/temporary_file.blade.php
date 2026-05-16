@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('styles')
+ @section('styles')
 <link rel="stylesheet" href="{{ asset('css/global-fileno-modal.css') }}">
 <style>
     /* Table styles matching other modules */
@@ -20,8 +20,7 @@
 </style>
 @endsection
 
-@section('content')
-<div class="flex-1 overflow-auto bg-slate-50/60">
+@section('content')<div class="flex-1 overflow-auto bg-slate-50/60">
     @include('admin.header', [
         'PageTitle' => 'Temporary File',
         'PageDescription' => 'Capture and manage Temporary File records.'
@@ -144,14 +143,8 @@
                         <input type="hidden" id="tf-id">
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Applicant Name <span class="text-red-500">*</span></label>
-                                <input type="text" name="applicant_name" id="tf-applicant_name" required
-                                    placeholder="e.g. Musa Sani"
-                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium">
-                            </div>
 
-                            <div>
+                             <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Original File Number</label>
                                 <div class="relative">
                                     <input type="text" name="file_no" id="tf-file_no"
@@ -162,6 +155,13 @@
                                         Select
                                     </button>
                                 </div>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Applicant Name <span class="text-red-500">*</span></label>
+                                <input type="text" name="applicant_name" id="tf-applicant_name" required
+                                    placeholder="e.g. Musa Sani"
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium">
                             </div>
 
                             <div>
@@ -177,9 +177,19 @@
                                     class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm font-medium">
                                     <option value="">Select District</option>
                                     @foreach($districts as $district)
-                                        <option value="{{ $district->name }}">{{ Str::upper($district->name) }}</option>
+                                        @if(strtoupper($district->name) !== 'OTHER')
+                                            <option value="{{ $district->name }}">{{ Str::upper($district->name) }}</option>
+                                        @endif
                                     @endforeach
+                                    <option value="OTHER">OTHER</option>
                                 </select>
+                            </div>
+
+                            <div id="tf-district-specify-wrapper" class="hidden">
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Specify District <span class="text-red-500">*</span></label>
+                                <input type="text" name="district_specify" id="tf-district_specify"
+                                    placeholder="Enter district name..."
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium uppercase">
                             </div>
 
                             <div>
@@ -242,7 +252,7 @@
         </div>
     </div>
 </div>
-@endsection
+
 
 {{-- Shared fixed-position action dropdown --}}
 <div id="tf-shared-dropdown"
@@ -252,8 +262,9 @@
 
 @include('components.global-fileno-modal')
 
-@push('scripts')
-<script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+@endsection
+
+@push('scripts')<script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script>
     let dt;
     $(document).ready(function() {
@@ -348,7 +359,10 @@
 
     function tfBuildLocation() {
         const plot    = $('#tf-plot_no').val().trim();
-        const district = $('#tf-district').val().trim();
+        let district  = $('#tf-district').val().trim();
+        if (district === 'OTHER') {
+            district = $('#tf-district_specify').val().trim();
+        }
         const lga     = $('#tf-lga').val().trim();
         const parts   = [];
         if (plot)     parts.push('Plot ' + plot);
@@ -359,8 +373,19 @@
     }
 
     // Auto-compose location whenever plot/district/lga changes
-    $(document).on('input', '#tf-plot_no', tfBuildLocation);
-    $(document).on('change', '#tf-district, #tf-lga', tfBuildLocation);
+    $(document).on('input', '#tf-plot_no, #tf-district_specify', tfBuildLocation);
+    $(document).on('change', '#tf-district, #tf-lga', function() {
+        if ($(this).attr('id') === 'tf-district') {
+            if ($(this).val() === 'OTHER') {
+                $('#tf-district-specify-wrapper').removeClass('hidden');
+                $('#tf-district_specify').attr('required', true);
+            } else {
+                $('#tf-district-specify-wrapper').addClass('hidden');
+                $('#tf-district_specify').val('').removeAttr('required');
+            }
+        }
+        tfBuildLocation();
+    });
 
     function tfOpenCreate() {
         $('#temporary-file-form')[0].reset();
@@ -371,6 +396,8 @@
         lucide.createIcons();
         
         $('#tf-modal').removeClass('hidden');
+        $('#tf-district-specify-wrapper').addClass('hidden');
+        $('#tf-district_specify').removeAttr('required');
         setTimeout(() => $('#tf-applicant_name').focus(), 100);
     }
 
@@ -387,11 +414,26 @@
         $('#tf-applicant_name').val(record.applicant_name);
         $('#tf-file_no').val(record.file_no);
         $('#tf-plot_no').val(record.plot_no);
-        $('#tf-district').val(record.district);
         $('#tf-lga').val(record.lga);
-        tfBuildLocation();
         $('#tf-phone').val(record.phone);
         $('#tf-remarks').val(record.remarks);
+        
+        // Handle District "OTHER" selection on edit
+        const districtExists = $('#tf-district option').filter(function() {
+            return $(this).val() === record.district;
+        }).length > 0;
+
+        if (record.district && !districtExists && record.district !== '') {
+            $('#tf-district').val('OTHER');
+            $('#tf-district-specify-wrapper').removeClass('hidden');
+            $('#tf-district_specify').val(record.district).attr('required', true);
+        } else {
+            $('#tf-district').val(record.district || '');
+            $('#tf-district-specify-wrapper').addClass('hidden');
+            $('#tf-district_specify').val('').removeAttr('required');
+        }
+
+        tfBuildLocation();
         $('#tf-address').val(record.address);
         
         lucide.createIcons();

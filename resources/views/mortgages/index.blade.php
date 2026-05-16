@@ -1,12 +1,11 @@
 @extends('layouts.app')
 
 @section('page-title')
-    Deed of Mortgage
+    Mortgage Records
 @endsection
-
 @section('content')
 <div class="flex-1 overflow-auto bg-slate-50">
-    @include('admin.header', ['PageTitle' => 'Deed of Mortgage', 'PageDescription' => 'Comprehensive list of Deed of Mortgage records from PRA, Instrument Capture, and File History Staging.'])
+    @include('admin.header', ['PageTitle' => 'Mortgage Records', 'PageDescription' => 'Comprehensive list of Deed of Mortgage and Tripartite Mortgage records from PRA, Instrument Capture, and File History Staging.'])
     
     <div class="p-6 space-y-6">
         {{-- ① Statistics Cards --}}
@@ -88,7 +87,7 @@
             <div class="px-6 py-4 border-b border-slate-100 bg-white flex items-center justify-between">
                 <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
                     <i data-lucide="table-2" class="w-5 h-5 text-indigo-500"></i>
-                    Deed of Mortgage Records
+                    Mortgage Records
                 </h2>
                 <div class="flex items-center gap-2">
                     <button id="refresh_btn" class="p-2 hover:bg-slate-100 rounded-lg transition text-slate-400 hover:text-indigo-600" title="Refresh Table">

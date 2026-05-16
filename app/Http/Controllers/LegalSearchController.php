@@ -943,6 +943,7 @@ class LegalSearchController extends Controller
                 'encumbrance_comment' => $encumbranceComment,
                 'litigation_comment' => $litigationComment,
                 'generated_by' => $generatedByText,
+                'full_name' => $generatedBy,
                 'qr_data' => $qrData,
             ],
         ]);

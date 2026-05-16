@@ -226,9 +226,9 @@
     </div>
 
     <div class="footer-info">
-        <span>KLAES SYSTEM GENERATED</span>
-        <span>DATE: {{ date('d/m/Y') }}</span>
-        <span>SIGNATURE: _______________________</span>
+       {{-- FOOTER LOGOS --}}
+       <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Left Logo" style="width: 100px; height: 50px;">
+
     </div>
 </div>
 

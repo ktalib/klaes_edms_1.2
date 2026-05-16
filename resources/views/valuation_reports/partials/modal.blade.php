@@ -90,6 +90,15 @@
                                             <label class="text-[10px] font-bold uppercase text-slate-500">2. Purpose of Inspection</label>
                                             <input type="text" x-model="formData.valuation_purpose" placeholder="Purpose of Inspection" class="w-full px-4 py-1.5 bg-white border border-slate-200 rounded-xl focus:border-blue-500 transition outline-none font-bold text-black text-xs uppercase">
                                         </div>
+                                        <div class="space-y-1">
+                                            <label class="text-[10px] font-bold uppercase text-slate-500">Valuation Type (Registration)</label>
+                                            <select x-model="formData.valuation_type" class="w-full px-4 py-1.5 bg-white border border-slate-200 rounded-xl focus:border-blue-500 transition outline-none font-bold text-black text-xs uppercase">
+                                                <option value="">Select Type</option>
+                                                <option value="Assignment">Assignment</option>
+                                                <option value="Mortgage">Mortgage</option>
+                                                <option value="Gift">Gift</option>
+                                            </select>
+                                        </div>
                                         <div class="col-span-2 space-y-1">
                                             <label class="text-[10px] font-bold uppercase text-slate-500">File Number</label>
                                             <div class="flex gap-2">
@@ -742,6 +751,7 @@
                 inspection_date: new Date().toISOString().split('T')[0],
                 land_use_purpose: '',
                 valuation_purpose: '',
+                valuation_type: '',
                 file_number: '',
                 full_name: '',
                 address: '',
@@ -902,6 +912,7 @@
                     inspection_date: this.getToday(),
                     land_use_purpose: '',
                     valuation_purpose: '',
+                    valuation_type: '',
                     file_number: '',
                     full_name: '',
                     address: '',

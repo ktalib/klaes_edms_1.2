@@ -88,16 +88,16 @@ class ProjectController extends Controller
                 'our_reference' => $request->our_reference,
                 'your_reference' => $request->your_reference,
                 'addressed_to' => $request->addressed_to,
-                'apply_percentage' => $request->apply_percentage ?? 10,
                 'user_id' => Auth::id(),
             ]);
 
             // Create Sub-Projects
-            $subProjectCount = intval($request->number_of_sub_projects ?? 0);
-            for ($i = 1; $i <= $subProjectCount; $i++) {
+            $subProjectNames = $request->sub_project_names ?? [];
+            foreach ($subProjectNames as $index => $name) {
+                $i = $index + 1;
                 \App\Models\SubProject::create([
                     'project_id' => $project->id,
-                    'name' => "Sub-Project A{$i}",
+                    'name' => $name ?: "Sub-Project A{$i}",
                     'code' => "{$project->project_code}-A{$i}"
                 ]);
             }
@@ -134,7 +134,6 @@ class ProjectController extends Controller
             'number_of_items' => 'required|integer|min:1',
             'project_type' => 'required|string',
             'number_of_sub_projects' => 'required|integer|min:1',
-            'apply_percentage' => 'required|numeric|min:0|max:100',
             'our_reference' => 'required|string',
             'your_reference' => 'nullable|string',
             'addressed_to' => 'nullable|string',
@@ -152,20 +151,35 @@ class ProjectController extends Controller
             'our_reference' => $request->our_reference,
             'your_reference' => $request->your_reference,
             'addressed_to' => $request->addressed_to,
-            'apply_percentage' => $request->apply_percentage ?? 10,
         ]);
 
-        // Sync Sub-Projects (Only Add New Ones if count increased)
-        $newCount = intval($request->number_of_sub_projects ?? 0);
-        $currentCount = $project->subProjects()->count();
+        // Sync Sub-Projects
+        $subProjectNames = $request->sub_project_names ?? [];
+        $existingSubProjects = $project->subProjects()->orderBy('id')->get();
         
-        if ($newCount > $currentCount) {
-            for ($i = $currentCount + 1; $i <= $newCount; $i++) {
+        foreach ($subProjectNames as $index => $name) {
+            $i = $index + 1;
+            $code = "{$project->project_code}-A{$i}";
+            if (isset($existingSubProjects[$index])) {
+                // Update existing
+                $existingSubProjects[$index]->update([
+                    'name' => $name ?: "Sub-Project A{$i}",
+                    'code' => $code
+                ]);
+            } else {
+                // Create new
                 \App\Models\SubProject::create([
                     'project_id' => $project->id,
-                    'name' => "Sub-Project A{$i}",
-                    'code' => "{$project->project_code}-A{$i}"
+                    'name' => $name ?: "Sub-Project A{$i}",
+                    'code' => $code
                 ]);
+            }
+        }
+        
+        // Remove extras if count decreased
+        if (count($existingSubProjects) > count($subProjectNames)) {
+            for ($i = count($subProjectNames); $i < count($existingSubProjects); $i++) {
+                $existingSubProjects[$i]->delete();
             }
         }
 
@@ -190,7 +204,6 @@ class ProjectController extends Controller
                 'addressed_to' => $p->addressed_to,
                 'district' => $p->district,
                 'lga' => $p->lga,
-                'apply_percentage' => $p->apply_percentage,
                 'sub_projects' => $p->subProjects->map(function($sp) {
                     return [
                         'id' => $sp->id,

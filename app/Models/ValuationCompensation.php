@@ -85,4 +85,9 @@ class ValuationCompensation extends Model
     {
         return $this->belongsTo(SubProject::class, 'sub_project_id');
     }
+
+    public function worker()
+    {
+        return $this->belongsTo(ProjectWorker::class, 'worker_id', 'worker_code');
+    }
 }

@@ -23,16 +23,16 @@ class LegalSearchService
      */
     public function search(array $params): array
     {
-        $fileNo        = trim($params['query'] ?? '');
+        $fileNo = trim($params['query'] ?? '');
         $guarantorName = trim($params['guarantorName'] ?? '');
         $guaranteeName = trim($params['guaranteeName'] ?? '');
-        $lga           = trim($params['lga'] ?? '');
-        $district      = trim($params['district'] ?? '');
-        $location      = trim($params['location'] ?? '');
-        $plotNumber    = trim($params['plotNumber'] ?? '');
-        $planNumber    = trim($params['planNumber'] ?? '');
-        $size          = trim($params['size'] ?? '');
-        $caveat        = trim($params['caveat'] ?? '');
+        $lga = trim($params['lga'] ?? '');
+        $district = trim($params['district'] ?? '');
+        $location = trim($params['location'] ?? '');
+        $plotNumber = trim($params['plotNumber'] ?? '');
+        $planNumber = trim($params['planNumber'] ?? '');
+        $size = trim($params['size'] ?? '');
+        $caveat = trim($params['caveat'] ?? '');
 
         $hasSearchCriteria = $fileNo !== '' || $guarantorName !== '' || $guaranteeName !== '' ||
             $lga !== '' || $district !== '' || $location !== '' ||
@@ -46,9 +46,9 @@ class LegalSearchService
         $conn = DB::connection('sqlsrv');
 
         $fileHistoryRecords = $this->searchFileHistoryStaging($conn, $filters);
-        $cofoRecords        = $this->searchCofoStaging($conn, $filters);
-        $praRecords         = $this->searchPra($conn, $filters);
-        $deedRecords        = $this->searchDeedRegistrations($conn, $filters);
+        $cofoRecords = $this->searchCofoStaging($conn, $filters);
+        $praRecords = $this->searchPra($conn, $filters);
+        $deedRecords = $this->searchDeedRegistrations($conn, $filters);
 
         // --- prop_id cross-table expansion ---
         // Collect prop_ids from initial results, then pull related records from all 4 tables
@@ -56,15 +56,15 @@ class LegalSearchService
         if (!empty($propIds)) {
             $existingIds = $this->buildExistingIdMap($fileHistoryRecords, $cofoRecords, $praRecords, $deedRecords);
 
-            $extraFH   = $this->searchByPropIds($conn, 'file_history_staging', $propIds, $existingIds['file_history_staging'] ?? []);
+            $extraFH = $this->searchByPropIds($conn, 'file_history_staging', $propIds, $existingIds['file_history_staging'] ?? []);
             $extraCofO = $this->searchByPropIds($conn, 'CofO_staging', $propIds, $existingIds['CofO_staging'] ?? []);
-            $extraPRA  = $this->searchByPropIds($conn, 'pra', $propIds, $existingIds['pra'] ?? []);
+            $extraPRA = $this->searchByPropIds($conn, 'pra', $propIds, $existingIds['pra'] ?? []);
             $extraDeed = $this->searchByPropIds($conn, 'deed_registrations', $propIds, $existingIds['deed_registrations'] ?? []);
 
             $fileHistoryRecords = array_merge($fileHistoryRecords, $extraFH);
-            $cofoRecords        = array_merge($cofoRecords, $extraCofO);
-            $praRecords         = array_merge($praRecords, $extraPRA);
-            $deedRecords        = array_merge($deedRecords, $extraDeed);
+            $cofoRecords = array_merge($cofoRecords, $extraCofO);
+            $praRecords = array_merge($praRecords, $extraPRA);
+            $deedRecords = array_merge($deedRecords, $extraDeed);
         }
 
         // Merge all and sort chronologically
@@ -95,7 +95,7 @@ class LegalSearchService
                     ->where(function ($q) use ($primaryCandidates) {
                         foreach ($primaryCandidates as $candidate) {
                             $q->orWhere('file_number', $candidate)
-                              ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
+                                ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
                         }
                     })
                     ->select('file_title', 'district', 'lga', 'land_use_type', 'plot_number', 'tp_no', 'related_fileno', 'file_number')
@@ -140,42 +140,42 @@ class LegalSearchService
         }
 
         return [
-            'transactions'       => $all,
-            'file_title'         => $fileIndexingData->file_title ?? null,
-            'file_district'      => $fileIndexingData->district ?? null,
-            'file_lga'           => $fileIndexingData->lga ?? null,
-            'file_land_use'      => $fileIndexingData->land_use_type ?? null,
-            'file_plot_number'   => $fileIndexingData->plot_number ?? null,
-            'file_tp_no'         => $fileIndexingData->tp_no ?? null,
-            'file_size'          => $fileSize,
-            'file_related_fileno'=> $fileIndexingData->related_fileno ?? null,
-            'file_index_number'  => $fileIndexingData->file_number ?? null,
+            'transactions' => $all,
+            'file_title' => $fileIndexingData->file_title ?? null,
+            'file_district' => $fileIndexingData->district ?? null,
+            'file_lga' => $fileIndexingData->lga ?? null,
+            'file_land_use' => $fileIndexingData->land_use_type ?? null,
+            'file_plot_number' => $fileIndexingData->plot_number ?? null,
+            'file_tp_no' => $fileIndexingData->tp_no ?? null,
+            'file_size' => $fileSize,
+            'file_related_fileno' => $fileIndexingData->related_fileno ?? null,
+            'file_index_number' => $fileIndexingData->file_number ?? null,
             'file_history_count' => count($fileHistoryRecords),
-            'cofo_count'         => count($cofoRecords),
-            'pra_count'          => count($praRecords),
-            'deed_count'         => count($deedRecords),
-            'total_count'        => count($all),
+            'cofo_count' => count($cofoRecords),
+            'pra_count' => count($praRecords),
+            'deed_count' => count($deedRecords),
+            'total_count' => count($all),
         ];
     }
 
     private function emptyResult(): array
     {
         return [
-            'transactions'       => [],
-            'file_title'         => null,
-            'file_district'      => null,
-            'file_lga'           => null,
-            'file_land_use'      => null,
-            'file_plot_number'   => null,
-            'file_tp_no'         => null,
-            'file_size'          => null,
-            'file_related_fileno'=> null,
-            'file_index_number'  => null,
+            'transactions' => [],
+            'file_title' => null,
+            'file_district' => null,
+            'file_lga' => null,
+            'file_land_use' => null,
+            'file_plot_number' => null,
+            'file_tp_no' => null,
+            'file_size' => null,
+            'file_related_fileno' => null,
+            'file_index_number' => null,
             'file_history_count' => 0,
-            'cofo_count'         => 0,
-            'pra_count'          => 0,
-            'deed_count'         => 0,
-            'total_count'        => 0,
+            'cofo_count' => 0,
+            'pra_count' => 0,
+            'deed_count' => 0,
+            'total_count' => 0,
         ];
     }
 
@@ -188,23 +188,46 @@ class LegalSearchService
             ->select([
                 'id',
                 DB::raw("COALESCE(mlsFNo, fileno) AS file_number"),
-                'mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno',
+                'mlsFNo',
+                'fileno',
+                'kangisFileNo',
+                'NewKANGISFileno',
                 'transaction_type',
                 DB::raw("TRY_CONVERT(DATE, transaction_date) AS transaction_date"),
-                'party_1', 'party_2', 'party_3', 'party_4',
-                DB::raw("Assignor AS assignor"), DB::raw("Assignee AS assignee"),
-                DB::raw("Mortgagor AS mortgagor"), DB::raw("Mortgagee AS mortgagee"),
-                DB::raw("Grantor AS grantor"), DB::raw("Grantee AS grantee"),
-                DB::raw("Surrenderor AS surrenderor"), DB::raw("Surrenderee AS surrenderee"),
-                DB::raw("Lessor AS lessor"), DB::raw("Lessee AS lessee"),
-                'land_use', 'location', 'lgsaOrCity', 'districtName',
-                DB::raw("serialNo AS serial_no"), DB::raw("pageNo AS page_no"), DB::raw("volumeNo AS volume_no"),
-                'regNo', 'prop_id', 'comments',
+                'party_1',
+                'party_2',
+                'party_3',
+                'party_4',
+                DB::raw("Assignor AS assignor"),
+                DB::raw("Assignee AS assignee"),
+                DB::raw("Mortgagor AS mortgagor"),
+                DB::raw("Mortgagee AS mortgagee"),
+                DB::raw("Grantor AS grantor"),
+                DB::raw("Grantee AS grantee"),
+                DB::raw("Surrenderor AS surrenderor"),
+                DB::raw("Surrenderee AS surrenderee"),
+                DB::raw("Lessor AS lessor"),
+                DB::raw("Lessee AS lessee"),
+                'land_use',
+                'location',
+                'lgsaOrCity',
+                'districtName',
+                DB::raw("serialNo AS serial_no"),
+                DB::raw("pageNo AS page_no"),
+                DB::raw("volumeNo AS volume_no"),
+                'regNo',
+                'prop_id',
+                'comments',
                 DB::raw("plot_size AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
-                'caveat_id', 'caveated_comment', 'is_caveated',
+                'caveat_id',
+                'caveated_comment',
+                'is_caveated',
                 'plot_no',
-                'deeds_date', 'deeds_time', 'reg_date', 'reg_time',
+                'deeds_date',
+                'deeds_time',
+                'reg_date',
+                'reg_time',
                 'tp_no',
                 DB::raw("'file_history_staging' AS source_table"),
             ]);
@@ -225,24 +248,45 @@ class LegalSearchService
             ->select([
                 'id',
                 DB::raw("COALESCE(mlsFNo, fileno) AS file_number"),
-                'mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno',
+                'mlsFNo',
+                'fileno',
+                'kangisFileNo',
+                'NewKANGISFileno',
                 'transaction_type',
                 DB::raw("TRY_CONVERT(DATE, transaction_date) AS transaction_date"),
-                'party_1', 'party_2', 'party_3', 'party_4',
-                DB::raw("Assignor AS assignor"), DB::raw("Assignee AS assignee"),
-                DB::raw("Mortgagor AS mortgagor"), DB::raw("Mortgagee AS mortgagee"),
-                DB::raw("Grantor AS grantor"), DB::raw("Grantee AS grantee"),
-                DB::raw("Surrenderor AS surrenderor"), DB::raw("Surrenderee AS surrenderee"),
-                DB::raw("Lessor AS lessor"), DB::raw("Lessee AS lessee"),
-                'land_use', 'location', 'lgsaOrCity',
-                DB::raw("serialNo AS serial_no"), DB::raw("pageNo AS page_no"), DB::raw("volumeNo AS volume_no"),
-                'regNo', 'prop_id', 'comments',
+                'party_1',
+                'party_2',
+                'party_3',
+                'party_4',
+                DB::raw("Assignor AS assignor"),
+                DB::raw("Assignee AS assignee"),
+                DB::raw("Mortgagor AS mortgagor"),
+                DB::raw("Mortgagee AS mortgagee"),
+                DB::raw("Grantor AS grantor"),
+                DB::raw("Grantee AS grantee"),
+                DB::raw("Surrenderor AS surrenderor"),
+                DB::raw("Surrenderee AS surrenderee"),
+                DB::raw("Lessor AS lessor"),
+                DB::raw("Lessee AS lessee"),
+                'land_use',
+                'location',
+                'lgsaOrCity',
+                DB::raw("serialNo AS serial_no"),
+                DB::raw("pageNo AS page_no"),
+                DB::raw("volumeNo AS volume_no"),
+                'regNo',
+                'prop_id',
+                'comments',
                 DB::raw("NULL AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
-                'caveat_id', 'caveated_comment', 'is_caveated',
+                'caveat_id',
+                'caveated_comment',
+                'is_caveated',
                 'plot_no',
-                DB::raw("NULL AS deeds_date"), DB::raw("NULL AS deeds_time"),
-                DB::raw("NULL AS reg_date"), DB::raw("transaction_time AS reg_time"),
+                DB::raw("NULL AS deeds_date"),
+                DB::raw("NULL AS deeds_time"),
+                DB::raw("NULL AS reg_date"),
+                DB::raw("transaction_time AS reg_time"),
                 DB::raw("NULL AS tp_no"),
                 DB::raw("'CofO_staging' AS source_table"),
             ]);
@@ -263,24 +307,46 @@ class LegalSearchService
             ->select([
                 'id',
                 DB::raw("COALESCE(mlsFNo, fileno) AS file_number"),
-                'mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno',
+                'mlsFNo',
+                'fileno',
+                'kangisFileNo',
+                'NewKANGISFileno',
                 'transaction_type',
                 DB::raw("TRY_CONVERT(DATE, transaction_date) AS transaction_date"),
-                'party_1', 'party_2', 'party_3', 'party_4',
-                DB::raw("Assignor AS assignor"), DB::raw("Assignee AS assignee"),
-                DB::raw("Mortgagor AS mortgagor"), DB::raw("Mortgagee AS mortgagee"),
-                DB::raw("Grantor AS grantor"), DB::raw("Grantee AS grantee"),
-                DB::raw("Surrenderor AS surrenderor"), DB::raw("Surrenderee AS surrenderee"),
-                DB::raw("Lessor AS lessor"), DB::raw("Lessee AS lessee"),
-                'land_use', DB::raw("COALESCE(property_description, location) AS location"), 'lgsaOrCity', 'districtName',
-                DB::raw("serialNo AS serial_no"), DB::raw("pageNo AS page_no"), DB::raw("volumeNo AS volume_no"),
-                'regNo', 'prop_id', 'comments',
+                'party_1',
+                'party_2',
+                'party_3',
+                'party_4',
+                DB::raw("Assignor AS assignor"),
+                DB::raw("Assignee AS assignee"),
+                DB::raw("Mortgagor AS mortgagor"),
+                DB::raw("Mortgagee AS mortgagee"),
+                DB::raw("Grantor AS grantor"),
+                DB::raw("Grantee AS grantee"),
+                DB::raw("Surrenderor AS surrenderor"),
+                DB::raw("Surrenderee AS surrenderee"),
+                DB::raw("Lessor AS lessor"),
+                DB::raw("Lessee AS lessee"),
+                'land_use',
+                DB::raw("COALESCE(property_description, location) AS location"),
+                'lgsaOrCity',
+                'districtName',
+                DB::raw("serialNo AS serial_no"),
+                DB::raw("pageNo AS page_no"),
+                DB::raw("volumeNo AS volume_no"),
+                'regNo',
+                'prop_id',
+                'comments',
                 DB::raw("plot_size AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
-                'caveat_id', 'caveated_comment', 'is_caveated',
+                'caveat_id',
+                'caveated_comment',
+                'is_caveated',
                 'plot_no',
-                'deeds_date', 'deeds_time',
-                DB::raw("NULL AS reg_date"), DB::raw("NULL AS reg_time"),
+                'deeds_date',
+                'deeds_time',
+                DB::raw("NULL AS reg_date"),
+                DB::raw("NULL AS reg_time"),
                 'tp_no',
                 DB::raw("'pra' AS source_table"),
             ]);
@@ -301,28 +367,46 @@ class LegalSearchService
             ->select([
                 'id',
                 DB::raw("fileno AS file_number"),
-                DB::raw("fileno AS mlsFNo"), 'fileno', DB::raw("NULL AS kangisFileNo"), DB::raw("NULL AS NewKANGISFileno"),
+                DB::raw("fileno AS mlsFNo"),
+                'fileno',
+                DB::raw("NULL AS kangisFileNo"),
+                DB::raw("NULL AS NewKANGISFileno"),
                 DB::raw("instrument_type AS transaction_type"),
                 DB::raw("TRY_CONVERT(DATE, deeds_date) AS transaction_date"),
-                DB::raw("grantor AS party_1"), DB::raw("grantee AS party_2"), DB::raw("NULL AS party_3"), DB::raw("NULL AS party_4"),
-                DB::raw("NULL AS assignor"), DB::raw("NULL AS assignee"),
-                DB::raw("NULL AS mortgagor"), DB::raw("NULL AS mortgagee"),
-                DB::raw("grantor"), DB::raw("grantee"),
-                DB::raw("NULL AS surrenderor"), DB::raw("NULL AS surrenderee"),
-                DB::raw("NULL AS lessor"), DB::raw("NULL AS lessee"),
+                DB::raw("grantor AS party_1"),
+                DB::raw("grantee AS party_2"),
+                DB::raw("NULL AS party_3"),
+                DB::raw("NULL AS party_4"),
+                DB::raw("NULL AS assignor"),
+                DB::raw("NULL AS assignee"),
+                DB::raw("NULL AS mortgagor"),
+                DB::raw("NULL AS mortgagee"),
+                DB::raw("grantor"),
+                DB::raw("grantee"),
+                DB::raw("NULL AS surrenderor"),
+                DB::raw("NULL AS surrenderee"),
+                DB::raw("NULL AS lessor"),
+                DB::raw("NULL AS lessee"),
                 DB::raw("NULL AS land_use"),
                 DB::raw("COALESCE(district, lga) AS location"),
-                'district', 'lga',
-                'serial_no', 'page_no', 'volume_no',
+                'district',
+                'lga',
+                'serial_no',
+                'page_no',
+                'volume_no',
                 DB::raw("registration_number AS regNo"),
                 'prop_id',
                 DB::raw("property_description AS comments"),
                 'size',
                 DB::raw("NULL AS caveat"),
-                DB::raw("NULL AS caveat_id"), DB::raw("NULL AS caveated_comment"), DB::raw("CAST(0 AS BIT) AS is_caveated"),
+                DB::raw("NULL AS caveat_id"),
+                DB::raw("NULL AS caveated_comment"),
+                DB::raw("CAST(0 AS BIT) AS is_caveated"),
                 DB::raw("plot_number AS plot_no"),
-                'deeds_date', 'deeds_time',
-                DB::raw("NULL AS reg_date"), DB::raw("NULL AS reg_time"),
+                'deeds_date',
+                'deeds_time',
+                DB::raw("NULL AS reg_date"),
+                DB::raw("NULL AS reg_time"),
                 DB::raw("NULL AS tp_no"),
                 DB::raw("'deed_registrations' AS source_table"),
             ]);
@@ -363,10 +447,10 @@ class LegalSearchService
                         $subQ->orWhereRaw("UPPER(party_1) LIKE UPPER(?)", ["%{$escaped}%"]);
                     }
                     $subQ->orWhereRaw("UPPER(Assignor) LIKE UPPER(?)", ["%{$escaped}%"])
-                         ->orWhereRaw("UPPER(Grantor) LIKE UPPER(?)", ["%{$escaped}%"])
-                         ->orWhereRaw("UPPER(Mortgagor) LIKE UPPER(?)", ["%{$escaped}%"])
-                         ->orWhereRaw("UPPER(Lessor) LIKE UPPER(?)", ["%{$escaped}%"])
-                         ->orWhereRaw("UPPER(Surrenderor) LIKE UPPER(?)", ["%{$escaped}%"]);
+                        ->orWhereRaw("UPPER(Grantor) LIKE UPPER(?)", ["%{$escaped}%"])
+                        ->orWhereRaw("UPPER(Mortgagor) LIKE UPPER(?)", ["%{$escaped}%"])
+                        ->orWhereRaw("UPPER(Lessor) LIKE UPPER(?)", ["%{$escaped}%"])
+                        ->orWhereRaw("UPPER(Surrenderor) LIKE UPPER(?)", ["%{$escaped}%"]);
                 }
             });
         }
@@ -382,10 +466,10 @@ class LegalSearchService
                         $subQ->orWhereRaw("UPPER(party_2) LIKE UPPER(?)", ["%{$escaped}%"]);
                     }
                     $subQ->orWhereRaw("UPPER(Assignee) LIKE UPPER(?)", ["%{$escaped}%"])
-                         ->orWhereRaw("UPPER(Grantee) LIKE UPPER(?)", ["%{$escaped}%"])
-                         ->orWhereRaw("UPPER(Mortgagee) LIKE UPPER(?)", ["%{$escaped}%"])
-                         ->orWhereRaw("UPPER(Lessee) LIKE UPPER(?)", ["%{$escaped}%"])
-                         ->orWhereRaw("UPPER(Surrenderee) LIKE UPPER(?)", ["%{$escaped}%"]);
+                        ->orWhereRaw("UPPER(Grantee) LIKE UPPER(?)", ["%{$escaped}%"])
+                        ->orWhereRaw("UPPER(Mortgagee) LIKE UPPER(?)", ["%{$escaped}%"])
+                        ->orWhereRaw("UPPER(Lessee) LIKE UPPER(?)", ["%{$escaped}%"])
+                        ->orWhereRaw("UPPER(Surrenderee) LIKE UPPER(?)", ["%{$escaped}%"]);
                 }
             });
         }
@@ -421,7 +505,7 @@ class LegalSearchService
             if ($isDeed) {
                 $query->where(function ($subQ) use ($escaped) {
                     $subQ->orWhereRaw("UPPER(district) LIKE UPPER(?)", ["%{$escaped}%"])
-                         ->orWhereRaw("UPPER(lga) LIKE UPPER(?)", ["%{$escaped}%"]);
+                        ->orWhereRaw("UPPER(lga) LIKE UPPER(?)", ["%{$escaped}%"]);
                 });
             } else {
                 $query->whereRaw("UPPER(location) LIKE UPPER(?)", ["%{$escaped}%"]);
@@ -477,7 +561,7 @@ class LegalSearchService
 
         // Build registration string
         $serialNo = $row->serial_no;
-        $pageNo   = $row->page_no;
+        $pageNo = $row->page_no;
         $volumeNo = $row->volume_no;
 
         $registration = null;
@@ -486,43 +570,43 @@ class LegalSearchService
         }
 
         return [
-            'id'               => $row->id,
-            'file_number'      => $row->file_number,
-            'mlsFNo'           => $row->mlsFNo,
-            'fileno'           => $row->fileno,
-            'kangisFileNo'     => $row->kangisFileNo,
-            'NewKANGISFileno'  => $row->NewKANGISFileno,
+            'id' => $row->id,
+            'file_number' => $row->file_number,
+            'mlsFNo' => $row->mlsFNo,
+            'fileno' => $row->fileno,
+            'kangisFileNo' => $row->kangisFileNo,
+            'NewKANGISFileno' => $row->NewKANGISFileno,
             'transaction_type' => $row->transaction_type ?: '-',
             'transaction_date' => $displayDate ?: '-',
-            'sort_date'        => $sortDate,
-            'party_1'          => $party1 ?: '-',
-            'party_2'          => $party2 ?: '-',
-            'party_3'          => $row->party_3 ?? '-',
-            'party_4'          => $row->party_4 ?? '-',
-            'land_use'         => $row->land_use ?: '-',
-            'location'         => $row->location ?: '-',
-            'lgsaOrCity'       => $row->lgsaOrCity ?? ($row->lga ?? '-'),
-            'districtName'     => $row->districtName ?? ($row->district ?? '-'),
-            'registration'     => $registration ?: '-',
-            'regNo'            => $row->regNo ?? '-',
-            'serial_no'        => $serialNo ?? '-',
-            'page_no'          => $pageNo ?? '-',
-            'volume_no'        => $volumeNo ?? '-',
-            'size'             => $row->size ?? '-',
-            'caveat'           => $row->caveat ?? '-',
-            'caveat_id'        => $row->caveat_id ?? null,
+            'sort_date' => $sortDate,
+            'party_1' => $party1 ?: '-',
+            'party_2' => $party2 ?: '-',
+            'party_3' => $row->party_3 ?? '-',
+            'party_4' => $row->party_4 ?? '-',
+            'land_use' => $row->land_use ?: '-',
+            'location' => $row->location ?: '-',
+            'lgsaOrCity' => $row->lgsaOrCity ?? ($row->lga ?? '-'),
+            'districtName' => $row->districtName ?? ($row->district ?? '-'),
+            'registration' => $registration ?: '-',
+            'regNo' => $row->regNo ?? '-',
+            'serial_no' => $serialNo ?? '-',
+            'page_no' => $pageNo ?? '-',
+            'volume_no' => $volumeNo ?? '-',
+            'size' => $row->size ?? '-',
+            'caveat' => $row->caveat ?? '-',
+            'caveat_id' => $row->caveat_id ?? null,
             'caveated_comment' => $row->caveated_comment ?? null,
-            'is_caveated'      => $row->is_caveated ?? 0,
-            'plot_no'          => $row->plot_no ?? '-',
-            'comments'         => $row->comments ?? '-',
-            'cofo_comment'     => $row->cofo_comment ?? null,
-            'prop_id'          => $row->prop_id ?? null,
-            'deeds_date'       => $row->deeds_date ?? null,
-            'deeds_time'       => $row->deeds_time ?? null,
-            'reg_date'         => $row->reg_date ?? null,
-            'reg_time'         => $row->reg_time ?? null,
-            'tp_no'            => $row->tp_no ?? null,
-            'source_table'     => $sourceLabel,
+            'is_caveated' => $row->is_caveated ?? 0,
+            'plot_no' => $row->plot_no ?? '-',
+            'comments' => $row->comments ?? '-',
+            'cofo_comment' => $row->cofo_comment ?? null,
+            'prop_id' => $row->prop_id ?? null,
+            'deeds_date' => $row->deeds_date ?? null,
+            'deeds_time' => $row->deeds_time ?? null,
+            'reg_date' => $row->reg_date ?? null,
+            'reg_time' => $row->reg_time ?? null,
+            'tp_no' => $row->tp_no ?? null,
+            'source_table' => $sourceLabel,
         ];
     }
 
@@ -554,11 +638,11 @@ class LegalSearchService
             foreach ($rows as $row) {
                 $source = $row['source_table'] ?? '';
                 $tableKey = match ($source) {
-                    'File History'      => 'file_history_staging',
-                    'CofO'              => 'CofO_staging',
-                    'PRA'               => 'pra',
+                    'File History' => 'file_history_staging',
+                    'CofO' => 'CofO_staging',
+                    'PRA' => 'pra',
                     'Deed Registration' => 'deed_registrations',
-                    default             => $source,
+                    default => $source,
                 };
                 $map[$tableKey][] = $row['id'];
             }
@@ -571,44 +655,80 @@ class LegalSearchService
      */
     private function searchByPropIds($conn, string $tableName, array $propIds, array $excludeIds): array
     {
-        if (empty($propIds)) return [];
+        if (empty($propIds))
+            return [];
 
         $selectMap = [
             'file_history_staging' => [
                 'id',
                 DB::raw("COALESCE(mlsFNo, fileno) AS file_number"),
-                'mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno',
+                'mlsFNo',
+                'fileno',
+                'kangisFileNo',
+                'NewKANGISFileno',
                 'transaction_type',
                 DB::raw("TRY_CONVERT(DATE, transaction_date) AS transaction_date"),
-                'party_1', 'party_2', 'party_3', 'party_4',
-                DB::raw("Assignor AS assignor"), DB::raw("Assignee AS assignee"),
-                DB::raw("Mortgagor AS mortgagor"), DB::raw("Mortgagee AS mortgagee"),
-                DB::raw("Grantor AS grantor"), DB::raw("Grantee AS grantee"),
-                DB::raw("Surrenderor AS surrenderor"), DB::raw("Surrenderee AS surrenderee"),
-                DB::raw("Lessor AS lessor"), DB::raw("Lessee AS lessee"),
-                'land_use', 'location', 'lgsaOrCity', 'districtName',
-                DB::raw("serialNo AS serial_no"), DB::raw("pageNo AS page_no"), DB::raw("volumeNo AS volume_no"),
-                'regNo', 'prop_id', 'comments',
+                'party_1',
+                'party_2',
+                'party_3',
+                'party_4',
+                DB::raw("Assignor AS assignor"),
+                DB::raw("Assignee AS assignee"),
+                DB::raw("Mortgagor AS mortgagor"),
+                DB::raw("Mortgagee AS mortgagee"),
+                DB::raw("Grantor AS grantor"),
+                DB::raw("Grantee AS grantee"),
+                DB::raw("Surrenderor AS surrenderor"),
+                DB::raw("Surrenderee AS surrenderee"),
+                DB::raw("Lessor AS lessor"),
+                DB::raw("Lessee AS lessee"),
+                'land_use',
+                'location',
+                'lgsaOrCity',
+                'districtName',
+                DB::raw("serialNo AS serial_no"),
+                DB::raw("pageNo AS page_no"),
+                DB::raw("volumeNo AS volume_no"),
+                'regNo',
+                'prop_id',
+                'comments',
                 DB::raw("plot_size AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
                 'plot_no',
                 DB::raw("'file_history_staging' AS source_table"),
             ],
-            'CofO_staging' => [ 
+            'CofO_staging' => [
                 'id',
                 DB::raw("COALESCE(mlsFNo, fileno) AS file_number"),
-                'mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno',
+                'mlsFNo',
+                'fileno',
+                'kangisFileNo',
+                'NewKANGISFileno',
                 'transaction_type',
                 DB::raw("TRY_CONVERT(DATE, transaction_date) AS transaction_date"),
-                DB::raw("NULL AS party_1"), DB::raw("NULL AS party_2"), DB::raw("NULL AS party_3"), DB::raw("NULL AS party_4"),
-                DB::raw("Assignor AS assignor"), DB::raw("Assignee AS assignee"),
-                DB::raw("Mortgagor AS mortgagor"), DB::raw("Mortgagee AS mortgagee"),
-                DB::raw("Grantor AS grantor"), DB::raw("Grantee AS grantee"),
-                DB::raw("Surrenderor AS surrenderor"), DB::raw("Surrenderee AS surrenderee"),
-                DB::raw("Lessor AS lessor"), DB::raw("Lessee AS lessee"),
-                'land_use', 'location', 'lgsaOrCity',
-                DB::raw("serialNo AS serial_no"), DB::raw("pageNo AS page_no"), DB::raw("volumeNo AS volume_no"),
-                'regNo', 'prop_id', 'comments',
+                DB::raw("NULL AS party_1"),
+                DB::raw("NULL AS party_2"),
+                DB::raw("NULL AS party_3"),
+                DB::raw("NULL AS party_4"),
+                DB::raw("Assignor AS assignor"),
+                DB::raw("Assignee AS assignee"),
+                DB::raw("Mortgagor AS mortgagor"),
+                DB::raw("Mortgagee AS mortgagee"),
+                DB::raw("Grantor AS grantor"),
+                DB::raw("Grantee AS grantee"),
+                DB::raw("Surrenderor AS surrenderor"),
+                DB::raw("Surrenderee AS surrenderee"),
+                DB::raw("Lessor AS lessor"),
+                DB::raw("Lessee AS lessee"),
+                'land_use',
+                'location',
+                'lgsaOrCity',
+                DB::raw("serialNo AS serial_no"),
+                DB::raw("pageNo AS page_no"),
+                DB::raw("volumeNo AS volume_no"),
+                'regNo',
+                'prop_id',
+                'comments',
                 DB::raw("NULL AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
                 'plot_no',
@@ -617,18 +737,36 @@ class LegalSearchService
             'pra' => [
                 'id',
                 DB::raw("COALESCE(mlsFNo, fileno) AS file_number"),
-                'mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno',
+                'mlsFNo',
+                'fileno',
+                'kangisFileNo',
+                'NewKANGISFileno',
                 'transaction_type',
                 DB::raw("TRY_CONVERT(DATE, transaction_date) AS transaction_date"),
-                'party_1', 'party_2', 'party_3', 'party_4',
-                DB::raw("Assignor AS assignor"), DB::raw("Assignee AS assignee"),
-                DB::raw("Mortgagor AS mortgagor"), DB::raw("Mortgagee AS mortgagee"),
-                DB::raw("Grantor AS grantor"), DB::raw("Grantee AS grantee"),
-                DB::raw("Surrenderor AS surrenderor"), DB::raw("Surrenderee AS surrenderee"),
-                DB::raw("Lessor AS lessor"), DB::raw("Lessee AS lessee"),
-                'land_use', 'location', 'lgsaOrCity', 'districtName',
-                DB::raw("serialNo AS serial_no"), DB::raw("pageNo AS page_no"), DB::raw("volumeNo AS volume_no"),
-                'regNo', 'prop_id', 'comments',
+                'party_1',
+                'party_2',
+                'party_3',
+                'party_4',
+                DB::raw("Assignor AS assignor"),
+                DB::raw("Assignee AS assignee"),
+                DB::raw("Mortgagor AS mortgagor"),
+                DB::raw("Mortgagee AS mortgagee"),
+                DB::raw("Grantor AS grantor"),
+                DB::raw("Grantee AS grantee"),
+                DB::raw("Surrenderor AS surrenderor"),
+                DB::raw("Surrenderee AS surrenderee"),
+                DB::raw("Lessor AS lessor"),
+                DB::raw("Lessee AS lessee"),
+                'land_use',
+                'location',
+                'lgsaOrCity',
+                'districtName',
+                DB::raw("serialNo AS serial_no"),
+                DB::raw("pageNo AS page_no"),
+                DB::raw("volumeNo AS volume_no"),
+                'regNo',
+                'prop_id',
+                'comments',
                 DB::raw("plot_size AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
                 'plot_no',
@@ -637,19 +775,33 @@ class LegalSearchService
             'deed_registrations' => [
                 'id',
                 DB::raw("fileno AS file_number"),
-                DB::raw("fileno AS mlsFNo"), 'fileno', DB::raw("NULL AS kangisFileNo"), DB::raw("NULL AS NewKANGISFileno"),
+                DB::raw("fileno AS mlsFNo"),
+                'fileno',
+                DB::raw("NULL AS kangisFileNo"),
+                DB::raw("NULL AS NewKANGISFileno"),
                 DB::raw("instrument_type AS transaction_type"),
                 DB::raw("TRY_CONVERT(DATE, deeds_date) AS transaction_date"),
-                DB::raw("grantor AS party_1"), DB::raw("grantee AS party_2"), DB::raw("NULL AS party_3"), DB::raw("NULL AS party_4"),
-                DB::raw("NULL AS assignor"), DB::raw("NULL AS assignee"),
-                DB::raw("NULL AS mortgagor"), DB::raw("NULL AS mortgagee"),
-                DB::raw("grantor"), DB::raw("grantee"),
-                DB::raw("NULL AS surrenderor"), DB::raw("NULL AS surrenderee"),
-                DB::raw("NULL AS lessor"), DB::raw("NULL AS lessee"),
+                DB::raw("grantor AS party_1"),
+                DB::raw("grantee AS party_2"),
+                DB::raw("NULL AS party_3"),
+                DB::raw("NULL AS party_4"),
+                DB::raw("NULL AS assignor"),
+                DB::raw("NULL AS assignee"),
+                DB::raw("NULL AS mortgagor"),
+                DB::raw("NULL AS mortgagee"),
+                DB::raw("grantor"),
+                DB::raw("grantee"),
+                DB::raw("NULL AS surrenderor"),
+                DB::raw("NULL AS surrenderee"),
+                DB::raw("NULL AS lessor"),
+                DB::raw("NULL AS lessee"),
                 DB::raw("NULL AS land_use"),
                 DB::raw("COALESCE(district, lga) AS location"),
-                'district', 'lga',
-                'serial_no', 'page_no', 'volume_no',
+                'district',
+                'lga',
+                'serial_no',
+                'page_no',
+                'volume_no',
                 DB::raw("registration_number AS regNo"),
                 'prop_id',
                 DB::raw("property_description AS comments"),
@@ -662,13 +814,14 @@ class LegalSearchService
 
         $labelMap = [
             'file_history_staging' => 'File History',
-            'CofO_staging'         => 'CofO',
-            'pra'                  => 'PRA',
-            'deed_registrations'   => 'Deed Registration',
+            'CofO_staging' => 'CofO',
+            'pra' => 'PRA',
+            'deed_registrations' => 'Deed Registration',
         ];
 
         $select = $selectMap[$tableName] ?? null;
-        if (!$select) return [];
+        if (!$select)
+            return [];
 
         $query = $conn->table($tableName)
             ->select($select)
@@ -703,42 +856,124 @@ class LegalSearchService
      */
     private const EDITABLE_COLUMNS = [
         'file_history_staging' => [
-            'mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'fileno',
-            'transaction_type', 'transaction_date', 'land_use', 'location',
-            'party_1', 'party_2', 'party_3', 'party_4',
-            'Assignor', 'Assignee', 'Mortgagor', 'Mortgagee',
-            'Grantor', 'Grantee', 'Surrenderor', 'Surrenderee', 'Lessor', 'Lessee',
-            'serialNo', 'pageNo', 'volumeNo', 'regNo',
-            'plot_no', 'plot_size', 'lgsaOrCity', 'districtName',
-            'comments', 'remarks',
+            'mlsFNo',
+            'kangisFileNo',
+            'NewKANGISFileno',
+            'fileno',
+            'transaction_type',
+            'transaction_date',
+            'land_use',
+            'location',
+            'party_1',
+            'party_2',
+            'party_3',
+            'party_4',
+            'Assignor',
+            'Assignee',
+            'Mortgagor',
+            'Mortgagee',
+            'Grantor',
+            'Grantee',
+            'Surrenderor',
+            'Surrenderee',
+            'Lessor',
+            'Lessee',
+            'serialNo',
+            'pageNo',
+            'volumeNo',
+            'regNo',
+            'plot_no',
+            'plot_size',
+            'lgsaOrCity',
+            'districtName',
+            'comments',
+            'remarks',
         ],
         'CofO_staging' => [
-            'mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'fileno', 'np_fileno',
-            'transaction_type', 'transaction_date', 'land_use', 'location',
-            'Assignor', 'Assignee', 'Mortgagor', 'Mortgagee',
-            'Grantor', 'Grantee', 'Surrenderor', 'Surrenderee', 'Lessor', 'Lessee',
-            'serialNo', 'pageNo', 'volumeNo', 'regNo',
-            'plot_no', 'lgsaOrCity',
-            'comments', 'remarks', 'period', 'period_unit',
+            'mlsFNo',
+            'kangisFileNo',
+            'NewKANGISFileno',
+            'fileno',
+            'np_fileno',
+            'transaction_type',
+            'transaction_date',
+            'land_use',
+            'location',
+            'Assignor',
+            'Assignee',
+            'Mortgagor',
+            'Mortgagee',
+            'Grantor',
+            'Grantee',
+            'Surrenderor',
+            'Surrenderee',
+            'Lessor',
+            'Lessee',
+            'serialNo',
+            'pageNo',
+            'volumeNo',
+            'regNo',
+            'plot_no',
+            'lgsaOrCity',
+            'comments',
+            'remarks',
+            'period',
+            'period_unit',
         ],
         'pra' => [
-            'mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'fileno',
-            'transaction_type', 'transaction_date', 'land_use', 'location',
-            'party_1', 'party_2', 'party_3',
-            'Assignor', 'Assignee', 'Mortgagor', 'Mortgagee',
-            'Grantor', 'Grantee', 'Surrenderor', 'Surrenderee', 'Lessor', 'Lessee',
-            'Donor', 'Donee', 'Vendor', 'Purchaser',
-            'serialNo', 'pageNo', 'volumeNo', 'regNo',
-            'plot_no', 'plot_size', 'lgsaOrCity', 'districtName',
-            'comments', 'remarks',
+            'mlsFNo',
+            'kangisFileNo',
+            'NewKANGISFileno',
+            'fileno',
+            'transaction_type',
+            'transaction_date',
+            'land_use',
+            'location',
+            'party_1',
+            'party_2',
+            'party_3',
+            'Assignor',
+            'Assignee',
+            'Mortgagor',
+            'Mortgagee',
+            'Grantor',
+            'Grantee',
+            'Surrenderor',
+            'Surrenderee',
+            'Lessor',
+            'Lessee',
+            'Donor',
+            'Donee',
+            'Vendor',
+            'Purchaser',
+            'serialNo',
+            'pageNo',
+            'volumeNo',
+            'regNo',
+            'plot_no',
+            'plot_size',
+            'lgsaOrCity',
+            'districtName',
+            'comments',
+            'remarks',
         ],
         'deed_registrations' => [
-            'fileno', 'parent_fileno',
-            'instrument_type', 'registration_number',
-            'volume_no', 'page_no', 'serial_no',
-            'deeds_date', 'deeds_time', 'instrument_date',
-            'grantor', 'grantee',
-            'lga', 'district', 'plot_number', 'size',
+            'fileno',
+            'parent_fileno',
+            'instrument_type',
+            'registration_number',
+            'volume_no',
+            'page_no',
+            'serial_no',
+            'deeds_date',
+            'deeds_time',
+            'instrument_date',
+            'grantor',
+            'grantee',
+            'lga',
+            'district',
+            'plot_number',
+            'size',
             'property_description',
         ],
     ];
@@ -774,7 +1009,7 @@ class LegalSearchService
             ->table($table)
             ->whereIn('id', $ids)
             ->update([
-                'prop_id'    => trim($propId),
+                'prop_id' => trim($propId),
                 'updated_at' => now(),
             ]);
     }
@@ -799,7 +1034,7 @@ class LegalSearchService
             ->table($table)
             ->whereIn('id', $ids)
             ->update([
-                'prop_id'    => null,
+                'prop_id' => null,
                 'updated_at' => now(),
             ]);
     }
@@ -1037,14 +1272,14 @@ class LegalSearchService
             $seen[$key] = true;
 
             $payload[] = [
-                'prop_id'      => $propId,
+                'prop_id' => $propId,
                 'source_table' => $table,
-                'source_id'    => $id,
-                'display_order'=> $order,
-                'arranged_by'  => $userId,
-                'arranged_at'  => now(),
-                'created_at'   => now(),
-                'updated_at'   => now(),
+                'source_id' => $id,
+                'display_order' => $order,
+                'arranged_by' => $userId,
+                'arranged_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
             ];
         }
 
@@ -1070,9 +1305,9 @@ class LegalSearchService
      * Label-to-table mapping for arrangement keys.
      */
     private const SOURCE_LABEL_TO_TABLE = [
-        'File History'      => 'file_history_staging',
-        'CofO'              => 'CofO_staging',
-        'PRA'               => 'pra',
+        'File History' => 'file_history_staging',
+        'CofO' => 'CofO_staging',
+        'PRA' => 'pra',
         'Deed Registration' => 'deed_registrations',
     ];
 
@@ -1112,8 +1347,8 @@ class LegalSearchService
             $dbTable = self::SOURCE_LABEL_TO_TABLE[$row['source_table'] ?? ''] ?? ($row['source_table'] ?? '');
             $key = $dbTable . ':' . ($row['id'] ?? '');
             $indexed[] = [
-                'row'   => $row,
-                'idx'   => $idx,
+                'row' => $row,
+                'idx' => $idx,
                 'order' => $arrangement[$key] ?? null,
             ];
         }
@@ -1121,9 +1356,12 @@ class LegalSearchService
         usort($indexed, function ($a, $b) {
             $hasA = $a['order'] !== null;
             $hasB = $b['order'] !== null;
-            if ($hasA && $hasB) return $a['order'] - $b['order'];
-            if ($hasA && !$hasB) return -1;
-            if (!$hasA && $hasB) return 1;
+            if ($hasA && $hasB)
+                return $a['order'] - $b['order'];
+            if ($hasA && !$hasB)
+                return -1;
+            if (!$hasA && $hasB)
+                return 1;
             return $a['idx'] - $b['idx'];
         });
 
@@ -1163,20 +1401,27 @@ class LegalSearchService
      */
     public function identifyFileNumberType($fileNo): string
     {
-        if (empty($fileNo)) return 'unknown';
+        if (empty($fileNo))
+            return 'unknown';
 
         $cleanFileNo = trim($fileNo);
 
-        if (preg_match('/^ST-(RES|COM|IND|AG)-\d{4}-\d+-\d+$/i', $cleanFileNo)) return 'st';
-        if (preg_match('/^ST-(RES|COM|IND|AG)-\d{4}-\d+$/i', $cleanFileNo))     return 'parent';
+        if (preg_match('/^ST-(RES|COM|IND|AG)-\d{4}-\d+-\d+$/i', $cleanFileNo))
+            return 'st';
+        if (preg_match('/^ST-(RES|COM|IND|AG)-\d{4}-\d+$/i', $cleanFileNo))
+            return 'parent';
 
-        if (preg_match('/^(COM|RES|IND|AG|CON-COM|CON-RES|CON-AG|CON-IND)-\d{4}-\d+$/i', $cleanFileNo) ||
-            preg_match('/^(COM|RES|IND|AG|CON-COM|CON-RES|CON-AG|CON-IND)-\d+$/i', $cleanFileNo)) {
+        if (
+            preg_match('/^(COM|RES|IND|AG|CON-COM|CON-RES|CON-AG|CON-IND)-\d{4}-\d+$/i', $cleanFileNo) ||
+            preg_match('/^(COM|RES|IND|AG|CON-COM|CON-RES|CON-AG|CON-IND)-\d+$/i', $cleanFileNo)
+        ) {
             return 'mls';
         }
 
-        if (preg_match('/^[A-Z]{4}\s?\d{3,6}$/i', $cleanFileNo)) return 'kangis';
-        if (preg_match('/^KN\d{2,6}$/i', $cleanFileNo))           return 'new_kangis';
+        if (preg_match('/^[A-Z]{4}\s?\d{3,6}$/i', $cleanFileNo))
+            return 'kangis';
+        if (preg_match('/^KN\d{2,6}$/i', $cleanFileNo))
+            return 'new_kangis';
 
         return 'unknown';
     }
