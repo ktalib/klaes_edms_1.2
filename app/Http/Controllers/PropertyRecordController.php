@@ -2948,8 +2948,9 @@ class PropertyRecordController extends Controller
 
                 // Only allocate Property ID if we have a permanent (non-temporary) file number
                 // Check if the file number is temporary (starts with TEMP-)
-                $isTempFileNumber = !empty($request->input('temp_fileno'))
-                    || (stripos($fileNumber, 'TEMP-') === 0)
+                $isTempSuffix = (bool) preg_match('/\(\s*T\s*\)\s*$/i', $fileNumber);
+                $isTempFileNumber = (stripos($fileNumber, 'TEMP-') === 0)
+                    || $isTempSuffix
                     || (empty($mlsFNo) && empty($kangisFileNo) && empty($newKangisFileNo));
 
                 $propId = null;

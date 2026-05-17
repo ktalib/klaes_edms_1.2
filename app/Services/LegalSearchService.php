@@ -45,14 +45,54 @@ class LegalSearchService
         $filters = compact('fileNo', 'guarantorName', 'guaranteeName', 'lga', 'district', 'location', 'plotNumber', 'planNumber', 'size', 'caveat');
         $conn = DB::connection('sqlsrv');
 
+        // Fetch SME allowed file numbers to prevent prop_id conversions/collisions
+        $allowedSmeFileNos = $this->getSmeAllowedFileNos($fileNo, $conn);
+        $filters['allowedSmeFileNos'] = $allowedSmeFileNos;
+
         $fileHistoryRecords = $this->searchFileHistoryStaging($conn, $filters);
         $cofoRecords = $this->searchCofoStaging($conn, $filters);
         $praRecords = $this->searchPra($conn, $filters);
         $deedRecords = $this->searchDeedRegistrations($conn, $filters);
 
-        // --- prop_id cross-table expansion ---
+        // Fetch active prop_id and parent_prop_id from active indexes if available (bypass for SME searches)
+        $activePropIds = [];
+        if ($fileNo !== '' && empty($allowedSmeFileNos)) {
+            $activeIndexing = $conn->table('file_indexings')
+                ->where('file_number', $fileNo)
+                ->whereNull('deleted_at')
+                ->first(['prop_id', 'parent_prop_id']);
+            if ($activeIndexing) {
+                if ($activeIndexing->prop_id) {
+                    $activePropIds[] = (string) $activeIndexing->prop_id;
+                }
+                if ($activeIndexing->parent_prop_id) {
+                    $activePropIds = array_merge($activePropIds, array_map('trim', explode(',', $activeIndexing->parent_prop_id)));
+                }
+            }
+            
+            $activeFileNo = $conn->table('fileNumber')
+                ->where('mlsfNo', $fileNo)
+                ->first(['parent_prop_id']);
+            if ($activeFileNo) {
+                if ($activeFileNo->parent_prop_id) {
+                    $activePropIds = array_merge($activePropIds, array_map('trim', explode(',', $activeFileNo->parent_prop_id)));
+                }
+            }
+        }
+
+        // --- prop_id cross-table expansion (bypass for SME searches) ---
         // Collect prop_ids from initial results, then pull related records from all 4 tables
-        $propIds = $this->collectPropIds(array_merge($fileHistoryRecords, $cofoRecords, $praRecords, $deedRecords));
+        $propIds = [];
+        if (empty($allowedSmeFileNos)) {
+            $propIds = $this->collectPropIds(array_merge($fileHistoryRecords, $cofoRecords, $praRecords, $deedRecords));
+            foreach ($activePropIds as $pid) {
+                if (trim($pid) !== '') {
+                    $propIds[] = trim($pid);
+                }
+            }
+            $propIds = array_values(array_unique($propIds));
+        }
+
         if (!empty($propIds)) {
             $existingIds = $this->buildExistingIdMap($fileHistoryRecords, $cofoRecords, $praRecords, $deedRecords);
 
@@ -69,6 +109,32 @@ class LegalSearchService
 
         // Merge all and sort chronologically
         $all = array_merge($fileHistoryRecords, $cofoRecords, $praRecords, $deedRecords);
+
+        // If searched by a subdivided unit (standard or Sectional Titling), only keep its own records and the mother's records,
+        // and explicitly exclude other unit records.
+        $motherFileNo = null;
+        if ($this->isSubdividedUnit($fileNo, $motherFileNo)) {
+            $all = array_filter($all, function ($row) use ($fileNo, $motherFileNo) {
+                // Get the row's file number
+                $rowFileNo = trim($row['fileno'] ?? ($row['file_number'] ?? ($row['mlsFNo'] ?? '')));
+                if ($rowFileNo === '') {
+                    return true; // Keep if no file number (e.g. orphan record with same prop_id)
+                }
+                
+                // Keep if matches the searched unit or the mother file number
+                if (strcasecmp($rowFileNo, $fileNo) === 0 || strcasecmp($rowFileNo, $motherFileNo) === 0) {
+                    return true;
+                }
+                
+                // If it's a subdivided unit file number pattern but not the searched one, exclude it!
+                if ($this->isSubdividedUnit($rowFileNo)) {
+                    return false; // Exclude other units!
+                }
+                
+                return true;
+            });
+            $all = array_values($all);
+        }
 
         usort($all, function ($a, $b) {
             $dateA = $a['sort_date'] ?? '9999-12-31';
@@ -426,12 +492,25 @@ class LegalSearchService
         $isDeed = ($tableName === 'deed_registrations');
         $isCofO = ($tableName === 'CofO_staging');
 
-        // File number filter (Exact match based on File Number Selector)
+        // File number filter (Exact match based on File Number Selector, support subdivision parent/unit search)
         if ($f['fileNo'] !== '') {
-            $exactFileNo = $f['fileNo'];
-            $query->where(function ($subQ) use ($exactFileNo, $fileColumns) {
+            $searchedFileNo = $f['fileNo'];
+            
+            if (!empty($f['allowedSmeFileNos'])) {
+                $searchFileNos = $f['allowedSmeFileNos'];
+            } else {
+                $searchFileNos = [$searchedFileNo];
+                $motherFileNo = null;
+                if ($this->isSubdividedUnit($searchedFileNo, $motherFileNo)) {
+                    $searchFileNos[] = $motherFileNo;
+                }
+            }
+            
+            $query->where(function ($subQ) use ($searchFileNos, $fileColumns) {
                 foreach ($fileColumns as $col) {
-                    $subQ->orWhereRaw("UPPER(LTRIM(RTRIM({$col}))) = UPPER(?)", [$exactFileNo]);
+                    foreach ($searchFileNos as $fn) {
+                        $subQ->orWhereRaw("UPPER(LTRIM(RTRIM({$col}))) = UPPER(?)", [$fn]);
+                    }
                 }
             });
         }
@@ -1424,5 +1503,101 @@ class LegalSearchService
             return 'new_kangis';
 
         return 'unknown';
+    }
+
+    /**
+     * Helper: Check if a file number is a subdivided unit, and return its mother file number.
+     * Excludes ST (Sectional Titling) files completely per project rules.
+     */
+    public function isSubdividedUnit($fileNo, &$motherFileNo = null): bool
+    {
+        $cleanFileNo = trim($fileNo);
+        if (empty($cleanFileNo)) {
+            return false;
+        }
+
+        // ST (Sectional Titling) is a separate system; exclude it completely
+        if (str_starts_with(strtoupper($cleanFileNo), 'ST-')) {
+            return false;
+        }
+        
+        $parts = explode('-', $cleanFileNo);
+        $count = count($parts);
+        
+        // Standard subdivided unit: COM-2025-4-001 (4 parts)
+        if ($count === 4) {
+            array_pop($parts);
+            $motherFileNo = implode('-', $parts);
+            return true;
+        }
+        
+        // Standard subdivided unit: COM-4-001 (3 parts, second part is not a 4-digit year)
+        if ($count === 3 && strlen($parts[1]) !== 4) {
+            array_pop($parts);
+            $motherFileNo = implode('-', $parts);
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * Retrieve explicitly related file numbers for Subdivision, Merger, and Extension (SME)
+     * using the related_fileno identifier array from file_indexings.
+     * Bypasses ST (Sectional Titling) files completely.
+     */
+    public function getSmeAllowedFileNos(string $fileNo, $conn): array
+    {
+        $fileNo = trim($fileNo);
+        if ($fileNo === '') {
+            return [];
+        }
+
+        // ST is a separate module; ignore ST prefix
+        if (str_starts_with(strtoupper($fileNo), 'ST-')) {
+            return [];
+        }
+
+        $allowed = [$fileNo];
+        $isSme = false;
+
+        // 1. Check active indexing
+        $active = $conn->table('file_indexings')
+            ->where('file_number', $fileNo)
+            ->whereNull('deleted_at')
+            ->first(['related_fileno']);
+
+        if ($active && !empty($active->related_fileno)) {
+            $decoded = json_decode($active->related_fileno, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                $isSme = true;
+                foreach ($decoded as $fn) {
+                    $allowed[] = trim($fn);
+                }
+            }
+        } else {
+            // 2. If decommissioned, find active record where this file is in its related_fileno
+            $activeParent = $conn->table('file_indexings')
+                ->whereNull('deleted_at')
+                ->where('related_fileno', 'like', '%' . $fileNo . '%')
+                ->first(['file_number', 'related_fileno']);
+            
+            if ($activeParent && !str_starts_with(strtoupper($activeParent->file_number), 'ST-')) {
+                $decoded = json_decode($activeParent->related_fileno, true);
+                if (is_array($decoded) && !empty($decoded)) {
+                    $isSme = true;
+                    $allowed[] = trim($activeParent->file_number);
+                    foreach ($decoded as $fn) {
+                        $allowed[] = trim($fn);
+                    }
+                }
+            }
+        }
+
+        if ($isSme) {
+            return array_values(array_unique($allowed));
+        }
+
+        return [];
     }
 }

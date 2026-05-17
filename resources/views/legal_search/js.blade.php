@@ -1232,6 +1232,26 @@ const executeSearchAjax = (filters, searchData) => {
     return '-';
   };
 
+  // Helper: render file number as a red badge if it is different from the searched file number
+  const renderFileNumberSpan = (item, fieldType = 'fileNumber') => {
+    const rawVal = getMappedValue(item, fieldType);
+    const itemFileNo = String(rawVal || '').trim();
+    const searchedFileNo = (window.__lsLastSearchedFileNumber || '').trim();
+    
+    const normalizeFN = (str) => {
+      return str.toUpperCase().replace(/[\s\-_=\/]+/g, '');
+    };
+    
+    if (searchedFileNo && itemFileNo && itemFileNo !== '-') {
+      const normSearch = normalizeFN(searchedFileNo);
+      const normItem = normalizeFN(itemFileNo);
+      if (normSearch && normItem !== normSearch) {
+        return `<span class="px-2 py-0.5 rounded text-xs font-semibold bg-red-50 text-red-600 border border-red-200" title="Associated Related File Number: ${itemFileNo}">${itemFileNo}</span>`;
+      }
+    }
+    return itemFileNo;
+  };
+
   // Helper: format reg particulars with 0/0/0 fallback
   const formatRegParticulars = (serialNo, pageNo, volumeNo) => {
     const s = cleanNumericValue(serialNo);
@@ -1961,7 +1981,7 @@ const executeSearchAjax = (filters, searchData) => {
           <td>${dedupDot(item)}${index + 1}</td>
           <td class="text-gray-500">${_wd_pr}</td>
           <td class="text-gray-500" style="padding-right:4px;">${getTableSourceWeight(item)}</td>
-          <td class="text-xs text-gray-600 whitespace-nowrap">${getMappedValue(item, 'fileNumber')}</td>
+          <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(item, 'fileNumber')}</td>
           <td style="white-space:nowrap;padding-left:6px;">${transactionType}</td>
           <td style="white-space:nowrap;">${party1}</td>
           <td>${party2}</td>
@@ -2016,7 +2036,7 @@ const executeSearchAjax = (filters, searchData) => {
           <td>${dedupDot(item)}${index + 1}</td>
           <td class="text-gray-500">${_wd_fh}</td>
           <td class="text-gray-500" style="padding-right:4px;">${getTableSourceWeight(item)}</td>
-          <td class="text-xs text-gray-600 whitespace-nowrap">${getMappedValue(item, 'fileNumber')}</td>
+          <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(item, 'fileNumber')}</td>
           <td style="white-space:nowrap;padding-left:6px;">${transactionType}</td>
           <td style="white-space:nowrap;">${party1}</td>
           <td>${party2}</td>
@@ -2093,7 +2113,7 @@ const executeSearchAjax = (filters, searchData) => {
           <td>${index + 1}</td>
           <td class="text-gray-500">${_wd_dr}</td>
           <td class="text-gray-500" style="padding-right:4px;">${getTableSourceWeight(registration)}</td>
-          <td class="text-xs text-gray-600 whitespace-nowrap">${getMappedValue(registration, 'fileNumber')}</td>
+          <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(registration, 'fileNumber')}</td>
           <td style="white-space:nowrap;padding-left:6px;" class="${isSTFragmentation ? 'text-yellow-800' : ''}">${transactionType}</td>
           <td style="white-space:nowrap;">${party1}</td>
           <td>${party2}</td>
@@ -2150,7 +2170,7 @@ const executeSearchAjax = (filters, searchData) => {
           <td>${index + 1}</td>
           <td class="text-gray-500">${_wd_cofo}</td>
           <td class="text-gray-500" style="padding-right:4px;">${getTableSourceWeight(cofo)}</td>
-          <td class="text-xs text-gray-600 whitespace-nowrap">${getMappedValue(cofo, 'fileNumber')}</td>
+          <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(cofo, 'fileNumber')}</td>
           <td>${cofoRegParticulars}</td>
           <td>
             <div>${date}</div>
@@ -2623,7 +2643,7 @@ const executeSearchAjax = (filters, searchData) => {
         <td class="cleanup-col hidden text-center"><input type="checkbox" class="row-checkbox" data-id="${item.id}" data-table="${timelineSourceToDbTable(item.source_table)}" data-prop-id="${item.prop_id || ''}"></td>
         <td class="arrange-col hidden text-center font-mono text-xs text-gray-400">${idx + 1}</td>
         <td class="text-center text-xs text-gray-500">${idx + 1}</td>
-        <td class="text-xs text-gray-600 whitespace-nowrap">${getMappedValue(item, 'fileNumber')}</td>
+        <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(item, 'fileNumber')}</td>
         <td><span class="source-badge ${sourceBadgeClass(item.source_table)}">${item.source_table}</span></td>
         <td class="text-center text-xs ${weightColorClass}">${weightDisplay}</td>
         <td>${party1}</td>

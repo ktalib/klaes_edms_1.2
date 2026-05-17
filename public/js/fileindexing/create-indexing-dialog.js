@@ -1220,6 +1220,38 @@
         return !!isKangisRegistry;
     }
 
+    async function checkTemporaryFileAssociationInline(fileNumber) {
+        if (!fileNumber) return;
+
+        const isEditingExisting = editModeState.isEditing && editModeState.recordId;
+        const isTempFileSuffix = /\(\s*T\s*\)\s*$/i.test(fileNumber);
+
+        if (!isEditingExisting && !isTempFileSuffix && !isKangisVariantMode()) {
+            try {
+                const checkUrl = `/fileindexing/api/check-temp-association?file_number=${encodeURIComponent(fileNumber)}`;
+                const chkResponse = await fetch(checkUrl, {
+                    headers: { Accept: 'application/json' },
+                });
+                if (chkResponse.ok) {
+                    const checkData = await chkResponse.json();
+                    if (checkData.has_associated_temp && typeof Swal !== 'undefined') {
+                        await Swal.fire({
+                            title: 'Temporary File Association Detected',
+                            html: `An existing temporary file <strong>${checkData.temp_record.temp_file_no}</strong> was found for this file number in the database.<br><br>` +
+                                `Saving will merge this main file number into the existing temporary indexing record.<br><br>` +
+                                `You can continue filling out the details.`,
+                            icon: 'warning',
+                            confirmButtonText: 'Understood & Proceed',
+                            confirmButtonColor: '#3085d6',
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error('Error checking temporary file association', err);
+            }
+        }
+    }
+
     async function promptExistingIndexedRecord(record, options = {}) {
         const {
             forcePrompt = false,
@@ -3466,6 +3498,7 @@
                     autoFillEntityCustomerFromAPI(current, { source: 'input-change' });
                 }
                 await checkFileAlreadyIndexed(current, { source: 'input-change' });
+                await checkTemporaryFileAssociationInline(current);
             } else {
                 clearEntityCustomerFields({ silent: false });
                 hideIndexedFeedback();
@@ -5518,6 +5551,41 @@
         }
 
         const isEditingExisting = editModeState.isEditing && editModeState.recordId;
+
+        // Check if there is an existing associated temporary record before proceeding
+        const isTempFileSuffix = /\(\s*T\s*\)\s*$/i.test(formData.file_number || '');
+        if (!isEditingExisting && !isTempFileSuffix && !formData.kangis_fileno_placeholder) {
+            try {
+                const checkUrl = `/fileindexing/api/check-temp-association?file_number=${encodeURIComponent(formData.file_number || '')}`;
+                const chkResponse = await fetch(checkUrl, {
+                    headers: { Accept: 'application/json' },
+                });
+                if (chkResponse.ok) {
+                    const checkData = await chkResponse.json();
+                    if (checkData.has_associated_temp && typeof Swal !== 'undefined') {
+                        const confirmTempMerge = await Swal.fire({
+                            title: 'Temporary File Association Detected',
+                            html: `An existing temporary file <strong>${checkData.temp_record.temp_file_no}</strong> was found for this file number in the database.<br><br>` +
+                                `Saving will merge this main file number into the existing temporary indexing record.<br><br>` +
+                                `Do you want to proceed?`,
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonText: 'Yes, merge & proceed',
+                            cancelButtonText: 'Cancel',
+                            confirmButtonColor: '#3085d6',
+                            cancelButtonColor: '#d33',
+                        });
+
+                        if (!confirmTempMerge.isConfirmed) {
+                            return; // User cancelled
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Error checking temporary file association', err);
+            }
+        }
+
         const endpoint = isEditingExisting
             ? `/fileindexing/${encodeURIComponent(editModeState.recordId)}`
             : '/fileindexing/store';
@@ -6055,10 +6123,25 @@
 
     function buildPropertyTransactionPayload(serverResponse, fallbackFormData = {}) {
         const payload = serverResponse?.data || {};
-        const fileNumber = payload.file_number || fallbackFormData.file_number || '';
+        const tempSuffixPattern = /\(\s*T\s*\)\s*$/i;
+        
+        let fileNumber = payload.file_number || fallbackFormData.file_number || '';
+        const hasTempFile = payload.has_temp_file || fallbackFormData.has_temp_file || tempSuffixPattern.test(fileNumber);
+        
+        let tempFileNo = payload.temp_file_no || fallbackFormData.temp_file_no || null;
+        if (hasTempFile && !tempFileNo) {
+            tempFileNo = tempSuffixPattern.test(fileNumber) ? fileNumber : `${fileNumber}(T)`;
+        }
+        
+        if (hasTempFile && fileNumber) {
+            fileNumber = fileNumber.replace(tempSuffixPattern, '').trim();
+        }
+
         const basePayload = {
             id: payload.id || null,
             file_number: fileNumber,
+            has_temp_file: hasTempFile ? 1 : 0,
+            temp_file_no: tempFileNo,
             file_title: payload.file_title || fallbackFormData.file_title || '',
             plot_number: payload.plot_number || fallbackFormData.plot_number || '',
             tp_no: payload.tp_no || fallbackFormData.tp_no || '',
@@ -6297,6 +6380,7 @@
                             await checkFileAlreadyIndexed(fileData.fileNumber, {
                                 source: isEditing ? 'edit_modal_selection' : 'modal_selection',
                             });
+                            await checkTemporaryFileAssociationInline(fileData.fileNumber);
 
                             if (!isEditing) {
                                 autoFillArchiveDetailsFromAPI(fileData.fileNumber);

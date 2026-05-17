@@ -2467,6 +2467,49 @@ class FileIndexingController extends Controller
         ], 404);
     }
 
+    protected function findAssociatedTempRecord($fileNumber)
+    {
+        $fileNumber = trim((string) $fileNumber);
+        if ($fileNumber === '') {
+            return null;
+        }
+        $baseFileNumber = preg_replace('/\(\s*T\s*\)\s*$/i', '', $fileNumber);
+        $normalizedBase = preg_replace('/[^A-Z0-9]/', '', strtoupper($baseFileNumber));
+
+        return \App\Models\FileIndexing::on('sqlsrv')
+            ->where(function ($q) {
+                $q->whereNull('file_number')->orWhere('file_number', '');
+            })
+            ->whereNotNull('temp_file_no')
+            ->get()
+            ->first(function ($row) use ($normalizedBase) {
+                $tempNo = preg_replace('/\(\s*T\s*\)\s*$/i', '', trim($row->temp_file_no));
+                $normalizedTemp = preg_replace('/[^A-Z0-9]/', '', strtoupper($tempNo));
+                return $normalizedTemp === $normalizedBase;
+            });
+    }
+
+    public function checkTempAssociation(Request $request)
+    {
+        $fileNumber = trim((string) $request->input('file_number', ''));
+        if ($fileNumber === '') {
+            return response()->json(['has_associated_temp' => false]);
+        }
+
+        $existing = $this->findAssociatedTempRecord($fileNumber);
+
+        if ($existing) {
+            return response()->json([
+                'has_associated_temp' => true,
+                'message' => 'Warning: An existing temporary file (' . $existing->temp_file_no . ') is already associated with this main file number. Saving will merge this main file number into the existing temporary indexing record.',
+                'temp_record' => $existing
+            ]);
+        }
+
+        return response()->json([
+            'has_associated_temp' => false
+        ]);
+    }
 
     public function store(Request $request)
     {
@@ -2498,61 +2541,89 @@ class FileIndexingController extends Controller
             // a file number that already exists (e.g. MLKN 001 alongside MLKN 01).
             $isKangisVariant = trim((string) $request->input('kangis_fileno_placeholder', '')) !== '';
 
-            $fileNumber = trim((string) $request->input('file_number', ''));
-            // Strip (T) suffix for duplicate detection so RES-2026-1(T) matches existing RES-2026-1
-            $fileNumber = trim((string) preg_replace('/\(\s*T\s*\)\s*$/i', '', $fileNumber));
-            if (!$isKangisVariant && $fileNumber !== '') {
-                $variants = $this->buildFileNumberVariants($fileNumber);
-                $normalizedFileno = $this->normalizeFileno($fileNumber);
-                if ($normalizedFileno) {
-                    $variants[] = $normalizedFileno;
-                }
-                $variants = array_values(array_unique(array_filter($variants)));
+            $rawRequestFileNumber = trim((string) $request->input('file_number', ''));
+            $tempSuffixPattern = '/\(\s*T\s*\)\s*$/i';
+            $isTempCandidate = (bool) preg_match($tempSuffixPattern, $rawRequestFileNumber);
+            $baseFileNumber = trim((string) preg_replace($tempSuffixPattern, '', $rawRequestFileNumber));
 
-                $normalizedVariants = array_map(static function ($value) {
-                    return preg_replace('/[^A-Z0-9]/', '', strtoupper((string) $value));
-                }, $variants);
-                $normalizedVariants = array_values(array_unique(array_filter($normalizedVariants)));
+            $existingTempRecord = null;
+            if (!$isTempCandidate) {
+                $existingTempRecord = $this->findAssociatedTempRecord($rawRequestFileNumber);
+            }
 
-                $existingQuery = DB::connection('sqlsrv')->table('file_indexings');
+            if (!$isKangisVariant && $baseFileNumber !== '') {
+                if ($isTempCandidate) {
+                    // Temporary file duplicate check
+                    $targetTempFileNo = $baseFileNumber . '(T)';
+                    $existingTemp = DB::connection('sqlsrv')->table('file_indexings')
+                        ->where('temp_file_no', $targetTempFileNo)
+                        ->first();
 
-                $existingQuery->where(function ($where) use ($variants, $normalizedVariants) {
-                    $applied = false;
-
-                    if (!empty($variants)) {
-                        $where->whereIn('file_number', $variants);
-                        $applied = true;
+                    if ($existingTemp) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This temporary file number has already been indexed. Do you want to update?',
+                            'error_type' => 'duplicate',
+                            'duplicate_action' => 'prompt_update',
+                            'existing_record' => (array) $existingTemp,
+                        ], 422);
                     }
+                } else {
+                    // Main file: only check for duplicates if there is NO associated temporary record
+                    if (!$existingTempRecord) {
+                        $variants = $this->buildFileNumberVariants($baseFileNumber);
+                        $normalizedFileno = $this->normalizeFileno($baseFileNumber);
+                        if ($normalizedFileno) {
+                            $variants[] = $normalizedFileno;
+                        }
+                        $variants = array_values(array_unique(array_filter($variants)));
 
-                    if (!empty($normalizedVariants)) {
-                        foreach ($normalizedVariants as $variant) {
-                            $clause = "REPLACE(REPLACE(REPLACE(UPPER(file_number), '-', ''), '/', ''), ' ', '') = ?";
-                            if ($applied) {
-                                $where->orWhereRaw($clause, [$variant]);
-                            } else {
-                                $where->whereRaw($clause, [$variant]);
+                        $normalizedVariants = array_map(static function ($value) {
+                            return preg_replace('/[^A-Z0-9]/', '', strtoupper((string) $value));
+                        }, $variants);
+                        $normalizedVariants = array_values(array_unique(array_filter($normalizedVariants)));
+
+                        $existingQuery = DB::connection('sqlsrv')->table('file_indexings');
+
+                        $existingQuery->where(function ($where) use ($variants, $normalizedVariants) {
+                            $applied = false;
+
+                            if (!empty($variants)) {
+                                $where->whereIn('file_number', $variants);
                                 $applied = true;
                             }
+
+                            if (!empty($normalizedVariants)) {
+                                foreach ($normalizedVariants as $variant) {
+                                    $clause = "REPLACE(REPLACE(REPLACE(UPPER(file_number), '-', ''), '/', ''), ' ', '') = ?";
+                                    if ($applied) {
+                                        $where->orWhereRaw($clause, [$variant]);
+                                    } else {
+                                        $where->whereRaw($clause, [$variant]);
+                                        $applied = true;
+                                    }
+                                }
+                            }
+
+                            if (!$applied) {
+                                $where->whereRaw('1 = 0');
+                            }
+                        });
+
+                        $existingRecord = $existingQuery->first();
+
+                        if ($existingRecord) {
+                            $existingRecordPayload = (array) $existingRecord;
+
+                            return response()->json([
+                                'success' => false,
+                                'message' => 'This file number has already been indexed. Do you want to update?',
+                                'error_type' => 'duplicate',
+                                'duplicate_action' => 'prompt_update',
+                                'existing_record' => $existingRecordPayload,
+                            ], 422);
                         }
                     }
-
-                    if (!$applied) {
-                        $where->whereRaw('1 = 0');
-                    }
-                });
-
-                $existingRecord = $existingQuery->first();
-
-                if ($existingRecord) {
-                    $existingRecordPayload = (array) $existingRecord;
-
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'This file number has already been indexed. Do you want to update?',
-                        'error_type' => 'duplicate',
-                        'duplicate_action' => 'prompt_update',
-                        'existing_record' => $existingRecordPayload,
-                    ], 422);
                 }
             }
 
@@ -2731,8 +2802,13 @@ class FileIndexingController extends Controller
                 $validated['has_temp_file'] = true;
                 $validated['temp_file_no'] = $baseFileNumber . '(T)';
             } else {
-                $validated['has_temp_file'] = false;
-                $validated['temp_file_no'] = null;
+                if ($existingTempRecord) {
+                    $validated['has_temp_file'] = true;
+                    $validated['temp_file_no'] = $existingTempRecord->temp_file_no;
+                } else {
+                    $validated['has_temp_file'] = false;
+                    $validated['temp_file_no'] = null;
+                }
             }
 
             $inputMdcBatchNo = null;
@@ -3159,6 +3235,9 @@ class FileIndexingController extends Controller
 
             $fileIndexing = null;
             $persistableData = Arr::only($validated, FileIndexing::columnWhitelist());
+            if ($tempCandidate !== null) {
+                $persistableData['file_number'] = null;
+            }
 
             // Check if the file number exists in the corresponding_fileno table
             $correspondingMatch = DB::connection('sqlsrv')
@@ -3192,9 +3271,17 @@ class FileIndexingController extends Controller
                 }
             }
 
-            DB::connection('sqlsrv')->transaction(function () use (&$fileIndexing, &$grouping, &$kangisPlaceholderResult, $isKangisVariant, $kangisGroupingCloned, $groupingTable, $persistableData, $groupingIdValue, $groupingSyncPayload, $sourceFileId, $fileNumberForUpdate, $trackingId, $resolvedTestControl, $validated, $indexingType, $rawFileTitles, $relatedFileNos, $relatedDetails, $request, $resolvedDistrictInput) {
-                // Create Main Record (Group Title for Block, or Single Record for Regular)
-                $fileIndexing = FileIndexing::create($persistableData);
+            DB::connection('sqlsrv')->transaction(function () use (&$fileIndexing, &$grouping, &$kangisPlaceholderResult, $isKangisVariant, $kangisGroupingCloned, $groupingTable, $persistableData, $groupingIdValue, $groupingSyncPayload, $sourceFileId, $fileNumberForUpdate, $trackingId, $resolvedTestControl, $validated, $indexingType, $rawFileTitles, $relatedFileNos, $relatedDetails, $request, $resolvedDistrictInput, $existingTempRecord) {
+                // Create Main Record or Update Existing Temporary Record
+                if ($existingTempRecord) {
+                    $fileIndexing = $existingTempRecord;
+                    $persistableData['file_number'] = $validated['file_number'];
+                    $persistableData['has_temp_file'] = 1;
+                    $persistableData['temp_file_no'] = $existingTempRecord->temp_file_no;
+                    $fileIndexing->update($persistableData);
+                } else {
+                    $fileIndexing = FileIndexing::create($persistableData);
+                }
 
                 // Resolve Kangis FileNo Placeholder (collision/disambiguation)
                 $kangisPlaceholderResult = ['resolved' => null, 'siblings' => []];
@@ -3222,7 +3309,7 @@ class FileIndexingController extends Controller
                 }
 
                 // Flag the fileNumber table record when a temp suffix was used
-                if (!empty($validated['has_temp_file']) && !empty($validated['temp_file_no'])) {
+                if (!empty($validated['has_temp_file']) && !empty($validated['temp_file_no']) && !empty($fileIndexing->file_number)) {
                     try {
                         DB::connection('sqlsrv')->table('fileNumber')
                             ->where(function ($query) use ($fileIndexing) {
@@ -3275,28 +3362,30 @@ class FileIndexingController extends Controller
                     }
                 }
 
-                $this->syncFileNumberTracking(
-                    $sourceFileId,
-                    $fileIndexing->file_number,
-                    $trackingId,
-                    $resolvedTestControl,
-                    [
-                        'file_title' => $validated['file_title'] ?? null,
-                        'location' => $validated['location'] ?? null,
-                        'lga' => $validated['lga'] ?? null,
-                        'plot_no' => $validated['plot_number'] ?? null,
-                        'tp_no' => $validated['tp_no'] ?? null,
-                        'has_temp_file' => $validated['has_temp_file'] ?? false,
-                        'temp_file_no' => $validated['temp_file_no'] ?? null,
-                        'is_kangis' => $isKangisVariant,
-                        'kangis_fileno_placeholder' => $validated['kangis_fileno_placeholder'] ?? null,
-                        'kangis_fileno_resolved' => $fileIndexing->file_number,
-                        'created_by' => Auth::id(),
-                        'updated_by' => Auth::id(),
-                        'source' => 'indexing',
-                        'type' => 'indexing',
-                    ]
-                );
+                if (!empty($fileIndexing->file_number)) {
+                    $this->syncFileNumberTracking(
+                        $sourceFileId,
+                        $fileIndexing->file_number,
+                        $trackingId,
+                        $resolvedTestControl,
+                        [
+                            'file_title' => $validated['file_title'] ?? null,
+                            'location' => $validated['location'] ?? null,
+                            'lga' => $validated['lga'] ?? null,
+                            'plot_no' => $validated['plot_number'] ?? null,
+                            'tp_no' => $validated['tp_no'] ?? null,
+                            'has_temp_file' => $validated['has_temp_file'] ?? false,
+                            'temp_file_no' => $validated['temp_file_no'] ?? null,
+                            'is_kangis' => $isKangisVariant,
+                            'kangis_fileno_placeholder' => $validated['kangis_fileno_placeholder'] ?? null,
+                            'kangis_fileno_resolved' => $fileIndexing->file_number,
+                            'created_by' => Auth::id(),
+                            'updated_by' => Auth::id(),
+                            'source' => 'indexing',
+                            'type' => 'indexing',
+                        ]
+                    );
+                }
 
                 // Block Indexing Specifics: Create Links for Main Files and Related Files
                 if ($indexingType === 'Block') {
@@ -3426,8 +3515,12 @@ class FileIndexingController extends Controller
 
 
             if ($propIdForStore !== null) {
+                $fileNoForHistory = $fileIndexing->file_number;
+                if (empty($fileNoForHistory) && !empty($fileIndexing->temp_file_no)) {
+                    $fileNoForHistory = trim((string) preg_replace('/\(\s*T\s*\)\s*$/i', '', $fileIndexing->temp_file_no));
+                }
                 $this->propertyIdAllocationService->syncPropIdToFileHistory(
-                    $fileIndexing->file_number,
+                    $fileNoForHistory ?: '',
                     $propIdForStore,
                     $resolvedTestControl
                 );
@@ -3559,8 +3652,9 @@ class FileIndexingController extends Controller
         return $cache[$column] = Schema::connection('sqlsrv')->hasColumn('grouping', $column);
     }
 
-    protected function syncFileNumberTracking(?int $sourceFileId, string $fileNumber, string $trackingId, ?string $testControl = null, array $extraAttributes = []): void
+    protected function syncFileNumberTracking(?int $sourceFileId, ?string $fileNumber, string $trackingId, ?string $testControl = null, array $extraAttributes = []): void
     {
+        $fileNumber = (string) $fileNumber;
         if (empty($trackingId)) {
             return;
         }
@@ -3644,6 +3738,14 @@ class FileIndexingController extends Controller
             ]);
 
             $variants = array_values(array_unique($this->buildFileNumberVariants($fileNumber)));
+            $tempFileNoAttr = $extraAttributes['temp_file_no'] ?? null;
+            $tempVariants = [];
+            if ($tempFileNoAttr) {
+                $tempVariants[] = $tempFileNoAttr;
+                $tempVariants[] = str_replace(' ', '', $tempFileNoAttr);
+                $tempVariants = array_values(array_unique(array_filter($tempVariants)));
+            }
+
             $hasFilenoColumn = Schema::connection('sqlsrv')->hasColumn('fileNumber', 'fileno');
 
             $query = DB::connection('sqlsrv')->table('fileNumber');
@@ -3651,23 +3753,35 @@ class FileIndexingController extends Controller
             if ($sourceFileId) {
                 $query->where('id', $sourceFileId);
             } else {
-                if (empty($variants)) {
+                if (empty($variants) && empty($tempVariants)) {
                     Log::warning('FileIndexing::store - no variants generated for fileNumber sync', [
                         'file_number' => $fileNumber,
                     ]);
                     return;
                 }
 
-                Log::info('FileIndexing::syncFileNumberTracking - variants', ['variants' => $variants]);
+                Log::info('FileIndexing::syncFileNumberTracking - variants', ['variants' => $variants, 'temp_variants' => $tempVariants]);
 
-                $query->where(function ($builder) use ($variants, $hasFilenoColumn) {
-                    $builder
-                        ->whereIn('st_file_no', $variants)
-                        ->orWhereIn('mlsfNo', $variants)
-                        ->orWhereIn('kangisFileNo', $variants)
-                        ->orWhereIn('NewKANGISFileNo', $variants);
+                $query->where(function ($builder) use ($variants, $tempVariants, $hasFilenoColumn) {
+                    $applied = false;
+                    if (!empty($variants)) {
+                        $builder->whereIn('st_file_no', $variants)
+                            ->orWhereIn('mlsfNo', $variants)
+                            ->orWhereIn('kangisFileNo', $variants)
+                            ->orWhereIn('NewKANGISFileNo', $variants);
+                        $applied = true;
+                    }
 
-                    if ($hasFilenoColumn) {
+                    if (!empty($tempVariants)) {
+                        if ($applied) {
+                            $builder->orWhereIn('temp_file_no', $tempVariants);
+                        } else {
+                            $builder->whereIn('temp_file_no', $tempVariants);
+                            $applied = true;
+                        }
+                    }
+
+                    if ($hasFilenoColumn && !empty($variants)) {
                         $builder->orWhereIn('fileno', $variants);
                     }
                 });
@@ -3676,16 +3790,28 @@ class FileIndexingController extends Controller
             $affected = $query->update($updateData);
 
             // If source_file_id was stale/non-fileNumber id, retry by file number variants.
-            if ($affected === 0 && $sourceFileId && !empty($variants)) {
+            if ($affected === 0 && $sourceFileId && (!empty($variants) || !empty($tempVariants))) {
                 $affected = DB::connection('sqlsrv')->table('fileNumber')
-                    ->where(function ($builder) use ($variants, $hasFilenoColumn) {
-                        $builder
-                            ->whereIn('st_file_no', $variants)
-                            ->orWhereIn('mlsfNo', $variants)
-                            ->orWhereIn('kangisFileNo', $variants)
-                            ->orWhereIn('NewKANGISFileNo', $variants);
+                    ->where(function ($builder) use ($variants, $tempVariants, $hasFilenoColumn) {
+                        $applied = false;
+                        if (!empty($variants)) {
+                            $builder->whereIn('st_file_no', $variants)
+                                ->orWhereIn('mlsfNo', $variants)
+                                ->orWhereIn('kangisFileNo', $variants)
+                                ->orWhereIn('NewKANGISFileNo', $variants);
+                            $applied = true;
+                        }
 
-                        if ($hasFilenoColumn) {
+                        if (!empty($tempVariants)) {
+                            if ($applied) {
+                                $builder->orWhereIn('temp_file_no', $tempVariants);
+                            } else {
+                                $builder->whereIn('temp_file_no', $tempVariants);
+                                $applied = true;
+                            }
+                        }
+
+                        if ($hasFilenoColumn && !empty($variants)) {
                             $builder->orWhereIn('fileno', $variants);
                         }
                     })

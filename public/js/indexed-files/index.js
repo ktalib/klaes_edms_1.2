@@ -1376,9 +1376,23 @@ async function submitTempFile() {
     // Open transaction modal if hasTransaction was true and data is returned
     if (hasTransaction && result.data && typeof window.openPropertyTransactionModal === 'function') {
       const row = result.data;
+      const tempSuffixPattern = /\(\s*T\s*\)\s*$/i;
+      let fileNo = row.file_number || '';
+      const hasTemp = row.has_temp_file || tempSuffixPattern.test(fileNo);
+      let tempFileNo = row.temp_file_no || '';
+      
+      if (hasTemp && !tempFileNo) {
+        tempFileNo = tempSuffixPattern.test(fileNo) ? fileNo : `${fileNo}(T)`;
+      }
+      
+      if (hasTemp && fileNo) {
+        fileNo = fileNo.replace(tempSuffixPattern, '').trim();
+      }
+
       const fileIndexingData = {
         id: row.id,
-        file_number: row.file_number,
+        file_number: fileNo,
+        has_temp_file: hasTemp ? 1 : 0,
         file_title: row.file_title || '',
         lga: row.lga || '',
         district: row.district || '',
@@ -1386,7 +1400,7 @@ async function submitTempFile() {
         plot_no: row.plot_no || row.plot_number || '',
         tp_no: row.tp_no || '',
         lpkn_no: row.lpkn_no || '',
-        temp_file_no: row.temp_file_no || '',
+        temp_file_no: tempFileNo,
         property_description: [row.district, row.lga].filter(Boolean).join(', '),
         existing_records: []
       };

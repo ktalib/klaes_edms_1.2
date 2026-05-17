@@ -1394,6 +1394,7 @@
         // Prepare data for submission with unified field handling
         const formData = {
             file_number: fileIndexingData.file_number,
+            temp_fileno: fileIndexingData.temp_file_no || null,
             file_title: fileIndexingData.file_title,
             plot_no: fileIndexingData.plot_no || fileIndexingData.plot_number, // Handle both formats
             tp_no: fileIndexingData.tp_no,

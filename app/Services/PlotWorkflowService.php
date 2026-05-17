@@ -52,6 +52,44 @@ class PlotWorkflowService
                     'updated_at' => now()
                 ]);
 
+                // 2.5 Archive detailed indexing record to deprecated_records before deletion
+                if ($indexingRecord) {
+                    DB::connection('sqlsrv')->table('deprecated_records')->insert([
+                        'file_indexing_id' => (int) ($indexingRecord->id ?? 0),
+                        'file_number' => $indexingRecord->file_number ?? $fileNo,
+                        'file_title' => $indexingRecord->file_title ?? null,
+                        'land_use_type' => $indexingRecord->land_use_type ?? null,
+                        'plot_number' => $indexingRecord->plot_number ?? null,
+                        'district' => $indexingRecord->district ?? null,
+                        'lga' => $indexingRecord->lga ?? null,
+                        'location' => $indexingRecord->location ?? null,
+                        'plot_size' => $indexingRecord->plot_size ?? null,
+                        'tp_no' => $indexingRecord->tp_no ?? null,
+                        'lpkn_no' => $indexingRecord->lpkn_no ?? null,
+                        'tracking_id' => $indexingRecord->tracking_id ?? null,
+                        'original_holder' => $indexingRecord->original_holder ?? null,
+                        'current_holder' => $indexingRecord->current_holder ?? null,
+                        'parent_prop_id' => $indexingRecord->parent_prop_id ?? null,
+                        'related_fileno' => $indexingRecord->related_fileno ?? null,
+                        'has_transaction' => $indexingRecord->has_transaction ?? 0,
+                        'workflow_type' => $reason,
+                        'decommissioned_by' => $commissionedBy,
+                        'decommissioned_at' => now(),
+                        'created_by' => $indexingRecord->created_by ?? null,
+                        'updated_by' => $indexingRecord->updated_by ?? null,
+                        'serial_no' => $indexingRecord->serial_no ?? null,
+                        'batch_no' => $indexingRecord->batch_no ?? null,
+                        'workflow_status' => $indexingRecord->workflow_status ?? null,
+                        'registry' => $indexingRecord->registry ?? null,
+                        'prop_id' => $indexingRecord->prop_id ?? null,
+                        'phone' => $indexingRecord->phone ?? null,
+                        'residence_address' => $indexingRecord->residence_address ?? null,
+                        'general_registry' => $indexingRecord->general_registry ?? null,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+
                 // 3. Hard Delete from active tables
                 DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fileNo)->delete();
                 DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $fileNo)->delete();
