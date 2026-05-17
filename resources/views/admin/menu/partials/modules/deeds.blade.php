@@ -2,7 +2,8 @@
 @if(
     $hasRole('PRA') || $hasRole('Bill Balance') || $hasRole('Valuation') ||
     $hasRole('Deeds - Consent') || $hasRole('Deeds Registration') ||
-    $hasRole('Deeds - Encumbrance') || $hasRole('Other Applications') ||
+    $hasRole('Deeds - Encumbrance') || $hasRole('Deeds - Surrender') ||
+    $hasRole('Surrender & Release') || $hasRole('Other Applications') ||
     $hasRole('Activity Monitoring') || $hasRole('Supper Admin')
   ) 
   <div class="py-1 px-3 mb-0.5 border-t border-slate-100">
@@ -125,7 +126,7 @@
           @endif
           @if($hasRole('Deeds Registration') || $hasRole('Supper Admin'))
             <a href="{{route('instrument_registration.index')}}"
-              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('instrument_registration.*') ? 'active' : '' }}">
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('instrument_registration.*') && request()->query('url') !== 'st_deeds' ? 'active' : '' }}">
               <i data-lucide="book-open" class="h-3.5 w-3.5 text-teal-400"></i>
               <span>Instrument Registration (New Registration)</span>
             </a>
@@ -173,7 +174,16 @@
         </div>
       @endif
 
-      <!-- g. Other Applications -->
+      <!-- g. Surrender & Release -->
+      @if($hasRole('Deeds - Surrender') || $hasRole('Surrender & Release') || $hasRole('Supper Admin'))
+        <a href="{{ route('surrender-release.index') }}"
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('surrender-release.*') ? 'active' : '' }}">
+          <i data-lucide="key-round" class="h-4 w-4 text-teal-500"></i>
+          <span>Surrender & Release</span>
+        </a>
+      @endif
+
+      <!-- h. Other Applications -->
       @if($hasRole('Other Applications') || $hasRole('Supper Admin'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="otherApplications-deeds">

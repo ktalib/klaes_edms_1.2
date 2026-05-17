@@ -57,6 +57,7 @@ use App\Http\Controllers\SltrPrintLabelController;
 use App\Http\Controllers\DcivPrintLabelController;
 use App\Http\Controllers\LegalSearchTokenController;
 use App\Http\Controllers\MortgageController;
+use App\Http\Controllers\SurrenderReleaseController;
 
 /*
 |--------------------------------------------------------------------------
@@ -73,6 +74,12 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('mortgages')->name('mortgages.')->group(function () {
         Route::get('/', [MortgageController::class, 'index'])->name('index');
         Route::get('/data', [MortgageController::class, 'getData'])->name('data');
+    });
+
+    // Surrender & Release Table Routes
+    Route::prefix('surrender-release')->name('surrender-release.')->group(function () {
+        Route::get('/', [SurrenderReleaseController::class, 'index'])->name('index');
+        Route::get('/data', [SurrenderReleaseController::class, 'getData'])->name('data');
     });
 
     // OPs Dashboard

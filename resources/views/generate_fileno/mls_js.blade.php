@@ -1011,11 +1011,13 @@
                                     <div class="border-t border-gray-100 my-1"></div>
 
                                     <!-- Delete Record -->
+                                    @if(Auth::user() && Auth::user()->assign_role === 'Supper Admin')
                                     <button onclick="deleteRecord(${row.id})" 
                                             class="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center space-x-3">
                                         <i data-lucide="trash-2" class="w-4 h-4"></i>
                                         <span class="font-medium">Delete Record</span>
                                     </button>
+                                    @endif
                                 </div>
                             </div>
                             </div>
@@ -3055,7 +3057,20 @@
     function deleteRecord(id) {
         Swal.fire({
             title: 'Are you sure?',
-            text: "You won't be able to revert this!",
+            html: `
+                <div class="text-center">
+                    <p class="mb-4 text-slate-500 text-sm">You won't be able to revert this! This action will execute a <strong>Master Cascade Delete</strong> and permanently purge this record from the following 5 tables:</p>
+                    <div class="inline-block text-left bg-slate-50 p-4 rounded-xl border border-slate-200/80 w-full max-w-md mx-auto shadow-inner">
+                        <ul class="space-y-2 text-slate-700 font-semibold text-xs list-decimal list-inside">
+                            <li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">MlsfileNo</span></li>
+                            <li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">fileNumber</span></li>
+                            <li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">Entity Table</span></li>
+                            <li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">Customers</span></li>
+                            <li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">File Indexings</span></li>
+                        </ul>
+                    </div>
+                </div>
+            `,
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#ef4444',

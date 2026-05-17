@@ -136,8 +136,8 @@
         </div>
 
         <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="stApprovals">
-          <a href="{{route('st_deeds.index')}}"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('st_deeds.index') ? 'active' : '' }}">
+          <a href="{{ route('instrument_registration.index', ['url' => 'st_deeds']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('instrument_registration.index') && request()->query('url') === 'st_deeds' ? 'active' : '' }}">
             <i data-lucide="file-check" class="h-3.5 w-3.5 text-lime-500"></i>
             <span>ST Deeds Registration View</span>
           </a>
@@ -240,36 +240,77 @@
       @if($hasRole('ST - e-Registry'))
         <div
           class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md text-black"
-          data-section="eRegistry">
+          data-section="digitalArchive">
           <div class="flex items-center gap-2">
-            <i data-lucide="database" class="h-4 w-4 text-lime-500"></i>
-            <span>e-Registry</span>
+            <i data-lucide="archive" class="h-4 w-4 text-lime-500"></i>
+            <span>Digital Archive</span>
           </div>
           <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200 text-black"
-            data-chevron="eRegistry"></i>
+            data-chevron="digitalArchive"></i>
         </div>
 
-        <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="eRegistry">
-          @if($hasRole('ST - e-Registry'))
+        <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="digitalArchive">
+          {{-- i. File Tracker Dashboard --}}
+          <a href="{{ route('file-tracker.dashboard', ['url' => 'st']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('file-tracker.dashboard') && request('url') === 'st' ? 'active' : '' }}">
+            <i data-lucide="bar-chart-2" class="h-3.5 w-3.5 text-lime-500"></i>
+            <span>File Tracker Dashboard</span>
+          </a>
+
+          {{-- ii. File Tracker (Archive) --}}
+          <a href="{{ route('track-file-archive.index', ['url' => 'st']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('track-file-archive.index') && request('url') === 'st' ? 'active' : '' }}">
+            <i data-lucide="archive" class="h-3.5 w-3.5 text-lime-500"></i>
+            <span>File Tracker (Archive)</span>
+          </a>
+
+          {{-- iii. Log a File --}}
+          <a href="{{ route('create-file-tracker.index', ['url' => 'st']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('create-file-tracker.index') && request('url') === 'st' ? 'active' : '' }}">
+            <i data-lucide="file-plus" class="h-3.5 w-3.5 text-lime-500"></i>
+            <span>Log a File</span>
+          </a>
+
+          {{-- iv. File Digital Library – Doc-WARE --}}
+          <a href="{{ route('filearchive.index', ['url' => 'st']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('filearchive.index') && request('url') === 'st' ? 'active' : '' }}">
+            <i data-lucide="library" class="h-3.5 w-3.5 text-lime-500"></i>
+            <span>File Digital Library – Doc-WARE</span>
+          </a>
+
+          {{-- v. e-Registry --}}
+          <div
+            class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md text-black"
+            data-section="st-eRegistry">
+            <div class="flex items-center gap-2">
+              <i data-lucide="database" class="h-3.5 w-3.5 text-lime-500"></i>
+              <span>e-Registry</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200 text-black"
+              data-chevron="st-eRegistry"></i>
+          </div>
+
+          <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="st-eRegistry">
+            {{-- 1. Files --}}
             <a href="{{route('programmes.eRegistry')}}"
               class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('programmes.eRegistry') ? 'active' : '' }}">
               <i data-lucide="folder" class="h-3.5 w-3.5 text-lime-500"></i>
               <span>Files</span>
             </a>
-            {{-- ii. Print File Label --}}
-            <a href="{{route('printlabel.index')}}?url=st"
-              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('printlabel.index') ? 'active' : '' }}">
+            {{-- 2. Print File Label --}}
+            <a href="{{ route('printlabel.index', ['url' => 'st']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('printlabel.index') && request('url') === 'st' ? 'active' : '' }}">
               <i data-lucide="printer" class="h-3.5 w-3.5 text-lime-500"></i>
               <span>Print File Label</span>
             </a>
-            {{-- iii. Log a File --}}
-            <a href="{{ route('create-file-tracker.index', ['url' => 'st']) }}"
-              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('create-file-tracker.index') && request('url') === 'st' ? 'active' : '' }}">
-              <i data-lucide="file-plus" class="h-3.5 w-3.5 text-lime-500"></i>
-              <span>Log a File</span>
-            </a>
-            {{-- iv. File Movement --}}
-          @endif
+          </div>
+
+          {{-- vi. EDMS Update --}}
+          <a href="#"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black">
+            <i data-lucide="refresh-cw" class="h-3.5 w-3.5 text-lime-500"></i>
+            <span>EDMS Update</span>
+          </a>
         </div>
       @endif
 

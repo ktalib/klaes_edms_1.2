@@ -802,7 +802,8 @@ class InstrumentRegistrationController extends Controller
 
     public function InstrumentRegistration()
     {
-        $PageTitle = 'Instrument Registration ';
+        $isStDeeds = request()->query('url') === 'st_deeds';
+        $PageTitle = $isStDeeds ? 'ST Deeds Registration' : 'Instrument Registration ';
         $PageDescription = '';
 
         try {
@@ -898,17 +899,27 @@ class InstrumentRegistrationController extends Controller
                 ->get();
 
             // Get unregistered instruments from instrument_registration table
-            $unregisteredInstruments = DB::connection('sqlsrv')->table('instrument_registration')
+            $unregisteredInstrumentsQuery = DB::connection('sqlsrv')->table('instrument_registration')
                 ->leftJoin('users', 'instrument_registration.created_by', '=', 'users.id')
                 ->where(function ($q) {
                     $q->where('instrument_registration.status', '!=', 'registered')
                         ->orWhereNull('instrument_registration.status');
-                })
-                ->select(
-                    'instrument_registration.*',
-                    DB::raw("CONCAT(COALESCE(users.first_name, ''), ' ', COALESCE(users.last_name, '')) as reg_creator_name")
-                )
-                ->get();
+                });
+
+            if ($isStDeeds) {
+                $unregisteredInstrumentsQuery->where(function ($q) {
+                    $q->where('instrument_registration.MLSFileNo', 'like', 'ST-%')
+                        ->orWhere('instrument_registration.KAGISFileNO', 'like', 'ST-%')
+                        ->orWhere('instrument_registration.NewKANGISFileNo', 'like', 'ST-%')
+                        ->orWhere('instrument_registration.temp_fileno', 'like', 'ST-%');
+                });
+            }
+
+            $unregisteredInstruments = $unregisteredInstrumentsQuery->select(
+                'instrument_registration.*',
+                DB::raw("CONCAT(COALESCE(users.first_name, ''), ' ', COALESCE(users.last_name, '')) as reg_creator_name")
+            )
+            ->get();
 
             // Create collection for all instruments
             $allInstruments = collect();
@@ -959,17 +970,21 @@ class InstrumentRegistrationController extends Controller
             }
 
             // Get unregistered instruments from instrument_capture table
-            $capturedInstruments = DB::connection('sqlsrv')->table('instrument_capture')
-                ->leftJoin('users', 'instrument_capture.created_by', '=', 'users.id')
-                ->where(function ($q) {
-                    $q->where('instrument_capture.is_deed_registered', 0)
-                        ->orWhereNull('instrument_capture.is_deed_registered');
-                })
-                ->select(
-                    'instrument_capture.*',
-                    DB::raw("CONCAT(COALESCE(users.first_name, ''), ' ', COALESCE(users.last_name, '')) as reg_creator_name")
-                )
-                ->get();
+            if ($isStDeeds) {
+                $capturedInstruments = collect();
+            } else {
+                $capturedInstruments = DB::connection('sqlsrv')->table('instrument_capture')
+                    ->leftJoin('users', 'instrument_capture.created_by', '=', 'users.id')
+                    ->where(function ($q) {
+                        $q->where('instrument_capture.is_deed_registered', 0)
+                            ->orWhereNull('instrument_capture.is_deed_registered');
+                    })
+                    ->select(
+                        'instrument_capture.*',
+                        DB::raw("CONCAT(COALESCE(users.first_name, ''), ' ', COALESCE(users.last_name, '')) as reg_creator_name")
+                    )
+                    ->get();
+            }
 
             foreach ($capturedInstruments as $instrument) {
                 // Determine the file number to use
@@ -1413,7 +1428,7 @@ class InstrumentRegistrationController extends Controller
 
             // Add registered instruments from deed_registrations that are NOT ST-related
             // These would be instruments registered from instrument_capture or instrument_registration
-            $registeredOtherInstruments = DB::connection('sqlsrv')->table('deed_registrations')
+            $registeredOtherInstrumentsQuery = DB::connection('sqlsrv')->table('deed_registrations')
                 ->leftJoin('users', 'deed_registrations.created_by', '=', 'users.id')
                 ->leftJoin('instrument_capture', function($join) {
                     $join->on('deed_registrations.fileno', '=', 'instrument_capture.mlsFNo')
@@ -1425,15 +1440,20 @@ class InstrumentRegistrationController extends Controller
                     'ST Assignment (Transfer of Title)',
                     'Sectional Titling CofO',
                     'ST Fragmentation'
-                ])
-                ->select(
-                    'deed_registrations.*',
-                    'deed_registrations.rds_exists as rds_exists_db',
-                    'deed_registrations.cor_exists as cor_exists_db',
-                    'instrument_capture.op_type as captured_op_type',
-                    DB::raw("CONCAT(COALESCE(users.first_name, ''), ' ', COALESCE(users.last_name, '')) as reg_creator_name")
-                )
-                ->get();
+                ]);
+
+            if ($isStDeeds) {
+                $registeredOtherInstrumentsQuery->where('deed_registrations.fileno', 'like', 'ST-%');
+            }
+
+            $registeredOtherInstruments = $registeredOtherInstrumentsQuery->select(
+                'deed_registrations.*',
+                'deed_registrations.rds_exists as rds_exists_db',
+                'deed_registrations.cor_exists as cor_exists_db',
+                'instrument_capture.op_type as captured_op_type',
+                DB::raw("CONCAT(COALESCE(users.first_name, ''), ' ', COALESCE(users.last_name, '')) as reg_creator_name")
+            )
+            ->get();
 
             foreach ($registeredOtherInstruments as $reg) {
                 $instrumentRecord = (object) [
@@ -1604,6 +1624,16 @@ class InstrumentRegistrationController extends Controller
             $instrumentTypes = array_unique(array_merge($instrumentTypesList, $dataOpTypes));
             sort($instrumentTypes);
 
+            if ($isStDeeds) {
+                $instrumentTypes = array_values(array_filter($instrumentTypes, function ($t) {
+                    return in_array($t, [
+                        'ST Assignment (Transfer of Title)',
+                        'ST Fragmentation',
+                        'Sectional Titling CofO'
+                    ]);
+                }));
+            }
+
             return view('instrument_registration.index', compact(
                 'approvedApplications',
                 'PageTitle',
@@ -1613,7 +1643,8 @@ class InstrumentRegistrationController extends Controller
                 'rejectedCount',
                 'totalCount',
                 'instrumentTypes',
-                'fullDataForJs'
+                'fullDataForJs',
+                'isStDeeds'
             ));
 
         } catch (\Exception $e) {
@@ -1636,7 +1667,8 @@ class InstrumentRegistrationController extends Controller
                 'rejectedCount',
                 'totalCount',
                 'instrumentTypes',
-                'fullDataForJs'
+                'fullDataForJs',
+                'isStDeeds'
             ))->with('error', 'Error loading instrument data: ' . $e->getMessage());
         }
     }
@@ -2943,15 +2975,28 @@ class InstrumentRegistrationController extends Controller
         try {
             $filter = $request->query('filter', 'batch');
             $data = collect();
+            $isStDeeds = str_contains($request->header('referer', ''), 'st_deeds') 
+                || $request->query('is_st') == '1' 
+                || $request->query('st_only') == '1';
 
             switch ($filter) {
                 case 'other':
                     // FIXED: Only return pending Other instruments
-                    $data = DB::connection('sqlsrv')->table('instrument_registration')
+                    $otherQuery = DB::connection('sqlsrv')->table('instrument_registration')
                         ->where('status', 'pending')
                         ->whereNull('particularsRegistrationNumber') // Exclude instruments with registration numbers
-                        ->whereNull('STM_Ref') // Exclude instruments with STM references
-                        ->select(
+                        ->whereNull('STM_Ref'); // Exclude instruments with STM references
+
+                    if ($isStDeeds) {
+                        $otherQuery->where(function ($q) {
+                            $q->where('MLSFileNo', 'like', 'ST-%')
+                              ->orWhere('KAGISFileNO', 'like', 'ST-%')
+                              ->orWhere('NewKANGISFileNo', 'like', 'ST-%')
+                              ->orWhere('StFileNo', 'like', 'ST-%');
+                        });
+                    }
+
+                    $data = $otherQuery->select(
                             'id',
                             DB::raw("COALESCE(MLSFileNo, KAGISFileNO, NewKANGISFileNo) as fileno"),
                             'instrument_type',
@@ -2967,12 +3012,22 @@ class InstrumentRegistrationController extends Controller
                         )
                         ->get();
 
-                    $capturedInstruments = DB::connection('sqlsrv')->table('instrument_capture')
+                    $capturedQuery = DB::connection('sqlsrv')->table('instrument_capture')
                         ->where(function ($q) {
                             $q->where('is_deed_registered', 0)
                                 ->orWhereNull('is_deed_registered');
-                        })
-                        ->select(
+                        });
+
+                    if ($isStDeeds) {
+                        $capturedQuery->where(function ($q) {
+                            $q->where('mlsFNo', 'like', 'ST-%')
+                              ->orWhere('kangisFileNo', 'like', 'ST-%')
+                              ->orWhere('NewKANGISFileno', 'like', 'ST-%')
+                              ->orWhere('temp_fileno', 'like', 'ST-%');
+                        });
+                    }
+
+                    $capturedInstruments = $capturedQuery->select(
                             'id',
                             DB::raw("COALESCE(mlsFNo, kangisFileNo, NewKANGISFileno, temp_fileno) as fileno"),
                             'instrument_type',
@@ -3129,11 +3184,21 @@ class InstrumentRegistrationController extends Controller
                     // FIXED: For batch registration, only include pending instruments
 
                     // Get pending other instruments
-                    $instrumentData = DB::connection('sqlsrv')->table('instrument_registration')
+                    $instrumentQuery = DB::connection('sqlsrv')->table('instrument_registration')
                         ->where('status', 'pending')
                         ->whereNull('particularsRegistrationNumber') // Exclude instruments with registration numbers
-                        ->whereNull('STM_Ref') // Exclude instruments with STM references
-                        ->select(
+                        ->whereNull('STM_Ref'); // Exclude instruments with STM references
+
+                    if ($isStDeeds) {
+                        $instrumentQuery->where(function ($q) {
+                            $q->where('MLSFileNo', 'like', 'ST-%')
+                              ->orWhere('KAGISFileNO', 'like', 'ST-%')
+                              ->orWhere('NewKANGISFileNo', 'like', 'ST-%')
+                              ->orWhere('StFileNo', 'like', 'ST-%');
+                        });
+                    }
+
+                    $instrumentData = $instrumentQuery->select(
                             'id',
                             DB::raw("COALESCE(MLSFileNo, KAGISFileNO, NewKANGISFileNo) as fileno"),
                             'instrument_type',
@@ -3239,12 +3304,22 @@ class InstrumentRegistrationController extends Controller
                         ]);
                     }
 
-                    $capturedInstruments = DB::connection('sqlsrv')->table('instrument_capture')
+                    $capturedBatchQuery = DB::connection('sqlsrv')->table('instrument_capture')
                         ->where(function ($q) {
                             $q->where('is_deed_registered', 0)
                                 ->orWhereNull('is_deed_registered');
-                        })
-                        ->select(
+                        });
+
+                    if ($isStDeeds) {
+                        $capturedBatchQuery->where(function ($q) {
+                            $q->where('mlsFNo', 'like', 'ST-%')
+                              ->orWhere('kangisFileNo', 'like', 'ST-%')
+                              ->orWhere('NewKANGISFileno', 'like', 'ST-%')
+                              ->orWhere('temp_fileno', 'like', 'ST-%');
+                        });
+                    }
+
+                    $capturedInstruments = $capturedBatchQuery->select(
                             'id',
                             DB::raw("COALESCE(mlsFNo, kangisFileNo, NewKANGISFileno, temp_fileno) as fileno"),
                             'instrument_type',

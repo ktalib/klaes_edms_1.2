@@ -1615,14 +1615,21 @@ document.addEventListener('DOMContentLoaded', function () {
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">${app.plotNumber || '-'}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">${app.size || '-'}</td>
 
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
-                        <div class="dropdown-wrapper">
-                            <button class="action-button text-gray-500 hover:text-gray-700 p-2 rounded-md transition-colors duration-200"
-                                onclick="toggleDropdown(this, '${app.id}')" type="button">
-                                <i data-lucide="more-vertical" class="w-4 h-4"></i>
-                            </button>
-                        </div>
-                    </td>
+                    ${(() => {
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const isStDeeds = urlParams.get('url') === 'st_deeds';
+                        if (isStDeeds) return '';
+                        return `
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
+                                <div class="dropdown-wrapper">
+                                    <button class="action-button text-gray-500 hover:text-gray-700 p-2 rounded-md transition-colors duration-200"
+                                        onclick="toggleDropdown(this, '${app.id}')" type="button">
+                                        <i data-lucide="more-vertical" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        `;
+                    })()}
                 </tr>
             `;
             tableBody.insertAdjacentHTML('beforeend', row);

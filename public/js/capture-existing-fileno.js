@@ -731,7 +731,18 @@
     function deleteRecord(id) {
         Swal.fire({
             title: 'Are you sure?',
-            text: "You won't be able to revert this!",
+            html: '<div class="text-center">' +
+                  '<p class="mb-4 text-slate-500 text-sm">You won\'t be able to revert this! This action will execute a <strong>Master Cascade Delete</strong> and permanently purge this record from the following 5 tables:</p>' +
+                  '<div class="inline-block text-left bg-slate-50 p-4 rounded-xl border border-slate-200/80 w-full max-w-md mx-auto shadow-inner">' +
+                  '<ul class="space-y-2 text-slate-700 font-semibold text-xs list-decimal list-inside">' +
+                  '<li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">mls_file_no</span></li>' +
+                  '<li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">fileNumber</span></li>' +
+                  '<li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">entities_staging</span></li>' +
+                  '<li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">customers_staging</span></li>' +
+                  '<li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">file_indexings</span></li>' +
+                  '</ul>' +
+                  '</div>' +
+                  '</div>',
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#ef4444',

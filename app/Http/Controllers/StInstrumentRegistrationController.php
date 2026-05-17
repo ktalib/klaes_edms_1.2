@@ -247,6 +247,280 @@ class StInstrumentRegistrationController extends Controller
                 $allInstruments->push($sectionalRecord);
             }
 
+            // Fetch unregistered generic ST instruments from instrument_registration table
+            $unregisteredSTInstruments = DB::connection('sqlsrv')->table('instrument_registration')
+                ->leftJoin('users', 'instrument_registration.created_by', '=', 'users.id')
+                ->where(function ($q) {
+                    $q->where('instrument_registration.status', '!=', 'registered')
+                        ->orWhereNull('instrument_registration.status');
+                })
+                ->where(function ($q) {
+                    $q->where('instrument_registration.MLSFileNo', 'like', 'ST-%')
+                        ->orWhere('instrument_registration.KAGISFileNO', 'like', 'ST-%')
+                        ->orWhere('instrument_registration.NewKANGISFileNo', 'like', 'ST-%')
+                        ->orWhere('instrument_registration.StFileNo', 'like', 'ST-%');
+                })
+                ->select(
+                    'instrument_registration.*',
+                    DB::raw("CONCAT(COALESCE(users.first_name, ''), ' ', COALESCE(users.last_name, '')) as reg_creator_name")
+                )
+                ->get();
+
+            foreach ($unregisteredSTInstruments as $instrument) {
+                $fileNo = $instrument->StFileNo ?? $instrument->MLSFileNo ?? $instrument->KAGISFileNO ?? $instrument->NewKANGISFileNo ?? 'N/A';
+
+                $instrumentRecord = (object) [
+                    'id' => 'instr_reg_' . $instrument->id,
+                    'fileno' => $fileNo,
+                    'parent_fileNo' => null,
+                    'Deeds_Serial_No' => $instrument->particularsRegistrationNumber ?? null,
+                    'volume_no' => $instrument->volumeNo ?? $instrument->volume_no ?? $instrument->oldTitleVolumeNo ?? null,
+                    'instrument_type' => $instrument->instrument_type ?? 'Other Instrument',
+                    'Grantor' => $instrument->Grantor ?? 'N/A',
+                    'Grantee' => $instrument->Grantee ?? 'N/A',
+                    'GrantorAddress' => $instrument->GrantorAddress ?? '',
+                    'GranteeAddress' => $instrument->GranteeAddress ?? '',
+                    'duration' => $instrument->duration ?? $instrument->leasePeriod ?? '',
+                    'leasePeriod' => $instrument->leasePeriod ?? '',
+                    'propertyDescription' => $instrument->propertyDescription ?? '',
+                    'lga' => $instrument->lga ?? '',
+                    'district' => $instrument->district ?? '',
+                    'size' => $instrument->size ?? '',
+                    'plotNumber' => $instrument->plotNumber ?? '',
+                    'deeds_date' => $instrument->instrumentDate ?? null,
+                    'solicitorName' => $instrument->solicitorName ?? '',
+                    'solicitorAddress' => $instrument->solicitorAddress ?? '',
+                    'status' => $instrument->status ?? 'pending',
+                    'land_use' => $instrument->landUseType ?? '',
+                    'reg_created_by' => $instrument->created_by,
+                    'created_at' => $instrument->created_at,
+                    'reg_creator_name' => $instrument->reg_creator_name ?? '',
+                    'instrument_category' => 'Other Instruments',
+                    'STM_Ref' => null,
+                    'original_instrument_id' => $instrument->id,
+                    'registered_instrument_id' => null,
+                    'application_type' => 'Other',
+                    'captured_date' => $instrument->created_at ?? $instrument->instrumentDate,
+                    'reg_date' => null,
+                    'reg_time' => null
+                ];
+
+                $allInstruments->push($instrumentRecord);
+            }
+
+            // Fetch unregistered captured ST instruments from instrument_capture table
+            $capturedSTInstruments = DB::connection('sqlsrv')->table('instrument_capture')
+                ->leftJoin('users', 'instrument_capture.created_by', '=', 'users.id')
+                ->where(function ($q) {
+                    $q->where('instrument_capture.is_deed_registered', 0)
+                        ->orWhereNull('instrument_capture.is_deed_registered');
+                })
+                ->where(function ($q) {
+                    $q->where('instrument_capture.mlsFNo', 'like', 'ST-%')
+                        ->orWhere('instrument_capture.kangisFileNo', 'like', 'ST-%')
+                        ->orWhere('instrument_capture.NewKANGISFileno', 'like', 'ST-%')
+                        ->orWhere('instrument_capture.temp_fileno', 'like', 'ST-%');
+                })
+                ->select(
+                    'instrument_capture.*',
+                    DB::raw("CONCAT(COALESCE(users.first_name, ''), ' ', COALESCE(users.last_name, '')) as reg_creator_name")
+                )
+                ->get();
+
+            foreach ($capturedSTInstruments as $instrument) {
+                $fileNo = $instrument->mlsFNo ?? $instrument->kangisFileNo ?? $instrument->NewKANGISFileno ?? $instrument->temp_fileno ?? 'N/A';
+                $mappedType = $this->mapCaptureTypeToRegistry($instrument->instrument_type);
+
+                $instrumentRecord = (object) [
+                    'id' => 'instr_capture_' . $instrument->id,
+                    'fileno' => $fileNo,
+                    'parent_fileNo' => null,
+                    'Deeds_Serial_No' => $instrument->registration_number ?? null,
+                    'volume_no' => $instrument->volume_no ?? null,
+                    'instrument_type' => $mappedType,
+                    'Grantor' => $instrument->party_1_name ?? 'N/A',
+                    'Grantee' => $instrument->party_2_name ?? 'N/A',
+                    'GrantorAddress' => $instrument->party_1_address ?? '',
+                    'GranteeAddress' => $instrument->party_2_address ?? '',
+                    'duration' => $instrument->duration ?? '',
+                    'leasePeriod' => $instrument->duration ?? '',
+                    'propertyDescription' => $instrument->property_description ?? '',
+                    'lga' => $instrument->lga ?? '',
+                    'district' => $instrument->district ?? '',
+                    'size' => $instrument->plot_size ?? '',
+                    'plotNumber' => $instrument->plot_number ?? '',
+                    'deeds_date' => $instrument->instrument_date ?? null,
+                    'solicitorName' => $instrument->solicitor_name ?? '',
+                    'solicitorAddress' => $instrument->solicitor_address ?? '',
+                    'status' => 'pending',
+                    'land_use' => $instrument->land_use ?? '',
+                    'reg_created_by' => $instrument->created_by,
+                    'created_at' => $instrument->created_at,
+                    'reg_creator_name' => $instrument->reg_creator_name ?? '',
+                    'instrument_category' => 'Captured Instruments',
+                    'STM_Ref' => null,
+                    'original_instrument_id' => $instrument->id,
+                    'registered_instrument_id' => null,
+                    'application_type' => 'Captured',
+                    'captured_date' => $instrument->created_at,
+                    'reg_date' => null,
+                    'reg_time' => null,
+                    'op_type' => (!empty($instrument->op_type) && !str_starts_with($instrument->op_type, 'OP ')) ? 'OP ' . $instrument->op_type : ($instrument->op_type ?? null),
+                ];
+
+                $allInstruments->push($instrumentRecord);
+            }
+
+            // Fetch registered instruments from deed_registrations table starting with ST-
+            $registeredSTOtherInstruments = DB::connection('sqlsrv')->table('deed_registrations')
+                ->leftJoin('users', 'deed_registrations.created_by', '=', 'users.id')
+                ->leftJoin('instrument_capture', function ($join) {
+                    $join->on('deed_registrations.fileno', '=', 'instrument_capture.mlsFNo')
+                        ->orOn('deed_registrations.fileno', '=', 'instrument_capture.temp_fileno')
+                        ->orOn('deed_registrations.fileno', '=', 'instrument_capture.kangisFileNo')
+                        ->orOn('deed_registrations.fileno', '=', 'instrument_capture.NewKANGISFileno');
+                })
+                ->where('deed_registrations.fileno', 'like', 'ST-%')
+                ->select(
+                    'deed_registrations.*',
+                    'deed_registrations.rds_exists as rds_exists_db',
+                    'deed_registrations.cor_exists as cor_exists_db',
+                    'instrument_capture.op_type as captured_op_type',
+                    DB::raw("CONCAT(COALESCE(users.first_name, ''), ' ', COALESCE(users.last_name, '')) as reg_creator_name")
+                )
+                ->get();
+
+            foreach ($registeredSTOtherInstruments as $reg) {
+                // Prevent duplication with subapp-based ones in $allInstruments
+                $duplicate = $allInstruments->first(function ($item) use ($reg) {
+                    return strtolower($item->fileno) === strtolower($reg->fileno)
+                        && strtolower($item->instrument_type) === strtolower($reg->instrument_type);
+                });
+
+                if ($duplicate) {
+                    continue;
+                }
+
+                $instrumentRecord = (object) [
+                    'id' => 'deed_reg_' . $reg->id,
+                    'fileno' => $reg->fileno,
+                    'parent_fileNo' => $reg->parent_fileno,
+                    'Deeds_Serial_No' => $reg->registration_number,
+                    'volume_no' => $reg->volume_no ?? null,
+                    'instrument_type' => $reg->instrument_type,
+                    'Grantor' => $reg->grantor ?? 'N/A',
+                    'Grantee' => $reg->grantee ?? 'N/A',
+                    'GrantorAddress' => '',
+                    'GranteeAddress' => '',
+                    'duration' => '',
+                    'leasePeriod' => '',
+                    'propertyDescription' => $reg->property_description ?? '',
+                    'lga' => $reg->lga ?? '',
+                    'district' => $reg->district ?? '',
+                    'size' => $reg->size ?? '',
+                    'plotNumber' => $reg->plot_number ?? '',
+                    'deeds_date' => $reg->deeds_date,
+                    'solicitorName' => '',
+                    'solicitorAddress' => '',
+                    'status' => 'registered',
+                    'land_use' => '',
+                    'reg_created_by' => $reg->created_by,
+                    'created_at' => $reg->created_at,
+                    'reg_creator_name' => $reg->reg_creator_name ?? '',
+                    'instrument_category' => 'Deeds',
+                    'STM_Ref' => null,
+                    'original_instrument_id' => null,
+                    'registered_instrument_id' => 'deed_reg_' . $reg->id,
+                    'application_type' => 'Deed',
+                    'captured_date' => $reg->created_at ?? $reg->instrument_date,
+                    'reg_date' => $reg->deeds_date,
+                    'reg_time' => $reg->deeds_time ? date('g:i A', strtotime($reg->deeds_time)) : ($reg->deeds_date ? date('g:i A', strtotime($reg->deeds_date)) : null),
+                    'rds_exists' => (bool) ($reg->rds_exists ?? false),
+                    'cor_exists' => (bool) ($reg->cor_exists ?? false),
+                    'rds_exists_db' => (bool) ($reg->rds_exists ?? false),
+                    'cor_exists_db' => (bool) ($reg->cor_exists ?? false),
+                    'op_type' => $reg->captured_op_type ?? null,
+                ];
+
+                if ($instrumentRecord->instrument_type === 'Occupancy Permit (OP)' && $instrumentRecord->op_type) {
+                    if (!str_starts_with($instrumentRecord->op_type, 'OP ')) {
+                        $instrumentRecord->op_type = 'OP ' . $instrumentRecord->op_type;
+                    }
+                }
+
+                $allInstruments->push($instrumentRecord);
+            }
+
+            // Fetch registered instruments from registered_instruments table starting with ST-
+            $registeredSTInstruments = DB::connection('sqlsrv')->table('registered_instruments')
+                ->leftJoin('users', 'registered_instruments.created_by', '=', 'users.id')
+                ->where('registered_instruments.StFileNo', 'like', 'ST-%')
+                ->whereNotIn('registered_instruments.instrument_type', [
+                    'ST Assignment (Transfer of Title)',
+                    'Sectional Titling CofO',
+                    'ST Fragmentation'
+                ])
+                ->select(
+                    'registered_instruments.*',
+                    DB::raw("CONCAT(COALESCE(users.first_name, ''), ' ', COALESCE(users.last_name, '')) as reg_creator_name")
+                )
+                ->get();
+
+            foreach ($registeredSTInstruments as $reg) {
+                // Prevent duplication
+                $duplicate = $allInstruments->first(function ($item) use ($reg) {
+                    return strtolower($item->fileno) === strtolower($reg->StFileNo)
+                        && strtolower($item->instrument_type) === strtolower($reg->instrument_type);
+                });
+
+                if ($duplicate) {
+                    continue;
+                }
+
+                $instrumentRecord = (object) [
+                    'id' => 'registered_inst_' . $reg->id,
+                    'fileno' => $reg->StFileNo,
+                    'parent_fileNo' => $reg->MLSFileNo ?? $reg->KAGISFileNO ?? $reg->NewKANGISFileNo ?? null,
+                    'Deeds_Serial_No' => $reg->particularsRegistrationNumber ?? null,
+                    'volume_no' => $reg->volumeNo ?? $reg->volume_no ?? null,
+                    'instrument_type' => $reg->instrument_type,
+                    'Grantor' => $reg->Grantor ?? 'N/A',
+                    'Grantee' => $reg->Grantee ?? 'N/A',
+                    'GrantorAddress' => $reg->GrantorAddress ?? '',
+                    'GranteeAddress' => $reg->GranteeAddress ?? '',
+                    'duration' => $reg->duration ?? $reg->leasePeriod ?? '',
+                    'leasePeriod' => $reg->leasePeriod ?? '',
+                    'propertyDescription' => $reg->propertyDescription ?? '',
+                    'lga' => $reg->lga ?? '',
+                    'district' => $reg->district ?? '',
+                    'size' => $reg->size ?? '',
+                    'plotNumber' => $reg->plotNumber ?? '',
+                    'deeds_date' => $reg->instrumentDate ?? null,
+                    'solicitorName' => $reg->solicitorName ?? '',
+                    'solicitorAddress' => $reg->solicitorAddress ?? '',
+                    'status' => 'registered',
+                    'land_use' => $reg->landUseType ?? '',
+                    'reg_created_by' => $reg->created_by,
+                    'created_at' => $reg->created_at,
+                    'reg_creator_name' => $reg->reg_creator_name ?? '',
+                    'instrument_category' => 'Deeds',
+                    'STM_Ref' => $reg->STM_Ref ?? null,
+                    'original_instrument_id' => null,
+                    'registered_instrument_id' => 'registered_inst_' . $reg->id,
+                    'application_type' => 'Deed',
+                    'captured_date' => $reg->created_at ?? $reg->instrumentDate,
+                    'reg_date' => $reg->instrumentDate ?? null,
+                    'reg_time' => $reg->deeds_time ? date('g:i A', strtotime($reg->deeds_time)) : ($reg->instrumentDate ? date('g:i A', strtotime($reg->instrumentDate)) : null),
+                    'rds_exists' => (bool) ($reg->rds_exists ?? false),
+                    'cor_exists' => (bool) ($reg->cor_exists ?? false),
+                    'rds_exists_db' => (bool) ($reg->rds_exists ?? false),
+                    'cor_exists_db' => (bool) ($reg->cor_exists ?? false),
+                ];
+
+                $allInstruments->push($instrumentRecord);
+            }
+
+
             // Exclude ST Fragmentation records from the main listing as they are registered automatically
             // and do not require manual interaction in this view.
             /*
@@ -932,14 +1206,15 @@ class StInstrumentRegistrationController extends Controller
                         ->select('StFileNo', 'instrument_type')
                         ->get()
                         ->groupBy('instrument_type')
-                        ->map(fn($rows) => $rows->pluck('StFileNo')
-                            ->filter()
-                            ->map(fn($v) => strtolower(trim($v)))
-                            ->toArray()
+                        ->map(
+                            fn($rows) => $rows->pluck('StFileNo')
+                                ->filter()
+                                ->map(fn($v) => strtolower(trim($v)))
+                                ->toArray()
                         );
 
                     $registeredStAssignment = $registeredLookup->get('ST Assignment (Transfer of Title)', []);
-                    $registeredSectional    = $registeredLookup->get('Sectional Titling CofO', []);
+                    $registeredSectional = $registeredLookup->get('Sectional Titling CofO', []);
                     $registeredFragmentation = $registeredLookup->get('ST Fragmentation', []);
 
                     $stAssignmentData = collect();
@@ -2274,6 +2549,27 @@ class StInstrumentRegistrationController extends Controller
                 'trace' => $e->getTraceAsString()
             ]);
         }
+    }
+
+    private function mapCaptureTypeToRegistry($captureType)
+    {
+        $mapping = [
+            'Power of Attorney' => 'Power of Attorney',
+            'Irrevocable Power of Attorney' => 'Power of Attorney',
+            'Deed of Mortgage' => 'Deed of Mortgage',
+            'Tripartite Mortgage' => 'Deed of Mortgage',
+            'Deed of Assignment' => 'Deed of Assignment',
+            'Deed of Lease' => 'Deed of Lease',
+            'Deed of Sub-Lease' => 'Sub Lease',
+            'Deed of Surrender / Release' => 'Deed of Surrender and Release',
+            'Occupancy Permit' => 'Occupancy Permit (OP)',
+            'Devolution Order' => 'Devolution Order',
+            'Deed of Gift' => 'Deed of Gift',
+            'Deed of Sub-Division' => 'Deed of Sub-Division',
+            'Deed of Merger' => 'Deed of Merger',
+        ];
+
+        return $mapping[$captureType] ?? $captureType;
     }
 }
 

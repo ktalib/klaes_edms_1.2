@@ -142,9 +142,9 @@
         <div class="container mx-auto py-6 space-y-6 px-4">
             <!-- Page Header -->
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <h1 class="text-2xl font-bold">Instrument Registration</h1>
+                <h1 class="text-2xl font-bold">{{ $PageTitle ?? 'Instrument Registration' }}</h1>
                 <div class="flex gap-2">
-                    @if(Auth::user()->assign_role == 'Supper Admin')
+                    @if(Auth::user()->assign_role == 'Supper Admin' && !($isStDeeds ?? false))
                         <!-- Manage Instrument Types Button -->
                         <div x-data="{ open: false }" class="relative">
                             <button @click="$dispatch('open-instrument-types-modal')"
@@ -155,11 +155,13 @@
                         </div>
                     @endif
 
+                    @if(!($isStDeeds ?? false))
                     <button id="batchRegisterBtn" onclick="openBatchRegisterModal()"
                         class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg flex items-center gap-2">
                         <i class="fas fa-layer-group"></i>
                         <span id="batchBtnText">Registration</span>
                     </button>
+                    @endif
                     <div class='hidden'>
                         <button id="exportRegistryBtn" onclick="openExportModal()"
                             class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg flex items-center gap-2">
@@ -190,11 +192,13 @@
                             <i class="fas fa-database text-blue-500"></i>
                             <span id="totalRecordsCount">{{ $totalCount ?? 0 }} Total Records</span>
                         </div>
+                        @if(!($isStDeeds ?? false))
                         <button type="button" onclick="openBatchPrintSessionModal()"
                             class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded-lg flex items-center gap-2">
                             <i class="fas fa-print"></i>
                             <span>Print Batch RDS and CoR</span>
                         </button>
+                        @endif
                     </div>
 
 
@@ -349,10 +353,12 @@
                                     <span class="inline-block align-middle" id="sortIcon-14"></span>
                                 </th>
 
+                                @if(!($isStDeeds ?? false))
                                 <th scope="col"
                                     class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Action
                                 </th>
+                                @endif
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200" id="cofoTableBody">
@@ -450,6 +456,7 @@
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ $app->district ?? '-' }}</td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ $app->plotNumber ?? '-' }}</td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ $app->size ?? '-' }}</td>
+                                    @if(!($isStDeeds ?? false))
                                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
                                         <div class="dropdown-wrapper">
                                             <button class="action-button text-gray-500 hover:text-gray-700 p-2 rounded-md transition-colors duration-200" onclick="toggleDropdown(this, '{{ $app->id }}')" type="button">
@@ -457,6 +464,7 @@
                                             </button>
                                         </div>
                                     </td>
+                                    @endif
                                 </tr>
                             @empty
                                 <tr>
