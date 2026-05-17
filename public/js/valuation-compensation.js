@@ -21,6 +21,7 @@ window.VFC = {
     currentProjectApplyPercentage: 100,
     pendingSubProjectId: null,
     pendingWorkerId: null,
+    batchRecords: [],
 
     init: function () {
         if (this.initialized) {
@@ -271,14 +272,7 @@ window.VFC = {
             self.calculateCompensation();
         });
 
-        // Building Type 'Other' logic
-        $('#building_type').on('change', function () {
-            if ($(this).val() === 'Other') {
-                $('#building_type_other').removeClass('hidden').prop('required', true).focus();
-            } else {
-                $('#building_type_other').addClass('hidden').prop('required', false);
-            }
-        });
+
 
         // Compensated Items logic
         $(document).on('change', '.item-checkbox', function () {
@@ -302,6 +296,42 @@ window.VFC = {
 
         $(document).on('change', '.structure-type-dropdown', function () {
             self.updateCompensatedItemsValue();
+        });
+
+        // Building Count & Dynamic Types
+        $(document).on('input', '#building_count', function () {
+            self.syncBuildingTypes();
+            self.calculateCompensation();
+        });
+
+        $(document).on('change', '.building-type-select', function () {
+            const $row = $(this).closest('.building-type-row');
+            const val = $(this).val();
+            if (val === 'Other' || val === 'Others') {
+                $row.find('.building-type-other').removeClass('hidden').focus();
+            } else {
+                $row.find('.building-type-other').addClass('hidden').val('');
+            }
+            self.updateFinalBuildingType();
+        });
+
+        $(document).on('input', '.building-type-other', function () {
+            self.updateFinalBuildingType();
+        });
+
+        $(document).on('change', '.building-stage-select', function () {
+            const $row = $(this).closest('.building-type-row');
+            const val = $(this).val();
+            if (val === 'Other' || val === 'Others') {
+                $row.find('.building-stage-other').removeClass('hidden').focus();
+            } else {
+                $row.find('.building-stage-other').addClass('hidden').val('');
+            }
+            self.updateFinalBuildingType();
+        });
+
+        $(document).on('input', '.building-stage-other', function () {
+            self.updateFinalBuildingType();
         });
 
         $('#compensated_items_other').on('input', function () {
@@ -342,8 +372,17 @@ window.VFC = {
                 $container.find('.sub-volume-val').val(vol);
                 total = vol * rate;
             } else if ($container.find('.sub-width').length > 0) {
-                // Shed/Area Group: L × W × Rate
-                total = length * width * rate;
+                // Volume Group (Now Area L×B): Total Area = (L×B) × Rate
+                // OR Shed/Area Group: L × W × Rate
+                const $volDisplay = $container.find('.sub-total-volume-display');
+                if ($volDisplay.length > 0) {
+                    const area = length * width;
+                    $volDisplay.text(area > 0 ? area.toFixed(2) + 'm²' : '0.00m²');
+                    $container.find('.sub-volume-val').val(area);
+                    total = area * rate;
+                } else {
+                    total = length * width * rate;
+                }
             } else if ($container.find('.sub-length').length > 0 || $formulaInput.length > 0) {
                 // Linear Group: L × Rate
                 total = length * rate;
@@ -417,6 +456,28 @@ window.VFC = {
         });
 
 
+        // Toggle 'Other' inputs
+        $(document).on('change', '#building_type', function () {
+            if ($(this).val() === 'Other' || $(this).val() === 'Others') {
+                $('#building_type_other').removeClass('hidden').focus();
+            } else {
+                $('#building_type_other').addClass('hidden').val('');
+            }
+        });
+
+        $(document).on('change', '#completion_stage_select', function () {
+            if ($(this).val() === 'Other' || $(this).val() === 'Others') {
+                $('#completion_stage_other').removeClass('hidden').focus();
+            } else {
+                $('#completion_stage_other').addClass('hidden').val('');
+            }
+        });
+
+        $(document).on('click', '.vfc-create-trigger', function (e) {
+            e.preventDefault();
+            self.openCreateModal();
+        });
+
         console.log('VFC: Event listeners bound.');
     },
 
@@ -465,7 +526,7 @@ window.VFC = {
         let selectedItems = [];
 
         // 1. Get Categorized Dropdown Values
-        $('.structure-type-dropdown').each(function() {
+        $('.structure-type-dropdown').each(function () {
             const val = $(this).val();
             const label = $(this).prev('label').text().trim();
             if (val) {
@@ -544,10 +605,7 @@ window.VFC = {
             formData.push({ name: '_method', value: 'PUT' });
         }
 
-        if ($('#building_type').val() === 'Other') {
-            const manualVal = $('#building_type_other').val();
-            formData = formData.map(item => (item.name === 'building_type' ? { name: 'building_type', value: manualVal } : item));
-        }
+
 
         Swal.fire({
             title: 'Saving...',
@@ -614,7 +672,8 @@ window.VFC = {
     },
 
     openCreateModal: function () {
-        this.closeRecordsModal(); // Ensure records list is closed
+        console.log('VFC: Opening Create Modal...');
+        this.closeRecordsModal();
         const $modal = $('#valuation-modal');
         if ($modal.parent().is('body') === false) {
             $('body').append($modal);
@@ -635,7 +694,7 @@ window.VFC = {
 
         $('#selected_bank_logo').html('<i data-lucide="building-2" class="h-4 w-4 text-slate-400"></i>');
         if (window.lucide) window.lucide.createIcons();
-        $('#building_type_other, #compensated_items_other').addClass('hidden');
+        $('#compensated_items_other, #building_type_other, #completion_stage_other').addClass('hidden').val('');
         $('.item-checkbox').prop('checked', false);
         $('.structure-type-dropdown').val(''); // Clear new dropdowns
         $('.item-amount-wrapper').addClass('hidden');
@@ -645,8 +704,11 @@ window.VFC = {
 
         this.clearBatch();
 
-        $('#valuation-modal').removeClass('hidden').addClass('flex');
-        setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
+        $('#valuation-modal').removeClass('hidden').addClass('flex').attr('style', 'display: flex !important; z-index: 110;');
+        setTimeout(() => {
+            $('#modal-overlay').addClass('opacity-100');
+            console.log('VFC: Modal displayed.');
+        }, 10);
     },
 
     openEditModal: function (record) {
@@ -678,19 +740,10 @@ window.VFC = {
         $('#valuation_date').val(record.valuation_date.split('T')[0]);
         $('#owner_name').val(record.owner_name);
 
-        const bTypeSelect = $('#building_type');
-        const typeExists = bTypeSelect.find(`option[value="${record.building_type}"]`).length > 0;
-        if (typeExists) {
-            bTypeSelect.val(record.building_type);
-            $('#building_type_other').addClass('hidden');
-        } else {
-            bTypeSelect.val('Other');
-            $('#building_type_other').val(record.building_type).removeClass('hidden');
-        }
+        $('#building_type').val(record.building_type);
+        $('#completion_stage_select').val(record.completion_stage);
 
-        if (record.structure_type) {
-            $(`.structure-type-radio[value="${record.structure_type}"]`).prop('checked', true);
-        }
+
 
         $('#building_count').val(record.building_count);
         $('#length').val(record.length);
@@ -725,9 +778,9 @@ window.VFC = {
                 if (itemStr.startsWith('[') && itemStr.includes(': ') && itemStr.endsWith(']')) {
                     const content = itemStr.replace('[', '').replace(']', '');
                     const [label, val] = content.split(': ').map(s => s.trim());
-                    
+
                     // Match by label (Structure Type, Wall Type, etc.)
-                    $('.structure-type-dropdown').each(function() {
+                    $('.structure-type-dropdown').each(function () {
                         const dropdownLabel = $(this).prev('label').text().trim();
                         if (dropdownLabel === label) {
                             $(this).val(val);
@@ -779,7 +832,7 @@ window.VFC = {
         $('#street_name').val(record.street_name);
         $('#location').val(record.location);
 
-        $('#valuation-modal').removeClass('hidden').addClass('flex');
+        $('#valuation-modal').removeClass('hidden').addClass('flex').attr('style', 'display: flex !important; z-index: 110;');
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
         if (window.lucide) window.lucide.createIcons();
     },
@@ -1096,18 +1149,34 @@ window.VFC = {
     },
 
     closeRecordsModal: function () {
-        $('#records-modal-overlay').removeClass('opacity-100').removeAttr('style');
-        $('#records-modal-container').addClass('scale-95 opacity-0').removeClass('scale-100 opacity-100').removeAttr('style');
+        console.log('VFC: Closing records modal...');
+        const $modal = $('#records-modal');
+        const $overlay = $('#records-modal-overlay');
+        const $container = $('#records-modal-container');
+
+        $overlay.removeClass('opacity-100');
+        $container.addClass('scale-95 opacity-0').removeClass('scale-100 opacity-100');
+
         setTimeout(() => {
-            $('#records-modal').addClass('hidden').removeClass('flex').attr('style', 'display: none !important;');
+            $modal.addClass('hidden').removeClass('flex').css('display', 'none');
+            // Ensure no lingering styles block clicks
+            $overlay.css('display', 'none');
         }, 300);
     },
 
     closeModal: function () {
-        $('#modal-overlay').removeClass('opacity-100').removeAttr('style');
-        setTimeout(() => {
-            $('#valuation-modal').addClass('hidden').removeClass('flex').attr('style', 'display: none !important;');
-        }, 300);
+        console.log('VFC: Closing data entry modal...');
+        const $modal = $('#valuation-modal');
+        const $overlay = $('#modal-overlay');
+
+        $overlay.removeClass('opacity-100');
+
+        // Hide immediately to prevent click blocking, but keep a tiny delay if we want transitions
+        // For robustness, we hide the main container immediately
+        $modal.addClass('hidden').removeClass('flex').css('display', 'none');
+
+        // Ensure overlay is also not blocking
+        $overlay.css('display', 'none');
     },
 
     showItemsDetails: function (owner, items) {
@@ -1309,6 +1378,61 @@ window.VFC = {
                 });
             }
         });
+    },
+
+    updateFinalBuildingType: function () {
+        const types = [];
+        const stages = [];
+        $('.building-type-row').each(function () {
+            let val = $(this).find('.building-type-select').val();
+            const other = $(this).find('.building-type-other').val();
+            if (val === 'Other' || val === 'Others') {
+                val = other || val;
+            }
+            if (val) types.push(val);
+
+            let sVal = $(this).find('.building-stage-select').val();
+            const sOther = $(this).find('.building-stage-other').val();
+            if (sVal === 'Other' || sVal === 'Others') {
+                sVal = sOther || sVal;
+            }
+            if (sVal) stages.push(sVal);
+        });
+        $('#building_type_final').val(types.join(', '));
+        $('#completion_stage_final').val(stages.join(', '));
+    },
+
+    syncBuildingTypes: function () {
+        const count = parseInt($('#building_count').val()) || 1;
+        const $container = $('#building_types_container');
+        const $rows = $container.find('.building-type-row');
+        const currentCount = $rows.length;
+
+        if (count > currentCount) {
+            // Add rows
+            const $template = $rows.first().clone();
+            $template.find('select').val('');
+            $template.find('.building-type-other, .building-stage-other').val('').addClass('hidden');
+            for (let i = 0; i < count - currentCount; i++) {
+                $container.append($template.clone());
+            }
+        } else if (count < currentCount) {
+            // Remove rows
+            for (let i = 0; i < currentCount - count; i++) {
+                $container.find('.building-type-row').last().remove();
+            }
+        }
+
+        // Update Building Numbers
+        $container.find('.building-type-row').each(function (idx) {
+            const $label = $(this).find('div').first();
+            if ($label.length) {
+                $label.html(`<i data-lucide="building" class="h-3 w-3"></i> Building ${idx + 1}`);
+            }
+        });
+
+        if (window.lucide) window.lucide.createIcons();
+        this.updateFinalBuildingType();
     }
 };
 

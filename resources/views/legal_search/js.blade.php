@@ -1067,6 +1067,7 @@ const executeSearchAjax = (filters, searchData) => {
         <td class="p-2 text-sm">${fileNumbers.mls}</td>
         <td class="p-2 text-sm">${fileNumbers.kangis}</td>
         <td class="p-2 text-sm">${fileNumbers.new_kangis}</td>
+        <td class="p-2 text-sm font-mono text-xs text-blue-700">${getMappedValue(file, 'fileNumber')}</td>
         <td class="p-2 text-sm">${toProperCase(file.party_1 || '-')}</td>
         <td class="p-2 text-sm">${toProperCase(file.party_2 || '-')}</td>
         <td class="p-2 text-sm">${toProperCase(file.party_3 || '-')}</td>
@@ -1129,6 +1130,11 @@ const executeSearchAjax = (filters, searchData) => {
         'transaction_type', 'instrument_type', 'title_type', 'typeForm', 
         'landUseType', 'application_status', 'deeds_status',
         'planning_recommendation_status', 'land_use', 'landUse'
+      ],
+
+      // File Number fields
+      fileNumber: [
+        'file_number', 'fileNumber', 'fileno', 'mlsFNo', 'kangis_file_no', 'new_kangis_file_no'
       ],
       
       // Grantor/From party fields - enhanced for applications
@@ -1955,6 +1961,7 @@ const executeSearchAjax = (filters, searchData) => {
           <td>${dedupDot(item)}${index + 1}</td>
           <td class="text-gray-500">${_wd_pr}</td>
           <td class="text-gray-500" style="padding-right:4px;">${getTableSourceWeight(item)}</td>
+          <td class="text-xs text-gray-600 whitespace-nowrap">${getMappedValue(item, 'fileNumber')}</td>
           <td style="white-space:nowrap;padding-left:6px;">${transactionType}</td>
           <td style="white-space:nowrap;">${party1}</td>
           <td>${party2}</td>
@@ -1973,7 +1980,7 @@ const executeSearchAjax = (filters, searchData) => {
     } else {
       propertyRecordTable.innerHTML = `
         <tr>
-          <td colspan="14" class="text-center py-4 text-gray-500">No property records found.</td>
+          <td colspan="16" class="text-center py-4 text-gray-500">No property records found.</td>
         </tr>
       `;
     }
@@ -2009,6 +2016,7 @@ const executeSearchAjax = (filters, searchData) => {
           <td>${dedupDot(item)}${index + 1}</td>
           <td class="text-gray-500">${_wd_fh}</td>
           <td class="text-gray-500" style="padding-right:4px;">${getTableSourceWeight(item)}</td>
+          <td class="text-xs text-gray-600 whitespace-nowrap">${getMappedValue(item, 'fileNumber')}</td>
           <td style="white-space:nowrap;padding-left:6px;">${transactionType}</td>
           <td style="white-space:nowrap;">${party1}</td>
           <td>${party2}</td>
@@ -2027,7 +2035,7 @@ const executeSearchAjax = (filters, searchData) => {
     } else {
       transactionHistoryTable.innerHTML = `
         <tr>
-          <td colspan="14" class="text-center py-4 text-gray-500">No file history records found.</td>
+          <td colspan="16" class="text-center py-4 text-gray-500">No file history records found.</td>
         </tr>
       `;
     }
@@ -2085,6 +2093,7 @@ const executeSearchAjax = (filters, searchData) => {
           <td>${index + 1}</td>
           <td class="text-gray-500">${_wd_dr}</td>
           <td class="text-gray-500" style="padding-right:4px;">${getTableSourceWeight(registration)}</td>
+          <td class="text-xs text-gray-600 whitespace-nowrap">${getMappedValue(registration, 'fileNumber')}</td>
           <td style="white-space:nowrap;padding-left:6px;" class="${isSTFragmentation ? 'text-yellow-800' : ''}">${transactionType}</td>
           <td style="white-space:nowrap;">${party1}</td>
           <td>${party2}</td>
@@ -2112,7 +2121,7 @@ const executeSearchAjax = (filters, searchData) => {
     } else {
       instrumentRegistrationTable.innerHTML = `
         <tr>
-          <td colspan="10" class="text-center py-4 text-gray-500">No instrument registration records found.</td>
+          <td colspan="12" class="text-center py-4 text-gray-500">No instrument registration records found.</td>
         </tr>
       `;
     }
@@ -2141,6 +2150,7 @@ const executeSearchAjax = (filters, searchData) => {
           <td>${index + 1}</td>
           <td class="text-gray-500">${_wd_cofo}</td>
           <td class="text-gray-500" style="padding-right:4px;">${getTableSourceWeight(cofo)}</td>
+          <td class="text-xs text-gray-600 whitespace-nowrap">${getMappedValue(cofo, 'fileNumber')}</td>
           <td>${cofoRegParticulars}</td>
           <td>
             <div>${date}</div>
@@ -2155,7 +2165,7 @@ const executeSearchAjax = (filters, searchData) => {
     } else {
       cofoTable.innerHTML = `
         <tr>
-          <td colspan="9" class="text-center py-4 text-gray-500">No Certificate of Occupancy records found.</td>
+          <td colspan="10" class="text-center py-4 text-gray-500">No Certificate of Occupancy records found.</td>
         </tr>
       `;
     }
@@ -2535,7 +2545,7 @@ const executeSearchAjax = (filters, searchData) => {
     }
 
     if (transactions.length === 0) {
-      timelineTable.innerHTML = '<tr><td colspan="15" class="text-center py-4 text-gray-500">No transactions to display.</td></tr>';
+      timelineTable.innerHTML = '<tr><td colspan="18" class="text-center py-4 text-gray-500">No transactions to display.</td></tr>';
       return;
     }
 
@@ -2613,6 +2623,7 @@ const executeSearchAjax = (filters, searchData) => {
         <td class="cleanup-col hidden text-center"><input type="checkbox" class="row-checkbox" data-id="${item.id}" data-table="${timelineSourceToDbTable(item.source_table)}" data-prop-id="${item.prop_id || ''}"></td>
         <td class="arrange-col hidden text-center font-mono text-xs text-gray-400">${idx + 1}</td>
         <td class="text-center text-xs text-gray-500">${idx + 1}</td>
+        <td class="text-xs text-gray-600 whitespace-nowrap">${getMappedValue(item, 'fileNumber')}</td>
         <td><span class="source-badge ${sourceBadgeClass(item.source_table)}">${item.source_table}</span></td>
         <td class="text-center text-xs ${weightColorClass}">${weightDisplay}</td>
         <td>${party1}</td>
@@ -2876,7 +2887,7 @@ const executeSearchAjax = (filters, searchData) => {
     }
 
     if (transactions.length === 0) {
-      excludedTable.innerHTML = '<tr><td colspan="13" class="text-center py-4 text-gray-400 italic">No duplicate or excluded records.</td></tr>';
+      excludedTable.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-gray-400 italic">No duplicate or excluded records.</td></tr>';
       return;
     }
 
@@ -2897,8 +2908,9 @@ const executeSearchAjax = (filters, searchData) => {
       const row = document.createElement('tr');
       row.className = 'border-b border-gray-50 hover:bg-gray-50/50 transition-colors';
       row.innerHTML = `
-        <td class="px-3 py-2 text-center"><input type="checkbox" class="row-checkbox" data-id="${item.id}" data-table="${timelineSourceToDbTable(item.source_table)}"></td>
+        <td class="cleanup-col hidden px-3 py-2 text-center"><input type="checkbox" class="row-checkbox" data-id="${item.id}" data-table="${timelineSourceToDbTable(item.source_table)}"></td>
         <td class="px-3 py-2 text-center">${idx + 1}</td>
+        <td class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">${getMappedValue(item, 'fileNumber')}</td>
         <td class="px-3 py-2"><span class="source-badge ${sourceBadgeClass(item.source_table)}">${item.source_table}</span></td>
         <td class="px-3 py-2">${party1}</td>
         <td class="px-3 py-2">${party2}</td>
@@ -3446,32 +3458,39 @@ const executeSearchAjax = (filters, searchData) => {
       countEl.classList.toggle('hidden', count === 0);
     }
     
-    // Check if any of the selected records are in the excluded table
+    // Track selection sources
     let hasExcludedSelected = false;
+    let hasTimelineSelected = false;
     selected.forEach(cb => {
       if (cb.closest('#excluded-table')) hasExcludedSelected = true;
+      else hasTimelineSelected = true;
     });
 
     const buttons = ['cleanup-match-btn', 'cleanup-drop-btn', 'cleanup-remove-btn', 'cleanup-edit-btn'];
     buttons.forEach(id => {
       const btn = document.getElementById(id);
       if (btn) {
-        if (id === 'cleanup-drop-btn' && hasExcludedSelected) {
-          btn.disabled = true;
-          btn.title = 'Selected records already in Excluded table';
-        } else {
-          btn.disabled = count === 0;
-          btn.title = '';
-        }
+        btn.disabled = count === 0;
       }
     });
+
+    // Contextual buttons
+    const demoteBtn = document.getElementById('smart-demote-btn');
+    if (demoteBtn) {
+      demoteBtn.disabled = (count === 0 || hasExcludedSelected);
+    }
+
+    const promoteBtn = document.getElementById('smart-replace-promote-btn');
+    if (promoteBtn) {
+      promoteBtn.disabled = (count === 0 || !hasExcludedSelected || hasTimelineSelected);
+    }
   };
 
   const toggleCleanupMode = (active) => {
     cleanupModeActive = active;
     const toggle = document.getElementById('cleanup-mode-toggle');
     const dot = document.getElementById('cleanup-toggle-dot');
-    const buttons = ['cleanup-match-btn', 'cleanup-drop-btn', 'cleanup-remove-btn', 'cleanup-edit-btn'];
+    const buttons = ['cleanup-match-btn', 'cleanup-drop-btn', 'cleanup-remove-btn', 'cleanup-edit-btn', 'smart-demote-btn'];
 
     if (active) {
       toggle.classList.remove('bg-gray-200');
@@ -3700,6 +3719,62 @@ const executeSearchAjax = (filters, searchData) => {
       }
       await swalAlert('Records removed successfully.', 'success', 'Completed');
       refreshAfterCleanup(byTable);
+    });
+  }
+
+  // DEMOTE button
+  const demoteBtn = document.getElementById('smart-demote-btn');
+  if (demoteBtn) {
+    demoteBtn.addEventListener('click', async () => {
+      const selected = document.querySelectorAll('.row-checkbox:checked');
+      if (selected.length === 0) {
+        await swalAlert('Select at least one record to demote.', 'warning', 'No Selection');
+        return;
+      }
+      
+      const proceed = await swalConfirm(`Demote ${selected.length} selected records? They will be moved to the excluded list.`, 'Confirm Demote', 'warning');
+      if (!proceed) return;
+
+      selected.forEach(cb => {
+        const table = cb.dataset.table;
+        const id = cb.dataset.id;
+        const uid = `${table}-${id}`;
+        window._manualDroppedIds.add(uid);
+        window._manualIncludedIds.delete(uid);
+      });
+
+      await swalAlert('Records demoted successfully.', 'success', 'Completed');
+      renderTransactionTables();
+      updateSelectionCount();
+    });
+  }
+
+  // PROMOTE button
+  const promoteBtnInJs = document.getElementById('smart-replace-promote-btn');
+  if (promoteBtnInJs) {
+    promoteBtnInJs.addEventListener('click', async () => {
+      const selected = document.querySelectorAll('.row-checkbox:checked');
+      const excludedSelected = Array.from(selected).filter(cb => cb.closest('#excluded-table'));
+      
+      if (excludedSelected.length === 0) {
+        await swalAlert('Select at least one record from the Excluded list to promote.', 'warning', 'No Selection');
+        return;
+      }
+
+      const proceed = await swalConfirm(`Promote ${excludedSelected.length} selected records back to the main list?`, 'Confirm Promote', 'question');
+      if (!proceed) return;
+
+      excludedSelected.forEach(cb => {
+        const table = cb.dataset.table;
+        const id = cb.dataset.id;
+        const uid = `${table}-${id}`;
+        window._manualIncludedIds.add(uid);
+        window._manualDroppedIds.delete(uid);
+      });
+
+      await swalAlert('Records promoted successfully.', 'success', 'Completed');
+      renderTransactionTables();
+      updateSelectionCount();
     });
   }
 

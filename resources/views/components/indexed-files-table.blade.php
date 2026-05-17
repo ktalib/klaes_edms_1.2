@@ -420,6 +420,7 @@
             </div>
         </div>
     </div>
+    @include('fileindexing.partial.property_transaction_modal')
 </div>
 
 @push('scripts')

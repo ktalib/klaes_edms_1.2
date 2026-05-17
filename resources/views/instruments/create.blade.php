@@ -6,6 +6,7 @@
 
 @section('content')
     @include('instruments.create.css')
+    @include('propertycard.css.style')
     <!-- Main Content -->
     <div class="flex-1 overflow-auto">
         <!-- Header -->
@@ -248,6 +249,10 @@
             };
         </script>
         <script src="{{ asset('js/instruments-capture.js') }}?v={{ time() }}"></script>
+        <script src="{{ asset('js/pra/helpers.js') }}"></script>
+        <script src="{{ asset('js/pra/state.js') }}"></script>
+        <script src="{{ asset('js/pra/modal.js') }}"></script>
+        <script src="{{ asset('js/pra/form-controller.js') }}"></script>
 
         <!-- Footer -->
         @include('admin.footer')
@@ -276,11 +281,11 @@
                 </div>
                 <div class="items-center px-4 py-3">
                     <button type="button" id="btn-update-existing"
-                        class="px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                        class="hidden px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300">
                         Update Existing Record
                     </button>
                     <button type="button" id="btn-create-new"
-                        class="mt-3 px-4 py-2 bg-gray-100 text-gray-700 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                        class="hidden mt-3 px-4 py-2 bg-gray-100 text-gray-700 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300">
                         Create New Record
                     </button>
                     <button type="button" id="btn-close-duplicate-footer"
@@ -293,6 +298,7 @@
     </div>
     {{-- PRA History Modal (shared partial) --}}
     @include('instruments.partials.pra_history_modal')
+    @include('propertycard.partials.add_property_record')
 
     <!-- <script>
     

@@ -112,7 +112,8 @@ class DuplicateCheckService
             });
         }
 
-        if (!empty($params['reg_date'])) {
+        // CofO is unique per file/prop_id/cofo_no; do not strictly match date if those are present
+        if (!empty($params['reg_date']) && empty($params['cofo_no']) && empty($params['prop_id']) && empty($params['fileno'])) {
             $query->where('transaction_date', $params['reg_date']);
         }
 
@@ -150,7 +151,8 @@ class DuplicateCheckService
             $query->where('party_2_name', 'LIKE', '%' . $params['party_2'] . '%');
         }
 
-        if (!empty($params['instrument_date'])) {
+        // Occupancy Permits are unique per file/serial; do not strictly match date if those are present
+        if (!empty($params['instrument_date']) && empty($params['op_serial']) && empty($params['fileno'])) {
             $query->where('instrument_date', $params['instrument_date']);
         }
 
@@ -192,8 +194,18 @@ class DuplicateCheckService
             $query->where('party_2_name', 'LIKE', '%' . $params['party_2'] . '%');
         }
 
+        // Singular instruments like Power of Attorney are unique per file; do not strictly match date
         if (!empty($params['instrument_date'])) {
-            $query->where('instrument_date', $params['instrument_date']);
+            $isSingular = false;
+            if (!empty($params['instrument_type'])) {
+                $normalizedType = strtolower(trim($params['instrument_type']));
+                if (str_contains($normalizedType, 'power of attorney')) {
+                    $isSingular = true;
+                }
+            }
+            if (!$isSingular) {
+                $query->where('instrument_date', $params['instrument_date']);
+            }
         }
 
         return $query->first();
@@ -254,7 +266,8 @@ class DuplicateCheckService
             $query->where('transaction_type', $params['transaction_type']);
         }
 
-        if (!empty($params['transaction_date'])) {
+        // CofO is unique per file/prop_id/cofo_no; do not strictly match date if those are present
+        if (!empty($params['transaction_date']) && empty($params['cofo_no']) && empty($params['prop_id']) && empty($params['fileno'])) {
             $query->whereDate('transaction_date', $params['transaction_date']);
         }
 

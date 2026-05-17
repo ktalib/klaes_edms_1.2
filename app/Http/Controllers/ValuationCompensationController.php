@@ -59,11 +59,18 @@ class ValuationCompensationController extends Controller
             ->orderBy('name')
             ->get();
 
-        $buildingTypes = BuildingType::active()->orderBy('name')->get();
+        $buildingTypes = BuildingType::active()
+            ->orderByRaw("CASE WHEN name IN ('Other', 'Others') THEN 1 ELSE 0 END ASC")
+            ->orderBy('name')
+            ->get();
 
         $streets = \App\Models\StreetName::orderBy('name')->get();
 
-        $valuationItems = DB::connection('sqlsrv')->table('vfc_valuation_items')->where('is_active', 1)->get();
+        $valuationItems = DB::connection('sqlsrv')->table('vfc_valuation_items')
+            ->where('is_active', 1)
+            ->orderByRaw("CASE WHEN name IN ('Other', 'Others') THEN 1 ELSE 0 END ASC")
+            ->orderBy('name')
+            ->get();
 
         $banks = \App\Models\VfcBank::orderBy('name')->get()->map(function ($b) {
             return [
@@ -111,6 +118,7 @@ class ValuationCompensationController extends Controller
             'remarks' => 'nullable|string',
             'compensated_items' => 'nullable|string',
             'compensated_items_other' => 'nullable|string',
+            'completion_stage' => 'nullable|string',
             'project_id' => 'required|exists:sqlsrv.vfc_projects,id',
             'sub_project_id' => 'nullable|exists:sqlsrv.vfc_sub_projects,id',
             'project_fileno' => 'nullable|string',
@@ -166,7 +174,7 @@ class ValuationCompensationController extends Controller
         try {
             foreach ($request->records as $data) {
                 $data['user_id'] = Auth::id();
-                
+
                 $project = \App\Models\Project::find($data['project_id']);
                 if ($project) {
                     $data['apply_percentage'] = $project->apply_percentage;
@@ -176,7 +184,7 @@ class ValuationCompensationController extends Controller
                 }
 
                 $record = ValuationCompensation::create($data);
-                
+
                 $this->auditService->logAction(
                     'BATCH_CREATED',
                     'ValuationCompensation',
@@ -185,7 +193,7 @@ class ValuationCompensationController extends Controller
                     $record->toArray(),
                     'Batch created valuation for ' . $record->owner_name
                 );
-                
+
                 $createdCount++;
             }
             DB::commit();
@@ -237,6 +245,7 @@ class ValuationCompensationController extends Controller
             'remarks' => 'nullable|string',
             'compensated_items' => 'nullable|string',
             'compensated_items_other' => 'nullable|string',
+            'completion_stage' => 'nullable|string',
             'project_id' => 'required|exists:sqlsrv.vfc_projects,id',
             'sub_project_id' => 'nullable|exists:sqlsrv.vfc_sub_projects,id',
             'project_fileno' => 'nullable|string',

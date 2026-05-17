@@ -7,19 +7,19 @@
             <p class="text-gray-500" id="file-details-subtitle">Viewing legal search results for file <span id="file-reference"></span></p>
           </div>
           <div class="flex items-center gap-2">
-            <button id="back-to-dashboard-btn" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+            <button id="back-to-dashboard-btn" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
               Back to Dashboard
             </button>
-            <button id="new-search-from-details-btn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-black hover:bg-black/90">
+            <button id="new-search-from-details-btn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-black hover:bg-black/90">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               New Search
             </button>
-            <button id="view-property-timeline-btn" class="hidden inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700" data-prop-id="" data-file-number="">
+            <button id="view-property-timeline-btn" class="hidden inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700" data-prop-id="" data-file-number="">
               <i class="fas fa-history mr-2"></i>
               Timeline
             </button>
@@ -105,30 +105,33 @@
             <div class="flex items-center justify-between mb-2">
               <div>
                 <h3 class="text-lg font-semibold">Multi-Source Data Aggregation Model</h3>
-                <p class="text-sm text-gray-500 mb-4">Blockchain Concept</p>
-                <div class="flex items-center gap-4 mb-4 mt-2 text-[11px] text-gray-600">
-                  <!-- Legend A group -->
-                  <div class="flex items-center gap-3 bg-emerald-50/80 px-3 py-1.5 rounded-lg border border-emerald-100">
-                    <span class="text-[9px] font-black text-emerald-500 uppercase tracking-widest mr-1">Legend A</span>
-                    <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Preferred</span>
-                    <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Dropped</span>
-                  </div>
-                  <!-- Legend B group -->
-                  <div class="flex items-center gap-3 bg-blue-50/80 px-3 py-1.5 rounded-lg border border-blue-100">
-                    <span class="text-[9px] font-black text-blue-500 uppercase tracking-widest mr-1">Legend B</span>
-                    <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Duplicate</span>
-                    <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Unique</span>
-                  </div>
-                </div>
+                <p class="text-sm text-gray-500">Blockchain Concept</p>
               </div>
-              <button id="refresh-history-btn" type="button" class="inline-flex items-center px-3 py-2 rounded-md text-xs font-medium bg-white text-gray-600 hover:bg-gray-50 border border-gray-300 cursor-pointer mr-2" title="Refresh records">
-                <svg data-refresh-icon xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                Refresh
-              </button>
-              <button id="add-record-smart-btn" type="button" class="inline-flex items-center px-3 py-2 rounded-md text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 border border-transparent cursor-pointer" data-role="legal-search-add-record" data-target="pra">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                Add Record
-              </button>
+              <div class="flex items-center gap-2">
+                <button id="refresh-history-btn" type="button" class="inline-flex items-center px-3 py-2 rounded-lg text-xs font-medium bg-white text-gray-600 hover:bg-gray-50 border border-gray-300 cursor-pointer whitespace-nowrap" title="Refresh records">
+                  <svg data-refresh-icon xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  Refresh
+                </button>
+                <button id="add-record-smart-btn" type="button" class="inline-flex items-center px-3 py-2 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 border border-transparent cursor-pointer whitespace-nowrap" data-role="legal-search-add-record" data-target="pra">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                  Add Record
+                </button>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-4 mb-4 mt-2 text-[11px] text-gray-600">
+              <!-- Legend A group -->
+              <div class="flex items-center gap-3 bg-emerald-50/80 px-3 py-1.5 rounded-lg border border-emerald-100">
+                <span class="text-[9px] font-black text-emerald-500 uppercase tracking-widest mr-1">Legend A</span>
+                <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Preferred</span>
+                <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Dropped</span>
+              </div>
+              <!-- Legend B group -->
+              <div class="flex items-center gap-3 bg-blue-50/80 px-3 py-1.5 rounded-lg border border-blue-100">
+                <span class="text-[9px] font-black text-blue-500 uppercase tracking-widest mr-1">Legend B</span>
+                <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Duplicate</span>
+                <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Unique</span>
+              </div>
             </div>
 
 
@@ -388,6 +391,7 @@
                       <th style="width:36px;">S/N</th>
                       <th style="width:36px;">RW</th>
                       <th style="width:36px;">TW</th>
+                      <th style="min-width:140px;white-space:nowrap;">File No</th>
                       <th style="text-align:left;">Instrument Type</th>
                       <th style="text-align:left;">Party 1</th>
                       <th style="min-width:110px;">Party 2</th>
@@ -417,6 +421,7 @@
                       <th style="width:36px;">S/N</th>
                       <th style="width:36px;">RW</th>
                       <th style="width:36px;">TW</th>
+                      <th style="min-width:140px;white-space:nowrap;">File No</th>
                       <th style="text-align:left;">Instrument Type</th>
                       <th style="text-align:left;">Party 1</th>
                       <th style="min-width:110px;">Party 2</th>
@@ -446,6 +451,7 @@
                       <th style="width:36px;">S/N</th>
                       <th style="width:36px;">RW</th>
                       <th style="width:36px;">TW</th>
+                      <th style="min-width:140px;white-space:nowrap;">File No</th>
                       <th style="text-align:left;">Instrument Type</th>
                       <th style="text-align:left;">Party 1</th>
                       <th style="min-width:110px;">Party 2</th>
@@ -471,6 +477,7 @@
                       <th>S/N</th>
                       <th style="min-width:60px;">RW</th>
                       <th style="min-width:60px;">TW</th>
+                      <th style="min-width:110px;">File No</th>
                       <th>Reg Particulars</th>
                       <th>Issue Date</th>
                       <th>Holder Name</th>
@@ -502,65 +509,65 @@
               <div class="flex items-center gap-2 mr-2">
                 <label for="cleanup-mode-toggle" class="text-xs font-medium text-gray-700 cursor-pointer select-none">Cleanup</label>
                 <button type="button" id="cleanup-mode-toggle" role="switch" aria-checked="false"
-                  class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-none border-2 border-black transition-colors duration-200 ease-in-out bg-black"
+                  class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-black transition-colors duration-200 ease-in-out bg-gray-200"
                 >
                   <span class="sr-only">Toggle Cleanup Mode</span>
-                  <span id="cleanup-toggle-dot" class="pointer-events-none inline-block h-5 w-5 transform rounded-none bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-6"></span>
+                  <span id="cleanup-toggle-dot" class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0"></span>
                 </button>
               </div>
               {{-- Cleanup Mode Action Buttons --}}
               <div id="cleanup-actions" class="flex items-center gap-2">
                 <button id="cleanup-match-btn" disabled
-                  class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border transition-colors
+                  class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
                          disabled:opacity-40 disabled:cursor-not-allowed
-                         bg-white border-orange-200 text-orange-400 hover:bg-orange-50 disabled:hover:bg-white">
+                         bg-white border-orange-200 text-orange-600 hover:bg-orange-50 disabled:hover:bg-white">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" /></svg>
                   Match
                 </button>
                 <button id="cleanup-drop-btn" disabled
-                  class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border transition-colors
+                  class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
                          disabled:opacity-40 disabled:cursor-not-allowed
-                         bg-white border-orange-200 text-orange-400 hover:bg-orange-50 disabled:hover:bg-white">
+                         bg-white border-orange-200 text-orange-600 hover:bg-orange-50 disabled:hover:bg-white">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
                   Drop
                 </button>
                 <button id="smart-demote-btn" disabled
-                  class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border transition-colors
+                  class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
                          disabled:opacity-40 disabled:cursor-not-allowed
-                         bg-white border-amber-200 text-amber-500 hover:bg-amber-50 disabled:hover:bg-white">
+                         bg-white border-amber-200 text-amber-600 hover:bg-amber-50 disabled:hover:bg-white">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13l-3 3m0 0l-3-3m3 3V8m0 13a9 9 0 110-18 9 9 0 010 18z" /></svg>
-                  Smart Demote
+                  Demote
                 </button>
                 <button id="cleanup-remove-btn" disabled
-                  class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border transition-colors
+                  class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
                          disabled:opacity-40 disabled:cursor-not-allowed
-                         bg-white border-orange-200 text-orange-400 hover:bg-orange-50 disabled:hover:bg-white">
+                         bg-white border-orange-200 text-orange-600 hover:bg-orange-50 disabled:hover:bg-white">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   Remove
                 </button>
                 <button id="cleanup-edit-btn" disabled
-                  class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border transition-colors
+                  class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
                          disabled:opacity-40 disabled:cursor-not-allowed
-                         bg-white border-orange-200 text-orange-400 hover:bg-orange-50 disabled:hover:bg-white">
+                         bg-white border-orange-200 text-orange-600 hover:bg-orange-50 disabled:hover:bg-white">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                   Edit
                 </button>
                 <span id="cleanup-selection-count" class="text-xs text-gray-500 ml-2 hidden">0 selected</span>
               </div>
 
-              <button id="arrange-mode-btn" class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border bg-white border-purple-200 text-purple-600 hover:bg-purple-50">
+              <button id="arrange-mode-btn" class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border bg-white border-purple-200 text-purple-600 hover:bg-purple-50">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" /></svg>
                 Arrange
               </button>
-              <button id="show-weighting-btn" class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border bg-white border-blue-200 text-blue-600 hover:bg-blue-50">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
+              <button id="show-weighting-btn" class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border bg-white border-blue-200 text-blue-600 hover:bg-blue-50">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3-3m3 3l-3-9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
                 Weighing
               </button>
-              <button id="toggle-excluded-records-btn" class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hidden">
+              <button id="toggle-excluded-records-btn" class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hidden">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                 Excluded Records (<span id="excluded-count-badge">0</span>)
               </button>
-              <button id="view-detailed-records-btn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-none shadow-sm text-sm font-medium text-white bg-black hover:bg-black/90">
+              <button id="view-detailed-records-btn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-black hover:bg-black/90">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" /></svg>
                 View Detailed Records
               </button>
@@ -573,6 +580,7 @@
                   <th class="cleanup-col hidden w-8"><input type="checkbox" class="select-all-checkbox" data-table="timeline-table"></th>
                   <th class="arrange-col hidden w-8">#</th>
                   <th style="min-width:40px;">S/N</th>
+                  <th style="min-width:140px;white-space:nowrap;">File No</th>
                   <th style="min-width:60px;">Source</th>
                   <th style="min-width:70px;">Weight</th>
                   <th style="min-width:110px;">Party 1</th>
@@ -606,11 +614,11 @@
                   <p class="text-xs text-gray-500">Records bypassed by weighting or manually dropped</p>
                 </div>
                 <button id="smart-replace-promote-btn" disabled
-                  class="inline-flex items-center px-3 py-1.5 rounded-none text-xs font-medium border transition-colors
+                  class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
                          disabled:opacity-40 disabled:cursor-not-allowed
                          bg-green-50 border-green-200 text-green-700 hover:bg-green-100 disabled:hover:bg-green-50">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11l3-3m0 0l3 3m-3-3v8m0 5a9 9 0 110-18 9 9 0 010 18z" /></svg>
-                  Smart Promote
+                  Promote
                 </button>
               </div>
             <div class="overflow-x-auto pb-32">
@@ -619,6 +627,7 @@
                   <tr class="bg-gray-50/50"> 
                     <th class="cleanup-col hidden w-8 text-center"><input type="checkbox" class="select-all-checkbox" data-table="excluded-table"></th>
                     <th style="min-width:40px;">S/N</th>
+                    <th style="min-width:140px;white-space:nowrap;">File No</th>
                     <th style="min-width:60px;">Source</th>
                     <th style="min-width:70px;">Weight</th>
                     <th style="min-width:110px;">Party 1</th>
@@ -785,8 +794,8 @@
           </select>
           <p class="text-xs text-red-600 hidden mb-2" id="transfer-caveat-error"></p>
           <div class="flex justify-end gap-2">
-            <button id="transfer-caveat-cancel" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
-            <button id="transfer-caveat-confirm" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700" disabled>Transfer</button>
+            <button id="transfer-caveat-cancel" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+            <button id="transfer-caveat-confirm" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700" disabled>Transfer</button>
           </div>
         </div>
       </div>
@@ -806,8 +815,8 @@
           <div id="conflict-prop-ids" class="mb-4 text-sm font-mono bg-gray-50 rounded p-2"></div>
           <p class="text-sm text-gray-600 mb-4">Are you sure you want to proceed?</p>
           <div class="flex justify-end gap-2">
-            <button id="conflict-cancel" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
-            <button id="conflict-proceed" class="px-4 py-2 text-sm font-medium text-white bg-yellow-600 rounded-md hover:bg-yellow-700">Proceed Anyway</button>
+            <button id="conflict-cancel" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+            <button id="conflict-proceed" class="px-4 py-2 text-sm font-medium text-white bg-yellow-600 rounded-lg hover:bg-yellow-700">Proceed Anyway</button>
           </div>
         </div>
       </div>
@@ -982,8 +991,8 @@
           <div class="flex items-center justify-between px-6 py-4 border-t bg-gray-50 rounded-b-xl">
             <p class="text-xs text-gray-400">File: <span id="ls-caveat-file-display" class="font-medium text-gray-600"></span></p>
             <div class="flex gap-3">
-              <button type="button" id="ls-caveat-cancel" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
-              <button type="button" id="ls-caveat-submit" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50">
+              <button type="button" id="ls-caveat-cancel" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button type="button" id="ls-caveat-submit" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
                 <span id="ls-caveat-submit-label">Save Caveat</span>
               </button>
             </div>

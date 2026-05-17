@@ -239,6 +239,9 @@ document.addEventListener('DOMContentLoaded', function () {
                             </div>
                         `;
                     }
+                    if (typeof checkDuplicate === 'function') {
+                        checkDuplicate();
+                    }
                     if (typeof lucide !== 'undefined') lucide.createIcons();
                 }
             }
@@ -1291,26 +1294,29 @@ document.addEventListener('DOMContentLoaded', function () {
             if (data.pra_history && data.pra_history.length > 0) {
                 duplicateCheckState.praHistory = data.pra_history;
                 setPraHistoryAlertVisibility(true);
+            }
 
-                // NEW: Mortgage Found Toast for Surrender/Release
-                if (currentInstrumentType === 'deed-of-surrender-release') {
-                    const hasMortgage = data.pra_history.some(rec => {
-                        const type = (rec.transaction_type || rec.instrument_type || '').toLowerCase();
-                        return type.includes('mortgage');
+            // SURRENDER & RELEASE MORTGAGE RECOGNITION CONVENTION
+            if (currentInstrumentType === 'deed-of-surrender-release') {
+                const hasMortgage = data.pra_history && data.pra_history.some(rec => {
+                    const type = (rec.transaction_type || rec.instrument_type || '').toLowerCase();
+                    return type.includes('mortgage');
+                });
+
+                if (hasMortgage) {
+                    Swal.fire({
+                        toast: true,
+                        position: 'top-end',
+                        icon: 'success',
+                        title: 'Mortgage Recognized',
+                        text: 'Existing active mortgage record has been verified for this file.',
+                        showConfirmButton: false,
+                        timer: 5000,
+                        timerProgressBar: true
                     });
-
-                    if (hasMortgage) {
-                        Swal.fire({
-                            toast: true,
-                            position: 'top-end',
-                            icon: 'info',
-                            title: 'Mortgage Found',
-                            text: 'This file has existing mortgage record(s). Please review before proceeding.',
-                            showConfirmButton: false,
-                            timer: 5000,
-                            timerProgressBar: true
-                        });
-                    }
+                } else {
+                    // Alert user to capture the existing mortgage first
+                    showMissingMortgageAlert(fileNo);
                 }
             }
 
@@ -1370,6 +1376,74 @@ document.addEventListener('DOMContentLoaded', function () {
         // ─────────────────────────────────────────────────────────────────────────
     }
 
+    function showMissingMortgageAlert(fileNo) {
+        Swal.fire({
+            title: 'No Existing Mortgage Found!',
+            html: `
+                <div class="text-left">
+                    <p class="mb-3">A <strong>Deed of Surrender & Release</strong> requires an existing active mortgage to be released.</p>
+                    <p class="mb-3 text-red-600 font-semibold">No mortgage record was found for File Number: ${fileNo}</p>
+                    <p class="text-sm text-gray-600">You must capture the existing mortgage first before capturing a Surrender & Release.</p>
+                </div>
+            `,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#3085d6',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Capture Existing Mortgage Now',
+            cancelButtonText: 'Cancel Capture',
+            allowOutsideClick: false
+        }).then((result) => {
+            if (result.isConfirmed) {
+                openPraMortgageModal(fileNo);
+            } else {
+                warnCannotSubmitWithoutMortgage();
+            }
+        });
+    }
+
+    function openPraMortgageModal(fileNo) {
+        const modal = document.getElementById('property-form-dialog');
+        const modalTitle = document.querySelector('#property-form-dialog h2');
+
+        if (modal) {
+            if (modalTitle) {
+                modalTitle.textContent = 'Capture Existing Mortgage';
+            }
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+            
+            // Auto-select Deed of Mortgage
+            if (window.PraFormController && window.PraFormController.controller) {
+                window.PraFormController.controller.setState('transactionType', 'Deed of Mortgage');
+            }
+
+            // Fill File Number selection
+            if (typeof window.applyPrimaryFileSelection === 'function') {
+                window.applyPrimaryFileSelection({ fileno: fileNo, mlsFileno: fileNo }, 'instruments-page');
+            }
+        } else {
+            console.error('Property form dialog modal not found in DOM.');
+        }
+    }
+
+    function warnCannotSubmitWithoutMortgage() {
+        Swal.fire({
+            title: 'Mortgage Capture Required',
+            text: 'A Surrender & Release cannot be registered without an existing Mortgage record. Please capture the mortgage first.',
+            icon: 'error',
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#3085d6'
+        });
+
+        // Disable submit button on the main form
+        if (elements.submitBtn) {
+            elements.submitBtn.disabled = true;
+            elements.submitBtn.className = 'px-6 py-2.5 text-white font-medium bg-gray-400 rounded-lg cursor-not-allowed opacity-60 shadow-md flex items-center gap-2';
+            elements.submitBtn.setAttribute('title', 'A Deed of Surrender / Release requires an existing Mortgage record.');
+        }
+    }
+
     function showDuplicateModal(instrument, pra) {
         console.log('showDuplicateModal: Starting with', { instrument, pra });
         const modal = document.getElementById('duplicate-modal');
@@ -1419,13 +1493,26 @@ document.addEventListener('DOMContentLoaded', function () {
     `;
 
         if (pra) {
-            html += `
-            <div class="mt-2 pt-2 border-t border-gray-200 text-xs">
-                <span class="font-semibold text-green-700">Property Record Found:</span>
-                <p class="truncate">${pra.property_description || 'No description'}</p>
-                <p>${pra.location || ''}</p>
-            </div>
-            `;
+            const desc = (pra.property_description || pra.propertyDescription || '').trim();
+            const loc = (pra.location || pra.property_location || '').trim();
+            
+            let displayString = desc;
+            if (loc && loc.toLowerCase() !== desc.toLowerCase()) {
+                if (displayString) {
+                    displayString += `<br>${loc}`;
+                } else {
+                    displayString = loc;
+                }
+            }
+            
+            if (displayString) {
+                html += `
+                <div class="mt-2 pt-2 border-t border-gray-200 text-xs">
+                    <span class="font-semibold text-green-700 block mb-1">Property Record Found:</span>
+                    <p class="text-gray-600 leading-relaxed">${displayString}</p>
+                </div>
+                `;
+            }
         }
 
         detailsContainer.innerHTML = html;
@@ -1438,6 +1525,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const updateBtn = document.getElementById('btn-update-existing');
         const createBtn = document.getElementById('btn-create-new');
+        
+        // Hide the buttons for now
+        if (updateBtn) updateBtn.classList.add('hidden');
+        if (createBtn) createBtn.classList.add('hidden');
+
         const closeBtnNow = document.getElementById('btn-close-duplicate');
         const closeFooterBtnNow = document.getElementById('btn-close-duplicate-footer');
 
@@ -1528,17 +1620,27 @@ document.addEventListener('DOMContentLoaded', function () {
 
         duplicateCheckState.isUpdateMode = true;
         autoFilledSubmitMode = false;
-        alreadyCapturedLock = false;
+        
+        // Check if already registered
+        const isRegistered = !!(record.registration_number || record.reg_no || record.is_deed_registered == 1);
+        alreadyCapturedLock = isRegistered;
 
-        elements.submitBtn.textContent = 'Update Instrument';
-        elements.submitBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-        elements.submitBtn.classList.remove('bg-green-600', 'hover:bg-green-700'); // Ensure green removed
-        elements.submitBtn.classList.add('bg-blue-600', 'hover:bg-blue-700'); // Update uses Blue typically, Store uses Blue? 
-        // Wait, Store is usually Blue. Update usually Amber/Orange? 
-        // Let's stick to: Create=Blue, Update=Green? Or vice versa.
-        // Previous code: Create=Blue, Update=Blue (text change).
-        // Let's try: Update = Amber
-        elements.submitBtn.classList.add('bg-amber-600', 'hover:bg-amber-700');
+        if (isRegistered) {
+            elements.submitBtn.textContent = 'Already Registered';
+            elements.submitBtn.disabled = true;
+            elements.submitBtn.className = 'px-6 py-2.5 text-white font-medium bg-gray-400 rounded-lg cursor-not-allowed opacity-60 shadow-md flex items-center gap-2';
+            elements.submitBtn.setAttribute('title', 'This instrument has already been registered. Modification is restricted.');
+            elements.submitBtn.innerHTML = `<i class="fas fa-lock mr-2"></i> Already Registered`;
+        } else {
+            alreadyCapturedLock = false;
+            elements.submitBtn.textContent = 'Update Instrument';
+            elements.submitBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            elements.submitBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+            elements.submitBtn.classList.add('bg-amber-600', 'hover:bg-amber-700');
+            elements.submitBtn.disabled = false;
+            elements.submitBtn.innerHTML = `<i class="fas fa-save mr-2"></i> Update Instrument`;
+            elements.submitBtn.removeAttribute('title');
+        }
 
         setHidden('id', record.id);
         const storeUrlInput = document.getElementById('storeUrl');
@@ -1548,11 +1650,17 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         populateForm(record);
+        
+        const swalTitle = isRegistered ? 'View Mode (Registered)' : 'Update Mode';
+        const swalText = isRegistered 
+            ? 'This record is already registered. Modification is disabled to ensure data integrity.' 
+            : 'Form pre-filled with existing record data. You are now in UPDATE mode.';
+        
         Swal.fire({
-            icon: 'info',
-            title: 'Update Mode',
-            text: 'Form pre-filled with existing record data. You are now in UPDATE mode.',
-            timer: 2000,
+            icon: isRegistered ? 'warning' : 'info',
+            title: swalTitle,
+            text: swalText,
+            timer: 3000,
             showConfirmButton: false
         });
     }

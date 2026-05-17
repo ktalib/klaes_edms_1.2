@@ -30,7 +30,7 @@ class PlotWorkflowService
                 // 1. Fetch records from all active tables
                 $fileRecord = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fileNo)->first();
                 $indexingRecord = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $fileNo)->first();
-                
+
                 if (!$fileRecord && !$indexingRecord) {
                     $summary['errors'][] = "File $fileNo not found in active records.";
                     continue;
@@ -57,7 +57,7 @@ class PlotWorkflowService
                 DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $fileNo)->delete();
                 DB::connection('sqlsrv')->table('entities_staging')->where('file_number', $fileNo)->delete();
                 DB::connection('sqlsrv')->table('customers_staging')->where('file_number', $fileNo)->delete();
-                
+
                 // Also clean up grouping placeholders to prevent "Tracking ID already in use" errors later
                 DB::connection('sqlsrv')->table('kangis_grouping')
                     ->where('kangis_fileno_placeholder', $fileNo)

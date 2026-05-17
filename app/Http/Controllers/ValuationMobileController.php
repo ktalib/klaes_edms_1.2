@@ -29,35 +29,47 @@ class ValuationMobileController extends Controller
      */
     public function getLookupData()
     {
-        return Cache::remember('vfc_mobile_lookup_data', 60 * 60 * 24, function() {
-            $projects = Project::with(['subProjects', 'valuations', 'workers'])->withCount(['valuations', 'workers'])->orderBy('project_name')->get()->map(function($p) {
-                return [
-                    'id' => $p->id,
-                    'name' => $p->project_name,
-                    'code' => $p->project_code,
-                    'fileno' => $p->project_fileno,
-                    'total_items' => $p->number_of_items,
-                    'valuations_count' => $p->valuations_count,
-                    'workers_count' => $p->workers_count,
-                    'our_reference' => $p->our_reference,
-                    'your_reference' => $p->your_reference,
-                    'sub_projects' => $p->subProjects->map(function($sp) {
-                        return [
-                            'id' => $sp->id,
-                            'name' => $sp->name,
-                            'code' => $sp->code
-                        ];
-                    })
-                ];
-            });
+        return Cache::remember('vfc_mobile_lookup_data', 60 * 60 * 24, function () {
+            $projects = Project::select('id', 'project_name', 'project_code', 'project_fileno', 'number_of_items', 'our_reference', 'your_reference')
+                ->with([
+                    'subProjects' => function ($q) {
+                        $q->select('id', 'project_id', 'name', 'code');
+                    }
+                ])
+                ->withCount(['valuations', 'workers'])
+                ->orderBy('project_name')
+                ->get()
+                ->map(function ($p) {
+                    return [
+                        'id' => $p->id,
+                        'name' => $p->project_name,
+                        'code' => $p->project_code,
+                        'fileno' => $p->project_fileno,
+                        'total_items' => $p->number_of_items,
+                        'valuations_count' => $p->valuations_count,
+                        'workers_count' => $p->workers_count,
+                        'our_reference' => $p->our_reference,
+                        'your_reference' => $p->your_reference,
+                        'sub_projects' => $p->subProjects->map(function ($sp) {
+                            return [
+                                'id' => $sp->id,
+                                'name' => $sp->name,
+                                'code' => $sp->code
+                            ];
+                        })
+                    ];
+                });
 
-            $buildingTypes = BuildingType::active()->orderBy('name')->get();
+            $buildingTypes = BuildingType::active()
+                ->orderByRaw("CASE WHEN name IN ('Other', 'Others') THEN 1 ELSE 0 END ASC")
+                ->orderBy('name')
+                ->get();
             $streets = StreetName::orderBy('name')->get();
-            
+
             $lgas = DB::connection('sqlsrv')->table('StatLGAs')->join('States', 'StatLGAs.StateID', '=', 'States.StateID')->where('States.StateName', 'Kano')->orderBy('LGAName')->get();
             $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
 
-            $banks = \App\Models\VfcBank::orderBy('name')->get()->map(function($b) {
+            $banks = \App\Models\VfcBank::orderBy('name')->get()->map(function ($b) {
                 return [
                     'name' => $b->name,
                     'logo' => asset('assets/' . $b->logo),
@@ -65,7 +77,11 @@ class ValuationMobileController extends Controller
                 ];
             });
 
-            $valuationItems = DB::connection('sqlsrv')->table('vfc_valuation_items')->where('is_active', 1)->get();
+            $valuationItems = DB::connection('sqlsrv')->table('vfc_valuation_items')
+                ->where('is_active', 1)
+                ->orderByRaw("CASE WHEN name IN ('Other', 'Others') THEN 1 ELSE 0 END ASC")
+                ->orderBy('name')
+                ->get();
 
             return response()->json([
                 'success' => true,
@@ -88,7 +104,7 @@ class ValuationMobileController extends Controller
         $workers = ProjectWorker::where('project_id', $projectId)
             ->with('user')
             ->get()
-            ->map(function($w) {
+            ->map(function ($w) {
                 return [
                     'id' => $w->id,
                     'worker_code' => $w->worker_code,
@@ -126,11 +142,11 @@ class ValuationMobileController extends Controller
             $project = \App\Models\Project::findOrFail($request->project_id);
             $fileNumber = $project->project_fileno;
 
-            // Handle 'Other' building type
+            // Handle 'Other' building type - now comma separated
             $buildingType = $request->building_type;
-            if ($buildingType === 'Other' && $request->building_type_other) {
-                $buildingType = $request->building_type_other;
-            }
+            
+            // Handle completion stage - now comma separated
+            $completionStage = $request->completion_stage;
 
             // Handle 'Other' compensated items
             $compItems = $request->compensated_items;
@@ -152,6 +168,9 @@ class ValuationMobileController extends Controller
                 'valuation_date' => $request->valuation_date,
                 'building_type' => $buildingType,
                 'building_count' => $request->building_count ?? 1,
+                'completion_stage' => $completionStage,
+                'length' => $request->length,
+                'breadth' => $request->breadth,
                 'area_covered' => $request->area_covered,
                 'rate_of_cost' => $request->rate_of_cost,
                 'compensation_amount' => $request->compensation_amount,

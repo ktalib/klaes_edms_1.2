@@ -2,6 +2,13 @@
     /* Keep SweetAlert / dialogs above the instrument capture modal (z-index: 1000020) */
     .swal2-container { z-index: 2000000 !important; }
     .swal2-backdrop-show { z-index: 1999999 !important; }
+
+    /* Specific scrollbar styling and flex constraints for registration-form */
+    #registration-form {
+        overflow-y: auto !important;
+        min-height: 0 !important;
+        flex: 1 1 0% !important;
+    }
 </style>
 <div id="registration-dialog"
     class="dialog-backdrop hidden transition-opacity duration-300 ease-in-out z-50 fixed inset-0 flex items-center justify-center bg-black/50">

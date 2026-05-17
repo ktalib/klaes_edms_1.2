@@ -1327,6 +1327,24 @@ async function submitTempFile() {
     return;
   }
 
+  // Ask for has_transaction
+  let hasTransaction = false;
+  if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
+    const result = await window.Swal.fire({
+      title: 'Has Transaction?',
+      text: "Does this file have a transaction?",
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes',
+      cancelButtonText: 'No',
+      confirmButtonColor: '#0d9488', // teal-600
+      cancelButtonColor: '#64748b', // slate-500
+    });
+    hasTransaction = !!result.isConfirmed;
+  } else {
+    hasTransaction = window.confirm('Does this file have a transaction?');
+  }
+
   try {
     const response = await fetch(`${window.location.origin}/api/indexed-files/${encodeURIComponent(fileId)}/set-temp-file`, {
       method: 'POST',
@@ -1335,7 +1353,10 @@ async function submitTempFile() {
         'X-CSRF-TOKEN': csrfToken,
         'X-Requested-With': 'XMLHttpRequest'
       },
-      body: JSON.stringify({ temp_file_no: tempFileNo })
+      body: JSON.stringify({ 
+        temp_file_no: tempFileNo,
+        has_transaction: hasTransaction
+      })
     });
 
     const result = await response.json().catch(() => ({}));
@@ -1350,6 +1371,58 @@ async function submitTempFile() {
       await window.Swal.fire({ icon: 'success', title: 'Updated', text: result.message || 'Temporary file number saved successfully.' });
     } else {
       alert(result.message || 'Temporary file number saved successfully.');
+    }
+
+    // Open transaction modal if hasTransaction was true and data is returned
+    if (hasTransaction && result.data && typeof window.openPropertyTransactionModal === 'function') {
+      const row = result.data;
+      const fileIndexingData = {
+        id: row.id,
+        file_number: row.file_number,
+        file_title: row.file_title || '',
+        lga: row.lga || '',
+        district: row.district || '',
+        land_use_type: row.land_use_type || '',
+        plot_no: row.plot_no || row.plot_number || '',
+        tp_no: row.tp_no || '',
+        lpkn_no: row.lpkn_no || '',
+        temp_file_no: row.temp_file_no || '',
+        property_description: [row.district, row.lga].filter(Boolean).join(', '),
+        existing_records: []
+      };
+
+      // Show loading while fetching existing records for the modal
+      if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
+        window.Swal.fire({
+          title: 'Loading...',
+          text: 'Fetching transaction details',
+          allowOutsideClick: false,
+          didOpen: () => {
+            window.Swal.showLoading();
+          }
+        });
+      }
+
+      try {
+        const checkResponse = await fetch(`${window.location.origin}/api/property-records/check/${encodeURIComponent(row.file_number)}`);
+        const checkData = await checkResponse.json();
+        
+        if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
+          window.Swal.close();
+        }
+
+        if (checkData.success && checkData.records) {
+          fileIndexingData.existing_records = checkData.records;
+        }
+        
+        window.openPropertyTransactionModal(fileIndexingData);
+      } catch (error) {
+        console.error('Error fetching transactions:', error);
+        if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
+          window.Swal.close();
+        }
+        window.openPropertyTransactionModal(fileIndexingData);
+      }
     }
 
     await loadTable();

@@ -21,6 +21,7 @@
     <!-- Register Instrument: enabled for pending instruments, with special logic for ST CofO -->
     @php
         $canRegister = false;
+        $isAlreadyRegistered = ($app->status == 'registered');
         if ($app->status == 'pending') {
             if ($app->instrument_type === 'Sectional Titling CofO') {
                 // For ST CofO, check if corresponding ST Assignment is registered
@@ -37,6 +38,9 @@
        @if($canRegister) 
            onclick="openSingleRegisterModalWithData('{{ $app->id }}'); return false;" 
            class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+       @elseif($isAlreadyRegistered)
+           onclick="showAlreadyRegisteredMessage(); return false;"
+           class="block px-4 py-2 text-sm text-gray-400 cursor-not-allowed"
        @else 
            onclick="showSTCofoRestrictionMessage(); return false;" 
            class="block px-4 py-2 text-sm text-gray-400 cursor-not-allowed"
@@ -169,6 +173,17 @@ function showSTCofoRestrictionMessage() {
         confirmButtonText: 'I Understand',
         confirmButtonColor: '#3085d6',
         width: '500px'
+    });
+}
+
+// Function to show already registered message
+function showAlreadyRegisteredMessage() {
+    Swal.fire({
+        title: 'Already Registered',
+        text: 'This instrument has already been registered and cannot be registered again.',
+        icon: 'info',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#3085d6'
     });
 }
 </script>

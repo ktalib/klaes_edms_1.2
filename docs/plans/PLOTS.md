@@ -79,7 +79,7 @@ This one will now come in. This new file number will come in. Yes.
 
 And then the commission can have comment. Yes. You understand? Yes.
 
-And under PRA, it will come as one record. One record with the transaction type. And this same thing will happen for major.
+And under PRA, it will come as one record. One record with the transaction type. And this same thing will happen for major. 
 
 It will happen for... Extension. Extension. Because they are the same.
 

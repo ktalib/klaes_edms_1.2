@@ -260,7 +260,14 @@ function populateDropdownContent(app, context = null) {
     const canRegister = checkCanRegisterInstrument(app);
     const registerClass = canRegister ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed';
     const registerIcon = canRegister ? 'text-green-500' : 'text-gray-300';
-    const registerClick = canRegister ? `onclick="openSingleRegisterModalWithData('${app.id}'); return false;"` : 'onclick="showSTCofoRestrictionMessage(); return false;"';
+    let registerClick = '';
+    if (app.status === 'registered') {
+        registerClick = 'onclick="showAlreadyRegisteredMessage(); return false;"';
+    } else if (canRegister) {
+        registerClick = `onclick="openSingleRegisterModalWithData('${app.id}'); return false;"`;
+    } else {
+        registerClick = 'onclick="showSTCofoRestrictionMessage(); return false;"';
+    }
 
     const deleteClass = app.status === 'pending' ? 'text-red-600 hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed';
     const deleteIcon = app.status === 'pending' ? '' : 'text-gray-300';
@@ -1073,6 +1080,16 @@ function showSTCofoRestrictionMessage() {
         confirmButtonText: 'I Understand',
         confirmButtonColor: '#3085d6',
         width: '500px'
+    });
+}
+
+function showAlreadyRegisteredMessage() {
+    Swal.fire({
+        title: 'Already Registered',
+        text: 'This instrument has already been registered in the official registry. You can view the RDS or CoR from the actions menu.',
+        icon: 'info',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#3085d6'
     });
 }
 

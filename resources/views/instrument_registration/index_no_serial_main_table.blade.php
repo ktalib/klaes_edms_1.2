@@ -516,7 +516,7 @@ function populateDropdownContent(app) {
     
     const registerClass = app.status === 'pending' ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed';
     const registerIcon = app.status === 'pending' ? 'text-green-500' : 'text-gray-300';
-    const registerClick = app.status === 'pending' ? `onclick="openSingleRegisterModalWithData('${app.id}'); return false;"` : 'onclick="return false;"';
+    const registerClick = app.status === 'pending' ? `onclick="openSingleRegisterModalWithData('${app.id}'); return false;"` : 'onclick="showAlreadyRegisteredMessage(); return false;"';
     
     const deleteClass = app.status === 'pending' ? 'text-red-600 hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed';
     const deleteIcon = app.status === 'pending' ? '' : 'text-gray-300';
@@ -556,6 +556,17 @@ function closeDropdown() {
     currentButton = null;
     currentAppData = null;
 }
+
+function showAlreadyRegisteredMessage() {
+    Swal.fire({
+        title: 'Already Registered',
+        text: 'This instrument has already been registered and cannot be registered again.',
+        icon: 'info',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#3085d6'
+    });
+}
+window.showAlreadyRegisteredMessage = showAlreadyRegisteredMessage;
 
 function deleteInstrument(id) {
     Swal.fire({

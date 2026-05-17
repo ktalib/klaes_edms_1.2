@@ -3029,6 +3029,7 @@ class PropertyRecordController extends Controller
                         'reg_time' => $transaction['reg_time'] ?? null,
                         'period' => $transaction['period'] ?? null,
                         'period_unit' => $transaction['period_unit'] ?? null,
+                        'comments' => $transaction['comments'] ?? null,
                         'property_description' => $request->property_description ?? null,
                         'location' => $request->property_description ?? null,
                         'districtName' => $request->district ?? null,

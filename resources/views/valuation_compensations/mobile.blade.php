@@ -701,12 +701,14 @@
     <!-- TOP BAR -->
     <header class="topbar">
         <div class="topbar-brand">
-            <div class="brand-icon" style="background: white; padding: 2px;">
-                <img src="{{ asset('storage/upload/logo/logo.png') }}" alt="Logo" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;" onerror="this.src='http://app.klaes.ng/storage/upload/logo/1.jpeg'">
+            <div class="brand-icon">
+                <img src="{{ asset('storage/upload/logo/logo.png') }}" alt="VFC" style="width: 24px; height: 24px; object-fit: contain;" 
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <i data-lucide="shield-check" class="h-5 w-5" style="display: none;"></i>
             </div>
             <div class="brand-text">
-                <h1>VFC MOBILE</h1>
-                <p>{{ Auth::user()->first_name ?? 'Field' }} Officer</p>
+                <h1>VFC App</h1>
+                
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 15px;">
@@ -759,7 +761,7 @@
                 <div class="section-body">
                     <div class="field">
                         <label>Target Project <span class="req">*</span></label>
-                        <select name="project_id" id="projectSelect" class="inp" required>
+                        <select name="project_id" id="projectSelect" class="inp" >
                             <option value="">Loading Projects...</option>
                         </select>
 
@@ -798,13 +800,13 @@
                     </div>
                     <div class="field">
                         <label>Sub-Project <span class="req">*</span></label>
-                        <select name="sub_project_id" id="subProjectSelect" class="inp" required disabled>
+                        <select name="sub_project_id" id="subProjectSelect" class="inp"  disabled>
                             <option value="">Select Project First</option>
                         </select>
                     </div>
                     <div class="field">
                         <label>Assigned Worker <span class="req">*</span></label>
-                        <select name="worker_id" id="workerSelect" class="inp" required disabled>
+                        <select name="worker_id" id="workerSelect" class="inp"  disabled>
                             <option value="">Select Project First</option>
                         </select>
                     </div>
@@ -844,11 +846,11 @@
                     </div>
                     <div class="field">
                         <label>Owner Full Name <span class="req">*</span></label>
-                        <input type="text" name="owner_name" id="owner_name" class="inp" placeholder="Musa Yakubu" required>
+                        <input type="text" name="owner_name" id="owner_name" class="inp" placeholder="Musa Yakubu" >
                     </div>
                     <div class="field">
                         <label>Valuation Date <span class="req">*</span></label>
-                        <input type="date" name="valuation_date" id="valuation_date" class="inp" value="{{ date('Y-m-d') }}" required>
+                        <input type="date" name="valuation_date" id="valuation_date" class="inp" value="{{ date('Y-m-d') }}" >
                     </div>
                 </div>
             </section>
@@ -862,39 +864,42 @@
                     <h2>Building Assessment</h2>
                 </div>
                 <div class="section-body">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-                        <div class="field" style="margin-bottom: 0;">
-                            <label>Structure Type</label>
-                            <select name="structure_type" id="structureType" class="inp struct-dropdown">
-                                <option value="">Select</option>
-                            </select>
-                            <input type="text" id="structureTypeOther" class="inp hidden mt-2" placeholder="Specify Structure Type...">
-                        </div>
-                        <div class="field" style="margin-bottom: 0;">
-                            <label>Completion Stage</label>
-                            <select name="completion_stage" id="completionStage" class="inp struct-dropdown">
-                                <option value="">Select</option>
-                            </select>
-                            <input type="text" id="completionStageOther" class="inp hidden mt-2" placeholder="Specify Stage...">
-                        </div>
+                    <div class="field">
+                        <label>Building Count <span class="req">*</span></label>
+                        <input type="number" name="building_count" id="buildingCount" class="inp" value="1" min="1" >
                     </div>
                     <div class="field">
-                        <label>Building Type <span class="req">*</span></label>
-                        <select name="building_type" id="buildingType" class="inp" required>
-                            <option value="">Select Type</option>
-                        </select>
-                        <input type="text" id="buildingTypeOther" class="inp hidden mt-2" placeholder="Specify Building Type...">
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                        <div class="field">
-                            <label>Count</label>
-                            <input type="number" name="building_count" id="buildingCount" class="inp" value="1" min="1">
+                        <label>Building Assessment <span class="req">*</span></label>
+                        <div id="building_types_mobile_container" style="display: flex; flex-direction: column; gap: 12px;">
+                            <div class="building-type-mobile-row" style="background: rgba(255,255,255,0.02); padding: 12px; border-radius: 12px; border: 1px solid var(--border);">
+                                <div style="font-size: 9px; font-weight: 800; color: var(--text-dim); text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 8px;">
+                                    <i data-lucide="building" style="width: 10px;"></i>
+                                    Building 1
+                                </div>
+                                <div style="margin-bottom: 12px;">
+                                    <label style="font-size: 9px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; display: block; text-transform: uppercase;">Building Type</label>
+                                    <select class="inp building-type-mobile-select">
+                                        <option value="">Select Type</option>
+                                    </select>
+                                    <input type="text" class="inp building-type-mobile-other hidden mt-2" placeholder="Specify type...">
+                                </div>
+                                <div>
+                                    <label style="font-size: 9px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; display: block; text-transform: uppercase;">Stage of Completion</label>
+                                    <select class="inp building-stage-mobile-select">
+                                        <option value="">Select Stage</option>
+                                    </select>
+                                    <input type="text" class="inp building-stage-mobile-other hidden mt-2" placeholder="Specify stage...">
+                                </div>
+                            </div>
                         </div>
+                        <input type="hidden" name="building_type" id="building_type_final_mobile">
+                        <input type="hidden" name="completion_stage" id="completion_stage_final_mobile">
+                    </div>
                         <div class="field">
                             <label>Area (m²)</label>
                             <input type="number" name="area_covered" id="areaCovered" class="inp" placeholder="0.00" step="0.01">
                         </div>
-                    </div>
+
                     <div class="field">
                         <label>Rate of Cost (₦)</label>
                         <input type="number" name="rate_of_cost" id="rateOfCost" class="inp" placeholder="0.00" step="0.01">
@@ -903,7 +908,7 @@
                         <label>Amount of Compensation <span class="req">*</span></label>
                         <div class="inp-wrap" style="position: relative;">
                             <div style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--success); font-weight: 700;">₦</div>
-                            <input type="number" name="compensation_amount" id="compensation_amount" class="inp" placeholder="0.00" step="0.01" style="padding-left: 32px; color: var(--success); font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700;" required>
+                            <input type="number" name="compensation_amount" id="compensation_amount" class="inp" placeholder="0.00" step="0.01" style="padding-left: 32px; color: var(--success); font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700;" >
                         </div>
                     </div>
                     
@@ -944,15 +949,15 @@
                     </div>
                     <div class="field">
                         <label>Account Name <span class="req">*</span></label>
-                        <input type="text" name="account_name" class="inp" placeholder="Full Name as on Bank Account" required>
+                        <input type="text" name="account_name" class="inp" placeholder="Full Name as on Bank Account" >
                     </div>
                     <div class="field">
                         <label>Account Number <span class="req">*</span></label>
-                        <input type="tel" name="account_number" class="inp" placeholder="10 Digits" maxlength="10" required>
+                        <input type="tel" name="account_number" class="inp" placeholder="10 Digits" maxlength="10" >
                     </div>
                     <div class="field">
                         <label>Phone Number <span class="req">*</span></label>
-                        <input type="tel" name="phone_number" class="inp" placeholder="080..." required>
+                        <input type="tel" name="phone_number" class="inp" placeholder="080..." >
                     </div>
                     <div class="field">
                         <label>National Identity Number (NIN)</label>
@@ -976,7 +981,7 @@
                 <div class="section-body">
                     <div class="field">
                         <label>Plot No <span class="req">*</span></label>
-                        <input type="text" name="plot_no" id="plot_no" class="inp loc-trigger" placeholder="e.g. 101" required>
+                        <input type="text" name="plot_no" id="plot_no" class="inp loc-trigger" placeholder="e.g. 101" >
                     </div>
                     <div class="field">
                         <label>Street Name</label>
@@ -986,15 +991,15 @@
                     </div>
                     <div class="field">
                         <label>District</label>
-                        <input type="text" id="districtSelect" class="inp loc-trigger" placeholder="e.g. Nassarawa">
+                        <input type="text" name="district" id="districtSelect" class="inp loc-trigger" placeholder="e.g. Fagge">
                     </div>
                     <div class="field">
                         <label>LGA <span class="req">*</span></label>
-                        <input type="text" id="lgaSelect" class="inp loc-trigger" required placeholder="e.g. Ungogo">
+                        <input type="text" name="lga" id="lgaSelect" class="inp loc-trigger" placeholder="e.g. Ungogo">
                     </div>
                     <div class="field">
                         <label>Full Address <span class="req">*</span></label>
-                        <textarea name="location" id="fullLocation" class="inp" rows="3" required placeholder="Generating from selections..."></textarea>
+                        <textarea name="location" id="fullLocation" class="inp" rows="3"  placeholder="Generating from selections..."></textarea>
                     </div>
 
                     <div class="field">
@@ -1036,18 +1041,23 @@
     </div>
 
     <script>
-        // Initialization
-        try {
-            if (typeof lucide !== 'undefined') {
-                lucide.createIcons();
-            }
-        } catch (e) {
-            console.error('Lucide error:', e);
-        }
-        
         let lookupData = null;
         let selectedItems = [];
         let allBanks = [];
+        let isInitializing = true;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            try {
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            } catch (e) {
+                console.error('Lucide error:', e);
+            }
+            
+            initMap();
+            loadLookupData();
+        });
 
         // Fetch Lookup Data
         async function loadLookupData() {
@@ -1066,15 +1076,7 @@
                     });
                 }
 
-                // Populate Building Types
-                const btSel = document.getElementById('buildingType');
-                btSel.innerHTML = '<option value="">Select Type</option>';
-                if (data.buildingTypes) {
-                    data.buildingTypes.forEach(t => {
-                        btSel.innerHTML += `<option value="${t.name}">${t.name}</option>`;
-                    });
-                }
-                btSel.innerHTML += `<option value="Other">Other (Please specify)</option>`;
+
 
                 // Populate Streets
                 const stSel = document.getElementById('streetSelect');
@@ -1110,29 +1112,38 @@
 
                 // Populate Valuation Items and Dropdowns
                 const itemGrid = document.getElementById('valuationItemsGrid');
-                const structSel = document.getElementById('structureType');
+                const buildingSel = document.querySelector('.building-type-mobile-select');
+                const buildingStageSel = document.querySelector('.building-stage-mobile-select');
                 const compSel = document.getElementById('completionStage');
-                
                 itemGrid.innerHTML = '';
-                structSel.innerHTML = '<option value="">Select</option>';
-                compSel.innerHTML = '<option value="">Select</option>';
+                if (buildingSel) buildingSel.innerHTML = '<option value="">Select Type</option>';
+                if (buildingStageSel) buildingStageSel.innerHTML = '<option value="">Select Stage</option>';
+                if (compSel) compSel.innerHTML = '<option value="">Select</option>';
 
                 if (data.valuationItems) {
-                    const linearItems = ['Cornstalk Fence', 'Sandcare Wall', 'Wire mesh'];
-                    const volumeItems = ['Pavement', 'Mass concrete pavement', 'Interlock Court yard', 'DPC', 'Mud Wall', 'Fish pond'];
+                    const linearItems = ['Cornstalk Fence', 'Sandcare Wall', 'Wire mesh', 'Mud Wall'];
+                    const volumeItems = ['Pavement', 'Mass concrete pavement', 'Interlock Court yard', 'DPC', 'Fish pond'];
                     
                     const sections = {
-                        linear: { title: 'Linear Measurements', sub: 'L × Rate', icon: 'maximize-2', items: [] },
-                        volume: { title: 'Volume Measurements', sub: 'L×W×H × Rate', icon: 'box', items: [] },
+                        linear: { title: 'Linear Measurements (Fencing/Walls)', sub: 'L + B × Rate', icon: 'maximize-2', items: [] },
+                        volume: { title: 'Volume Measurements (Pavement/DPC)', sub: 'L × B × Rate', icon: 'box', items: [] },
                         other: { title: 'Other Structures', sub: 'Standard & Area Based', icon: 'archive', items: [] }
                     };
 
+                    // Populate Building Types first
+                    if (data.buildingTypes) {
+                        data.buildingTypes.forEach(type => {
+                            if (buildingSel) buildingSel.innerHTML += `<option value="${type.name}">${type.name}</option>`;
+                        });
+                        data.valuationItems.filter(i => i.type === 'CompletionStage').forEach(stage => {
+                            if (buildingStageSel) buildingStageSel.innerHTML += `<option value="${stage.name}">${stage.name}</option>`;
+                        });
+                    }
+
                     data.valuationItems.forEach(item => {
-                        if (item.type === 'StructureType') {
-                            structSel.innerHTML += `<option value="${item.name}">${item.name}</option>`;
-                        } else if (item.type === 'CompletionStage') {
-                            compSel.innerHTML += `<option value="${item.name}">${item.name}</option>`;
-                        } else {
+                        if (item.type === 'CompletionStage') {
+                            if (compSel) compSel.innerHTML += `<option value="${item.name}">${item.name}</option>`;
+                        } else if (item.type === 'Other') {
                             if (linearItems.includes(item.name)) sections.linear.items.push(item);
                             else if (volumeItems.includes(item.name)) sections.volume.items.push(item);
                             else sections.other.items.push(item);
@@ -1161,8 +1172,15 @@
                                         <div class="calc-grid">
                                             ${type === 'linear' ? `
                                                 <div class="calc-field" style="grid-column: 1/-1;">
-                                                    <label>Length (L)</label>
-                                                    <input type="number" class="calc-inp l-val" placeholder="0.00" step="0.01">
+                                                    <label>Dimensions (Sum: L + B + ... N)</label>
+                                                    <input type="text" class="calc-inp d-val" placeholder="e.g. 15.5 + 10">
+                                                </div>
+                                                <div class="calc-field" style="grid-column: 1/-1;">
+                                                    <div class="flex justify-between items-center px-3 py-2 bg-slate-50 rounded-lg border border-slate-100">
+                                                        <span class="text-[10px] font-bold text-slate-500 uppercase">Total Length (L+B)</span>
+                                                        <span class="l-total-display text-[12px] font-black text-blue-600">0.00m</span>
+                                                    </div>
+                                                    <input type="hidden" class="l-val" value="0">
                                                 </div>
                                             ` : ''}
                                             ${type === 'volume' ? `
@@ -1171,22 +1189,24 @@
                                                     <input type="number" class="calc-inp l-val" placeholder="0.00" step="0.01">
                                                 </div>
                                                 <div class="calc-field">
-                                                    <label>Width (W)</label>
+                                                    <label>Breadth (B)</label>
                                                     <input type="number" class="calc-inp w-val" placeholder="0.00" step="0.01">
                                                 </div>
                                                 <div class="calc-field" style="grid-column: 1/-1;">
-                                                    <label>Height (H)</label>
-                                                    <input type="number" class="calc-inp h-val" placeholder="0.00" step="0.01">
+                                                    <div class="flex justify-between items-center px-3 py-2 bg-slate-50 rounded-lg border border-slate-100">
+                                                        <span class="text-[10px] font-bold text-slate-500 uppercase">Area Covered (L×B)</span>
+                                                        <span class="v-total-display text-[12px] font-black text-indigo-600">0.00m²</span>
+                                                    </div>
                                                 </div>
                                             ` : ''}
                                             ${type === 'standard' ? `
-                                                <div class="calc-field" style="grid-column: 1/-1;">
+                                                <div class="calc-field" style="grid-column: 1/-1; display: none;">
                                                     <label>Quantity / Area</label>
                                                     <input type="number" class="calc-inp q-val" value="1" step="0.01">
                                                 </div>
                                             ` : ''}
                                             <div class="calc-field" style="grid-column: 1/-1;">
-                                                <label>Rate (₦)</label>
+                                                <label>${type === 'standard' ? 'Amount (₦)' : (type === 'linear' ? 'Rate (₦/m)' : 'Rate (₦/m³)')}</label>
                                                 <input type="number" class="calc-inp r-val" placeholder="0.00" step="0.01">
                                             </div>
                                             <div class="calc-result">
@@ -1202,11 +1222,15 @@
                     
                     // Re-initialize click listeners for new items
                     initCheckItems();
+                    initCalcListeners();
+                    
+                    isInitializing = false; // System is now ready for calculations
                     if (window.lucide) window.lucide.createIcons();
                 }
 
             } catch (err) {
                 console.error('Initialization Error:', err);
+                isInitializing = false;
                 showToast('Failed to load system data. Check connection.', 'danger');
             }
         }
@@ -1229,14 +1253,18 @@
             if (!matches.length) {
                 bankResults.innerHTML = '<div style="padding:16px;text-align:center;font-size:12px;color:var(--text-dim);">No banks found</div>';
             } else {
-                bankResults.innerHTML = matches.map(b => `
-                    <div class="bank-item" onclick="selectBank('${b.name}', '${b.logo}')" style="padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;border-bottom:1px solid var(--border);">
-                        <div class="selected-logo-wrap">
-                            <img src="${b.logo}" alt="" class="bank-logo-img" onerror="this.src='https://ui-avatars.com/api/?name=${b.name}&background=random'">
+                bankResults.innerHTML = matches.map(b => {
+                    const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(b.name)}&background=random`;
+                    const logoUrl = b.logo || fallback;
+                    return `
+                        <div class="bank-item" onclick="selectBank('${b.name}', '${logoUrl}')" style="padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;border-bottom:1px solid var(--border);">
+                            <div class="selected-logo-wrap" style="width:32px;height:32px;background:var(--surface2);border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-center:center;">
+                                <img src="${logoUrl}" alt="" style="width:100%;height:100%;object-fit:contain;" onerror="this.src='${fallback}'">
+                            </div>
+                            <span style="font-size:13px;font-weight:600;color:var(--text);">${b.name}</span>
                         </div>
-                        <span style="font-size:13px;font-weight:600;">${b.name}</span>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             }
             bankResults.classList.remove('hidden');
         });
@@ -1258,17 +1286,21 @@
             if (!e.target.closest('.inp-wrap')) bankResults.classList.add('hidden');
         });
 
-        // Building Type Other Logic
-        document.getElementById('buildingType').addEventListener('change', function() {
-            const otherInp = document.getElementById('buildingTypeOther');
-            if (this.value === 'Other') {
-                otherInp.classList.remove('hidden');
-                otherInp.required = true;
-            } else {
-                otherInp.classList.add('hidden');
-                otherInp.required = false;
-            }
-        });
+        // Building Type/Stage Other logic handled by initBuildingAssessmentListenersMobile below
+        // Completion Stage Other toggle (Main form, if still used)
+        const cStageSel = document.getElementById('completionStage');
+        if (cStageSel) {
+            cStageSel.addEventListener('change', function() {
+                const otherInp = document.getElementById('completionStageOther');
+                if (this.value === 'Other' || this.value === 'Others') {
+                    otherInp.classList.remove('hidden');
+                    otherInp.focus();
+                } else {
+                    otherInp.classList.add('hidden');
+                    otherInp.value = '';
+                }
+            });
+        }
 
         // Initialize Check Items functionality
         function initCheckItems() {
@@ -1276,7 +1308,6 @@
                 item.onclick = function() {
                     this.classList.toggle('active');
                     const val = this.dataset.val;
-                    const type = this.dataset.type;
                     const calcBox = document.getElementById(`calc-${val.replace(/\s+/g, '-')}`);
                     
                     if (this.classList.contains('active')) {
@@ -1295,6 +1326,7 @@
                             // Reset values in calc box
                             calcBox.querySelectorAll('input').forEach(inp => inp.value = '');
                             calcBox.querySelector('.calc-total-val').textContent = '₦0.00';
+                            box.dataset.total = 0;
                         }
                     }
                     
@@ -1302,31 +1334,47 @@
                     calculateAllCompensation();
                 };
             });
+        }
 
+        function initCalcListeners() {
             // Add input listeners for all calc inputs
             document.querySelectorAll('.calc-inp').forEach(inp => {
-                inp.addEventListener('input', function() {
+                // Use a named function to avoid duplicate listeners if called multiple times
+                inp.oninput = function() {
                     const box = this.closest('.calc-box');
                     if (!box) return;
 
                     const type = box.previousElementSibling.dataset.type;
-                    const l = parseFloat(box.querySelector('.l-val')?.value) || 0;
-                    const w = parseFloat(box.querySelector('.w-val')?.value) || 0;
-                    const h = parseFloat(box.querySelector('.h-val')?.value) || 0;
-                    const q = parseFloat(box.querySelector('.q-val')?.value) || 1;
                     const r = parseFloat(box.querySelector('.r-val')?.value) || 0;
 
-                    let total = 0;
-                    if (type === 'linear') total = l * r;
-                    else if (type === 'volume') total = l * w * h * r;
-                    else total = q * r;
+                    let subTotal = 0;
+                    if (type === 'linear') {
+                        const dStr = box.querySelector('.d-val')?.value || '';
+                        const totalL = dStr.split('+')
+                            .map(s => parseFloat(s.trim()))
+                            .filter(n => !isNaN(n))
+                            .reduce((sum, n) => sum + n, 0);
+                        
+                        box.querySelector('.l-val').value = totalL;
+                        box.querySelector('.l-total-display').textContent = totalL.toFixed(2) + 'm';
+                        subTotal = totalL * r;
+                    } else if (type === 'volume') {
+                        const l = parseFloat(box.querySelector('.l-val')?.value) || 0;
+                        const w = parseFloat(box.querySelector('.w-val')?.value) || 0;
+                        const area = l * w;
+                        box.querySelector('.v-total-display').textContent = area.toFixed(2) + 'm²';
+                        subTotal = area * r;
+                    } else {
+                        const q = parseFloat(box.querySelector('.q-val')?.value) || 1;
+                        subTotal = q * r;
+                    }
 
-                    box.querySelector('.calc-total-val').textContent = '₦' + total.toLocaleString(undefined, {minimumFractionDigits: 2});
-                    box.dataset.total = total;
+                    box.querySelector('.calc-total-val').textContent = '₦' + subTotal.toLocaleString(undefined, {minimumFractionDigits: 2});
+                    box.dataset.total = subTotal;
 
                     updateItemsValue();
                     calculateAllCompensation();
-                });
+                };
             });
         }
 
@@ -1345,20 +1393,25 @@
         }
 
         function calculateAllCompensation() {
-            // Base calculation
+            if (isInitializing) return; // Prevent loops during startup
+
+            // Base calculation (Building/Structure itself)
             const count = parseFloat(document.getElementById('buildingCount').value) || 0;
             const area = parseFloat(document.getElementById('areaCovered').value) || 0;
             const rate = parseFloat(document.getElementById('rateOfCost').value) || 0;
-            let total = count * area * rate;
+            let grandTotal = count * area * rate;
 
-            // Add sub-item totals
+            // Add sub-item totals from all active calc boxes
             document.querySelectorAll('.calc-box').forEach(box => {
                 if (box.style.display === 'block') {
-                    total += parseFloat(box.dataset.total) || 0;
+                    grandTotal += parseFloat(box.dataset.total) || 0;
                 }
             });
 
-            document.getElementById('compensation_amount').value = total.toFixed(2);
+            const mainComp = document.getElementById('compensation_amount');
+            if (mainComp) {
+                mainComp.value = grandTotal.toFixed(2);
+            }
         }
 
         // Street/District Other Logic (if needed)
@@ -1564,9 +1617,38 @@
         // Submit Form
         async function submitForm() {
             const form = document.getElementById('vfcForm');
-            if (!form.checkValidity()) {
-                form.reportValidity();
-                return;
+            const formData = new FormData(form);
+
+            // Custom Validation
+            const requiredFields = [
+                { id: 'projectSelect', name: 'Project', section: 'sec-context' },
+                { id: 'workerSelect', name: 'Assigned Worker', section: 'sec-context' },
+                { id: 'owner_name', name: 'Owner Full Name', section: 'sec-ownership' },
+                { id: 'buildingType', name: 'Building Type', section: 'sec-building' },
+                { id: 'buildingCount', name: 'Building Count', section: 'sec-building' },
+                { id: 'compensation_amount', name: 'Amount of Compensation', section: 'sec-building' },
+                { id: 'account_name', name: 'Account Name', section: 'sec-payment' },
+                { id: 'account_number', name: 'Account Number', section: 'sec-payment' },
+                { id: 'phone_number', name: 'Phone Number', section: 'sec-payment' },
+                { id: 'plot_no', name: 'Plot No', section: 'sec-location' },
+                { id: 'lgaSelect', name: 'LGA', section: 'sec-location' },
+                { id: 'fullLocation', name: 'Full Address', section: 'sec-location' }
+            ];
+
+            for (const field of requiredFields) {
+                const el = document.getElementById(field.id);
+                if (!el || !el.value || el.value.trim() === '') {
+                    showToast(`⚠️ ${field.name} is required`, 'warning');
+                    
+                    // Expand and scroll to the section
+                    const section = document.getElementById(field.section);
+                    if (section) {
+                        section.classList.remove('collapsed');
+                        section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        setTimeout(() => el.focus(), 500);
+                    }
+                    return;
+                }
             }
 
             const btn = document.getElementById('saveBtn');
@@ -1757,6 +1839,122 @@
                 { enableHighAccuracy: true }
             );
         }
+        // Building Count & Dynamic Types (Mobile)
+        document.getElementById('buildingCount').addEventListener('input', function() {
+            syncBuildingTypesMobile();
+            calculateAllCompensation();
+        });
+
+        function syncBuildingTypesMobile() {
+            const count = parseInt(document.getElementById('buildingCount').value) || 1;
+            const container = document.getElementById('building_types_mobile_container');
+            if (!container) return;
+            const rows = container.querySelectorAll('.building-type-mobile-row');
+            const currentCount = rows.length;
+
+            if (count > currentCount) {
+                const template = rows[0].cloneNode(true);
+                template.querySelectorAll('select').forEach(sel => sel.value = '');
+                template.querySelectorAll('input').forEach(inp => {
+                    if (inp.type !== 'hidden') {
+                        inp.value = '';
+                        inp.classList.add('hidden');
+                    }
+                });
+                for (let i = 0; i < count - currentCount; i++) {
+                    container.appendChild(template.cloneNode(true));
+                }
+            } else if (count < currentCount) {
+                for (let i = 0; i < currentCount - count; i++) {
+                    if (container.lastElementChild && container.children.length > 1) {
+                        container.lastElementChild.remove();
+                    }
+                }
+            }
+
+            // Update Building Numbers
+            container.querySelectorAll('.building-type-mobile-row').forEach((row, idx) => {
+                const label = row.querySelector('div');
+                if (label) {
+                    label.innerHTML = `<i data-lucide="building" style="width: 10px;"></i> Building ${idx + 1}`;
+                }
+            });
+            
+            if (window.lucide) window.lucide.createIcons();
+            initBuildingAssessmentListenersMobile();
+            updateFinalBuildingAssessmentMobile();
+        }
+
+        function initBuildingAssessmentListenersMobile() {
+            document.querySelectorAll('.building-type-mobile-select').forEach(sel => {
+                sel.onchange = function() {
+                    const row = this.closest('.building-type-mobile-row');
+                    const otherInp = row.querySelector('.building-type-mobile-other');
+                    if (this.value === 'Other' || this.value === 'Others') {
+                        if (otherInp) {
+                            otherInp.classList.remove('hidden');
+                            otherInp.focus();
+                        }
+                    } else {
+                        if (otherInp) {
+                            otherInp.classList.add('hidden');
+                            otherInp.value = '';
+                        }
+                    }
+                    updateFinalBuildingAssessmentMobile();
+                };
+            });
+            document.querySelectorAll('.building-stage-mobile-select').forEach(sel => {
+                sel.onchange = function() {
+                    const row = this.closest('.building-type-mobile-row');
+                    const otherInp = row.querySelector('.building-stage-mobile-other');
+                    if (this.value === 'Other' || this.value === 'Others') {
+                        if (otherInp) {
+                            otherInp.classList.remove('hidden');
+                            otherInp.focus();
+                        }
+                    } else {
+                        if (otherInp) {
+                            otherInp.classList.add('hidden');
+                            otherInp.value = '';
+                        }
+                    }
+                    updateFinalBuildingAssessmentMobile();
+                };
+            });
+            document.querySelectorAll('.building-type-mobile-other, .building-stage-mobile-other').forEach(inp => {
+                inp.oninput = updateFinalBuildingAssessmentMobile;
+            });
+        }
+
+        function updateFinalBuildingAssessmentMobile() {
+            const types = [];
+            const stages = [];
+            document.querySelectorAll('.building-type-mobile-row').forEach(row => {
+                const typeSel = row.querySelector('.building-type-mobile-select');
+                const typeOther = row.querySelector('.building-type-mobile-other');
+                if (typeSel) {
+                    let val = typeSel.value;
+                    if (val === 'Other' || val === 'Others') val = typeOther?.value || val;
+                    if (val) types.push(val);
+                }
+
+                const stageSel = row.querySelector('.building-stage-mobile-select');
+                const stageOther = row.querySelector('.building-stage-mobile-other');
+                if (stageSel) {
+                    let val = stageSel.value;
+                    if (val === 'Other' || val === 'Others') val = stageOther?.value || val;
+                    if (val) stages.push(val);
+                }
+            });
+            const typeFinal = document.getElementById('building_type_final_mobile');
+            const stageFinal = document.getElementById('completion_stage_final_mobile');
+            if (typeFinal) typeFinal.value = types.join(', ');
+            if (stageFinal) stageFinal.value = stages.join(', ');
+        }
+
+        // Initialize mobile listeners on start
+        initBuildingAssessmentListenersMobile();
     </script>
 </body>
 </html>

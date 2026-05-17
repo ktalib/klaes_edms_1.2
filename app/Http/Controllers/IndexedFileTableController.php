@@ -836,15 +836,23 @@ class IndexedFileTableController extends Controller
                 ], 404);
             }
 
+            $hasTransaction = $request->has('has_transaction') ? (int) filter_var($request->input('has_transaction'), FILTER_VALIDATE_BOOLEAN) : null;
+
             // Update file_indexings table
+            $updateData = [
+                'has_temp_file' => 1,
+                'temp_file_no' => $tempFileNo,
+                'updated_at' => now(),
+            ];
+
+            if ($hasTransaction !== null) {
+                $updateData['has_transaction'] = $hasTransaction;
+            }
+
             DB::connection('sqlsrv')
                 ->table('file_indexings')
                 ->where('id', $fileId)
-                ->update([
-                    'has_temp_file' => 1,
-                    'temp_file_no' => $tempFileNo,
-                    'updated_at' => now(),
-                ]);
+                ->update($updateData);
 
             // Also update fileNumber table if a matching record exists
             $fileNumber = $fileIndexing->file_number;
@@ -857,19 +865,30 @@ class IndexedFileTableController extends Controller
                     ->first();
 
                 if ($fileNumberRecord) {
+                    $fnUpdateData = [
+                        'has_temp_file' => 1,
+                        'temp_file_no' => $tempFileNo,
+                    ];
+                    if ($hasTransaction !== null) {
+                        $fnUpdateData['has_transaction'] = $hasTransaction;
+                    }
+
                     DB::connection('sqlsrv')
                         ->table('fileNumber')
                         ->where('id', $fileNumberRecord->id)
-                        ->update([
-                            'has_temp_file' => 1,
-                            'temp_file_no' => $tempFileNo,
-                        ]);
+                        ->update($fnUpdateData);
                 }
             }
 
+            $updatedFile = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('id', $fileId)
+                ->first();
+
             return response()->json([
                 'success' => true,
-                'message' => 'Temporary file number saved successfully.',
+                'message' => 'Temporary file number and transaction status saved successfully.',
+                'data' => $updatedFile,
             ]);
         } catch (\Throwable $e) {
             return response()->json([

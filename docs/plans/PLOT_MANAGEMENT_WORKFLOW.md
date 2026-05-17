@@ -55,7 +55,7 @@ This document defines the system logic for handling changes to plot structures (
 ---
 
 ## **5. Technical Requirements Summary**
-
+ 
 *   **Table Migrations**: Add `parent_prop_id` to `PropertyRecord` and `file_indexings`.
 *   **Decommissioning Hook**: Ensure a transactional process that copies to `decommissioned_files` and then deletes from the source in a single block.
 *   **History Resolver**: Update the search/reporting engines to follow the `parent_prop_id` link for Subdivisions.

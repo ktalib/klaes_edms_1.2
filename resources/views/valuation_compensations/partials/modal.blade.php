@@ -239,29 +239,59 @@
                         <h4 class="text-sm font-bold text-slate-700 uppercase tracking-wider">Building & Compensated Items</h4>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Building Type <span class="text-red-500">*</span></label>
-                            <select name="building_type" id="building_type" required
-                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
-                                <option value="">Select Building Type</option>
-                                @foreach($buildingTypes as $type)
-                                    <option value="{{ $type->name }}">{{ $type->name }}</option>
-                                @endforeach
-                                <option value="Other">Other (Please specify)</option>
-                            </select>
-                            <input type="text" name="building_type_other" id="building_type_other" 
-                                class="hidden w-full mt-3 px-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
-                                placeholder="Specify building type...">
-                        </div>
-
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Building Count <span class="text-red-500">*</span></label>
+                    <div class="space-y-6 mb-6">
+                        <!-- Building Count -->
+                        <div class="max-w-md">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <i data-lucide="hash" class="h-3 w-3"></i>
+                                Building Count <span class="text-red-500">*</span>
+                            </label>
                             <input type="number" name="building_count" id="building_count" required min="1" value="1"
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
                         </div>
 
-                        <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <!-- Building Type(s) & Stages -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <i data-lucide="building" class="h-3 w-3"></i>
+                                Building Assessment <span class="text-red-500">*</span>
+                            </label>
+                            <div id="building_types_container" class="grid grid-cols-1 gap-4">
+                                <div class="building-type-row p-4 rounded-xl border border-slate-100 bg-slate-50/50">
+                                    <div class="text-[10px] font-black text-slate-400 uppercase mb-3 flex items-center gap-2">
+                                        <i data-lucide="building" class="h-3 w-3"></i>
+                                        Building 1
+                                    </div>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Building Type</label>
+                                            <select class="building-type-select w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-blue-500 transition text-sm font-medium">
+                                                <option value="">Select Building Type</option>
+                                                @foreach($buildingTypes as $item)
+                                                    <option value="{{ $item->name }}">{{ $item->name }}</option>
+                                                @endforeach
+                                            </select>
+                                            <input type="text" class="building-type-other hidden mt-2 w-full px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 focus:border-blue-500 focus:bg-white transition text-xs font-medium" placeholder="Specify type...">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Stage of Completion</label>
+                                            <select class="building-stage-select w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-blue-500 transition text-sm font-medium">
+                                                <option value="">Select Stage</option>
+                                                @foreach($valuationItems->where('type', 'CompletionStage') as $item)
+                                                    <option value="{{ $item->name }}">{{ $item->name }}</option>
+                                                @endforeach
+                                            </select>
+                                            <input type="text" class="building-stage-other hidden mt-2 w-full px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 focus:border-blue-500 focus:bg-white transition text-xs font-medium" placeholder="Specify stage...">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <input type="hidden" name="building_type" id="building_type_final" required>
+                            <input type="hidden" name="completion_stage" id="completion_stage_final">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">                        <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Length (L) <span class="text-slate-400 font-normal italic">(m)</span></label>
                                 <input type="number" step="0.01" name="length" id="length"
@@ -300,34 +330,7 @@
                         </div>
                     </div>
 
-                    <!-- Section 2.1: Structure Type -->
-                    <div class="pt-6 mb-8">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
-                            <!-- Structure Type -->
-                            <div>
-                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Structure Type</label>
-                                <select name="structure_type" id="structure_type_select" 
-                                    class="structure-type-dropdown w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-[11px] font-bold text-slate-700">
-                                    <option value="">Select Structure Type</option>
-                                    @foreach($valuationItems->where('type', 'StructureType') as $item)
-                                        <option value="{{ $item->name }}">{{ $item->name }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
 
-                            <!-- Completion Stage -->
-                            <div>
-                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Completion Stage</label>
-                                <select name="completion_stage" id="completion_stage_select" 
-                                    class="structure-type-dropdown w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-[11px] font-bold text-slate-700">
-                                    <option value="">Select Stage</option>
-                                    @foreach($valuationItems->where('type', 'CompletionStage') as $item)
-                                        <option value="{{ $item->name }}">{{ $item->name }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                        </div>
-                    </div>
 
                     <!-- Compensated Items -->
                     <div class="pt-6 space-y-8">
@@ -340,14 +343,14 @@
                             // Items categorized as 'Other' (not in the dropdowns above)
                             $filteredItems = $valuationItems->where('type', 'Other');
                             
-                            $linearItemsList = ['Cornstalk Fence', 'Sandcare Wall', 'Wire mesh'];
-                            $volumeItemsList = ['Pavement', 'Mass concrete pavement', 'Interlock Court yard', 'DPC', 'Mud Wall', 'Fish pond'];
+                            $linearItemsList = ['Cornstalk Fence', 'Sandcare Wall', 'Wire mesh', 'Mud Wall'];
+                            $volumeItemsList = ['Pavement', 'Mass concrete pavement', 'Interlock Court yard', 'DPC', 'Fish pond'];
                             $shedItemsList   = []; 
 
                             $groups = [
                                 [
                                     'title' => 'Linear Measurements (Fencing/Walls)',
-                                    'subtitle' => 'L × Rate',
+                                    'subtitle' => 'L + B × Rate',
                                     'icon' => 'maximize-2',
                                     'color' => 'amber',
                                     'is_exclusive' => false,
@@ -355,7 +358,7 @@
                                 ],
                                 [
                                     'title' => 'Volume Measurements (Pavement/DPC)',
-                                    'subtitle' => 'L×W×H × Rate',
+                                    'subtitle' => 'L × B × Rate',
                                     'icon' => 'box',
                                     'color' => 'indigo',
                                     'is_exclusive' => false,
@@ -419,9 +422,9 @@
                                                     $itemColor = 'emerald';
                                                     $itemFormulaBadge = 'L × W × Rate';
                                                 } elseif ($calcType === 'linear') {
-                                                    $itemFormulaBadge = 'L × Rate';
+                                                    $itemFormulaBadge = 'L + B × Rate';
                                                 } elseif ($calcType === 'volume') {
-                                                    $itemFormulaBadge = 'L×W×H × Rate';
+                                                    $itemFormulaBadge = 'L × B × Rate';
                                                 }
                                             @endphp
 
@@ -442,13 +445,13 @@
 
                                                 <div class="item-amount-wrapper hidden mt-1">
                                          @if($calcType === 'linear')
-                                        {{-- Linear: Total Length = a + b + ... N --}}
+                                        {{-- Linear: Total Length = L + B (Sum: a + b + ... N) --}}
                                         <div class="space-y-2">
                                             <div>
-                                                <label class="block text-[9px] font-bold text-amber-500 uppercase tracking-wider mb-1">Dimensions (Sum: a + b + ... N)</label>
+                                                <label class="block text-[9px] font-bold text-amber-500 uppercase tracking-wider mb-1">Dimensions (Sum: L + B + ... N)</label>
                                                 <input type="text"
                                                     class="sub-calc-trigger sub-length-formula w-full px-2 py-2 rounded-lg border border-amber-200 bg-white text-[11px] font-bold text-slate-700 focus:border-amber-400 outline-none transition"
-                                                    placeholder="e.g. 15.5 + 10 + 5" data-item-name="{{ $item->name }}">
+                                                    placeholder="e.g. 15.5 + 10" data-item-name="{{ $item->name }}">
                                             </div>
                                             
                                             <div class="grid grid-cols-2 gap-2">
@@ -470,7 +473,7 @@
 
                                             <div class="flex items-center gap-2 px-2 py-1.5 bg-amber-100/50 rounded-lg border border-amber-200">
                                                 <div class="flex flex-col">
-                                                    <span class="text-[8px] font-black text-amber-600 uppercase">Total Length = X [RATE] = Amount</span>
+                                                    <span class="text-[8px] font-black text-amber-600 uppercase">Total Length (L+B) [RATE] = Amount</span>
                                                     <div class="relative mt-0.5">
                                                         <span class="absolute left-0 top-1/2 -translate-y-1/2 text-[10px] text-amber-600 font-bold">₦</span>
                                                         <input type="number" step="0.01" readonly
@@ -481,9 +484,9 @@
                                             </div>
                                         </div>                                     
                                         @elseif($calcType === 'volume')
-                                            {{-- Volume: Total Volume = V [RATE] = Amount --}}
+                                            {{-- Volume: Area = (L×B) [RATE] = Amount --}}
                                             <div class="space-y-2">
-                                                <div class="grid grid-cols-3 gap-1.5">
+                                                <div class="grid grid-cols-2 gap-1.5">
                                                     <div>
                                                         <label class="block text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-1">L (m)</label>
                                                         <input type="number" step="0.01" min="0"
@@ -491,27 +494,21 @@
                                                             placeholder="0.00" data-item-name="{{ $item->name }}">
                                                     </div>
                                                     <div>
-                                                        <label class="block text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-1">W (m)</label>
+                                                        <label class="block text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-1">B (m)</label>
                                                         <input type="number" step="0.01" min="0"
                                                             class="sub-calc-trigger sub-width w-full px-2 py-1.5 rounded-lg border border-indigo-200 bg-white text-[11px] font-bold text-slate-700 focus:border-indigo-400 outline-none transition"
-                                                            placeholder="0.00" data-item-name="{{ $item->name }}">
-                                                    </div>
-                                                    <div>
-                                                        <label class="block text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-1">H (m)</label>
-                                                        <input type="number" step="0.01" min="0"
-                                                            class="sub-calc-trigger sub-height w-full px-2 py-1.5 rounded-lg border border-indigo-200 bg-white text-[11px] font-bold text-slate-700 focus:border-indigo-400 outline-none transition"
                                                             placeholder="0.00" data-item-name="{{ $item->name }}">
                                                     </div>
                                                 </div>
                                                 
                                                 <div class="grid grid-cols-2 gap-2">
                                                     <div class="flex flex-col justify-center px-2 py-1.5 bg-indigo-50/50 rounded-lg border border-indigo-100">
-                                                        <span class="text-[8px] font-bold text-indigo-500 uppercase tracking-tight">Total Volume (V)</span>
-                                                        <span class="sub-total-volume-display text-[11px] font-black text-indigo-700">0.000 m³</span>
+                                                        <span class="text-[8px] font-bold text-indigo-500 uppercase tracking-tight">Area (L×B)</span>
+                                                        <span class="sub-total-volume-display text-[11px] font-black text-indigo-700">0.00m²</span>
                                                         <input type="hidden" class="sub-volume-val" value="0">
                                                     </div>
                                                     <div>
-                                                        <label class="block text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-1">Rate (₦/m³)</label>
+                                                        <label class="block text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-1">Rate (₦/m²)</label>
                                                         <div class="relative">
                                                             <input type="number" step="0.01" min="0"
                                                                 class="sub-calc-trigger sub-rate w-full pl-5 pr-2 py-2 rounded-lg border border-indigo-200 bg-white text-[11px] font-bold text-slate-700 focus:border-indigo-400 outline-none transition"
@@ -523,7 +520,7 @@
 
                                                 <div class="flex items-center gap-2 px-2 py-1.5 bg-indigo-100/50 rounded-lg border border-indigo-200">
                                                     <div class="flex flex-col">
-                                                        <span class="text-[8px] font-black text-indigo-600 uppercase">Total Volume = V [RATE] = Amount</span>
+                                                        <span class="text-[8px] font-black text-indigo-600 uppercase">Area = (L×B) [RATE] = Amount</span>
                                                         <div class="relative mt-0.5">
                                                             <span class="absolute left-0 top-1/2 -translate-y-1/2 text-[10px] text-indigo-600 font-bold">₦</span>
                                                             <input type="number" step="0.01" readonly

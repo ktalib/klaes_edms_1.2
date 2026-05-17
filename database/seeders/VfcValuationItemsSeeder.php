@@ -15,12 +15,23 @@ class VfcValuationItemsSeeder extends Seeder
      */
     public function run()
     {
-        $items = [
+        $structureTypes = [
             'Permanent',
             'Semi-Permanent',
             'Permanent GF/FF',
             'Warehouse',
             'Semi-Permanent GF/FF',
+            'Proposed Building'
+        ];
+
+        $completionStages = [
+            'Building',
+            'Complete',
+            'Liatel',
+            'Roof Level'
+        ];
+
+        $otherItems = [
             'Sandcare Wall',
             'Mud Wall',
             'Interlock Court yard',
@@ -48,11 +59,39 @@ class VfcValuationItemsSeeder extends Seeder
             'Others'
         ];
 
-        foreach ($items as $item) {
+        foreach ($structureTypes as $item) {
             DB::connection('sqlsrv')->table('vfc_valuation_items')->updateOrInsert(
-                ['name' => $item],
+                ['name' => $item, 'type' => 'StructureType'],
                 ['is_active' => true, 'updated_at' => now(), 'created_at' => now()]
             );
         }
+
+        foreach ($completionStages as $item) {
+            DB::connection('sqlsrv')->table('vfc_valuation_items')->updateOrInsert(
+                ['name' => $item, 'type' => 'CompletionStage'],
+                ['is_active' => true, 'updated_at' => now(), 'created_at' => now()]
+            );
+        }
+
+        foreach ($otherItems as $item) {
+            DB::connection('sqlsrv')->table('vfc_valuation_items')->updateOrInsert(
+                ['name' => $item, 'type' => 'Other'],
+                ['is_active' => true, 'updated_at' => now(), 'created_at' => now()]
+            );
+        }
+
+        // Distinct "Other" choices for all types
+        DB::connection('sqlsrv')->table('vfc_valuation_items')->updateOrInsert(
+            ['name' => 'Other', 'type' => 'StructureType'],
+            ['is_active' => true, 'updated_at' => now()]
+        );
+        DB::connection('sqlsrv')->table('vfc_valuation_items')->updateOrInsert(
+            ['name' => 'Other', 'type' => 'CompletionStage'],
+            ['is_active' => true, 'updated_at' => now()]
+        );
+        DB::connection('sqlsrv')->table('vfc_valuation_items')->updateOrInsert(
+            ['name' => 'Other', 'type' => 'Other'],
+            ['is_active' => true, 'updated_at' => now()]
+        );
     }
 }

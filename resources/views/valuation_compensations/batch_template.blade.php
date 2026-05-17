@@ -358,7 +358,7 @@
                             <tr>
                                 <td>{{ $globalIndex++ }}</td>
                                 <td style="font-weight: bold; text-align: left; padding-left: 8px;">{{ $record->owner_name }}</td>
-                                <td style="text-align: left; padding-left: 8px;">{{ $record->building_type === 'Other' ? $record->building_type_other : $record->building_type }}</td>
+                                <td style="text-align: left; padding-left: 8px;">{{ $record->building_type }}</td>
                                 <td>{{ $record->building_count }}</td>
                                 <td>{{ $record->area_covered > 0 ? number_format($record->area_covered, 2) : 'Allow' }}</td>
                                 <td style="text-align: right; padding-right: 8px;">{{ number_format($record->rate_of_cost, 2) }}</td>

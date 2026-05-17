@@ -197,6 +197,7 @@
                     <th>MLS File No</th>
                     <th>KANGIS File No</th>
                     <th>New KANGIS</th>
+                    <th>File No</th>
                     <th>Party 1</th>
                     <th>Party 2</th>
                     <th>Party 3</th>

@@ -482,28 +482,7 @@ Planning, Kano State</textarea>
             generateWorkerCards($(this).val());
         });
 
-        function generateSubProjectInputs(count, existingNames = []) {
-            const $preview = $('#sub_projects_preview');
-            const $list = $('#sub_projects_list');
 
-            if (count > 0) {
-                $preview.removeClass('hidden');
-                let html = '';
-                for (let i = 1; i <= count; i++) {
-                    const name = existingNames[i-1] || '';
-                    html += `
-                        <input type="text" name="sub_project_names[]" 
-                            value="${name}" 
-                            class="w-full px-3 py-2 rounded-lg border border-indigo-100 bg-white text-[11px] font-bold text-indigo-700 focus:border-indigo-400 outline-none shadow-sm transition"
-                            placeholder="Sub-Project Name #${i}">`;
-                }
-                $list.html(html);
-                if (window.lucide) window.lucide.createIcons();
-            } else {
-                $preview.addClass('hidden');
-                $list.html('');
-            }
-        }
 
         $('#number_of_sub_projects').on('input', function() {
             generateSubProjectInputs(parseInt($(this).val()) || 0);
@@ -593,7 +572,31 @@ Planning, Kano State</textarea>
         $('#our_reference').val($(this).val());
     });
 
+    function generateSubProjectInputs(count, existingNames = []) {
+        const $preview = $('#sub_projects_preview');
+        const $list = $('#sub_projects_list');
+
+        if (count > 0) {
+            $preview.removeClass('hidden');
+            let html = '';
+            for (let i = 1; i <= count; i++) {
+                const name = existingNames[i-1] || '';
+                html += `
+                    <input type="text" name="sub_project_names[]" 
+                        value="${name}" 
+                        class="w-full px-3 py-2 rounded-lg border border-indigo-100 bg-white text-[11px] font-bold text-indigo-700 focus:border-indigo-400 outline-none shadow-sm transition"
+                        placeholder="Sub-Project Name #${i}">`;
+            }
+            $list.html(html);
+            if (window.lucide) window.lucide.createIcons();
+        } else {
+            $preview.addClass('hidden');
+            $list.html('');
+        }
+    }
+
     function openProjectModal() {
+        $('#project-modal').attr('style', '').removeClass('hidden').addClass('flex');
         $('#project-form')[0].reset();
         $('#worker-cards').empty();
         $('#project_type_other').addClass('hidden');
@@ -615,7 +618,6 @@ Planning, Kano State</textarea>
             if (num > 0) generateWorkerCards(num);
         });
 
-        $('#project-modal').removeClass('hidden').addClass('flex');
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
         
         // Trigger sub-projects preview for default count of 1
@@ -623,6 +625,7 @@ Planning, Kano State</textarea>
     }
 
     function editProject(project) {
+        $('#project-modal').attr('style', '').removeClass('hidden').addClass('flex');
         $('#project-form')[0].reset();
         $('#project-id').val(project.id);
         $('#modal-title-text').text('Edit Project: ' + project.project_name);
@@ -664,14 +667,13 @@ Planning, Kano State</textarea>
             $('#proj_lga').val([]).trigger('change');
         }
 
-        $('#project-modal').removeClass('hidden').addClass('flex');
         setTimeout(() => $('#modal-overlay').addClass('opacity-100'), 10);
     }
 
     function closeModal() {
         $('#modal-overlay').removeClass('opacity-100');
         setTimeout(() => {
-            $('#project-modal').addClass('hidden').removeClass('flex').attr('style', 'display: none !important;');
+            $('#project-modal').addClass('hidden').removeClass('flex');
         }, 300);
     }
 

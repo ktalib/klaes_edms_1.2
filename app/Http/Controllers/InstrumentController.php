@@ -58,6 +58,7 @@ class InstrumentController extends Controller
                 // Blade guards like @if(!empty($instrument->registered_instrument_id)) skip the
                 // row until it has been registered.
                 DB::raw("CASE WHEN dr.id IS NULL THEN NULL ELSE CONCAT('deed_reg_', dr.id) END as registered_instrument_id"),
+                DB::raw("CASE WHEN dr.id IS NULL THEN 'pending' ELSE 'registered' END as status"),
                 DB::raw("ISNULL(u.first_name, '') + ' ' + ISNULL(u.last_name, '') as created_by_name")
             )
             ->orderBy('ic.created_at', 'desc')
