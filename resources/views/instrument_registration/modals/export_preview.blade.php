@@ -14,7 +14,7 @@
                     </div>
                     <div>
                         <h3 class="text-xl font-bold text-white" id="modal-title">Export Instruments Preview</h3>
-                        <p class="text-green-100 text-sm opacity-90">Review data before downloading CSV</p>
+                        <p class="text-green-100 text-sm opacity-90">Consolidated report generation & export filter</p>
                     </div>
                 </div>
                 <button type="button" onclick="closeExportModal()" class="text-white hover:text-green-100 transition-colors">
@@ -24,19 +24,54 @@
 
             <!-- Modal Body -->
             <div class="bg-white px-6 py-6">
-                <!-- Filter Summary -->
-                <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200 flex flex-wrap gap-6 items-center">
-                    <div class="flex items-center gap-2">
-                        <span class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Type:</span>
-                        <span id="previewFilterType" class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold border border-green-200">All Types</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Volume:</span>
-                        <span id="previewFilterVolume" class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-bold border border-blue-200">All</span>
-                    </div>
-                    <div class="ml-auto flex items-center gap-2">
-                        <span class="text-sm text-gray-600 font-medium">Total Records:</span>
-                        <span id="previewRecordCount" class="text-lg font-bold text-gray-900 px-2 py-0.5 bg-gray-200 rounded">0</span>
+                <!-- Consolidated Filter Summary & Controls -->
+                <div class="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200 shadow-sm">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 items-end">
+                        <!-- Instrument Type -->
+                        <div class="space-y-1">
+                            <label for="modalInstrumentTypeFilter" class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">Instrument Type</label>
+                            <select id="modalInstrumentTypeFilter" onchange="loadExportPreviewData()" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all outline-none">
+                                <option value="">All Types</option>
+                                @foreach(($instrumentTypes ?? []) as $type)
+                                    <option value="{{ $type }}">{{ $type }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        
+                        <!-- Volume -->
+                        <div class="space-y-1">
+                            <label for="modalVolumeFilter" class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">Volume</label>
+                            <select id="modalVolumeFilter" onchange="loadExportPreviewData()" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all outline-none">
+                                <option value="">All Volumes</option>
+                                @for ($i = 1; $i <= 999; $i++)
+                                    <option value="{{ $i }}">{{ $i }}</option>
+                                @endfor
+                            </select>
+                        </div>
+
+                        <!-- Start Date -->
+                        <div class="space-y-1">
+                            <label for="modalStartDateFilter" class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">Start Date</label>
+                            <input type="date" id="modalStartDateFilter" onchange="loadExportPreviewData()" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all outline-none">
+                        </div>
+
+                        <!-- End Date -->
+                        <div class="space-y-1">
+                            <label for="modalEndDateFilter" class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">End Date</label>
+                            <input type="date" id="modalEndDateFilter" onchange="loadExportPreviewData()" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all outline-none">
+                        </div>
+
+                        <!-- Refresh & Count -->
+                        <div class="flex items-center justify-between md:justify-end gap-4 h-full md:pb-0.5">
+                            <div class="text-right md:mr-2">
+                                <span class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Records</span>
+                                <span id="previewRecordCount" class="text-lg font-black text-green-700 font-mono">0</span>
+                            </div>
+                            <button type="button" onclick="loadExportPreviewData()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 text-xs shadow-sm transition-all hover:shadow-md h-[36px]">
+                                <i class="fas fa-sync fa-sm"></i>
+                                <span>Refresh</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 

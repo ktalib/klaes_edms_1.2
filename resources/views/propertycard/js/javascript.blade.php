@@ -1786,7 +1786,11 @@
                     // Direct title update as fallback
                     const titleElement = dialog.querySelector('#form-title');
                     if (titleElement) {
-                        titleElement.textContent = mode === 'index' ? 'Index Card' : 'Add New Property Record';
+                        if (titleElement.dataset.customTitle) {
+                            titleElement.textContent = titleElement.dataset.customTitle;
+                        } else {
+                            titleElement.textContent = mode === 'index' ? 'Index Card' : 'Add New Property Record';
+                        }
                     }
                 }, 100);
 

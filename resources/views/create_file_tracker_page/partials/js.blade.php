@@ -3217,6 +3217,7 @@
             workflowProgress: tracker.workflow_progress ?? tracker.workflowProgress ?? null,
             nextStep: tracker.next_step ?? tracker.nextStep ?? null,
             currentStep: tracker.current_step ?? tracker.currentStep ?? null,
+            printed: tracker.printed ?? false,
         };
     }
 
@@ -5487,6 +5488,32 @@
             `;
 
         document.getElementById('details-dialog').classList.add('show');
+
+        // Control the visibility and disabled state of the Print buttons based on the printed attribute
+        const isPrinted = tracker.printed === true || tracker.printed === 1 || tracker.printed === '1';
+        const printBtn = document.getElementById('print-details-btn');
+        const printHtmlBtn = document.getElementById('print-html-request-sheet-btn');
+
+        if (printBtn) {
+            if (isPrinted) {
+                printBtn.disabled = true;
+                printBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                printBtn.setAttribute('title', 'This file request sheet has already been printed.');
+            } else {
+                printBtn.disabled = false;
+                printBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                printBtn.removeAttribute('title');
+            }
+        }
+
+        if (printHtmlBtn) {
+            if (isPrinted) {
+                printHtmlBtn.style.display = 'inline-flex';
+                printHtmlBtn.setAttribute('href', `/create-file-tracker/${tracker.id || tracker.trackingId}/request-sheet`);
+            } else {
+                printHtmlBtn.style.display = 'none';
+            }
+        }
         lucide.createIcons();
 
         /* 
@@ -5941,7 +5968,19 @@
                     <div class="print-container">
                         <div class="header">
                             <img class="logo" src="/assets/logo/logo.png" alt="Organization Logo">
-                            <h1>File Request Sheet</h1>
+                            ${urlView === 'st' 
+                                ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF SECTIONAL TITLING</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>' 
+                                : (urlView === 'dciv'
+                                    ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF COMPLAINT INVESTIGATION AND VERIFICATION</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
+                                    : (urlView === 'sltr'
+                                        ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">SYSTEMATIC LAND TITLING AND REGISTRATION</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
+                                        : (urlView && urlView.toLowerCase() === 'cadastral'
+                                            ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">CADASTRAL DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
+                                            : '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">LAND DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
+                                        )
+                                    )
+                                )
+                            }
                             <div class="header-meta">
                                 <div class="file-meta">
                                     <div><strong>File No:</strong> ${fileNoValue}</div>
@@ -6037,16 +6076,18 @@
                                         const logIn = entry.logInDate && entry.logInTime
                                             ? entry.logInDate + ' ' + entry.logInTime
                                             : (entry.logInDate || entry.logInTime || '-');
-                                        const hasLogIn = Boolean(entry.logInDate || entry.logInTime);
-                                        const statusRaw = (entry.status || '').toLowerCase();
-                                        const statusLabel = !hasLogIn ? 'In Transit'
-                                            : statusRaw === 'active' ? 'In Transit'
-                                            : statusRaw === 'archive' ? 'Archive'
-                                            : 'Archived (Completed)';
-                                        const statusClass = !hasLogIn ? 'status-in-transit'
-                                            : statusRaw === 'active' ? 'status-in-transit'
-                                            : statusRaw === 'archive' ? 'status-archive'
-                                            : 'status-archived';
+                                        const statusMeta = resolveStatusDisplay(entry, entry.status || 'completed');
+                                        const statusLabel = statusMeta.label;
+                                        let statusClass = 'status-in-transit';
+                                        if (statusLabel === 'In-Transit') {
+                                            statusClass = 'status-in-transit';
+                                        } else if (statusLabel === 'Log-out' || statusLabel === 'Log-in') {
+                                            statusClass = 'status-archived';
+                                        } else if (statusLabel === 'Archive') {
+                                            statusClass = 'status-archive';
+                                        } else if (statusLabel === 'Rejected') {
+                                            statusClass = 'status-archive';
+                                        }
                                         return '<tr>'
                                             + '<td>' + dateTime + '</td>'
                                             + '<td>' + (entry.officeName || '-') + '</td>'
@@ -6700,9 +6741,67 @@
     document.getElementById('close-details-btn')?.addEventListener('click', () => {
         document.getElementById('details-dialog')?.classList.remove('show');
     });
-    document.getElementById('print-details-btn')?.addEventListener('click', () => {
+    document.getElementById('print-details-btn')?.addEventListener('click', function() {
         if (currentDetailsTracker) {
+            // First, trigger printing
             printFileTrackerDetails(currentDetailsTracker);
+
+            // If it's already marked as printed, do nothing else
+            if (currentDetailsTracker.printed) return;
+
+            const printBtn = this;
+            printBtn.disabled = true;
+            
+            // Show a quick loader
+            const originalHtml = printBtn.innerHTML;
+            printBtn.innerHTML = '<i class="animate-spin h-4 w-4 mr-2" data-lucide="loader-2"></i> Printing...';
+            lucide.createIcons();
+
+            $.ajax({
+                url: `/create-file-tracker/${currentDetailsTracker.id}/mark-printed`,
+                type: 'POST',
+                success: function(response) {
+                    if (response.success) {
+                        currentDetailsTracker.printed = true;
+                        
+                        // Update the tracker in the fileTrackers array too
+                        const idx = fileTrackers.findIndex(t => t.id === currentDetailsTracker.id || t.trackingId === currentDetailsTracker.trackingId);
+                        if (idx !== -1) {
+                            fileTrackers[idx].printed = true;
+                        }
+
+                        // Disable the Print Details button
+                        printBtn.disabled = true;
+                        printBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                        printBtn.innerHTML = '<i data-lucide="printer" class="h-4 w-4 mr-2"></i> Print Details';
+                        printBtn.setAttribute('title', 'This file request sheet has already been printed.');
+
+                        // Show the red Print Request Sheet button
+                        const printHtmlBtn = document.getElementById('print-html-request-sheet-btn');
+                        if (printHtmlBtn) {
+                            printHtmlBtn.style.display = 'inline-flex';
+                            printHtmlBtn.setAttribute('href', `/create-file-tracker/${currentDetailsTracker.id || currentDetailsTracker.trackingId}/request-sheet`);
+                        }
+                        
+                        lucide.createIcons();
+                        
+                        // Trigger a quiet reload of the table to update status or list
+                        if (typeof loadFileTrackers === 'function') {
+                            loadFileTrackers(currentPage);
+                        }
+                    } else {
+                        printBtn.disabled = false;
+                        printBtn.innerHTML = originalHtml;
+                        lucide.createIcons();
+                    }
+                },
+                error: function(xhr) {
+                    console.error('Failed to mark tracker as printed:', xhr);
+                    printBtn.disabled = false;
+                    printBtn.innerHTML = originalHtml;
+                    lucide.createIcons();
+                }
+            });
         } else {
             Swal.fire({ icon: 'warning', title: 'No Data', text: 'No tracker data available to print.' });
         }

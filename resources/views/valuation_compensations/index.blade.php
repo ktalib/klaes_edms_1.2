@@ -39,7 +39,7 @@
                 </a>
                 <button type="button" onclick="VFC.openCreateModal()" class="vfc-create-trigger inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold shadow hover:bg-blue-700 transition">
                     <i data-lucide="plus-circle" class="h-5 w-5"></i>
-                    <span>CFV Data entry</span>
+                    <span>VFC Data entry</span>
                 </button>
             </div>
         </div>

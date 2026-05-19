@@ -1526,6 +1526,12 @@ class LegalSearchService
         
         // Standard subdivided unit: COM-2025-4-001 (4 parts)
         if ($count === 4) {
+            // Region-prefixed MLS file numbers like CON-COM-2026-302 have the 4-digit year at index 2 (third part).
+            // Subdivided units without region prefix (COM-2025-4-001) have the 4-digit year at index 1 (second part).
+            // If the third part is a 4-digit year, it is a standard MLS file number, NOT a subdivided unit.
+            if (isset($parts[2]) && strlen($parts[2]) === 4 && is_numeric($parts[2])) {
+                return false;
+            }
             array_pop($parts);
             $motherFileNo = implode('-', $parts);
             return true;

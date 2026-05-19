@@ -30,8 +30,7 @@ class FileIndexingController extends Controller
     public function __construct(
         PropertyIdAllocationService $propertyIdAllocationService,
         CommissioningMirrorService $commissioningMirrorService
-    )
-    {
+    ) {
         $this->propertyIdAllocationService = $propertyIdAllocationService;
         $this->commissioningMirrorService = $commissioningMirrorService;
     }
@@ -118,7 +117,7 @@ class FileIndexingController extends Controller
             return null;
         }
 
-        $trimmed = trim((string)$value);
+        $trimmed = trim((string) $value);
 
         if ($trimmed === '') {
             return null;
@@ -607,11 +606,11 @@ class FileIndexingController extends Controller
     {
         try {
             $record = DB::connection('sqlsrv')->table('file_indexings')->where('id', $id)->first();
-            
+
             if (!$record) {
                 // Try to handle ID mismatch: user might be passing a fileNumber ID
                 $fileNumberRecord = DB::connection('sqlsrv')->table('fileNumber')->where('id', $id)->first();
-                
+
                 if ($fileNumberRecord) {
                     // Check if there is an existing indexing record for this file number
                     $existingIndex = DB::connection('sqlsrv')->table('file_indexings')
@@ -620,12 +619,12 @@ class FileIndexingController extends Controller
 
                     if ($existingIndex) {
                         return redirect()->route('fileindexing.edit', $existingIndex->id)
-                             ->with('info', 'Redirected to the correct indexing record for this file number.');
+                            ->with('info', 'Redirected to the correct indexing record for this file number.');
                     }
-                    
+
                     // If no indexing record exists, allow creating one
-                     return redirect()->route('fileindexing.create', ['fileno' => $fileNumberRecord->mlsfNo])
-                         ->with('info', 'File not indexed yet. You can create the index now.');
+                    return redirect()->route('fileindexing.create', ['fileno' => $fileNumberRecord->mlsfNo])
+                        ->with('info', 'File not indexed yet. You can create the index now.');
                 }
 
                 return redirect()->route('fileindex.index')->with('error', 'File indexing record not found.');
@@ -650,8 +649,10 @@ class FileIndexingController extends Controller
                             ->where('id', $record->id)
                             ->update(['tracking_id' => $resolvedTrackingId]);
 
-                        if (Schema::connection('sqlsrv')->hasTable('fileNumber') &&
-                            Schema::connection('sqlsrv')->hasColumn('fileNumber', 'tra')) {
+                        if (
+                            Schema::connection('sqlsrv')->hasTable('fileNumber') &&
+                            Schema::connection('sqlsrv')->hasColumn('fileNumber', 'tra')
+                        ) {
                             DB::connection('sqlsrv')->table('fileNumber')
                                 ->where(function ($query) use ($record) {
                                     $query->whereRaw('UPPER(LTRIM(RTRIM(mlsfNo))) = UPPER(?)', [(string) $record->file_number])
@@ -668,62 +669,70 @@ class FileIndexingController extends Controller
             }
 
             // Fetch related links
-        $relatedLinks = DB::connection('sqlsrv')->table('file_indexing_links')
-            ->where('file_indexing_id', $id)
-            ->get();
+            $relatedLinks = DB::connection('sqlsrv')->table('file_indexing_links')
+                ->where('file_indexing_id', $id)
+                ->get();
 
-        // Attach related details as an array for the JS
-        $record->related_details = $relatedLinks->map(function($link) {
-            return [
-                'file_number' => $link->file_number,
-                'related_fileno' => $link->file_number,
-                'file_title' => $link->file_title,
-                'plot_number' => $link->plot_number,
-                'tp_no' => $link->tp_no,
-                'lpkn_no' => $link->lpkn_no,
-                'location' => $link->location,
-                'entity_type' => $link->entity_type ?? null,
-                'entity_name' => $link->entity_name ?? null,
-                'customer_name' => $link->customer_name ?? null,
-                'land_use_type' => $link->land_use_type ?? null,
-                'district' => $link->district ?? null,
-                'lga' => $link->lga ?? null,
-                'mfile' => $link->mfile ?? null
-            ];
-        })->toArray();
+            // Attach related details as an array for the JS
+            $record->related_details = $relatedLinks->map(function ($link) {
+                return [
+                    'file_number' => $link->file_number,
+                    'related_fileno' => $link->file_number,
+                    'file_title' => $link->file_title,
+                    'plot_number' => $link->plot_number,
+                    'tp_no' => $link->tp_no,
+                    'lpkn_no' => $link->lpkn_no,
+                    'location' => $link->location,
+                    'entity_type' => $link->entity_type ?? null,
+                    'entity_name' => $link->entity_name ?? null,
+                    'customer_name' => $link->customer_name ?? null,
+                    'land_use_type' => $link->land_use_type ?? null,
+                    'district' => $link->district ?? null,
+                    'lga' => $link->lga ?? null,
+                    'mfile' => $link->mfile ?? null
+                ];
+            })->toArray();
 
-        // Prepare CofO Details
-        $cofoDetails = $this->prepareCofODetailsForEdit($record);
+            // Prepare CofO Details
+            $cofoDetails = $this->prepareCofODetailsForEdit($record);
 
-        // Enrich record with RoFO details from PRA table
-        if ($record->has_rofo ?? false) {
-            $rofoDetails = $this->prepareRofoDetailsForEdit($record);
-            foreach ($rofoDetails as $key => $value) {
-                $record->$key = $value;
+            // Enrich record with RoFO details from PRA table
+            if ($record->has_rofo ?? false) {
+                $rofoDetails = $this->prepareRofoDetailsForEdit($record);
+                foreach ($rofoDetails as $key => $value) {
+                    $record->$key = $value;
+                }
             }
-        }
 
-        // Fetch dynamic registries
-        $registries = \App\Models\Registry::orderBy('name')->get();
-        $lgas = \App\Models\Lga::orderBy('name')->pluck('name');
-        $districts = \App\Models\District::orderBy('name')->pluck('name');
-        $physicalRegistries = \App\Models\PhysicalRegistry::orderBy('name')->get();
-        $landUseTypes = \App\Models\LandUseType::orderBy('name')->get()->pluck('name', 'name');
+            // Fetch dynamic registries
+            $registries = \App\Models\Registry::orderBy('name')->get();
+            $lgas = \App\Models\Lga::orderBy('name')->pluck('name');
+            $districts = \App\Models\District::orderBy('name')->pluck('name');
+            $physicalRegistries = \App\Models\PhysicalRegistry::orderBy('name')->get();
+            $landUseTypes = \App\Models\LandUseType::orderBy('name')->get()->pluck('name', 'name');
 
-        // Check if property records exist (CofO, PRA, or History)
-        $hasPropertyRecords = !empty($cofoDetails) || 
-                             DB::connection('sqlsrv')->table('pra')->where('mlsFNo', $record->file_number)->exists() ||
-                             DB::connection('sqlsrv')->table('file_history_staging')->where('mlsFNo', $record->file_number)->orWhere('fileno', $record->file_number)->exists();
+            // Check if property records exist (CofO, PRA, or History)
+            $hasPropertyRecords = !empty($cofoDetails) ||
+                DB::connection('sqlsrv')->table('pra')->where('mlsFNo', $record->file_number)->exists() ||
+                DB::connection('sqlsrv')->table('file_history_staging')->where('mlsFNo', $record->file_number)->orWhere('fileno', $record->file_number)->exists();
 
-        // Return the original Edit View as requested
-        $PageTitle = 'Edit File Indexing';
-        $PageDescription ='';
+            // Return the original Edit View as requested
+            $PageTitle = 'Edit File Indexing';
+            $PageDescription = '';
 
-        return view('fileindexing.edit', compact(
-            'record', 'PageTitle', 'PageDescription', 'lgas', 'registries', 
-            'districts', 'physicalRegistries', 'landUseTypes', 'cofoDetails', 'hasPropertyRecords'
-        ))->with('fileIndexing', $record);
-    } catch (\Throwable $e) {
+            return view('fileindexing.edit', compact(
+                'record',
+                'PageTitle',
+                'PageDescription',
+                'lgas',
+                'registries',
+                'districts',
+                'physicalRegistries',
+                'landUseTypes',
+                'cofoDetails',
+                'hasPropertyRecords'
+            ))->with('fileIndexing', $record);
+        } catch (\Throwable $e) {
             return redirect()->route('fileindex.index')->with('error', 'Error loading record: ' . $e->getMessage());
         }
     }
@@ -782,7 +791,8 @@ class FileIndexingController extends Controller
      */
     protected function formatDateForForm($date)
     {
-        if (empty($date)) return null;
+        if (empty($date))
+            return null;
         try {
             return \Carbon\Carbon::parse($date)->format('Y-m-d');
         } catch (\Exception $e) {
@@ -795,7 +805,8 @@ class FileIndexingController extends Controller
      */
     protected function formatTimeForForm($time)
     {
-        if (empty($time)) return null;
+        if (empty($time))
+            return null;
         try {
             return \Carbon\Carbon::parse($time)->format('H:i');
         } catch (\Exception $e) {
@@ -992,7 +1003,7 @@ class FileIndexingController extends Controller
             $validated['lga'] = $this->normalizeChoiceValue($validated['lga'] ?? null);
             $validated['registry_batch_no'] = $this->normalizeChoiceValue($validated['registry_batch_no'] ?? null);
             $validated['related_fileno'] = $this->normalizeChoiceValue($validated['related_fileno'] ?? null);
-            
+
             // Filter out nulls from related_fileno array
             if (is_array($validated['related_fileno'])) {
                 $validated['related_fileno'] = array_values(array_filter($validated['related_fileno']));
@@ -1068,10 +1079,10 @@ class FileIndexingController extends Controller
                 ->value('fileno');
             if ($correspondingMatch !== null) {
                 $validated['is_corresponding_file'] = 1;
-                $validated['corresponding_fileno']  = $correspondingMatch;
+                $validated['corresponding_fileno'] = $correspondingMatch;
             } else {
                 $validated['is_corresponding_file'] = 0;
-                $validated['corresponding_fileno']  = null;
+                $validated['corresponding_fileno'] = null;
             }
 
             DB::connection('sqlsrv')->transaction(function () use (&$validated, $id, $existingRecord, $request, $resolvedTestControl, $requestHasCofo, $normalizedPropId, $skipEntityCustomerUpdates, $isKangisRegistry) {
@@ -1090,7 +1101,7 @@ class FileIndexingController extends Controller
                 if (isset($updatePayload['current_holder']) && is_array($updatePayload['current_holder'])) {
                     $updatePayload['current_holder'] = json_encode($updatePayload['current_holder']);
                 }
-                
+
                 if (isset($updatePayload['original_holder']) && is_array($updatePayload['original_holder'])) {
                     $updatePayload['original_holder'] = json_encode($updatePayload['original_holder']);
                 }
@@ -1147,19 +1158,19 @@ class FileIndexingController extends Controller
                     DB::connection('sqlsrv')->table('fileNumber')
                         ->where(function ($q) use ($newFileNumber) {
                             $q->whereRaw('UPPER(LTRIM(RTRIM(mlsfNo))) = UPPER(?)', [$newFileNumber])
-                              ->orWhereRaw('UPPER(LTRIM(RTRIM(kangisFileNo))) = UPPER(?)', [$newFileNumber])
-                              ->orWhereRaw('UPPER(LTRIM(RTRIM(NewKANGISFileNo))) = UPPER(?)', [$newFileNumber]);
+                                ->orWhereRaw('UPPER(LTRIM(RTRIM(kangisFileNo))) = UPPER(?)', [$newFileNumber])
+                                ->orWhereRaw('UPPER(LTRIM(RTRIM(NewKANGISFileNo))) = UPPER(?)', [$newFileNumber]);
                         })
                         ->update([
                             'kangis_fileno_placeholder' => $kangisPlaceholder,
-                            'kangis_fileno_resolved'    => $newFileNumber,
+                            'kangis_fileno_resolved' => $newFileNumber,
                         ]);
                 }
 
                 // Handle related file links for update
                 $rawRelatedFiles = $validated['related_fileno'] ?? null;
                 $relatedDetails = $request->input('related_details', []);
-                
+
                 $indexingType = $validated['indexing_type'] ?? $existingRecord->indexing_type ?? 'Regular';
                 $relatedFileNos = [];
 
@@ -1167,7 +1178,7 @@ class FileIndexingController extends Controller
                     // For block indexing, we want a link for each holder detail
                     // We'll try to map existing related file numbers from the main form to these holders
                     $mainFormFiles = array_values(array_filter(is_array($rawRelatedFiles) ? $rawRelatedFiles : [$rawRelatedFiles]));
-                    
+
                     foreach ($relatedDetails as $index => $detail) {
                         // Use the file number from main form if it exists at this index, else use null for fallback
                         $relatedFileNos[] = $detail['file_number'] ?? ($mainFormFiles[$index] ?? null);
@@ -1249,8 +1260,7 @@ class FileIndexingController extends Controller
         bool $isKangisRegistry = false,
         $existingRecord = null,
         ?string $registry = null
-    ): void
-    {
+    ): void {
         if ($oldFileNumber === $newFileNumber || $oldFileNumber === '' || $newFileNumber === '') {
             return;
         }
@@ -1284,10 +1294,10 @@ class FileIndexingController extends Controller
 
         // 1. Rename the fileNumber table row so updateFileNumberTable() can find it by the new number
         $fileNumberUpdateData = [
-            'kangisFileNo'           => $newFileNumber,
-            'NewKANGISFileNo'        => $newFileNumber,
+            'kangisFileNo' => $newFileNumber,
+            'NewKANGISFileNo' => $newFileNumber,
             'kangis_fileno_resolved' => $newFileNumber,
-            'updated_at'             => now(),
+            'updated_at' => now(),
         ];
 
         if ($isKangisRegistry) {
@@ -1305,8 +1315,8 @@ class FileIndexingController extends Controller
         DB::connection('sqlsrv')->table('fileNumber')
             ->where(function ($q) use ($oldFileNumber, $trackingId, $hasFileNumberTraColumn) {
                 $q->whereRaw('UPPER(LTRIM(RTRIM(mlsfNo))) = UPPER(?)', [$oldFileNumber])
-                  ->orWhereRaw('UPPER(LTRIM(RTRIM(kangisFileNo))) = UPPER(?)', [$oldFileNumber])
-                  ->orWhereRaw('UPPER(LTRIM(RTRIM(NewKANGISFileNo))) = UPPER(?)', [$oldFileNumber]);
+                    ->orWhereRaw('UPPER(LTRIM(RTRIM(kangisFileNo))) = UPPER(?)', [$oldFileNumber])
+                    ->orWhereRaw('UPPER(LTRIM(RTRIM(NewKANGISFileNo))) = UPPER(?)', [$oldFileNumber]);
                 if ($trackingId !== null && $trackingId !== '' && $hasFileNumberTraColumn) {
                     $q->orWhere('tra', $trackingId);
                 }
@@ -1395,22 +1405,32 @@ class FileIndexingController extends Controller
                 if (str_contains($f, 'GKN') || str_contains($f, 'LPKN') || str_contains($f, 'MISC')) {
                     return 'gkn_grouping';
                 }
-                if (str_contains($f, 'SLTR')) return 'sltr_grouping';
-                if (str_contains($f, 'SIT')) return 'sit_grouping';
-                if (str_contains($f, 'DCIV')) return 'dciv_grouping';
+                if (str_contains($f, 'SLTR'))
+                    return 'sltr_grouping';
+                if (str_contains($f, 'SIT'))
+                    return 'sit_grouping';
+                if (str_contains($f, 'DCIV'))
+                    return 'dciv_grouping';
                 if (str_contains($f, 'KNML') || str_contains($f, 'MLKN') || str_contains($f, 'MNKL') || str_contains($f, 'KNGP')) {
                     return 'kangis_grouping';
                 }
-                if (preg_match('/^KN\d+$/i', $f)) return 'kn_grouping';
+                if (preg_match('/^KN\d+$/i', $f))
+                    return 'kn_grouping';
             }
 
             if ($r !== '') {
-                if (str_contains($r, 'SURVEY')) return 'gkn_grouping';
-                if (str_contains($r, 'SLTR')) return 'sltr_grouping';
-                if (str_contains($r, 'SIT')) return 'sit_grouping';
-                if (str_contains($r, 'DCIV')) return 'dciv_grouping';
-                if (str_contains($r, 'KANGIS')) return 'kangis_grouping';
-                if (str_contains($r, 'LANDS')) return 'grouping';
+                if (str_contains($r, 'SURVEY'))
+                    return 'gkn_grouping';
+                if (str_contains($r, 'SLTR'))
+                    return 'sltr_grouping';
+                if (str_contains($r, 'SIT'))
+                    return 'sit_grouping';
+                if (str_contains($r, 'DCIV'))
+                    return 'dciv_grouping';
+                if (str_contains($r, 'KANGIS'))
+                    return 'kangis_grouping';
+                if (str_contains($r, 'LANDS'))
+                    return 'grouping';
             }
 
             return null;
@@ -1419,13 +1439,13 @@ class FileIndexingController extends Controller
         $table = $detect($registryUpper, $oldUpper) ?? $detect($registryUpper, $newUpper) ?? 'grouping';
 
         $columnMap = [
-            'grouping'        => ['awaiting' => 'awaiting_fileno',       'final' => 'mls_fileno',        'extra_final' => null],
-            'gkn_grouping'    => ['awaiting' => 'gkn_awaiting_fileno',   'final' => 'gkn_fileno',        'extra_final' => null],
-            'sltr_grouping'   => ['awaiting' => 'sltr_awaiting_fileno',  'final' => 'sltr_fileno',       'extra_final' => null],
-            'sit_grouping'    => ['awaiting' => 'sit_awaiting_fileno',   'final' => 'sit_fileno',        'extra_final' => null],
-            'dciv_grouping'   => ['awaiting' => 'dciv_awaiting_fileno',  'final' => 'dciv_fileno',       'extra_final' => null],
-            'kangis_grouping' => ['awaiting' => 'kangis_awaiting_fileno','final' => 'kangis_fileno',     'extra_final' => 'indexing_kangis_fileno'],
-            'kn_grouping'     => ['awaiting' => 'kn_awaiting_fileno',    'final' => 'kn_fileno',         'extra_final' => null],
+            'grouping' => ['awaiting' => 'awaiting_fileno', 'final' => 'mls_fileno', 'extra_final' => null],
+            'gkn_grouping' => ['awaiting' => 'gkn_awaiting_fileno', 'final' => 'gkn_fileno', 'extra_final' => null],
+            'sltr_grouping' => ['awaiting' => 'sltr_awaiting_fileno', 'final' => 'sltr_fileno', 'extra_final' => null],
+            'sit_grouping' => ['awaiting' => 'sit_awaiting_fileno', 'final' => 'sit_fileno', 'extra_final' => null],
+            'dciv_grouping' => ['awaiting' => 'dciv_awaiting_fileno', 'final' => 'dciv_fileno', 'extra_final' => null],
+            'kangis_grouping' => ['awaiting' => 'kangis_awaiting_fileno', 'final' => 'kangis_fileno', 'extra_final' => 'indexing_kangis_fileno'],
+            'kn_grouping' => ['awaiting' => 'kn_awaiting_fileno', 'final' => 'kn_fileno', 'extra_final' => null],
         ];
 
         if (!isset($columnMap[$table])) {
@@ -1444,8 +1464,10 @@ class FileIndexingController extends Controller
         $table = $groupingTable['table'];
 
         try {
-            if (!Schema::connection('sqlsrv')->hasTable($table) ||
-                !Schema::connection('sqlsrv')->hasColumn($table, 'tracking_id')) {
+            if (
+                !Schema::connection('sqlsrv')->hasTable($table) ||
+                !Schema::connection('sqlsrv')->hasColumn($table, 'tracking_id')
+            ) {
                 return null;
             }
 
@@ -1457,7 +1479,7 @@ class FileIndexingController extends Controller
                 ->select('tracking_id')
                 ->where(function ($q) use ($finalCol, $awaitingCol, $extraFinalCol, $oldFileNumber) {
                     $q->whereRaw("UPPER(LTRIM(RTRIM({$finalCol}))) = UPPER(?)", [$oldFileNumber])
-                      ->orWhereRaw("UPPER(LTRIM(RTRIM({$awaitingCol}))) = UPPER(?)", [$oldFileNumber]);
+                        ->orWhereRaw("UPPER(LTRIM(RTRIM({$awaitingCol}))) = UPPER(?)", [$oldFileNumber]);
                     if ($extraFinalCol) {
                         $q->orWhereRaw("UPPER(LTRIM(RTRIM({$extraFinalCol}))) = UPPER(?)", [$oldFileNumber]);
                     }
@@ -1509,7 +1531,7 @@ class FileIndexingController extends Controller
                         $q->where('tracking_id', $trackingId);
                     }
                     $q->orWhereRaw("UPPER(LTRIM(RTRIM({$finalCol}))) = UPPER(?)", [$oldFileNumber])
-                      ->orWhereRaw("UPPER(LTRIM(RTRIM({$awaitingCol}))) = UPPER(?)", [$oldFileNumber]);
+                        ->orWhereRaw("UPPER(LTRIM(RTRIM({$awaitingCol}))) = UPPER(?)", [$oldFileNumber]);
                     if ($extraFinalCol) {
                         $q->orWhereRaw("UPPER(LTRIM(RTRIM({$extraFinalCol}))) = UPPER(?)", [$oldFileNumber]);
                     }
@@ -1540,23 +1562,23 @@ class FileIndexingController extends Controller
     {
         // table => [columns that may hold the file number string]
         $targets = [
-            'CofO'                  => ['mlsFNo', 'kangisFileNo', 'NewKANGISFileNo', 'fileno', 'file_number'],
-            'CofO_staging'          => ['mlsFNo', 'kangisFileNo', 'NewKANGISFileNo', 'fileno', 'file_number'],
-            'mother_applications'   => ['file_number'],
-            'subapplications'       => ['file_number'],
-            'instrument_captures'   => ['file_number', 'fileno'],
-            'caveats'               => ['file_number_kangis', 'file_number_mlsf', 'file_number_new_kangis'],
-            'bills'                 => ['file_number', 'fileno'],
-            'pagetypings'           => ['file_number', 'fileno', 'kangisFileNo', 'mlsFNo'],
-            'scanning_batches'      => ['file_number', 'fileno'],
-            'scans'                 => ['file_number', 'fileno'],
-            'file_archives'         => ['file_number', 'fileno', 'mlsFNo', 'kangisFileNo'],
-            'file_trackings'        => ['file_number', 'fileno'],
-            'rack_allocations'      => ['file_number', 'fileno'],
-            'shelf_allocations'     => ['file_number', 'fileno'],
-            'property_cards'        => ['file_number', 'fileno', 'mlsFNo', 'kangisFileNo'],
-            'rds'                   => ['file_number', 'fileno'],
-            'cors'                  => ['file_number', 'fileno'],
+            'CofO' => ['mlsFNo', 'kangisFileNo', 'NewKANGISFileNo', 'fileno', 'file_number'],
+            'CofO_staging' => ['mlsFNo', 'kangisFileNo', 'NewKANGISFileNo', 'fileno', 'file_number'],
+            'mother_applications' => ['file_number'],
+            'subapplications' => ['file_number'],
+            'instrument_captures' => ['file_number', 'fileno'],
+            'caveats' => ['file_number_kangis', 'file_number_mlsf', 'file_number_new_kangis'],
+            'bills' => ['file_number', 'fileno'],
+            'pagetypings' => ['file_number', 'fileno', 'kangisFileNo', 'mlsFNo'],
+            'scanning_batches' => ['file_number', 'fileno'],
+            'scans' => ['file_number', 'fileno'],
+            'file_archives' => ['file_number', 'fileno', 'mlsFNo', 'kangisFileNo'],
+            'file_trackings' => ['file_number', 'fileno'],
+            'rack_allocations' => ['file_number', 'fileno'],
+            'shelf_allocations' => ['file_number', 'fileno'],
+            'property_cards' => ['file_number', 'fileno', 'mlsFNo', 'kangisFileNo'],
+            'rds' => ['file_number', 'fileno'],
+            'cors' => ['file_number', 'fileno'],
         ];
 
         foreach ($targets as $table => $columns) {
@@ -2175,76 +2197,76 @@ class FileIndexingController extends Controller
             }
 
             $responseRecord = [
-                    'id' => $record->id,
-                    'file_number' => $record->file_number,
-                    'st_fillno' => $record->st_fillno,
-                    'file_title' => $record->file_title,
-                    'land_use_type' => $record->land_use_type,
-                    'plot_number' => $record->plot_number,
-                    'district' => $record->district,
-                    'lga' => $record->lga,
-                    'tracking_id' => $record->tracking_id,
-                    'tp_no' => $record->tp_no,
-                    'lpkn_no' => $record->lpkn_no,
-                    'location' => $record->location,
-                    'registry' => $record->registry,
-                    'serial_no' => $record->serial_no,
-                    'batch_no' => $record->batch_no,
-                    'registry_batch_no' => $record->registry_batch_no ?? $record->group_no,
-                    'sys_batch_no' => $record->sys_batch_no,
-                    'group_no' => $record->group_no,
-                    'batch_id' => $record->batch_id ?? null,
-                    'physical_registry' => $record->physical_registry ?? null,
-                    'general_registry' => $record->general_registry,
-                    'shelf_location' => $record->shelf_location,
-                    'shelf_label_id' => $record->shelf_label_id,
-                    'indexed_by' => $record->indexed_by ?? null,
-                    'indexed_date' => $record->indexed_date ?? null,
-                    'has_cofo' => (int) ($record->has_cofo ?? 0),
-                    'is_merged' => (int) ($record->is_merged ?? 0),
-                    'has_transaction' => (int) ($record->has_transaction ?? 0),
-                    'is_problematic' => (int) ($record->is_problematic ?? 0),
-                    'is_co_owned_plot' => (int) ($record->is_co_owned_plot ?? 0),
-                    'file_type' => $record->file_type ?? null,
-                    'dob' => $record->dob ?? null,
-                    'nin' => $record->nin ?? null,
-                    'tin' => $record->tin ?? null,
-                    'rc_no' => $record->rc_no ?? null,
-                    'country_code' => $record->country_code ?? null,
-                    'phone' => $record->phone ?? null,
-                    'residence_address' => $record->residence_address ?? null,
-                    'dciv_reason' => $record->dciv_reason ?? null,
-                    'created_at' => $record->created_at,
-                    'updated_at' => $record->updated_at,
-                    'current_holder' => $record->current_holder ?? $record->file_title,
-                    'original_holder' => $record->original_holder ?? $record->file_title,
-                    'related_fileno' => $record->related_fileno ?? null,
-                    'plot_size' => $record->plot_size ?? null,
-                    // Entity details
-                    'entity_type' => $record->entity_type ?? null,
-                    'entity_name' => $record->entity_name ?? null,
-                    'entity_physical_address' => $record->entity_physical_address ?? null,
-                    'entity_id' => $record->entity_id ?? null,
-                    // Customer details
-                    'customer_type' => $record->customer_type ?? null,
-                    'customer_name' => $record->customer_name ?? null,
-                    'customer_account_no' => $record->customer_account_no ?? $record->account_no ?? null,
-                    'customer_code' => $record->customer_code ?? null,
-                    'customer_property_address' => $record->customer_property_address ?? $record->property_address ?? null,
-                    'customer_id' => $record->customer_id ?? null,
-                    'has_rofo' => (int) ($record->has_rofo ?? 0),
-                ];
+                'id' => $record->id,
+                'file_number' => $record->file_number,
+                'st_fillno' => $record->st_fillno,
+                'file_title' => $record->file_title,
+                'land_use_type' => $record->land_use_type,
+                'plot_number' => $record->plot_number,
+                'district' => $record->district,
+                'lga' => $record->lga,
+                'tracking_id' => $record->tracking_id,
+                'tp_no' => $record->tp_no,
+                'lpkn_no' => $record->lpkn_no,
+                'location' => $record->location,
+                'registry' => $record->registry,
+                'serial_no' => $record->serial_no,
+                'batch_no' => $record->batch_no,
+                'registry_batch_no' => $record->registry_batch_no ?? $record->group_no,
+                'sys_batch_no' => $record->sys_batch_no,
+                'group_no' => $record->group_no,
+                'batch_id' => $record->batch_id ?? null,
+                'physical_registry' => $record->physical_registry ?? null,
+                'general_registry' => $record->general_registry,
+                'shelf_location' => $record->shelf_location,
+                'shelf_label_id' => $record->shelf_label_id,
+                'indexed_by' => $record->indexed_by ?? null,
+                'indexed_date' => $record->indexed_date ?? null,
+                'has_cofo' => (int) ($record->has_cofo ?? 0),
+                'is_merged' => (int) ($record->is_merged ?? 0),
+                'has_transaction' => (int) ($record->has_transaction ?? 0),
+                'is_problematic' => (int) ($record->is_problematic ?? 0),
+                'is_co_owned_plot' => (int) ($record->is_co_owned_plot ?? 0),
+                'file_type' => $record->file_type ?? null,
+                'dob' => $record->dob ?? null,
+                'nin' => $record->nin ?? null,
+                'tin' => $record->tin ?? null,
+                'rc_no' => $record->rc_no ?? null,
+                'country_code' => $record->country_code ?? null,
+                'phone' => $record->phone ?? null,
+                'residence_address' => $record->residence_address ?? null,
+                'dciv_reason' => $record->dciv_reason ?? null,
+                'created_at' => $record->created_at,
+                'updated_at' => $record->updated_at,
+                'current_holder' => $record->current_holder ?? $record->file_title,
+                'original_holder' => $record->original_holder ?? $record->file_title,
+                'related_fileno' => $record->related_fileno ?? null,
+                'plot_size' => $record->plot_size ?? null,
+                // Entity details
+                'entity_type' => $record->entity_type ?? null,
+                'entity_name' => $record->entity_name ?? null,
+                'entity_physical_address' => $record->entity_physical_address ?? null,
+                'entity_id' => $record->entity_id ?? null,
+                // Customer details
+                'customer_type' => $record->customer_type ?? null,
+                'customer_name' => $record->customer_name ?? null,
+                'customer_account_no' => $record->customer_account_no ?? $record->account_no ?? null,
+                'customer_code' => $record->customer_code ?? null,
+                'customer_property_address' => $record->customer_property_address ?? $record->property_address ?? null,
+                'customer_id' => $record->customer_id ?? null,
+                'has_rofo' => (int) ($record->has_rofo ?? 0),
+            ];
 
-                // Enrich with RoFO details from PRA table
-                if ($record->has_rofo ?? false) {
-                    $rofoDetails = $this->prepareRofoDetailsForEdit($record);
-                    $responseRecord = array_merge($responseRecord, $rofoDetails);
-                }
+            // Enrich with RoFO details from PRA table
+            if ($record->has_rofo ?? false) {
+                $rofoDetails = $this->prepareRofoDetailsForEdit($record);
+                $responseRecord = array_merge($responseRecord, $rofoDetails);
+            }
 
-                return response()->json([
-                    'exists' => true,
-                    'record' => $responseRecord,
-                ]);
+            return response()->json([
+                'exists' => true,
+                'record' => $responseRecord,
+            ]);
         } catch (\Exception $e) {
             return response()->json([
                 'exists' => false,
@@ -2289,7 +2311,7 @@ class FileIndexingController extends Controller
                         ->select(['file_number', DB::raw('MAX(id) as max_id')])
                         ->groupBy('file_number'),
                     'fi_max',
-                    fn ($join) => $join->on('fi_max.file_number', '=', 'fn.mlsfNo')
+                    fn($join) => $join->on('fi_max.file_number', '=', 'fn.mlsfNo')
                         ->orOn('fi_max.file_number', '=', 'fn.st_file_no')
                         ->orOn('fi_max.file_number', '=', 'fn.kangisFileNo')
                         ->orOn('fi_max.file_number', '=', 'fn.NewKANGISFileNo')
@@ -2764,7 +2786,7 @@ class FileIndexingController extends Controller
                 $validated['lga'] = $validated['lga'][0] ?? null;
             }
             if (is_array($validated['registry_batch_no'])) {
-                 $validated['registry_batch_no'] = $validated['registry_batch_no'][0] ?? null;
+                $validated['registry_batch_no'] = $validated['registry_batch_no'][0] ?? null;
             }
 
             if ($request->input('indexing_type') !== 'Block' && ($validated['lga'] ?? null) === null) {
@@ -2984,11 +3006,11 @@ class FileIndexingController extends Controller
             // this file number is indexed the record keeps its bare file_number and
             // the original grouping entry is updated in-place inside the transaction.
             $kangisGroupingCloned = false;
-            $groupingTable        = null;
+            $groupingTable = null;
             if ($isKangisVariant) {
                 $groupingService = app(\App\Services\GroupingFileNumberService::class);
-                $groupingTable   = $groupingService->getTableName($registryContext);
-                $baseFileNo      = $grouping->mls_fileno ?? $grouping->awaiting_fileno ?? null;
+                $groupingTable = $groupingService->getTableName($registryContext);
+                $baseFileNo = $grouping->mls_fileno ?? $grouping->awaiting_fileno ?? null;
 
                 // Collision check: does the bare file number already exist?
                 $bareAlreadyIndexed = $baseFileNo && DB::connection('sqlsrv')
@@ -3024,53 +3046,53 @@ class FileIndexingController extends Controller
                     $suffixedFileNo = $baseFileNo . '_' . $variantSuffix;
 
                     $newTrackingId = 'TRK-' . strtoupper(substr(bin2hex(random_bytes(5)), 0, 8))
-                                           . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
+                        . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
 
                     if ($groupingTable === 'kangis_grouping') {
                         // kangis_grouping has different column names
                         $groupingCloneData = [
                             'kangis_awaiting_fileno' => $suffixedFileNo,
-                            'kangis_fileno'          => $suffixedFileNo,
-                            'mapping'                => $grouping->mapping ?? null,
-                            'group'                  => $grouping->group ?? null,
-                            'number'                 => null,
-                            'mdc_batch_no'           => $grouping->mdc_batch_no ?? null,
-                            'sys_batch_no'           => $grouping->sys_batch_no ?? null,
-                            'shelf_rack'             => $grouping->shelf_rack ?? null,
-                            'registry'               => $grouping->registry ?? null,
-                            'registry_batch_no'      => $grouping->registry_batch_no ?? null,
-                            'landuse'                => $grouping->landuse ?? null,
-                            'year'                   => $grouping->year ?? null,
-                            'tracking_id'            => $newTrackingId,
-                            'test_control'           => $grouping->test_control ?? null,
-                            'created_by'             => Auth::user()->name ?? Auth::id(),
-                            'updated_by'             => Auth::user()->name ?? Auth::id(),
-                            'indexing_mapping'       => 1,
-                            'indexing_kangis_fileno'  => $suffixedFileNo,
+                            'kangis_fileno' => $suffixedFileNo,
+                            'mapping' => $grouping->mapping ?? null,
+                            'group' => $grouping->group ?? null,
+                            'number' => null,
+                            'mdc_batch_no' => $grouping->mdc_batch_no ?? null,
+                            'sys_batch_no' => $grouping->sys_batch_no ?? null,
+                            'shelf_rack' => $grouping->shelf_rack ?? null,
+                            'registry' => $grouping->registry ?? null,
+                            'registry_batch_no' => $grouping->registry_batch_no ?? null,
+                            'landuse' => $grouping->landuse ?? null,
+                            'year' => $grouping->year ?? null,
+                            'tracking_id' => $newTrackingId,
+                            'test_control' => $grouping->test_control ?? null,
+                            'created_by' => Auth::user()->name ?? Auth::id(),
+                            'updated_by' => Auth::user()->name ?? Auth::id(),
+                            'indexing_mapping' => 1,
+                            'indexing_kangis_fileno' => $suffixedFileNo,
                             'kangis_fileno_resolved' => $suffixedFileNo,
                             'kangis_fileno_placeholder' => $request->input('kangis_fileno_placeholder'),
-                            'is_indexed'             => 1,
+                            'is_indexed' => 1,
                         ];
                     } else {
                         // Default grouping table columns
                         $groupingCloneData = [
-                            'awaiting_fileno'    => $grouping->awaiting_fileno,
-                            'mls_fileno'         => $grouping->mls_fileno ?? null,
-                            'mapping'            => $grouping->mapping ?? null,
-                            'group'              => $grouping->group ?? null,
-                            'batch_no'           => $grouping->batch_no ?? null,
-                            'mdc_batch_no'       => $grouping->mdc_batch_no ?? null,
-                            'sys_batch_no'       => $grouping->sys_batch_no ?? null,
-                            'shelf_rack'         => $grouping->shelf_rack ?? null,
-                            'registry'           => $grouping->registry ?? null,
-                            'landuse'            => $grouping->landuse ?? null,
-                            'year'               => $grouping->year ?? null,
-                            'tracking_id'        => $newTrackingId,
-                            'test_control'       => $grouping->test_control ?? null,
-                            'created_by'         => Auth::user()->name ?? Auth::id(),
-                            'updated_by'         => Auth::user()->name ?? Auth::id(),
-                            'indexing_mapping'   => 1,
-                            'indexing_mls_fileno'=> $grouping->indexing_mls_fileno ?? $grouping->awaiting_fileno,
+                            'awaiting_fileno' => $grouping->awaiting_fileno,
+                            'mls_fileno' => $grouping->mls_fileno ?? null,
+                            'mapping' => $grouping->mapping ?? null,
+                            'group' => $grouping->group ?? null,
+                            'batch_no' => $grouping->batch_no ?? null,
+                            'mdc_batch_no' => $grouping->mdc_batch_no ?? null,
+                            'sys_batch_no' => $grouping->sys_batch_no ?? null,
+                            'shelf_rack' => $grouping->shelf_rack ?? null,
+                            'registry' => $grouping->registry ?? null,
+                            'landuse' => $grouping->landuse ?? null,
+                            'year' => $grouping->year ?? null,
+                            'tracking_id' => $newTrackingId,
+                            'test_control' => $grouping->test_control ?? null,
+                            'created_by' => Auth::user()->name ?? Auth::id(),
+                            'updated_by' => Auth::user()->name ?? Auth::id(),
+                            'indexing_mapping' => 1,
+                            'indexing_mls_fileno' => $grouping->indexing_mls_fileno ?? $grouping->awaiting_fileno,
                         ];
                     }
 
@@ -3085,20 +3107,20 @@ class FileIndexingController extends Controller
                     $kangisGroupingCloned = true;
 
                     Log::info('FileIndexing::store - KANGIS variant: cloned grouping (collision)', [
-                        'table'                => $groupingTable,
+                        'table' => $groupingTable,
                         'original_grouping_id' => $groupingIdValue ?? null,
-                        'cloned_grouping_id'   => $clonedGroupingId,
-                        'new_tracking_id'      => $newTrackingId,
-                        'kangis_placeholder'   => $request->input('kangis_fileno_placeholder'),
-                        'variant_suffix'       => $variantSuffix,
+                        'cloned_grouping_id' => $clonedGroupingId,
+                        'new_tracking_id' => $newTrackingId,
+                        'kangis_placeholder' => $request->input('kangis_fileno_placeholder'),
+                        'variant_suffix' => $variantSuffix,
                     ]);
                 } else {
                     // No collision: first time this file number is indexed with a placeholder.
                     // Original grouping will be updated in-place inside the transaction.
                     Log::info('FileIndexing::store - KANGIS variant: no collision, using original grouping', [
-                        'grouping_id'        => $groupingIdValue ?? null,
+                        'grouping_id' => $groupingIdValue ?? null,
                         'kangis_placeholder' => $request->input('kangis_fileno_placeholder'),
-                        'base_file_no'       => $baseFileNo,
+                        'base_file_no' => $baseFileNo,
                     ]);
                 }
             }
@@ -3197,12 +3219,12 @@ class FileIndexingController extends Controller
             $relatedFileNos = [];
             // Collect from main form inputs
             if (is_array($rawRelatedFiles)) {
-                 $relatedFileNos = array_values(array_filter($rawRelatedFiles, fn($v) => !empty($v)));
+                $relatedFileNos = array_values(array_filter($rawRelatedFiles, fn($v) => !empty($v)));
             }
-            
+
             // In block mode, also add numbers from details modal if any
             if ($indexingType === 'Block' && !empty($relatedDetails)) {
-                 foreach ($relatedDetails as $detail) {
+                foreach ($relatedDetails as $detail) {
                     $num = $detail['file_number'] ?? null;
                     if ($num && !in_array($num, $relatedFileNos)) {
                         $relatedFileNos[] = $num;
@@ -3211,26 +3233,26 @@ class FileIndexingController extends Controller
             }
 
             // Reuse relatedFileNos calculated earlier for JSON persistence in group record if needed
-             if (!empty($relatedFileNos)) {
+            if (!empty($relatedFileNos)) {
                 $validated['related_fileno'] = json_encode($relatedFileNos);
             } else {
                 $validated['related_fileno'] = null;
             }
-            
+
             // Logic for Group Title in Block Indexing
             if ($indexingType === 'Block') {
-                  $validated['file_title'] = 'Group Title';
-                 // Ensure current_holder is stored as JSON
-                 if (isset($validated['current_holder']) && !is_array($validated['current_holder'])) {
-                      // It might be already a string due to validation sanitization earlier, but we want the raw array from request if available for JSON storage?
-                      // The validation earlier:
-                      // if (is_array) $validated['current_holder'] = array_values...
-                      // else $validated['current_holder'] = trim string
-                      // So it is already in good shape. Model cast 'array' will handle array -> json.
-                 }
+                $validated['file_title'] = 'Group Title';
+                // Ensure current_holder is stored as JSON
+                if (isset($validated['current_holder']) && !is_array($validated['current_holder'])) {
+                    // It might be already a string due to validation sanitization earlier, but we want the raw array from request if available for JSON storage?
+                    // The validation earlier:
+                    // if (is_array) $validated['current_holder'] = array_values...
+                    // else $validated['current_holder'] = trim string
+                    // So it is already in good shape. Model cast 'array' will handle array -> json.
+                }
             } else {
-                 // Regular: use first title if array
-                 $validated['file_title'] = $rawFileTitles[0] ?? $validated['file_title'];
+                // Regular: use first title if array
+                $validated['file_title'] = $rawFileTitles[0] ?? $validated['file_title'];
             }
 
             $fileIndexing = null;
@@ -3246,10 +3268,10 @@ class FileIndexingController extends Controller
                 ->value('fileno');
             if ($correspondingMatch !== null) {
                 $persistableData['is_corresponding_file'] = 1;
-                $persistableData['corresponding_fileno']  = $correspondingMatch;
+                $persistableData['corresponding_fileno'] = $correspondingMatch;
             } else {
                 $persistableData['is_corresponding_file'] = 0;
-                $persistableData['corresponding_fileno']  = null;
+                $persistableData['corresponding_fileno'] = null;
             }
 
             // Initialize before transaction
@@ -3293,8 +3315,8 @@ class FileIndexingController extends Controller
                     } catch (\Throwable $e) {
                         Log::warning('KangisFileNoPlaceholderService failed', [
                             'file_id' => $fileIndexing->id,
-                            'input'   => $rawKangisPlaceholder,
-                            'error'   => $e->getMessage(),
+                            'input' => $rawKangisPlaceholder,
+                            'error' => $e->getMessage(),
                         ]);
                     }
                 }
@@ -3320,13 +3342,13 @@ class FileIndexingController extends Controller
                             })
                             ->update([
                                 'has_temp_file' => 1,
-                                'temp_file_no'  => $validated['temp_file_no'],
+                                'temp_file_no' => $validated['temp_file_no'],
                             ]);
                     } catch (\Throwable $e) {
                         \Illuminate\Support\Facades\Log::warning('Could not flag fileNumber with temp_file_no', [
-                            'file_number'  => $fileIndexing->file_number,
+                            'file_number' => $fileIndexing->file_number,
                             'temp_file_no' => $validated['temp_file_no'],
-                            'error'        => $e->getMessage(),
+                            'error' => $e->getMessage(),
                         ]);
                     }
                 }
@@ -3342,12 +3364,12 @@ class FileIndexingController extends Controller
                             ->table('kangis_grouping')
                             ->where('id', $groupingIdValue)
                             ->update([
-                                'indexing_mapping'       => 1,
+                                'indexing_mapping' => 1,
                                 'indexing_kangis_fileno' => $fileIndexing->file_number,
                                 'kangis_fileno_resolved' => $fileIndexing->file_number,
                                 'kangis_fileno_placeholder' => $request->input('kangis_fileno_placeholder'),
-                                'is_indexed'             => 1,
-                                'tracking_id'            => $trackingId,
+                                'is_indexed' => 1,
+                                'tracking_id' => $trackingId,
                             ]);
                     }
                 } elseif (!$isKangisVariant) {
@@ -3391,98 +3413,100 @@ class FileIndexingController extends Controller
                 if ($indexingType === 'Block') {
                     // 1. Create Links for Main Files (mfile = 1)
                     foreach ($rawFileTitles as $index => $title) {
-                        if (empty($title)) continue;
-                        
-                        $linkData = [
-                             'file_indexing_id' => $fileIndexing->id,
-                             'file_number' => $validated['file_number'], 
-                             'file_title' => $title,
-                             'mfile' => 1,
-                             'indexing_type' => 'Block',
-                             'created_by' => Auth::id(),
-                             'updated_by' => Auth::id(),
-                             
-                             'location' => is_array($request->input('location')) ? ($request->input('location')[$index] ?? null) : $request->input('location'),
-                             
-                             // User requested to remove Customer and Entity from Block Logic
-                             // 'entity_type' => is_array($request->input('entity_type')) ? ($request->input('entity_type')[$index] ?? null) : $request->input('entity_type'),
-                             // 'entity_name' => is_array($request->input('entity_name')) ? ($request->input('entity_name')[$index] ?? null) : $request->input('entity_name'),
-                             // 'entity_physical_address' => is_array($request->input('entity_physical_address')) ? ($request->input('entity_physical_address')[$index] ?? null) : $request->input('entity_physical_address'),
-                             // 'customer_type' => is_array($request->input('customer_type')) ? ($request->input('customer_type')[$index] ?? null) : $request->input('customer_type'),
-                             // 'customer_name' => is_array($request->input('customer_name')) ? ($request->input('customer_name')[$index] ?? null) : $request->input('customer_name'),
-                             // 'customer_account_no' => is_array($request->input('customer_account_no')) ? ($request->input('customer_account_no')[$index] ?? null) : $request->input('customer_account_no'),
-                             // 'customer_code' => is_array($request->input('customer_code')) ? ($request->input('customer_code')[$index] ?? null) : $request->input('customer_code'),
-                             // 'property_address' => is_array($request->input('property_address')) ? ($request->input('property_address')[$index] ?? null) : $request->input('property_address'),
-                             // 'customer_status' => is_array($request->input('customer_status')) ? ($request->input('customer_status')[$index] ?? 'Active') : ($request->input('customer_status') ?? 'Active'),
-                             
-                             'land_use_type' => is_array($request->input('land_use_type')) ? ($request->input('land_use_type')[$index] ?? null) : $request->input('land_use_type'),
-                             'district' => is_array($resolvedDistrictInput) ? ($resolvedDistrictInput[$index] ?? null) : $resolvedDistrictInput,
-                             'lga' => is_array($request->input('lga')) ? ($request->input('lga')[$index] ?? null) : $request->input('lga'),
-                             'plot_size' => is_array($request->input('plot_size')) ? ($request->input('plot_size')[$index] ?? null) : $request->input('plot_size'),
-                             'plot_number' => is_array($request->input('plot_number')) ? ($request->input('plot_number')[$index] ?? null) : $request->input('plot_number'),
-                             'tp_no' => is_array($request->input('tp_no')) ? ($request->input('tp_no')[$index] ?? null) : $request->input('tp_no'),
-                             'lpkn_no' => is_array($request->input('lpkn_no')) ? ($request->input('lpkn_no')[$index] ?? null) : $request->input('lpkn_no'),
+                        if (empty($title))
+                            continue;
 
-                             
-                             'dob' => is_array($request->input('dob')) ? ($request->input('dob')[$index] ?? null) : $request->input('dob'),
-                             'nin' => is_array($request->input('nin')) ? ($request->input('nin')[$index] ?? null) : $request->input('nin'),
-                             'tin' => is_array($request->input('tin')) ? ($request->input('tin')[$index] ?? null) : $request->input('tin'),
-                             'rc_no' => is_array($request->input('rc_no')) ? ($request->input('rc_no')[$index] ?? null) : $request->input('rc_no'),
-                             'phone' => is_array($request->input('phone')) ? ($request->input('phone')[$index] ?? null) : $request->input('phone'),
-                             'email' => is_array($request->input('email')) ? ($request->input('email')[$index] ?? null) : $request->input('email'),
-                             'residence_address' => is_array($request->input('residence_address')) ? ($request->input('residence_address')[$index] ?? null) : $request->input('residence_address'),
-                             'country_code' => is_array($request->input('country_code')) ? ($request->input('country_code')[$index] ?? null) : $request->input('country_code'),
+                        $linkData = [
+                            'file_indexing_id' => $fileIndexing->id,
+                            'file_number' => $validated['file_number'],
+                            'file_title' => $title,
+                            'mfile' => 1,
+                            'indexing_type' => 'Block',
+                            'created_by' => Auth::id(),
+                            'updated_by' => Auth::id(),
+
+                            'location' => is_array($request->input('location')) ? ($request->input('location')[$index] ?? null) : $request->input('location'),
+
+                            // User requested to remove Customer and Entity from Block Logic
+                            // 'entity_type' => is_array($request->input('entity_type')) ? ($request->input('entity_type')[$index] ?? null) : $request->input('entity_type'),
+                            // 'entity_name' => is_array($request->input('entity_name')) ? ($request->input('entity_name')[$index] ?? null) : $request->input('entity_name'),
+                            // 'entity_physical_address' => is_array($request->input('entity_physical_address')) ? ($request->input('entity_physical_address')[$index] ?? null) : $request->input('entity_physical_address'),
+                            // 'customer_type' => is_array($request->input('customer_type')) ? ($request->input('customer_type')[$index] ?? null) : $request->input('customer_type'),
+                            // 'customer_name' => is_array($request->input('customer_name')) ? ($request->input('customer_name')[$index] ?? null) : $request->input('customer_name'),
+                            // 'customer_account_no' => is_array($request->input('customer_account_no')) ? ($request->input('customer_account_no')[$index] ?? null) : $request->input('customer_account_no'),
+                            // 'customer_code' => is_array($request->input('customer_code')) ? ($request->input('customer_code')[$index] ?? null) : $request->input('customer_code'),
+                            // 'property_address' => is_array($request->input('property_address')) ? ($request->input('property_address')[$index] ?? null) : $request->input('property_address'),
+                            // 'customer_status' => is_array($request->input('customer_status')) ? ($request->input('customer_status')[$index] ?? 'Active') : ($request->input('customer_status') ?? 'Active'),
+
+                            'land_use_type' => is_array($request->input('land_use_type')) ? ($request->input('land_use_type')[$index] ?? null) : $request->input('land_use_type'),
+                            'district' => is_array($resolvedDistrictInput) ? ($resolvedDistrictInput[$index] ?? null) : $resolvedDistrictInput,
+                            'lga' => is_array($request->input('lga')) ? ($request->input('lga')[$index] ?? null) : $request->input('lga'),
+                            'plot_size' => is_array($request->input('plot_size')) ? ($request->input('plot_size')[$index] ?? null) : $request->input('plot_size'),
+                            'plot_number' => is_array($request->input('plot_number')) ? ($request->input('plot_number')[$index] ?? null) : $request->input('plot_number'),
+                            'tp_no' => is_array($request->input('tp_no')) ? ($request->input('tp_no')[$index] ?? null) : $request->input('tp_no'),
+                            'lpkn_no' => is_array($request->input('lpkn_no')) ? ($request->input('lpkn_no')[$index] ?? null) : $request->input('lpkn_no'),
+
+
+                            'dob' => is_array($request->input('dob')) ? ($request->input('dob')[$index] ?? null) : $request->input('dob'),
+                            'nin' => is_array($request->input('nin')) ? ($request->input('nin')[$index] ?? null) : $request->input('nin'),
+                            'tin' => is_array($request->input('tin')) ? ($request->input('tin')[$index] ?? null) : $request->input('tin'),
+                            'rc_no' => is_array($request->input('rc_no')) ? ($request->input('rc_no')[$index] ?? null) : $request->input('rc_no'),
+                            'phone' => is_array($request->input('phone')) ? ($request->input('phone')[$index] ?? null) : $request->input('phone'),
+                            'email' => is_array($request->input('email')) ? ($request->input('email')[$index] ?? null) : $request->input('email'),
+                            'residence_address' => is_array($request->input('residence_address')) ? ($request->input('residence_address')[$index] ?? null) : $request->input('residence_address'),
+                            'country_code' => is_array($request->input('country_code')) ? ($request->input('country_code')[$index] ?? null) : $request->input('country_code'),
                         ];
                         FileIndexingLink::create($linkData);
                     }
 
-                     // 2. Create Links for Related Files (mfile = 0)
-                     foreach ($relatedDetails as $detail) {
+                    // 2. Create Links for Related Files (mfile = 0)
+                    foreach ($relatedDetails as $detail) {
                         $rFileNo = $detail['file_number'] ?? null;
-                         if (empty($rFileNo) && !empty($detail['holder'])) {
-                             // Use holder as file number for block indexing link if file number wasn't provided directly
-                             $rFileNo = $detail['holder'];
-                         }
-                         if (empty($rFileNo)) continue;
+                        if (empty($rFileNo) && !empty($detail['holder'])) {
+                            // Use holder as file number for block indexing link if file number wasn't provided directly
+                            $rFileNo = $detail['holder'];
+                        }
+                        if (empty($rFileNo))
+                            continue;
 
-                         $linkData = [
-                             'file_indexing_id' => $fileIndexing->id,
-                             'file_number' => $rFileNo,
-                             'mfile' => 0,
-                             'indexing_type' => 'Block',
-                             'created_by' => Auth::id(),
-                             'updated_by' => Auth::id(),
-                             
-                             'file_title' => $detail['file_title'] ?? null,
-                             'location' => $detail['location'] ?? null,
-                             'plot_number' => $detail['plot_number'] ?? null,
-                             'plot_size' => $detail['plot_size'] ?? null, // Added plot_size
-                             'tp_no' => $detail['tp_no'] ?? null,
-                             'lpkn_no' => $detail['lpkn_no'] ?? null,
-                             
-                             'district' => $detail['district'] ?? ($validated['district'] ?? null),
-                             'lga' => $detail['lga'] ?? ($validated['lga'] ?? null),
-                             'land_use_type' => $detail['land_use_type'] ?? ($validated['land_use_type'] ?? null),
-                             
-                             'dob' => $detail['dob'] ?? ($validated['dob'] ?? null),
-                             'nin' => $detail['nin'] ?? ($validated['nin'] ?? null),
-                             'tin' => $detail['tin'] ?? ($validated['tin'] ?? null),
-                             'rc_no' => $detail['rc_no'] ?? ($validated['rc_no'] ?? null),
-                             'phone' => $detail['phone'] ?? ($validated['phone'] ?? null),
-                             'email' => $detail['email'] ?? ($validated['email'] ?? null),
-                             'residence_address' => $detail['residence_address'] ?? ($validated['residence_address'] ?? null),
-                             'country_code' => $detail['country_code'] ?? ($validated['country_code'] ?? null),
-                         ];
-                         FileIndexingLink::create($linkData);
-                     }
+                        $linkData = [
+                            'file_indexing_id' => $fileIndexing->id,
+                            'file_number' => $rFileNo,
+                            'mfile' => 0,
+                            'indexing_type' => 'Block',
+                            'created_by' => Auth::id(),
+                            'updated_by' => Auth::id(),
+
+                            'file_title' => $detail['file_title'] ?? null,
+                            'location' => $detail['location'] ?? null,
+                            'plot_number' => $detail['plot_number'] ?? null,
+                            'plot_size' => $detail['plot_size'] ?? null, // Added plot_size
+                            'tp_no' => $detail['tp_no'] ?? null,
+                            'lpkn_no' => $detail['lpkn_no'] ?? null,
+
+                            'district' => $detail['district'] ?? ($validated['district'] ?? null),
+                            'lga' => $detail['lga'] ?? ($validated['lga'] ?? null),
+                            'land_use_type' => $detail['land_use_type'] ?? ($validated['land_use_type'] ?? null),
+
+                            'dob' => $detail['dob'] ?? ($validated['dob'] ?? null),
+                            'nin' => $detail['nin'] ?? ($validated['nin'] ?? null),
+                            'tin' => $detail['tin'] ?? ($validated['tin'] ?? null),
+                            'rc_no' => $detail['rc_no'] ?? ($validated['rc_no'] ?? null),
+                            'phone' => $detail['phone'] ?? ($validated['phone'] ?? null),
+                            'email' => $detail['email'] ?? ($validated['email'] ?? null),
+                            'residence_address' => $detail['residence_address'] ?? ($validated['residence_address'] ?? null),
+                            'country_code' => $detail['country_code'] ?? ($validated['country_code'] ?? null),
+                        ];
+                        FileIndexingLink::create($linkData);
+                    }
 
                 } else {
-                     // Regular Logic (maintain backward compatibility but using new mfile field? or just related links?)
-                     // Existing logic for Regular handles related files in syncRelatedFileLinks outside transaction or we can do it here?
-                     // The original code called `syncRelatedFileLinks` AFTER transaction.
-                     // But for Block we did it INSIDE.
-                     // We should probably rely on `syncRelatedFileLinks` for Regular to ensure consistency if it does more than just creating links.
-                     // Let's check `syncRelatedFileLinks`.
+                    // Regular Logic (maintain backward compatibility but using new mfile field? or just related links?)
+                    // Existing logic for Regular handles related files in syncRelatedFileLinks outside transaction or we can do it here?
+                    // The original code called `syncRelatedFileLinks` AFTER transaction.
+                    // But for Block we did it INSIDE.
+                    // We should probably rely on `syncRelatedFileLinks` for Regular to ensure consistency if it does more than just creating links.
+                    // Let's check `syncRelatedFileLinks`.
                 }
 
             });
@@ -3505,7 +3529,7 @@ class FileIndexingController extends Controller
             if ($indexingType !== 'Block' && $validated['general_registry'] !== 'DCIV Registry') {
                 $this->syncEntityAndCustomer($fileIndexing, $request, $resolvedTestControl);
             }
-            
+
             // Only sync related file links if NOT Block Indexing
             // Block Indexing handles link creation (mfile=1, mfile=0) inside the transaction
             // Running syncRelatedFileLinks here would delete those links!
@@ -3587,11 +3611,11 @@ class FileIndexingController extends Controller
             }
 
             return response()->json([
-                'success'          => true,
-                'message'          => 'File indexing created successfully!',
-                'data'             => $fileIndexing,
+                'success' => true,
+                'message' => 'File indexing created successfully!',
+                'data' => $fileIndexing,
                 'siblings_updated' => $kangisPlaceholderResult['siblings'] ?? [],
-                'kangis_resolved'  => $kangisPlaceholderResult['resolved'] ?? null,
+                'kangis_resolved' => $kangisPlaceholderResult['resolved'] ?? null,
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -3801,6 +3825,8 @@ class FileIndexingController extends Controller
                                 ->orWhereIn('NewKANGISFileNo', $variants);
                             $applied = true;
                         }
+
+
 
                         if (!empty($tempVariants)) {
                             if ($applied) {
@@ -4035,7 +4061,7 @@ class FileIndexingController extends Controller
             'plot_no' => $fileIndexing->plot_number,
             'lgsaOrCity' => $fileIndexing->lga,
             'updated_by' => Auth::id(),
-             'created_by' => Auth::id(),
+            'created_by' => Auth::id(),
             'source' => 'indexing',
             'updated_at' => now(),
         ];
@@ -4484,7 +4510,7 @@ class FileIndexingController extends Controller
     /**
      * Get available shelf labels for direct selection
      */
-     
+
     public function getAvailableShelfLabels(Request $request)
     {
         try {
@@ -5216,7 +5242,7 @@ class FileIndexingController extends Controller
                 'land_use_type' => $details['land_use_type'] ?? null,
                 'district' => $details['district'] ?? null,
                 'lga' => $details['lga'] ?? null,
-                
+
                 'dob' => $details['dob'] ?? ($mainRecord->dob ?? null),
                 'nin' => $details['nin'] ?? ($mainRecord->nin ?? null),
                 'tin' => $details['tin'] ?? ($mainRecord->tin ?? null),

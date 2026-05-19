@@ -282,8 +282,20 @@
                                                         </div>
                                                     </div>
                                                         <div class="py-1">
-                                                        @if($record->status === 'approved')
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Approved applications cannot be deleted">
+                                                        </div>
+                                                         @if($record->status !== 'approved' && $record->status !== 'commissioned')
+                                                         <div class="py-1 border-t border-slate-100">
+                                                             <button onclick="copApproveRecord(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-600 hover:bg-emerald-50 gap-2 font-medium">
+                                                                 <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i> Approve Application
+                                                             </button>
+                                                             <button onclick="copRejectRecord(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-rose-600 hover:bg-rose-50 gap-2 font-medium">
+                                                                 <i data-lucide="x-circle" class="w-4 h-4 text-rose-500"></i> Reject Application
+                                                             </button>
+                                                         </div>
+                                                         @endif
+                                                         <div class="py-1 border-t border-slate-100">
+                                                        @if($record->status === 'approved' || $record->status === 'commissioned')
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Approved or commissioned applications cannot be deleted">
                                                                 <i data-lucide="trash-2" class="w-4 h-4 text-slate-300"></i> Delete
                                                             </button>
                                                         @else
@@ -361,6 +373,12 @@
                                                             <button class="block w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center space-x-2 text-sm" onclick="copViewAcknowledgement(this)">
                                                                 <i data-lucide="file-text" class="w-4 h-4 text-slate-500"></i>
                                                                 <span>Acknowledgement</span>
+                                                            </button>
+                                                        </li>
+                                                        <li>
+                                                            <button class="block w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center space-x-2 text-sm text-emerald-600 font-semibold" onclick="copOpenCommission(this)">
+                                                                <i data-lucide="check-square" class="w-4 h-4 text-emerald-500"></i>
+                                                                <span>Commission</span>
                                                             </button>
                                                         </li>
                                                     </ul>

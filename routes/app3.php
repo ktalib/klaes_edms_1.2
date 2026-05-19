@@ -54,10 +54,12 @@ use App\Http\Controllers\OpsDashboardController;
 use App\Http\Controllers\RofoStagingDashboardController;
 use App\Http\Controllers\KangisPrintLabelController;
 use App\Http\Controllers\SltrPrintLabelController;
+use App\Http\Controllers\StPrintLabelController;
 use App\Http\Controllers\DcivPrintLabelController;
 use App\Http\Controllers\LegalSearchTokenController;
 use App\Http\Controllers\MortgageController;
 use App\Http\Controllers\SurrenderReleaseController;
+use App\Http\Controllers\ManualFileLinkageController;
 
 /*
 |--------------------------------------------------------------------------
@@ -222,6 +224,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/applications/op-resettlement/{id}/capture-edit', [OpResettlementApplicationController::class, 'captureEdit'])->name('applications.capture-edit')->where('id', '[0-9]+|pra-[0-9]+|ic-[0-9]+');
         Route::get('/applications/match-op/preview', [OpResettlementApplicationController::class, 'matchOpPreview'])->name('applications.match-op-preview');
         Route::post('/applications/match-op', [OpResettlementApplicationController::class, 'matchOp'])->name('applications.match-op');
+        Route::delete('/applications/delete-master/{id}', [OpResettlementApplicationController::class, 'deleteMaster'])->name('applications.delete-master');
+        Route::delete('/applications/delete-master-bulk', [OpResettlementApplicationController::class, 'deleteMasterBulk'])->name('applications.delete-master-bulk');
         Route::post('/applications/op-resettlement/pra/flag-merger', [OpResettlementApplicationController::class, 'flagMergerOp'])->name('applications.pra-flag-merger');
         Route::get('/bill', [OpResettlementBillController::class, 'index'])->name('bill.index');
         Route::get('/bill/{id}/print', [OpResettlementBillController::class, 'printBill'])->name('bill.print')->where('id', '[0-9]+');
@@ -353,6 +357,13 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/approve', [TemporaryFileController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
         Route::post('/{id}/generate-recommendation', [TemporaryFileController::class, 'generateRecommendation'])->name('generate-recommendation')->where('id', '[0-9]+');
         Route::get('/{id}/print-recommendation', [TemporaryFileController::class, 'printRecommendation'])->name('print-recommendation')->where('id', '[0-9]+');
+    });
+
+    // Manually Processed File Linkages Routes
+    Route::prefix('manual-linkage')->name('admin.manual-linkage.')->group(function () {
+        Route::get('/', [ManualFileLinkageController::class, 'index'])->name('index');
+        Route::post('/', [ManualFileLinkageController::class, 'store'])->name('store');
+        Route::get('/search-old-file', [ManualFileLinkageController::class, 'searchOldFile'])->name('search-old-file');
     });
 
     // Match Existing FileNo (MLSFileNo) Routes
@@ -646,6 +657,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [DeedsApplicationController::class, 'index'])->name('index');
         Route::get('/create', [DeedsApplicationController::class, 'create'])->name('create');
         Route::post('/', [DeedsApplicationController::class, 'store'])->name('store');
+        
+        // Master Delete Endpoints
+        Route::delete('/delete-master/{id}', [DeedsApplicationController::class, 'deleteMaster'])->name('delete-master');
+        Route::delete('/delete-master-bulk', [DeedsApplicationController::class, 'deleteMasterBulk'])->name('delete-master-bulk');
+        
         Route::get('/{deedsApplication}', [DeedsApplicationController::class, 'show'])->name('show');
         Route::get('/{deedsApplication}/edit', [DeedsApplicationController::class, 'edit'])->name('edit');
         Route::put('/{deedsApplication}', [DeedsApplicationController::class, 'update'])->name('update');
@@ -925,6 +941,23 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/api/batch/{id}/print', [SltrPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');
         Route::patch('/api/batch/{id}/print', [SltrPrintLabelController::class, 'markBatchAsPrinted'])->name('api.batch.mark-printed');
         Route::delete('/api/batch/{id}', [SltrPrintLabelController::class, 'deleteBatch'])->name('api.batch.delete');
+    });
+
+    // ST Print Labels
+    Route::prefix('st-printlabel')->name('st-printlabel.')->group(function () {
+        Route::get('/', [StPrintLabelController::class, 'index'])->name('index');
+        Route::get('/print-template', function () {
+            return view('st_printlabel.print-file-lab'); })->name('print-template');
+        Route::get('/api/prefixes', [StPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
+        Route::get('/api/sub-prefixes', [StPrintLabelController::class, 'getSubPrefixes'])->name('api.sub-prefixes');
+        Route::get('/api/prefix-next-range', [StPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
+        Route::get('/api/files', [StPrintLabelController::class, 'getAvailableFiles'])->name('api.files');
+        Route::get('/api/rack-label/status', [StPrintLabelController::class, 'getRackLabelStatus'])->name('api.rack-label.status');
+        Route::post('/api/batch', [StPrintLabelController::class, 'createBatch'])->name('api.batch.store');
+        Route::get('/api/batches', [StPrintLabelController::class, 'getBatches'])->name('api.batches');
+        Route::get('/api/batch/{id}/print', [StPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');
+        Route::patch('/api/batch/{id}/print', [StPrintLabelController::class, 'markBatchAsPrinted'])->name('api.batch.mark-printed');
+        Route::delete('/api/batch/{id}', [StPrintLabelController::class, 'deleteBatch'])->name('api.batch.delete');
     });
 
     // DCIV Print Labels

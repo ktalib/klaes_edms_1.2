@@ -146,7 +146,7 @@ function renderRows(rows) {
   const fragments = rows.map((row) => {
     return `
       <tr class="hover:bg-gray-50">
-        <td class="p-3 whitespace-nowrap font-medium text-blue-600">${escapeHtml(row.file_number)}</td>
+        <td class="p-3 whitespace-nowrap font-medium ${row.is_temp_fallback ? 'text-red-600 font-bold' : 'text-blue-600'}">${escapeHtml(row.file_number)}</td>
         <td class="${standardCellClass}">
           ${row.has_related_files ? `
             <div class="flex flex-col gap-1">
@@ -274,6 +274,11 @@ function openRelatedFilesModal(id) {
         const firstRow = data.data[0];
         if (firstRow && firstRow.main_file_number && parentContainer && parentBadge) {
           parentBadge.textContent = firstRow.main_file_number;
+          if (firstRow.main_is_temp_fallback) {
+            parentBadge.className = 'inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-700 border border-red-100';
+          } else {
+            parentBadge.className = 'inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100';
+          }
           parentContainer.classList.remove('hidden');
         }
 

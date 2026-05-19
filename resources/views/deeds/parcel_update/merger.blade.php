@@ -181,7 +181,7 @@
                                                 <a href="javascript:void(0)" 
                                                    onclick="showSourcePlotsModal({{ $record->id }}, {{ json_encode($sourceFilesData) }})" 
                                                    class="text-blue-600 hover:text-blue-800 font-bold font-mono text-sm underline decoration-blue-100 underline-offset-4 hover:decoration-blue-400 transition-all">
-                                                    {{ $firstFile }} @if($count > 1) (+{{ $count - 1 }}) @endif
+                                                    {{ $firstFile }}
                                                 </a>
                                             @else
                                                 <span class="text-xs font-bold text-slate-400 italic">No Source Data</span>
@@ -190,7 +190,6 @@
                                     </td>
                                     <td class="px-4 py-3">
                                         <div class="text-slate-700 font-semibold leading-tight line-clamp-2" title="{{ $record->file_title }}">{{ $record->file_title }}</div>
-                                        <div class="text-[9px] text-slate-400 uppercase tracking-tight mt-0.5">Reference Title</div>
                                     </td>
                                     <td class="px-4 py-3 text-slate-600">{{ $record->num_plots }}</td>
                                     <td class="px-4 py-3 text-slate-600 text-xs">
@@ -710,7 +709,6 @@
             if (record.file_name) {
                 const title = record.file_name.toUpperCase();
                 document.getElementById('file_title').value = title;
-                document.getElementById('applicant_name').value = title;
             }
         }
         

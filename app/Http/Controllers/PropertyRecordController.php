@@ -2640,7 +2640,7 @@ class PropertyRecordController extends Controller
                 ->map(function ($record) {
                     $arr = (array) $record;
                     // Normalize for frontend
-                    if (!isset($arr['transaction_type'])) {
+                    if (empty($arr['transaction_type'])) {
                         $arr['transaction_type'] = $arr['instrument_type'] ?? '';
                     }
                     if (!isset($arr['transaction_date'])) {
@@ -2670,7 +2670,7 @@ class PropertyRecordController extends Controller
                 ->get()
                 ->map(function ($record) {
                     $arr = (array) $record;
-                    if (!isset($arr['transaction_type'])) {
+                    if (empty($arr['transaction_type'])) {
                         $arr['transaction_type'] = $arr['instrument_type'] ?? 'Certificate of Occupancy';
                     }
                     if (!isset($arr['first_party'])) {
@@ -2696,7 +2696,7 @@ class PropertyRecordController extends Controller
                 ->get()
                 ->map(function ($record) {
                     $arr = (array) $record;
-                    if (!isset($arr['transaction_type'])) {
+                    if (empty($arr['transaction_type'])) {
                         $arr['transaction_type'] = $arr['instrument_type'] ?? '';
                     }
                     if (!isset($arr['first_party'])) {
@@ -3192,6 +3192,15 @@ class PropertyRecordController extends Controller
                         $praData['created_by'] = Auth::id();
                         $praData['created_at'] = now();
 
+                        // Remap fields that differ between tables
+                        if (isset($praData['reg_date'])) {
+                            $praData['transaction_date'] = $praData['transaction_date'] ?? $praData['reg_date'];
+                            $praData['deeds_date'] = $praData['deeds_date'] ?? $praData['reg_date'];
+                        }
+                        if (isset($praData['reg_time'])) {
+                            $praData['deeds_time'] = $praData['deeds_time'] ?? $praData['reg_time'];
+                        }
+
                         // Filter to only columns that exist in pra
                         $praData = array_filter($praData, function ($key) use ($praTableColumns) {
                             return in_array($key, $praTableColumns, true);
@@ -3264,6 +3273,15 @@ class PropertyRecordController extends Controller
 
                         $praData['updated_by'] = Auth::id();
                         $praData['updated_at'] = now();
+
+                        // Remap fields that differ between tables
+                        if (isset($praData['reg_date'])) {
+                            $praData['transaction_date'] = $praData['transaction_date'] ?? $praData['reg_date'];
+                            $praData['deeds_date'] = $praData['deeds_date'] ?? $praData['reg_date'];
+                        }
+                        if (isset($praData['reg_time'])) {
+                            $praData['deeds_time'] = $praData['deeds_time'] ?? $praData['reg_time'];
+                        }
 
                         // Filter to only columns that exist in pra
                         $praData = array_filter($praData, function ($key) use ($praTableColumnsUpdate) {

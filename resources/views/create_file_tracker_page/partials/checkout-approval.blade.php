@@ -1,14 +1,18 @@
 {{-- Registry Checkout Approval Tab Content --}}
 @php
-    $registryLabel = match ($module ?? '') {
+    $registryLabel = match (strtolower($module ?? '')) {
         'sltr' => 'SLTR Registry',
         'st'   => 'ST Registry',
+        'dciv' => 'DCIV Registry',
+        'cadastral' => 'Cadastral Registry',
         default => 'KANGIS Registry',
     };
-    $accentColor = match ($module ?? '') {
-        'sltr' => 'violet',
-        'st'   => 'lime',
-        default => 'amber',
+    $accentColor = match (strtolower($module ?? '')) {
+        'sltr' => 'lime',
+        'st'   => 'blue',
+        'dciv' => 'emerald',
+        'cadastral' => 'stone',
+        default => 'red',
     };
 @endphp
 <div class="p-6 space-y-6">

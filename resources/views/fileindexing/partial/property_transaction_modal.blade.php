@@ -36,6 +36,7 @@
         </div>
 
         <div x-data="{
+            isUpdateMode: false,
             // Transaction fields
             transactions: [{
                 id: 1,
@@ -165,7 +166,7 @@
                     return;
                 }
                 if (!this.transactionTypeOptions.includes(normalized) && !this.additionalTransactionTypes.includes(normalized)) {
-                    this.additionalTransactionTypes.push(normalized);
+                    this.additionalTransactionTypes = [...this.additionalTransactionTypes, normalized];
                 }
             },
 
@@ -368,20 +369,27 @@
                 console.log('File indexing data:', this.fileIndexingData);
 
                 // Validate that at least one transaction has required fields
-                const hasValidTransaction = this.transactions.some(t => 
-                    t.transactionType && t.transactionDate
-                );
+                const hasValidTransaction = this.transactions.some(t => {
+                    if (this.isUpdateMode) {
+                        return t.transactionType;
+                    }
+                    return t.transactionType && t.transactionDate;
+                });
 
                 if (!hasValidTransaction) {
+                    const errorText = this.isUpdateMode
+                        ? 'Please fill in at least one transaction with a Transaction Type.'
+                        : 'Please fill in at least one transaction with Transaction Type and Date.';
+                        
                     if (typeof Swal !== 'undefined') {
                         Swal.fire({
                             icon: 'error',
                             title: 'Validation Error',
-                            text: 'Please fill in at least one transaction with Transaction Type and Date.',
+                            text: errorText,
                             confirmButtonText: 'OK'
                         });
                     } else {
-                        alert('Please fill in at least one transaction with Transaction Type and Date.');
+                        alert(errorText);
                     }
                     return;
                 }
@@ -600,7 +608,7 @@
                                     <div>
                                         <label
                                             class="block text-sm font-medium text-gray-700 mb-1">Transaction/Certificate
-                                            Date <span class="text-red-500">*</span></label>
+                                            Date <span x-show="!isUpdateMode" class="text-red-500">*</span></label>
                                         <input type="date" x-model="transaction.transactionDate"
                                             :name="'transactions[' + index + '][transaction_date]'"
                                             class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors">
@@ -738,7 +746,7 @@
                                 </div>
 
                                 <!-- Comments/Remarks -->
-                                <div>
+                                <div class=>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Transaction Comments (e.g. Temp File Number)</label>
                                     <textarea x-model="transaction.comments"
                                         :name="'transactions[' + index + '][comments]'"
@@ -1206,9 +1214,9 @@
                                 // Convert existing records to transaction format
                                 const mappedTransactions = fileIndexingData.existing_records.map((record, index) => {
                                     const parties = extractPartyNames(record);
-                                    const formattedTransactionDate = formatDateForInput(record.transaction_date || record.transactionDate || record.deeds_date || null);
-                                    const formattedRegDate = formatDateForInput(record.reg_date || record.regDate || record.transaction_date || record.transactionDate || null);
-                                    const formattedRegTime = formatTimeForInput(record.reg_time || record.regTime || record.deeds_time || record.transaction_time || record.transactionTime || null);
+                                    const formattedTransactionDate = formatDateForInput(record.transaction_date || record.transactionDate || null);
+                                    const formattedRegDate = formatDateForInput(record.reg_date || record.regDate || null);
+                                    const formattedRegTime = formatTimeForInput(record.reg_time || record.regTime || null);
                                     const normalizedType = normalizePropertyTransactionType(
                                         record.transaction_type ||
                                         record.transactionType ||
@@ -1245,6 +1253,7 @@
                                 }
 
                                 alpineComponent.transactions = mappedTransactions;
+                                alpineComponent.isUpdateMode = true;
 
                                 console.log('Populated transactions from existing records:', alpineComponent.transactions);
 
@@ -1255,6 +1264,7 @@
                                 }
                             } else {
                                 console.log('No existing records, creating empty transaction');
+                                alpineComponent.isUpdateMode = false;
 
                                 // Update modal title to "Add"
                                 const titleElement = document.getElementById('transaction-form-title');
@@ -1580,5 +1590,8 @@
                 }
             });
         }
+
+        
+
     });
 </script>

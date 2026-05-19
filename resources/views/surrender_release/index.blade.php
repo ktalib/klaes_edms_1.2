@@ -100,6 +100,7 @@
                                 <th class="px-4 py-4 rounded-tl-xl">S/N</th>
                                 <th class="px-4 py-4">File Number</th>
                                 <th class="px-4 py-4">Registration Particulars</th>
+                                <th class="px-4 py-4">Associated Mortgage</th>
                                 <th class="px-4 py-4">Party 1</th>
                                 <th class="px-4 py-4">Party 2</th>
                                 <th class="px-4 py-4">Party 3</th>
@@ -109,6 +110,37 @@
                             </tr>
                         </thead>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Mortgage Details Modal --}}
+    <div id="mortgage_modal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" aria-hidden="true" onclick="closeMortgagesModal()"></div>
+
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+            <div class="inline-block align-bottom bg-white rounded-3xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-xl sm:w-full border border-slate-100">
+                <div class="bg-gradient-to-r from-amber-500 to-orange-600 px-6 py-5 flex items-center justify-between">
+                    <h3 class="text-lg font-black text-white flex items-center gap-2" id="modal-title">
+                        <i class="fas fa-file-invoice-dollar text-xl"></i>
+                        Associated Mortgage Details
+                    </h3>
+                    <button type="button" class="text-white/80 hover:text-white transition cursor-pointer" onclick="closeMortgagesModal()">
+                        <i class="fas fa-times text-lg"></i>
+                    </button>
+                </div>
+
+                <div class="px-6 py-6 space-y-4 max-h-[70vh] overflow-y-auto bg-slate-50" id="mortgage_modal_body">
+                    {{-- Dynamically populated --}}
+                </div>
+
+                <div class="bg-white px-6 py-4 border-t border-slate-100 flex justify-end">
+                    <button type="button" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-sm transition shadow-md hover:shadow-lg cursor-pointer" onclick="closeMortgagesModal()">
+                        Close
+                    </button>
                 </div>
             </div>
         </div>
@@ -253,13 +285,14 @@ $(function() {
             { 
                 data: 'file_number', 
                 name: 'file_number',
+                className: 'whitespace-nowrap',
                 render: function(data, type, row) {
                     const fileNo = data || '—';
                     const propId = row.prop_id || '';
                     const count = row.timeline_count || 1;
                     
-                    let html = `<div class="flex flex-col justify-center items-start py-1">
-                                    <span class="file-no-link">${fileNo}</span>`;
+                    let html = `<div class="flex flex-col justify-center items-start py-1 whitespace-nowrap">
+                                    <span class="file-no-link whitespace-nowrap" style="white-space: nowrap;">${fileNo}</span>`;
                     
                     if (fileNo !== '—' || propId) {
                         html += `<button type="button" class="timeline-badge" 
@@ -274,7 +307,24 @@ $(function() {
                 }
             },
             { data: 'registration_particulars', name: 'registration_particulars', defaultContent: '0/0/0' },
-
+            {
+                data: 'associated_mortgages',
+                name: 'associated_mortgages',
+                orderable: false,
+                searchable: false,
+                render: function (data, type, row) {
+                    const mortgages = data || [];
+                    if (mortgages.length === 0) {
+                        return `<span class="text-slate-400 text-xs italic">No Mortgage</span>`;
+                    }
+                    
+                    return `<div class="py-1">
+                                <button type="button" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition duration-150 uppercase tracking-wide cursor-pointer mortgage-trigger shadow-sm hover:shadow" title="View Mortgage Details">
+                                    <i class="fas fa-file-invoice-dollar text-[11px] text-amber-600"></i> Mortgage (${mortgages.length})
+                                </button>
+                            </div>`;
+                }
+            },
             { data: 'party_1', name: 'party_1', defaultContent: '—' },
             { data: 'party_2', name: 'party_2', defaultContent: '—' },
             { data: 'party_3', name: 'party_3', defaultContent: '—' },
@@ -294,7 +344,7 @@ $(function() {
             }
         ],
         pageLength: 25,
-        order: [[9, 'desc']],
+        order: [[8, 'desc']],
         language: {
             search: "",
             searchPlaceholder: "Search records...",
@@ -306,10 +356,98 @@ $(function() {
         }
     });
 
+    // Delegate click event on Mortgage button triggers
+    $('#surrender_release_table').on('click', '.mortgage-trigger', function(e) {
+        e.preventDefault();
+        const tr = $(this).closest('tr');
+        const rowData = table.row(tr).data();
+        if (rowData && rowData.associated_mortgages) {
+            openMortgagesModal(rowData.associated_mortgages, rowData.file_number || '—');
+        }
+    });
+
     $('#refresh_btn').on('click', function() {
         table.ajax.reload();
         if (typeof lucide !== 'undefined') lucide.createIcons();
     });
 });
+
+// Global functions for open/close Mortgage details modal
+function openMortgagesModal(mortgages, fileNo) {
+    const body = $('#mortgage_modal_body');
+    body.empty();
+    
+    $('#modal-title').html(`<i class="fas fa-file-invoice-dollar text-xl"></i> Mortgages for ${fileNo}`);
+
+    mortgages.forEach(function(m) {
+        const mType = m.instrument_type || 'Deed of Mortgage';
+        const reg = m.registration_particulars && m.registration_particulars.trim() ? m.registration_particulars : 'Unregistered';
+        const mortgagor = m.party_1 || '—';
+        const mortgagee = m.party_2 || '—';
+        const party3Html = m.party_3 && m.party_3.trim() ? `
+        <div class="pt-2">
+            <p class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Party 3</p>
+            <p class="text-sm font-bold text-slate-800 mt-0.5">${m.party_3}</p>
+        </div>` : '';
+        
+        let dateVal = '—';
+        if (m.date_captured) {
+            try {
+                dateVal = m.date_captured.substring(0, 16).replace('T', ' ');
+            } catch (e) {
+                dateVal = m.date_captured;
+            }
+        }
+        
+        const cardHtml = `
+        <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4 hover:border-amber-300 transition-all duration-300">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-amber-50 text-amber-800 border border-amber-200 uppercase tracking-wide">
+                    <i class="fas fa-file-invoice-dollar text-amber-600 text-[10px]"></i> ${mType}
+                </span>
+                <span class="px-2.5 py-1 text-xs font-mono font-bold bg-slate-100 text-slate-700 rounded-lg border border-slate-200">
+                    ${reg}
+                </span>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Mortgagor (Party 1)</p>
+                    <p class="text-sm font-bold text-slate-800 mt-0.5">${mortgagor}</p>
+                </div>
+                <div>
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Mortgagee (Party 2)</p>
+                    <p class="text-sm font-bold text-slate-800 mt-0.5">${mortgagee}</p>
+                </div>
+            </div>
+
+            ${party3Html}
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-100 text-xs text-slate-500">
+                <div class="flex items-center gap-1.5">
+                    <i class="fas fa-database text-slate-400 text-[10px]"></i>
+                    <span>Source: <strong class="text-slate-700">${m.source || '—'}</strong></span>
+                </div>
+                <div class="flex items-center gap-1.5 md:justify-end">
+                    <i class="fas fa-calendar-alt text-slate-400 text-[10px]"></i>
+                    <span>Date Captured: <strong class="text-slate-700">${dateVal}</strong></span>
+                </div>
+            </div>
+        </div>`;
+        
+        body.append(cardHtml);
+    });
+
+    $('#mortgage_modal').removeClass('hidden');
+    $('body').addClass('overflow-hidden');
+}
+
+function closeMortgagesModal() {
+    $('#mortgage_modal').addClass('hidden');
+    $('body').removeClass('overflow-hidden');
+}
+
+window.openMortgagesModal = openMortgagesModal;
+window.closeMortgagesModal = closeMortgagesModal;
 </script>
 @endpush

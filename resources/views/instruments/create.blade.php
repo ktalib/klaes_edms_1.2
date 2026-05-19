@@ -254,53 +254,50 @@
         <script src="{{ asset('js/pra/modal.js') }}"></script>
         <script src="{{ asset('js/pra/form-controller.js') }}"></script>
 
-        <!-- Footer -->
-        @include('admin.footer')
-    </div>
-    <!-- Duplicate Check Modal -->
-    <div id="duplicate-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full"
-        style="z-index: 1000030;">
-        <div class="relative top-20 mx-auto p-5 border max-w-xl w-full shadow-lg rounded-md bg-white">
-            <button type="button" id="btn-close-duplicate"
-                class="absolute top-3 right-3 p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                aria-label="Close duplicate dialog">
-                <i data-lucide="x" class="h-5 w-5"></i>
-            </button>
-            <div class="mt-3 text-center">
-                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100">
-                    <i data-lucide="alert-triangle" class="h-6 w-6 text-yellow-600"></i>
-                </div>
-                <h3 class="text-lg leading-6 font-medium text-gray-900 mt-2">Duplicate Record Found</h3>
-                <div class="mt-2 px-7 py-3">
-                    <p class="text-sm text-gray-500">
-                        An instrument record already exists for this file number.
-                    </p>
-                    <div id="duplicate-details" class="text-left mt-4 text-sm bg-gray-50 p-3 rounded text-gray-700">
-                        <!-- Details injected via JS -->
+        <!-- Duplicate Check Modal -->
+        <div id="duplicate-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full"
+            style="z-index: 1000030;">
+            <div class="relative top-20 mx-auto p-5 border max-w-xl w-full shadow-lg rounded-md bg-white">
+                <button type="button" id="btn-close-duplicate"
+                    class="absolute top-3 right-3 p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                    aria-label="Close duplicate dialog">
+                    <i data-lucide="x" class="h-5 w-5"></i>
+                </button>
+                <div class="mt-3 text-center">
+                    <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100">
+                        <i data-lucide="alert-triangle" class="h-6 w-6 text-yellow-600"></i>
                     </div>
-                </div>
-                <div class="items-center px-4 py-3">
-                    <button type="button" id="btn-update-existing"
-                        class="hidden px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300">
-                        Update Existing Record
-                    </button>
-                    <button type="button" id="btn-create-new"
-                        class="hidden mt-3 px-4 py-2 bg-gray-100 text-gray-700 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300">
-                        Create New Record
-                    </button>
-                    <button type="button" id="btn-close-duplicate-footer"
-                        class="mt-3 px-4 py-2 bg-white text-gray-600 text-base font-medium rounded-md w-full border border-gray-200 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300">
-                        Close
-                    </button>
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 mt-2">Duplicate Record Found</h3>
+                    <div class="mt-2 px-7 py-3">
+                        <p class="text-sm text-gray-500">
+                            An instrument record already exists for this file number.
+                        </p>
+                        <div id="duplicate-details" class="text-left mt-4 text-sm bg-gray-50 p-3 rounded text-gray-700">
+                            <!-- Details injected via JS -->
+                        </div>
+                    </div>
+                    <div class="items-center px-4 py-3">
+                        <button type="button" id="btn-update-existing"
+                            class="hidden px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                            Update Existing Record
+                        </button>
+                        <button type="button" id="btn-create-new"
+                            class="hidden mt-3 px-4 py-2 bg-gray-100 text-gray-700 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                            Create New Record
+                        </button>
+                        <button type="button" id="btn-close-duplicate-footer"
+                            class="mt-3 px-4 py-2 bg-white text-gray-600 text-base font-medium rounded-md w-full border border-gray-200 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                            Close
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-    {{-- PRA History Modal (shared partial) --}}
-    @include('instruments.partials.pra_history_modal')
-    @include('propertycard.partials.add_property_record')
+        {{-- PRA History Modal (shared partial) --}}
+        @include('instruments.partials.pra_history_modal')
+        @include('propertycard.partials.add_property_record')
 
-    <!-- <script>
-    
- </script> -->
+        <!-- Footer -->
+        @include('admin.footer')
+    </div>
 @endsection

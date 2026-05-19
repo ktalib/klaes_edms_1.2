@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
 
 class IndexedFileTableController extends Controller
 {
@@ -195,6 +196,7 @@ class IndexedFileTableController extends Controller
             $like = '%' . $this->escapeLikePattern($search) . '%';
             $query->where(function ($q) use ($like) {
                 $q->where('file_indexings.file_number', 'like', $like)
+                    ->orWhere('file_indexings.temp_file_no', 'like', $like)
                     ->orWhere('file_indexings.file_title', 'like', $like)
                     ->orWhere('file_indexings.tracking_id', 'like', $like)
                     ->orWhere('file_indexings.registry', 'like', $like)
@@ -270,8 +272,17 @@ class IndexedFileTableController extends Controller
                 ->groupBy('file_indexing_id')
                 ->pluck('total', 'file_indexing_id');
 
-        // Pre-fetch grouping fallbacks to avoid N+1 queries
-        $fileNumbers = $items->pluck('file_number')->filter()->unique()->values();
+        // Pre-fetch grouping fallbacks to avoid N+1 queries using display or temporary file number
+        $fileNumbers = $items->map(function ($item) {
+            $displayFileNo = $item->file_number;
+            if (empty($displayFileNo) || trim($displayFileNo) === '' || trim($displayFileNo) === '-') {
+                if (!empty($item->temp_file_no) && trim($item->temp_file_no) !== '' && trim($item->temp_file_no) !== '-' && strtoupper(trim($item->temp_file_no)) !== 'NONE') {
+                    $displayFileNo = $item->temp_file_no;
+                }
+            }
+            return $displayFileNo;
+        })->filter()->unique()->values();
+
         $groupingFallbacks = $fileNumbers->isEmpty()
             ? collect()
             : DB::connection('sqlsrv')
@@ -295,14 +306,14 @@ class IndexedFileTableController extends Controller
             $scanned = (int) ($scanningCounts->get($item->id) ?? 0);
             $typed = (int) ($pageTypingCounts->get($item->id) ?? 0);
             $hasRelatedFilesFromLinks = (int) ($relatedFileCounts->get($item->id) ?? 0) > 0;
-            
+
             // Check if there are related files in the JSON column
             $jsonRelated = null;
             if (!empty($item->related_fileno)) {
                 $jsonRelated = json_decode($item->related_fileno, true);
             }
             $hasRelatedFilesFromJson = !empty($jsonRelated) && is_array($jsonRelated);
-            
+
             $hasRelatedFiles = $hasRelatedFilesFromLinks || $hasRelatedFilesFromJson;
 
             $relatedFileDisplay = '-';
@@ -328,8 +339,18 @@ class IndexedFileTableController extends Controller
                 ? $item->created_at
                 : Carbon::parse($item->created_at);
 
+            // Use display file number with fallback to temp file number
+            $displayFileNo = $item->file_number;
+            $isTempFallback = false;
+            if (empty($displayFileNo) || trim($displayFileNo) === '' || trim($displayFileNo) === '-') {
+                if (!empty($item->temp_file_no) && trim($item->temp_file_no) !== '' && trim($item->temp_file_no) !== '-' && strtoupper(trim($item->temp_file_no)) !== 'NONE') {
+                    $displayFileNo = $item->temp_file_no;
+                    $isTempFallback = true;
+                }
+            }
+
             // Use pre-fetched fallback
-            $fallback = $groupingFallbacks->get($item->file_number);
+            $fallback = $groupingFallbacks->get($displayFileNo);
 
             $rowData = [
                 'id' => (int) $item->id,
@@ -340,7 +361,8 @@ class IndexedFileTableController extends Controller
                 'sys_batch_no' => $item->sys_batch_no ?: '-',
                 'batch_no' => $item->batch_no ?: '-',
                 'group_no' => $item->group_no ?? '-',
-                'file_number' => $item->file_number ?? '-',
+                'file_number' => !empty($displayFileNo) ? $displayFileNo : '-',
+                'is_temp_fallback' => $isTempFallback,
                 'file_title' => $item->file_title ?? '-',
                 'plot_number' => $item->plot_number ?? '-',
                 'indexed_at' => $indexedAt ? $indexedAt->format('Y-m-d H:i') : null,
@@ -353,7 +375,7 @@ class IndexedFileTableController extends Controller
                 'lga' => $item->lga ?? '-',
                 'location' => $item->location ?? '-',
                 'general_registry' => $item->general_registry
-                    ?? \App\Models\FileIndexing::detectRegistryFromFileNumber($item->file_number)
+                    ?? \App\Models\FileIndexing::detectRegistryFromFileNumber($displayFileNo)
                     ?? '-',
                 'physical_registry' => $item->physical_registry ?? '-',
                 'status' => $status,
@@ -375,7 +397,7 @@ class IndexedFileTableController extends Controller
             $rowData['new_kangis_file_no'] = $item->new_kangis_file_no ?? null;
 
             // Flags whether scanned files exist in any EDMS registry folder
-            $rowData['has_edms_files'] = (bool) ($edmsFolderMap[$item->file_number] ?? false);
+            $rowData['has_edms_files'] = (bool) ($edmsFolderMap[$displayFileNo] ?? false);
 
             return $rowData;
         });
@@ -434,6 +456,7 @@ class IndexedFileTableController extends Controller
                 'file_indexings.physical_registry',
                 'file_indexings.land_use_type',
                 'file_indexings.related_fileno',
+                'file_indexings.temp_file_no',
                 DB::raw("'Kano' as state"),
             ]);
 
@@ -441,6 +464,7 @@ class IndexedFileTableController extends Controller
             $like = '%' . $this->escapeLikePattern($search) . '%';
             $query->where(function ($q) use ($like) {
                 $q->where('file_indexings.file_number', 'like', $like)
+                    ->orWhere('file_indexings.temp_file_no', 'like', $like)
                     ->orWhere('file_indexings.file_title', 'like', $like)
                     ->orWhere('file_indexings.registry', 'like', $like)
                     ->orWhere('file_indexings.current_holder', 'like', $like)
@@ -494,7 +518,7 @@ class IndexedFileTableController extends Controller
 
         $data = $items->map(function ($item) use ($relatedFileCounts) {
             $hasRelatedFilesFromLinks = (int) ($relatedFileCounts->get($item->id) ?? 0) > 0;
-            
+
             $jsonRelated = null;
             if (!empty($item->related_fileno)) {
                 $jsonRelated = json_decode($item->related_fileno, true);
@@ -511,11 +535,21 @@ class IndexedFileTableController extends Controller
             } elseif ($hasRelatedFilesFromLinks) {
                 $relatedFileDisplay = 'Linked Records';
             }
-            
+
+            $displayFileNo = $item->file_number;
+            $isTempFallback = false;
+            if (empty($displayFileNo) || trim($displayFileNo) === '' || trim($displayFileNo) === '-') {
+                if (!empty($item->temp_file_no) && trim($item->temp_file_no) !== '' && trim($item->temp_file_no) !== '-' && strtoupper(trim($item->temp_file_no)) !== 'NONE') {
+                    $displayFileNo = $item->temp_file_no;
+                    $isTempFallback = true;
+                }
+            }
+
             return [
                 'id' => (int) $item->id,
                 'registry' => $item->registry ?? 1,
-                'file_number' => $item->file_number ?? '-',
+                'file_number' => !empty($displayFileNo) ? $displayFileNo : '-',
+                'is_temp_fallback' => $isTempFallback,
                 'file_title' => $item->file_title ?? '-',
                 'current_holder' => $item->current_holder ?? '-',
                 'original_holder' => $item->original_holder ?? '-',
@@ -523,7 +557,7 @@ class IndexedFileTableController extends Controller
                 'district' => $item->district ?? '-',
                 'lga' => $item->lga ?? '-',
                 'general_registry' => $item->general_registry
-                    ?? \App\Models\FileIndexing::detectRegistryFromFileNumber($item->file_number)
+                    ?? \App\Models\FileIndexing::detectRegistryFromFileNumber($displayFileNo)
                     ?? '-',
                 'physical_registry' => $item->physical_registry ?? '-',
                 'land_use_type' => $item->land_use_type ?? '-',
@@ -637,16 +671,32 @@ class IndexedFileTableController extends Controller
                     'fil.location',
                     'fil.created_by',
                     'fil.created_at',
-                    'fi.file_number as main_file_number'
+                    'fi.file_number as main_file_number',
+                    'fi.temp_file_no as main_temp_file_no'
                 ])
                 ->get()
                 ->toArray();
+
+            $relatedLinks = array_map(function ($link) {
+                $linkArr = (array) $link;
+                $mainFn = $linkArr['main_file_number'] ?? '';
+                $mainIsTempFallback = false;
+                if (empty($mainFn) || trim($mainFn) === '' || trim($mainFn) === '-') {
+                    $mainTemp = $linkArr['main_temp_file_no'] ?? '';
+                    if (!empty($mainTemp) && trim($mainTemp) !== '' && trim($mainTemp) !== '-' && strtoupper(trim($mainTemp)) !== 'NONE') {
+                        $linkArr['main_file_number'] = $mainTemp;
+                        $mainIsTempFallback = true;
+                    }
+                }
+                $linkArr['main_is_temp_fallback'] = $mainIsTempFallback;
+                return $linkArr;
+            }, $relatedLinks);
 
             // 2. Fetch the main record to check for parent links in the JSON column
             $mainRecord = DB::connection('sqlsrv')
                 ->table('file_indexings')
                 ->where('id', $id)
-                ->select(['file_number', 'related_fileno', 'file_title'])
+                ->select(['file_number', 'related_fileno', 'file_title', 'temp_file_no'])
                 ->first();
 
             $finalResults = $relatedLinks;
@@ -654,7 +704,7 @@ class IndexedFileTableController extends Controller
             if ($mainRecord && !empty($mainRecord->related_fileno)) {
                 $rawRelated = trim($mainRecord->related_fileno);
                 $parents = json_decode($rawRelated, true);
-                
+
                 // If it's not valid JSON array, treat it as a plain string (legacy format)
                 if (!is_array($parents)) {
                     // Check if it's a simple string like "FILE/NO" or "FILE/NO, FILE/NO2"
@@ -673,9 +723,19 @@ class IndexedFileTableController extends Controller
                         ->pluck('file_title', 'file_number')
                         ->toArray();
 
+                    $mainFileNumber = $mainRecord->file_number;
+                    $mainIsTempFallback = false;
+                    if (empty($mainFileNumber) || trim($mainFileNumber) === '' || trim($mainFileNumber) === '-') {
+                        if (!empty($mainRecord->temp_file_no) && trim($mainRecord->temp_file_no) !== '' && trim($mainRecord->temp_file_no) !== '-' && strtoupper(trim($mainRecord->temp_file_no)) !== 'NONE') {
+                            $mainFileNumber = $mainRecord->temp_file_no;
+                            $mainIsTempFallback = true;
+                        }
+                    }
+
                     foreach ($parents as $parentNo) {
-                        if (empty($parentNo) || $parentNo === '[]' || $parentNo === '-') continue;
-                        
+                        if (empty($parentNo) || $parentNo === '[]' || $parentNo === '-')
+                            continue;
+
                         // Avoid duplicates if already in links
                         $exists = false;
                         foreach ($relatedLinks as $link) {
@@ -698,7 +758,8 @@ class IndexedFileTableController extends Controller
                                 'location' => '-',
                                 'created_by' => 'System',
                                 'created_at' => null,
-                                'main_file_number' => $mainRecord->file_number,
+                                'main_file_number' => !empty($mainFileNumber) ? $mainFileNumber : '-',
+                                'main_is_temp_fallback' => $mainIsTempFallback,
                                 'is_json_parent' => true
                             ];
                         }
@@ -891,6 +952,8 @@ class IndexedFileTableController extends Controller
                 'data' => $updatedFile,
             ]);
         } catch (\Throwable $e) {
+            //Log the error
+            Log::error('Error setting temporary file number: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to set temporary file number.',
@@ -1171,7 +1234,7 @@ class IndexedFileTableController extends Controller
             if ($fileNumber) {
                 // Strip suffix if any (e.g. KNML 1_2 -> KNML 1)
                 $baseFileNumber = preg_replace('/_\d+$/', '', $fileNumber);
-                
+
                 \Illuminate\Support\Facades\DB::connection('sqlsrv')
                     ->table('kangis_grouping')
                     ->where('kangis_awaiting_fileno', $baseFileNumber)

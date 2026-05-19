@@ -903,15 +903,15 @@
 
     /* Responsive design */
     @media (min-width: 768px) {
-        .md\\:grid-cols-2 {
+        .md\:grid-cols-2 {
             grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
-        .md\\:grid-cols-3 {
+        .md\:grid-cols-3 {
             grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
-        .md\\:grid-cols-4 {
+        .md\:grid-cols-4 {
             grid-template-columns: repeat(4, minmax(0, 1fr));
         }
     }

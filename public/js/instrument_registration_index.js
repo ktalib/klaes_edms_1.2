@@ -250,6 +250,9 @@ async function toggleDropdown(button, appId) {
 
 function populateDropdownContent(app, context = null) {
     const dropdown = document.getElementById('dropdown-menu');
+    if (!dropdown) {
+        return;
+    }
 
     const editClass = app.status === 'pending' ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed';
     const editIcon = app.status === 'pending' ? 'text-blue-500' : 'text-gray-300';
@@ -433,7 +436,9 @@ function closeDropdown() {
     const dropdown = document.getElementById('dropdown-menu');
     const backdrop = document.getElementById('dropdown-backdrop');
 
-    dropdown.classList.add('hidden');
+    if (dropdown) {
+        dropdown.classList.add('hidden');
+    }
     if (backdrop) {
         backdrop.classList.add('hidden');
     }

@@ -21,25 +21,25 @@
             </div>
         </div>
         @elseif(($module ?? '') === 'sltr')
-        <div class="bg-gradient-to-r from-emerald-600 via-green-500 to-emerald-600 px-6 py-3 flex items-center gap-3 shadow-sm">
+        <div class="bg-gradient-to-r from-lime-600 via-green-500 to-lime-600 px-6 py-3 flex items-center gap-3 shadow-sm">
             <i data-lucide="landmark" class="h-5 w-5 text-white shrink-0"></i>
             <div class="flex items-center gap-2">
-                <span class="text-white font-bold text-sm uppercase tracking-widest">SLTR</span>
-                <span class="text-emerald-100 text-sm">·</span>
-                <span class="text-white text-sm font-medium">Digital Archive</span>
-                <span class="text-emerald-100 text-sm">·</span>
-                <span class="text-emerald-100 text-sm">Log a File</span>
-            </div>
-        </div>
-        @elseif(($module ?? '') === 'st')
-        <div class="bg-gradient-to-r from-lime-600 via-green-500 to-lime-600 px-6 py-3 flex items-center gap-3 shadow-sm">
-            <i data-lucide="building-2" class="h-5 w-5 text-white shrink-0"></i>
-            <div class="flex items-center gap-2">
-                <span class="text-white font-bold text-sm uppercase tracking-widest">Sectional Titling</span>
+                <span class="text-white font-bold text-sm uppercase tracking-widest">Systematic Land Titling and Registration</span>
                 <span class="text-lime-100 text-sm">·</span>
                 <span class="text-white text-sm font-medium">e-Registry</span>
                 <span class="text-lime-100 text-sm">·</span>
                 <span class="text-lime-100 text-sm">Log a File</span>
+            </div>
+        </div>
+        @elseif(($module ?? '') === 'st')
+        <div class="bg-gradient-to-r from-blue-600 via-sky-500 to-blue-700 px-6 py-3 flex items-center gap-3 shadow-sm">
+            <i data-lucide="building-2" class="h-5 w-5 text-white shrink-0"></i>
+            <div class="flex items-center gap-2">
+                <span class="text-white font-bold text-sm uppercase tracking-widest">Sectional Titling</span>
+                <span class="text-blue-100 text-sm">·</span>
+                <span class="text-white text-sm font-medium">e-Registry</span>
+                <span class="text-blue-100 text-sm">·</span>
+                <span class="text-blue-100 text-sm">Log a File</span>
             </div>
         </div>
         @elseif(($module ?? '') === 'dgis')
@@ -65,23 +65,34 @@
             </div>
         </div>
         @elseif(($module ?? '') === 'dciv')
-        <div class="bg-gradient-to-r from-emerald-600 via-green-500 to-emerald-600 px-6 py-3 flex items-center gap-3 shadow-sm">
+        <div class="bg-gradient-to-r from-emerald-900 via-emerald-800 to-emerald-950 px-6 py-3 flex items-center gap-3 shadow-sm">
             <i data-lucide="layers" class="h-5 w-5 text-white shrink-0"></i>
             <div class="flex items-center gap-2">
-                <span class="text-white font-bold text-sm uppercase tracking-widest">DCIV</span>
+                <span class="text-white font-bold text-sm uppercase tracking-widest">DEPARTMENT OF COMPLAINT INVESTIGATION AND VERIFICATION</span>
                 <span class="text-emerald-100 text-sm">·</span>
-                <span class="text-white text-sm font-medium">Digital Archive</span>
+                <span class="text-white text-sm font-medium">e-Registry</span>
                 <span class="text-emerald-100 text-sm">·</span>
                 <span class="text-emerald-100 text-sm">Log a File</span>
             </div>
         </div>
+        @elseif(in_array(strtolower($module ?? ''), ['cadastral']))
+        <div class="bg-gradient-to-r from-[#6f4e37] via-[#8B4513] to-[#5c4033] px-6 py-3 flex items-center gap-3 shadow-sm">
+            <i data-lucide="compass" class="h-5 w-5 text-white shrink-0"></i>
+            <div class="flex items-center gap-2">
+                <span class="text-white font-bold text-sm uppercase tracking-widest">CADASTRAL DEPARTMENT</span>
+                <span class="text-amber-100 text-sm">·</span>
+                <span class="text-white text-sm font-medium">e-Registry</span>
+                <span class="text-amber-100 text-sm">·</span>
+                <span class="text-amber-100 text-sm">Log a File</span>
+            </div>
+        </div>
         @else
-        <div class="bg-gradient-to-r from-red-600 via-rose-500 to-red-700 px-6 py-3 flex items-center gap-3 shadow-sm">
+        <div class="bg-gradient-to-r from-red-950 via-red-800 to-red-950 px-6 py-3 flex items-center gap-3 shadow-sm">
             <i data-lucide="file-text" class="h-5 w-5 text-white shrink-0"></i>
             <div class="flex items-center gap-2">
-                <span class="text-white font-bold text-sm uppercase tracking-widest">Lands Registry</span>
+                <span class="text-white font-bold text-sm uppercase tracking-widest">LAND DEPARTMENT</span>
                 <span class="text-red-100 text-sm">·</span>
-                <span class="text-white text-sm font-medium">File Tracker</span>
+                <span class="text-white text-sm font-medium">e-Registry</span>
                 <span class="text-red-100 text-sm">·</span>
                 <span class="text-red-100 text-sm">Log a File</span>
             </div>
@@ -115,6 +126,7 @@
                             'dgis'       => ['active' => 'border-indigo-600 text-white bg-indigo-600 hover:bg-indigo-700 ring-indigo-300',     'idle' => 'border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100'],
                             'dg'         => ['active' => 'border-emerald-600 text-white bg-emerald-600 hover:bg-emerald-700 ring-emerald-300', 'idle' => 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'],
                             'dciv'       => ['active' => 'border-slate-700 text-white bg-slate-700 hover:bg-slate-800 ring-slate-300',         'idle' => 'border-slate-300 text-slate-700 bg-slate-50 hover:bg-slate-100'],
+                            'st'         => ['active' => 'border-blue-600 text-white bg-blue-600 hover:bg-blue-700 ring-blue-300',           'idle' => 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'],
                         ];
                         $navClass = function ($key) use ($currentModule, $navBaseClass, $navActiveExtra, $navStyles) {
                             $tone = $navStyles[$key] ?? ['active' => '', 'idle' => ''];
@@ -138,7 +150,7 @@
                         $isDgGroup     = in_array($currentModule, ['dgis', 'dg']);
                         
                         // Modules that participate in the KANGIS/Approval cross-registry workflow
-                        $eligibleModules = ['', 'kangis', 'new_kangis', 'dgis', 'dg'];
+                        $eligibleModules = ['kangis', 'new_kangis', 'dgis', 'dg'];
                         $isEligible      = in_array($currentModule, $eligibleModules);
 
                         // Privileged users see BOTH header rows ONLY when in an eligible context
@@ -572,31 +584,37 @@
                                                 <!-- Row 1: Registry + Destination + Recommendation (3-col for kangis, 2-col otherwise) -->
                                                 <div class="grid @if(($module ?? '') === 'kangis') grid-cols-3 @else grid-cols-2 @endif gap-4 @if(($module ?? '') === 'new_kangis') hidden @endif" @if(($module ?? '') === 'new_kangis') aria-hidden="true" @endif>
                                                     <div class="space-y-2">
-                                                        <label for="origin-office"
-                                                            class="block text-sm font-medium text-gray-700">Registry
-                                                            (Origin)</label>
+                                                        <label for="origin-office" class="block text-sm font-medium text-gray-700">Registry (Origin)</label>
                                                         <select id="origin-office"
-                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 {{ in_array(($module ?? ''), ['sltr', 'dciv']) ? 'bg-gray-100 text-gray-700 cursor-not-allowed' : '' }}"
+                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 {{ in_array(strtolower($module ?? ''), ['sltr', 'dciv', 'st']) ? 'bg-gray-100 text-gray-700 cursor-not-allowed' : '' }}"
                                                             @if(in_array(($module ?? ''), ['kangis', 'new_kangis'])) data-default="KANGIS Registry" @elseif(($module ?? '') === 'sltr') data-default="SLTR Registry" @elseif(($module ?? '') === 'st') data-default="ST Registry" @elseif(($module ?? '') === 'dciv') data-default="DCIV Registry" @endif
-                                                            {{ in_array(($module ?? ''), ['sltr', 'dciv']) ? 'disabled' : '' }}>
+                                                            {{ in_array(strtolower($module ?? ''), ['sltr', 'dciv', 'st']) ? 'disabled' : '' }}>
                                                             <option value="">Select Registry (Origin)</option>
-                                                            @foreach ($registries as $registry)
-                                                                @php
-                                                                    // Normalize old plural "Registry 1 - Lands" to the
-                                                                    // canonical singular "Registry 1 - Land" used
-                                                                    // throughout the system (FileSearchController,
-                                                                    // FileIndexingController, etc.).
-                                                                    $registryDisplay = ($registry->name === 'Registry 1 - Lands')
-                                                                        ? 'Registry 1 - Land'
-                                                                        : $registry->name;
-                                                                    
-                                                                    // Enforce SLTR Registry selection if in SLTR module
-                                                                    $isSelected = (($module ?? '') === 'sltr' && $registry->name === 'SLTR Registry');
-                                                                @endphp
-                                                                <option value="{{ $registry->name }}" {{ $isSelected ? 'selected' : '' }}>{{ $registryDisplay }}
-                                                                </option>
-                                                            @endforeach
-                                                        </select>
+                                                            @if(in_array(strtolower($module ?? ''), ['cadastral']))
+                                                                <option value="Registry 1 - Cadastral">Registry 1 - Cadastral</option>
+                                                                <option value="Registry 2 - Cadastral">Registry 2 - Cadastral</option>
+                                                            @else
+                                                                @foreach ($registries as $registry)
+                                                                    @php
+                                                                        // Normalize old plural "Registry 1 - Lands" to the
+                                                                        // canonical singular "Registry 1 - Land" used
+                                                                        // throughout the system (FileSearchController,
+                                                                        // FileIndexingController, etc.).
+                                                                        $registryDisplay = ($registry->name === 'Registry 1 - Lands')
+                                                                            ? 'Registry 1 - Land'
+                                                                            : $registry->name;
+                                                                        
+                                                                        // Enforce SLTR or ST Registry selection if in their respective modules
+                                                                        $isSelected = (
+                                                                            (($module ?? '') === 'sltr' && $registry->name === 'SLTR Registry') || 
+                                                                            (($module ?? '') === 'st' && $registry->name === 'ST Registry')
+                                                                        );
+                                                                    @endphp
+                                                                    <option value="{{ $registry->name }}" {{ $isSelected ? 'selected' : '' }}>{{ $registryDisplay }}
+                                                                    </option>
+                                                                @endforeach
+                                                            @endif
+                                                        </select>                 </select>
                                                         <p class="text-xs text-gray-500">Defaults to Officers as the origin
                                                             registry</p>
                                                     </div>
@@ -1787,15 +1805,21 @@
                                 </div>
                                 <div class="flex justify-end gap-2 mt-6">
                                     <button id="close-details-btn"
-                                        class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                                        Close
-                                    </button>
-                                    <button id="print-details-btn"
-                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
-                                        <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
-                                        Print Details
-                                    </button>
-                                </div>
+                                         class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                                         Close
+                                     </button>
+                                     <button id="print-details-btn"
+                                         class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                         <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
+                                         Print Details
+                                     </button>
+                                     <a id="print-html-request-sheet-btn" href="/klaes/file_request_sheet.html" target="_blank"
+                                         class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700"
+                                         style="display: none;">
+                                         <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
+                                         Print Request Sheet
+                                     </a>
+                                 </div>
                             </div>
                         </div>
                         <style>
@@ -2060,7 +2084,7 @@
                         <script>
                             window.currentUser = @json($currentUserPayload);
                             window.assignmentPermissions = @json($assignmentPermissionsPayload);
-                            window.isKangisModule = {{ in_array($module ?? '', ['kangis', 'new_kangis', 'sltr', 'st', 'dgis', 'dg', 'dciv']) ? 'true' : 'false' }};
+                            window.isKangisModule = {{ in_array(strtolower($module ?? ''), ['kangis', 'new_kangis', 'sltr', 'st', 'dgis', 'dg', 'dciv', 'cadastral']) ? 'true' : 'false' }};
                             window.isNewKangisMode = {{ ($module ?? '') === 'new_kangis' ? 'true' : 'false' }};
                             window.currentModule = '{{ $module ?? '' }}';
                             window.isApprovalModule = {{ in_array($module ?? '', ['dgis', 'dg']) ? 'true' : 'false' }};
@@ -2070,7 +2094,7 @@
                         @include('create_file_tracker_page.partials.js')
                         @include('create_file_tracker_page.partials.assignment-workflow-js')
                         @include('create_file_tracker_page.partials.workflow-3step-js')
-                        @if(in_array($module ?? '', ['kangis', 'sltr', 'st', 'dciv']))
+                        @if(in_array(strtolower($module ?? ''), ['kangis', 'sltr', 'st', 'dciv', 'cadastral']))
                         @include('create_file_tracker_page.partials.checkout-approval-js')
                         @endif
                     </div>

@@ -370,6 +370,9 @@
 
     @include('fileindexing.partials.unindexed_assets')
 
+    {{-- Property Transaction Modal --}}
+    @include('fileindexing.partial.property_transaction_modal')
+
     @include('components.global-fileno-modal')
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 

@@ -102,7 +102,7 @@ function renderRows(rows) {
   const fragments = rows.map((row, rowIndex) => {
     const viewUrl = buildViewUrl(row.view_url, row.id);
     const statusBadge = buildStatusBadge(row.status);
-    const fileNumberBadge = buildFileNumberBadge(row.file_number);
+    const fileNumberBadge = buildFileNumberBadge(row.file_number, row.is_temp_fallback);
     const landUseBadge = buildLandUseBadge(row.land_use_type);
     const lgaValue = row.lga == null ? '' : String(row.lga).toUpperCase();
     rowCache.set(String(row.id), row);
@@ -165,49 +165,60 @@ function renderRows(rows) {
 
     const rowCells = isKangisVariant
       ? (() => {
-          // Detect based on prefix as requested
-          const fn = (row.file_number || '').toUpperCase().trim();
-          const p = (row.kangis_fileno_placeholder || '').toUpperCase().trim();
-          const rel = (row.related_file_no || '').toUpperCase().trim();
-          const mls = (row.mls_file_no || '').toUpperCase().trim();
-          const nkn = (row.new_kangis_file_no || '').toUpperCase().trim();
+        // Detect based on prefix as requested
+        const fn = (row.file_number || '').toUpperCase().trim();
+        const p = (row.kangis_fileno_placeholder || '').toUpperCase().trim();
+        const rel = (row.related_file_no || '').toUpperCase().trim();
+        const mls = (row.mls_file_no || '').toUpperCase().trim();
+        const nkn = (row.new_kangis_file_no || '').toUpperCase().trim();
 
-          let kangisVal = row.kangis_file_no || '';
-          let placeholderVal = row.kangis_fileno_placeholder || '';
-          let newKangisVal = row.new_kangis_file_no || '';
-          let mlsVal = row.mls_file_no || (row.related_file_no !== '-' ? row.related_file_no : '');
+        let kangisVal = row.kangis_file_no || '';
+        let placeholderVal = row.kangis_fileno_placeholder || '';
+        let newKangisVal = row.new_kangis_file_no || '';
+        let mlsVal = row.mls_file_no || (row.related_file_no !== '-' ? row.related_file_no : '');
 
-          // Smart detection based on prefixes
-          const allValues = [fn, p, rel, mls, nkn, row.temp_file_no || ''].map(v => v.toUpperCase().trim()).filter(v => v !== '' && v !== '-');
-          
-          allValues.forEach(val => {
-            if (val.startsWith('KNML') || val.startsWith('MNKL') || val.startsWith('MLKN') || val.startsWith('KNGP')) {
-              if (!kangisVal) kangisVal = val;
-            } else if (val.startsWith('KN') && !val.startsWith('KNML')) {
-              // If it has a space and 4+ digits, it's likely a placeholder
-              if (val.includes(' ') && /\d{4,}/.test(val)) {
-                if (!placeholderVal) placeholderVal = val;
-              } else {
-                if (!newKangisVal) newKangisVal = val;
-              }
-            } else if (/^(RES|COM|IND|AG|CON|MISC|SIT|SLTR|DCIV|LPCC|GKN|LPKN)/.test(val)) {
-              if (!mlsVal) mlsVal = val;
+        // Smart detection based on prefixes
+        const allValues = [fn, p, rel, mls, nkn, row.temp_file_no || ''].map(v => v.toUpperCase().trim()).filter(v => v !== '' && v !== '-');
+
+        allValues.forEach(val => {
+          if (val.startsWith('KNML') || val.startsWith('MNKL') || val.startsWith('MLKN') || val.startsWith('KNGP')) {
+            if (!kangisVal) kangisVal = val;
+          } else if (val.startsWith('KN') && !val.startsWith('KNML')) {
+            // If it has a space and 4+ digits, it's likely a placeholder
+            if (val.includes(' ') && /\d{4,}/.test(val)) {
+              if (!placeholderVal) placeholderVal = val;
+            } else {
+              if (!newKangisVal) newKangisVal = val;
             }
-          });
+          } else if (/^(RES|COM|IND|AG|CON|MISC|SIT|SLTR|DCIV|LPCC|GKN|LPKN)/.test(val)) {
+            if (!mlsVal) mlsVal = val;
+          }
+        });
 
-          // Fallback to row fields if still empty
-          if (!kangisVal && (fn.startsWith('KNML') || fn.startsWith('MNKL') || fn.startsWith('MLKN') || fn.startsWith('KNGP'))) kangisVal = row.file_number;
-          if (!newKangisVal && fn.startsWith('KN') && !fn.startsWith('KNML') && !fn.includes(' ')) newKangisVal = row.file_number;
-          if (!mlsVal && /^(RES|COM|IND|AG|CON|MISC|SIT|SLTR|DCIV|LPCC|GKN|LPKN)/.test(fn)) mlsVal = row.file_number;
+        // Fallback to row fields if still empty
+        if (!kangisVal && (fn.startsWith('KNML') || fn.startsWith('MNKL') || fn.startsWith('MLKN') || fn.startsWith('KNGP'))) kangisVal = row.file_number;
+        if (!newKangisVal && fn.startsWith('KN') && !fn.startsWith('KNML') && !fn.includes(' ')) newKangisVal = row.file_number;
+        if (!mlsVal && /^(RES|COM|IND|AG|CON|MISC|SIT|SLTR|DCIV|LPCC|GKN|LPKN)/.test(fn)) mlsVal = row.file_number;
 
-          return `
+        // Ensure mlsVal strictly matches MLS prefixes, otherwise empty it out
+        if (mlsVal && !/^(RES|COM|IND|AG|CON|MISC|SIT|SLTR|DCIV|LPCC|GKN|LPKN)/.test(mlsVal.toUpperCase().trim())) {
+          mlsVal = '';
+        }
+
+        return `
             ${col('shelf_location', `<td class="${standardCellClass}">${escapeHtml(row.shelf_location)}</td>`)}
             ${col('file_number', `<td class="p-3 whitespace-nowrap">
-              ${kangisVal ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">${escapeHtml(kangisVal)}</span>` : '<span class="text-gray-400">-</span>'}
+              ${newKangisVal ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">${escapeHtml(newKangisVal)}</span>` : '<span class="text-gray-400">-</span>'}
               ${tableVariant === 'sltr' && row.has_edms_files ? `<div class="mt-1"><button type="button" class="edms-view-files-btn inline-flex items-center gap-1 text-[10px] font-bold text-violet-600 hover:text-violet-800 hover:underline transition-colors" data-id="${row.id}" data-file-number="${escapeHtml(row.file_number)}" data-registry-folder="SLTR_Registry"><i data-lucide="folder-open" class="w-3 h-3"></i><span>View Files</span></button></div>` : ''}
               ${tableVariant === 'kangis' && row.has_edms_files ? `<div class="mt-1"><button type="button" class="edms-view-files-btn inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 hover:text-purple-800 hover:underline transition-colors" data-id="${row.id}" data-file-number="${escapeHtml(row.file_number)}" data-registry-folder="KANGIS_Registry"><i data-lucide="folder-open" class="w-3 h-3"></i><span>View Files</span></button></div>` : ''}
             </td>`)}
-            ${col('kangis_fileno_placeholder', `<td class="${standardCellClass}">${placeholderVal ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">${escapeHtml(placeholderVal)}</span>` : '<span class="text-gray-400">-</span>'}</td>`)}
+            ${col('kangis_fileno_placeholder', `<td class="${standardCellClass}">
+              <div class="flex flex-col gap-1">
+                ${kangisVal ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">${escapeHtml(kangisVal)}</span>` : ''}
+                ${placeholderVal && placeholderVal !== kangisVal ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200 mt-1">${escapeHtml(placeholderVal)}</span>` : ''}
+                ${!kangisVal && !placeholderVal ? '<span class="text-gray-400">-</span>' : ''}
+              </div>
+            </td>`)}
             ${col('new_kangis_file_no', `<td class="${standardCellClass}">${newKangisVal ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">${escapeHtml(newKangisVal)}</span>` : '<span class="text-gray-400">-</span>'}</td>`)}
             ${col('related_file_no', `<td class="${standardCellClass}">
               ${mlsVal ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">${escapeHtml(mlsVal)}</span>` : '<span class="text-gray-400">-</span>'}
@@ -231,7 +242,7 @@ function renderRows(rows) {
             ${col('indexed_date', `<td class="${standardCellClass}">${escapeHtml(row.indexed_at ?? '')}</td>`)}
             ${col('status', `<td class="p-3 whitespace-nowrap">${statusBadge}</td>`)}
           `;
-        })()
+      })()
       : `
         ${col('shelf_location', `<td class="${standardCellClass}">${escapeHtml(row.shelf_location)}</td>`)}
         ${col('general_registry', `<td class="${standardCellClass}">${escapeHtml(row.general_registry)}</td>`)}
@@ -325,9 +336,13 @@ function buildStatusBadge(status) {
   return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${className}">${escapeHtml(label)}</span>`;
 }
 
-function buildFileNumberBadge(fileNumber) {
+function buildFileNumberBadge(fileNumber, isTempFallback = false) {
   if (!fileNumber) {
     return '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">No File</span>';
+  }
+
+  if (isTempFallback) {
+    return `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">${escapeHtml(fileNumber)}</span>`;
   }
 
   return `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">${escapeHtml(fileNumber)}</span>`;
@@ -686,7 +701,7 @@ function openRelatedFilesModal(id) {
   modal.classList.remove('hidden');
   const parentContainer = document.getElementById('parent-file-number-container');
   if (parentContainer) parentContainer.classList.add('hidden');
-  
+
   tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-sm"><i data-lucide="loader" class="h-5 w-5 animate-spin inline-block mr-2"></i>Loading related files...</td></tr>';
   if (window.lucide) window.lucide.createIcons();
 
@@ -699,8 +714,8 @@ function openRelatedFilesModal(id) {
   // Fetch data
   const url = `${window.location.origin}/api/indexed-files/related-files/${id}`;
   fetch(url, {
-      headers: { 'X-Requested-With': 'XMLHttpRequest' }
-    })
+    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  })
     .then(res => res.json())
     .then(data => {
       const parentContainer = document.getElementById('parent-file-number-container');
@@ -711,6 +726,11 @@ function openRelatedFilesModal(id) {
         const firstRow = data.data[0];
         if (firstRow && firstRow.main_file_number && parentContainer && parentBadge) {
           parentBadge.textContent = firstRow.main_file_number;
+          if (firstRow.main_is_temp_fallback) {
+            parentBadge.className = 'inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-700 border border-red-100';
+          } else {
+            parentBadge.className = 'inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100';
+          }
           parentContainer.classList.remove('hidden');
         }
 
@@ -764,9 +784,9 @@ function openRelatedFilesModal(id) {
 
 function openEdmsFilesModal(id, fileNumber, registryFolder) {
   registryFolder = registryFolder || 'Cadastral_Registry';
-  const modal   = document.getElementById('edms-files-modal');
-  const title   = document.getElementById('edms-files-modal-title');
-  const body    = document.getElementById('edms-files-modal-body');
+  const modal = document.getElementById('edms-files-modal');
+  const title = document.getElementById('edms-files-modal-title');
+  const body = document.getElementById('edms-files-modal-body');
   const closeBtn = document.getElementById('close-edms-files-modal');
   const backdrop = document.getElementById('edms-files-backdrop');
 
@@ -790,40 +810,40 @@ function openEdmsFilesModal(id, fileNumber, registryFolder) {
   fetch(`${window.location.origin}/api/indexed-files/edms-files/${id}?folder=${encodeURIComponent(registryFolder)}`, {
     headers: { 'X-Requested-With': 'XMLHttpRequest' }
   })
-  .then(r => r.json())
-  .then(data => {
-    if (!data.success) {
-      body.innerHTML = `<p class="text-center text-red-500 py-8 text-sm font-medium">${data.message || 'Failed to load files.'}</p>`;
-      return;
-    }
-    if (!data.has_files || !data.files.length) {
-      body.innerHTML = `
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) {
+        body.innerHTML = `<p class="text-center text-red-500 py-8 text-sm font-medium">${data.message || 'Failed to load files.'}</p>`;
+        return;
+      }
+      if (!data.has_files || !data.files.length) {
+        body.innerHTML = `
         <div class="flex flex-col items-center justify-center py-12 text-slate-400">
           <i data-lucide="folder-x" class="h-10 w-10 mb-3"></i>
           <p class="text-sm font-semibold">No scanned files found</p>
           <p class="text-xs mt-1">No documents are stored for this file number yet.</p>
         </div>`;
-      if (window.lucide) window.lucide.createIcons();
-      return;
-    }
+        if (window.lucide) window.lucide.createIcons();
+        return;
+      }
 
-    const images = data.files.filter(f => f.type === 'image');
-    const pdfs   = data.files.filter(f => f.type === 'pdf');
+      const images = data.files.filter(f => f.type === 'image');
+      const pdfs = data.files.filter(f => f.type === 'pdf');
 
-    // Preview list combines images first, then PDFs, so prev/next navigation works for both
-    const previewList = [...images, ...pdfs];
-    // Stash on the modal so click handlers below can read it
-    body.dataset.previewIndexBase = '0';
-    window.__edmsPreviewList = previewList;
+      // Preview list combines images first, then PDFs, so prev/next navigation works for both
+      const previewList = [...images, ...pdfs];
+      // Stash on the modal so click handlers below can read it
+      body.dataset.previewIndexBase = '0';
+      window.__edmsPreviewList = previewList;
 
-    let html = '';
+      let html = '';
 
-    if (images.length) {
-      html += `<div class="mb-4">
+      if (images.length) {
+        html += `<div class="mb-4">
         <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Images (${images.length})</p>
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">`;
-      images.forEach((f, i) => {
-        html += `
+        images.forEach((f, i) => {
+          html += `
           <button type="button" data-edms-preview-index="${i}" class="edms-preview-trigger group block w-full text-left rounded-xl border border-slate-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition-all bg-slate-50">
             <div class="aspect-[4/3] bg-slate-100 flex items-center justify-center overflow-hidden">
               <img src="${f.url}" alt="${escapeHtml(f.name)}" class="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" onerror="this.parentElement.innerHTML='<span class=text-slate-400 text-xs>Preview unavailable</span>'">
@@ -832,17 +852,17 @@ function openEdmsFilesModal(id, fileNumber, registryFolder) {
               <p class="text-[10px] font-semibold text-slate-600 truncate" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</p>
             </div>
           </button>`;
-      });
-      html += `</div></div>`;
-    }
+        });
+        html += `</div></div>`;
+      }
 
-    if (pdfs.length) {
-      const pdfStartIndex = images.length;
-      html += `<div>
+      if (pdfs.length) {
+        const pdfStartIndex = images.length;
+        html += `<div>
         <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">PDF Documents (${pdfs.length})</p>
         <div class="space-y-2">`;
-      pdfs.forEach((f, i) => {
-        html += `
+        pdfs.forEach((f, i) => {
+          html += `
           <button type="button" data-edms-preview-index="${pdfStartIndex + i}" class="edms-preview-trigger flex items-center gap-3 p-3 w-full text-left rounded-xl border border-slate-200 hover:border-red-300 hover:bg-red-50 transition-all group">
             <div class="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
               <i data-lucide="file-text" class="w-5 h-5 text-red-600"></i>
@@ -853,24 +873,24 @@ function openEdmsFilesModal(id, fileNumber, registryFolder) {
             </div>
             <i data-lucide="eye" class="w-4 h-4 text-slate-400 group-hover:text-red-500 shrink-0"></i>
           </button>`;
-      });
-      html += `</div></div>`;
-    }
+        });
+        html += `</div></div>`;
+      }
 
-    body.innerHTML = html;
-    if (window.lucide) window.lucide.createIcons();
+      body.innerHTML = html;
+      if (window.lucide) window.lucide.createIcons();
 
-    // Wire up preview triggers
-    body.querySelectorAll('.edms-preview-trigger').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = parseInt(btn.getAttribute('data-edms-preview-index'), 10) || 0;
-        openEdmsPreview(window.__edmsPreviewList || [], idx);
+      // Wire up preview triggers
+      body.querySelectorAll('.edms-preview-trigger').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.getAttribute('data-edms-preview-index'), 10) || 0;
+          openEdmsPreview(window.__edmsPreviewList || [], idx);
+        });
       });
+    })
+    .catch(() => {
+      body.innerHTML = `<p class="text-center text-red-500 py-8 text-sm font-medium">Network error. Please try again.</p>`;
     });
-  })
-  .catch(() => {
-    body.innerHTML = `<p class="text-center text-red-500 py-8 text-sm font-medium">Network error. Please try again.</p>`;
-  });
 }
 
 /**
@@ -903,11 +923,11 @@ function openEdmsPreview(list, startIndex) {
     if (window.lucide) window.lucide.createIcons();
   }
 
-  const stage   = overlay.querySelector('#edms-preview-stage');
+  const stage = overlay.querySelector('#edms-preview-stage');
   const caption = overlay.querySelector('#edms-preview-caption');
   const closeBtn = overlay.querySelector('#edms-preview-close');
-  const prevBtn  = overlay.querySelector('#edms-preview-prev');
-  const nextBtn  = overlay.querySelector('#edms-preview-next');
+  const prevBtn = overlay.querySelector('#edms-preview-prev');
+  const nextBtn = overlay.querySelector('#edms-preview-next');
 
   const render = () => {
     const item = list[index];
@@ -949,8 +969,8 @@ function openEdmsPreview(list, startIndex) {
 
   // (Re)bind handlers — clone-replace to avoid stacking listeners
   const newClose = closeBtn.cloneNode(true); closeBtn.replaceWith(newClose); newClose.addEventListener('click', close);
-  const newPrev  = prevBtn.cloneNode(true);  prevBtn.replaceWith(newPrev);   newPrev.addEventListener('click', prev);
-  const newNext  = nextBtn.cloneNode(true);  nextBtn.replaceWith(newNext);   newNext.addEventListener('click', next);
+  const newPrev = prevBtn.cloneNode(true); prevBtn.replaceWith(newPrev); newPrev.addEventListener('click', prev);
+  const newNext = nextBtn.cloneNode(true); nextBtn.replaceWith(newNext); newNext.addEventListener('click', next);
   overlay.onclick = (e) => { if (e.target === overlay) close(); };
   document.addEventListener('keydown', onKey);
 
@@ -1297,7 +1317,7 @@ function openTempFileNoSelector() {
   }
 
   window.GlobalFileNoModal.open({
-    callback: function(result) {
+    callback: function (result) {
       if (result && result.fileNumber) {
         const input = document.getElementById('temp-file-no-input');
         if (input) {
@@ -1327,25 +1347,8 @@ async function submitTempFile() {
     return;
   }
 
-  // Ask for has_transaction
-  let hasTransaction = false;
-  if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
-    const result = await window.Swal.fire({
-      title: 'Has Transaction?',
-      text: "Does this file have a transaction?",
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Yes',
-      cancelButtonText: 'No',
-      confirmButtonColor: '#0d9488', // teal-600
-      cancelButtonColor: '#64748b', // slate-500
-    });
-    hasTransaction = !!result.isConfirmed;
-  } else {
-    hasTransaction = window.confirm('Does this file have a transaction?');
-  }
-
   try {
+    // 1. Update the temporary file number first (before popping has_transaction)
     const response = await fetch(`${window.location.origin}/api/indexed-files/${encodeURIComponent(fileId)}/set-temp-file`, {
       method: 'POST',
       headers: {
@@ -1353,9 +1356,8 @@ async function submitTempFile() {
         'X-CSRF-TOKEN': csrfToken,
         'X-Requested-With': 'XMLHttpRequest'
       },
-      body: JSON.stringify({ 
-        temp_file_no: tempFileNo,
-        has_transaction: hasTransaction
+      body: JSON.stringify({
+        temp_file_no: tempFileNo
       })
     });
 
@@ -1365,77 +1367,129 @@ async function submitTempFile() {
       throw new Error(result.message || 'Failed to set temporary file number.');
     }
 
+    // Hide the temp file modal first as requested
     document.getElementById('temp-file-modal').classList.add('hidden');
 
+    // 2. Ask "Has Transaction?"
+    let hasTransaction = false;
     if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
-      await window.Swal.fire({ icon: 'success', title: 'Updated', text: result.message || 'Temporary file number saved successfully.' });
+      const promptResult = await window.Swal.fire({
+        title: 'Has Transaction?',
+        text: "Does this file have a transaction?",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes',
+        cancelButtonText: 'No',
+        confirmButtonColor: '#0d9488', // teal-600
+        cancelButtonColor: '#64748b', // slate-500
+      });
+      hasTransaction = !!promptResult.isConfirmed;
     } else {
-      alert(result.message || 'Temporary file number saved successfully.');
+      hasTransaction = window.confirm('Does this file have a transaction?');
     }
 
-    // Open transaction modal if hasTransaction was true and data is returned
-    if (hasTransaction && result.data && typeof window.openPropertyTransactionModal === 'function') {
-      const row = result.data;
-      const tempSuffixPattern = /\(\s*T\s*\)\s*$/i;
-      let fileNo = row.file_number || '';
-      const hasTemp = row.has_temp_file || tempSuffixPattern.test(fileNo);
-      let tempFileNo = row.temp_file_no || '';
-      
-      if (hasTemp && !tempFileNo) {
-        tempFileNo = tempSuffixPattern.test(fileNo) ? fileNo : `${fileNo}(T)`;
-      }
-      
-      if (hasTemp && fileNo) {
-        fileNo = fileNo.replace(tempSuffixPattern, '').trim();
-      }
-
-      const fileIndexingData = {
-        id: row.id,
-        file_number: fileNo,
-        has_temp_file: hasTemp ? 1 : 0,
-        file_title: row.file_title || '',
-        lga: row.lga || '',
-        district: row.district || '',
-        land_use_type: row.land_use_type || '',
-        plot_no: row.plot_no || row.plot_number || '',
-        tp_no: row.tp_no || '',
-        lpkn_no: row.lpkn_no || '',
+    // 3. Update has_transaction status in database
+    const updateResponse = await fetch(`${window.location.origin}/api/indexed-files/${encodeURIComponent(fileId)}/set-temp-file`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': csrfToken,
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({
         temp_file_no: tempFileNo,
-        property_description: [row.district, row.lga].filter(Boolean).join(', '),
-        existing_records: []
-      };
+        has_transaction: hasTransaction
+      })
+    });
 
-      // Show loading while fetching existing records for the modal
-      if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
-        window.Swal.fire({
-          title: 'Loading...',
-          text: 'Fetching transaction details',
-          allowOutsideClick: false,
-          didOpen: () => {
-            window.Swal.showLoading();
+    const updateResult = await updateResponse.json().catch(() => ({}));
+    if (!updateResponse.ok || !updateResult.success) {
+      throw new Error(updateResult.message || 'Failed to update transaction status.');
+    }
+
+    const row = updateResult.data || result.data;
+
+    if (hasTransaction) {
+      // 4. If click yes, prepare the property transaction modal
+      if (row && typeof window.openPropertyTransactionModal === 'function') {
+        const tempSuffixPattern = /\(\s*T\s*\)\s*$/i;
+        let fileNo = row.file_number || '';
+        const originalFileNumber = document.getElementById('temp-file-file-number').value || '';
+
+        // Ensure we use the main file number (not the temp file number)
+        if (!fileNo || fileNo === '-' || fileNo === '') {
+          fileNo = originalFileNumber;
+        }
+
+        // Clean main file number from any (T) suffix
+        if (fileNo) {
+          fileNo = fileNo.replace(tempSuffixPattern, '').trim();
+        }
+
+        // If for some reason the main file number is still empty or is identical to the temp one,
+        // fallback to the original main file number.
+        if (fileNo === tempFileNo && originalFileNumber && originalFileNumber !== tempFileNo) {
+          fileNo = originalFileNumber.replace(tempSuffixPattern, '').trim();
+        }
+
+        const hasTemp = row.has_temp_file || tempSuffixPattern.test(fileNo) || !!tempFileNo;
+
+        const fileIndexingData = {
+          id: row.id,
+          file_number: fileNo, // clean main file number
+          has_temp_file: hasTemp ? 1 : 0,
+          file_title: row.file_title || document.getElementById('temp-file-file-title').value || '',
+          lga: row.lga || document.getElementById('temp-file-lga').value || '',
+          district: row.district || document.getElementById('temp-file-district').value || '',
+          land_use_type: row.land_use_type || '',
+          plot_no: row.plot_no || row.plot_number || document.getElementById('temp-file-plot-number').value || '',
+          tp_no: row.tp_no || '',
+          lpkn_no: row.lpkn_no || '',
+          temp_file_no: tempFileNo,
+          location: row.location || document.getElementById('temp-file-location').value || '',
+          property_description: row.location || document.getElementById('temp-file-location').value || [row.district, row.lga].filter(Boolean).join(', '),
+          existing_records: []
+        };
+
+        // Show loading while fetching existing records for the modal
+        if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
+          window.Swal.fire({
+            title: 'Loading...',
+            text: 'Fetching transaction details',
+            allowOutsideClick: false,
+            didOpen: () => {
+              window.Swal.showLoading();
+            }
+          });
+        }
+
+        try {
+          const checkResponse = await fetch(`${window.location.origin}/api/property-records/check/${encodeURIComponent(fileNo)}`);
+          const checkData = await checkResponse.json();
+
+          if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
+            window.Swal.close();
           }
-        });
+
+          if (checkData.success && checkData.records) {
+            fileIndexingData.existing_records = checkData.records;
+          }
+
+          window.openPropertyTransactionModal(fileIndexingData);
+        } catch (error) {
+          console.error('Error fetching transactions:', error);
+          if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
+            window.Swal.close();
+          }
+          window.openPropertyTransactionModal(fileIndexingData);
+        }
       }
-
-      try {
-        const checkResponse = await fetch(`${window.location.origin}/api/property-records/check/${encodeURIComponent(row.file_number)}`);
-        const checkData = await checkResponse.json();
-        
-        if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
-          window.Swal.close();
-        }
-
-        if (checkData.success && checkData.records) {
-          fileIndexingData.existing_records = checkData.records;
-        }
-        
-        window.openPropertyTransactionModal(fileIndexingData);
-      } catch (error) {
-        console.error('Error fetching transactions:', error);
-        if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
-          window.Swal.close();
-        }
-        window.openPropertyTransactionModal(fileIndexingData);
+    } else {
+      // If clicked No, show success alert
+      if (typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function') {
+        await window.Swal.fire({ icon: 'success', title: 'Updated', text: 'Temporary file number saved successfully.' });
+      } else {
+        alert('Temporary file number saved successfully.');
       }
     }
 
@@ -1462,17 +1516,17 @@ function handleUpdatePlaceholder(button) {
   if (!modal) return;
 
   document.getElementById('update-placeholder-id').value = fileId;
-  
+
   // Split prefix and serial
   const prefixSelect = document.getElementById('update-placeholder-prefix');
   const serialInput = document.getElementById('update-placeholder-serial');
-  
+
   if (fullPlaceholder) {
     const parts = fullPlaceholder.split(/\s+/);
     if (parts.length >= 2) {
       const prefix = parts[0].toUpperCase();
       const serial = parts.slice(1).join(' ');
-      
+
       // Try to match prefix in select
       let found = false;
       for (let i = 0; i < prefixSelect.options.length; i++) {
@@ -1482,11 +1536,11 @@ function handleUpdatePlaceholder(button) {
           break;
         }
       }
-      
+
       if (!found) {
         prefixSelect.value = 'OTHER';
       }
-      
+
       serialInput.value = serial;
     } else {
       prefixSelect.value = ''; // Default to "Select Prefix"
@@ -1569,7 +1623,7 @@ async function submitUpdatePlaceholder() {
 }
 
 // Bind temp file modal events
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
   const closeTempModalBtn = document.getElementById('close-temp-file-modal');
   const cancelTempBtn = document.getElementById('cancel-temp-file');
   const tempBackdrop = document.getElementById('temp-file-backdrop');
@@ -1810,6 +1864,12 @@ document.addEventListener('click', (e) => {
     document.getElementById('edms-files-modal')?.classList.add('hidden');
   }
 });
+
+// Callback function triggered by the property transaction modal on successful save/update
+window.checkExistingPropertyRecords = function () {
+  console.log('checkExistingPropertyRecords callback triggered, reloading table...');
+  loadTable();
+};
 
 function bootstrap() {
   if (dom.perPageSelect) {

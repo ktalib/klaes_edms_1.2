@@ -1,6 +1,6 @@
 <!-- Global File Number Modal -->
 <div id="global-fileno-modal"
-    class="fixed inset-0 bg-black bg-opacity-60 z-[100] hidden items-center justify-center p-4"
+    class="fixed inset-0 bg-black bg-opacity-60 z-[2000000] hidden items-center justify-center p-4"
     data-modal="global-fileno" onclick="if(event.target === this) GlobalFileNoModal.close()">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden"
         onclick="event.stopPropagation()">
@@ -753,6 +753,9 @@
     <style>
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        #global-fileno-modal {
+            z-index: 2000000 !important;
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script>

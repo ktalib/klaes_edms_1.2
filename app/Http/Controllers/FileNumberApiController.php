@@ -487,9 +487,11 @@ class FileNumberApiController extends Controller
             $row = DB::connection('sqlsrv')
                 ->table('file_indexings')
                 ->select('tracking_id')
-                ->where(function ($q) use ($fileNumber) {
+                ->where(function ($q) use ($fileNumber, $selectedFileNumber) {
                     $q->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = UPPER(?)', [$fileNumber])
-                      ->orWhereRaw('UPPER(LTRIM(RTRIM(temp_file_no))) = UPPER(?)', [$fileNumber]);
+                      ->orWhereRaw('UPPER(LTRIM(RTRIM(temp_file_no))) = UPPER(?)', [$fileNumber])
+                      ->orWhereRaw('UPPER(LTRIM(RTRIM(file_number))) = UPPER(?)', [$selectedFileNumber])
+                      ->orWhereRaw('UPPER(LTRIM(RTRIM(temp_file_no))) = UPPER(?)', [$selectedFileNumber]);
                 })
                 ->whereNotNull('tracking_id')
                 ->whereRaw("LTRIM(RTRIM(tracking_id)) <> ''")
@@ -520,9 +522,11 @@ class FileNumberApiController extends Controller
         try {
             $row = DB::connection('sqlsrv')
                 ->table('file_indexings')
-                ->where(function ($q) use ($fileNumber) {
+                ->where(function ($q) use ($fileNumber, $selectedFileNumber) {
                     $q->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = UPPER(?)', [$fileNumber])
-                      ->orWhereRaw('UPPER(LTRIM(RTRIM(temp_file_no))) = UPPER(?)', [$fileNumber]);
+                      ->orWhereRaw('UPPER(LTRIM(RTRIM(temp_file_no))) = UPPER(?)', [$fileNumber])
+                      ->orWhereRaw('UPPER(LTRIM(RTRIM(file_number))) = UPPER(?)', [$selectedFileNumber])
+                      ->orWhereRaw('UPPER(LTRIM(RTRIM(temp_file_no))) = UPPER(?)', [$selectedFileNumber]);
                 })
                 ->orderByDesc('id')
                 ->first();
@@ -597,13 +601,10 @@ class FileNumberApiController extends Controller
                     ->select('tracking_id')
                     ->whereNotNull('tracking_id')
                     ->whereRaw("LTRIM(RTRIM(tracking_id)) <> ''")
-                    ->where(function ($q) use ($columns, $fileNumber) {
-                        foreach ($columns as $index => $column) {
-                            if ($index === 0) {
-                                $q->whereRaw("UPPER(LTRIM(RTRIM({$column}))) = UPPER(?)", [$fileNumber]);
-                            } else {
-                                $q->orWhereRaw("UPPER(LTRIM(RTRIM({$column}))) = UPPER(?)", [$fileNumber]);
-                            }
+                    ->where(function ($q) use ($columns, $fileNumber, $selectedFileNumber) {
+                        foreach ($columns as $column) {
+                            $q->orWhereRaw("UPPER(LTRIM(RTRIM({$column}))) = UPPER(?)", [$fileNumber])
+                              ->orWhereRaw("UPPER(LTRIM(RTRIM({$column}))) = UPPER(?)", [$selectedFileNumber]);
                         }
                     })
                     ->orderByDesc('id')
@@ -1482,19 +1483,55 @@ class FileNumberApiController extends Controller
         }
 
         if (!empty($criteria['mlsf_no'])) {
-            $query->where('fn.mlsfNo', $criteria['mlsf_no']);
+            $val = $criteria['mlsf_no'];
+            $stripped = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $val);
+            if ($stripped !== $val) {
+                $query->where(function ($q) use ($val, $stripped) {
+                    $q->where('fn.mlsfNo', $val)
+                      ->orWhere('fn.mlsfNo', $stripped);
+                });
+            } else {
+                $query->where('fn.mlsfNo', $val);
+            }
         }
 
         if (!empty($criteria['st_file_no'])) {
-            $query->where('fn.st_file_no', $criteria['st_file_no']);
+            $val = $criteria['st_file_no'];
+            $stripped = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $val);
+            if ($stripped !== $val) {
+                $query->where(function ($q) use ($val, $stripped) {
+                    $q->where('fn.st_file_no', $val)
+                      ->orWhere('fn.st_file_no', $stripped);
+                });
+            } else {
+                $query->where('fn.st_file_no', $val);
+            }
         }
 
         if (!empty($criteria['kangis_file_no'])) {
-            $query->where('fn.kangisFileNo', $criteria['kangis_file_no']);
+            $val = $criteria['kangis_file_no'];
+            $stripped = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $val);
+            if ($stripped !== $val) {
+                $query->where(function ($q) use ($val, $stripped) {
+                    $q->where('fn.kangisFileNo', $val)
+                      ->orWhere('fn.kangisFileNo', $stripped);
+                });
+            } else {
+                $query->where('fn.kangisFileNo', $val);
+            }
         }
 
         if (!empty($criteria['new_kangis_file_no'])) {
-            $query->where('fn.NewKANGISFileNo', $criteria['new_kangis_file_no']);
+            $val = $criteria['new_kangis_file_no'];
+            $stripped = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $val);
+            if ($stripped !== $val) {
+                $query->where(function ($q) use ($val, $stripped) {
+                    $q->where('fn.NewKANGISFileNo', $val)
+                      ->orWhere('fn.NewKANGISFileNo', $stripped);
+                });
+            } else {
+                $query->where('fn.NewKANGISFileNo', $val);
+            }
         }
 
         if (!empty($criteria['file_number'])) {

@@ -1236,12 +1236,12 @@
                     const checkData = await chkResponse.json();
                     if (checkData.has_associated_temp && typeof Swal !== 'undefined') {
                         await Swal.fire({
-                            title: 'Temporary File Association Detected',
+                            title: 'Temporary File Detected',
                             html: `An existing temporary file <strong>${checkData.temp_record.temp_file_no}</strong> was found for this file number in the database.<br><br>` +
                                 `Saving will merge this main file number into the existing temporary indexing record.<br><br>` +
                                 `You can continue filling out the details.`,
                             icon: 'warning',
-                            confirmButtonText: 'Understood & Proceed',
+                            confirmButtonText: 'Proceed',
                             confirmButtonColor: '#3085d6',
                         });
                     }
@@ -6124,15 +6124,15 @@
     function buildPropertyTransactionPayload(serverResponse, fallbackFormData = {}) {
         const payload = serverResponse?.data || {};
         const tempSuffixPattern = /\(\s*T\s*\)\s*$/i;
-        
+
         let fileNumber = payload.file_number || fallbackFormData.file_number || '';
         const hasTempFile = payload.has_temp_file || fallbackFormData.has_temp_file || tempSuffixPattern.test(fileNumber);
-        
+
         let tempFileNo = payload.temp_file_no || fallbackFormData.temp_file_no || null;
         if (hasTempFile && !tempFileNo) {
             tempFileNo = tempSuffixPattern.test(fileNumber) ? fileNumber : `${fileNumber}(T)`;
         }
-        
+
         if (hasTempFile && fileNumber) {
             fileNumber = fileNumber.replace(tempSuffixPattern, '').trim();
         }

@@ -254,7 +254,7 @@
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-2">
                                 <i data-lucide="building" class="h-3 w-3"></i>
-                                Building Assessment <span class="text-red-500">*</span>
+                                Building Assessment & Cost Details <span class="text-red-500">*</span>
                             </label>
                             <div id="building_types_container" class="grid grid-cols-1 gap-4">
                                 <div class="building-type-row p-4 rounded-xl border border-slate-100 bg-slate-50/50">
@@ -284,6 +284,32 @@
                                             <input type="text" class="building-stage-other hidden mt-2 w-full px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 focus:border-blue-500 focus:bg-white transition text-xs font-medium" placeholder="Specify stage...">
                                         </div>
                                     </div>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mt-4 pt-4 border-t border-slate-100">
+                                        <div>
+                                            <label class="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Length (L) (m)</label>
+                                            <input type="number" step="0.01" class="building-length w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:border-blue-500 transition text-xs font-medium" placeholder="0.00">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Breadth (B) (m)</label>
+                                            <input type="number" step="0.01" class="building-breadth w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:border-blue-500 transition text-xs font-medium" placeholder="0.00">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Area Covered (m²)</label>
+                                            <input type="number" step="0.01" class="building-area w-full px-4 py-2.5 rounded-xl border border-blue-100 bg-blue-50/50 text-blue-700 font-bold focus:border-blue-500 transition text-xs font-medium shadow-inner" placeholder="0.00">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Rate of Cost (₦)</label>
+                                            <input type="number" step="0.01" class="building-rate w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:border-blue-500 transition text-xs font-medium" placeholder="0.00">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Amount (₦)</label>
+                                            <div class="relative">
+                                                <input type="number" step="0.01" class="building-comp w-full pl-7 pr-4 py-2.5 rounded-xl border border-blue-200 bg-white font-bold text-blue-700 text-xs shadow-sm" placeholder="0.00" readonly>
+                                                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 font-bold text-xs">₦</span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <input type="hidden" name="building_type" id="building_type_final" required>
@@ -291,41 +317,44 @@
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">                        <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Length (L) <span class="text-slate-400 font-normal italic">(m)</span></label>
-                                <input type="number" step="0.01" name="length" id="length"
-                                    class="calc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
-                                    placeholder="0.00">
+                    <div class="hidden">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Total Length (L) <span class="text-slate-400 font-normal italic">(m)</span></label>
+                                    <input type="number" step="0.01" name="length" id="length" readonly
+                                        class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-bold text-slate-500 cursor-not-allowed shadow-inner transition"
+                                        placeholder="0.00">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Total Breadth (B) <span class="text-slate-400 font-normal italic">(m)</span></label>
+                                    <input type="number" step="0.01" name="breadth" id="breadth" readonly
+                                        class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-bold text-slate-500 cursor-not-allowed shadow-inner transition"
+                                        placeholder="0.00">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Total Area Covered (m²) <span class="text-red-500">*</span></label>
+                                    <input type="number" step="0.01" name="area_covered" id="area_covered" required readonly
+                                        class="w-full px-4 py-3 rounded-xl border border-blue-100 bg-blue-50/50 text-sm font-bold text-blue-700 shadow-inner transition cursor-not-allowed"
+                                        placeholder="0.00">
+                                </div>
                             </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Breadth (B) <span class="text-slate-400 font-normal italic">(m)</span></label>
-                                <input type="number" step="0.01" name="breadth" id="breadth"
-                                    class="calc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
-                                    placeholder="0.00">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Area Covered (m²) <span class="text-red-500">*</span></label>
-                                <input type="number" step="0.01" name="area_covered" id="area_covered" required
-                                    class="calc-trigger w-full px-4 py-3 rounded-xl border border-blue-100 bg-blue-50/50 focus:border-blue-500 focus:bg-white text-sm font-bold text-blue-700 shadow-inner transition"
-                                    placeholder="0.00">
-                            </div>
-                        </div>
 
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Rate of Cost (₦) <span class="text-red-500">*</span></label>
-                            <input type="number" step="0.01" name="rate_of_cost" id="rate_of_cost" required
-                                class="calc-trigger w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium"
-                                placeholder="0.00">
-                        </div>
-
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Amount of Compensation</label>
-                            <div class="relative">
-                                <input type="number" step="0.01" name="compensation_amount" id="compensation_amount" required
-                                    class="w-full pl-10 pr-4 py-3 rounded-xl border border-blue-200 bg-white font-bold text-blue-700 text-lg focus:ring-0 shadow-sm"
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Average Rate of Cost (₦) <span class="text-red-500">*</span></label>
+                                <input type="number" step="0.01" name="rate_of_cost" id="rate_of_cost" required readonly
+                                    class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-bold text-slate-500 cursor-not-allowed shadow-inner transition"
                                     placeholder="0.00">
-                                <div class="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 font-bold">₦</div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Total Amount of Compensation</label>
+                                <div class="relative">
+                                    <input type="number" step="0.01" name="compensation_amount" id="compensation_amount" required readonly
+                                        class="w-full pl-10 pr-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 font-bold text-blue-700 text-lg focus:ring-0 shadow-inner cursor-not-allowed"
+                                        placeholder="0.00">
+                                    <div class="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 font-bold">₦</div>
+                                </div>
                             </div>
                         </div>
                     </div>

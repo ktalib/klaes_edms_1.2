@@ -30,20 +30,20 @@ class ChangeOfPurposeController extends Controller
      */
     public function index(Request $request): View
     {
-        $limit  = max(10, min((int) $request->input('limit', 50), 200));
+        $limit = max(10, min((int) $request->input('limit', 50), 200));
         $search = trim((string) $request->input('search'));
 
         $base = ChangeOfPurposeApplication::query()
-            ->where(function($q) {
+            ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     $sub->where('applicant_name', 'LIKE', "%{$search}%")
-                        ->orWhere('file_no',       'LIKE', "%{$search}%")
-                        ->orWhere('land_use',      'LIKE', "%{$search}%")
-                        ->orWhere('location',      'LIKE', "%{$search}%")
-                        ->orWhere('purpose',       'LIKE', "%{$search}%");
+                        ->orWhere('file_no', 'LIKE', "%{$search}%")
+                        ->orWhere('land_use', 'LIKE', "%{$search}%")
+                        ->orWhere('location', 'LIKE', "%{$search}%")
+                        ->orWhere('purpose', 'LIKE', "%{$search}%");
                 });
             })
             ->orderByDesc('created_at');
@@ -64,23 +64,35 @@ class ChangeOfPurposeController extends Controller
             ->limit($limit)
             ->get();
 
-        $states      = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
-        $lgas        = DB::connection('sqlsrv')->table('lgas')->where('is_active', 1)->orderBy('name')->get();
-        $districts   = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
+        $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
+        $lgas = DB::connection('sqlsrv')->table('lgas')->where('is_active', 1)->orderBy('name')->get();
+        $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
         $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
 
         // Dashboard stats
         $stats = [
-            'total'        => ChangeOfPurposeApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->count(),
-            'daily'        => ChangeOfPurposeApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->whereDate('created_at', today())->count(),
-            'pending'      => ChangeOfPurposeApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfPurposeApplication::STATUS_PENDING)->count(),
-            'approved'     => ChangeOfPurposeApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfPurposeApplication::STATUS_APPROVED)->count(),
-            'rejected'     => ChangeOfPurposeApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfPurposeApplication::STATUS_REJECTED)->count(),
+            'total' => ChangeOfPurposeApplication::where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->count(),
+            'daily' => ChangeOfPurposeApplication::where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->whereDate('created_at', today())->count(),
+            'pending' => ChangeOfPurposeApplication::where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfPurposeApplication::STATUS_PENDING)->count(),
+            'approved' => ChangeOfPurposeApplication::where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfPurposeApplication::STATUS_APPROVED)->count(),
+            'rejected' => ChangeOfPurposeApplication::where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfPurposeApplication::STATUS_REJECTED)->count(),
         ];
 
         return view('change_of_purpose.index', compact(
-            'pendingRecords', 'approvedRecords', 'limit', 'search',
-            'states', 'lgas', 'districts', 'streetNames', 'stats'
+            'pendingRecords',
+            'approvedRecords',
+            'limit',
+            'search',
+            'states',
+            'lgas',
+            'districts',
+            'streetNames',
+            'stats'
         ) + ['landUseOptions' => self::LAND_USE_OPTIONS]);
     }
 
@@ -90,7 +102,7 @@ class ChangeOfPurposeController extends Controller
     public function show(int $id): JsonResponse
     {
         $record = ChangeOfPurposeApplication::query()
-            
+
             ->findOrFail($id);
 
         return response()->json(['success' => true, 'data' => $record]);
@@ -107,17 +119,17 @@ class ChangeOfPurposeController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed.',
-                'errors'  => $validator->errors(),
+                'errors' => $validator->errors(),
             ], 422);
         }
 
-        $data                     = $validator->validated();
-        $comment                  = $data['comment'] ?? null;
+        $data = $validator->validated();
+        $comment = $data['comment'] ?? null;
         unset($data['comment']);
 
-        $data['remarks']          = $comment;
-        $data['captured_by']      = Auth::id();
-        $data['status']           = ChangeOfPurposeApplication::STATUS_PENDING;
+        $data['remarks'] = $comment;
+        $data['captured_by'] = Auth::id();
+        $data['status'] = ChangeOfPurposeApplication::STATUS_PENDING;
 
         $record = ChangeOfPurposeApplication::create($data);
 
@@ -138,7 +150,7 @@ class ChangeOfPurposeController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Application submitted successfully. Awaiting approval.',
-            'data'    => $record,
+            'data' => $record,
         ]);
     }
 
@@ -148,11 +160,11 @@ class ChangeOfPurposeController extends Controller
     public function approve(int $id): JsonResponse
     {
         $record = ChangeOfPurposeApplication::query()
-            
+
             ->findOrFail($id);
 
         $record->update([
-            'status'     => ChangeOfPurposeApplication::STATUS_APPROVED,
+            'status' => ChangeOfPurposeApplication::STATUS_APPROVED,
             'updated_by' => Auth::id(),
         ]);
 
@@ -165,14 +177,14 @@ class ChangeOfPurposeController extends Controller
     public function reject(Request $request, int $id): JsonResponse
     {
         $record = ChangeOfPurposeApplication::query()
-            
+
             ->findOrFail($id);
 
         $reason = trim((string) $request->input('reason', ''));
 
         $record->update([
-            'status'     => ChangeOfPurposeApplication::STATUS_REJECTED,
-            'remarks'    => $reason ? "Rejected: {$reason}" : 'Rejected',
+            'status' => ChangeOfPurposeApplication::STATUS_REJECTED,
+            'remarks' => $reason ? "Rejected: {$reason}" : 'Rejected',
             'updated_by' => Auth::id(),
         ]);
 
@@ -185,7 +197,7 @@ class ChangeOfPurposeController extends Controller
     public function acknowledgement(int $id): JsonResponse
     {
         $record = ChangeOfPurposeApplication::query()
-            
+
             ->findOrFail($id);
 
         $newFileNo = $this->generateNewFileNumber(
@@ -195,7 +207,7 @@ class ChangeOfPurposeController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => $record,
+            'data' => $record,
             'new_file_no' => $newFileNo,
             'land_use_label' => self::LAND_USE_OPTIONS[$record->purpose ?? ''] ?? $record->purpose,
         ]);
@@ -213,11 +225,14 @@ class ChangeOfPurposeController extends Controller
             strtoupper((string) ($record->purpose ?? ''))
         );
 
-        $landUseLabel    = $record->land_use ?: '-';
+        $landUseLabel = $record->land_use ?: '-';
         $newPurposeLabel = self::LAND_USE_OPTIONS[$record->purpose ?? ''] ?? $record->purpose;
 
         return view('change_of_purpose.print.acknowledgement', compact(
-            'record', 'newFileNo', 'landUseLabel', 'newPurposeLabel'
+            'record',
+            'newFileNo',
+            'landUseLabel',
+            'newPurposeLabel'
         ));
     }
 
@@ -234,14 +249,14 @@ class ChangeOfPurposeController extends Controller
         $oldFileNo = trim((string) ($record->file_no ?? ''));
 
         $record->update([
-            'status'     => 'commissioned',
-            'remarks'    => trim(($record->remarks ?? '') . "\nCommissioned: {$oldFileNo} -> {$newFileNo} on " . now()->toDateTimeString()),
+            'status' => 'commissioned',
+            'remarks' => trim(($record->remarks ?? '') . "\nCommissioned: {$oldFileNo} -> {$newFileNo} on " . now()->toDateTimeString()),
             'updated_by' => Auth::id(),
         ]);
 
         return response()->json([
-            'success'     => true,
-            'message'     => 'Change of Purpose commissioned successfully.',
+            'success' => true,
+            'message' => 'Change of Purpose commissioned successfully.',
             'old_file_no' => $oldFileNo,
             'new_file_no' => $newFileNo,
         ]);
@@ -264,11 +279,11 @@ class ChangeOfPurposeController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed.',
-                'errors'  => $validator->errors(),
+                'errors' => $validator->errors(),
             ], 422);
         }
 
-        $data               = $validator->validated();
+        $data = $validator->validated();
         $data['updated_by'] = Auth::id();
         $record->update($data);
 
@@ -290,10 +305,10 @@ class ChangeOfPurposeController extends Controller
         $results = DB::connection('sqlsrv')
             ->table('fileNumber')
             ->where(function ($q) use ($term) {
-                $q->where('mlsfNo',         'LIKE', "%{$term}%")
-                  ->orWhere('kangisFileNo',  'LIKE', "%{$term}%")
-                  ->orWhere('NewKANGISFileNo','LIKE', "%{$term}%")
-                  ->orWhere('FileName',      'LIKE', "%{$term}%");
+                $q->where('mlsfNo', 'LIKE', "%{$term}%")
+                    ->orWhere('kangisFileNo', 'LIKE', "%{$term}%")
+                    ->orWhere('NewKANGISFileNo', 'LIKE', "%{$term}%")
+                    ->orWhere('FileName', 'LIKE', "%{$term}%");
             })
             ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
@@ -323,10 +338,10 @@ class ChangeOfPurposeController extends Controller
             ->where('status', ChangeOfPurposeApplication::STATUS_APPROVED)
             ->where(function ($q) use ($term) {
                 $q->where('applicant_name', 'LIKE', "%{$term}%")
-                  ->orWhere('file_no',       'LIKE', "%{$term}%")
-                  ->orWhere('land_use',      'LIKE', "%{$term}%")
-                  ->orWhere('location',      'LIKE', "%{$term}%")
-                  ->orWhere('purpose',       'LIKE', "%{$term}%");
+                    ->orWhere('file_no', 'LIKE', "%{$term}%")
+                    ->orWhere('land_use', 'LIKE', "%{$term}%")
+                    ->orWhere('location', 'LIKE', "%{$term}%")
+                    ->orWhere('purpose', 'LIKE', "%{$term}%");
             })
             ->orderByDesc('created_at')
             ->limit($limit)
@@ -342,23 +357,23 @@ class ChangeOfPurposeController extends Controller
     public function verifyForCommission(Request $request): JsonResponse
     {
         $fileNo = trim((string) $request->input('file_no', ''));
-        
+
         if (empty($fileNo)) {
             return response()->json(['success' => false, 'message' => 'No file number provided.']);
         }
-        
+
         $application = ChangeOfPurposeApplication::where('file_no', $fileNo)
             ->orderByDesc('created_at')
             ->first();
-            
+
         if (!$application) {
             return response()->json(['success' => false, 'message' => 'This file number has not passed through the Change of Purpose application process.']);
         }
-        
+
         if ($application->status !== ChangeOfPurposeApplication::STATUS_APPROVED) {
             return response()->json(['success' => false, 'message' => "The Change of Purpose application for this file number is currently '{$application->status}'. It must be Approved before generating an MLS File Number."]);
         }
-        
+
         return response()->json(['success' => true, 'data' => $application]);
     }
 
@@ -367,21 +382,21 @@ class ChangeOfPurposeController extends Controller
      */
     public function preview(Request $request): JsonResponse
     {
-        $fileNo     = trim((string) $request->input('file_no'));
+        $fileNo = trim((string) $request->input('file_no'));
         $newPurpose = strtoupper(trim((string) $request->input('purpose')));
 
-        if (! $fileNo || ! $newPurpose) {
+        if (!$fileNo || !$newPurpose) {
             return response()->json(['success' => false, 'message' => 'File number and purpose are required.'], 422);
         }
 
         $newFileNo = $this->generateNewFileNumber($fileNo, $newPurpose);
 
-        if (! $newFileNo) {
+        if (!$newFileNo) {
             return response()->json(['success' => false, 'message' => 'Could not compute new file number from this format.'], 422);
         }
 
         return response()->json([
-            'success'     => true,
+            'success' => true,
             'old_file_no' => $fileNo,
             'new_file_no' => $newFileNo,
             'new_purpose' => $newPurpose,
@@ -395,26 +410,26 @@ class ChangeOfPurposeController extends Controller
      */
     private function updateFileIndexing(string $oldFileNo, string $newFileNo): void
     {
-        $db   = DB::connection('sqlsrv');
+        $db = DB::connection('sqlsrv');
         $rows = $db->table('file_indexings')->where('file_number', $oldFileNo)->get();
 
         foreach ($rows as $row) {
             $existing = [];
-            if (! empty($row->related_fileno)) {
-                $decoded  = json_decode($row->related_fileno, true);
+            if (!empty($row->related_fileno)) {
+                $decoded = json_decode($row->related_fileno, true);
                 $existing = is_array($decoded) ? $decoded : [$row->related_fileno];
             }
 
-            if (! in_array($oldFileNo, $existing, true)) {
+            if (!in_array($oldFileNo, $existing, true)) {
                 $existing[] = $oldFileNo;
             }
 
             $db->table('file_indexings')
                 ->where('id', $row->id)
                 ->update([
-                    'file_number'    => $newFileNo,
+                    'file_number' => $newFileNo,
                     'related_fileno' => json_encode(array_values($existing)),
-                    'updated_by'     => Auth::id(),
+                    'updated_by' => Auth::id(),
                 ]);
         }
     }
@@ -427,8 +442,8 @@ class ChangeOfPurposeController extends Controller
         $db = DB::connection('sqlsrv');
 
         // Determine which file-number columns actually exist in pra
-        $candidates  = ['mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'fileno'];
-        $praColumns  = [];
+        $candidates = ['mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'fileno'];
+        $praColumns = [];
 
         foreach ($candidates as $col) {
             try {
@@ -498,16 +513,31 @@ class ChangeOfPurposeController extends Controller
      */
     private function generateNewFileNumber(string $oldFileNo, string $newPurpose): ?string
     {
-        $oldFileNo  = strtoupper(trim($oldFileNo));
+        $oldFileNo = strtoupper(trim($oldFileNo));
         $newPurpose = strtoupper(trim($newPurpose));
 
-        $knownPrefixes = ['RES', 'COM', 'IND', 'AGR', 'AGRIC', 'AG', 'MIX', 'MIXED',
-                          'RESIDENTIAL', 'COMMERCIAL', 'INDUSTRIAL', 'AGRICULTURAL'];
+        $knownPrefixes = [
+            'RES',
+            'COM',
+            'IND',
+            'AGR',
+            'AGRIC',
+            'AG',
+            'MIX',
+            'MIXED',
+            'RESIDENTIAL',
+            'COMMERCIAL',
+            'INDUSTRIAL',
+            'AGRICULTURAL'
+        ];
         $pp = implode('|', $knownPrefixes);
 
-        if (preg_match('/^(ST)-(' . $pp . ')-(.+)$/i',  $oldFileNo, $m)) return $m[1] . '-' . $newPurpose . '-' . $m[3];
-        if (preg_match('/^(CON)-(' . $pp . ')-(.+)$/i', $oldFileNo, $m)) return $m[1] . '-' . $newPurpose . '-' . $m[3];
-        if (preg_match('/^(' . $pp . ')-(.+)$/i',        $oldFileNo, $m)) return $newPurpose . '-' . $m[2];
+        if (preg_match('/^(ST)-(' . $pp . ')-(.+)$/i', $oldFileNo, $m))
+            return $m[1] . '-' . $newPurpose . '-' . $m[3];
+        if (preg_match('/^(CON)-(' . $pp . ')-(.+)$/i', $oldFileNo, $m))
+            return $m[1] . '-' . $newPurpose . '-' . $m[3];
+        if (preg_match('/^(' . $pp . ')-(.+)$/i', $oldFileNo, $m))
+            return $newPurpose . '-' . $m[2];
 
         return null;
     }
@@ -563,26 +593,26 @@ class ChangeOfPurposeController extends Controller
     private function rules(): array
     {
         return [
-            'applicant_name'         => 'required|string|max:255',
-            'file_no'                => 'required|string|max:255',
-            'purpose'                => 'required|string|max:50',
-            'land_use'               => 'nullable|string|max:255',
-            'location'               => 'nullable|string|max:2000',
-            'plot_no'                => 'nullable|string|max:100',
-            'plan_no'                => 'nullable|string|max:100',
-            'phone'                  => 'nullable|string|max:50',
-            'residential_address'    => 'nullable|string|max:2000',
-            'comment'                => 'required|string|max:2000',
-            'knupda_fee'             => 'nullable|numeric',
-            'land_size'              => 'nullable|numeric',
-            'site_plan'              => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
+            'applicant_name' => 'required|string|max:255',
+            'file_no' => 'required|string|max:255',
+            'purpose' => 'required|string|max:50',
+            'land_use' => 'nullable|string|max:255',
+            'location' => 'nullable|string|max:2000',
+            'plot_no' => 'nullable|string|max:100',
+            'plan_no' => 'nullable|string|max:100',
+            'phone' => 'nullable|string|max:50',
+            'residential_address' => 'nullable|string|max:2000',
+            'comment' => 'required|string|max:2000',
+            'knupda_fee' => 'nullable|numeric',
+            'land_size' => 'nullable|numeric',
+            'site_plan' => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
         ];
     }
 
     public function destroy(int $id): JsonResponse
     {
         $record = ChangeOfPurposeApplication::findOrFail($id);
-        
+
         if ($record->status === ChangeOfPurposeApplication::STATUS_APPROVED) {
             return response()->json(['success' => false, 'message' => 'Approved applications cannot be deleted.'], 403);
         }
@@ -592,7 +622,7 @@ class ChangeOfPurposeController extends Controller
             'deleted_by' => Auth::id(),
             'deleted_at' => now(),
         ]);
-        
+
         return response()->json(['success' => true, 'message' => 'Application deleted successfully.']);
     }
 }

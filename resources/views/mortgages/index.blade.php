@@ -259,13 +259,14 @@ $(function() {
             { 
                 data: 'file_number', 
                 name: 'file_number',
+                className: 'whitespace-nowrap',
                 render: function(data, type, row) {
                     const fileNo = data || '—';
                     const propId = row.prop_id || '';
                     const count = row.timeline_count || 1;
                     
-                    let html = `<div class="flex flex-col">
-                                    <span class="file-no-link">${fileNo}</span>`;
+                    let html = `<div class="flex flex-col whitespace-nowrap">
+                                    <span class="file-no-link whitespace-nowrap" style="white-space: nowrap;">${fileNo}</span>`;
                     
                     if (fileNo !== '—' || propId) {
                         html += `<div class="mt-1">
@@ -327,7 +328,7 @@ $(function() {
     });
 });
 
- 
+  
 
 </script>
 @endpush

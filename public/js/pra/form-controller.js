@@ -696,6 +696,8 @@
 
                 select.value = previousValue;
             });
+
+            this.updateTransactionContext();
         }
 
         syncModelElement(key, value) {
@@ -839,11 +841,30 @@
 
             const titleElement = this.dialog ? this.dialog.querySelector('#form-title') : null;
             if (titleElement) {
-                titleElement.textContent = normalizedMode === 'index' ? 'Index Card' : 'Add New Property Record';
+                if (titleElement.dataset.customTitle) {
+                    titleElement.textContent = titleElement.dataset.customTitle;
+                } else {
+                    titleElement.textContent = normalizedMode === 'index' ? 'Index Card' : 'Add New Property Record';
+                }
             }
         }
 
         updateTransactionContext() {
+            // Lock the Instrument Type dropdown to "Deed of Mortgage" on the instruments capture page
+            if (window.location.pathname.includes('/instruments/create')) {
+                const selectElement = document.getElementById('transactionType-record');
+                if (selectElement) {
+                    selectElement.style.pointerEvents = 'none';
+                    selectElement.style.backgroundColor = '#f3f4f6';
+                    selectElement.setAttribute('tabindex', '-1');
+                    if (this.state.transactionType !== 'Deed of Mortgage') {
+                        this.state.transactionType = 'Deed of Mortgage';
+                        this.syncModelElement('transactionType', 'Deed of Mortgage');
+                        this.syncTransactionTypeSelects('Deed of Mortgage');
+                    }
+                }
+            }
+
             const transactionType = this.state.transactionType || '';
             const labels = TRANSACTION_PARTY_LABELS[transactionType] || { first: 'Grantor', second: 'Grantee' };
             const normalizedTx = String(transactionType || '').toLowerCase();
@@ -1987,6 +2008,11 @@
             this.state.updateRecordId = null;
             this.pendingUpdatePrompt = false;
 
+            const titleElement = this.dialog ? this.dialog.querySelector('#form-title') : null;
+            if (titleElement) {
+                delete titleElement.dataset.customTitle;
+            }
+
             if (this.propertyIdInput) {
                 this.propertyIdInput.value = '';
             }
@@ -2058,13 +2084,15 @@
         }
 
         async handleFormSubmit(event) {
-            if (!this.state.isUpdateMode) {
+            const isInstrumentsPage = window.location.pathname.toLowerCase().includes('/instruments/create');
+            
+            if (!this.state.isUpdateMode && !isInstrumentsPage) {
                 return;
             }
 
             event.preventDefault();
 
-            if (!this.state.updateRecordId) {
+            if (this.state.isUpdateMode && !this.state.updateRecordId) {
                 this.showAlert('Missing record identifier for update.', 'error');
                 return;
             }
@@ -2073,13 +2101,19 @@
                 return;
             }
 
-            this.setSubmitting(true, 'Updating…');
+            const submittingMsg = this.state.isUpdateMode ? 'Updating…' : 'Saving…';
+            this.setSubmitting(true, submittingMsg);
 
             try {
                 const formData = new FormData(this.form);
-                formData.append('_method', 'PUT');
+                let url = this.form.action;
+                
+                if (this.state.isUpdateMode) {
+                    formData.append('_method', 'PUT');
+                    url = this.buildUpdateUrl(this.state.updateRecordId);
+                }
 
-                const response = await fetch(this.buildUpdateUrl(this.state.updateRecordId), {
+                const response = await fetch(url, {
                     method: 'POST',
                     headers: {
                         'X-CSRF-TOKEN': this.csrfToken,
@@ -2092,7 +2126,7 @@
                 const data = await this.parseJsonSafely(response);
 
                 if (!response.ok || !data || data.status !== 'success') {
-                    let message = data && data.message ? data.message : 'Failed to update property record';
+                    let message = data && data.message ? data.message : (this.state.isUpdateMode ? 'Failed to update property record' : 'Failed to save property record');
                     if (data && data.errors) {
                         const errorMessages = Object.values(data.errors)
                             .flat()
@@ -2106,23 +2140,215 @@
                     return;
                 }
 
-                const successMessage = data.message || 'Property record updated successfully';
+                const successMessage = data.message || (this.state.isUpdateMode ? 'Property record updated successfully' : 'Property record saved successfully');
 
-                if (typeof window.Swal !== 'undefined') {
-                    await window.Swal.fire({
-                        title: 'Updated',
-                        text: successMessage,
-                        icon: 'success',
-                        confirmButtonText: 'OK'
-                    });
+                if (isInstrumentsPage && !this.state.isUpdateMode) {
+                    // Close the mortgage modal
+                    const modal = document.getElementById('property-form-dialog');
+                    if (modal) {
+                        modal.classList.add('hidden');
+                        modal.style.display = 'none';
+                    }
+
+                    // Show success alert
+                    if (typeof window.Swal !== 'undefined') {
+                        await window.Swal.fire({
+                            title: 'Mortgage Captured Successfully',
+                            text: 'The existing mortgage has been successfully captured. The property location details will be passed to your Deed of Surrender and Release form.',
+                            icon: 'success',
+                            confirmButtonText: 'OK'
+                        });
+                    } else {
+                        window.alert('Mortgage Captured Successfully!');
+                    }
+
+                    // Capture all values from the mortgage form BEFORE resetting it
+                    const plotNoVal = document.querySelector('#property-form-dialog #plotNo') ? document.querySelector('#property-form-dialog #plotNo').value : '';
+                    const tpNoVal = document.querySelector('#property-form-dialog #tp_no_prop') ? document.querySelector('#property-form-dialog #tp_no_prop').value : '';
+                    const lpknNoVal = document.querySelector('#property-form-dialog #lpkn_no_prop') ? document.querySelector('#property-form-dialog #lpkn_no_prop').value : '';
+                    const plotSizeVal = document.querySelector('#property-form-dialog #plot_size_prop') ? document.querySelector('#property-form-dialog #plot_size_prop').value : '';
+                    
+                    // Street
+                    const streetSelect = document.querySelector('#property-form-dialog #streetName');
+                    let streetVal = '';
+                    let isManualStreet = false;
+                    if (streetSelect) {
+                        streetVal = streetSelect.value;
+                        if (streetVal === 'Others') {
+                            isManualStreet = true;
+                            const manualStreet = document.querySelector('#property-form-dialog #manual_street_name');
+                            if (manualStreet) streetVal = manualStreet.value;
+                        }
+                    }
+
+                    // District
+                    const districtSelect = document.querySelector('#property-form-dialog #desc_district');
+                    let districtVal = '';
+                    let isManualDistrict = false;
+                    if (districtSelect) {
+                        districtVal = districtSelect.value;
+                        if (districtVal === 'Others') {
+                            isManualDistrict = true;
+                            const manualDistrict = document.querySelector('#property-form-dialog #manual_district');
+                            if (manualDistrict) districtVal = manualDistrict.value;
+                        }
+                    }
+
+                    // LGA
+                    const lgaSelect = document.querySelector('#property-form-dialog #desc_lga');
+                    const lgaVal = lgaSelect ? lgaSelect.value : '';
+
+                    // Property Description
+                    const propDescVal = document.querySelector('#property-form-dialog #property-description') ? document.querySelector('#property-form-dialog #property-description').value : '';
+
+                    // Extract parties from Mortgage Form before resetting
+                    const firstPartyInput = document.querySelector('#property-form-dialog [data-model="firstParty"]');
+                    const secondPartyInput = document.querySelector('#property-form-dialog [data-model="secondParty"]');
+                    const thirdPartyInput = document.querySelector('#property-form-dialog [data-model="thirdParty"]');
+                    const hasTripartiteCheckbox = document.querySelector('#property-form-dialog [data-model="tripartiteHasThird"]');
+
+                    const mortgagorName = firstPartyInput ? firstPartyInput.value : '';
+                    const mortgageeName = secondPartyInput ? secondPartyInput.value : '';
+                    const coMortgagorName = thirdPartyInput ? thirdPartyInput.value : '';
+                    const hasCoMortgagor = hasTripartiteCheckbox ? hasTripartiteCheckbox.checked : false;
+
+                    // Now safely reset form submit button and state so it can be used again
+                    this.resetForm();
+
+                    // Pass property location details to the Capture Deed of Surrender / Release form!
+                    const mainPlot = document.querySelector('#registration-dialog #plotNumber');
+                    if (mainPlot) mainPlot.value = plotNoVal;
+
+                    const mainTp = document.querySelector('#registration-dialog #tp_no');
+                    if (mainTp) mainTp.value = tpNoVal;
+
+                    const mainLpkn = document.querySelector('#registration-dialog #lpkn_no');
+                    if (mainLpkn) mainLpkn.value = lpknNoVal;
+
+                    const mainSize = document.querySelector('#registration-dialog #size');
+                    if (mainSize) mainSize.value = plotSizeVal;
+
+                    const mainStreet = document.querySelector('#registration-dialog #streetName');
+                    const mainManualStreet = document.querySelector('#registration-dialog #manual_street_name');
+                    if (mainStreet) {
+                        if (isManualStreet) {
+                            mainStreet.value = 'Others';
+                            mainStreet.dispatchEvent(new Event('change'));
+                            if (mainManualStreet) {
+                                mainManualStreet.value = streetVal;
+                                mainManualStreet.dispatchEvent(new Event('input'));
+                            }
+                        } else {
+                            mainStreet.value = streetVal;
+                            mainStreet.dispatchEvent(new Event('change'));
+                        }
+                    }
+
+                    const mainDistrict = document.querySelector('#registration-dialog #desc_district');
+                    const mainManualDistrict = document.querySelector('#registration-dialog #manual_district');
+                    const surveyDistrict = document.querySelector('#registration-dialog #district');
+                    if (mainDistrict) {
+                        if (isManualDistrict) {
+                            mainDistrict.value = 'Others';
+                            mainDistrict.dispatchEvent(new Event('change'));
+                            if (mainManualDistrict) {
+                                mainManualDistrict.value = districtVal;
+                                mainManualDistrict.dispatchEvent(new Event('input'));
+                            }
+                        } else {
+                            mainDistrict.value = districtVal;
+                            mainDistrict.dispatchEvent(new Event('change'));
+                        }
+                    }
+                    if (surveyDistrict) {
+                        surveyDistrict.value = districtVal;
+                        surveyDistrict.dispatchEvent(new Event('change'));
+                    }
+
+                    const mainLga = document.querySelector('#registration-dialog #desc_lga');
+                    const surveyLga = document.querySelector('#registration-dialog #lga');
+                    if (mainLga) {
+                        mainLga.value = lgaVal;
+                        mainLga.dispatchEvent(new Event('change'));
+                    }
+                    if (surveyLga) {
+                        surveyLga.value = lgaVal;
+                        surveyLga.dispatchEvent(new Event('change'));
+                    }
+
+                    // Activate Survey Info Checkbox if LGA or District has a value
+                    const surveyInfoCheckbox = document.querySelector('#registration-dialog #surveyInfo');
+                    if (surveyInfoCheckbox && (lgaVal || districtVal)) {
+                        surveyInfoCheckbox.checked = true;
+                        surveyInfoCheckbox.dispatchEvent(new Event('change'));
+                        
+                        // Also show survey section
+                        const surveySection = document.getElementById('survey-info-section');
+                        if (surveySection) {
+                            surveySection.classList.remove('hidden');
+                        }
+                    }
+
+                    const mainDesc = document.querySelector('#registration-dialog #propertyDescription');
+                    if (mainDesc) {
+                        mainDesc.value = propDescVal;
+                    }
+
+                    // BACKFILL & SWITCH PARTIES:
+                    // Mortgagee (Second Party) -> Surrenderer/Releasor (firstPartyName in capture modal)
+                    // Mortgagor (First Party) -> Surrenderee/Releasee (secondPartyName in capture modal)
+                    const mainFirstParty = document.querySelector('#registration-dialog #firstPartyName');
+                    if (mainFirstParty) {
+                        mainFirstParty.value = mortgageeName;
+                        mainFirstParty.dispatchEvent(new Event('input'));
+                    }
+
+                    const mainSecondParty = document.querySelector('#registration-dialog #secondPartyName');
+                    if (mainSecondParty) {
+                        mainSecondParty.value = mortgagorName;
+                        mainSecondParty.dispatchEvent(new Event('input'));
+                    }
+
+                    // Co-Mortgagor -> Co-Surrenderor
+                    const mainHasThirdParty = document.querySelector('#registration-dialog #hasThirdParty');
+                    const mainCoSurrenderor = document.querySelector('#registration-dialog #coSurrenderorName');
+                    const mainThirdPartyContainer = document.querySelector('#registration-dialog #thirdPartyContainer');
+                    if (hasCoMortgagor && coMortgagorName) {
+                        if (mainHasThirdParty) {
+                            mainHasThirdParty.checked = true;
+                            mainHasThirdParty.dispatchEvent(new Event('change'));
+                        }
+                        if (mainThirdPartyContainer) {
+                            mainThirdPartyContainer.classList.remove('hidden');
+                        }
+                        if (mainCoSurrenderor) {
+                            mainCoSurrenderor.value = coMortgagorName;
+                            mainCoSurrenderor.dispatchEvent(new Event('input'));
+                        }
+                    }
+
+                    // Check if we need to call checkDuplicate to re-evaluate history and recognize the mortgage
+                    if (typeof window.checkDuplicate === 'function') {
+                        window.checkDuplicate();
+                    }
+
                 } else {
-                    window.alert(successMessage);
-                }
+                    if (typeof window.Swal !== 'undefined') {
+                        await window.Swal.fire({
+                            title: this.state.isUpdateMode ? 'Updated' : 'Saved',
+                            text: successMessage,
+                            icon: 'success',
+                            confirmButtonText: 'OK'
+                        });
+                    } else {
+                        window.alert(successMessage);
+                    }
 
-                this.exitUpdateMode();
-                window.location.reload();
+                    this.exitUpdateMode();
+                    window.location.reload();
+                }
             } catch (error) {
-                const message = error && error.message ? error.message : 'Failed to update property record';
+                const message = error && error.message ? error.message : (this.state.isUpdateMode ? 'Failed to update property record' : 'Failed to save property record');
                 this.showAlert(message, 'error');
             } finally {
                 this.setSubmitting(false);

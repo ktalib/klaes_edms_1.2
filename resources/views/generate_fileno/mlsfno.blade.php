@@ -106,7 +106,7 @@
                                     class="tab-button group relative py-3 px-6 text-sm font-semibold rounded-t-lg transition-all duration-200">
                                     <div class="flex items-center space-x-2">
                                         <i data-lucide="file-bar-chart" class="w-5 h-5"></i>
-                                        <span>Consolidation Report</span>
+                                        <span>Consolidated Report</span>
                                     </div>
                                     <div class="absolute bottom-0 left-0 right-0 h-1 bg-transparent rounded-t-sm transition-all duration-200"></div>
                                 </button>
@@ -310,7 +310,7 @@
                                     <i data-lucide="file-bar-chart" class="w-6 h-6 text-emerald-600"></i>
                                 </div>
                                 <div>
-                                    <h3 class="text-lg font-bold text-emerald-900">MLS File Number Consolidation Report</h3>
+                                    <h3 class="text-lg font-bold text-emerald-900">MLS File Number Consolidated Report</h3>
                                     <p class="text-sm text-emerald-700 mt-1">
                                         Generate and export consolidated reports from the <strong>mls_file_no</strong> source table.
                                         Filter by date range, file number year, or land use prefix, then export to PDF or Excel.

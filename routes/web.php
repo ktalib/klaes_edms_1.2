@@ -1578,6 +1578,7 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'create-file-tracker'
     Route::get('/workflow-definition', [App\Http\Controllers\CreateFileTrackerController::class, 'workflowDefinition'])->name('create-file-tracker.workflow-definition');
     Route::get('/workflow-progress/{id}', [App\Http\Controllers\CreateFileTrackerController::class, 'workflowProgress'])->name('create-file-tracker.workflow-progress');
     Route::post('/{id}/mark-printed', [App\Http\Controllers\CreateFileTrackerController::class, 'markAsPrinted'])->name('create-file-tracker.mark-printed');
+    Route::get('/{id}/request-sheet', [App\Http\Controllers\CreateFileTrackerController::class, 'requestSheet'])->name('create-file-tracker.request-sheet');
 });
 
 // File Tracker API Routes for AJAX calls (Web session auth OR Sanctum Bearer token)

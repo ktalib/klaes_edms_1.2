@@ -1296,13 +1296,13 @@ const executeSearchAjax = (filters, searchData) => {
 
   // Rule B: transaction-type priority for Timeline sort order.
   // Priority group (always displayed first, in weight order): OP=10, TOT=9, RoFO=8.
-  // CofO + all other instruments = 5 → sorted chronologically by reg date within tie.
+  // CofO + all other instruments = 1 → sorted chronologically by reg date within tie.
   const recordPriorityWeight = (item) => {
     const txType = canonicalWeightingInstrumentType(getMappedValue(item, 'transactionType'));
     if (txType === 'occupancy permit') return 10;
     if (txType === 'transfer of title') return 9;
     if (txType === 'right of occupancy') return 8;
-    return 5;
+    return 1;
   };
 
   // Rule A (Source/Table Weighting)
@@ -1979,9 +1979,9 @@ const executeSearchAjax = (filters, searchData) => {
         row.dataset.propId = item.prop_id || '';
         row.innerHTML = `
           <td>${dedupDot(item)}${index + 1}</td>
+          <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(item, 'fileNumber')}</td>
           <td class="text-gray-500">${_wd_pr}</td>
           <td class="text-gray-500" style="padding-right:4px;">${getTableSourceWeight(item)}</td>
-          <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(item, 'fileNumber')}</td>
           <td style="white-space:nowrap;padding-left:6px;">${transactionType}</td>
           <td style="white-space:nowrap;">${party1}</td>
           <td>${party2}</td>
@@ -2034,9 +2034,9 @@ const executeSearchAjax = (filters, searchData) => {
         row.dataset.propId = item.prop_id || '';
         row.innerHTML = `
           <td>${dedupDot(item)}${index + 1}</td>
+          <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(item, 'fileNumber')}</td>
           <td class="text-gray-500">${_wd_fh}</td>
           <td class="text-gray-500" style="padding-right:4px;">${getTableSourceWeight(item)}</td>
-          <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(item, 'fileNumber')}</td>
           <td style="white-space:nowrap;padding-left:6px;">${transactionType}</td>
           <td style="white-space:nowrap;">${party1}</td>
           <td>${party2}</td>
@@ -2111,9 +2111,9 @@ const executeSearchAjax = (filters, searchData) => {
         const _wd_dr = recordRichnessScore(registration);
         row.innerHTML = `
           <td>${index + 1}</td>
+          <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(registration, 'fileNumber')}</td>
           <td class="text-gray-500">${_wd_dr}</td>
           <td class="text-gray-500" style="padding-right:4px;">${getTableSourceWeight(registration)}</td>
-          <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(registration, 'fileNumber')}</td>
           <td style="white-space:nowrap;padding-left:6px;" class="${isSTFragmentation ? 'text-yellow-800' : ''}">${transactionType}</td>
           <td style="white-space:nowrap;">${party1}</td>
           <td>${party2}</td>
@@ -2168,9 +2168,9 @@ const executeSearchAjax = (filters, searchData) => {
         const _wd_cofo = recordRichnessScore(cofo);
         row.innerHTML = `
           <td>${index + 1}</td>
+          <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(cofo, 'fileNumber')}</td>
           <td class="text-gray-500">${_wd_cofo}</td>
           <td class="text-gray-500" style="padding-right:4px;">${getTableSourceWeight(cofo)}</td>
-          <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(cofo, 'fileNumber')}</td>
           <td>${cofoRegParticulars}</td>
           <td>
             <div>${date}</div>
@@ -2463,8 +2463,8 @@ const executeSearchAjax = (filters, searchData) => {
     const weight = recordPriorityWeight(item);
     
     let candidates;
-    if (weight === 5) {
-      // For default weight (5) records, prioritize Reg Date
+    if (weight === 1) {
+      // For default weight (1) records, prioritize Reg Date
       candidates = [
         item.reg_date,
         item.transaction_date,

@@ -158,6 +158,9 @@
         $pageDescription = $isChangeOfName
             ? 'Land One Stop Shop overview of Change of Name Occupancy Permit records' . ($recordType ? ' filtered by ' . strtoupper($recordType) : '') . '.'
             : 'Land One Stop Shop overview of regular Occupancy Permit records.';
+
+        $assignRoles = collect(explode(',', (string) (auth()->user()->assign_role ?? '')))->map(fn($r) => trim($r))->filter();
+        $isSupperAdmin = $assignRoles->contains(fn($r) => strcasecmp($r, 'Supper Admin') === 0);
     @endphp
     @include('admin.header', [
         'PageTitle' => $pageTitle,
@@ -208,6 +211,7 @@
                         @endforeach
                     </select>
                     <div class="flex flex-col gap-2">
+
                         @if(!isset($recordType) || $recordType === 'fc')
                             <button type="button" id="btn-file-commissioning"
                                 class="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-blue-700 transition">
@@ -377,9 +381,23 @@
             @if($isChangeOfName)
                 <div class="flex flex-wrap items-center gap-3 px-1 py-1 mb-2">
                     <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Listing:</span>
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200 whitespace-nowrap">
                         TRANSFER OF TITLE (OP)
                     </span>
+
+                    @if($isSupperAdmin)
+                        <button type="button" id="btn-toggle-selection" onclick="toggleSelectionMode()"
+                            class="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 text-slate-700 rounded-full text-[11px] font-semibold hover:bg-slate-50 transition shadow-sm cursor-pointer whitespace-nowrap">
+                            <i data-lucide="check-square" class="w-3.5 h-3.5 text-blue-600"></i>
+                            Start Master Deletion
+                        </button>
+
+                        <button type="button" id="btn-bulk-delete-master" onclick="deleteSelectedMasters()"
+                            class="hidden inline-flex items-center gap-1.5 px-3 py-1 bg-rose-600 border border-rose-600 text-white rounded-full text-[11px] font-semibold hover:bg-rose-700 transition shadow-sm cursor-pointer whitespace-nowrap">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            Delete  Master
+                        </button>
+                    @endif
                 </div>
             @endif
             <div class="flex flex-wrap items-center gap-3 px-1 py-2">
@@ -400,6 +418,11 @@
                     <table id="op-resettlement-table" class="w-full table-auto" style="min-width:1600px">
                         <thead>
                             <tr class="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
+                                @if($isSupperAdmin)
+                                    <th class="checkbox-col hidden px-4 py-3 text-center whitespace-nowrap" style="width:40px; min-width:40px;">
+                                        <input type="checkbox" id="check-all-masters" onchange="toggleSelectAllMasters(this)" class="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer">
+                                    </th>
+                                @endif
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:70px">S/N</th>
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:120px">Customer Type</th>
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:140px">Source</th>
@@ -420,6 +443,19 @@
                         <tbody class="bg-white divide-y divide-gray-100">
                             @forelse($records as $record)
                                 <tr data-record='@json($record)'>
+                                    @if($isSupperAdmin)
+                                        <td class="checkbox-col hidden px-4 py-2.5 text-center">
+                                            @php
+                                                $isToT = (stripos($record['source'] ?? '', 'Transfer of Title') !== false);
+                                            @endphp
+                                            @if($isToT)
+                                                <input type="checkbox" class="master-row-checkbox rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" 
+                                                       data-pra-id="{{ $record['pra_id'] }}" data-file-no="{{ $record['mls_file_no'] }}" onchange="updateBulkDeleteButtonState()">
+                                            @else
+                                                <span class="text-slate-300 font-bold">—</span>
+                                            @endif
+                                        </td>
+                                    @endif
                                     <td class="px-4 py-2.5 font-mono text-xs text-slate-700 op-sn-cell">{{ $loop->iteration }}</td>
                                     <td class="px-4 py-2.5 text-slate-700">{{ ucfirst(strtolower($record['customer_type'])) }}</td>
                                     <td class="px-4 py-2.5">
@@ -543,11 +579,7 @@
                                                 @php
                                                     $sourceText = strtolower((string) ($record['source'] ?? ''));
                                                     $isConversionRecord = str_contains($sourceText, 'conversion');
-                                                    $assignRoles = collect(explode(',', (string) (auth()->user()->assign_role ?? '')))
-                                                        ->map(fn ($role) => trim($role))
-                                                        ->filter();
-                                                    $canUpdateOp = $assignRoles->contains(fn ($role) => strcasecmp($role, 'Supper Admin') === 0) 
-                                                        || auth()->id() == 101524;
+                                                    $canUpdateOp = $isSupperAdmin || auth()->id() == 101524;
                                                 @endphp
                                                 @if($isGenerateChangeOfName)
                                                 <!-- OSS - Generate FileNos (Change of Name) -->
@@ -572,7 +604,12 @@
                                                     <i class="fas fa-file-pen w-3.5 h-3.5 text-indigo-500"></i> Update OP
                                                 </a>
                                                 @endif
-                                                <button type="button" class="inline-flex items-center gap-2 !text-red-500 hover:!text-red-700 hover:!bg-red-50">
+                                                @if($isSupperAdmin && stripos($record['source'] ?? '', 'Transfer of Title') !== false)
+                                                <button type="button" onclick="deleteMasterRecord('{{ $record['pra_id'] }}', '{{ $record['mls_file_no'] }}')" class="inline-flex items-center gap-2 !text-rose-600 hover:!text-rose-800 hover:!bg-rose-50 font-semibold">
+                                                    <i class="fas fa-trash-can w-3.5 h-3.5 text-rose-500"></i> Delete Master
+                                                </button>
+                                                @endif
+                                                <button type="button" style="display: none;" class="inline-flex items-center gap-2 !text-red-500 hover:!text-red-700 hover:!bg-red-50">
                                                     <i class="fas fa-trash w-3.5 h-3.5"></i> Delete Entry
                                                 </button>
                                                 @elseif($isChangeOfName)
@@ -604,7 +641,12 @@
                                                     <i class="fas fa-file-pen w-3.5 h-3.5 text-indigo-500"></i> Update OP
                                                 </a>
                                                 @endif
-                                                <button type="button" class="inline-flex items-center gap-2 !text-red-500 hover:!text-red-700 hover:!bg-red-50">
+                                                @if($isSupperAdmin && stripos($record['source'] ?? '', 'Transfer of Title') !== false)
+                                                <button type="button" onclick="deleteMasterRecord('{{ $record['pra_id'] }}', '{{ $record['mls_file_no'] }}')" class="inline-flex items-center gap-2 !text-rose-600 hover:!text-rose-800 hover:!bg-rose-50 font-semibold">
+                                                    <i class="fas fa-trash-can w-3.5 h-3.5 text-rose-500"></i> Delete Master
+                                                </button>
+                                                @endif
+                                                <button type="button" style="display: none;" class="inline-flex items-center gap-2 !text-red-500 hover:!text-red-700 hover:!bg-red-50">
                                                     <i class="fas fa-trash w-3.5 h-3.5"></i> Delete Entry
                                                 </button>
                                                 @else
@@ -1181,6 +1223,10 @@
             });
         }
 
+        var snColumnIndex = {{ $isSupperAdmin ? 1 : 0 }};
+        var actionsColumnIndex = {{ $isSupperAdmin ? 15 : 14 }};
+        var sortColumnIndex = {{ $isSupperAdmin ? 14 : 13 }};
+
         // ── DataTable initialisation ──
         const table = $('#op-resettlement-table').DataTable({
             dom: '<"op-table-scroll"t><"px-4 py-3 flex items-center justify-between border-t border-slate-100"i>',
@@ -1192,9 +1238,12 @@
             paging: false,
             autoWidth: false,
             scrollX: false,
-            order: [[13, 'desc']],
+            order: [[sortColumnIndex, 'desc']],
             columnDefs: [
-                { orderable: false, targets: [14] }
+                { orderable: false, targets: [actionsColumnIndex] },
+                @if($isSupperAdmin)
+                { orderable: false, targets: [0] }
+                @endif
             ],
             language: {
                 info: 'Showing _START_ to _END_ of _TOTAL_ applications',
@@ -1204,7 +1253,7 @@
             drawCallback: function (settings) {
                 var api = this.api();
                 var offset = {{ ($page - 1) * $limit }};
-                api.column(0, { page: 'current' }).nodes().each(function (cell, i) {
+                api.column(snColumnIndex, { page: 'current' }).nodes().each(function (cell, i) {
                     cell.textContent = offset + i + 1;
                 });
                 // Override info text to reflect server-side totals
@@ -1257,7 +1306,8 @@
                 return true;
             }
 
-            const rowDate = parseCommissionDate(data[12]);
+            var dateColumnIndex = {{ $isSupperAdmin ? 13 : 12 }};
+            const rowDate = parseCommissionDate(data[dateColumnIndex]);
             if (!rowDate) {
                 return false;
             }
@@ -6082,5 +6132,273 @@
         form.submit();
         document.body.removeChild(form);
     }
+
+    function deleteMasterRecord(id, fileNo) {
+        if (!id) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'Invalid record ID.'
+            });
+            return;
+        }
+
+        Swal.fire({
+            title: 'Are you sure?',
+            html: "This will delete the <strong>Transfer of Title (ToT)</strong> record for file <strong>" + (fileNo || '') + "</strong> and detach the Occupancy Permit (OP), resetting it back to its unmatched state.<br><br>" +
+                  "<div style='text-align: left; padding: 12px; background-color: #fff1f2; border: 1px solid #ffe4e6; border-radius: 8px; font-size: 14px; color: #9f1239; margin-bottom: 10px;'>" +
+                  "<strong>Warning:</strong> This action will also delete matching file records from the following tables:" +
+                  "<ul style='list-style-type: disc; padding-left: 20px; margin-top: 4px; font-weight: 600;'>" +
+                  "<li>File Indexing</li>" +
+                  "<li>File Number</li>" +
+                  "<li>Customers Staging</li>" +
+                  "<li>Mls FileNo</li>" +
+                  "<li>Entities Staging</li>" +
+                  "</ul>" +
+                  "</div>" +
+                  "This action cannot be undone!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#e11d48', // rose-600
+            cancelButtonColor: '#475569', // slate-600
+            confirmButtonText: 'Yes, Delete Master',
+            cancelButtonText: 'Cancel'
+        }).then(function(result) {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    title: 'Deleting...',
+                    html: 'Please wait while detaching records.',
+                    allowOutsideClick: false,
+                    didOpen: function() {
+                        Swal.showLoading();
+                    }
+                });
+
+                var csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+                var deleteUrl = '{{ url("lands-one-stop-shop/applications/delete-master") }}/' + id;
+
+                fetch(deleteUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        _method: 'DELETE'
+                    })
+                })
+                .then(function(res) {
+                    return res.json();
+                })
+                .then(function(result) {
+                    if (result.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Deleted!',
+                            text: result.message || 'Master record deleted successfully.',
+                            timer: 2000,
+                            showConfirmButton: false
+                        }).then(function() {
+                            location.reload();
+                        });
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Failed',
+                            text: result.message || 'Failed to delete master record.'
+                        });
+                    }
+                })
+                .catch(function(err) {
+                    console.error('Delete master error:', err);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: 'A network error occurred. Please try again.'
+                    });
+                });
+            }
+        });
+    }
+
+    function toggleSelectionMode() {
+        var cols = document.querySelectorAll('.checkbox-col');
+        var btn = document.getElementById('btn-toggle-selection');
+        var isShowing = false;
+
+        cols.forEach(function(col) {
+            if (col.classList.contains('hidden')) {
+                col.classList.remove('hidden');
+                isShowing = true;
+            } else {
+                col.classList.add('hidden');
+                // Uncheck checkboxes when disabling selection mode
+                var masterCheckbox = document.getElementById('check-all-masters');
+                if (masterCheckbox) masterCheckbox.checked = false;
+                var rowCheckboxes = document.querySelectorAll('.master-row-checkbox');
+                rowCheckboxes.forEach(function(cb) {
+                    cb.checked = false;
+                });
+            }
+        });
+
+        if (btn) {
+            if (isShowing) {
+                btn.innerHTML = '<i data-lucide="x" class="w-3.5 h-3.5 text-red-600"></i> Cancel Selection';
+                btn.classList.replace('bg-white', 'bg-red-50');
+                btn.classList.replace('text-slate-700', 'text-red-700');
+                btn.classList.replace('border-slate-200', 'border-red-200');
+            } else {
+                btn.innerHTML = '<i data-lucide="check-square" class="w-3.5 h-3.5 text-blue-600"></i> Select Records';
+                btn.classList.replace('bg-red-50', 'bg-white');
+                btn.classList.replace('text-red-700', 'text-slate-700');
+                btn.classList.replace('border-red-200', 'border-slate-200');
+            }
+            if (typeof lucide !== 'undefined' && typeof lucide.createIcons === 'function') {
+                lucide.createIcons();
+            }
+        }
+
+        updateBulkDeleteButtonState();
+    }
+
+    function toggleSelectAllMasters(masterCheckbox) {
+        var checkboxes = document.querySelectorAll('.master-row-checkbox');
+        checkboxes.forEach(function(cb) {
+            cb.checked = masterCheckbox.checked;
+        });
+        updateBulkDeleteButtonState();
+    }
+
+    function updateBulkDeleteButtonState() {
+        var checkedCount = document.querySelectorAll('.master-row-checkbox:checked').length;
+        var bulkBtn = document.getElementById('btn-bulk-delete-master');
+        if (bulkBtn) {
+            if (checkedCount > 0) {
+                bulkBtn.classList.remove('hidden');
+            } else {
+                bulkBtn.classList.add('hidden');
+            }
+        }
+    }
+
+    function deleteSelectedMasters() {
+        var checkedBoxes = document.querySelectorAll('.master-row-checkbox:checked');
+        if (checkedBoxes.length === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'No Selection',
+                text: 'Please select at least one record to delete.'
+            });
+            return;
+        }
+
+        var recordsToDelete = [];
+        checkedBoxes.forEach(function(cb) {
+            recordsToDelete.push({
+                id: cb.getAttribute('data-pra-id'),
+                fileNo: cb.getAttribute('data-file-no')
+            });
+        });
+
+        var fileNumbersText = recordsToDelete.map(r => r.fileNo).join(', ');
+
+        // First Warning
+        Swal.fire({
+            title: 'First Warning: Are you sure?',
+            html: "You are about to perform a <strong>Bulk Master Delete</strong> on <strong>" + recordsToDelete.length + "</strong> record(s): <br><strong style='color:#e11d48;'>" + fileNumbersText + "</strong>.<br><br>" +
+                  "This will delete their Transfer of Title (ToT) records, detach their Occupancy Permits (OPs), and delete matching file records from:<br>" +
+                  "<ul style='list-style-type: disc; padding-left: 20px; text-align: left; font-weight: 600; color: #9f1239; margin-top: 5px;'>" +
+                  "<li>File Indexing</li>" +
+                  "<li>File Number</li>" +
+                  "<li>Customers Staging</li>" +
+                  "<li>Mls FileNo</li>" +
+                  "<li>Entities Staging</li>" +
+                  "</ul>",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#e11d48',
+            cancelButtonColor: '#475569',
+            confirmButtonText: 'Yes, I am sure (1/2)',
+            cancelButtonText: 'Cancel'
+        }).then(function(res1) {
+            if (res1.isConfirmed) {
+                // Second Warning
+                Swal.fire({
+                    title: 'Second Warning: FINAL CONFIRMATION!',
+                    html: "<strong>CRITICAL ACTION!</strong> Are you absolutely 100% certain you want to proceed? " +
+                          "This action is permanent and <strong>CANNOT BE UNDONE</strong>.",
+                    icon: 'error',
+                    showCancelButton: true,
+                    confirmButtonColor: '#b91c1c', // red-700
+                    cancelButtonColor: '#475569',
+                    confirmButtonText: 'YES, DELETE PERMANENTLY (2/2)',
+                    cancelButtonText: 'Abort'
+                }).then(function(res2) {
+                    if (res2.isConfirmed) {
+                        Swal.fire({
+                            title: 'Deleting...',
+                            html: 'Processing bulk deletion. Please wait.',
+                            allowOutsideClick: false,
+                            didOpen: function() {
+                                Swal.showLoading();
+                            }
+                        });
+
+                        var csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+                        var bulkDeleteUrl = '{{ route("lands-one-stop-shop.applications.delete-master-bulk") }}';
+                        var ids = recordsToDelete.map(r => r.id);
+
+                        fetch(bulkDeleteUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': csrfToken,
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                _method: 'DELETE',
+                                ids: ids
+                            })
+                        })
+                        .then(function(res) {
+                            return res.json();
+                        })
+                        .then(function(result) {
+                            if (result.success) {
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Bulk Deletion Complete!',
+                                    text: result.message || 'Selected records deleted successfully.',
+                                    timer: 2500,
+                                    showConfirmButton: false
+                                }).then(function() {
+                                    location.reload();
+                                });
+                            } else {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Failed',
+                                    text: result.message || 'Failed to complete bulk deletion.'
+                                });
+                            }
+                        })
+                        .catch(function(err) {
+                            console.error('Bulk delete master error:', err);
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: 'A network error occurred. Please try again.'
+                            });
+                        });
+                    }
+                });
+            }
+        });
+    }
 </script>
 @endsection
+
+{{-- 
+--}}

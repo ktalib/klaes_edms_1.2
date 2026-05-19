@@ -150,6 +150,29 @@ class KangisPrintLabelController extends Controller
 
             $rows = $query->orderBy('kangis_awaiting_fileno')->get();
 
+            if ($rows->isNotEmpty()) {
+                $fileNumbers = $rows->pluck('kangis_awaiting_fileno')->filter()->unique()->values();
+                if ($fileNumbers->isNotEmpty()) {
+                    $indexings = DB::connection('sqlsrv')
+                        ->table('file_indexings')
+                        ->whereIn('file_number', $fileNumbers)
+                        ->where(function ($q) {
+                            $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                        })
+                        ->whereNotNull('kangis_fileno_placeholder')
+                        ->where('kangis_fileno_placeholder', '!=', '')
+                        ->pluck('kangis_fileno_placeholder', 'file_number')
+                        ->all();
+
+                    foreach ($rows as $r) {
+                        $fn = $r->kangis_awaiting_fileno;
+                        if (isset($indexings[$fn])) {
+                            $r->kangis_fileno_placeholder = $indexings[$fn];
+                        }
+                    }
+                }
+            }
+
             if ($rows->isEmpty()) {
                 return response()->json([
                     'success' => true,
@@ -293,6 +316,7 @@ class KangisPrintLabelController extends Controller
                 $groups = $filesFromDb->groupBy('registry_batch_no');
                 
                 $createdBatchesData = [];
+                $allLabelItems = [];
                 $currentFullLabel = $fullLabel;
                 $currentRackPrimary = $rackPrimary;
                 $currentRackSecondary = $rackSecondary;
@@ -386,6 +410,29 @@ class KangisPrintLabelController extends Controller
                             'updated_by' => auth()->id(),
                         ]);
 
+                    // Gather label items formatted for frontend print preview
+                    $groupFiles->values()->each(function ($file, $index) use (&$allLabelItems, $currentFullLabel, $prefix) {
+                        $fileNumber = $file->kangis_awaiting_fileno;
+                        $placeholder = $file->kangis_fileno_placeholder;
+                        $allLabelItems[] = [
+                            'id'                    => $file->id,
+                            'file_number'           => $fileNumber,
+                            'secondary_file_number' => $placeholder,
+                            'file_title'            => $placeholder,
+                            'plot_number'           => null,
+                            'district'              => null,
+                            'lga'                   => null,
+                            'land_use_type'         => null,
+                            'shelf_location'        => $currentFullLabel,
+                            'shelf_value'           => $currentFullLabel,
+                            'shelf_label'           => $currentFullLabel,
+                            'tracking_id'           => $file->tracking_id ?? $fileNumber,
+                            'qr_value'              => $file->tracking_id ?? $fileNumber,
+                            'label_position'        => $index + 1,
+                            'prefix'                => $prefix,
+                        ];
+                    });
+
                     $createdBatchesData[] = [
                         'batch' => $batch->fresh(),
                         'file_count' => $groupFiles->count()
@@ -399,18 +446,23 @@ class KangisPrintLabelController extends Controller
                     }
                 }
 
-                return $createdBatchesData;
+                return [
+                    'batches_data' => $createdBatchesData,
+                    'label_items'  => $allLabelItems,
+                ];
             });
 
-            $first = $result[0];
+            $batchesData = $result['batches_data'];
+            $first = $batchesData[0];
 
             return response()->json([
                 'success' => true,
-                'message' => count($result) > 1 ? count($result) . ' separate batches created successfully.' : 'Label batch created successfully.',
+                'message' => count($batchesData) > 1 ? count($batchesData) . ' separate batches created successfully.' : 'Label batch created successfully.',
                 'data' => [
                     'batch_id'     => $first['batch']->id,
                     'batch_number' => $first['batch']->batch_number,
-                    'file_count'   => $first['file_count'],
+                    'file_count'   => count($fileIds),
+                    'label_items'  => $result['label_items'],
                 ],
             ]);
 
@@ -480,6 +532,27 @@ $query = KangisPrintLabelBatch::with(['creator'])
                     ->whereIn('id', $kangisGroupingIds)
                     ->get()
                     ->keyBy('id');
+
+                $fileNumbers = $groupingDetails->pluck('kangis_awaiting_fileno')->filter()->unique()->values();
+                if ($fileNumbers->isNotEmpty()) {
+                    $indexings = DB::connection('sqlsrv')
+                        ->table('file_indexings')
+                        ->whereIn('file_number', $fileNumbers)
+                        ->where(function ($q) {
+                            $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                        })
+                        ->whereNotNull('kangis_fileno_placeholder')
+                        ->where('kangis_fileno_placeholder', '!=', '')
+                        ->pluck('kangis_fileno_placeholder', 'file_number')
+                        ->all();
+
+                    foreach ($groupingDetails as $r) {
+                        $fn = $r->kangis_awaiting_fileno;
+                        if (isset($indexings[$fn])) {
+                            $r->kangis_fileno_placeholder = $indexings[$fn];
+                        }
+                    }
+                }
             }
 
             $files = $batch->batchItems->map(function ($item) use ($groupingDetails) {

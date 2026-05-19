@@ -260,7 +260,7 @@ class PlotMergerController extends Controller
             $record->source_file_nos = DB::connection('sqlsrv')->table('plot_application_sizes')
                 ->where('application_id', $record->id)
                 ->where('application_type', 'merger')
-                ->pluck('plot_number')
+                ->pluck('source_file_no')
                 ->toArray();
             return $record;
         });
@@ -285,7 +285,7 @@ class PlotMergerController extends Controller
         $record->source_file_nos = DB::connection('sqlsrv')->table('plot_application_sizes')
             ->where('application_id', $record->id)
             ->where('application_type', 'merger')
-            ->pluck('plot_number')
+            ->pluck('source_file_no')
             ->toArray();
 
         return response()->json(['success' => true, 'data' => $record]);

@@ -24,6 +24,27 @@ document.addEventListener('DOMContentLoaded', function () {
     window.populateForm = populateForm;
     const isInstrumentCaptureCreatePage = window.location.pathname.toLowerCase().includes('/instruments/create');
 
+    // Wire up `#close-property-form` and cancel button for the property modal dialog on the instruments capture page
+    const propDialogCloseBtn = document.getElementById('close-property-form');
+    const propDialogCancelBtn = document.getElementById('cancel-property-form');
+    const propFormDialog = document.getElementById('property-form-dialog');
+    if (propDialogCloseBtn) {
+        propDialogCloseBtn.addEventListener('click', function() {
+            if (propFormDialog) {
+                propFormDialog.classList.add('hidden');
+                propFormDialog.style.display = 'none';
+            }
+        });
+    }
+    if (propDialogCancelBtn) {
+        propDialogCancelBtn.addEventListener('click', function() {
+            if (propFormDialog) {
+                propFormDialog.classList.add('hidden');
+                propFormDialog.style.display = 'none';
+            }
+        });
+    }
+
     const instrumentTypes = {
         'power-of-attorney': {
             id: 'power-of-attorney',
@@ -102,7 +123,7 @@ document.addEventListener('DOMContentLoaded', function () {
         },
         'deed-of-surrender-release': {
             id: 'deed-of-surrender-release',
-            name: 'Deed of Surrender / Release',
+            name: 'Deed of Surrender and Release',
             firstParty: 'Surrenderer/Releasor',
             secondParty: 'Surrenderee/Releasee',
             needsRootReg: true,
@@ -520,8 +541,111 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    function clearStaleFormInputs() {
+        // Reset the method to POST and storeUrl to /instruments/store if they were in update mode
+        const methodField = elements.registrationForm?.querySelector('input[name="_method"]');
+        if (methodField) methodField.remove();
+
+        const storeUrlInput = document.getElementById('storeUrl');
+        if (storeUrlInput) storeUrlInput.value = '/instruments/store';
+
+        // Clear all populated fields
+        const fieldsToClear = [
+            'firstPartyName', 'secondPartyName', 'firstPartyStreet', 'firstPartyPhone',
+            'secondPartyStreet', 'secondPartyPhone', 'coMortgagorName', 'coMortgagorAddress',
+            'coMortgagorDistrict', 'coMortgagorState', 'coMortgagorLga', 'coMortgagorPhone',
+            'thirdPartyName', 'thirdPartyAddress', 'thirdPartyDistrict', 'thirdPartyState',
+            'thirdPartyLga', 'thirdPartyPhone', 'party5Name', 'party5Address',
+            'party5District', 'party5State', 'party5Lga', 'party5Phone', 'solicitorName',
+            'solicitorAddress', 'solicitorDistrict', 'solicitorState', 'solicitorLga',
+            'plotDescription', 'plotLocation', 'plotNumber', 'tp_no', 'plotSize',
+            'surveyPlanNo', 'lga', 'district', 'manual_district', 'cofoTerm',
+            'cofoDate', 'cofoRegParticulars', 'assignmentTerm', 'leaseTerm',
+            'subLeaseAmount', 'firstPartyState', 'firstPartyDistrict', 'secondPartyState',
+            'secondPartyDistrict', 'coMortgagorDistrict', 'solicitorState',
+            'solicitorDistrict', 'propertyState', 'transactionDate', 'duration',
+            'startDate', 'endDate', 'annualRent', 'considerationAmount', 'bankName',
+            'rootRegNo', 'cofoType', 'op_serial_number', 'serial_no', 'volume_no',
+            'registration_number', 'reg_page_no', 'registrationDate', 'registrationTime',
+            'lpkn_no', 'propertyDescription'
+        ];
+
+        fieldsToClear.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.value = '';
+                // Trigger events to update custom select components if any
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+
+        // Clear prop_id hidden field
+        const propIdInput = elements.registrationForm?.querySelector('[name="prop_id"]');
+        if (propIdInput) {
+            propIdInput.value = '';
+        }
+
+        // Reset toggles (checkboxes) if they are checked
+        ['hasCoMortgagor', 'hasThirdParty', 'hasFourthParty', 'includeSolicitorSidebar', 'includeSolicitor', 'coo_recertification', 'coo_conversion'].forEach(id => {
+            const cb = document.getElementById(id);
+            if (cb && cb.checked) {
+                cb.checked = false;
+                cb.dispatchEvent(new Event('change'));
+            }
+        });
+
+        // If the instrument type has autoSetGrantor, re-apply it
+        if (currentInstrumentType) {
+            const type = instrumentTypes[currentInstrumentType];
+            if (type && type.autoSetGrantor) {
+                const firstPartyNameField = document.getElementById('firstPartyName');
+                if (firstPartyNameField) {
+                    firstPartyNameField.value = 'Kano State Government';
+                    firstPartyNameField.readOnly = true;
+                    firstPartyNameField.style.backgroundColor = '#f3f4f6';
+                    firstPartyNameField.style.cursor = 'not-allowed';
+                }
+                const addressFields = {
+                    'firstPartyStreet': 'Ministry of Land and Physical Planning Kano State',
+                    'firstPartyLga': 'Kano',
+                    'firstPartyState': 'Kano',
+                    'firstPartyPostalCode': '700102',
+                    'firstPartyCountry': 'Nigeria'
+                };
+                Object.entries(addressFields).forEach(([fieldId, value]) => {
+                    const field = document.getElementById(fieldId);
+                    if (field) {
+                        field.value = value;
+                        field.readOnly = true;
+                        field.style.backgroundColor = '#f3f4f6';
+                    }
+                });
+                if (typeof toggleKanoFields === 'function') {
+                    toggleKanoFields('Kano State Government');
+                }
+            }
+        }
+
+        // Reset manual custom selects
+        resetManualSelectFields();
+
+        // Reset duplicate state and capture lock
+        duplicateCheckState.existingRecord = null;
+        duplicateCheckState.propertyData = null;
+        duplicateCheckState.praHistory = [];
+        duplicateCheckState.isUpdateMode = false;
+        duplicateCheckState.consentApp = null;
+        duplicateCheckState.priorInstrument = null;
+        alreadyCapturedLock = false;
+        resetSubmitButton();
+    }
+
     function applySelectedFile(result) {
         if (!result) return;
+
+        // Clear stale inputs first
+        clearStaleFormInputs();
 
         const fileNo = result.fileNumber;
         const system = result.system.toLowerCase();
@@ -1298,21 +1422,90 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // SURRENDER & RELEASE MORTGAGE RECOGNITION CONVENTION
             if (currentInstrumentType === 'deed-of-surrender-release') {
-                const hasMortgage = data.pra_history && data.pra_history.some(rec => {
+                const mortgageRecords = data.pra_history ? data.pra_history.filter(rec => {
                     const type = (rec.transaction_type || rec.instrument_type || '').toLowerCase();
                     return type.includes('mortgage');
-                });
+                }) : [];
 
-                if (hasMortgage) {
+                if (mortgageRecords.length > 0) {
+                    let htmlContent = `
+                        <div class="text-left space-y-3 mt-2 max-h-[300px] overflow-y-auto pr-1">
+                            <p class="text-xs text-slate-600 mb-3 font-semibold">Multiple mortgage records have been identified. Please select the one you wish to release & backfill:</p>
+                    `;
+
+                    mortgageRecords.forEach((mortgageRecord, idx) => {
+                        const mortgagor = mortgageRecord.party_1 || mortgageRecord.Mortgagor || 'N/A';
+                        const mortgagee = mortgageRecord.party_2 || mortgageRecord.Mortgagee || 'N/A';
+                        
+                        const serNo = mortgageRecord.serialNo || mortgageRecord.serial_no || '0';
+                        const pgNo = mortgageRecord.pageNo || mortgageRecord.page_no || mortgageRecord.reg_page_no || '0';
+                        const volNo = mortgageRecord.volumeNo || mortgageRecord.volume_no || '0';
+                        const particulars = `${serNo}/${pgNo}/${volNo}`;
+                        
+                        const dateVal = mortgageRecord.deeds_date || mortgageRecord.transaction_date || mortgageRecord.assignment_date || mortgageRecord.regDate || mortgageRecord.created_at || '';
+                        const formattedDate = dateVal ? new Date(dateVal).toLocaleDateString() : 'N/A';
+
+                        const checked = idx === 0 ? 'checked' : '';
+
+                        htmlContent += `
+                            <label class="block cursor-pointer bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl p-3.5 relative transition-all duration-200 group">
+                                <div class="flex items-start gap-3">
+                                    <input type="radio" name="selected_mortgage" value="${idx}" ${checked} class="mt-1 w-4 h-4 text-indigo-600 border-gray-300 focus:ring-indigo-500">
+                                    <div class="space-y-1 w-full">
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-[10px] uppercase font-black text-indigo-600 tracking-wider">Option ${idx + 1}</span>
+                                            <span class="text-[10px] font-mono font-bold text-slate-400">Reg: ${particulars}</span>
+                                        </div>
+                                        <div class="grid grid-cols-2 gap-y-1 text-xs pt-1 border-t border-slate-100 mt-1">
+                                            <span class="font-semibold text-slate-500">Party 1:</span>
+                                            <span class="text-slate-800 font-bold break-all">${mortgagor.toUpperCase()}</span>
+                                            <span class="font-semibold text-slate-500">Party 2:</span>
+                                            <span class="text-slate-800 font-bold break-all">${mortgagee.toUpperCase()}</span>
+                                            <span class="font-semibold text-slate-500">Reg Date:</span>
+                                            <span class="text-slate-800 font-medium">${formattedDate}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </label>
+                        `;
+                    });
+
+                    htmlContent += `</div>`;
+
                     Swal.fire({
-                        toast: true,
-                        position: 'top-end',
-                        icon: 'success',
-                        title: 'Mortgage Recognized',
-                        text: 'Existing active mortgage record has been verified for this file.',
-                        showConfirmButton: false,
-                        timer: 5000,
-                        timerProgressBar: true
+                        title: 'Active Mortgage Identified!',
+                        html: htmlContent,
+                        icon: 'info',
+                        showCancelButton: true,
+                        confirmButtonText: 'Map & Apply Details',
+                        cancelButtonText: 'Manual Capture',
+                        confirmButtonColor: '#4f46e5',
+                        cancelButtonColor: '#94a3b8',
+                        allowOutsideClick: false,
+                        preConfirm: () => {
+                            const selectedRadio = document.querySelector('input[name="selected_mortgage"]:checked');
+                            if (!selectedRadio) {
+                                Swal.showValidationMessage('Please select a mortgage to continue');
+                                return false;
+                            }
+                            return selectedRadio.value;
+                        }
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            const selectedIndex = parseInt(result.value);
+                            const chosenRecord = mortgageRecords[selectedIndex];
+                            autoFillReleaseFromMortgage(chosenRecord);
+                            Swal.fire({
+                                toast: true,
+                                position: 'top-end',
+                                icon: 'success',
+                                title: 'Mortgage Data Mapped',
+                                text: 'Property details and parties have been updated for release.',
+                                showConfirmButton: false,
+                                timer: 3000,
+                                timerProgressBar: true
+                            });
+                        }
                     });
                 } else {
                     // Alert user to capture the existing mortgage first
@@ -1409,9 +1602,11 @@ document.addEventListener('DOMContentLoaded', function () {
         if (modal) {
             if (modalTitle) {
                 modalTitle.textContent = 'Capture Existing Mortgage';
+                modalTitle.dataset.customTitle = 'Capture Existing Mortgage';
             }
             modal.classList.remove('hidden');
             modal.style.display = 'flex';
+            modal.style.setProperty('z-index', '1000040', 'important');
             
             // Auto-select Deed of Mortgage
             if (window.PraFormController && window.PraFormController.controller) {
@@ -1440,7 +1635,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (elements.submitBtn) {
             elements.submitBtn.disabled = true;
             elements.submitBtn.className = 'px-6 py-2.5 text-white font-medium bg-gray-400 rounded-lg cursor-not-allowed opacity-60 shadow-md flex items-center gap-2';
-            elements.submitBtn.setAttribute('title', 'A Deed of Surrender / Release requires an existing Mortgage record.');
+            elements.submitBtn.setAttribute('title', 'A Deed of Surrender and Release requires an existing Mortgage record.');
         }
     }
 
@@ -1526,9 +1721,25 @@ document.addEventListener('DOMContentLoaded', function () {
         const updateBtn = document.getElementById('btn-update-existing');
         const createBtn = document.getElementById('btn-create-new');
         
-        // Hide the buttons for now
-        if (updateBtn) updateBtn.classList.add('hidden');
-        if (createBtn) createBtn.classList.add('hidden');
+        if (updateBtn) {
+            updateBtn.classList.remove('hidden');
+            if (instrument) {
+                const isRegistered = !!(instrument.registration_number || instrument.reg_no || instrument.is_deed_registered == 1);
+                if (isRegistered) {
+                    updateBtn.innerHTML = `<i class="fas fa-eye mr-2"></i> View / Load Existing Record`;
+                    updateBtn.className = 'px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white text-base font-medium rounded-md w-full shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-300';
+                } else {
+                    updateBtn.innerHTML = `<i class="fas fa-edit mr-2"></i> Update Existing Record`;
+                    updateBtn.className = 'px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-base font-medium rounded-md w-full shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-300';
+                }
+            } else {
+                updateBtn.innerHTML = `<i class="fas fa-edit mr-2"></i> Update Existing Record`;
+                updateBtn.className = 'px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-base font-medium rounded-md w-full shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-300';
+            }
+        }
+        if (createBtn) {
+            createBtn.classList.remove('hidden');
+        }
 
         const closeBtnNow = document.getElementById('btn-close-duplicate');
         const closeFooterBtnNow = document.getElementById('btn-close-duplicate-footer');
@@ -6269,7 +6480,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (secondPartyInput) secondPartyInput.value = mortgagor;
 
         // Map Particulars
-        const particulars = `${record.serialNo || '0'}/${record.pageNo || '0'}/${record.volumeNo || '0'}`;
+        const serNo = record.serialNo || record.serial_no || '0';
+        const pgNo = record.pageNo || record.page_no || record.reg_page_no || '0';
+        const volNo = record.volumeNo || record.volume_no || '0';
+        const particulars = `${serNo}/${pgNo}/${volNo}`;
         const originalInput = document.getElementById('originalInstrumentRegParticulars');
         if (originalInput) originalInput.value = particulars;
 

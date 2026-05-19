@@ -195,7 +195,7 @@
             </div>
 
             <div class="point-block">
-                a.) Commissioning of temporary file no. <span class="bold-caps">{{ Str::upper($record->file_no) }}</span> over a piece of land situated {{ Str::upper($record->address) }} in favor of {{ Str::upper($record->applicant_name) }}.
+                a.) Commissioning of temporary file no. <span class="bold-caps">{{ Str::upper($record->file_no) }}(T)</span> over a piece of land situated {{ Str::upper($record->address) }} in favor of {{ Str::upper($record->applicant_name) }}.
             </div>
 
             <div class="signature-field-container">

@@ -1,6 +1,6 @@
 <style>
     /* Custom styles */
-    .dialog-overlay {
+    #property-form-dialog.dialog-overlay {
         position: fixed;
         top: 0;
         left: 0;
@@ -10,43 +10,38 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 50;
+        z-index: 1000040; /* Make it display on top of Instrument Capture which has z-index around 1000020 */
     }
     
-    .dialog-content {
+    #property-form-dialog .dialog-content {
         background-color: white;
         border-radius: 0.5rem;
         padding: 1.5rem;
-        max-width: 900px;
-        width: 90%;
+        max-width: 1000px !important; /* Default wide for property form */
+        width: 90% !important;
         max-height: 90vh;
-        overflow: hidden; /* Changed from overflow-y: auto to prevent double scrollbars */
+        overflow: hidden; /* Prevent double scrollbars */
         display: flex;
         flex-direction: column;
     }
     
     /* Make internal container scrollable instead of entire dialog */
-    .dialog-content form {
+    #property-form-dialog .dialog-content form {
         display: flex;
         flex-direction: column;
         height: 100%;
         overflow: hidden;
     }
 
-    .dialog-content .max-h-\[75vh\] {
+    #property-form-dialog .dialog-content .max-h-\[75vh\] {
         overflow-y: auto;
         flex-grow: 1;
         padding-right: 0.75rem; /* Give space for scrollbar */
     }
     
-    /* Dialog content for property form specifically */
-    .property-form-content {
-        max-width: 1000px; /* Even wider for property forms */
-    }
-    
     /* Add this to ensure close buttons are clickable */
-    .dialog-content button[id^="close-"], 
-    .dialog-content button[id^="cancel-"] {
+    #property-form-dialog .dialog-content button[id^="close-"], 
+    #property-form-dialog .dialog-content button[id^="cancel-"] {
         cursor: pointer;
         z-index: 100;
         position: relative;
@@ -59,19 +54,19 @@
         display: none !important; /* Use !important to override any other styles */
     }
     
-    /* Fix for tab content display issues */
-    .tab-content {
+    /* Fix for tab content display issues scoped to property form */
+    #property-form-dialog .tab-content {
         display: block; /* Always visible since no more tabs */
     }
     
-    /* File number tab content styles */
-    .tabcontent {
+    /* File number tab content styles scoped to property form */
+    #property-form-dialog .tabcontent {
         display: none !important; /* Default hidden - with important to override any inline styles */
         width: 100%; 
         visibility: hidden;
     }
     
-    .tabcontent.active {
+    #property-form-dialog .tabcontent.active {
         display: block !important; /* Shown when active - with important to override any inline styles */
         visibility: visible;
     }
@@ -487,5 +482,10 @@
 
     #cofo-records-table tbody tr.selected-row:hover {
         background-color: #a7f3d0 !important;
+    }
+
+    /* SweetAlert2 override to ensure alerts display in front of the property modals */
+    .swal2-container {
+        z-index: 2000000 !important;
     }
 </style>

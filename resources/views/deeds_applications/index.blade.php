@@ -1,4 +1,10 @@
-@php use App\Models\ConsentApplication; @endphp
+@php 
+    use App\Models\ConsentApplication; 
+    $assignRoles = collect(explode(',', (string) (auth()->user()->assign_role ?? '')))
+        ->map(fn($r) => trim($r))
+        ->filter();
+    $isSupperAdmin = $assignRoles->contains(fn($r) => strcasecmp($r, 'Supper Admin') === 0);
+@endphp
 @extends('layouts.app')
 
 @section('page-title', 'Applications for Consent')
@@ -266,6 +272,28 @@
       </div>
     </div>
 
+    {{-- ── Deeds Master Delete Legend ── --}}
+    <div class="flex flex-wrap items-center gap-3 px-1 py-1 mb-2">
+        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Listing:</span>
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200 whitespace-nowrap">
+            DEEDS APPLICATIONS FOR CONSENT
+        </span>
+
+        @if($isSupperAdmin)
+            <button type="button" id="btn-toggle-selection" onclick="toggleSelectionMode()"
+                class="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 text-slate-700 rounded-full text-[11px] font-semibold hover:bg-slate-50 transition shadow-sm cursor-pointer whitespace-nowrap">
+                <i data-lucide="check-square" class="w-3.5 h-3.5 text-blue-600"></i>
+                Start Master Deletion
+            </button>
+
+            <button type="button" id="btn-bulk-delete-master" onclick="deleteSelectedMasters()"
+                class="hidden inline-flex items-center gap-1.5 px-3 py-1 bg-rose-600 border border-rose-600 text-white rounded-full text-[11px] font-semibold hover:bg-rose-700 transition shadow-sm cursor-pointer whitespace-nowrap">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                Delete Master
+            </button>
+        @endif
+    </div>
+
     {{-- Stats cards --}}
     <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
       <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm ring-1 ring-emerald-100 bg-emerald-50/10">
@@ -305,6 +333,11 @@
         <table class="w-full text-left border-collapse" id="consent-table">
           <thead class="bg-slate-50 border-b border-slate-100">
             <tr>
+              @if($isSupperAdmin)
+                <th class="checkbox-col hidden px-4 py-4 text-center whitespace-nowrap" style="width:40px; min-width:40px;">
+                  <input type="checkbox" id="check-all-masters" onchange="toggleSelectAllMasters(this)" class="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer">
+                </th>
+              @endif
               <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px]">S/N</th>
               <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px] whitespace-nowrap">
                 File Number</th>
@@ -325,7 +358,17 @@
           </thead>
           <tbody class="divide-y divide-slate-100">
             @forelse($applications as $application)
-            <tr class="hover:bg-slate-50/50 transition duration-200">
+            <tr class="hover:bg-slate-50/50 transition duration-200" data-id="{{ $application->id }}" data-file-no="{{ $application->file_number }}">
+              @if($isSupperAdmin)
+                <td class="checkbox-col hidden px-4 py-4 text-center">
+                  @if(!($application->is_st_assignment ?? false))
+                    <input type="checkbox" class="master-row-checkbox rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" 
+                           data-id="{{ $application->id }}" data-file-no="{{ $application->file_number }}" onchange="updateBulkDeleteButtonState()">
+                  @else
+                    <span class="text-slate-300 font-bold">—</span>
+                  @endif
+                </td>
+              @endif
               <td class="px-6 py-4 text-slate-600 font-bold italic">{{ $loop->iteration }}</td>
               <td class="px-6 py-4 text-slate-900 font-bold whitespace-nowrap">
                 {{ $application->file_number }}
@@ -358,7 +401,7 @@
               <td class="px-6 py-4">
                 <div class="flex items-center gap-2">
                   <div class="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500">
-                    <i data-lucide="user-check" class="h-3.5 w-3.5"></i>
+                     <i data-lucide="user-check" class="h-3.5 w-3.5"></i>
                   </div>
                   <span class="text-slate-600 text-sm font-medium uppercase">{{ $application->created_by ?:
                     ($application->user ? $application->user->first_name . ' ' . $application->user->last_name :
@@ -397,7 +440,7 @@
             </tr>
             @empty
             <tr>
-              <td colspan="12" class="px-6 py-12 text-center text-slate-500 italic">
+              <td @if($isSupperAdmin) colspan="13" @else colspan="12" @endif class="px-6 py-12 text-center text-slate-500 italic">
                 No applications found. Click "New Application" to capture your first one.
               </td>
             </tr>
@@ -466,6 +509,8 @@
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script src="{{ asset('js/consent_applications.js') }}"></script>
 <script>
+  const isSupperAdmin = @json($isSupperAdmin);
+
   document.addEventListener('DOMContentLoaded', function () {
     // ── Lucide icons ──
     if (window.lucide) window.lucide.createIcons();
@@ -545,11 +590,17 @@
     if (typeof jQuery !== 'undefined' && jQuery.fn.DataTable) {
       const $table = jQuery('#consent-table');
       if (!jQuery.fn.DataTable.isDataTable('#consent-table')) {
+        const consentTypeColIndex = isSupperAdmin ? 3 : 2;
+        const actionsColIndex = isSupperAdmin ? 12 : 11;
+
         const dt = $table.DataTable({
           pageLength: 10,
           lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "All"]],
           ordering: true,
           autoWidth: false,
+          columnDefs: [
+            { orderable: false, targets: isSupperAdmin ? [0, 12] : [11] }
+          ],
           language: {
             search: "",
             searchPlaceholder: "Search...",
@@ -565,11 +616,11 @@
               .appendTo(filterWrapper)
               .on('change', function () {
                 var val = jQuery.fn.dataTable.util.escapeRegex(jQuery(this).val());
-                api.column(2).search(val ? '^' + val + '$' : '', true, false).draw();
+                api.column(consentTypeColIndex).search(val ? '^' + val + '$' : '', true, false).draw();
               });
 
             // Populate the select with unique values from the Consent Type column
-            api.column(2).data().unique().sort().each(function (d, j) {
+            api.column(consentTypeColIndex).data().unique().sort().each(function (d, j) {
               const tempDiv = document.createElement('div');
               tempDiv.innerHTML = d;
               const text = tempDiv.textContent || tempDiv.innerText || "";
@@ -621,22 +672,23 @@
                       </button>
                   `;
         } else {
-          const canEdit = app.print_count == 0;
+          const isRegistered = app.is_registered_in_instrument === true || app.is_registered_in_instrument === 1 || app.is_registered_in_instrument === "1";
+          const canUpdate = !isRegistered;
           const canPrint = app.print_count < 2;
 
-          if (canEdit) {
+          if (canUpdate) {
             html += `
-                          <button type="button" class="edit-consent-btn flex items-center gap-3 w-full px-4 py-2.5 text-xs text-amber-600 hover:bg-amber-50 transition font-bold"
+                          <button type="button" class="edit-consent-btn flex items-center gap-3 w-full px-4 py-2.5 text-xs text-amber-600 hover:bg-amber-50 transition font-bold cursor-pointer"
                               data-id="${app.id}" data-app='${JSON.stringify(app)}'>
                               <i data-lucide="edit-3" class="h-4 w-4"></i>
-                              <span>Edit Application</span>
+                              <span>Update Application</span>
                           </button>
                       `;
           } else {
             html += `
-                          <div class="flex items-center gap-3 w-full px-4 py-2.5 text-xs text-slate-300 cursor-not-allowed font-bold" title="Cannot edit after printing">
+                          <div class="flex items-center gap-3 w-full px-4 py-2.5 text-xs text-slate-300 cursor-not-allowed font-bold" title="Registered in Instrument Capture">
                               <i data-lucide="lock" class="h-4 w-4"></i>
-                              <span>Edit</span>
+                              <span>Update</span>
                           </div>
                       `;
           }
@@ -654,6 +706,16 @@
                               <i data-lucide="printer" class="h-4 w-4"></i>
                               <span>Print</span>
                           </div>
+                      `;
+          }
+
+          if (isSupperAdmin) {
+            html += `
+                          <div class="h-px bg-slate-100 my-1"></div>
+                          <button type="button" onclick="confirmSingleDeleteMaster('${app.id}', '${app.file_number}')" class="flex items-center gap-3 w-full px-4 py-2.5 text-xs text-rose-600 hover:bg-rose-50 transition font-bold cursor-pointer">
+                              <i data-lucide="trash-2" class="h-4 w-4"></i>
+                              <span>Delete Master</span>
+                          </button>
                       `;
           }
         }
@@ -734,6 +796,266 @@
       }
     }, true);
 
+    window.toggleSelectionMode = function() {
+        var cols = document.querySelectorAll('.checkbox-col');
+        var btn = document.getElementById('btn-toggle-selection');
+        var isShowing = false;
+
+        cols.forEach(function(col) {
+            if (col.classList.contains('hidden')) {
+                col.classList.remove('hidden');
+                isShowing = true;
+            } else {
+                col.classList.add('hidden');
+                // Uncheck checkboxes when disabling selection mode
+                var masterCheckbox = document.getElementById('check-all-masters');
+                if (masterCheckbox) masterCheckbox.checked = false;
+                var rowCheckboxes = document.querySelectorAll('.master-row-checkbox');
+                rowCheckboxes.forEach(function(cb) {
+                    cb.checked = false;
+                });
+            }
+        });
+
+        if (btn) {
+            if (isShowing) {
+                btn.innerHTML = '<i data-lucide="x" class="w-3.5 h-3.5 text-red-600"></i> Cancel Selection';
+                btn.classList.replace('bg-white', 'bg-red-50');
+                btn.classList.replace('text-slate-700', 'text-red-700');
+                btn.classList.replace('border-slate-200', 'border-red-200');
+            } else {
+                btn.innerHTML = '<i data-lucide="check-square" class="w-3.5 h-3.5 text-blue-600"></i> Start Master Deletion';
+                btn.classList.replace('bg-red-50', 'bg-white');
+                btn.classList.replace('text-red-700', 'text-slate-700');
+                btn.classList.replace('border-red-200', 'border-slate-200');
+            }
+            if (typeof lucide !== 'undefined' && typeof lucide.createIcons === 'function') {
+                lucide.createIcons();
+            }
+        }
+
+        updateBulkDeleteButtonState();
+    };
+
+    window.toggleSelectAllMasters = function(masterCheckbox) {
+        var checkboxes = document.querySelectorAll('.master-row-checkbox');
+        checkboxes.forEach(function(cb) {
+            cb.checked = masterCheckbox.checked;
+        });
+        updateBulkDeleteButtonState();
+    };
+
+    window.updateBulkDeleteButtonState = function() {
+        var checkedCount = document.querySelectorAll('.master-row-checkbox:checked').length;
+        var bulkBtn = document.getElementById('btn-bulk-delete-master');
+        if (bulkBtn) {
+            if (checkedCount > 0) {
+                bulkBtn.classList.remove('hidden');
+            } else {
+                bulkBtn.classList.add('hidden');
+            }
+        }
+    };
+
+    window.deleteSelectedMasters = function() {
+        var checkedBoxes = document.querySelectorAll('.master-row-checkbox:checked');
+        if (checkedBoxes.length === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'No Selection',
+                text: 'Please select at least one record to delete.'
+            });
+            return;
+        }
+
+        var recordsToDelete = [];
+        checkedBoxes.forEach(function(cb) {
+            recordsToDelete.push({
+                id: cb.getAttribute('data-id'),
+                fileNo: cb.getAttribute('data-file-no')
+            });
+        });
+
+        var fileNumbersText = recordsToDelete.map(r => r.fileNo).join(', ');
+
+        // First Warning
+        Swal.fire({
+            title: 'First Warning: Are you sure?',
+            html: "You are about to perform a <strong>Bulk Master Delete</strong> on <strong>" + recordsToDelete.length + "</strong> record(s): <br><strong style='color:#e11d48;'>" + fileNumbersText + "</strong>.<br><br>" +
+                  "This will delete their Deeds Consent Application records permanently.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#e11d48',
+            cancelButtonColor: '#475569',
+            confirmButtonText: 'Yes, I am sure (1/2)',
+            cancelButtonText: 'Cancel'
+        }).then(function(res1) {
+            if (res1.isConfirmed) {
+                // Second Warning
+                Swal.fire({
+                    title: 'Second Warning: FINAL CONFIRMATION!',
+                    html: "<strong>CRITICAL ACTION!</strong> Are you absolutely 100% certain you want to proceed? " +
+                          "This action is permanent and <strong>CANNOT BE UNDONE</strong>.",
+                    icon: 'error',
+                    showCancelButton: true,
+                    confirmButtonColor: '#b91c1c',
+                    cancelButtonColor: '#475569',
+                    confirmButtonText: 'YES, DELETE PERMANENTLY (2/2)',
+                    cancelButtonText: 'Abort'
+                }).then(function(res2) {
+                    if (res2.isConfirmed) {
+                        Swal.fire({
+                            title: 'Deleting...',
+                            html: 'Processing bulk deletion. Please wait.',
+                            allowOutsideClick: false,
+                            didOpen: function() {
+                                Swal.showLoading();
+                            }
+                        });
+
+                        var csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+                        var bulkDeleteUrl = '{{ route("deeds-applications.delete-master-bulk") }}';
+                        var ids = recordsToDelete.map(r => r.id);
+
+                        fetch(bulkDeleteUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': csrfToken,
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                _method: 'DELETE',
+                                ids: ids
+                            })
+                        })
+                        .then(function(res) {
+                            return res.json();
+                        })
+                        .then(function(result) {
+                            if (result.success) {
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Bulk Deletion Complete!',
+                                    text: result.message || 'Selected records deleted successfully.',
+                                    timer: 2500,
+                                    showConfirmButton: false
+                                }).then(function() {
+                                    location.reload();
+                                });
+                            } else {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Failed',
+                                    text: result.message || 'Failed to complete bulk deletion.'
+                                });
+                            }
+                        })
+                        .catch(function(err) {
+                            console.error('Bulk delete master error:', err);
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: 'A network error occurred. Please try again.'
+                            });
+                        });
+                    }
+                });
+            }
+        });
+    };
+
+    window.confirmSingleDeleteMaster = function(id, fileNo) {
+        if (!id || !fileNo) return;
+
+        // Close actions dropdown first
+        var globalDropdown = document.getElementById('deeds-global-dropdown');
+        if (globalDropdown) globalDropdown.style.visibility = 'hidden';
+
+        // First Warning
+        Swal.fire({
+            title: 'First Warning: Are you sure?',
+            html: "You are about to perform a <strong>Master Delete</strong> on application: <br><strong style='color:#e11d48;'>" + fileNo + "</strong>.<br><br>" +
+                  "This will delete this Deeds Consent Application record permanently.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#e11d48',
+            cancelButtonColor: '#475569',
+            confirmButtonText: 'Yes, I am sure (1/2)',
+            cancelButtonText: 'Cancel'
+        }).then(function(res1) {
+            if (res1.isConfirmed) {
+                // Second Warning
+                Swal.fire({
+                    title: 'Second Warning: FINAL CONFIRMATION!',
+                    html: "<strong>CRITICAL ACTION!</strong> Are you absolutely 100% certain you want to proceed? " +
+                          "This action is permanent and <strong>CANNOT BE UNDONE</strong>.",
+                    icon: 'error',
+                    showCancelButton: true,
+                    confirmButtonColor: '#b91c1c',
+                    cancelButtonColor: '#475569',
+                    confirmButtonText: 'YES, DELETE PERMANENTLY (2/2)',
+                    cancelButtonText: 'Abort'
+                }).then(function(res2) {
+                    if (res2.isConfirmed) {
+                        Swal.fire({
+                            title: 'Deleting...',
+                            html: 'Processing deletion. Please wait.',
+                            allowOutsideClick: false,
+                            didOpen: function() {
+                                Swal.showLoading();
+                            }
+                        });
+
+                        var csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+                        var deleteUrl = '/deeds-applications/delete-master/' + id;
+
+                        fetch(deleteUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': csrfToken,
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                _method: 'DELETE'
+                            })
+                        })
+                        .then(function(res) {
+                            return res.json();
+                        })
+                        .then(function(result) {
+                            if (result.success) {
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Deletion Complete!',
+                                    text: result.message || 'Record deleted successfully.',
+                                    timer: 2500,
+                                    showConfirmButton: false
+                                }).then(function() {
+                                    location.reload();
+                                });
+                            } else {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Failed',
+                                    text: result.message || 'Failed to delete record.'
+                                });
+                            }
+                        })
+                        .catch(function(err) {
+                            console.error('Delete master error:', err);
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: 'A network error occurred. Please try again.'
+                            });
+                        });
+                    }
+                });
+            }
+        });
+    };
 
   });
 </script>

@@ -144,7 +144,7 @@
                             <tr class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-50/80">
                                 <th class="px-4 py-3 text-left">#</th>
                                 <th class="px-4 py-3 text-left">Applicant</th>
-                                <th class="px-4 py-3 text-left">File No</th>
+                                <th class="px-4 py-3 text-left whitespace-nowrap">File No</th>
                                 <th class="px-4 py-3 text-left">File Title</th>
                                 <th class="px-4 py-3 text-left">Plots</th>
                                 <th class="px-4 py-3 text-left">Location</th>
@@ -159,7 +159,7 @@
                                 <tr>
                                     <td class="px-4 py-3 font-mono text-xs text-slate-400">{{ $record->id }}</td>
                                     <td class="px-4 py-3 text-slate-700 font-bold">{{ $record->applicant_name ?: '—' }}</td>
-                                    <td class="px-4 py-3 font-bold text-slate-700">{{ $record->file_no }}</td>
+                                    <td class="px-4 py-3 font-bold text-slate-700 whitespace-nowrap">{{ $record->file_no }}</td>
                                     <td class="px-4 py-3 text-slate-600">{{ $record->file_title }}</td>
                                     <td class="px-4 py-3 text-slate-600">{{ $record->num_plots }}</td>
                                     <td class="px-4 py-3 text-slate-600 text-xs">
@@ -755,7 +755,7 @@
                                 </div>
                                 <div>
                                     <p class="text-[10px] font-black text-slate-400 uppercase">File No</p>
-                                    <p class="font-bold text-slate-800">${data.file_no}</p>
+                                    <p class="font-bold text-slate-800 whitespace-nowrap">${data.file_no}</p>
                                 </div>
                                 <div>
                                     <p class="text-[10px] font-black text-slate-400 uppercase">Status</p>

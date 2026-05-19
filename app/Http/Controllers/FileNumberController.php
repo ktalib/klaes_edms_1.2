@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
- 
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -34,7 +34,7 @@ class FileNumberController extends Controller
         $stats = Cache::remember('mls_fileno_page_stats', 600, function () {
             $today = now()->toDateString();   // YYYY-MM-DD
             $month = now()->month;
-            $year  = now()->year;
+            $year = now()->year;
 
             $row = DB::connection('sqlsrv')->selectOne(
                 "SELECT
@@ -56,7 +56,7 @@ class FileNumberController extends Controller
             );
 
             return [
-                'total' => (int) ($row->total       ?? 0),
+                'total' => (int) ($row->total ?? 0),
                 'today' => (int) ($row->today_count ?? 0),
                 'month' => (int) ($row->month_count ?? 0),
             ];
@@ -147,11 +147,11 @@ class FileNumberController extends Controller
             WHERE {$notDeleted}
         ");
 
-        $totalCount     = (int) ($stats->total            ?? 0);
-        $mlsfCount      = (int) ($stats->mls_count        ?? 0);
-        $kangisCount    = (int) ($stats->kangis_count     ?? 0);
+        $totalCount = (int) ($stats->total ?? 0);
+        $mlsfCount = (int) ($stats->mls_count ?? 0);
+        $kangisCount = (int) ($stats->kangis_count ?? 0);
         $newKangisCount = (int) ($stats->new_kangis_count ?? 0);
-        $stCount        = (int) ($stats->st_count         ?? 0);
+        $stCount = (int) ($stats->st_count ?? 0);
 
         // Generate a fresh tracking ID for this session
         $trackingId = $this->generateTrackingId();
@@ -166,13 +166,13 @@ class FileNumberController extends Controller
         ));
     }
 
-    
-    
+
+
     public function getData(Request $request)
     {
         try {
-            $draw   = $request->input('draw');
-            $start  = (int) $request->input('start', 0);
+            $draw = $request->input('draw');
+            $start = (int) $request->input('start', 0);
             $length = (int) $request->input('length', 20);
             $search = $request->input('search.value', '');
             $source = $request->input('source', 'New');
@@ -196,11 +196,11 @@ class FileNumberController extends Controller
             }
 
             // ── Search WHERE fragment + bindings ──
-            $searchSql      = '';
+            $searchSql = '';
             $searchBindings = [];
             if (!empty($search)) {
-                $pct            = "%{$search}%";
-                $searchSql      = "AND (   fn.kangisFileNo    LIKE ?
+                $pct = "%{$search}%";
+                $searchSql = "AND (   fn.kangisFileNo    LIKE ?
                                        OR fn.NewKANGISFileNo LIKE ?
                                        OR fn.FileName        LIKE ?
                                        OR fn.mlsfNo          LIKE ?
@@ -229,6 +229,24 @@ class FileNumberController extends Controller
                 return (int) ($row->cnt ?? 0);
             });
 
+            // ── Add temporary-file count to totals (source=New only) ──
+            // Temporary files only exist in mls_file_no, so we count them separately.
+            $tempCount = 0;
+            if ($source === 'New') {
+                $tempRow = DB::connection('sqlsrv')->selectOne(
+                    "SELECT COUNT(*) AS cnt FROM mls_file_no
+                     WHERE file_option = 'temporary'
+                       AND (is_deleted IS NULL OR is_deleted = 0)
+                       AND NOT EXISTS (
+                           SELECT 1 FROM fileNumber fn2
+                           WHERE fn2.mlsfNo = mls_file_no.full_file_number
+                             AND (fn2.is_deleted IS NULL OR fn2.is_deleted = 0)
+                       )"
+                );
+                $tempCount = (int) ($tempRow->cnt ?? 0);
+                $recordsTotal += $tempCount;
+            }
+
             // ── Fast filtered count ──
             // Short-circuit when no search: filtered = total (saves a whole SQL round-trip).
             if (empty($search)) {
@@ -247,6 +265,32 @@ class FileNumberController extends Controller
                     $searchBindings
                 );
                 $filteredRecords = (int) ($row->cnt ?? 0);
+
+                // Also count matching temporary files in filtered count
+                if ($source === 'New') {
+                    $pct = "%{$search}%";
+                    $tempFiltered = DB::connection('sqlsrv')->selectOne(
+                        "SELECT COUNT(*) AS cnt FROM mls_file_no
+                         WHERE file_option = 'temporary'
+                           AND (is_deleted IS NULL OR is_deleted = 0)
+                           AND NOT EXISTS (
+                               SELECT 1 FROM fileNumber fn2
+                               WHERE fn2.mlsfNo = mls_file_no.full_file_number
+                                 AND (fn2.is_deleted IS NULL OR fn2.is_deleted = 0)
+                           )
+                           AND (
+                               full_file_number LIKE ?
+                               OR file_name     LIKE ?
+                               OR tracking_id   LIKE ?
+                               OR location      LIKE ?
+                               OR lga           LIKE ?
+                               OR plot_no       LIKE ?
+                               OR tp_no         LIKE ?
+                           )",
+                        [$pct, $pct, $pct, $pct, $pct, $pct, $pct]
+                    );
+                    $filteredRecords += (int) ($tempFiltered->cnt ?? 0);
+                }
             }
 
             // ── Main data query (two-phase) ──
@@ -301,23 +345,77 @@ class FileNumberController extends Controller
 
             // Build lookup maps from phase-1 results
             $batchMeta = [];   // id => [batch_no, batch_count, batch_first_file]
-            $pageIds   = [];
+            $pageIds = [];
             foreach ($pagedRows as $r) {
-                $pageIds[]        = (int) $r->id;
+                $pageIds[] = (int) $r->id;
                 $batchMeta[$r->id] = [
-                    'batch_no'        => $r->derived_batch_no,
-                    'batch_count'     => (int) $r->batch_count,
-                    'batch_first_file'=> $r->batch_first_file,
+                    'batch_no' => $r->derived_batch_no,
+                    'batch_count' => (int) $r->batch_count,
+                    'batch_first_file' => $r->batch_first_file,
                 ];
             }
 
-            // Nothing to enrich – return empty result to DataTables immediately
+            // Nothing in fileNumber – but we may still have temporary files to show
             if (empty($pageIds)) {
+                $tempFormattedData2 = collect();
+                if ($source === 'New') {
+                    $tmpSrchSql = '';
+                    $tmpSrchBindings = [];
+                    if (!empty($search)) {
+                        $pct = "%{$search}%";
+                        $tmpSrchSql = "AND (m.full_file_number LIKE ? OR m.file_name LIKE ? OR m.tracking_id LIKE ?
+                            OR m.location LIKE ? OR m.lga LIKE ? OR m.plot_no LIKE ? OR m.tp_no LIKE ?)";
+                        $tmpSrchBindings = [$pct, $pct, $pct, $pct, $pct, $pct, $pct];
+                    }
+                    $tmpRows = DB::connection('sqlsrv')->select(
+                        "SELECT m.id, m.full_file_number, m.file_name, m.land_use, m.customer_type,
+                                m.plot_no, m.tp_no, m.location, m.lga, m.tracking_id,
+                                m.created_by, m.commissioning_date, m.created_at, m.source,
+                                m.batch_no, p.name AS purpose_name
+                         FROM mls_file_no m
+                         LEFT JOIN purposes p ON p.id = m.purpose_id
+                         WHERE m.file_option = 'temporary'
+                           AND (m.is_deleted IS NULL OR m.is_deleted = 0)
+                           AND NOT EXISTS (
+                               SELECT 1 FROM fileNumber fn2
+                               WHERE fn2.mlsfNo = m.full_file_number
+                                 AND (fn2.is_deleted IS NULL OR fn2.is_deleted = 0)
+                           )
+                           {$tmpSrchSql}
+                         ORDER BY m.id DESC",
+                        $tmpSrchBindings
+                    );
+                    $tempFormattedData2 = collect($tmpRows)->map(function ($row) {
+                        $fileNo = trim($row->full_file_number ?? '');
+                        $id = (int) $row->id;
+                        $actionHtml = '<div class="relative action-dropdown"><button type="button" class="p-1 rounded-full hover:bg-slate-100 transition-colors"><i data-lucide="more-horizontal" class="w-5 h-5 text-slate-500"></i></button><div class="action-dropdown-menu"><div class="py-1"><button onclick="editRecord(' . $id . ')" class="w-full text-left px-4 py-2.5 text-sm flex items-center space-x-3 text-slate-700 hover:bg-slate-50"><i data-lucide="pencil" class="w-4 h-4 text-slate-500"></i><span class="font-medium">Edit Record</span></button></div></div></div>';
+                        return [
+                            'id' => $id, 'primaryFileNo' => $fileNo ?: 'N/A', 'relatedFileNo' => 'N/A',
+                            'mlsfNo' => $fileNo ?: 'N/A', 'kangisFileNo' => 'N/A', 'NewKANGISFileNo' => 'N/A', 'stFileNo' => 'N/A',
+                            'FileName' => trim($row->file_name ?? '') ?: 'N/A',
+                            'land_use' => trim($row->land_use ?? '') ?: 'N/A',
+                            'customer_type' => trim($row->customer_type ?? '') ?: 'N/A',
+                            'purpose_name' => trim($row->purpose_name ?? '') ?: 'N/A',
+                            'plot_no' => trim($row->plot_no ?? '') ?: 'N/A', 'tp_no' => trim($row->tp_no ?? '') ?: 'N/A',
+                            'location' => trim($row->location ?? '') ?: 'N/A', 'lga' => trim($row->lga ?? '') ?: 'N/A',
+                            'tracking_id' => trim($row->tracking_id ?? '') ?: 'N/A', 'type' => 'Temporary',
+                            'created_by' => trim($row->created_by ?? '') ?: 'System',
+                            'source' => trim($row->source ?? '') ?: 'Temporary File',
+                            'source_instrument_capture_id' => null, 'source_pra_id' => null, 'source_prop_id' => null,
+                            'source_temp_fileno' => 'N/A', 'batch_no' => trim($row->batch_no ?? ''), 'batch_count' => 1,
+                            'batch_first_file' => $fileNo,
+                            'commissioning_date' => $row->commissioning_date ? date('Y-m-d', strtotime($row->commissioning_date)) : 'N/A',
+                            'has_commissioning_sheet' => false,
+                            'created_at' => $row->created_at ? date('Y-m-d H:i:s', strtotime($row->created_at)) : 'N/A',
+                            'action' => $actionHtml,
+                        ];
+                    });
+                }
                 return response()->json([
-                    'draw'            => intval($draw),
-                    'recordsTotal'    => $recordsTotal,
+                    'draw' => intval($draw),
+                    'recordsTotal' => $recordsTotal,
                     'recordsFiltered' => $filteredRecords,
-                    'data'            => [],
+                    'data' => $tempFormattedData2->values(),
                 ]);
             }
 
@@ -325,7 +423,7 @@ class FileNumberController extends Controller
             // All expensive OUTER APPLYs (pra, instrument_capture,
             // file_commissioning_sheets, dciv_link, file_indexing_links)
             // now fire at most 20 times per request.
-            $inList  = implode(',', $pageIds);   // safe: all are cast to int above
+            $inList = implode(',', $pageIds);   // safe: all are cast to int above
             $enrichSql = "
                 SELECT
                     fn.id, fn.kangisFileNo, fn.mlsfNo, fn.NewKANGISFileNo, fn.FileName,
@@ -405,12 +503,13 @@ class FileNumberController extends Controller
             // Merge phase-2 enrichment + phase-1 batch meta, preserving phase-1 order
             $data = [];
             foreach ($pageIds as $id) {
-                if (!isset($enrichedMap[$id])) continue;
+                if (!isset($enrichedMap[$id]))
+                    continue;
                 $row = $enrichedMap[$id];
                 // Overlay correct batch aggregates from phase 1
-                $row->derived_batch_no  = $batchMeta[$id]['batch_no']         ?? '';
-                $row->batch_count       = $batchMeta[$id]['batch_count']       ?? 1;
-                $row->batch_first_file  = $batchMeta[$id]['batch_first_file']  ?? $row->mlsfNo;
+                $row->derived_batch_no = $batchMeta[$id]['batch_no'] ?? '';
+                $row->batch_count = $batchMeta[$id]['batch_count'] ?? 1;
+                $row->batch_first_file = $batchMeta[$id]['batch_first_file'] ?? $row->mlsfNo;
                 $data[] = $row;
             }
 
@@ -441,44 +540,132 @@ class FileNumberController extends Controller
                 $relatedFileNo = implode(', ', $allRelated) ?: 'N/A';
 
                 return [
-                    'id'                           => $row->id,
-                    'primaryFileNo'                => $primaryFileNo,
-                    'relatedFileNo'                => $relatedFileNo,
-                    'mlsfNo'                       => trim($row->mlsfNo ?? '') ?: 'N/A',
-                    'kangisFileNo'                 => trim($row->kangisFileNo ?? '') ?: 'N/A',
-                    'NewKANGISFileNo'              => trim($row->NewKANGISFileNo ?? '') ?: 'N/A',
-                    'stFileNo'                     => trim($row->st_file_no ?? '') ?: 'N/A',
-                    'FileName'                     => trim($row->FileName ?? '') ?: 'N/A',
-                    'land_use'                     => trim($row->derived_land_use ?? '') ?: 'N/A',
-                    'customer_type'                => trim($row->derived_customer_type ?? '') ?: 'N/A',
-                    'purpose_name'                 => trim($row->purpose_name ?? '') ?: 'N/A',
-                    'plot_no'                      => trim($row->plot_no ?? '') ?: 'N/A',
-                    'tp_no'                        => trim($row->tp_no ?? '') ?: 'N/A',
-                    'location'                     => trim($row->location ?? '') ?: 'N/A',
-                    'lga'                          => trim($row->derived_lga ?? '') ?: 'N/A',
-                    'tracking_id'                  => trim($row->tracking_id ?? '') ?: 'N/A',
-                    'type'                         => trim($row->type ?? '') ?: 'N/A',
-                    'created_by'                   => trim($row->derived_created_by ?? '') ?: 'System',
-                    'source'                       => trim($row->derived_source ?? '') ?: (trim($row->SOURCE ?? '') ?: 'N/A'),
+                    'id' => $row->id,
+                    'primaryFileNo' => $primaryFileNo,
+                    'relatedFileNo' => $relatedFileNo,
+                    'mlsfNo' => trim($row->mlsfNo ?? '') ?: 'N/A',
+                    'kangisFileNo' => trim($row->kangisFileNo ?? '') ?: 'N/A',
+                    'NewKANGISFileNo' => trim($row->NewKANGISFileNo ?? '') ?: 'N/A',
+                    'stFileNo' => trim($row->st_file_no ?? '') ?: 'N/A',
+                    'FileName' => trim($row->FileName ?? '') ?: 'N/A',
+                    'land_use' => trim($row->derived_land_use ?? '') ?: 'N/A',
+                    'customer_type' => trim($row->derived_customer_type ?? '') ?: 'N/A',
+                    'purpose_name' => trim($row->purpose_name ?? '') ?: 'N/A',
+                    'plot_no' => trim($row->plot_no ?? '') ?: 'N/A',
+                    'tp_no' => trim($row->tp_no ?? '') ?: 'N/A',
+                    'location' => trim($row->location ?? '') ?: 'N/A',
+                    'lga' => trim($row->derived_lga ?? '') ?: 'N/A',
+                    'tracking_id' => trim($row->tracking_id ?? '') ?: 'N/A',
+                    'type' => trim($row->type ?? '') ?: 'N/A',
+                    'created_by' => trim($row->derived_created_by ?? '') ?: 'System',
+                    'source' => trim($row->derived_source ?? '') ?: (trim($row->SOURCE ?? '') ?: 'N/A'),
                     'source_instrument_capture_id' => $row->derived_source_instrument_capture_id ? (int) $row->derived_source_instrument_capture_id : null,
-                    'source_pra_id'                => $row->derived_source_pra_id ? (int) $row->derived_source_pra_id : null,
-                    'source_prop_id'               => $row->derived_source_prop_id ? (int) $row->derived_source_prop_id : null,
-                    'source_temp_fileno'           => trim($row->derived_source_temp_fileno ?? '') ?: 'N/A',
-                    'batch_no'                     => trim($row->derived_batch_no ?? ''),
-                    'batch_count'                  => (int) $row->batch_count,
-                    'batch_first_file'             => trim($row->batch_first_file ?? ''),
-                    'commissioning_date'           => $row->derived_commissioning_date ? date('Y-m-d', strtotime($row->derived_commissioning_date)) : 'N/A',
-                    'has_commissioning_sheet'      => (bool) $row->has_commissioning_sheet,
-                    'created_at'                   => $row->created_at ? date('Y-m-d H:i:s', strtotime($row->created_at)) : 'N/A',
-                    'action'                       => $this->buildCaptureActionColumn($row, $row->SOURCE),
+                    'source_pra_id' => $row->derived_source_pra_id ? (int) $row->derived_source_pra_id : null,
+                    'source_prop_id' => $row->derived_source_prop_id ? (int) $row->derived_source_prop_id : null,
+                    'source_temp_fileno' => trim($row->derived_source_temp_fileno ?? '') ?: 'N/A',
+                    'batch_no' => trim($row->derived_batch_no ?? ''),
+                    'batch_count' => (int) $row->batch_count,
+                    'batch_first_file' => trim($row->batch_first_file ?? ''),
+                    'commissioning_date' => $row->derived_commissioning_date ? date('Y-m-d', strtotime($row->derived_commissioning_date)) : 'N/A',
+                    'has_commissioning_sheet' => (bool) $row->has_commissioning_sheet,
+                    'created_at' => $row->created_at ? date('Y-m-d H:i:s', strtotime($row->created_at)) : 'N/A',
+                    'action' => $this->buildCaptureActionColumn($row, $row->SOURCE),
                 ];
             });
 
+            // ── Prepend temporary files from mls_file_no (source=New only) ──
+            $tempFormattedData = collect();
+            if ($source === 'New') {
+                $tempSearchSql = '';
+                $tempBindings = [];
+                if (!empty($search)) {
+                    $pct = "%{$search}%";
+                    $tempSearchSql = "AND (
+                        m.full_file_number LIKE ? OR m.file_name LIKE ? OR m.tracking_id LIKE ?
+                        OR m.location LIKE ? OR m.lga LIKE ? OR m.plot_no LIKE ? OR m.tp_no LIKE ?
+                    )";
+                    $tempBindings = [$pct, $pct, $pct, $pct, $pct, $pct, $pct];
+                }
+
+                $tempRows = DB::connection('sqlsrv')->select(
+                    "SELECT m.id, m.full_file_number, m.file_name, m.land_use, m.customer_type,
+                            m.plot_no, m.tp_no, m.location, m.lga, m.tracking_id,
+                            m.created_by, m.commissioning_date, m.created_at, m.source,
+                            m.batch_no, p.name AS purpose_name
+                     FROM mls_file_no m
+                     LEFT JOIN purposes p ON p.id = m.purpose_id
+                     WHERE m.file_option = 'temporary'
+                       AND (m.is_deleted IS NULL OR m.is_deleted = 0)
+                       AND NOT EXISTS (
+                           SELECT 1 FROM fileNumber fn2
+                           WHERE fn2.mlsfNo = m.full_file_number
+                             AND (fn2.is_deleted IS NULL OR fn2.is_deleted = 0)
+                       )
+                       {$tempSearchSql}
+                     ORDER BY m.id DESC",
+                    $tempBindings
+                );
+
+                $tempFormattedData = collect($tempRows)->map(function ($row) {
+                    $fileNo = trim($row->full_file_number ?? '');
+                    // Build a fake action column for temp files (view only, no batch)
+                    $id = (int) $row->id;
+                    $actionHtml = '
+                    <div class="relative action-dropdown">
+                        <button type="button" class="p-1 rounded-full hover:bg-slate-100 transition-colors">
+                            <i data-lucide="more-horizontal" class="w-5 h-5 text-slate-500"></i>
+                        </button>
+                        <div class="action-dropdown-menu"><div class="py-1">
+                            <button onclick="editRecord(' . $id . ')" class="w-full text-left px-4 py-2.5 text-sm flex items-center space-x-3 text-slate-700 hover:bg-slate-50">
+                                <i data-lucide="pencil" class="w-4 h-4 text-slate-500"></i>
+                                <span class="font-medium">Edit Record</span>
+                            </button>
+                        </div></div>
+                    </div>';
+
+                    return [
+                        'id'                          => $id,
+                        'primaryFileNo'               => $fileNo ?: 'N/A',
+                        'relatedFileNo'               => 'N/A',
+                        'mlsfNo'                      => $fileNo ?: 'N/A',
+                        'kangisFileNo'                => 'N/A',
+                        'NewKANGISFileNo'             => 'N/A',
+                        'stFileNo'                    => 'N/A',
+                        'FileName'                    => trim($row->file_name ?? '') ?: 'N/A',
+                        'land_use'                    => trim($row->land_use ?? '') ?: 'N/A',
+                        'customer_type'               => trim($row->customer_type ?? '') ?: 'N/A',
+                        'purpose_name'                => trim($row->purpose_name ?? '') ?: 'N/A',
+                        'plot_no'                     => trim($row->plot_no ?? '') ?: 'N/A',
+                        'tp_no'                       => trim($row->tp_no ?? '') ?: 'N/A',
+                        'location'                    => trim($row->location ?? '') ?: 'N/A',
+                        'lga'                         => trim($row->lga ?? '') ?: 'N/A',
+                        'tracking_id'                 => trim($row->tracking_id ?? '') ?: 'N/A',
+                        'type'                        => 'Temporary',
+                        'created_by'                  => trim($row->created_by ?? '') ?: 'System',
+                        'source'                      => trim($row->source ?? '') ?: 'Temporary File',
+                        'source_instrument_capture_id'=> null,
+                        'source_pra_id'               => null,
+                        'source_prop_id'              => null,
+                        'source_temp_fileno'          => 'N/A',
+                        'batch_no'                    => trim($row->batch_no ?? ''),
+                        'batch_count'                 => 1,
+                        'batch_first_file'            => $fileNo,
+                        'commissioning_date'          => $row->commissioning_date ? date('Y-m-d', strtotime($row->commissioning_date)) : 'N/A',
+                        'has_commissioning_sheet'     => false,
+                        'created_at'                  => $row->created_at ? date('Y-m-d H:i:s', strtotime($row->created_at)) : 'N/A',
+                        'action'                      => $actionHtml,
+                    ];
+                });
+            }
+
+            // Merge: temp files first, then regular records
+            $mergedData = $tempFormattedData->concat($formattedData)->values();
+
             return response()->json([
-                'draw'            => intval($draw),
-                'recordsTotal'    => $recordsTotal,
+                'draw' => intval($draw),
+                'recordsTotal' => $recordsTotal,
                 'recordsFiltered' => $filteredRecords,
-                'data'            => $formattedData,
+                'data' => $mergedData,
             ]);
 
         } catch (\Exception $e) {
@@ -487,11 +674,11 @@ class FileNumberController extends Controller
             ]);
 
             return response()->json([
-                'draw'            => intval($request->input('draw')),
-                'recordsTotal'    => 0,
+                'draw' => intval($request->input('draw')),
+                'recordsTotal' => 0,
                 'recordsFiltered' => 0,
-                'data'            => [],
-                'error'           => 'Error loading data: ' . $e->getMessage(),
+                'data' => [],
+                'error' => 'Error loading data: ' . $e->getMessage(),
             ]);
         }
     }
@@ -599,7 +786,7 @@ class FileNumberController extends Controller
                             $maxSerial = $serial;
                         }
                     }
-                } 
+                }
             }
 
             $nextSerial = $maxSerial + 1;
@@ -1237,7 +1424,7 @@ class FileNumberController extends Controller
                 $updateData['tp_no'] = $request->tp_no;
             if ($request->has('location'))
                 $updateData['location'] = $request->location;
-            
+
             // purpose_id and customer_type are usually in mls_file_no, but check if they're in fileNumber too
             if ($request->has('purpose_id') && \Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasColumn('fileNumber', 'purpose_id')) {
                 $updateData['purpose_id'] = $request->purpose_id;
@@ -1245,7 +1432,7 @@ class FileNumberController extends Controller
             if ($request->has('customer_type') && \Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasColumn('fileNumber', 'customer_type')) {
                 $updateData['customer_type'] = $request->customer_type;
             }
-            
+
             // Handle phone_no dynamically
             if ($request->has('phone_no')) {
                 if (\Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasColumn('fileNumber', 'phone_no')) {
@@ -1287,13 +1474,13 @@ class FileNumberController extends Controller
                     $mlsUpdateData['tp_no'] = $updateData['tp_no'];
                 if (isset($updateData['location']))
                     $mlsUpdateData['location'] = $updateData['location'];
-                
+
                 if ($request->has('purpose_id'))
                     $mlsUpdateData['purpose_id'] = $request->purpose_id;
-                
+
                 if ($request->has('customer_type'))
                     $mlsUpdateData['customer_type'] = $request->customer_type;
-                
+
                 if ($request->has('phone_no')) {
                     if (\Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasColumn('mls_file_no', 'phone_no')) {
                         $mlsUpdateData['phone_no'] = $request->phone_no;
@@ -2244,22 +2431,22 @@ class FileNumberController extends Controller
                 if ($type === 'Date') {
                     $query->where(function ($q) use ($reference) {
                         $q->whereDate('commissioning_date', $reference)
-                          ->orWhereDate('created_at', $reference);
+                            ->orWhereDate('created_at', $reference);
                     });
                 } else {
                     $query->where('batch_no', $reference);
                 }
 
                 // Exclude OSS / One-Stop Shop specific records (match getBatchRecords filters)
-                $query->where(function($q) {
-                    $q->where(function($sq) {
+                $query->where(function ($q) {
+                    $q->where(function ($sq) {
                         $sq->where('sub_source', '!=', 'OP Change of Name')
-                           ->orWhereNull('sub_source');
+                            ->orWhereNull('sub_source');
                     })
-                    ->where(function($sq) {
-                        $sq->whereNotIn('source', ['OP Resettlement', 'OP Direct Allocation'])
-                           ->orWhereNull('source');
-                    });
+                        ->where(function ($sq) {
+                            $sq->whereNotIn('source', ['OP Resettlement', 'OP Direct Allocation'])
+                                ->orWhereNull('source');
+                        });
                 });
 
                 // Only log records that haven't been printed yet
@@ -2375,8 +2562,8 @@ class FileNumberController extends Controller
 
             return response()->json([
                 'success' => true,
-                'count'   => $records->count(),
-                'data'    => $records,
+                'count' => $records->count(),
+                'data' => $records,
             ]);
         } catch (\Exception $e) {
             \Log::error('Consolidation report error: ' . $e->getMessage());

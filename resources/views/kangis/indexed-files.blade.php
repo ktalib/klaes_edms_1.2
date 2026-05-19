@@ -81,11 +81,10 @@
             @include('components.indexed-files-table', ['config' => [
                 'registry' => 'KANGIS',
                 'tableVariant' => 'kangis',
-                'hiddenColumns' => ['general_registry', 'registry', 'registry_batch_no', 'sys_batch_no', 'batch_no', 'corresponding_fileno'],
+                'hiddenColumns' => ['general_registry', 'registry', 'registry_batch_no', 'sys_batch_no', 'batch_no', 'corresponding_fileno', 'new_kangis_file_no'],
                 'columnLabels' => [
-                    'file_number' => 'Kangis FileNo',
-                    'kangis_fileno_placeholder' => 'Placeholder',
-                    'new_kangis_file_no' => 'Newkangis',
+                    'file_number' => 'Newkangis',
+                    'kangis_fileno_placeholder' => 'Kangis FileNo',
                     'related_file_no' => 'Mls FileNo',
                     'related_fileno_action' => 'Related FileNo',
                     'file_title' => 'File Title',

@@ -162,13 +162,11 @@
                         <span id="batchBtnText">Registration</span>
                     </button>
                     @endif
-                    <div class='hidden'>
-                        <button id="exportRegistryBtn" onclick="openExportModal()"
-                            class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg flex items-center gap-2">
-                            <i class="fas fa-file-export"></i>
-                            <span>Export Instruments</span>
-                        </button>
-                    </div>
+                    <button id="exportRegistryBtn" onclick="openCaptureExportModal()"
+                        class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg flex items-center gap-2 shadow-md hover:shadow-lg transition-all duration-200">
+                        <i class="fas fa-file-export"></i>
+                        <span>Export Instruments</span>
+                    </button>
 
                 </div>
             </div>
@@ -749,4 +747,5 @@
     <script src="{{ asset('js/property-timeline-modal.js') }}"></script>
     <script src="{{ asset('js/instrument_registration_index.js') }}"></script>
     <script src="{{ asset('js/instrument_registration_batch_print.js') }}?v={{ time() }}"></script>
+    <script src="{{ asset('js/instrument_capture_export.js') }}?v={{ time() }}"></script>
 @endsection

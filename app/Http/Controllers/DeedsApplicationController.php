@@ -50,9 +50,44 @@ class DeedsApplicationController extends Controller
             ->get()
             ->unique('mother_id');
 
+        $capturedInstruments = DB::connection('sqlsrv')
+            ->table('instrument_capture')
+            ->where(function ($q) {
+                $q->where('is_deleted', 0)->orWhereNull('is_deleted');
+            })
+            ->select('mlsFNo', 'temp_fileno', 'instrument_type')
+            ->get();
+
+        // Build an O(1) lookup map for extreme performance
+        $instrumentMap = [];
+        foreach ($capturedInstruments as $inst) {
+            $instType = strtolower(trim($inst->instrument_type ?? ''));
+            if (!empty($inst->mlsFNo)) {
+                $instrumentMap[strtolower(trim($inst->mlsFNo))][] = $instType;
+            }
+            if (!empty($inst->temp_fileno)) {
+                $instrumentMap[strtolower(trim($inst->temp_fileno))][] = $instType;
+            }
+        }
+
         foreach ($applications as $app) {
-            $app->applicant_name = strtoupper($app->applicant_name);
-            $app->party_name = strtoupper($app->party_name);
+            $app->applicant_name = strtoupper((string)$app->applicant_name);
+            $app->party_name = strtoupper((string)$app->party_name);
+            
+            // Check if registered in Instrument Capture
+            $app->is_registered_in_instrument = false;
+            if (!empty($app->file_number)) {
+                $fileKey = strtolower(trim($app->file_number));
+                if (isset($instrumentMap[$fileKey])) {
+                    $consentType = strtolower(trim($app->consent_type ?? ''));
+                    foreach ($instrumentMap[$fileKey] as $instType) {
+                        if (str_contains($instType, $consentType) || str_contains($consentType, $instType)) {
+                            $app->is_registered_in_instrument = true;
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
         foreach ($stMemos as $memo) {
@@ -201,5 +236,114 @@ class DeedsApplicationController extends Controller
             'submitted_at' => ['nullable', 'date'],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
+    }
+
+    public function deleteMaster(Request $request, $id): \Illuminate\Http\JsonResponse
+    {
+        // Enforce role permission Supper Admin
+        $assignRoles = collect(explode(',', (string) (auth()->user()->assign_role ?? '')))
+            ->map(fn($r) => trim($r))
+            ->filter();
+        $isSupperAdmin = $assignRoles->contains(fn($r) => strcasecmp($r, 'Supper Admin') === 0);
+
+        if (!$isSupperAdmin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized action.'
+            ], 403);
+        }
+
+        DB::beginTransaction();
+        try {
+            $application = ConsentApplication::findOrFail($id);
+            $fileNo = $application->file_number;
+
+            // Formally log the action
+            if (class_exists('\App\Services\AuditService')) {
+                \App\Services\AuditService::logAction(
+                    'Deeds Master Delete',
+                    'consent_applications',
+                    $application->id,
+                    "Deleted deeds consent application for file: {$fileNo}"
+                );
+            }
+
+            // Physically delete the application
+            $application->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Master record deleted successfully.'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete master record: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function deleteMasterBulk(Request $request): \Illuminate\Http\JsonResponse
+    {
+        // Enforce role permission Supper Admin
+        $assignRoles = collect(explode(',', (string) (auth()->user()->assign_role ?? '')))
+            ->map(fn($r) => trim($r))
+            ->filter();
+        $isSupperAdmin = $assignRoles->contains(fn($r) => strcasecmp($r, 'Supper Admin') === 0);
+
+        if (!$isSupperAdmin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized action.'
+            ], 403);
+        }
+
+        $ids = $request->input('ids');
+        if (empty($ids) || !is_array($ids)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No valid IDs provided.'
+            ], 400);
+        }
+
+        DB::beginTransaction();
+        try {
+            $deletedCount = 0;
+            foreach ($ids as $id) {
+                $application = ConsentApplication::find($id);
+                if ($application) {
+                    $fileNo = $application->file_number;
+
+                    // Formally log the action
+                    if (class_exists('\App\Services\AuditService')) {
+                        \App\Services\AuditService::logAction(
+                            'Deeds Master Delete Bulk',
+                            'consent_applications',
+                            $application->id,
+                            "Deleted deeds consent application for file: {$fileNo} (Bulk)"
+                        );
+                    }
+
+                    $application->delete();
+                    $deletedCount++;
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Successfully deleted {$deletedCount} master record(s)."
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to complete bulk deletion: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

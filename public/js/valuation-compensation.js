@@ -262,13 +262,15 @@ window.VFC = {
             });
         });
 
-        // Location Auto-builder (Using delegated events for robustness)
+        // Location Auto-builder (Using delegated events for robustness.)
         $(document).on('change input', '.loc-trigger, #loc_district, #loc_lga, #loc_state', function () {
             self.buildLocation();
         });
 
-        // Auto-calculation
-        $('.calc-trigger').on('input', function () {
+        // Auto-calculation & Row Calculations
+        $(document).on('input', '.building-length, .building-breadth, .building-area, .building-rate', function () {
+            const $row = $(this).closest('.building-type-row');
+            self.calculateBuildingRow($row);
             self.calculateCompensation();
         });
 
@@ -423,7 +425,7 @@ window.VFC = {
         });
 
         // Modal close buttons (Using delegated binding for reliability when moved to body)
-        $(document).on('click', '.close-modal, #modal-overlay', function () {
+        $(document).on('click', '.close-modal', function () {
             console.log('VFC: Close Modal clicked');
             self.closeModal();
         });
@@ -578,21 +580,63 @@ window.VFC = {
         }
     },
 
-    calculateCompensation: function () {
-        const length = parseFloat($('#length').val()) || 0;
-        const breadth = parseFloat($('#breadth').val()) || 0;
+    calculateBuildingRow: function ($row) {
+        const length = parseFloat($row.find('.building-length').val()) || 0;
+        const breadth = parseFloat($row.find('.building-breadth').val()) || 0;
 
-        // If L and B are provided, update Area Covered
+        // If L and B are provided, update Area Covered for this row
         if (length > 0 && breadth > 0) {
             const areaVal = length * breadth;
-            $('#area_covered').val(areaVal.toFixed(2));
+            $row.find('.building-area').val(areaVal.toFixed(2));
         }
 
-        const count = parseFloat($('#building_count').val()) || 0;
-        const area = parseFloat($('#area_covered').val()) || 0;
-        const rate = parseFloat($('#rate_of_cost').val()) || 0;
-        const total = count * area * rate;
-        $('#compensation_amount').val(total.toFixed(2));
+        const area = parseFloat($row.find('.building-area').val()) || 0;
+        const rate = parseFloat($row.find('.building-rate').val()) || 0;
+        const total = area * rate;
+        $row.find('.building-comp').val(total.toFixed(2));
+    },
+
+    calculateCompensation: function () {
+        let totalLength = 0;
+        let totalBreadth = 0;
+        let totalArea = 0;
+        let totalComp = 0;
+        let rateSum = 0;
+        let rateCount = 0;
+        let weightedRateSum = 0;
+
+        $('.building-type-row').each(function () {
+            const length = parseFloat($(this).find('.building-length').val()) || 0;
+            const breadth = parseFloat($(this).find('.building-breadth').val()) || 0;
+            const area = parseFloat($(this).find('.building-area').val()) || 0;
+            const rate = parseFloat($(this).find('.building-rate').val()) || 0;
+            const comp = parseFloat($(this).find('.building-comp').val()) || 0;
+
+            totalLength += length;
+            totalBreadth += breadth;
+            totalArea += area;
+            totalComp += comp;
+
+            if (rate > 0) {
+                rateSum += rate;
+                rateCount++;
+                weightedRateSum += area * rate;
+            }
+        });
+
+        // Compute average rate
+        let averageRate = 0;
+        if (totalArea > 0 && weightedRateSum > 0) {
+            averageRate = weightedRateSum / totalArea;
+        } else if (rateCount > 0) {
+            averageRate = rateSum / rateCount;
+        }
+
+        $('#length').val(totalLength > 0 ? totalLength.toFixed(2) : '');
+        $('#breadth').val(totalBreadth > 0 ? totalBreadth.toFixed(2) : '');
+        $('#area_covered').val(totalArea > 0 ? totalArea.toFixed(2) : '');
+        $('#rate_of_cost').val(averageRate > 0 ? averageRate.toFixed(2) : '');
+        $('#compensation_amount').val(totalComp > 0 ? totalComp.toFixed(2) : '');
     },
 
     saveRecord: function () {
@@ -703,6 +747,7 @@ window.VFC = {
         $('.sub-total-length-display').text('0.00m');
 
         this.clearBatch();
+        this.syncBuildingTypes();
 
         $('#valuation-modal').removeClass('hidden').addClass('flex').attr('style', 'display: flex !important; z-index: 110;');
         setTimeout(() => {
@@ -740,12 +785,52 @@ window.VFC = {
         $('#valuation_date').val(record.valuation_date.split('T')[0]);
         $('#owner_name').val(record.owner_name);
 
-        $('#building_type').val(record.building_type);
-        $('#completion_stage_select').val(record.completion_stage);
+        const count = parseInt(record.building_count) || 1;
+        $('#building_count').val(count);
+        self.syncBuildingTypes();
 
+        const types = record.building_type ? record.building_type.split(', ') : [];
+        const stages = record.completion_stage ? record.completion_stage.split(', ') : [];
 
+        // Distribute totals per building
+        const lenPerB = record.length ? (parseFloat(record.length) / count).toFixed(2) : '';
+        const brdPerB = record.breadth ? (parseFloat(record.breadth) / count).toFixed(2) : '';
+        const areaPerB = record.area_covered ? (parseFloat(record.area_covered) / count).toFixed(2) : '';
+        const ratePerB = record.rate_of_cost ? parseFloat(record.rate_of_cost).toFixed(2) : '';
+        const compPerB = record.compensation_amount ? (parseFloat(record.compensation_amount) / count).toFixed(2) : '';
 
-        $('#building_count').val(record.building_count);
+        $('.building-type-row').each(function (idx) {
+            const $row = $(this);
+
+            // Populate Building Type
+            const typeVal = types[idx] || '';
+            const $typeSelect = $row.find('.building-type-select');
+            if ($typeSelect.find(`option[value="${typeVal}"]`).length > 0) {
+                $typeSelect.val(typeVal).trigger('change');
+            } else if (typeVal) {
+                $typeSelect.val('Other').trigger('change');
+                $row.find('.building-type-other').val(typeVal).removeClass('hidden');
+            }
+
+            // Populate Completion Stage
+            const stageVal = stages[idx] || '';
+            const $stageSelect = $row.find('.building-stage-select');
+            if ($stageSelect.find(`option[value="${stageVal}"]`).length > 0) {
+                $stageSelect.val(stageVal).trigger('change');
+            } else if (stageVal) {
+                $stageSelect.val('Other').trigger('change');
+                $row.find('.building-stage-other').val(stageVal).removeClass('hidden');
+            }
+
+            // Populate measurements
+            $row.find('.building-length').val(lenPerB);
+            $row.find('.building-breadth').val(brdPerB);
+            $row.find('.building-area').val(areaPerB);
+            $row.find('.building-rate').val(ratePerB);
+            $row.find('.building-comp').val(compPerB);
+        });
+
+        // Set global readonly fields
         $('#length').val(record.length);
         $('#breadth').val(record.breadth);
         $('#area_covered').val(record.area_covered);
@@ -1244,6 +1329,7 @@ window.VFC = {
         $('#owner_name').val('');
         $('#plot_no').val('');
         $('#building_count').val(1);
+        this.syncBuildingTypes();
         $('#length, #breadth, #area_covered, #rate_of_cost, #compensation_amount').val('');
         $('#account_name, #account_number, #phone_number, #nin, #remarks').val('');
 
@@ -1413,6 +1499,7 @@ window.VFC = {
             const $template = $rows.first().clone();
             $template.find('select').val('');
             $template.find('.building-type-other, .building-stage-other').val('').addClass('hidden');
+            $template.find('.building-length, .building-breadth, .building-area, .building-rate, .building-comp').val('');
             for (let i = 0; i < count - currentCount; i++) {
                 $container.append($template.clone());
             }
@@ -1433,6 +1520,7 @@ window.VFC = {
 
         if (window.lucide) window.lucide.createIcons();
         this.updateFinalBuildingType();
+        this.calculateCompensation();
     }
 };
 

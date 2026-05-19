@@ -869,7 +869,7 @@
                         <input type="number" name="building_count" id="buildingCount" class="inp" value="1" min="1" >
                     </div>
                     <div class="field">
-                        <label>Building Assessment <span class="req">*</span></label>
+                        <label>Building Assessment & Details <span class="req">*</span></label>
                         <div id="building_types_mobile_container" style="display: flex; flex-direction: column; gap: 12px;">
                             <div class="building-type-mobile-row" style="background: rgba(255,255,255,0.02); padding: 12px; border-radius: 12px; border: 1px solid var(--border);">
                                 <div style="font-size: 9px; font-weight: 800; color: var(--text-dim); text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 8px;">
@@ -890,25 +890,62 @@
                                     </select>
                                     <input type="text" class="inp building-stage-mobile-other hidden mt-2" placeholder="Specify stage...">
                                 </div>
+                                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <div>
+                                        <label style="font-size: 9px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; display: block; text-transform: uppercase;">Length (L) (m)</label>
+                                        <input type="number" step="0.01" class="inp building-mobile-length" placeholder="0.00" style="padding: 8px; font-size: 12px;">
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 9px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; display: block; text-transform: uppercase;">Breadth (B) (m)</label>
+                                        <input type="number" step="0.01" class="inp building-mobile-breadth" placeholder="0.00" style="padding: 8px; font-size: 12px;">
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 9px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; display: block; text-transform: uppercase;">Area Covered (m²)</label>
+                                        <input type="number" step="0.01" class="inp building-mobile-area" placeholder="0.00" style="padding: 8px; font-size: 12px; background: rgba(59,130,246,0.05); color: var(--accent); border-color: rgba(59,130,246,0.2);">
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 9px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; display: block; text-transform: uppercase;">Rate of Cost (₦)</label>
+                                        <input type="number" step="0.01" class="inp building-mobile-rate" placeholder="0.00" style="padding: 8px; font-size: 12px;">
+                                    </div>
+                                    <div style="grid-column: 1 / -1;">
+                                        <label style="font-size: 9px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; display: block; text-transform: uppercase;">Amount (₦)</label>
+                                        <div class="inp-wrap" style="position: relative;">
+                                            <div style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--success); font-size: 11px; font-weight: 700;">₦</div>
+                                            <input type="number" step="0.01" class="inp building-mobile-comp" placeholder="0.00" readonly style="padding: 8px 8px 8px 24px; font-size: 12px; color: var(--success); font-weight: 700;">
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <input type="hidden" name="building_type" id="building_type_final_mobile">
                         <input type="hidden" name="completion_stage" id="completion_stage_final_mobile">
                     </div>
+                    
+                    <div style="display: none;">
                         <div class="field">
-                            <label>Area (m²)</label>
-                            <input type="number" name="area_covered" id="areaCovered" class="inp" placeholder="0.00" step="0.01">
+                            <label>Total Length (L) (m)</label>
+                            <input type="number" name="length" id="length" class="inp inp-readonly" placeholder="0.00" step="0.01" readonly>
+                        </div>
+                        <div class="field">
+                            <label>Total Breadth (B) (m)</label>
+                            <input type="number" name="breadth" id="breadth" class="inp inp-readonly" placeholder="0.00" step="0.01" readonly>
+                        </div>
+                        <div class="field">
+                            <label>Total Area Covered (m²) <span class="req">*</span></label>
+                            <input type="number" name="area_covered" id="areaCovered" class="inp inp-readonly" placeholder="0.00" step="0.01" readonly>
                         </div>
 
-                    <div class="field">
-                        <label>Rate of Cost (₦)</label>
-                        <input type="number" name="rate_of_cost" id="rateOfCost" class="inp" placeholder="0.00" step="0.01">
-                    </div>
-                    <div class="field">
-                        <label>Amount of Compensation <span class="req">*</span></label>
-                        <div class="inp-wrap" style="position: relative;">
-                            <div style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--success); font-weight: 700;">₦</div>
-                            <input type="number" name="compensation_amount" id="compensation_amount" class="inp" placeholder="0.00" step="0.01" style="padding-left: 32px; color: var(--success); font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700;" >
+                        <div class="field">
+                            <label>Average Rate of Cost (₦) <span class="req">*</span></label>
+                            <input type="number" name="rate_of_cost" id="rateOfCost" class="inp inp-readonly" placeholder="0.00" step="0.01" readonly>
+                        </div>
+                        
+                        <div class="field">
+                            <label>Total Amount of Compensation <span class="req">*</span></label>
+                            <div class="inp-wrap" style="position: relative;">
+                                <div style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--success); font-weight: 700;">₦</div>
+                                <input type="number" name="compensation_amount" id="compensation_amount" class="inp inp-readonly" placeholder="0.00" step="0.01" style="padding-left: 32px; color: var(--success); font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700;" readonly>
+                            </div>
                         </div>
                     </div>
                     
@@ -1392,16 +1429,73 @@
             document.getElementById('compItemsVal').value = finalItems.join(', ');
         }
 
+        function calculateBuildingRowMobile(row) {
+            const length = parseFloat(row.querySelector('.building-mobile-length').value) || 0;
+            const breadth = parseFloat(row.querySelector('.building-mobile-breadth').value) || 0;
+
+            // If L and B are provided, update Area Covered for this row
+            if (length > 0 && breadth > 0) {
+                const areaVal = length * breadth;
+                row.querySelector('.building-mobile-area').value = areaVal.toFixed(2);
+            }
+
+            const area = parseFloat(row.querySelector('.building-mobile-area').value) || 0;
+            const rate = parseFloat(row.querySelector('.building-mobile-rate').value) || 0;
+            const total = area * rate;
+            row.querySelector('.building-mobile-comp').value = total.toFixed(2);
+        }
+
         function calculateAllCompensation() {
             if (isInitializing) return; // Prevent loops during startup
 
-            // Base calculation (Building/Structure itself)
-            const count = parseFloat(document.getElementById('buildingCount').value) || 0;
-            const area = parseFloat(document.getElementById('areaCovered').value) || 0;
-            const rate = parseFloat(document.getElementById('rateOfCost').value) || 0;
-            let grandTotal = count * area * rate;
+            let totalLength = 0;
+            let totalBreadth = 0;
+            let totalArea = 0;
+            let totalBuildingComp = 0;
+            let rateSum = 0;
+            let rateCount = 0;
+            let weightedRateSum = 0;
 
-            // Add sub-item totals from all active calc boxes
+            document.querySelectorAll('.building-type-mobile-row').forEach(row => {
+                const length = parseFloat(row.querySelector('.building-mobile-length')?.value) || 0;
+                const breadth = parseFloat(row.querySelector('.building-mobile-breadth')?.value) || 0;
+                const area = parseFloat(row.querySelector('.building-mobile-area')?.value) || 0;
+                const rate = parseFloat(row.querySelector('.building-mobile-rate')?.value) || 0;
+                const comp = parseFloat(row.querySelector('.building-mobile-comp')?.value) || 0;
+
+                totalLength += length;
+                totalBreadth += breadth;
+                totalArea += area;
+                totalBuildingComp += comp;
+
+                if (rate > 0) {
+                    rateSum += rate;
+                    rateCount++;
+                    weightedRateSum += area * rate;
+                }
+            });
+
+            // Compute average rate
+            let averageRate = 0;
+            if (totalArea > 0 && weightedRateSum > 0) {
+                averageRate = weightedRateSum / totalArea;
+            } else if (rateCount > 0) {
+                averageRate = rateSum / rateCount;
+            }
+
+            // Write to global readonly fields
+            const gLen = document.getElementById('length');
+            const gBrd = document.getElementById('breadth');
+            const gArea = document.getElementById('areaCovered');
+            const gRate = document.getElementById('rateOfCost');
+
+            if (gLen) gLen.value = totalLength > 0 ? totalLength.toFixed(2) : '';
+            if (gBrd) gBrd.value = totalBreadth > 0 ? totalBreadth.toFixed(2) : '';
+            if (gArea) gArea.value = totalArea > 0 ? totalArea.toFixed(2) : '';
+            if (gRate) gRate.value = averageRate > 0 ? averageRate.toFixed(2) : '';
+
+            // Grand total includes sub-items
+            let grandTotal = totalBuildingComp;
             document.querySelectorAll('.calc-box').forEach(box => {
                 if (box.style.display === 'block') {
                     grandTotal += parseFloat(box.dataset.total) || 0;
@@ -1410,7 +1504,7 @@
 
             const mainComp = document.getElementById('compensation_amount');
             if (mainComp) {
-                mainComp.value = grandTotal.toFixed(2);
+                mainComp.value = grandTotal > 0 ? grandTotal.toFixed(2) : '';
             }
         }
 
@@ -1621,10 +1715,10 @@
 
             // Custom Validation
             const requiredFields = [
-                { id: 'projectSelect', name: 'Project', section: 'sec-context' },
-                { id: 'workerSelect', name: 'Assigned Worker', section: 'sec-context' },
-                { id: 'owner_name', name: 'Owner Full Name', section: 'sec-ownership' },
-                { id: 'buildingType', name: 'Building Type', section: 'sec-building' },
+                { id: 'projectSelect', name: 'Project', section: 'sec-project' },
+                { id: 'workerSelect', name: 'Assigned Worker', section: 'sec-project' },
+                { id: 'owner_name', name: 'Owner Full Name', section: 'sec-owner' },
+                { id: 'building_type_final_mobile', name: 'Building Type', section: 'sec-building' },
                 { id: 'buildingCount', name: 'Building Count', section: 'sec-building' },
                 { id: 'compensation_amount', name: 'Amount of Compensation', section: 'sec-building' },
                 { id: 'account_name', name: 'Account Name', section: 'sec-payment' },
@@ -1700,9 +1794,15 @@
             selectedItems = [];
             document.querySelectorAll('.check-item').forEach(i => i.classList.remove('active'));
             
-            // Clear compensation amount
-            const compAmt = document.getElementById('compensation_amount');
-            if (compAmt) compAmt.value = '';
+            // Sync building rows back to 1
+            document.getElementById('buildingCount').value = 1;
+            syncBuildingTypesMobile();
+
+            // Clear compensation amount and aggregate fields
+            ['length', 'breadth', 'areaCovered', 'rateOfCost', 'compensation_amount'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
 
             // Clear bank logo
             const bankLogo = document.getElementById('selectedBankLogo');
@@ -1858,7 +1958,11 @@
                 template.querySelectorAll('input').forEach(inp => {
                     if (inp.type !== 'hidden') {
                         inp.value = '';
-                        inp.classList.add('hidden');
+                        if (inp.classList.contains('building-type-mobile-other') || inp.classList.contains('building-stage-mobile-other')) {
+                            inp.classList.add('hidden');
+                        } else {
+                            inp.classList.remove('hidden');
+                        }
                     }
                 });
                 for (let i = 0; i < count - currentCount; i++) {
@@ -1924,6 +2028,15 @@
             });
             document.querySelectorAll('.building-type-mobile-other, .building-stage-mobile-other').forEach(inp => {
                 inp.oninput = updateFinalBuildingAssessmentMobile;
+            });
+
+            // Bind listeners for measurement and cost inputs
+            document.querySelectorAll('.building-mobile-length, .building-mobile-breadth, .building-mobile-area, .building-mobile-rate').forEach(inp => {
+                inp.oninput = function() {
+                    const row = this.closest('.building-type-mobile-row');
+                    calculateBuildingRowMobile(row);
+                    calculateAllCompensation();
+                };
             });
         }
 

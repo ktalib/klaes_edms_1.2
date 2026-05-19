@@ -354,7 +354,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Address format: No. {houseNo}, {street}, {district}, {lga}, {state} State
         // Parse positionally after identifying house number and state
-        
+
         let remainingParts = [];
         parts.forEach(part => {
             if (part.startsWith('No. ') || part.startsWith('House No ')) {
@@ -374,7 +374,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const prefix = type === 'applicant'
             ? 'applicant'
             : (type === 'party' ? 'party' : (type === 'property' ? 'property' : 'correspondence'));
-        
+
         let houseEl = document.getElementById(`${prefix}_house_no`);
         let streetEl = document.getElementById(`${prefix}_street`);
         let distSelect = document.getElementById(`${prefix}_district`);
@@ -382,12 +382,12 @@ document.addEventListener('DOMContentLoaded', function () {
         let lgaSelect = document.getElementById(`${prefix}_lga`);
         let stateSelect = document.getElementById(`${prefix}_state`);
 
-        if(houseEl) houseEl.value = houseNo;
+        if (houseEl) houseEl.value = houseNo;
         if (streetEl) setStreetSelectValue(streetEl, street);
-        if(distSelect && distOther) setDistrictValue(distSelect, distOther, district);
-        
+        if (distSelect && distOther) setDistrictValue(distSelect, distOther, district);
+
         // Set state - add option if not exists
-        if(stateSelect && state) {
+        if (stateSelect && state) {
             if ([...stateSelect.options].some(o => o.value === state)) {
                 stateSelect.value = state;
             } else {
@@ -691,7 +691,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.addEventListener('click', function (e) {
         const editBtn = e.target.closest('.edit-consent-btn');
         const viewBtn = e.target.closest('.view-consent-btn');
-        
+
         if (editBtn || viewBtn) {
             const btn = editBtn || viewBtn;
             const appId = btn.getAttribute('data-id');
@@ -825,7 +825,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             // Auto-populate applicant name if available in record
                             if (result.record) {
                                 const record = result.record;
-                                
+
                                 // Name
                                 const applicantInput = document.querySelector('input[name="applicant_name"]');
                                 if (applicantInput && !applicantInput.value) {
@@ -912,13 +912,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 financialLabel.textContent = 'Amount in Words';
                 financialWordsInput.placeholder = 'e.g. Five Million Naira Only';
                 financialInput.placeholder = 'e.g. 5,000,000';
-                
+
                 // Show Add Party container
                 const addPartyContainer = document.getElementById('add-party-action-container');
                 if (addPartyContainer) addPartyContainer.classList.remove('hidden');
                 const addPartyBtnSpan = document.querySelector('#add-party-btn span');
                 if (addPartyBtnSpan) addPartyBtnSpan.textContent = 'Add Another Assignee';
-                
+
             } else if (type === 'Gift') {
                 if (financialSection) financialSection.classList.remove('hidden');
                 financialInput.required = true;
@@ -950,7 +950,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 financialLabel.textContent = 'Amount in Words';
                 financialWordsInput.placeholder = 'e.g. Ten Million Naira Only';
                 financialInput.placeholder = 'e.g. 10,000,000';
-                
+
                 // Show Add Party container
                 const addPartyContainer = document.getElementById('add-party-action-container');
                 if (addPartyContainer) addPartyContainer.classList.remove('hidden');
@@ -1148,7 +1148,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Title-case helper: "12TH AV" → "12th Av", "BICHI" → "Bichi"
         function _addrTitleCase(str) {
             if (!str) return str;
-            return str.replace(/\S+/g, function(word) {
+            return str.replace(/\S+/g, function (word) {
                 return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
             });
         }
@@ -1201,13 +1201,13 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    document.addEventListener('change', function(e) {
+    document.addEventListener('change', function (e) {
         if (e.target.classList.contains('street-dropdown')) {
             handleManualStreetToggle(e.target);
         }
     });
 
-    document.addEventListener('input', function(e) {
+    document.addEventListener('input', function (e) {
         if (e.target.classList.contains('manual-street-input')) {
             const addressType = e.target.dataset.addressType;
             if (addressType) updateBuiltAddress(addressType);
@@ -1217,7 +1217,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.street-dropdown').forEach(select => handleManualStreetToggle(select));
 
     // District Select Other Logic
-    document.addEventListener('change', function(e) {
+    document.addEventListener('change', function (e) {
         if (e.target.matches('select[id$="_district"], select[name$="_district[]"], select.dist-select')) {
             const isOther = e.target.value === 'Other';
             let otherInput;
@@ -1226,7 +1226,7 @@ document.addEventListener('DOMContentLoaded', function () {
             } else if (e.target.nextElementSibling && e.target.nextElementSibling.matches('input')) {
                 otherInput = e.target.nextElementSibling;
             }
-            
+
             if (otherInput) {
                 if (isOther) {
                     otherInput.classList.remove('hidden');
@@ -1336,24 +1336,24 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     if (addPartyBtn && additionalPartiesContainer && partyTemplate) {
-        addPartyBtn.addEventListener('click', function() {
+        addPartyBtn.addEventListener('click', function () {
             const currentBlocks = additionalPartiesContainer.querySelectorAll('.additional-party-block');
             if (currentBlocks.length >= 2) return;
 
             const clone = partyTemplate.content.cloneNode(true);
             additionalPartiesContainer.appendChild(clone);
-            
+
             // Re-index heads and check limit
             updatePartyHeaders();
 
             // Initialize Lucide icons for the new block
             if (window.lucide) window.lucide.createIcons();
-            
+
             // Add remove event listener
             const lastBlock = additionalPartiesContainer.lastElementChild;
             const removeBtn = lastBlock.querySelector('.remove-party-btn');
             if (removeBtn) {
-                removeBtn.addEventListener('click', function() {
+                removeBtn.addEventListener('click', function () {
                     lastBlock.remove();
                     updatePartyHeaders();
                 });
@@ -1371,31 +1371,31 @@ document.addEventListener('DOMContentLoaded', function () {
             const block = document.createElement('div');
             block.appendChild(clone);
             const actualBlock = block.firstElementChild;
-            
+
             actualBlock.querySelector('input[name="additional_party_name[]"]').value = party.name || '';
             actualBlock.querySelector('input[name="additional_party_house_no[]"]').value = party.house_no || '';
             const partyStreetSelect = actualBlock.querySelector('select[name="additional_party_street[]"]');
             setStreetSelectValue(partyStreetSelect, party.street || '');
-            
+
             const distSelect = actualBlock.querySelector('select[name="additional_party_district[]"]');
             const distOther = actualBlock.querySelector('input[name="additional_party_district_other[]"]');
             setDistrictValue(distSelect, distOther, party.district || '');
 
             actualBlock.querySelector('select[name="additional_party_lga[]"]').value = party.lga || '';
             actualBlock.querySelector('select[name="additional_party_state[]"]').value = party.state || '';
-            
+
             additionalPartiesContainer.appendChild(actualBlock);
-            
+
             // Add remove event listener
             const removeBtn = actualBlock.querySelector('.remove-party-btn');
             if (removeBtn) {
-                removeBtn.addEventListener('click', function() {
+                removeBtn.addEventListener('click', function () {
                     actualBlock.remove();
                     updatePartyHeaders();
                 });
             }
         });
-        
+
         updatePartyHeaders();
         if (window.lucide) window.lucide.createIcons();
     }
@@ -1412,17 +1412,17 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     if (addApplicantBtn && additionalApplicantsContainer && applicantTemplate) {
-        addApplicantBtn.addEventListener('click', function() {
+        addApplicantBtn.addEventListener('click', function () {
             const clone = applicantTemplate.content.cloneNode(true);
             additionalApplicantsContainer.appendChild(clone);
-            
+
             if (window.lucide) window.lucide.createIcons();
-            
+
             // Add remove event listener
             const lastBlock = additionalApplicantsContainer.lastElementChild;
             const removeBtn = lastBlock.querySelector('.remove-applicant-btn');
             if (removeBtn) {
-                removeBtn.addEventListener('click', function() {
+                removeBtn.addEventListener('click', function () {
                     lastBlock.remove();
                 });
             }
@@ -1433,7 +1433,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     window.clearAdditionalApplicants = clearAdditionalApplicants;
-    window.populateAdditionalApplicants = function(applicants) {
+    window.populateAdditionalApplicants = function (applicants) {
         clearAdditionalApplicants();
         if (!applicants || !Array.isArray(applicants)) return;
 
@@ -1442,30 +1442,30 @@ document.addEventListener('DOMContentLoaded', function () {
             const block = document.createElement('div');
             block.appendChild(clone);
             const actualBlock = block.firstElementChild;
-            
+
             actualBlock.querySelector('input[name="additional_applicant_name[]"]').value = applicant.name || '';
             actualBlock.querySelector('input[name="additional_applicant_house_no[]"]').value = applicant.house_no || '';
             const applicantStreetSelect = actualBlock.querySelector('select[name="additional_applicant_street[]"]');
             setStreetSelectValue(applicantStreetSelect, applicant.street || '');
-            
+
             const distSelect = actualBlock.querySelector('select[name="additional_applicant_district[]"]');
             const distOther = actualBlock.querySelector('input[name="additional_applicant_district_other[]"]');
             setDistrictValue(distSelect, distOther, applicant.district || '');
 
             actualBlock.querySelector('select[name="additional_applicant_lga[]"]').value = applicant.lga || '';
             actualBlock.querySelector('select[name="additional_applicant_state[]"]').value = applicant.state || '';
-            
+
             additionalApplicantsContainer.appendChild(actualBlock);
-            
+
             // Add remove event listener
             const removeBtn = actualBlock.querySelector('.remove-applicant-btn');
             if (removeBtn) {
-                removeBtn.addEventListener('click', function() {
+                removeBtn.addEventListener('click', function () {
                     actualBlock.remove();
                 });
             }
         });
-        
+
         if (window.lucide) window.lucide.createIcons();
     };
 

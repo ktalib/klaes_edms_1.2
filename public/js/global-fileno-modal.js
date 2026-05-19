@@ -84,7 +84,7 @@
             modal.css({
                 'display': 'flex',
                 'position': 'fixed',
-                'z-index': '9999'
+                'z-index': '2000000'
             });
 
             modal.focus();

@@ -115,9 +115,8 @@ class MlsFileNoController extends Controller
         try {
             // Test database connection first
             DB::connection('sqlsrv')->getPdo();
-            // Build a query builder for the main fileNumber table
-            // LEFT JOIN with mls_file_no to get batch_no (which only exists in mls_file_no table)
-            $query = DB::connection('sqlsrv')
+            // Build a query builder for the main fileNumber table and union it with temporary files from mls_file_no
+            $query1 = DB::connection('sqlsrv')
                 ->table('fileNumber')
                 ->leftJoin('mls_file_no', function ($join) {
                     $join->on('fileNumber.tracking_id', '=', 'mls_file_no.tracking_id')
@@ -125,50 +124,94 @@ class MlsFileNoController extends Controller
                 })
                 ->leftJoin('instrument_capture as source_capture', 'mls_file_no.source_instrument_capture_id', '=', 'source_capture.id')
                 ->leftJoin('pra as source_pra', 'mls_file_no.source_pra_id', '=', 'source_pra.id')
+                ->leftJoin('purposes', 'mls_file_no.purpose_id', '=', 'purposes.id')
                 ->select([
-                    'fileNumber.id',
-                    'fileNumber.mlsfNo',
-                    'fileNumber.FileName',
-                    'fileNumber.created_at',
-                    'fileNumber.updated_at',
-                    'fileNumber.location',
-                    'fileNumber.lga',
-                    'fileNumber.created_by',
-                    'fileNumber.is_deleted',
-                    'fileNumber.SOURCE',
-                    'fileNumber.plot_no',
-                    'fileNumber.tp_no',
-                    'fileNumber.tracking_id',
-                    'fileNumber.commissioning_date',
-                    'fileNumber.kangisFileNo',
-                    'fileNumber.NewKANGISFileNo',
-                    'fileNumber.st_file_no',
-                    'mls_file_no.batch_no', // Get batch_no from mls_file_no table
-                    'mls_file_no.purpose_id',
-                    'mls_file_no.customer_type',
-                    'mls_file_no.source_instrument_capture_id',
-                    'mls_file_no.source_pra_id',
+                    'fileNumber.id as id',
+                    'fileNumber.mlsfNo as mlsfNo',
+                    'fileNumber.FileName as FileName',
+                    'fileNumber.created_at as created_at',
+                    'fileNumber.updated_at as updated_at',
+                    'fileNumber.location as location',
+                    'fileNumber.lga as lga',
+                    'fileNumber.created_by as created_by',
+                    'fileNumber.is_deleted as is_deleted',
+                    'fileNumber.SOURCE as SOURCE',
+                    'fileNumber.plot_no as plot_no',
+                    'fileNumber.tp_no as tp_no',
+                    'fileNumber.tracking_id as tracking_id',
+                    'fileNumber.commissioning_date as commissioning_date',
+                    'fileNumber.kangisFileNo as kangisFileNo',
+                    'fileNumber.NewKANGISFileNo as NewKANGISFileNo',
+                    'fileNumber.st_file_no as st_file_no',
+                    'mls_file_no.batch_no as batch_no',
+                    'mls_file_no.purpose_id as purpose_id',
+                    'mls_file_no.customer_type as customer_type',
+                    'mls_file_no.land_use as land_use',
+                    'mls_file_no.source_instrument_capture_id as source_instrument_capture_id',
+                    'mls_file_no.source_pra_id as source_pra_id',
                     DB::raw('COALESCE(source_capture.temp_fileno, source_pra.temp_fileno) as source_temp_fileno'),
                     DB::raw('COALESCE(source_capture.prop_id, source_pra.prop_id) as source_prop_id'),
                     'purposes.name as purpose_name'
                 ])
-                ->leftJoin('purposes', 'mls_file_no.purpose_id', '=', 'purposes.id')
                 ->where(function ($q) {
                     $q->whereNull('fileNumber.is_deleted')->orWhere('fileNumber.is_deleted', 0);
                 });
+
+            $query2 = DB::connection('sqlsrv')
+                ->table('mls_file_no')
+                ->leftJoin('instrument_capture as source_capture', 'mls_file_no.source_instrument_capture_id', '=', 'source_capture.id')
+                ->leftJoin('pra as source_pra', 'mls_file_no.source_pra_id', '=', 'source_pra.id')
+                ->leftJoin('purposes', 'mls_file_no.purpose_id', '=', 'purposes.id')
+                ->select([
+                    'mls_file_no.id as id',
+                    'mls_file_no.full_file_number as mlsfNo',
+                    'mls_file_no.file_name as FileName',
+                    'mls_file_no.created_at as created_at',
+                    'mls_file_no.updated_at as updated_at',
+                    'mls_file_no.location as location',
+                    'mls_file_no.lga as lga',
+                    'mls_file_no.created_by as created_by',
+                    DB::raw('0 as is_deleted'),
+                    'mls_file_no.source as SOURCE',
+                    'mls_file_no.plot_no as plot_no',
+                    'mls_file_no.tp_no as tp_no',
+                    'mls_file_no.tracking_id as tracking_id',
+                    'mls_file_no.created_at as commissioning_date',
+                    DB::raw('NULL as kangisFileNo'),
+                    DB::raw('NULL as NewKANGISFileNo'),
+                    DB::raw('NULL as st_file_no'),
+                    'mls_file_no.batch_no as batch_no',
+                    'mls_file_no.purpose_id as purpose_id',
+                    'mls_file_no.customer_type as customer_type',
+                    'mls_file_no.land_use as land_use',
+                    'mls_file_no.source_instrument_capture_id as source_instrument_capture_id',
+                    'mls_file_no.source_pra_id as source_pra_id',
+                    DB::raw('COALESCE(source_capture.temp_fileno, source_pra.temp_fileno) as source_temp_fileno'),
+                    DB::raw('COALESCE(source_capture.prop_id, source_pra.prop_id) as source_prop_id'),
+                    'purposes.name as purpose_name'
+                ])
+                ->where('mls_file_no.file_option', 'temporary');
+
+            $unionSql = $query1->toSql() . " UNION ALL " . $query2->toSql();
+            $bindings = array_merge($query1->getBindings(), $query2->getBindings());
+
+            $query = DB::connection('sqlsrv')
+                ->table(DB::raw("({$unionSql}) as sub"))
+                ->mergeBindings($query1)
+                ->mergeBindings($query2);
 
             // Apply filters from DataTables
             if ($request->filled('year')) {
                 $year = intval($request->get('year'));
                 if ($year > 1900) {
-                    $query->whereYear('fileNumber.created_at', $year);
+                    $query->whereYear('sub.created_at', $year);
                 }
             }
 
             if ($request->filled('status')) {
                 $status = trim($request->get('status'));
                 if ($status !== '') {
-                    $query->where('fileNumber.SOURCE', $status);
+                    $query->where('sub.SOURCE', $status);
                 }
             }
 
@@ -181,12 +224,12 @@ class MlsFileNoController extends Controller
             $searchValue = $request->input('search.value');
             if (!empty($searchValue)) {
                 $query->where(function ($q) use ($searchValue) {
-                    $q->where('fileNumber.mlsfNo', 'LIKE', "%{$searchValue}%")
-                        ->orWhere('fileNumber.FileName', 'LIKE', "%{$searchValue}%")
-                        ->orWhere('fileNumber.tracking_id', 'LIKE', "%{$searchValue}%")
-                        ->orWhere('fileNumber.st_file_no', 'LIKE', "%{$searchValue}%")
-                        ->orWhere('fileNumber.kangisFileNo', 'LIKE', "%{$searchValue}%")
-                        ->orWhere('fileNumber.NewKANGISFileNo', 'LIKE', "%{$searchValue}%");
+                    $q->where('sub.mlsfNo', 'LIKE', "%{$searchValue}%")
+                        ->orWhere('sub.FileName', 'LIKE', "%{$searchValue}%")
+                        ->orWhere('sub.tracking_id', 'LIKE', "%{$searchValue}%")
+                        ->orWhere('sub.st_file_no', 'LIKE', "%{$searchValue}%")
+                        ->orWhere('sub.kangisFileNo', 'LIKE', "%{$searchValue}%")
+                        ->orWhere('sub.NewKANGISFileNo', 'LIKE', "%{$searchValue}%");
                 });
             }
 
@@ -204,17 +247,17 @@ class MlsFileNoController extends Controller
             $columnData = $request->input("columns.{$orderColumnIndex}.data", 'mlsfNo');
 
             $sortMap = [
-                'mlsfNo' => 'fileNumber.mlsfNo',
-                'FileName' => 'fileNumber.FileName',
-                'SOURCE' => 'fileNumber.SOURCE',
-                'commissioning_date' => 'fileNumber.commissioning_date',
-                'created_by' => 'fileNumber.created_by',
-                'purpose_name' => 'purposes.name',
-                'customer_type' => 'mls_file_no.customer_type',
-                'land_use' => 'mls_file_no.land_use'
+                'mlsfNo' => 'sub.mlsfNo',
+                'FileName' => 'sub.FileName',
+                'SOURCE' => 'sub.SOURCE',
+                'commissioning_date' => 'sub.commissioning_date',
+                'created_by' => 'sub.created_by',
+                'purpose_name' => 'sub.purpose_name',
+                'customer_type' => 'sub.customer_type',
+                'land_use' => 'sub.land_use'
             ];
 
-            $sortField = $sortMap[$columnData] ?? 'fileNumber.id';
+            $sortField = $sortMap[$columnData] ?? 'sub.id';
             $query->orderBy($sortField, $orderDirection);
 
             // Handle manual paging
@@ -389,13 +432,20 @@ class MlsFileNoController extends Controller
     public function show($identifier)
     {
         try {
-            // Try to find by ID first, then by file number
+            // Try to find by ID (numeric) first, then by file number string.
+            // SQL Server cannot compare a non-numeric string to an int column,
+            // so only add the id condition when $identifier is actually numeric.
+            $isNumeric = is_numeric($identifier);
             $fileNumber = DB::connection('sqlsrv')
                 ->table('fileNumber')
                 ->leftJoin('mls_file_no', 'fileNumber.tracking_id', '=', 'mls_file_no.tracking_id')
-                ->where(function ($query) use ($identifier) {
-                    $query->where('fileNumber.id', $identifier)
-                        ->orWhere('fileNumber.mlsfNo', $identifier);
+                ->where(function ($query) use ($identifier, $isNumeric) {
+                    if ($isNumeric) {
+                        $query->where('fileNumber.id', (int) $identifier)
+                              ->orWhere('fileNumber.mlsfNo', $identifier);
+                    } else {
+                        $query->where('fileNumber.mlsfNo', $identifier);
+                    }
                 })
                 ->select([
                     'fileNumber.*',
@@ -411,6 +461,33 @@ class MlsFileNoController extends Controller
                     'mls_file_no.batch_no'
                 ])
                 ->first();
+
+            if (!$fileNumber) {
+                // Try finding directly in mls_file_no (for temporary files)
+                $fileNumber = DB::connection('sqlsrv')
+                    ->table('mls_file_no')
+                    ->leftJoin('purposes', 'mls_file_no.purpose_id', '=', 'purposes.id')
+                    ->where('mls_file_no.full_file_number', $identifier)
+                    ->select([
+                        'mls_file_no.id as id',
+                        'mls_file_no.full_file_number as mlsfNo',
+                        'mls_file_no.file_name as FileName',
+                        'mls_file_no.plot_no as plot_no',
+                        'mls_file_no.tp_no as tp_no',
+                        'mls_file_no.location as location',
+                        'mls_file_no.lga as lga',
+                        'mls_file_no.district as district',
+                        'mls_file_no.tracking_id as tracking_id',
+                        'mls_file_no.purpose_id as purpose_id',
+                        'mls_file_no.customer_type as customer_type',
+                        'mls_file_no.batch_no as batch_no',
+                        'mls_file_no.created_at as created_at',
+                        'mls_file_no.updated_at as updated_at',
+                        DB::raw("'MLS_Commissioned' as SOURCE"),
+                        'purposes.name as purpose_name'
+                    ])
+                    ->first();
+            }
 
             if (!$fileNumber) {
                 return response()->json([
@@ -1408,8 +1485,10 @@ class MlsFileNoController extends Controller
                     $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial);
 
                     // Check for duplicates in both modern and legacy tables
-                    if (\App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() || 
-                        DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()) {
+                    if (
+                        \App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() ||
+                        DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()
+                    ) {
                         throw new \Exception("The generated file number already exists: {$fullFileNumber}. Please check serial synchronization.");
                     }
 
@@ -1461,7 +1540,26 @@ class MlsFileNoController extends Controller
                         'tracking_id' => $trackingId ?? $oldFileNoRecord->tracking_id
                     ]);
 
-                    // 5. Update indexings to flip related_fileno
+                    // 5. Resolve or Allocate Property ID across staging tables to ensure historical linkage
+                    $propId = null;
+                    try {
+                        $allocationService = app(\App\Services\PropertyIdAllocationService::class);
+                        // Pass new file number as primary/mls and the old file number as temp_fileno to scan all staging tables (like CofO_staging)
+                        $propId = $allocationService->allocateOrRetrievePropId(
+                            $fullFileNumber,
+                            $fullFileNumber,
+                            null,
+                            null,
+                            ['temp_fileno' => $originalFileNo]
+                        );
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning('PropertyIdAllocationService failed during Change of Purpose, falling back to basic lookup', [
+                            'error' => $e->getMessage()
+                        ]);
+                        $propId = $validated['source_prop_id'] ?? ($oldIndexing->prop_id ?? null);
+                    }
+
+                    // 6. Update indexings to flip related_fileno and set prop_id
                     if ($oldIndexing) {
                         $correspondingMatch = DB::connection('sqlsrv')
                             ->table('corresponding_fileno')
@@ -1477,11 +1575,12 @@ class MlsFileNoController extends Controller
                                 'is_corresponding_file' => ($correspondingMatch !== null) ? 1 : 0,
                                 'corresponding_fileno' => $correspondingMatch,
                                 'tracking_id' => $trackingId ?? $oldIndexing->tracking_id,
+                                'prop_id' => $propId,
                                 'updated_at' => now()
                             ]);
                     }
 
-                    // 6. Update Entities and Customers staging
+                    // 7. Update Entities and Customers staging
                     DB::connection('sqlsrv')->table('entities_staging')
                         ->where('file_number', $originalFileNo)
                         ->update([
@@ -1497,10 +1596,7 @@ class MlsFileNoController extends Controller
                             'updated_at' => now()
                         ]);
 
-                    // 7. Send mapping down into PRA referencing old Prop ID
-                    // Use prop_id from validated source_prop_id if available, otherwise grab from indexing
-                    $propId = $validated['source_prop_id'] ?? ($oldIndexing->prop_id ?? null);
-
+                    // 8. Send mapping down into PRA referencing resolved Prop ID
                     DB::connection('sqlsrv')->table('pra')->insert([
                         'Prop_id' => $propId,
                         'temp_fileno' => $fullFileNumber,
@@ -1543,15 +1639,45 @@ class MlsFileNoController extends Controller
                         throw new \Exception("Existing file number is required for temporary version.");
                     }
 
-                    // Get next serial for this land use/year combination
-                    $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
+                    // Extract year and serial from the existing file number (e.g. RES-1994-680)
+                    $parsedYear = null;
+                    $parsedSerial = null;
+                    $cleanExisting = preg_replace('/\(\s*T\s*\)\s*$/i', '', trim($existingFileNo));
+                    $parts = explode('-', $cleanExisting);
+                    $yearIndex = -1;
+                    foreach ($parts as $idx => $part) {
+                        if (preg_match('/^\d{4}$/', $part)) {
+                            $yearIndex = $idx;
+                            break;
+                        }
+                    }
 
-                    // Generate the full file number (based on next serial) and append (T)
-                    $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial) . '(T)';
+                    if ($yearIndex !== -1) {
+                        $parsedYear = (int)$parts[$yearIndex];
+                        $serialPart = implode('-', array_slice($parts, $yearIndex + 1));
+                        $parsedSerial = (int)preg_replace('/[^0-9]/', '', $serialPart);
+                        
+                        $extractedPrefix = implode('-', array_slice($parts, 0, $yearIndex));
+                        if (!empty($extractedPrefix)) {
+                            $landUse = $extractedPrefix;
+                        }
+                    }
+
+                    if ($parsedYear !== null && $parsedSerial !== null) {
+                        $year = $parsedYear;
+                        $serial = $parsedSerial;
+                        $fullFileNumber = $cleanExisting . '(T)';
+                    } else {
+                        // Fallback to original logic if parsing fails
+                        $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
+                        $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial) . '(T)';
+                    }
 
                     // Check if this temporary file already exists to avoid duplicates
-                    if (\App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() || 
-                        DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()) {
+                    if (
+                        \App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() ||
+                        DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()
+                    ) {
                         throw new \Exception("The generated temporary file number already exists: {$fullFileNumber}. Please check serial synchronization.");
                     }
 
@@ -1584,8 +1710,10 @@ class MlsFileNoController extends Controller
                     $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial);
 
                     // Final safety check for duplicates across both modern and legacy systems
-                    if (\App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() || 
-                        DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()) {
+                    if (
+                        \App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() ||
+                        DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()
+                    ) {
                         throw new \Exception("The generated file number already exists: {$fullFileNumber}. Please ensure the serial counter is correctly synchronized.");
                     }
                 }
@@ -1666,61 +1794,81 @@ class MlsFileNoController extends Controller
                     'source_pra_id' => $validated['source_pra_id'] ?? null,
                 ]);
 
-                // Also create record in fileNumber table for compatibility
-                $fileNumberData = [
-                    'tracking_id' => $trackingId,
-                    'mlsfNo' => $fullFileNumber,
-                    'FileName' => $validated['file_name'] ?? null,
-                    'plot_no' => $validated['plot_no'] ?? null,
-                    'tp_no' => $validated['tp_no'] ?? null,
-                    'location' => $validated['location'] ?? null,
-                    'lga' => $validated['lga'] ?? null,
-                    'source' => 'MLS_Commissioned',
-                    'type' => 'MlsFileNO',
-                    'created_by' => $commissionedBy,
-                    'updated_at' => now()
-                ];
-                if (!empty($validated['related_fileno'])) {
-                    $fileNumberData['related_fileno'] = json_encode([$validated['related_fileno']]);
+                if ($fileOption !== 'temporary') {
+                    // Also create record in fileNumber table for compatibility
+                    $fileNumberData = [
+                        'tracking_id' => $trackingId,
+                        'mlsfNo' => $fullFileNumber,
+                        'FileName' => $validated['file_name'] ?? null,
+                        'plot_no' => $validated['plot_no'] ?? null,
+                        'tp_no' => $validated['tp_no'] ?? null,
+                        'location' => $validated['location'] ?? null,
+                        'lga' => $validated['lga'] ?? null,
+                        'source' => 'MLS_Commissioned',
+                        'type' => 'MlsFileNO',
+                        'created_by' => $commissionedBy,
+                        'updated_at' => now()
+                    ];
+                    if (!empty($validated['related_fileno'])) {
+                        $fileNumberData['related_fileno'] = json_encode([$validated['related_fileno']]);
+                    }
+                    DB::connection('sqlsrv')->table('fileNumber')->insert($fileNumberData);
                 }
-                DB::connection('sqlsrv')->table('fileNumber')->insert($fileNumberData);
 
-                // 3. Staging Logic for Entities and Customers
-                try {
-                    // Insert into entities_staging
-                    $entityId = DB::connection('sqlsrv')->table('entities_staging')->insertGetId([
-                        'entity_type' => $validated['customer_type'] ?? 'Individual',
-                        'entity_name' => $validated['file_name'] ?? 'N/A',
-                        'file_number' => $fullFileNumber,
-                        'created_at' => now(),
-                        'updated_at' => now()
-                    ]);
+                if ($fileOption !== 'temporary') {
+                    // 3. Staging Logic for Entities and Customers
+                    try {
+                        // Insert into entities_staging
+                        $entityId = DB::connection('sqlsrv')->table('entities_staging')->insertGetId([
+                            'entity_type' => $validated['customer_type'] ?? 'Individual',
+                            'entity_name' => $validated['file_name'] ?? 'N/A',
+                            'file_number' => $fullFileNumber,
+                            'created_at' => now(),
+                            'updated_at' => now()
+                        ]);
 
-                    // Construct property address
-                    $addressParts = [];
-                    if (!empty($validated['plot_no']))
-                        $addressParts[] = "Plot " . $validated['plot_no'];
-                    if (!empty($validated['location']))
-                        $addressParts[] = $validated['location'];
-                    if (!empty($validated['lga']))
-                        $addressParts[] = $validated['lga'];
-                    $propertyAddress = implode(', ', $addressParts);
+                        // Construct property address
+                        $addressParts = [];
+                        if (!empty($validated['plot_no']))
+                            $addressParts[] = "Plot " . $validated['plot_no'];
+                        if (!empty($validated['location']))
+                            $addressParts[] = $validated['location'];
+                        if (!empty($validated['lga']))
+                            $addressParts[] = $validated['lga'];
+                        $propertyAddress = implode(', ', $addressParts);
 
-                    // Insert into customers_staging
-                    DB::connection('sqlsrv')->table('customers_staging')->insert([
-                        'customer_type' => $validated['customer_type'] ?? 'Individual',
-                        'file_number' => $fullFileNumber,
-                        'customer_name' => $validated['file_name'] ?? 'N/A',
-                        'property_address' => $propertyAddress ?: 'N/A',
-                        'entity_id' => $entityId,
-                        'account_no' => $fullFileNumber, // account_no same as the file number
-                        'status' => 'Active',
-                        'created_by' => Auth::id(),
-                        'created_at' => now(),
-                        'updated_at' => now()
-                    ]);
-                } catch (\Exception $e) {
-                    \Log::error('Error in staging logic during file generation: ' . $e->getMessage());
+                        // Insert into customers_staging
+                        DB::connection('sqlsrv')->table('customers_staging')->insert([
+                            'customer_type' => $validated['customer_type'] ?? 'Individual',
+                            'file_number' => $fullFileNumber,
+                            'customer_name' => $validated['file_name'] ?? 'N/A',
+                            'property_address' => $propertyAddress ?: 'N/A',
+                            'entity_id' => $entityId,
+                            'account_no' => $fullFileNumber, // account_no same as the file number
+                            'status' => 'Active',
+                            'created_by' => Auth::id(),
+                            'created_at' => now(),
+                            'updated_at' => now()
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::error('Error in staging logic during file generation: ' . $e->getMessage());
+                    }
+                } else {
+                    // For Temporary Files: Do not insert new rows into entities_staging or customers_staging.
+                    // Instead, update the parent file_indexings record:
+                    // set has_temp_file = 1 and temp_file_no = the temp file, where file_number = temp file without the (T)
+                    try {
+                        $parentFileNo = preg_replace('/\(\s*T\s*\)\s*$/i', '', trim($existingFileNo ?? ''));
+                        DB::connection('sqlsrv')->table('file_indexings')
+                            ->where('file_number', $parentFileNo)
+                            ->update([
+                                'has_temp_file' => 1,
+                                'temp_file_no' => $fullFileNumber,
+                                'updated_at' => now()
+                            ]);
+                    } catch (\Exception $e) {
+                        \Log::error('Failed to update parent file_indexings record with temporary file: ' . $e->getMessage());
+                    }
                 }
 
                 $parentPropId = null;
@@ -1795,22 +1943,24 @@ class MlsFileNoController extends Controller
                     if (!empty($validated['merger_app_id'])) {
                         $mergerApp = \App\Models\PlotMergerApplication::find($validated['merger_app_id']);
                         if ($mergerApp) {
-                            $sourceFiles = $mergerApp->plotSizes()->whereIn('type', ['source', 'merger_source'])->pluck('plot_number')->toArray();
+                            $sourceFiles = $mergerApp->plotSizes()->whereIn('type', ['source', 'merger_source'])->pluck('source_file_no')->toArray();
                             if (!empty($sourceFiles)) {
                                 $sourceRecords = DB::connection('sqlsrv')->table('file_indexings')
                                     ->whereIn('file_number', $sourceFiles)
                                     ->get();
-                                
+
                                 $propIds = $sourceRecords->pluck('prop_id')->unique()->filter()->toArray();
                                 foreach ($sourceFiles as $sf) {
                                     if (!$sourceRecords->where('file_number', $sf)->first()?->prop_id) {
                                         try {
                                             $sfPropId = $propIdService->allocateOrRetrievePropId($sf, null, null, null, ['skip_lookup' => false]);
-                                            if ($sfPropId) $propIds[] = $sfPropId;
-                                        } catch (\Exception $e) {}
+                                            if ($sfPropId)
+                                                $propIds[] = $sfPropId;
+                                        } catch (\Exception $e) {
+                                        }
                                     }
                                 }
-                                
+
                                 $parentPropId = implode(',', array_unique($propIds));
                                 $relatedFileNumbers = json_encode($sourceFiles);
                                 $relatedFileTitle = 'Consolidated Titles';
@@ -1818,7 +1968,7 @@ class MlsFileNoController extends Controller
                                 $indexedFiles = $sourceRecords->pluck('file_number')->toArray();
                                 $missingFiles = array_diff($sourceFiles, $indexedFiles);
                                 $titles = $sourceRecords->pluck('file_title')->unique()->filter()->toArray();
-                                
+
                                 if (!empty($missingFiles)) {
                                     $registryTitles = DB::connection('sqlsrv')->table('fileNumber')
                                         ->whereIn('mlsfNo', $missingFiles)
@@ -1828,7 +1978,7 @@ class MlsFileNoController extends Controller
                                         ->toArray();
                                     $titles = array_unique(array_merge($titles, $registryTitles));
                                 }
-                                
+
                                 $titles = array_values(array_filter($titles));
                                 if (count($titles) > 1) {
                                     $last = array_pop($titles);
@@ -1845,12 +1995,13 @@ class MlsFileNoController extends Controller
                             $motherFile = DB::connection('sqlsrv')->table('file_indexings')
                                 ->where('file_number', $motherFileNo)
                                 ->first();
-                            
+
                             $resolvedPropId = $motherFile->prop_id ?? null;
                             if (!$resolvedPropId) {
                                 try {
                                     $resolvedPropId = $propIdService->allocateOrRetrievePropId($motherFileNo, null, null, null, ['skip_lookup' => false]);
-                                } catch (\Exception $e) {}
+                                } catch (\Exception $e) {
+                                }
                             }
 
                             $parentPropId = $resolvedPropId;
@@ -1862,12 +2013,13 @@ class MlsFileNoController extends Controller
                         $extFile = DB::connection('sqlsrv')->table('file_indexings')
                             ->where('file_number', $extFileNo)
                             ->first();
-                        
+
                         $resolvedPropId = $extFile->prop_id ?? null;
                         if (!$resolvedPropId) {
                             try {
                                 $resolvedPropId = $propIdService->allocateOrRetrievePropId($extFileNo, null, null, null, ['skip_lookup' => false]);
-                            } catch (\Exception $e) {}
+                            } catch (\Exception $e) {
+                            }
                         }
 
                         $parentPropId = $resolvedPropId;
@@ -1974,6 +2126,25 @@ class MlsFileNoController extends Controller
                             );
 
                             $praService = app(\App\Services\Pra\PraRecordService::class);
+
+                            // Custom Comment building based on transaction type for PRA
+                            $praComment = $plotTransactionType . " commissioning for " . $fullFileNumber;
+                            if ($sourceValue === 'Merger') {
+                                $mergerApp = \App\Models\PlotMergerApplication::find($validated['merger_app_id'] ?? 0);
+                                if ($mergerApp) {
+                                    $sourceFiles = $mergerApp->plotSizes()->whereIn('type', ['source', 'merger_source'])->pluck('source_file_no')->toArray();
+                                    $praComment = 'Plot Merger: ' . implode(', ', $sourceFiles) . '; the new ' . $fullFileNumber;
+                                }
+                            } elseif ($sourceValue === 'Subdivision') {
+                                $subdivisionApp = \App\Models\PlotSubdivisionApplication::find($validated['subdivision_app_id'] ?? 0);
+                                if ($subdivisionApp) {
+                                    $praComment = 'Plot Subdivision: ' . ($subdivisionApp->num_plots ?? '0') . ' Subdivided from ' . ($subdivisionApp->file_no ?? '');
+                                }
+                            } elseif ($sourceValue === 'Extension') {
+                                $extFileNo = (string) ($validated['existing_file_no'] ?? '');
+                                $praComment = 'Plot Extension: Plot ' . $extFileNo . ' extended by extra ' . $fullFileNumber;
+                            }
+
                             $praService->createRecord([
                                 'mlsFNo' => $fullFileNumber,
                                 'fileno' => $fullFileNumber,
@@ -1999,7 +2170,7 @@ class MlsFileNoController extends Controller
                                 'prop_id' => $propId,
                                 'parent_prop_id' => $parentPropId,
                                 'tracking_id' => $trackingId,
-                                'comments' => $plotTransactionType . " commissioning for " . $fullFileNumber . " (System Generated)",
+                                'comments' => $praComment,
                                 'remarks' => "Commissioned via " . $sourceValue . " workflow",
                             ], Auth::id());
 
@@ -2023,99 +2194,102 @@ class MlsFileNoController extends Controller
                 }
 
                 // Auto-index the file in file_indexings table
-                try {
-                    $fileIndexingService = app(\App\Services\FileIndexingService::class);
-                    $relatedFileNo = $validated['related_fileno'] ?? null;
-                    $relatedFileTitle = $validated['related_file_title'] ?? null;
-                    $fileIndexing = $fileIndexingService->createFromFileNumberData([
-                        'tracking_id' => $trackingId,
-                        'file_number' => $fullFileNumber,
-                        'file_title' => $validated['file_name'] ?? null,
-                        'land_use' => $landUse,
-                        'plot_number' => $validated['plot_no'] ?? null,
-                        'tp_no' => $validated['tp_no'] ?? null,
-                        'location' => $validated['location'] ?? null,
-                        'lga' => $validated['lga'] ?? null,
-                        'created_by' => $commissionedBy,
-                        'original_holder' => $motherOwner ?? ($validated['file_name'] ?? null),
-                        'parent_prop_id' => $parentPropId,
-                        'related_fileno' => $relatedFileNumbers ?? ($relatedFileNo ? json_encode([$relatedFileNo]) : null),
-                    ]);
+                if ($fileOption !== 'temporary') {
+                    try {
+                        $fileIndexingService = app(\App\Services\FileIndexingService::class);
+                        $relatedFileNo = $validated['related_fileno'] ?? null;
+                        $relatedFileTitle = $validated['related_file_title'] ?? null;
+                        $fileIndexing = $fileIndexingService->createFromFileNumberData([
+                            'tracking_id' => $trackingId,
+                            'file_number' => $fullFileNumber,
+                            'file_title' => $validated['file_name'] ?? null,
+                            'land_use' => $landUse,
+                            'plot_number' => $validated['plot_no'] ?? null,
+                            'tp_no' => $validated['tp_no'] ?? null,
+                            'location' => $validated['location'] ?? null,
+                            'lga' => $validated['lga'] ?? null,
+                            'created_by' => $commissionedBy,
+                            'original_holder' => $motherOwner ?? ($validated['file_name'] ?? null),
+                            'parent_prop_id' => $parentPropId,
+                            'related_fileno' => $relatedFileNumbers ?? ($relatedFileNo ? json_encode([$relatedFileNo]) : null),
+                        ]);
 
-                    // Create file_indexing_links record to link lineage (Subdivision/Merger/Extension/Recertification)
-                    $now = now();
-                    $lineageFileNumbers = [];
-                    if (!empty($relatedFileNumbers)) {
-                        $lineageFileNumbers = json_decode($relatedFileNumbers, true) ?: [];
-                    } elseif (!empty($relatedFileNo)) {
-                        $lineageFileNumbers = [$relatedFileNo];
-                    }
+                        // Create file_indexing_links record to link lineage (Subdivision/Merger/Extension/Recertification)
+                        $now = now();
+                        $lineageFileNumbers = [];
+                        if (!empty($relatedFileNumbers)) {
+                            $lineageFileNumbers = json_decode($relatedFileNumbers, true) ?: [];
+                        } elseif (!empty($relatedFileNo)) {
+                            $lineageFileNumbers = [$relatedFileNo];
+                        }
 
-                    if (!empty($lineageFileNumbers) && $fileIndexing) {
-                        $linksToCreate = [];
-                        foreach ($lineageFileNumbers as $oldFileNo) {
-                            if (empty($oldFileNo)) continue;
+                        if (!empty($lineageFileNumbers) && $fileIndexing) {
+                            $linksToCreate = [];
+                            foreach ($lineageFileNumbers as $oldFileNo) {
+                                if (empty($oldFileNo))
+                                    continue;
 
-                            // Direction 1: NEW FILE -> OLD FILE (Lineage Backwards)
-                            // This ensures that when viewing the NEW file, you see where it came from.
-                            $linksToCreate[] = [
-                                'file_indexing_id' => $fileIndexing->id,
-                                'file_number' => $oldFileNo,
-                                'file_title' => $relatedFileTitle ?? 'Parent/Source File',
-                                'land_use_type' => $landUse,
-                                'plot_number' => $validated['plot_no'] ?? null,
-                                'tp_no' => $validated['tp_no'] ?? null,
-                                'location' => $validated['location'] ?? null,
-                                'lga' => $validated['lga'] ?? null,
-                                'tracking_id' => $trackingId,
-                                'indexing_type' => 'lineage_link',
-                                'workflow_status' => 'indexed',
-                                'created_by' => $commissionedBy,
-                                'created_at' => $now,
-                                'updated_at' => $now,
-                            ];
+                                // Direction 1: NEW FILE -> OLD FILE (Lineage Backwards)
+                                // This ensures that when viewing the NEW file, you see where it came from.
+                                $linksToCreate[] = [
+                                    'file_indexing_id' => $fileIndexing->id,
+                                    'file_number' => $oldFileNo,
+                                    'file_title' => $relatedFileTitle ?? 'Parent/Source File',
+                                    'land_use_type' => $landUse,
+                                    'plot_number' => $validated['plot_no'] ?? null,
+                                    'tp_no' => $validated['tp_no'] ?? null,
+                                    'location' => $validated['location'] ?? null,
+                                    'lga' => $validated['lga'] ?? null,
+                                    'tracking_id' => $trackingId,
+                                    'indexing_type' => 'lineage_link',
+                                    'workflow_status' => 'indexed',
+                                    'created_by' => $commissionedBy,
+                                    'created_at' => $now,
+                                    'updated_at' => $now,
+                                ];
 
-                            // Direction 2: OLD FILE -> NEW FILE (Lineage Forwards)
-                            // This ensures that when viewing the OLD file, you see its subdivisions/mergers.
-                            try {
-                                $relatedIndexing = DB::connection('sqlsrv')
-                                    ->table('file_indexings')
-                                    ->where('file_number', $oldFileNo)
-                                    ->first(['id', 'file_title']);
+                                // Direction 2: OLD FILE -> NEW FILE (Lineage Forwards)
+                                // This ensures that when viewing the OLD file, you see its subdivisions/mergers.
+                                try {
+                                    $relatedIndexing = DB::connection('sqlsrv')
+                                        ->table('file_indexings')
+                                        ->where('file_number', $oldFileNo)
+                                        ->first(['id', 'file_title']);
 
-                                if ($relatedIndexing) {
-                                    $linksToCreate[] = [
-                                        'file_indexing_id' => $relatedIndexing->id,
-                                        'file_number' => $fullFileNumber,
-                                        'file_title' => 'Subdivision/Merger/Link',
-                                        'land_use_type' => $landUse,
-                                        'plot_number' => $validated['plot_no'] ?? null,
-                                        'tp_no' => $validated['tp_no'] ?? null,
-                                        'location' => $validated['location'] ?? null,
-                                        'lga' => $validated['lga'] ?? null,
-                                        'tracking_id' => $trackingId,
-                                        'indexing_type' => 'lineage_link',
-                                        'workflow_status' => 'indexed',
-                                        'created_by' => $commissionedBy,
-                                        'created_at' => $now,
-                                        'updated_at' => $now,
-                                    ];
+                                    if ($relatedIndexing) {
+                                        $linksToCreate[] = [
+                                            'file_indexing_id' => $relatedIndexing->id,
+                                            'file_number' => $fullFileNumber,
+                                            'file_title' => 'Subdivision/Merger/Link',
+                                            'land_use_type' => $landUse,
+                                            'plot_number' => $validated['plot_no'] ?? null,
+                                            'tp_no' => $validated['tp_no'] ?? null,
+                                            'location' => $validated['location'] ?? null,
+                                            'lga' => $validated['lga'] ?? null,
+                                            'tracking_id' => $trackingId,
+                                            'indexing_type' => 'lineage_link',
+                                            'workflow_status' => 'indexed',
+                                            'created_by' => $commissionedBy,
+                                            'created_at' => $now,
+                                            'updated_at' => $now,
+                                        ];
+                                    }
+                                } catch (\Exception $e) {
+                                    Log::error('Failed to create forward lineage link', ['error' => $e->getMessage()]);
                                 }
-                            } catch (\Exception $e) {
-                                Log::error('Failed to create forward lineage link', ['error' => $e->getMessage()]);
+                            }
+
+                            if (!empty($linksToCreate)) {
+                                DB::connection('sqlsrv')->table('file_indexing_links')->insert($linksToCreate);
+                                Log::info('Lineage file indexing links created', [
+                                    'new_file' => $fullFileNumber,
+                                    'link_count' => count($linksToCreate),
+                                ]);
                             }
                         }
-
-                        if (!empty($linksToCreate)) {
-                            DB::connection('sqlsrv')->table('file_indexing_links')->insert($linksToCreate);
-                            Log::info('Lineage file indexing links created', [
-                                'new_file' => $fullFileNumber,
-                                'link_count' => count($linksToCreate),
-                            ]);
-                        }
+                    } catch (\Exception $indexingError) {
+                        Log::error('Auto-indexing failed (non-critical)', ['error' => $indexingError->getMessage()]);
                     }
-                } catch (\Exception $indexingError) {
-                    Log::error('Auto-indexing failed (non-critical)', ['error' => $indexingError->getMessage()]);
                 }
 
 
@@ -2132,7 +2306,7 @@ class MlsFileNoController extends Controller
                     if ($mergerApp) {
                         $sourceFiles = $mergerApp->plotSizes()
                             ->whereIn('type', ['source', 'merger_source'])
-                            ->pluck('plot_number')
+                            ->pluck('source_file_no')
                             ->toArray();
                         if (!empty($sourceFiles)) {
                             // 1. Get old PropIDs from indexings BEFORE they are deleted
@@ -2289,12 +2463,12 @@ class MlsFileNoController extends Controller
                         'year' => $year,
                         'serial' => $serial,
                         'tracking_id' => $trackingId,
-                        'application_type' => !empty($validated['merger_app_id']) ? 'merger' : 
-                                            (!empty($validated['subdivision_app_id']) ? 'subdivision' : 
-                                            (!empty($validated['change_of_purpose_app_id']) ? 'change_of_purpose' : 
-                                            (in_array($validated['file_option'] ?? '', ['subdivision', 'merger', 'extension'])
-                                                ? $validated['file_option']
-                                                : ($validated['application_type'] ?? 'new')))),
+                        'application_type' => !empty($validated['merger_app_id']) ? 'merger' :
+                            (!empty($validated['subdivision_app_id']) ? 'subdivision' :
+                                (!empty($validated['change_of_purpose_app_id']) ? 'change_of_purpose' :
+                                    (in_array($validated['file_option'] ?? '', ['subdivision', 'merger', 'extension'])
+                                        ? $validated['file_option']
+                                        : ($validated['application_type'] ?? 'new')))),
                         'id' => $mlsRecord->id,
                         'source_pra_id' => $validated['source_pra_id'] ?? null,
                         'mother_file_no' => $motherFileNo ?? $validated['existing_file_no'] ?? null,
@@ -2494,7 +2668,7 @@ class MlsFileNoController extends Controller
                         $motherFile = DB::connection('sqlsrv')->table('file_indexings')
                             ->where('file_number', $motherFileNo)
                             ->first();
-                        
+
                         // Resolve prop_id: Try indexing table first, then master lookup
                         $resolvedPropId = $motherFile->prop_id ?? null;
                         if (!$resolvedPropId) {
@@ -2508,7 +2682,7 @@ class MlsFileNoController extends Controller
                         $parentPropId = $resolvedPropId;
                         $relatedFileNumbers = json_encode([$motherFileNo]);
                         $motherOwner = $motherFile->file_title ?? $subApp->applicant_name ?? 'Original Owner';
-                        
+
                         Log::info('Subdivision lineage resolved', [
                             'mother_file' => $motherFileNo,
                             'parent_prop_id' => $parentPropId,
@@ -2518,31 +2692,33 @@ class MlsFileNoController extends Controller
                 } elseif (!empty($validated['merger_app_id'])) {
                     $mergerApp = \App\Models\PlotMergerApplication::find($validated['merger_app_id']);
                     if ($mergerApp) {
-                        $sourceFiles = $mergerApp->plotSizes()->whereIn('type', ['source', 'merger_source'])->pluck('plot_number')->toArray();
+                        $sourceFiles = $mergerApp->plotSizes()->whereIn('type', ['source', 'merger_source'])->pluck('source_file_no')->toArray();
                         if (!empty($sourceFiles)) {
                             $sourceRecords = DB::connection('sqlsrv')->table('file_indexings')
                                 ->whereIn('file_number', $sourceFiles)
                                 ->get();
-                            
+
                             $propIds = $sourceRecords->pluck('prop_id')->unique()->filter()->toArray();
-                            
+
                             // Supplement missing prop_ids from service
                             foreach ($sourceFiles as $sf) {
                                 if (!$sourceRecords->where('file_number', $sf)->first()?->prop_id) {
                                     try {
                                         $sfPropId = $propIdService->allocateOrRetrievePropId($sf, null, null, null, ['skip_lookup' => false]);
-                                        if ($sfPropId) $propIds[] = $sfPropId;
-                                    } catch (\Exception $e) {}
+                                        if ($sfPropId)
+                                            $propIds[] = $sfPropId;
+                                    } catch (\Exception $e) {
+                                    }
                                 }
                             }
-                            
+
                             $parentPropId = implode(',', array_unique($propIds));
                             $relatedFileNumbers = json_encode($sourceFiles);
-                            
+
                             $indexedFiles = $sourceRecords->pluck('file_number')->toArray();
                             $missingFiles = array_diff($sourceFiles, $indexedFiles);
                             $titles = $sourceRecords->pluck('file_title')->unique()->filter()->toArray();
-                            
+
                             if (!empty($missingFiles)) {
                                 $registryTitles = DB::connection('sqlsrv')->table('fileNumber')
                                     ->whereIn('mlsfNo', $missingFiles)
@@ -2552,7 +2728,7 @@ class MlsFileNoController extends Controller
                                     ->toArray();
                                 $titles = array_unique(array_merge($titles, $registryTitles));
                             }
-                            
+
                             $titles = array_values(array_filter($titles));
                             if (count($titles) > 1) {
                                 $last = array_pop($titles);
@@ -2572,12 +2748,13 @@ class MlsFileNoController extends Controller
                     $extFile = DB::connection('sqlsrv')->table('file_indexings')
                         ->where('file_number', $extFileNo)
                         ->first();
-                    
+
                     $resolvedPropId = $extFile->prop_id ?? null;
                     if (!$resolvedPropId) {
                         try {
                             $resolvedPropId = $propIdService->allocateOrRetrievePropId($extFileNo, null, null, null, ['skip_lookup' => false]);
-                        } catch (\Exception $e) {}
+                        } catch (\Exception $e) {
+                        }
                     }
 
                     $parentPropId = $resolvedPropId;
@@ -2747,7 +2924,7 @@ class MlsFileNoController extends Controller
                                 ->get(['id', 'file_number', 'land_use_type', 'plot_number', 'tp_no', 'location', 'lga', 'tracking_id', 'file_title']);
 
                             $batchLinksToCreate = [];
-                            
+
                             // Pre-fetch related parent indexing records for forward links
                             $parentIndexings = DB::connection('sqlsrv')->table('file_indexings')
                                 ->whereIn('file_number', $lineageFileNumbers)
@@ -2756,7 +2933,8 @@ class MlsFileNoController extends Controller
 
                             foreach ($newIndexings as $ni) {
                                 foreach ($lineageFileNumbers as $oldFileNo) {
-                                    if (empty($oldFileNo)) continue;
+                                    if (empty($oldFileNo))
+                                        continue;
 
                                     // Direction 1: NEW FILE -> OLD FILE
                                     $batchLinksToCreate[] = [
@@ -2842,7 +3020,7 @@ class MlsFileNoController extends Controller
                     if (!empty($validated['merger_app_id'])) {
                         $mergerApp = \App\Models\PlotMergerApplication::find($validated['merger_app_id']);
                         if ($mergerApp) {
-                            $sourceFiles = $mergerApp->plotSizes()->whereIn('type', ['source', 'merger_source'])->pluck('plot_number')->toArray();
+                            $sourceFiles = $mergerApp->plotSizes()->whereIn('type', ['source', 'merger_source'])->pluck('source_file_no')->toArray();
                             if (!empty($sourceFiles)) {
                                 $parentPropId = DB::connection('sqlsrv')->table('file_indexings')
                                     ->whereIn('file_number', $sourceFiles)
@@ -2948,6 +3126,24 @@ class MlsFileNoController extends Controller
                                 []
                             );
 
+                            // Custom Comment building based on transaction type for PRA in batch
+                            $praComment = $plotTransactionType . " batch commissioning for " . $batchFileNumber;
+                            if ($sourceValue === 'Merger') {
+                                $mergerApp = \App\Models\PlotMergerApplication::find($validated['merger_app_id'] ?? 0);
+                                if ($mergerApp) {
+                                    $sourceFiles = $mergerApp->plotSizes()->whereIn('type', ['source', 'merger_source'])->pluck('source_file_no')->toArray();
+                                    $praComment = 'Plot Merger: ' . implode(', ', $sourceFiles) . '; the new ' . $batchFileNumber;
+                                }
+                            } elseif ($sourceValue === 'Subdivision') {
+                                $subdivisionApp = \App\Models\PlotSubdivisionApplication::find($validated['subdivision_app_id'] ?? 0);
+                                if ($subdivisionApp) {
+                                    $praComment = 'Plot Subdivision: ' . ($subdivisionApp->num_plots ?? '0') . ' Subdivided from ' . ($subdivisionApp->file_no ?? '');
+                                }
+                            } elseif ($sourceValue === 'Extension') {
+                                $extFileNo = (string) ($validated['existing_file_no'] ?? '');
+                                $praComment = 'Plot Extension: Plot ' . $extFileNo . ' extended by extra ' . $batchFileNumber;
+                            }
+
                             $praService->createRecord([
                                 'mlsFNo' => $batchFileNumber,
                                 'fileno' => $batchFileNumber,
@@ -2974,7 +3170,7 @@ class MlsFileNoController extends Controller
                                 'parent_prop_id' => $parentPropId,
                                 'tracking_id' => $batchTrackingId,
                                 'related_fileno' => $relatedFileNumbers,
-                                'comments' => $plotTransactionType . " batch commissioning for " . $batchFileNumber . " (System Generated)",
+                                'comments' => $praComment,
                                 'remarks' => "Batch commissioned via " . $sourceValue . " workflow",
                             ], Auth::id());
                         }
@@ -3035,7 +3231,7 @@ class MlsFileNoController extends Controller
                     if ($mergerApp) {
                         $sourceFiles = $mergerApp->plotSizes()
                             ->whereIn('type', ['source', 'merger_source'])
-                            ->pluck('plot_number')
+                            ->pluck('source_file_no')
                             ->toArray();
                         $this->logPlotsWorkflow('info', 'Merger source files resolved', [
                             'source_files' => $sourceFiles,

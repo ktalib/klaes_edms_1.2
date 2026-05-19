@@ -1287,6 +1287,8 @@ class InstrumentController extends Controller
         try {
             $instrumentType = $request->query('instrument_type');
             $volumeNo = $request->query('volume_no');
+            $startDate = $request->query('start_date');
+            $endDate = $request->query('end_date');
 
             $query = DB::connection('sqlsrv')->table('instrument_capture as ic')
                 ->leftJoin('deed_registrations as dr', function ($join) {
@@ -1323,14 +1325,25 @@ class InstrumentController extends Controller
                 $query->where('dr.volume_no', $volumeNo);
             }
 
+            if ($startDate) {
+                $query->whereRaw("CAST(COALESCE(dr.deeds_date, ic.reg_date, ic.created_at) AS DATE) >= ?", [$startDate]);
+            }
+
+            if ($endDate) {
+                $query->whereRaw("CAST(COALESCE(dr.deeds_date, ic.reg_date, ic.created_at) AS DATE) <= ?", [$endDate]);
+            }
+
             $results = $query
+                ->orderBy('ic.instrument_type', 'asc')
+                ->orderByRaw("CASE WHEN dr.volume_no IS NULL THEN 1 ELSE 0 END")
+                ->orderByRaw("TRY_CONVERT(INT, dr.volume_no)")
                 ->orderByRaw("CASE WHEN dr.serial_no IS NULL THEN 1 ELSE 0 END")
                 ->orderByRaw("TRY_CONVERT(INT, dr.serial_no)")
                 ->orderBy('ic.created_at', 'desc')
                 ->get();
 
             $data = $results->map(function ($item, $index) {
-                $deedDate = $item->reg_date ?? $item->created_at;
+                $deedDate = $item->reg_date ?? $item->deeds_date ?? $item->created_at;
                 $location = $item->property_location ?? $item->location ?? $item->property_description ?? null;
 
                 return [

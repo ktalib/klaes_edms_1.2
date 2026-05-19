@@ -389,9 +389,9 @@
                   <thead>
                     <tr>
                       <th style="width:36px;">S/N</th>
+                      <th style="min-width:140px;white-space:nowrap;">File No</th>
                       <th style="width:36px;">RW</th>
                       <th style="width:36px;">TW</th>
-                      <th style="min-width:140px;white-space:nowrap;">File No</th>
                       <th style="text-align:left;">Instrument Type</th>
                       <th style="text-align:left;">Party 1</th>
                       <th style="min-width:110px;">Party 2</th>
@@ -419,9 +419,9 @@
                   <thead>
                     <tr>
                       <th style="width:36px;">S/N</th>
+                      <th style="min-width:140px;white-space:nowrap;">File No</th>
                       <th style="width:36px;">RW</th>
                       <th style="width:36px;">TW</th>
-                      <th style="min-width:140px;white-space:nowrap;">File No</th>
                       <th style="text-align:left;">Instrument Type</th>
                       <th style="text-align:left;">Party 1</th>
                       <th style="min-width:110px;">Party 2</th>
@@ -449,9 +449,9 @@
                   <thead>
                     <tr>
                       <th style="width:36px;">S/N</th>
+                      <th style="min-width:140px;white-space:nowrap;">File No</th>
                       <th style="width:36px;">RW</th>
                       <th style="width:36px;">TW</th>
-                      <th style="min-width:140px;white-space:nowrap;">File No</th>
                       <th style="text-align:left;">Instrument Type</th>
                       <th style="text-align:left;">Party 1</th>
                       <th style="min-width:110px;">Party 2</th>
@@ -475,9 +475,9 @@
                   <thead>
                     <tr>
                       <th>S/N</th>
+                      <th style="min-width:110px;">File No</th>
                       <th style="min-width:60px;">RW</th>
                       <th style="min-width:60px;">TW</th>
-                      <th style="min-width:110px;">File No</th>
                       <th>Reg Particulars</th>
                       <th>Issue Date</th>
                       <th>Holder Name</th>

@@ -93,7 +93,7 @@
                                             $isApproved  = $record->status === 'Approved';
                                             $recGenerated = !empty($record->recommendation_generated_at);
                                         @endphp
-                                        <button type="button"
+                                          <button type="button"
                                             class="tf-action-toggle w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
                                             data-id="{{ $record->id }}"
                                             data-approved="{{ $isApproved ? '1' : '0' }}"
@@ -102,7 +102,7 @@
                                             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                                                 <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
                                             </svg>
-                                        </button>
+                                        </button>  
                                     </td>
                                     @endif
                                 </tr>

@@ -194,16 +194,28 @@ class DuplicateCheckService
             $query->where('party_2_name', 'LIKE', '%' . $params['party_2'] . '%');
         }
 
-        // Singular instruments like Power of Attorney are unique per file; do not strictly match date
+        // Do not strictly match date if it's a singular instrument type OR if key identifiers (fileno, reg_no, prop_id) are present
         if (!empty($params['instrument_date'])) {
             $isSingular = false;
             if (!empty($params['instrument_type'])) {
                 $normalizedType = strtolower(trim($params['instrument_type']));
-                if (str_contains($normalizedType, 'power of attorney')) {
+                if (str_contains($normalizedType, 'power of attorney') ||
+                    str_contains($normalizedType, 'devolution order') ||
+                    str_contains($normalizedType, 'deed of assignment') ||
+                    str_contains($normalizedType, 'deed of gift') ||
+                    str_contains($normalizedType, 'surrender') ||
+                    str_contains($normalizedType, 'release') ||
+                    str_contains($normalizedType, 'lease') ||
+                    str_contains($normalizedType, 'merger') ||
+                    str_contains($normalizedType, 'sub-division') ||
+                    str_contains($normalizedType, 'certificate of occupancy')) {
                     $isSingular = true;
                 }
             }
-            if (!$isSingular) {
+
+            $hasIdentifiers = !empty($params['fileno']) || !empty($params['reg_no']) || !empty($params['prop_id']);
+
+            if (!$isSingular && !$hasIdentifiers) {
                 $query->where('instrument_date', $params['instrument_date']);
             }
         }

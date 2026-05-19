@@ -113,6 +113,17 @@ class MlsFileNoMatchingController extends Controller
                 'is_deleted' => 0,
             ]);
 
+            // Set corresponding file flags in file_indexings for matching record
+            DB::connection('sqlsrv')->table('file_indexings')
+                ->where(function($query) use ($fullFileNumber) {
+                    $query->where('file_number', $fullFileNumber)
+                          ->orWhere('st_fillno', $fullFileNumber);
+                })
+                ->update([
+                    'is_corresponding_file' => 1,
+                    'corresponding_fileno' => $fullFileNumber,
+                ]);
+
             DB::connection('sqlsrv')->commit();
 
             return response()->json([
@@ -207,7 +218,7 @@ class MlsFileNoMatchingController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Record updated successfully , we need to'
+                'message' => 'Record updated successfully'
             ]);
         } catch (\Exception $e) {
             DB::connection('sqlsrv')->rollBack();
@@ -239,6 +250,8 @@ class MlsFileNoMatchingController extends Controller
                     'plot_no' => $file->plot_no ?? null,
                     'location' => $file->location ?? null,
                     'lga' => $file->lga ?? null,
+                    'lga_name' => $file->lga ?? null,
+                    'district_name' => $file->district ?? null,
                     'type' => $file->type ?? null,
                     'tracking_id' => $file->tracking_id ?? null,
                 ];
@@ -260,16 +273,15 @@ class MlsFileNoMatchingController extends Controller
                 ->first();
 
             if ($indexing) {
-                $data = array_merge($data ?? [], [
-                    'title' => $data['title'] ?? $indexing->file_title,
-                    'plot_no' => $data['plot_no'] ?? $indexing->plot_number,
-                    'tp_no' => $indexing->tp_no ?? null,
-                    'location' => $data['location'] ?? $indexing->location,
-                    'district_name' => $indexing->district ?? null,
-                    'lga_name' => $indexing->lga ?? null,
-                    'customer_type' => $indexing->file_type ?? '-',
-                    'tracking_id' => $data['tracking_id'] ?? $indexing->tracking_id ?? null,
-                ]);
+                $data = $data ?? [];
+                $data['title'] = (!empty($data['title']) ? $data['title'] : null) ?? $indexing->file_title;
+                $data['plot_no'] = (!empty($data['plot_no']) ? $data['plot_no'] : null) ?? $indexing->plot_number;
+                $data['tp_no'] = (!empty($data['tp_no']) ? $data['tp_no'] : null) ?? $indexing->tp_no ?? null;
+                $data['location'] = (!empty($data['location']) ? $data['location'] : null) ?? $indexing->location;
+                $data['district_name'] = (!empty($data['district_name']) ? $data['district_name'] : null) ?? $indexing->district ?? null;
+                $data['lga_name'] = (!empty($data['lga_name']) ? $data['lga_name'] : null) ?? $indexing->lga ?? null;
+                $data['customer_type'] = (!empty($data['customer_type']) ? $data['customer_type'] : null) ?? $indexing->file_type ?? '-';
+                $data['tracking_id'] = (!empty($data['tracking_id']) ? $data['tracking_id'] : null) ?? $indexing->tracking_id ?? null;
             } else if (isset($data['type'])) {
                 // Fallback for customer_type if indexing not found but legacy type exists
                 $data['customer_type'] = $data['type'];
@@ -281,13 +293,12 @@ class MlsFileNoMatchingController extends Controller
                 ->first();
 
             if ($link) {
-                $data = array_merge($data ?? [], [
-                    'title' => $data['title'] ?? $link->file_title,
-                    'plot_no' => $data['plot_no'] ?? $link->plot_number,
-                    'tp_no' => $data['tp_no'] ?? $link->tp_no,
-                    'location' => $data['location'] ?? $link->location,
-                    'tracking_id' => $data['tracking_id'] ?? $link->tracking_id ?? null,
-                ]);
+                $data = $data ?? [];
+                $data['title'] = (!empty($data['title']) ? $data['title'] : null) ?? $link->file_title;
+                $data['plot_no'] = (!empty($data['plot_no']) ? $data['plot_no'] : null) ?? $link->plot_number;
+                $data['tp_no'] = (!empty($data['tp_no']) ? $data['tp_no'] : null) ?? $link->tp_no ?? null;
+                $data['location'] = (!empty($data['location']) ? $data['location'] : null) ?? $link->location;
+                $data['tracking_id'] = (!empty($data['tracking_id']) ? $data['tracking_id'] : null) ?? $link->tracking_id ?? null;
             }
 
 

@@ -4294,9 +4294,13 @@
             updatePreview() {
                 // Auto-update serial number when land use changes for normal, subdivision, merger, and temporary files
                 if (['normal', 'subdivision', 'merger', 'temporary'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
-                    const newSerial = getNextSerialForLandUse(this.prefix || this.landUse);
-                    if (this.serialNo !== newSerial) {
-                        this.serialNo = newSerial;
+                    if (this.fileOption === 'temporary' && this.existingFileNo) {
+                        // Keep extracted serial from existing file for temporary files
+                    } else {
+                        const newSerial = getNextSerialForLandUse(this.prefix || this.landUse);
+                        if (this.serialNo !== newSerial) {
+                            this.serialNo = newSerial;
+                        }
                     }
                 }
 
@@ -4723,13 +4727,48 @@
                                     const data = window.Alpine.$data(modalEl);
                                     data.existingFileNo = cleanedFileNumber;
                                     
-                                    // For temporary files, we DO NOT extract serial/year from existing file anymore.
-                                    // Instead, we use the current year and the next available serial.
-                                    // data.year and data.serialNo will be handled by updatePreview() 
-                                    // which now includes 'temporary' in its auto-update logic.
+                                    // Extract prefix, year, and serial from the existing file number
+                                    const parts = cleanedFileNumber.split('-');
+                                    const yearIndex = parts.findIndex(p => /^\d{4}$/.test(p));
+                                    if (yearIndex !== -1) {
+                                        const extractedPrefix = parts.slice(0, yearIndex).join('-');
+                                        const extractedYear = parseInt(parts[yearIndex]);
+                                        const extractedSerial = parts.slice(yearIndex + 1).join('-');
+                                        
+                                        data.year = extractedYear;
+                                        data.serialNo = extractedSerial;
+                                        
+                                        if (extractedPrefix) {
+                                            const foundPrefix = data.allAllPrefixes.find(p => p.prefix === extractedPrefix);
+                                            if (foundPrefix) {
+                                                data.prefix = foundPrefix.prefix;
+                                                data.handlePrefixChange();
+                                            } else {
+                                                const foundLu = data.landUses.find(l => {
+                                                    const name = l.landuse.toUpperCase();
+                                                    return (extractedPrefix === 'RES' && name.includes('RESIDENTIAL')) ||
+                                                           (extractedPrefix === 'COM' && name.includes('COMMERCIAL')) ||
+                                                           (extractedPrefix === 'IND' && name.includes('INDUSTRIAL')) ||
+                                                           (extractedPrefix.startsWith('AG') && name.includes('AGRICULTURAL'));
+                                                });
+                                                if (foundLu) {
+                                                    let code = '';
+                                                    const name = foundLu.landuse.toUpperCase();
+                                                    if (name.includes('RESIDENTIAL')) code = 'RES';
+                                                    else if (name.includes('COMMERCIAL')) code = 'COM';
+                                                    else if (name.includes('INDUSTRIAL')) code = 'IND';
+                                                    else if (name.includes('AGRICULTURAL')) code = 'AG';
+                                                    else code = name.substring(0, 3);
+                                                    
+                                                    data.landUse = code;
+                                                    data.landUseId = foundLu.id;
+                                                }
+                                            }
+                                        }
+                                    }
 
                                     data.updatePreview();
-                                    console.log('[FileNumberGenerator] Alpine data updated, existing file no:', data.existingFileNo);
+                                    console.log('[FileNumberGenerator] Alpine data updated, existing file no:', data.existingFileNo, 'year:', data.year, 'serial:', data.serialNo);
                                 } else {
                                     // Fallback if Alpine not global
                                     const displayInput = document.getElementById('displayTemporaryFileNo');
@@ -5226,13 +5265,22 @@
             if (logo1Base64) doc.addImage(logo1Base64, 'JPEG', 20, 12, 20, 20);
             if (logo2Base64) doc.addImage(logo2Base64, 'JPEG', 170, 12, 20, 20);
 
+            // Detect temporary file
+            const fileNumberVal = formData.get('file_number') || '';
+            const isTemporaryFile = fileNumberVal.endsWith('(T)');
+
             doc.setFontSize(14);
             doc.setFont("helvetica", "bold");
             doc.text("MINISTRY OF LAND & PHYSICAL PLANNING", 105, 18, { align: "center" });
             doc.setFontSize(12);
             doc.text("DEPARTMENT OF LAND", 105, 26, { align: "center" });
             doc.setFontSize(11);
-            doc.text("FILE COMMISSIONING SHEET", 105, 36, { align: "center" });
+            if (isTemporaryFile) {
+                doc.text("TEMPORARY FILE COMMISSIONING SHEET", 105, 36, { align: "center" });
+            } else {
+                doc.text("FILE COMMISSIONING SHEET", 105, 36, { align: "center" });
+            }
+
 
             // Add Watermark
             doc.setTextColor(255, 0, 0);
@@ -5317,6 +5365,11 @@
 
                 const row = records[i] || {};
 
+                // Detect temporary file for this record
+                const rowFileNo = row.full_file_number || row.mlsf_no || row.file_number || '';
+                const isTempFile = rowFileNo.endsWith('(T)');
+
+
                 // Header logos
                 if (logo1Base64) doc.addImage(logo1Base64, 'JPEG', 20, 12, 20, 20);
                 if (logo2Base64) doc.addImage(logo2Base64, 'JPEG', 170, 12, 20, 20);
@@ -5328,7 +5381,12 @@
                 doc.setFontSize(12);
                 doc.text('DEPARTMENT OF LAND', 105, 26, { align: 'center' });
                 doc.setFontSize(11);
-                doc.text('FILE COMMISSIONING SHEET', 105, 36, { align: 'center' });
+                if (isTempFile) {
+                    doc.text('TEMPORARY FILE COMMISSIONING SHEET', 105, 36, { align: 'center' });
+                } else {
+                    doc.text('FILE COMMISSIONING SHEET', 105, 36, { align: 'center' });
+                }
+
 
                 // Watermark
                 doc.setTextColor(255, 0, 0);
@@ -6697,7 +6755,14 @@
                         generateDaily24hPDF(pmState.status);
                     } else {
                         // Individual Commissioning Sheet
-                        fetchAndGenerateCommissioningSheet(pmState.id, pmState.status);
+                        // Use file number string (not numeric id) so mls-fileno.show looks up
+                        // by fileNumber.mlsfNo first, then falls back to mls_file_no.full_file_number.
+                        // This prevents temp files (only in mls_file_no) from accidentally loading
+                        // a different fileNumber row that shares the same numeric id.
+                        const lookupKey = (pmState.fileNo && pmState.fileNo !== '--' && pmState.fileNo !== 'N/A')
+                            ? encodeURIComponent(pmState.fileNo)
+                            : pmState.id;
+                        fetchAndGenerateCommissioningSheet(lookupKey, pmState.status);
                     }
                 } else {
                     // Conversion Application

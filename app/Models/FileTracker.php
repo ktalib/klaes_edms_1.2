@@ -26,6 +26,7 @@ class FileTracker extends Model
         'description',
         'status',
         'date_created',
+        'date_requested',
         'deadline',
         'movement_log',
         'current_office_code',
@@ -51,6 +52,7 @@ class FileTracker extends Model
 
     protected $casts = [
         'date_created' => 'datetime',
+        'date_requested' => 'datetime',
         'deadline' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',

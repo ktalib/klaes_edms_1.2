@@ -217,6 +217,7 @@ class CreateFileTrackerController extends Controller
                 'description' => $request->description,
                 'status' => $workflowStatus,
                 'date_created' => now(),
+                'date_requested' => now(),
                 'deadline' => $request->deadline,
                 'total_offices' => count($request->movement_log),
                 'notes' => $request->notes,
@@ -652,7 +653,8 @@ class CreateFileTrackerController extends Controller
                 $query->whereIn('file_number', $variants)
                     ->orWhereIn('new_kangis_file_no', $variants)
                     ->orWhereIn('kangis_file_no', $variants)
-                    ->orWhereIn('mls_file_no', $variants);
+                    ->orWhereIn('mls_file_no', $variants)
+                    ->orWhereIn('st_file_no', $variants);
             })
             ->orderByDesc('id')
             ->first();
@@ -1982,5 +1984,83 @@ class CreateFileTrackerController extends Controller
                 ],
             ],
         ]);
+    }
+
+    /**
+     * Mark a file tracker as printed
+     */
+    public function markAsPrinted(Request $request, $id)
+    {
+        $tracker = FileTracker::find($id);
+
+        if (!$tracker) {
+            $tracker = FileTracker::where('tracking_id', $id)->first();
+        }
+
+        if (!$tracker) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tracker not found.'
+            ], 404);
+        }
+
+        try {
+            $oldData = ['printed' => $tracker->printed];
+            $tracker->update(['printed' => true]);
+
+            // Log action in AuditLog via AuditService
+            try {
+                $auditService = app(\App\Services\AuditService::class);
+                $auditService->logAction(
+                    'UPDATED',
+                    'FileTracker',
+                    $tracker->id,
+                    $oldData,
+                    ['printed' => true],
+                    "Marked file tracker {$tracker->tracking_id} as printed"
+                );
+            } catch (\Exception $ae) {
+                Log::warning('CreateFileTrackerController markAsPrinted audit logging failed: ' . $ae->getMessage());
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'File request sheet printed.',
+                'data' => $this->decorateTrackerForResponse($tracker),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('markAsPrinted failed', ['id' => $id, 'error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to mark printed: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Display the dynamic datadriven file request sheet for a tracker.
+     */
+    public function requestSheet($id)
+    {
+        $tracker = FileTracker::find($id);
+
+        if (!$tracker) {
+            $tracker = FileTracker::where('tracking_id', $id)->first();
+        }
+
+        if (!$tracker) {
+            abort(404, 'File Tracker not found.');
+        }
+
+        // Fetch officer's rank from User table if receiving_officer_id is present
+        $officerRank = '—';
+        if (!empty($tracker->receiving_officer_id)) {
+            $officer = \App\Models\User::find($tracker->receiving_officer_id);
+            if ($officer && !empty($officer->rank)) {
+                $officerRank = $officer->rank;
+            }
+        }
+
+        return view('create_file_tracker_page.file_request_sheet', compact('tracker', 'officerRank'));
     }
 }

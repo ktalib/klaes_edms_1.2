@@ -50,6 +50,7 @@ function getExportColumns(mode) {
     return [
         { key: 'SN', label: 'S/N', preview: true, pdfWidth: 8 },
         { key: 'fileno', label: 'File No', preview: true, pdfWidth: 24 },
+        { key: 'instrument_type', label: 'Instrument Type', preview: true, pdfWidth: 28 },
         { key: 'serialNo', label: 'Serial No', preview: true, pdfWidth: 16 },
         { key: 'pageNo', label: 'Page No', preview: true, pdfWidth: 16 },
         { key: 'volumeNo', label: 'Vol No', preview: true, pdfWidth: 16 },
@@ -77,30 +78,24 @@ function renderExportHeaders(columns, includeCsvOnly = false) {
         .join('');
 }
 
-window.openCaptureExportModal = async function () {
-    const modal = document.getElementById('exportPreviewModal');
+window.loadExportPreviewData = async function () {
     const body = document.getElementById('exportPreviewBody');
-    const type = document.getElementById('instrumentTypeFilter')?.value || '';
-    const volume = document.getElementById('volumeFilter')?.value || '';
+    if (!body) return;
+
+    const type = document.getElementById('modalInstrumentTypeFilter')?.value || '';
+    const volume = document.getElementById('modalVolumeFilter')?.value || '';
+    const startDate = document.getElementById('modalStartDateFilter')?.value || '';
+    const endDate = document.getElementById('modalEndDateFilter')?.value || '';
+
     const mode = isOccupancyPermitExport(type) ? 'op' : 'general';
     const columns = getExportColumns(mode);
     window.exportMode = mode;
 
-    // Update labels in modal
-    if (document.getElementById('previewFilterType')) {
-        document.getElementById('previewFilterType').textContent = type || 'All Types';
-    }
-    if (document.getElementById('previewFilterVolume')) {
-        document.getElementById('previewFilterVolume').textContent = volume || 'All';
-    }
-    
     // Update headers
     const head = document.querySelector('#exportPreviewTable thead tr');
     if (head) {  
         head.innerHTML = renderExportHeaders(columns);
     }
-    
-    modal.classList.remove('hidden');
 
     // Show loading
     body.innerHTML = `
@@ -115,7 +110,11 @@ window.openCaptureExportModal = async function () {
     `;
 
     try {
-        const response = await fetch(`${window.baseUrl}/instruments/export?instrument_type=${encodeURIComponent(type)}&volume_no=${volume}`);
+        let url = `${window.baseUrl}/instruments/export?instrument_type=${encodeURIComponent(type)}&volume_no=${volume}`;
+        if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+        if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+
+        const response = await fetch(url);
         const result = await response.json();
 
         if (result.success) {
@@ -140,6 +139,26 @@ window.openCaptureExportModal = async function () {
             });
 
             const sortedData = result.data.slice().sort((a, b) => {
+                // 1. Group by Instrument Type (case-insensitive, alphabetical)
+                const aType = String(a.instrument_type || '').trim().toLowerCase();
+                const bType = String(b.instrument_type || '').trim().toLowerCase();
+                if (aType !== bType) {
+                    return aType.localeCompare(bType);
+                }
+
+                // 2. Group by Volume Number (numeric, ascending)
+                const getVolValue = (item) => {
+                    const raw = item.volumeNo ?? item.volume_no;
+                    const parsed = parseInt(raw, 10);
+                    return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+                };
+                const aVol = getVolValue(a);
+                const bVol = getVolValue(b);
+                if (aVol !== bVol) {
+                    return aVol - bVol;
+                }
+
+                // 3. Followed by Serial Number (numeric, ascending)
                 const getSerialValue = (item) => {
                     const raw = item.serialNo ?? item.serial_no ?? item.reg_serial_no ?? item.SN;
                     const parsed = parseInt(raw, 10);
@@ -147,11 +166,11 @@ window.openCaptureExportModal = async function () {
                 };
                 const aSerial = getSerialValue(a);
                 const bSerial = getSerialValue(b);
-
                 if (aSerial !== bSerial) {
                     return aSerial - bSerial;
                 }
 
+                // 4. Fallback to File Number
                 return String(a.fileno || '').localeCompare(String(b.fileno || ''));
             }).map((item, index) => ({
                 ...normalizeExportRow(item),
@@ -191,6 +210,70 @@ window.openCaptureExportModal = async function () {
     }
 };
 
+window.openCaptureExportModal = function () {
+    const modal = document.getElementById('exportPreviewModal');
+    if (!modal) return;
+
+    const type = document.getElementById('instrumentTypeFilter')?.value || '';
+    const volume = document.getElementById('volumeFilter')?.value || '';
+
+    // Initialize modal filters with current page filter values
+    const modalTypeSelect = document.getElementById('modalInstrumentTypeFilter');
+    if (modalTypeSelect) {
+        modalTypeSelect.value = type;
+    }
+    const modalVolumeSelect = document.getElementById('modalVolumeFilter');
+    if (modalVolumeSelect) {
+        modalVolumeSelect.value = volume;
+    }
+    const modalStartDate = document.getElementById('modalStartDateFilter');
+    if (modalStartDate) {
+        modalStartDate.value = '';
+    }
+    const modalEndDate = document.getElementById('modalEndDateFilter');
+    if (modalEndDate) {
+        modalEndDate.value = '';
+    }
+
+    const mode = isOccupancyPermitExport(type) ? 'op' : 'general';
+    const columns = getExportColumns(mode);
+    window.exportMode = mode;
+
+    // Update headers
+    const head = document.querySelector('#exportPreviewTable thead tr');
+    if (head) {  
+        head.innerHTML = renderExportHeaders(columns);
+    }
+
+    // Reset records count
+    if (document.getElementById('previewRecordCount')) {
+        document.getElementById('previewRecordCount').textContent = '0';
+    }
+
+    window.exportData = [];
+    modal.classList.remove('hidden');
+
+    // Show highly interactive, styled premium prompt instead of freezing the page with massive data loads
+    const body = document.getElementById('exportPreviewBody');
+    if (body) {
+        body.innerHTML = `
+            <tr>
+                <td colspan="${columns.filter(column => column.preview).length}" class="px-6 py-20 text-center text-gray-500">
+                    <div class="flex flex-col items-center gap-3 justify-center max-w-md mx-auto">
+                        <div class="bg-green-50 text-green-600 p-4 rounded-full shadow-inner animate-bounce">
+                            <i class="fas fa-calendar-alt text-3xl"></i>
+                        </div>
+                        <h4 class="text-base font-black text-gray-700 tracking-wide uppercase">Consolidated Report Engine</h4>
+                        <p class="text-xs text-gray-500 leading-relaxed">
+                            Refine the Instrument Type, Volume, or select a specific <strong>Date Range</strong> above, then click the <strong class="text-green-600">Refresh</strong> button to compile the report preview dynamically.
+                        </p>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+};
+
 window.closeExportModal = function () {
     document.getElementById('exportPreviewModal').classList.add('hidden');
 };
@@ -211,11 +294,27 @@ window.downloadExportCsv = function () {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
-    const typeLabel = (document.getElementById('instrumentTypeFilter')?.value || 'All').replace(/\s+/g, '_');
-    const volLabel = document.getElementById('volumeFilter')?.value || 'All';
+    
+    // Get filter values from modal
+    const typeLabel = (document.getElementById('modalInstrumentTypeFilter')?.value || 'All').replace(/\s+/g, '_');
+    const volLabel = document.getElementById('modalVolumeFilter')?.value || 'All';
+    const startDate = document.getElementById('modalStartDateFilter')?.value || '';
+    const endDate = document.getElementById('modalEndDateFilter')?.value || '';
+
+    let filename = `Instrument_Capture_${typeLabel}`;
+    if (volLabel && volLabel !== 'All') {
+        filename += `_Vol_${volLabel}`;
+    }
+    if (startDate) {
+        filename += `_from_${startDate}`;
+    }
+    if (endDate) {
+        filename += `_to_${endDate}`;
+    }
+    filename += `_${new Date().toISOString().split('T')[0]}.csv`;
 
     link.setAttribute('href', url);
-    link.setAttribute('download', `Instrument_Capture_${typeLabel}_Vol_${volLabel}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', filename);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -312,18 +411,24 @@ window.downloadExportPdf = function () {
 
             paintMinistryHeader();
 
-            var typeLabel = document.getElementById('instrumentTypeFilter')?.value || 'All Captured Instruments';
-            var volLabel = document.getElementById('volumeFilter')?.value || 'All Volumes';
+            var typeLabel = document.getElementById('modalInstrumentTypeFilter')?.value || 'All Captured Instruments';
+            var volLabel = document.getElementById('modalVolumeFilter')?.value || 'All Volumes';
+            var startDate = document.getElementById('modalStartDateFilter')?.value || '';
+            var endDate = document.getElementById('modalEndDateFilter')?.value || '';
+
+            var dateRangeLabel = '';
+            if (startDate && endDate) {
+                dateRangeLabel = ' | Period: ' + startDate + ' to ' + endDate;
+            } else if (startDate) {
+                dateRangeLabel = ' | From: ' + startDate;
+            } else if (endDate) {
+                dateRangeLabel = ' | To: ' + endDate;
+            }
 
             var columns = getExportColumns(window.exportMode || 'general').filter(function (column) {
                 return window.exportMode === 'op' || column.preview;
             });
             var tableColumn = columns.map(function (column) { return column.label; });
-            var tableRows = window.exportData.map(function (item) {
-                return columns.map(function (column) {
-                    return valueForExportColumn(item, column);
-                });
-            });
             var columnStyles = {};
             columns.forEach(function (column, index) {
                 if (column.pdfWidth) {
@@ -331,47 +436,72 @@ window.downloadExportPdf = function () {
                 }
             });
 
-            doc.autoTable({
-                head: [tableColumn],
-                body: tableRows,
-                startY: 50,
-                theme: 'grid',
-                styles: { fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'middle' },
-                headStyles: { fillColor: [22, 163, 74], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
-                columnStyles: columnStyles,
-                margin: { top: 50, left: 10, right: 10 },
-                didDrawPage: function (data) {
-                    // Repaint ministry header + title on every page
-                    paintMinistryHeader();
-                    doc.setFontSize(13);
-                    doc.setFont('helvetica', 'bold');
-                    doc.setTextColor(0, 0, 0);
-                    doc.text('Instrument Capture Register - ' + typeLabel, 14, 39);
-                    doc.setFontSize(10);
-                    doc.setFont('helvetica', 'normal');
-                    doc.text('Volume: ' + volLabel + ' | Generated on: ' + new Date().toLocaleDateString(), 14, 45);
-
-                    // Paint the coat-of-arms watermark on every page AFTER the
-                    // table body has been drawn so it sits visibly on top with
-                    // low opacity instead of being hidden behind white cells.
-                    paintWatermark();
-
-                    // Page number footer placeholder – real total added in post-pass below
-                    doc.setFontSize(8);
-                    doc.setFont('helvetica', 'normal');
-                    doc.setTextColor(100, 100, 100);
-                    doc.text(
-                        'Page ' + data.pageNumber + ' of {total}',
-                        pageWidth - 10,
-                        pageHeight - 5,
-                        { align: 'right' }
-                    );
-                },
-                didParseCell: function (data) {
-                    if (data.column.index === 1 && data.cell.text[0] === 'N/A') {
-                        data.cell.styles.textColor = [150, 150, 150];
-                    }
+            // Group the sorted data by instrument type
+            var groupedData = {};
+            window.exportData.forEach(function (item) {
+                var type = item.instrument_type || 'Unspecified';
+                if (!groupedData[type]) {
+                    groupedData[type] = [];
                 }
+                groupedData[type].push(item);
+            });
+
+            var isFirstTable = true;
+            Object.keys(groupedData).forEach(function (currentType) {
+                if (!isFirstTable) {
+                    doc.addPage();
+                }
+                isFirstTable = false;
+
+                var items = groupedData[currentType];
+                var tableRows = items.map(function (item) {
+                    return columns.map(function (column) {
+                        return valueForExportColumn(item, column);
+                    });
+                });
+
+                doc.autoTable({
+                    head: [tableColumn],
+                    body: tableRows,
+                    startY: 50,
+                    theme: 'grid',
+                    styles: { fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'middle' },
+                    headStyles: { fillColor: [22, 163, 74], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
+                    columnStyles: columnStyles,
+                    margin: { top: 50, left: 10, right: 10 },
+                    didDrawPage: function (data) {
+                        // Repaint ministry header + title on every page
+                        paintMinistryHeader();
+                        doc.setFontSize(13);
+                        doc.setFont('helvetica', 'bold');
+                        doc.setTextColor(0, 0, 0);
+                        doc.text('Instrument Capture Register - ' + currentType, 14, 39);
+                        doc.setFontSize(10);
+                        doc.setFont('helvetica', 'normal');
+                        doc.text('Volume: ' + volLabel + dateRangeLabel + ' | Generated on: ' + new Date().toLocaleDateString(), 14, 45);
+
+                        // Paint the coat-of-arms watermark on every page AFTER the
+                        // table body has been drawn so it sits visibly on top with
+                        // low opacity instead of being hidden behind white cells.
+                        paintWatermark();
+
+                        // Page number footer placeholder – real total added in post-pass below
+                        doc.setFontSize(8);
+                        doc.setFont('helvetica', 'normal');
+                        doc.setTextColor(100, 100, 100);
+                        doc.text(
+                            'Page ' + doc.internal.getCurrentPageInfo().pageNumber + ' of {total}',
+                            pageWidth - 10,
+                            pageHeight - 5,
+                            { align: 'right' }
+                        );
+                    },
+                    didParseCell: function (data) {
+                        if (data.column.index === 1 && data.cell.text[0] === 'N/A') {
+                            data.cell.styles.textColor = [150, 150, 150];
+                        }
+                    }
+                });
             });
 
             // Post-pass: replace "{total}" placeholder with real page count
@@ -392,7 +522,19 @@ window.downloadExportPdf = function () {
                 );
             }
 
-            doc.save('Instrument_Capture_' + typeLabel.replace(/\s+/g, '_') + '_Vol_' + volLabel + '_' + new Date().toISOString().split('T')[0] + '.pdf');
+            var filename = 'Instrument_Capture_' + typeLabel.replace(/\s+/g, '_');
+            if (volLabel && volLabel !== 'All Volumes') {
+                filename += '_Vol_' + volLabel;
+            }
+            if (startDate) {
+                filename += '_from_' + startDate;
+            }
+            if (endDate) {
+                filename += '_to_' + endDate;
+            }
+            filename += '_' + new Date().toISOString().split('T')[0] + '.pdf';
+
+            doc.save(filename);
         } catch (e) {
             console.error('PDF Generation Error:', e);
             Swal.fire('Error', 'Failed to generate PDF: ' + e.message, 'error');

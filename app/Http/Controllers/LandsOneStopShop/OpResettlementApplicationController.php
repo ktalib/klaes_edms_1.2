@@ -2094,13 +2094,13 @@ class OpResettlementApplicationController extends Controller
                     $q->where('prop_id', $propId);
                 } else {
                     $q->where('mlsFNo', $base->mlsfNo)
-                      ->orWhere('fileno', $base->mlsfNo);
+                        ->orWhere('fileno', $base->mlsfNo);
                 }
             })
             ->where(function ($q) {
                 $q->where('instrument_type', 'like', '%Occupancy Permit%')
-                  ->orWhere('transaction_type', 'like', '%Occupancy Permit%')
-                  ->orWhereNotNull('op_serial_number');
+                    ->orWhere('transaction_type', 'like', '%Occupancy Permit%')
+                    ->orWhereNotNull('op_serial_number');
             })
             ->orderByRaw("CASE 
                 WHEN (instrument_type NOT LIKE '%Transfer of Title%' OR instrument_type IS NULL) 
@@ -2331,10 +2331,11 @@ class OpResettlementApplicationController extends Controller
      * 1. Allocate a TEMP-XXXXX from temp_fileno_sequence.
      * 2. Update the existing OP PRA row (system_source, temp_fileno, fileno).
      * 3. Create the Transfer of Title (OP) PRA row with the same prop_id and temp_fileno.
-     *
+
      * POST /lands-one-stop-shop/applications/match-op
      * Body: { pra_id: int, current_holder?: string }
      */
+
     public function matchOp(Request $request, PraRecordService $praService): JsonResponse
     {
         // Merger path: pra_ids[] (multiple OPs → grouped match)
@@ -2550,6 +2551,9 @@ class OpResettlementApplicationController extends Controller
                     ]);
                 }
 
+                // Synchronize to entities_staging during file number commissioning
+                $this->syncEntitiesStaging($mlsFNo, $currentHolder);
+
                 return [
                     'op_temp_fileno' => $opTempFileno,
                     'tot_temp_fileno' => $totTempFileno,
@@ -2713,6 +2717,9 @@ class OpResettlementApplicationController extends Controller
                         'party_1' => $party1Names,
                     ],
                 ], $userId);
+
+                // Synchronize to entities_staging during merger file number commissioning
+                $this->syncEntitiesStaging($mlsFNo, $party1Names);
 
                 return [
                     'op_temp_fileno' => $opTempFileno,
@@ -2883,5 +2890,409 @@ class OpResettlementApplicationController extends Controller
             'rows_updated' => $updated,
             'message' => "Flagged {$updated} OP record(s) as Merger OP.",
         ]);
+    }
+
+    /**
+     * Delete the Transfer of Title (ToT) record and detach the original
+     * Occupancy Permit (OP) record(s) from it.
+     *
+     * DELETE /lands-one-stop-shop/applications/delete-master/{id}
+     */
+    public function deleteMaster(Request $request, $id): JsonResponse
+    {
+        $db = DB::connection('sqlsrv');
+        $userId = auth()->id();
+
+        // Security gate: only Supper Admin can execute master delete
+        $assignRoles = collect(explode(',', (string) (auth()->user()->assign_role ?? '')))
+            ->map(fn($role) => trim($role))
+            ->filter();
+        $isSupperAdmin = $assignRoles->contains(fn($role) => strcasecmp($role, 'Supper Admin') === 0);
+
+        if (!$isSupperAdmin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized action. Only Supper Admin can execute a Master Delete.'
+            ], 403);
+        }
+
+        // The ID passed can be of form "pra-123" or just "123". Parse it:
+        $totPraId = $id;
+        if (is_string($id) && str_starts_with($id, 'pra-')) {
+            $totPraId = (int) substr($id, 4);
+        } else {
+            $totPraId = (int) $id;
+        }
+
+        // 1. Retrieve the Transfer of Title (ToT) record
+        $totRecord = $db->table('pra')->where('id', $totPraId)->first();
+
+        if (!$totRecord) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Transfer of Title record not found.'
+            ], 404);
+        }
+
+        // Verify that this is indeed a Transfer of Title row
+        $instrumentType = $totRecord->instrument_type ?? $totRecord->transaction_type ?? '';
+        if (stripos($instrumentType, 'Transfer of Title') === false) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This record is not a Transfer of Title row.'
+            ], 422);
+        }
+
+        try {
+            $db->transaction(function () use ($db, $totRecord, $userId) {
+                // 2. Identify the parent OP record(s) and detach them
+                // We detach by setting:
+                // - system_source = NULL
+                // - temp_fileno = NULL
+                // - merger_group_id = NULL
+                // - is_merger_op = 0
+
+                if (!empty($totRecord->merger_group_id)) {
+                    // It is a merger! Find all parent OPs that have the same merger_group_id and detach them.
+                    $db->table('pra')
+                        ->where('merger_group_id', $totRecord->merger_group_id)
+                        ->where(function ($q) {
+                            $q->whereNull('instrument_type')
+                                ->orWhere('instrument_type', 'not like', '%Transfer of Title%');
+                        })
+                        ->update([
+                            'system_source' => null,
+                            'temp_fileno' => null,
+                            'merger_group_id' => null,
+                            'is_merger_op' => 0,
+                            'updated_at' => now(),
+                        ]);
+                } else {
+                    // Single match! Find parent OP by source_op_id, or fallback to parent_prop_id
+                    $parentOpQuery = null;
+                    if (!empty($totRecord->source_op_id)) {
+                        $parentOpQuery = $db->table('pra')->where('id', (int) $totRecord->source_op_id);
+                    } elseif (!empty($totRecord->parent_prop_id)) {
+                        $parentOpQuery = $db->table('pra')
+                            ->where('prop_id', $totRecord->parent_prop_id)
+                            ->where(function ($q) {
+                                $q->whereNull('instrument_type')
+                                    ->orWhere('instrument_type', 'not like', '%Transfer of Title%');
+                            });
+                    }
+
+                    if ($parentOpQuery) {
+                        $parentOpQuery->update([
+                            'system_source' => null,
+                            'temp_fileno' => null,
+                            'merger_group_id' => null,
+                            'is_merger_op' => 0,
+                            'updated_at' => now(),
+                        ]);
+                    }
+                }
+
+                // 3. Clear related file system records from indexing/staging tables
+                $identifiers = array_unique(array_filter([
+                    $totRecord->mlsFNo ?? null,
+                    $totRecord->fileno ?? null,
+                    $totRecord->temp_fileno ?? null
+                ]));
+
+                if (!empty($identifiers)) {
+                    $safeDelete = function ($tableName) use ($db, $identifiers) {
+                        if (!\Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasTable($tableName)) {
+                            return;
+                        }
+
+                        $columns = ['file_number', 'full_file_number', 'mlsfNo'];
+                        $query = $db->table($tableName);
+                        $added = false;
+
+                        foreach ($columns as $column) {
+                            if (\Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasColumn($tableName, $column)) {
+                                if (!$added) {
+                                    $query->whereIn($column, $identifiers);
+                                    $added = true;
+                                } else {
+                                    $query->orWhereIn($column, $identifiers);
+                                }
+                            }
+                        }
+
+                        if ($added) {
+                            $query->delete();
+                        }
+                    };
+
+                    // Execute safe deletes for the indexing and staging tables
+                    $safeDelete('file_indexings');
+                    $safeDelete('fileNumber');
+                    $safeDelete('customers_staging');
+                    $safeDelete('mls_file_no');
+                    $safeDelete('entities_staging');
+                }
+
+                // 4. Mark the ToT record as deleted (soft delete)
+                $db->table('pra')->where('id', $totRecord->id)->update([
+                    'is_deleted' => 1,
+                    'updated_at' => now(),
+                ]);
+
+                // 4. Log the deletion to AuditService
+                try {
+                    $auditService = app(\App\Services\AuditService::class);
+                    $auditService->logAction(
+                        'DELETED',
+                        'pra',
+                        $totRecord->id,
+                        (array) $totRecord,
+                        null,
+                        "Deleted Change of Name Master matching. Soft-deleted Transfer of Title row ID {$totRecord->id} and detached parent OP(s)."
+                    );
+                } catch (\Throwable $auditEx) {
+                    \Illuminate\Support\Facades\Log::warning("AuditLog failed for ToT deletion: " . $auditEx->getMessage());
+                }
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Master record deleted and OP detached successfully.'
+            ]);
+
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Delete Master failed', [
+                'tot_pra_id' => $totPraId,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'user_id' => $userId,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Delete Master failed: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Bulk delete the Transfer of Title (ToT) records and detach parent OP(s).
+     *
+     * DELETE /lands-one-stop-shop/applications/delete-master-bulk
+     */
+    public function deleteMasterBulk(Request $request): JsonResponse
+    {
+        $db = DB::connection('sqlsrv');
+        $userId = auth()->id();
+
+        // Security gate: only Supper Admin can execute master delete bulk
+        $assignRoles = collect(explode(',', (string) (auth()->user()->assign_role ?? '')))
+            ->map(fn($role) => trim($role))
+            ->filter();
+        $isSupperAdmin = $assignRoles->contains(fn($role) => strcasecmp($role, 'Supper Admin') === 0);
+
+        if (!$isSupperAdmin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized action. Only Supper Admin can execute a Bulk Master Delete.'
+            ], 403);
+        }
+
+        $ids = $request->input('ids');
+        if (!is_array($ids) || empty($ids)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No record IDs provided for deletion.'
+            ], 400);
+        }
+
+        try {
+            $deletedCount = 0;
+            $db->transaction(function () use ($db, $ids, $userId, &$deletedCount) {
+                foreach ($ids as $id) {
+                    // Parse ID:
+                    $totPraId = $id;
+                    if (is_string($id) && str_starts_with($id, 'pra-')) {
+                        $totPraId = (int) substr($id, 4);
+                    } else {
+                        $totPraId = (int) $id;
+                    }
+
+                    // 1. Retrieve the Transfer of Title (ToT) record
+                    $totRecord = $db->table('pra')->where('id', $totPraId)->first();
+                    if (!$totRecord) {
+                        continue;
+                    }
+
+                    // Verify that this is indeed a Transfer of Title row
+                    $instrumentType = $totRecord->instrument_type ?? $totRecord->transaction_type ?? '';
+                    if (stripos($instrumentType, 'Transfer of Title') === false) {
+                        continue;
+                    }
+
+                    // 2. Identify the parent OP record(s) and detach them
+                    if (!empty($totRecord->merger_group_id)) {
+                        $db->table('pra')
+                            ->where('merger_group_id', $totRecord->merger_group_id)
+                            ->where(function ($q) {
+                                $q->whereNull('instrument_type')
+                                    ->orWhere('instrument_type', 'not like', '%Transfer of Title%');
+                            })
+                            ->update([
+                                'system_source' => null,
+                                'temp_fileno' => null,
+                                'merger_group_id' => null,
+                                'is_merger_op' => 0,
+                                'updated_at' => now(),
+                            ]);
+                    } else {
+                        $parentOpQuery = null;
+                        if (!empty($totRecord->source_op_id)) {
+                            $parentOpQuery = $db->table('pra')->where('id', (int) $totRecord->source_op_id);
+                        } elseif (!empty($totRecord->parent_prop_id)) {
+                            $parentOpQuery = $db->table('pra')
+                                ->where('prop_id', $totRecord->parent_prop_id)
+                                ->where(function ($q) {
+                                    $q->whereNull('instrument_type')
+                                        ->orWhere('instrument_type', 'not like', '%Transfer of Title%');
+                                });
+                        }
+
+                        if ($parentOpQuery) {
+                            $parentOpQuery->update([
+                                'system_source' => null,
+                                'temp_fileno' => null,
+                                'merger_group_id' => null,
+                                'is_merger_op' => 0,
+                                'updated_at' => now(),
+                            ]);
+                        }
+                    }
+
+                    // 3. Clear related file system records from indexing/staging tables
+                    $identifiers = array_unique(array_filter([
+                        $totRecord->mlsFNo ?? null,
+                        $totRecord->fileno ?? null,
+                        $totRecord->temp_fileno ?? null
+                    ]));
+
+                    if (!empty($identifiers)) {
+                        $safeDelete = function ($tableName) use ($db, $identifiers) {
+                            if (!\Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasTable($tableName)) {
+                                return;
+                            }
+
+                            $columns = ['file_number', 'full_file_number', 'mlsfNo'];
+                            $query = $db->table($tableName);
+                            $added = false;
+
+                            foreach ($columns as $column) {
+                                if (\Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasColumn($tableName, $column)) {
+                                    if (!$added) {
+                                        $query->whereIn($column, $identifiers);
+                                        $added = true;
+                                    } else {
+                                        $query->orWhereIn($column, $identifiers);
+                                    }
+                                }
+                            }
+
+                            if ($added) {
+                                $query->delete();
+                            }
+                        };
+
+                        $safeDelete('file_indexings');
+                        $safeDelete('fileNumber');
+                        $safeDelete('customers_staging');
+                        $safeDelete('mls_file_no');
+                        $safeDelete('entities_staging');
+                    }
+
+                    // 4. Mark the ToT record as deleted (soft delete)
+                    $db->table('pra')->where('id', $totRecord->id)->update([
+                        'is_deleted' => 1,
+                        'updated_at' => now(),
+                    ]);
+
+                    // 5. Log the deletion to AuditService
+                    try {
+                        $auditService = app(\App\Services\AuditService::class);
+                        $auditService->logAction(
+                            'DELETED',
+                            'pra',
+                            $totRecord->id,
+                            (array) $totRecord,
+                            null,
+                            "Bulk Deleted Change of Name Master matching. Soft-deleted Transfer of Title row ID {$totRecord->id} and detached parent OP(s)."
+                        );
+                    } catch (\Throwable $auditEx) {
+                        \Illuminate\Support\Facades\Log::warning("AuditLog failed for bulk ToT deletion: " . $auditEx->getMessage());
+                    }
+
+                    $deletedCount++;
+                }
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => "Successfully processed master bulk deletion. Deleted {$deletedCount} record(s)."
+            ]);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Bulk delete master error:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An internal database error occurred while executing bulk master delete.'
+            ], 500);
+        }
+    }
+
+    /**
+     * Synchronize entity record into entities_staging table.
+     */
+    private function syncEntitiesStaging(string $mlsFNo, ?string $name): void
+    {
+        if (empty($mlsFNo)) {
+            return;
+        }
+
+        $name = trim((string) $name);
+        $resolvedCustomerType = 'Individual';
+        if ($name !== '') {
+            $normalized = strtolower(preg_replace('/\s+/', ' ', $name));
+            $corporateTokens = ['ltd', 'limited', 'plc', 'inc', 'llc', 'company', 'co.', 'corp', 'corporate', 'enterprise', 'global', 'resources', 'venture', 'investment'];
+            foreach ($corporateTokens as $token) {
+                if (str_contains($normalized, $token)) {
+                    $resolvedCustomerType = 'Corporate';
+                    break;
+                }
+            }
+        }
+
+        $db = DB::connection('sqlsrv');
+        if (\Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasTable('entities_staging')) {
+            $existing = $db->table('entities_staging')->where('file_number', $mlsFNo)->first();
+            if ($existing) {
+                $db->table('entities_staging')->where('id', $existing->id)->update([
+                    'entity_type' => $resolvedCustomerType,
+                    'entity_name' => $name !== '' ? $name : 'N/A',
+                    'updated_at' => now(),
+                ]);
+            } else {
+                $db->table('entities_staging')->insert([
+                    'entity_type' => $resolvedCustomerType,
+                    'entity_name' => $name !== '' ? $name : 'N/A',
+                    'file_number' => $mlsFNo,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
     }
 }
