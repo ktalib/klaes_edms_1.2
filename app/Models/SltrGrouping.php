@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Support\SltrDigitRank;
 
 class SltrGrouping extends Model
 {
@@ -31,6 +32,7 @@ class SltrGrouping extends Model
      */
     protected $fillable = [
         'sltr_awaiting_fileno',
+        'digit_rank',
         'date',
         'created_by',
         'indexed_by',
@@ -68,6 +70,7 @@ class SltrGrouping extends Model
         'mapping' => 'integer',
         'test_control' => 'integer',
         'indexing_mapping' => 'integer',
+        'digit_rank' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
@@ -97,12 +100,16 @@ class SltrGrouping extends Model
         parent::boot();
 
         static::creating(function ($model) {
+            $model->digit_rank = SltrDigitRank::fromFileNumber($model->sltr_awaiting_fileno);
+
             if (auth()->check()) {
                 $model->created_by = auth()->user()->name ?? auth()->user()->id;
             }
         });
 
         static::updating(function ($model) {
+            $model->digit_rank = SltrDigitRank::fromFileNumber($model->sltr_awaiting_fileno);
+
             if (auth()->check()) {
                 $model->updated_by = auth()->user()->name ?? auth()->user()->id;
             }

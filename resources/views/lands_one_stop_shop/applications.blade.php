@@ -1,6 +1,7 @@
 @extends('layouts.app')
 
 @section('styles')
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <style>
     /* ── Hide native DT search / length controls ── */
     #op-resettlement-table_wrapper .dataTables_filter,
@@ -1211,7 +1212,17 @@
 @endsection
 
 @section('footer-scripts')
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+<script>
+    window.InstrumentCaptureConfig = Object.assign({}, window.InstrumentCaptureConfig || {}, {
+        csrfToken: "{{ csrf_token() }}",
+        urls: Object.assign({}, (window.InstrumentCaptureConfig || {}).urls || {}, {
+            tpLookupSearch: "{{ route('instruments.tpLookups.search') }}",
+            tpLookupStore: "{{ route('instruments.tpLookups.store') }}"
+        })
+    });
+</script>
 <script src="{{ asset('js/instruments-capture.js') }}?v={{ time() }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {

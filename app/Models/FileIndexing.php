@@ -10,6 +10,7 @@ use App\Models\FileTracking;
 use App\Models\PrintLabelBatchItem;
 use App\Models\User;
 use App\Models\Grouping;
+use App\Support\SltrDigitRank;
 
 class FileIndexing extends Model
 {
@@ -91,6 +92,7 @@ class FileIndexing extends Model
         'corresponding_fileno',
         'sub_prefix',
         'suffix',
+        'digit_rank',
     ];
 
     public static function columnWhitelist(): array
@@ -185,6 +187,7 @@ class FileIndexing extends Model
             'corresponding_fileno',
             'sub_prefix',
             'suffix',
+            'digit_rank',
         ];
     }
 
@@ -208,7 +211,15 @@ class FileIndexing extends Model
         'deleted_at' => 'datetime',
         'current_holder' => 'array',
         'original_holder' => 'array',
+        'digit_rank' => 'integer',
     ];
+
+    protected static function booted()
+    {
+        static::saving(function (FileIndexing $model) {
+            $model->digit_rank = SltrDigitRank::fromFileNumber($model->file_number);
+        });
+    }
 
     public function mainApplication()
     {

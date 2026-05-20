@@ -320,9 +320,16 @@
                         <h3 id="first-party-title" class="text-sm font-semibold text-gray-800 mb-4">{{ isset($record) ? 'Party 1' : 'Grantor' }}</h3>
 
                         <div class="space-y-3">
-                            <x-instrument-input id="firstPartyName" label="" icon="user" placeholder="Name" 
+                            <x-instrument-input id="firstPartyName" label="" icon="user" placeholder="Name"
                                 value="{{ $record->party_1_name ?? '' }}" />
-                            
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <x-instrument-input id="firstPartyHouseNo" label="" icon="home" placeholder="House No"
+                                    value="{{ $record->party_1_house_no ?? '' }}" />
+                                <x-instrument-input id="firstPartyPlotNo" label="" icon="hash" placeholder="Plot No"
+                                    value="{{ $record->party_1_plot_no ?? '' }}" />
+                            </div>
+
                             <div id="first-party-row-1" class="grid grid-cols-2 gap-3">
                                 <div>
                                     <x-instrument-select id="firstPartyStreet" label="" icon="map-pin"
@@ -367,6 +374,14 @@
                         <div class="space-y-3">
                             <x-instrument-input id="secondPartyName" label="" icon="user-plus"
                                 placeholder="Name" value="{{ $record->party_2_name ?? '' }}" />
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <x-instrument-input id="secondPartyHouseNo" label="" icon="home" placeholder="House No"
+                                    value="{{ $record->party_2_house_no ?? '' }}" />
+                                <x-instrument-input id="secondPartyPlotNo" label="" icon="hash" placeholder="Plot No"
+                                    value="{{ $record->party_2_plot_no ?? '' }}" />
+                            </div>
+
                             <div class="grid grid-cols-2 gap-3">
                                 <div>
                                     <x-instrument-select id="secondPartyStreet" label="" icon="map-pin"
@@ -422,20 +437,34 @@
                                 class="text-xs font-medium text-teal-700 cursor-pointer">Include Survey
                                 Info</label>
                         </div>
-                    </div>
+                    </div> 
 
                     <div class="grid grid-cols-2 gap-4">
                         <div class="space-y-3">
                             <div class="grid grid-cols-3 gap-3">
+                                <x-instrument-input id="house_no" label="" icon="home" placeholder="House No"
+                                    value="{{ old('house_no', $record->house_no ?? '') }}" />
                                 <x-instrument-input id="plotNumber" label="" icon="hash"
                                     placeholder="Plot Number" value="{{ $record->plot_number ?? '' }}" />
-                                <x-instrument-input id="tp_no" label="" icon="layers"
-                                    placeholder="TP No" value="{{ $record->tp_no ?? '' }}" />
-                                <x-instrument-input id="size" label="" icon="maximize" placeholder="Size" 
-                                    value="{{ $record->size ?? '' }}" />
+                                <div>
+                                    <div class="relative">
+                                        <select id="tp_no" name="tp_no" class="tp-lookup-select w-full px-3 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all text-sm">
+                                            <option value="">TP No</option>
+                                            @if(!empty($record->tp_no))
+                                                <option value="{{ $record->tp_no }}" selected>{{ $record->tp_no }}</option>
+                                            @endif
+                                        </select>
+                                    </div>
+                                    <div id="manual_tp_no_container" class="mt-2 hidden">
+                                        <x-instrument-input id="manual_tp_no" name="manual_tp_no" label="" icon="edit-3"
+                                            placeholder="Enter TP No" value="{{ old('manual_tp_no') }}" />
+                                    </div>
+                                </div>
                             </div>
                             
                             <div class="grid grid-cols-3 gap-3">
+                                <x-instrument-input id="size" label="" icon="maximize" placeholder="Size"
+                                    value="{{ $record->size ?? '' }}" />
                                 <x-instrument-input id="lpkn_no" label="" icon="file-text" placeholder="LPKN No" 
                                     value="{{ $record->lpkn_no ?? '' }}" />
                             </div>

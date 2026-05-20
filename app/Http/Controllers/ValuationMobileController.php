@@ -29,7 +29,7 @@ class ValuationMobileController extends Controller
      */
     public function getLookupData()
     {
-        return Cache::remember('vfc_mobile_lookup_data', 60 * 60 * 24, function () {
+        return Cache::remember('vfc_mobile_lookup_data_v2', 60 * 60 * 24, function () {
             $projects = Project::select('id', 'project_name', 'project_code', 'project_fileno', 'number_of_items', 'our_reference', 'your_reference')
                 ->with([
                     'subProjects' => function ($q) {
@@ -66,8 +66,18 @@ class ValuationMobileController extends Controller
                 ->get();
             $streets = StreetName::orderBy('name')->get();
 
-            $lgas = DB::connection('sqlsrv')->table('StatLGAs')->join('States', 'StatLGAs.StateID', '=', 'States.StateID')->where('States.StateName', 'Kano')->orderBy('LGAName')->get();
-            $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
+            $lgas = DB::connection('sqlsrv')->table('StatLGAs')
+                ->join('States', 'StatLGAs.StateID', '=', 'States.StateID')
+                ->where('States.StateName', 'Kano')
+                ->orderBy('LGAName')
+                ->get();
+            $lgaNames = $lgas->pluck('LGAName')->map(fn ($name) => strtoupper(trim((string) $name)))->all();
+            $districts = DB::connection('sqlsrv')
+                ->table('districts')
+                ->where('is_active', 1)
+                ->whereNotIn(DB::raw('UPPER(LTRIM(RTRIM(name)))'), $lgaNames)
+                ->orderBy('name')
+                ->get();
 
             $banks = \App\Models\VfcBank::orderBy('name')->get()->map(function ($b) {
                 return [

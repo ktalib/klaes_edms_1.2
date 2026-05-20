@@ -363,13 +363,19 @@ document.addEventListener('DOMContentLoaded', function () {
         if (stateEl) {
             stateEl.addEventListener('change', function () {
                 fetchLgas(this.value, `${prefix}Lga`);
+                updatePartyAddressMode(prefix);
             });
+
+            if (stateEl.value) {
+                const lgaEl = document.getElementById(`${prefix}Lga`);
+                fetchLgas(stateEl.value, `${prefix}Lga`, lgaEl?.value || null);
+            }
         }
     });
 
 
     // Property Description Auto-update listeners
-    ['plotNumber', 'desc_lga', 'desc_district', 'propertyState', 'manual_district', 'streetName', 'manual_street_name'].forEach(id => {
+    ['house_no', 'plotNumber', 'desc_lga', 'desc_district', 'propertyState', 'manual_district', 'streetName', 'manual_street_name'].forEach(id => {
         const el = document.getElementById(id);
         if (el) {
             const eventType = el.tagName === 'SELECT' ? 'change' : 'input';
@@ -413,6 +419,36 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    function isKanoState(value) {
+        const normalized = (value || '').toString().trim().toLowerCase();
+        return normalized === '' || normalized === 'kano' || normalized === 'kano state';
+    }
+
+    function updatePartyAddressMode(prefix) {
+        if (!['firstParty', 'secondParty'].includes(prefix)) return;
+
+        const stateEl = document.getElementById(`${prefix}State`);
+        const useManual = stateEl && !isKanoState(stateEl.value);
+
+        [`${prefix}Street`, `${prefix}District`].forEach(id => {
+            const selectEl = document.getElementById(id);
+            const config = manualSelectConfig[id];
+            if (!selectEl || !config) return;
+
+            if (useManual) {
+                selectEl.value = 'Others';
+                selectEl.dataset.forcedManualForState = '1';
+                handleManualToggle(id, 'Others');
+            } else {
+                if (selectEl.dataset.forcedManualForState === '1') {
+                    selectEl.value = '';
+                    delete selectEl.dataset.forcedManualForState;
+                }
+                handleManualToggle(id, selectEl.value);
+            }
+        });
+    }
+
     function setupManualSelectListeners() {
         Object.keys(manualSelectConfig).forEach(id => {
             const selectEl = document.getElementById(id);
@@ -427,13 +463,18 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     setupManualSelectListeners();
+    ['firstParty', 'secondParty'].forEach(updatePartyAddressMode);
 
     function getSelectOrManualValue(selectId, manualInputId) {
         const selectEl = document.getElementById(selectId);
         if (!selectEl) return '';
         let value = (selectEl.value || '').trim();
+        const manualEl = manualInputId ? document.getElementById(manualInputId) : null;
+        const manualContainer = manualEl?.closest('.mt-2');
+        if (manualEl && manualContainer && !manualContainer.classList.contains('hidden') && manualEl.value.trim()) {
+            return manualEl.value.trim();
+        }
         if (isOtherValue(value) && manualInputId) {
-            const manualEl = document.getElementById(manualInputId);
             return manualEl?.value?.trim() || '';
         }
         return value;
@@ -455,6 +496,127 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+
+    function getCsrfToken() {
+        return window.InstrumentCaptureConfig?.csrfToken
+            || document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+            || '';
+    }
+
+    function getTpLookupUrls() {
+        const urls = window.InstrumentCaptureConfig?.urls || {};
+        return {
+            search: urls.tpLookupSearch || '/instruments/tp-lookups/search',
+            store: urls.tpLookupStore || '/instruments/tp-lookups',
+        };
+    }
+
+    function getTpLookupValue() {
+        const selectEl = document.getElementById('tp_no');
+        if (!selectEl) return '';
+        if (selectEl.value === '__other__') {
+            return document.getElementById('manual_tp_no')?.value?.trim() || '';
+        }
+        return selectEl.value?.trim() || '';
+    }
+
+    function setTpLookupManualVisibility(show) {
+        const container = document.getElementById('manual_tp_no_container');
+        if (container) container.classList.toggle('hidden', !show);
+        if (!show) {
+            const manual = document.getElementById('manual_tp_no');
+            if (manual) manual.value = '';
+        }
+    }
+
+    async function persistManualTpLookup() {
+        const selectEl = document.getElementById('tp_no');
+        const manualEl = document.getElementById('manual_tp_no');
+        const value = manualEl?.value?.trim().toUpperCase() || '';
+        if (!selectEl || selectEl.value !== '__other__' || !value || value === 'OTHER' || value === 'OTHERS') {
+            return value;
+        }
+
+        if (manualEl.dataset.savedValue === value) return value;
+
+        const response = await fetch(getTpLookupUrls().store, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': getCsrfToken(),
+            },
+            body: JSON.stringify({ tp_no: value }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Could not save TP number');
+        }
+
+        manualEl.dataset.savedValue = value;
+        const option = new Option(value, value, true, true);
+        selectEl.appendChild(option);
+        selectEl.value = value;
+        if (window.jQuery && jQuery.fn.select2) {
+            jQuery(selectEl).trigger('change.select2');
+        }
+        setTpLookupManualVisibility(false);
+        return value;
+    }
+
+    function initTpLookupSelect() {
+        const selectEl = document.getElementById('tp_no');
+        if (!selectEl) return;
+
+        const initialValue = selectEl.querySelector('option[selected]')?.value || selectEl.value;
+        if (initialValue) {
+            selectEl.value = initialValue;
+        }
+
+        if (window.jQuery && jQuery.fn.select2) {
+            jQuery(selectEl).select2({
+                width: '100%',
+                placeholder: 'TP No',
+                allowClear: true,
+                minimumInputLength: 0,
+                dropdownParent: jQuery('#registration-dialog').length ? jQuery('#registration-dialog') : jQuery(document.body),
+                ajax: {
+                    url: getTpLookupUrls().search,
+                    dataType: 'json',
+                    delay: 250,
+                    data: params => ({ q: params.term || '' }),
+                    processResults: data => data,
+                    cache: true,
+                },
+            });
+
+            jQuery(selectEl).on('select2:select', function (event) {
+                setTpLookupManualVisibility(event.params?.data?.id === '__other__');
+            });
+            jQuery(selectEl).on('select2:clear', function () {
+                setTpLookupManualVisibility(false);
+            });
+        }
+
+        selectEl.addEventListener('change', () => {
+            setTpLookupManualVisibility(selectEl.value === '__other__');
+        });
+
+        const manualEl = document.getElementById('manual_tp_no');
+        if (manualEl) {
+            manualEl.addEventListener('input', () => {
+                manualEl.value = manualEl.value.toUpperCase();
+                updatePropertyDescription();
+            });
+            manualEl.addEventListener('blur', () => {
+                persistManualTpLookup().catch(error => console.warn(error.message || error));
+            });
+        }
+
+        setTpLookupManualVisibility(selectEl.value === '__other__');
+    }
+
+    initTpLookupSelect();
 
     // Attach checkbox listeners
     const surveyInfo = document.getElementById('surveyInfo');
@@ -558,7 +720,7 @@ document.addEventListener('DOMContentLoaded', function () {
             'thirdPartyLga', 'thirdPartyPhone', 'party5Name', 'party5Address',
             'party5District', 'party5State', 'party5Lga', 'party5Phone', 'solicitorName',
             'solicitorAddress', 'solicitorDistrict', 'solicitorState', 'solicitorLga',
-            'plotDescription', 'plotLocation', 'plotNumber', 'tp_no', 'plotSize',
+            'plotDescription', 'plotLocation', 'house_no', 'plotNumber', 'tp_no', 'plotSize',
             'surveyPlanNo', 'lga', 'district', 'manual_district', 'cofoTerm',
             'cofoDate', 'cofoRegParticulars', 'assignmentTerm', 'leaseTerm',
             'subLeaseAmount', 'firstPartyState', 'firstPartyDistrict', 'secondPartyState',
@@ -1042,6 +1204,10 @@ document.addEventListener('DOMContentLoaded', function () {
             'property_street_name',
             'street_name'
         ]);
+        const explicitHouseNo = pickConsentValue(cons, [
+            'property_house_no',
+            'house_no'
+        ]) || prior.house_no || '';
         const explicitPropertyState = normalizeLocationLabel(pickConsentValue(cons, [
             'property_state',
             'state',
@@ -1156,6 +1322,9 @@ document.addEventListener('DOMContentLoaded', function () {
         console.log('[autoFillFromConsent] resolvedPlotNo:', resolvedPlotNo, '| plotNumber el exists:', !!document.getElementById('plotNumber'));
         if (resolvedPlotNo) {
             safeSetValue('plotNumber', resolvedPlotNo);
+        }
+        if (explicitHouseNo) {
+            safeSetValue('house_no', explicitHouseNo);
         }
 
         // Property description - set dropdowns first, then restore original text
@@ -2587,6 +2756,7 @@ document.addEventListener('DOMContentLoaded', function () {
         safeSetValue('solicitorAddress', data.solicitor_address);
         safeSetValue('plotDescription', data.property_description);
         safeSetValue('plotLocation', data.properties_location || data.location); // Fallback
+        safeSetValue('house_no', data.house_no);
         safeSetValue('plotNumber', data.plot_number);
         safeSetValue('tp_no', data.tp_no);
         safeSetValue('plotSize', data.plot_size);
@@ -2743,9 +2913,18 @@ document.addEventListener('DOMContentLoaded', function () {
         if (value == null) return;
         const el = document.getElementById(id);
         if (el) {
+            if (id === 'tp_no' && el.tagName === 'SELECT' && value) {
+                const hasOption = Array.from(el.options).some(option => option.value == value);
+                if (!hasOption) {
+                    el.appendChild(new Option(value, value, true, true));
+                }
+            }
             el.value = value;
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
+            if (id === 'tp_no' && window.jQuery && jQuery.fn.select2) {
+                jQuery(el).trigger('change.select2');
+            }
 
             // Handle custom Select components universally
             // 1. Try to get display text from selected option if it's a select
@@ -4445,6 +4624,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Skip auto-update while consent auto-fill is populating dropdowns
         if (window._suppressPropertyDescUpdate) return;
 
+        const house = document.getElementById('house_no')?.value?.trim() || '';
         const plot = document.getElementById('plotNumber')?.value?.trim() || '';
         const district = getSelectOrManualValue('desc_district', 'manual_district');
         const lga = document.getElementById('desc_lga')?.value?.trim() || '';
@@ -4452,7 +4632,12 @@ document.addEventListener('DOMContentLoaded', function () {
         const streetName = getSelectOrManualValue('streetName', 'manual_street_name');
 
         const parts = [];
-        if (plot) parts.push(`Plot ${plot}`);
+        // If both house and plot exist, show only plot. Otherwise show whichever is present.
+        if (plot) {
+            parts.push(`Plot ${plot}`);
+        } else if (house) {
+            parts.push(`House No ${house}`);
+        }
         if (streetName && streetName !== 'Select Street Name') parts.push(streetName);
         if (district && district !== 'Select District') parts.push(district);
         if (lga && lga !== 'Select LGA') parts.push(lga);
@@ -5140,6 +5325,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // 3. Prepare Data
         const formData = new FormData(elements.registrationForm);
+
+        if (document.getElementById('tp_no')) {
+            try {
+                await persistManualTpLookup();
+            } catch (error) {
+                console.warn(error.message || error);
+            }
+            formData.set('tp_no', getTpLookupValue());
+        }
 
         // Handle "Others" for District
         const districtSelect = document.getElementById('desc_district');

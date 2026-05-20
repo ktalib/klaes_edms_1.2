@@ -653,6 +653,8 @@ Route::group(['middleware' => ['auth'], 'prefix' => 'instruments'], function () 
     Route::get('/create', [App\Http\Controllers\InstrumentController::class, 'create'])->name('instruments.create');
     Route::get('/generate-particulars', [App\Http\Controllers\InstrumentController::class, 'generateParticulars'])->name('instruments.generateParticulars');
     Route::get('/get-lgas/{stateId}', [App\Http\Controllers\InstrumentController::class, 'getLgas'])->name('instruments.getLgas');
+    Route::get('/tp-lookups/search', [App\Http\Controllers\InstrumentController::class, 'searchTpLookups'])->name('instruments.tpLookups.search');
+    Route::post('/tp-lookups', [App\Http\Controllers\InstrumentController::class, 'storeTpLookup'])->name('instruments.tpLookups.store');
     Route::get('/preview-registration-number', [App\Http\Controllers\InstrumentController::class, 'previewRegistrationNumber'])->name('instruments.previewRegistrationNumber');
     Route::get('/get-next-temp-fileno', [App\Http\Controllers\InstrumentController::class, 'getNextTempFileNo'])->name('instruments.getNextTempFileNo');
     Route::post('/resolve-op-duplicates', [App\Http\Controllers\InstrumentController::class, 'resolveOpDuplicates'])->name('instruments.resolveOpDuplicates');

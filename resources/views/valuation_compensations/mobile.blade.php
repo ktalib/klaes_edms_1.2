@@ -1025,14 +1025,20 @@
                         <select name="street_name" id="streetSelect" class="inp loc-trigger">
                             <option value="">Select Street</option>
                         </select>
+                        <input type="text" id="streetSelectOther" class="inp loc-trigger hidden mt-2" placeholder="Specify street name">
                     </div>
                     <div class="field">
                         <label>District</label>
-                        <input type="text" name="district" id="districtSelect" class="inp loc-trigger" placeholder="e.g. Fagge">
+                        <select name="district" id="districtSelect" class="inp loc-trigger">
+                            <option value="">Loading districts...</option>
+                        </select>
+                        <input type="text" id="districtSelectOther" class="inp loc-trigger hidden mt-2" placeholder="Specify district">
                     </div>
                     <div class="field">
                         <label>LGA <span class="req">*</span></label>
-                        <input type="text" name="lga" id="lgaSelect" class="inp loc-trigger" placeholder="e.g. Ungogo">
+                        <select name="lga" id="lgaSelect" class="inp loc-trigger" required>
+                            <option value="">Loading LGAs...</option>
+                        </select>
                     </div>
                     <div class="field">
                         <label>Full Address <span class="req">*</span></label>
@@ -1508,11 +1514,61 @@
             }
         }
 
-        // Street/District Other Logic (if needed)
+        function isOtherValue(value) {
+            return ['other', 'others'].includes((value || '').toString().trim().toLowerCase());
+        }
+
+        function getLocationSelectValue(selectId) {
+            const select = document.getElementById(selectId);
+            const otherInput = document.getElementById(selectId + 'Other');
+            if (!select) return '';
+            if (isOtherValue(select.value)) {
+                return (otherInput?.value || '').trim();
+            }
+            return (select.value || '').trim();
+        }
+
+        function toggleLocationOther(selectId) {
+            const select = document.getElementById(selectId);
+            const otherInput = document.getElementById(selectId + 'Other');
+            if (!select || !otherInput) return;
+
+            const shouldShow = isOtherValue(select.value);
+            otherInput.classList.toggle('hidden', !shouldShow);
+            if (shouldShow) {
+                otherInput.focus();
+            } else {
+                otherInput.value = '';
+            }
+            buildAddress();
+        }
+
+        function setSelectOrOther(selectId, value) {
+            const select = document.getElementById(selectId);
+            const otherInput = document.getElementById(selectId + 'Other');
+            const normalizedValue = (value || '').toString().trim();
+            if (!select || !normalizedValue) return;
+
+            const hasOption = Array.from(select.options).some(option => option.value === normalizedValue);
+            if (hasOption) {
+                select.value = normalizedValue;
+                if (otherInput) otherInput.value = '';
+            } else {
+                select.value = 'Other';
+                if (otherInput) otherInput.value = normalizedValue;
+            }
+            toggleLocationOther(selectId);
+        }
+
         ['streetSelect', 'districtSelect'].forEach(id => {
-            document.getElementById(id).addEventListener('change', function() {
-                // We could add other inputs here but let's keep it simple for now
-            });
+            const select = document.getElementById(id);
+            const otherInput = document.getElementById(id + 'Other');
+            if (select) {
+                select.addEventListener('change', () => toggleLocationOther(id));
+            }
+            if (otherInput) {
+                otherInput.addEventListener('input', buildAddress);
+            }
         });
 
         // Project Change -> Load Workers
@@ -1578,7 +1634,7 @@
 
                     // Backfill location scope
                     if (proj.district) {
-                        document.getElementById('districtSelect').value = proj.district;
+                        setSelectOrOther('districtSelect', proj.district);
                     }
                     if (proj.lga) {
                         document.getElementById('lgaSelect').value = proj.lga;
@@ -1638,8 +1694,8 @@
         // Address Builder
         function buildAddress() {
             const plotNo = document.getElementById('plot_no').value;
-            const street = document.getElementById('streetSelect').value;
-            const district = document.getElementById('districtSelect').value;
+            const street = getLocationSelectValue('streetSelect');
+            const district = getLocationSelectValue('districtSelect');
             const lga = document.getElementById('lgaSelect').value;
             
             let parts = [];
@@ -1712,6 +1768,10 @@
         async function submitForm() {
             const form = document.getElementById('vfcForm');
             const formData = new FormData(form);
+            formData.set('street_name', getLocationSelectValue('streetSelect'));
+            formData.set('district', getLocationSelectValue('districtSelect'));
+            buildAddress();
+            formData.set('location', document.getElementById('fullLocation')?.value || '');
 
             // Custom Validation
             const requiredFields = [
@@ -1740,6 +1800,24 @@
                         section.classList.remove('collapsed');
                         section.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         setTimeout(() => el.focus(), 500);
+                    }
+                    return;
+                }
+            }
+
+            for (const field of [
+                { selectId: 'streetSelect', inputId: 'streetSelectOther', name: 'Street Name', section: 'sec-location' },
+                { selectId: 'districtSelect', inputId: 'districtSelectOther', name: 'District', section: 'sec-location' }
+            ]) {
+                const select = document.getElementById(field.selectId);
+                const input = document.getElementById(field.inputId);
+                if (select && input && isOtherValue(select.value) && input.value.trim() === '') {
+                    showToast(`Specify ${field.name}`, 'warning');
+                    const section = document.getElementById(field.section);
+                    if (section) {
+                        section.classList.remove('collapsed');
+                        section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        setTimeout(() => input.focus(), 500);
                     }
                     return;
                 }
@@ -1814,9 +1892,12 @@
             document.getElementById('workerBadge').classList.add('hidden');
             
             // Hide other specify fields
-            ['structureTypeOther', 'completionStageOther', 'buildingTypeOther', 'compItemsOtherText'].forEach(id => {
+            ['structureTypeOther', 'completionStageOther', 'buildingTypeOther', 'compItemsOtherText', 'streetSelectOther', 'districtSelectOther'].forEach(id => {
                 const el = document.getElementById(id);
-                if (el) el.classList.add('hidden');
+                if (el) {
+                    el.classList.add('hidden');
+                    if ('value' in el) el.value = '';
+                }
             });
 
             window.scrollTo({ top: 0, behavior: 'smooth' });

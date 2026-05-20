@@ -780,11 +780,13 @@
             }
 
             // Manual entry - require both prefix and number
+            const fileType = $('#kangis-file-type').val();
             const prefix = $('#kangis-prefix').val().trim();
             const number = $('#kangis-number').val().trim();
 
             if (prefix && number) {
-                return `${prefix} ${number}`;
+                const fileNo = `${prefix} ${number}`;
+                return fileType === 'temporary' ? `${fileNo}(T)` : fileNo;
             }
 
             return '';
@@ -1109,7 +1111,8 @@
                 console.log("Resetting form...");
 
                 // Reset all form inputs (excluding radio buttons, file inputs, and readonly fields)
-                $('#global-fileno-modal input:not([type="radio"]):not([type="file"]):not([readonly]), #global-fileno-modal select').val('').trigger('change');
+                $('#global-fileno-modal input:not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([readonly]), #global-fileno-modal select').val('').trigger('change');
+                $('#global-fileno-modal input[type="checkbox"]').prop('checked', false).trigger('change');
 
                 // Reset radio buttons to smart selector and trigger the change
                 $('input[name$="-input-method"][value="smart"]').prop('checked', true);

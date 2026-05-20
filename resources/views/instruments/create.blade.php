@@ -7,6 +7,7 @@
 @section('content')
     @include('instruments.create.css')
     @include('propertycard.css.style')
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <!-- Main Content -->
     <div class="flex-1 overflow-auto">
         <!-- Header -->
@@ -235,11 +236,14 @@
 
         {{-- Scripts --}}
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
         <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
         <script>
             window.InstrumentCaptureConfig = {
                 csrfToken: "{{ csrf_token() }}",
                 urls: {
+                    tpLookupSearch: "{{ route('instruments.tpLookups.search') }}",
+                    tpLookupStore: "{{ route('instruments.tpLookups.store') }}",
                     generateRds: "{{ url('instrument_registration/generate-rds') }}",
                     viewRds: "{{ url('instrument_registration/view-rds') }}",
                     printRds: "{{ url('instrument_registration/print-rds') }}",

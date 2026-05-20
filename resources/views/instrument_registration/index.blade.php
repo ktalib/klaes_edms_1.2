@@ -505,61 +505,6 @@
                         </button>
                     </div>
                 </div>
-
-                <script>
-                    let sortDirections = {};
-                    function sortTable(colIndex) {
-                        const table = document.getElementById('instrumentTable');
-                        const tbody = table.tBodies[0];
-                        const rows = Array.from(tbody.querySelectorAll('tr')).filter(row => !row.querySelector('td[colspan]'));
-                        const numericColumns = [14]; // Plot Size column (index 14) is numeric
-                        const dateColumns = [4, 5]; // REG DATE (4), Captured Date (5)
-                        const timeColumns = [3, 6]; // Reg Time (3), Captured Time (6)
-                        
-                        sortDirections[colIndex] = !sortDirections[colIndex];
-                        rows.sort((a, b) => {
-                            let aText = a.children[colIndex]?.innerText.trim() || '';
-                            let bText = b.children[colIndex]?.innerText.trim() || '';
-                            
-                            if (numericColumns.includes(colIndex)) {
-                                aText = parseFloat(aText.replace(/[^0-9.]/g, '')) || 0;
-                                bText = parseFloat(bText.replace(/[^0-9.]/g, '')) || 0;
-                            } else if (dateColumns.includes(colIndex)) {
-                                const parseDate = (value) => value === '-' ? new Date(0) : new Date(value);
-                                aText = parseDate(aText);
-                                bText = parseDate(bText);
-                            } else if (timeColumns.includes(colIndex)) {
-                                const parseTime = (value) => {
-                                    if (value === '-') return 0;
-                                    // Try to parse AM/PM time
-                                    const match = value.match(/(\d+):(\d+)\s*(AM|PM)/i);
-                                    if (match) {
-                                        let hours = parseInt(match[1]);
-                                        const minutes = parseInt(match[2]);
-                                        const ampm = match[3].toUpperCase();
-                                        if (ampm === 'PM' && hours < 12) hours += 12;
-                                        if (ampm === 'AM' && hours === 12) hours = 0;
-                                        return hours * 60 + minutes;
-                                    }
-                                    return 0;
-                                };
-                                aText = parseTime(aText);
-                                bText = parseTime(bText);
-                            }
-                            if (aText < bText) return sortDirections[colIndex] ? -1 : 1;
-                            if (aText > bText) return sortDirections[colIndex] ? 1 : -1;
-                            return 0;
-                        });
-                        // Remove all rows and re-append sorted
-                        rows.forEach(row => tbody.appendChild(row));
-                        // Update sort icons
-                        document.querySelectorAll('[id^="sortIcon-"]').forEach(icon => {
-                            icon.innerHTML = '';
-                        });
-                        const icon = document.getElementById('sortIcon-' + colIndex);
-                        if (icon) icon.innerHTML = sortDirections[colIndex] ? '▲' : '▼';
-                    }
-                </script>
             </div>
 
             <!-- Application Type Legend -->

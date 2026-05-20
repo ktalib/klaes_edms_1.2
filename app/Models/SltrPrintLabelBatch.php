@@ -46,7 +46,8 @@ class SltrPrintLabelBatch extends Model
 
     public function batchItems(): HasMany
     {
-        return $this->hasMany(SltrPrintLabelBatchItem::class, 'batch_id');
+        return $this->hasMany(SltrPrintLabelBatchItem::class, 'batch_id')
+            ->orderBy('label_position');
     }
 
     public function creator(): BelongsTo

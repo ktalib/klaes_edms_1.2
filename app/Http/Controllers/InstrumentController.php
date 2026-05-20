@@ -109,8 +109,8 @@ class InstrumentController extends Controller
 
         // Fetch states, lgas, and districts for dropdowns
         $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
-        $lgas = DB::connection('sqlsrv')->table('lgas')->where('is_active', 1)->orderBy('name')->get();
-        $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
+        $lgas = $this->getKanoLgasForSelect();
+        $districts = $this->getDistrictsForSelect($lgas);
         $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
 
         return view('instruments.create', compact('PageTitle', 'PageDescription', 'states', 'lgas', 'districts', 'streetNames'));
@@ -1066,8 +1066,8 @@ class InstrumentController extends Controller
         $PageTitle = 'View Instrument';
         $PageDescription = 'View details of an instrument record';
         $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
-        $lgas = DB::connection('sqlsrv')->table('lgas')->where('is_active', 1)->orderBy('name')->get();
-        $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
+        $lgas = $this->getKanoLgasForSelect();
+        $districts = $this->getDistrictsForSelect($lgas);
         $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
         $record = DB::connection('sqlsrv')->table('instrument_capture')->find($id);
 
@@ -1083,8 +1083,8 @@ class InstrumentController extends Controller
         $PageTitle = 'Edit Instrument';
         $PageDescription = 'Edit an existing instrument record';
         $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
-        $lgas = DB::connection('sqlsrv')->table('lgas')->where('is_active', 1)->orderBy('name')->get();
-        $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
+        $lgas = $this->getKanoLgasForSelect();
+        $districts = $this->getDistrictsForSelect($lgas);
         $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
         $record = DB::connection('sqlsrv')->table('instrument_capture')->find($id);
 
@@ -1093,6 +1093,40 @@ class InstrumentController extends Controller
         }
 
         return view('instruments.edit', compact('PageTitle', 'PageDescription', 'states', 'record', 'lgas', 'districts', 'streetNames'));
+    }
+
+    private function getKanoLgasForSelect()
+    {
+        return DB::connection('sqlsrv')
+            ->table('StatLGAs')
+            ->join('States', 'StatLGAs.StateID', '=', 'States.StateID')
+            ->where('States.StateName', 'Kano')
+            ->orderBy('StatLGAs.LGAName')
+            ->get([
+                'StatLGAs.LGAID as id',
+                'StatLGAs.LGAName as name',
+            ]);
+    }
+
+    private function getDistrictsForSelect($kanoLgas = null)
+    {
+        $districts = DB::connection('sqlsrv')
+            ->table('districts')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        $lgaNames = collect($kanoLgas ?? $this->getKanoLgasForSelect())
+            ->pluck('name')
+            ->map(fn ($name) => strtoupper(trim((string) $name)))
+            ->filter()
+            ->flip();
+
+        $filteredDistricts = $districts
+            ->reject(fn ($district) => $lgaNames->has(strtoupper(trim((string) $district->name))))
+            ->values();
+
+        return $filteredDistricts->isNotEmpty() ? $filteredDistricts : $districts;
     }
 
     public function update(Request $request, $id)
@@ -1165,6 +1199,75 @@ class InstrumentController extends Controller
 
         $lgas = $query->orderBy('LGAName')->get();
         return response()->json($lgas);
+    }
+
+    public function searchTpLookups(Request $request)
+    {
+        $term = trim((string) $request->input('q', ''));
+        $results = collect();
+
+        if ($term !== '') {
+            $results = DB::connection('sqlsrv')
+                ->table('tp_lookups')
+                ->select('tp_no')
+                ->whereNotNull('tp_no')
+                ->where('tp_no', 'like', $term . '%')
+                ->distinct()
+                ->orderBy('tp_no')
+                ->limit(20)
+                ->get()
+                ->map(function ($row) {
+                    $tpNo = trim((string) $row->tp_no);
+                    return [
+                        'id' => $tpNo,
+                        'text' => $tpNo,
+                    ];
+                })
+                ->filter(fn ($row) => $row['id'] !== '')
+                ->values();
+        }
+
+        $results->push([
+            'id' => '__other__',
+            'text' => 'Other',
+        ]);
+
+        return response()->json([
+            'results' => $results,
+            'pagination' => ['more' => false],
+        ]);
+    }
+
+    public function storeTpLookup(Request $request)
+    {
+        $validated = $request->validate([
+            'tp_no' => ['required', 'string', 'max:255'],
+        ]);
+
+        $tpNo = strtoupper(trim($validated['tp_no']));
+
+        if ($tpNo === '' || in_array($tpNo, ['OTHER', 'OTHERS', '__OTHER__'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Enter a valid TP number.',
+            ], 422);
+        }
+
+        $exists = DB::connection('sqlsrv')
+            ->table('tp_lookups')
+            ->where('tp_no', $tpNo)
+            ->exists();
+
+        if (!$exists) {
+            DB::connection('sqlsrv')->table('tp_lookups')->insert([
+                'tp_no' => $tpNo,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'tp_no' => $tpNo,
+        ]);
     }
 
     public function getNextTempFileNo()

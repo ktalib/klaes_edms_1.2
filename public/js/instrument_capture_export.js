@@ -48,9 +48,8 @@ function getExportColumns(mode) {
     // Note: A4 landscape usable width is ~277mm with 10mm side margins.
     // Keep total fixed widths well under that so "Location" gets enough room.
     return [
-        { key: 'SN', label: 'S/N', preview: true, pdfWidth: 8 },
-        { key: 'fileno', label: 'File No', preview: true, pdfWidth: 24 },
-        { key: 'instrument_type', label: 'Instrument Type', preview: true, pdfWidth: 28 },
+        { key: 'SN', label: 'S/N', preview: true, pdfWidth: 8, noWrap: true },
+        { key: 'fileno', label: 'File No', preview: true, pdfWidth: 24, noWrap: true },
         { key: 'serialNo', label: 'Serial No', preview: true, pdfWidth: 16 },
         { key: 'pageNo', label: 'Page No', preview: true, pdfWidth: 16 },
         { key: 'volumeNo', label: 'Vol No', preview: true, pdfWidth: 16 },
@@ -434,6 +433,10 @@ window.downloadExportPdf = function () {
                 if (column.pdfWidth) {
                     columnStyles[index] = { cellWidth: column.pdfWidth };
                 }
+                if (column.noWrap) {
+                    columnStyles[index] = columnStyles[index] || {};
+                    columnStyles[index].overflow = 'hidden';
+                }
             });
 
             // Group the sorted data by instrument type
@@ -499,6 +502,11 @@ window.downloadExportPdf = function () {
                     didParseCell: function (data) {
                         if (data.column.index === 1 && data.cell.text[0] === 'N/A') {
                             data.cell.styles.textColor = [150, 150, 150];
+                        }
+                        // Prevent file number (column 1) from wrapping
+                        if (data.column.index === 1) {
+                            data.cell.styles.overflow = 'hidden';
+                            data.cell.styles.cellWidth = 24;
                         }
                     }
                 });

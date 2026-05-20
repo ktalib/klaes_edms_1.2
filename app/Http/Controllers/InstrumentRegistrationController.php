@@ -499,6 +499,23 @@ class InstrumentRegistrationController extends Controller
                 throw new \RuntimeException('Generate RDS for all records in this session before opening the batch print page.');
             }
 
+            // Increment print_count for RDS when batch print page loads
+            if ($scope === 'rds') {
+                foreach ($registrations as $registration) {
+                    $trackingKey = 'deed_reg_' . $registration->id;
+                    $tracking = $rdsTrackingLookup[$trackingKey] ?? null;
+                    if ($tracking) {
+                        // rdsTrackingLookup uses DB::table(...) so results are stdClass; update via query
+                        DB::connection('sqlsrv')
+                            ->table('rds_tracking')
+                            ->where('instrument_id', $trackingKey)
+                            ->increment('print_count', 1);
+                    }
+                }
+                // refresh lookup after increment (not strictly necessary here, but keeps state consistent)
+                $rdsTrackingLookup = $this->buildRdsTrackingLookup($registrations);
+            }
+
             if ($scope === 'cor') {
                 $this->ensureBatchSessionRdsPrinted($registrations, $rdsTrackingLookup);
 

@@ -6,6 +6,7 @@ use App\Models\FileIndexing;
 use App\Models\SltrRackShelfLabel;
 use App\Models\SltrPrintLabelBatch;
 use App\Models\SltrPrintLabelBatchItem;
+use App\Support\SltrDigitRank;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -125,9 +126,14 @@ class SltrPrintLabelController extends Controller
         try {
             $subPrefix = trim((string) $request->input('sub_prefix', ''));
             $search    = trim((string) $request->input('search', ''));
+            $digitRank = trim((string) $request->input('digit_rank', ''));
 
             if ($subPrefix === '') {
                 return response()->json(['success' => false, 'message' => 'Please select a sub prefix.'], 422);
+            }
+
+            if ($digitRank !== '' && !in_array($digitRank, ['5', '6'], true)) {
+                return response()->json(['success' => false, 'message' => 'Invalid digit rank selected.'], 422);
             }
 
             // Look up from file_indexings instead of sltr_grouping
@@ -142,6 +148,7 @@ class SltrPrintLabelController extends Controller
                     'shelf_location',
                     'sub_prefix',
                     'suffix',
+                    'digit_rank',
                 ]);
 
             if ($search !== '') {
@@ -149,6 +156,10 @@ class SltrPrintLabelController extends Controller
                     $q->where('file_number', 'like', '%' . $search . '%')
                       ->orWhere('tracking_id', 'like', '%' . $search . '%');
                 });
+            }
+
+            if ($digitRank !== '') {
+                $query->where('digit_rank', (int) $digitRank);
             }
 
             // Exclude files that are already in a batch (already generated/printed)
@@ -167,7 +178,10 @@ class SltrPrintLabelController extends Controller
                 });
             }
 
-            $rows = $query->orderBy('file_number')->get();
+            $rows = $query
+                ->orderByRaw('CASE WHEN digit_rank IS NULL THEN 999 ELSE digit_rank END')
+                ->orderBy('file_number')
+                ->get();
 
             if ($rows->isEmpty()) {
                 return response()->json([
@@ -178,6 +192,7 @@ class SltrPrintLabelController extends Controller
                         'total'      => 0,
                         'prefix'     => self::PREFIX,
                         'sub_prefix' => $subPrefix,
+                        'digit_rank' => $digitRank,
                         'message'    => 'No indexed records found for this sub prefix.',
                     ],
                 ]);
@@ -186,10 +201,21 @@ class SltrPrintLabelController extends Controller
             // Check if this sub_prefix already has a generated batch (optional, logic might need adjustment)
             $batchAlreadyUsed = false; // We can relax this for sub_prefix or implement similar logic if needed
 
-            $mapped = $rows->map(function ($r) {
+            $this->syncFileIndexingDigitRanks($rows);
+
+            $mapped = $rows
+                ->sort(function ($a, $b) {
+                    $rankCompare = ($a->digit_rank ?? 999) <=> ($b->digit_rank ?? 999);
+
+                    return $rankCompare !== 0
+                        ? $rankCompare
+                        : strnatcasecmp((string) $a->file_number, (string) $b->file_number);
+                })
+                ->map(function ($r) {
                 return [
                     'id'              => $r->id,
                     'file_number'     => $r->file_number,
+                    'digit_rank'      => $r->digit_rank,
                     'file_title'      => null,
                     'plot_number'     => null,
                     'district'        => null,
@@ -211,6 +237,7 @@ class SltrPrintLabelController extends Controller
                     'total'              => $mapped->count(),
                     'prefix'             => self::PREFIX,
                     'sub_prefix'         => $subPrefix,
+                    'digit_rank'         => $digitRank,
                     'indexed_count'      => $rows->count(),
                     'batch_already_used' => $batchAlreadyUsed,
                 ],
@@ -322,11 +349,24 @@ class SltrPrintLabelController extends Controller
                 // Fetch files from file_indexings instead of sltr_grouping
                 $files = FileIndexing::on('sqlsrv')
                     ->whereIn('id', $fileIds)
+                    ->orderByRaw('CASE WHEN digit_rank IS NULL THEN 999 ELSE digit_rank END')
+                    ->orderBy('file_number')
                     ->get();
 
                 if ($files->isEmpty()) {
                     throw ValidationException::withMessages(['file_ids' => 'No matching files found in indexed files.']);
                 }
+
+                $this->syncFileIndexingDigitRanks($files);
+                $files = $files
+                    ->sort(function ($a, $b) {
+                        $rankCompare = ($a->digit_rank ?? 999) <=> ($b->digit_rank ?? 999);
+
+                        return $rankCompare !== 0
+                            ? $rankCompare
+                            : strnatcasecmp((string) $a->file_number, (string) $b->file_number);
+                    })
+                    ->values();
 
                 // Resolve / create rack label record
                 $shelfLabelRecord = $this->resolveRackLabelRecord($fullLabel, $rackPrimary, $rackSecondary, $shelfNumber, false, true);
@@ -337,6 +377,7 @@ class SltrPrintLabelController extends Controller
                         'file_number'  => $fileNumber,
                         'tracking_id'  => $file->tracking_id ?? $fileNumber,
                         'prefix'       => $prefix,
+                        'digit_rank'   => $file->digit_rank,
                         'shelf_label'  => $fullLabel,
                         'generated_at' => $now->toIso8601String(),
                     ];
@@ -350,7 +391,7 @@ class SltrPrintLabelController extends Controller
                         'plot_number'     => null,
                         'district'        => null,
                         'lga'             => null,
-                        'land_use_type'   => $file->landuse,
+                        'land_use_type'   => $file->land_use_type,
                         'shelf_location'  => $fullLabel,
                         'label_position'  => $index + 1,
                         'qr_code_data'    => json_encode($qrPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
@@ -399,6 +440,7 @@ class SltrPrintLabelController extends Controller
                     return [
                         'file_indexing_id' => $file->id,
                         'file_number'      => $fileNumber,
+                        'digit_rank'       => $file->digit_rank,
                         'file_title'       => $file->file_title,
                         'plot_number'      => $file->plot_number,
                         'district'         => $file->location,
@@ -522,6 +564,7 @@ class SltrPrintLabelController extends Controller
                     'district'         => $item->district,
                     'lga'              => $item->lga,
                     'land_use_type'    => $item->land_use_type,
+                    'digit_rank'       => SltrDigitRank::fromFileNumber($item->file_number),
                     'shelf_location'   => $shelfValue,
                     'shelf_value'      => $shelfValue,
                     'shelf_label'      => $shelfValue,
@@ -645,6 +688,22 @@ class SltrPrintLabelController extends Controller
 
         foreach (array_chunk($items, $maxPerInsert) as $chunk) {
             SltrPrintLabelBatchItem::insert($chunk);
+        }
+    }
+
+    private function syncFileIndexingDigitRanks($rows): void
+    {
+        foreach ($rows as $row) {
+            $rank = SltrDigitRank::fromFileNumber($row->file_number ?? null);
+            $row->digit_rank = $rank;
+
+            if ((int) ($row->getOriginal('digit_rank') ?? 0) === (int) ($rank ?? 0)) {
+                continue;
+            }
+
+            FileIndexing::on('sqlsrv')
+                ->where('id', $row->id)
+                ->update(['digit_rank' => $rank]);
         }
     }
 }

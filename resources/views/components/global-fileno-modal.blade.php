@@ -408,7 +408,15 @@
 
                     <!-- Manual Entry Section -->
                     <div class="kangis-input-section hidden" data-method="manual">
-                        <div class="grid grid-cols-2 gap-3 mb-3">
+                        <div class="grid grid-cols-3 gap-3 mb-3">
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700 mb-1">File Type</label>
+                                <select id="kangis-file-type"
+                                    class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
+                                    <option value="regular">Regular</option>
+                                    <option value="temporary">Temporary File (T)</option>
+                                </select>
+                            </div>
                             <div>
                                 <label class="block text-xs font-medium text-gray-700 mb-1">File Prefix</label>
                                 <select id="kangis-prefix"
