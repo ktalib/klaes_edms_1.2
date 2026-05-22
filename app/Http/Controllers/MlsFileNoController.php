@@ -129,8 +129,8 @@ class MlsFileNoController extends Controller
                     'fileNumber.id as id',
                     'fileNumber.mlsfNo as mlsfNo',
                     'fileNumber.FileName as FileName',
-                    'fileNumber.created_at as created_at',
-                    'fileNumber.updated_at as updated_at',
+                    DB::raw('COALESCE(fileNumber.created_at, mls_file_no.created_at) as created_at'),
+                    DB::raw('COALESCE(fileNumber.updated_at, mls_file_no.updated_at) as updated_at'),
                     'fileNumber.location as location',
                     'fileNumber.lga as lga',
                     'fileNumber.created_by as created_by',
@@ -244,20 +244,22 @@ class MlsFileNoController extends Controller
             // Handle sorting manually
             $orderColumnIndex = $request->input('order.0.column', 0);
             $orderDirection = $request->input('order.0.dir', 'desc');
-            $columnData = $request->input("columns.{$orderColumnIndex}.data", 'mlsfNo');
+            $columnData = $request->input("columns.{$orderColumnIndex}.data");
 
             $sortMap = [
                 'mlsfNo' => 'sub.mlsfNo',
                 'FileName' => 'sub.FileName',
                 'SOURCE' => 'sub.SOURCE',
                 'commissioning_date' => 'sub.commissioning_date',
+                'created_at' => 'sub.created_at',
+                'updated_at' => 'sub.updated_at',
                 'created_by' => 'sub.created_by',
                 'purpose_name' => 'sub.purpose_name',
                 'customer_type' => 'sub.customer_type',
                 'land_use' => 'sub.land_use'
             ];
 
-            $sortField = $sortMap[$columnData] ?? 'sub.id';
+            $sortField = $sortMap[$columnData] ?? 'sub.created_at';
             $query->orderBy($sortField, $orderDirection);
 
             // Handle manual paging
@@ -2006,7 +2008,7 @@ class MlsFileNoController extends Controller
 
                             $parentPropId = $resolvedPropId;
                             $relatedFileNumbers = json_encode([$motherFileNo]);
-                            $motherOwner = $motherFile->file_title ?? $subdivisionApp->applicant_name ?? 'Original Owner';
+                            $motherOwner = $motherFile->file_title ?? 'Original Owner';
                         }
                     } elseif (($validated['file_option'] ?? '') === 'extension' && !empty($validated['existing_file_no'])) {
                         $extFileNo = (string) $validated['existing_file_no'];
@@ -2324,6 +2326,18 @@ class MlsFileNoController extends Controller
                             $res = $workflowService->decommissionFiles($sourceFiles, "Plot Merger to $fullFileNumber", $commissionedBy);
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
 
+                            // PRA comment on the new merged file's row
+                            $sourceFilesList = implode(', ', $sourceFiles);
+                            $mergerPlotNo = $validated['plot_no'] ?? '';
+                            $mergerComment = "{$sourceFilesList}; the new {$fullFileNumber} {$mergerPlotNo}";
+                            DB::connection('sqlsrv')->table('pra')
+                                ->where('mlsFNo', $fullFileNumber)
+                                ->update(['comments' => $mergerComment]);
+                            // Also stamp the source files' pra rows (fileno column)
+                            DB::connection('sqlsrv')->table('pra')
+                                ->whereIn('fileno', $sourceFiles)
+                                ->update(['comments' => $mergerComment]);
+
                             Log::info('Plot workflow decommissioning completed', [
                                 'archived' => $res['archived'],
                                 'deleted' => $res['deleted'],
@@ -2392,6 +2406,16 @@ class MlsFileNoController extends Controller
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
                         }
 
+                        // PRA comment on the new fragment and the mother file
+                        $subdivisionPlotNo = $validated['plot_no'] ?? '';
+                        $subdivisionComment = "{$subdivisionApp->num_plots} Subdivided from {$motherFile},{$subdivisionPlotNo}";
+                        DB::connection('sqlsrv')->table('pra')
+                            ->where('mlsFNo', $fullFileNumber)
+                            ->update(['comments' => $subdivisionComment]);
+                        DB::connection('sqlsrv')->table('pra')
+                            ->where('fileno', $motherFile)
+                            ->update(['comments' => $subdivisionComment]);
+
                         $subdivisionApp->update([
                             'status' => PlotSubdivisionApplication::STATUS_COMMISSIONED,
                             'remarks' => "Commissioned fragment: {$fullFileNumber} on " . now()->toDateTimeString(),
@@ -2427,6 +2451,15 @@ class MlsFileNoController extends Controller
 
                     $res = $workflowService->decommissionFiles([$oldFile], "Plot Extension to $fullFileNumber", $commissionedBy);
                     $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
+
+                    // PRA comment on the new extension file and the old file
+                    $extensionComment = "Plot {$oldFile} extended by extra {$fullFileNumber}";
+                    DB::connection('sqlsrv')->table('pra')
+                        ->where('mlsFNo', $fullFileNumber)
+                        ->update(['comments' => $extensionComment]);
+                    DB::connection('sqlsrv')->table('pra')
+                        ->where('fileno', $oldFile)
+                        ->update(['comments' => $extensionComment]);
                 }
 
                 // Handle Change of Purpose Application Linkage
@@ -2681,7 +2714,7 @@ class MlsFileNoController extends Controller
 
                         $parentPropId = $resolvedPropId;
                         $relatedFileNumbers = json_encode([$motherFileNo]);
-                        $motherOwner = $motherFile->file_title ?? $subApp->applicant_name ?? 'Original Owner';
+                        $motherOwner = $motherFile->file_title ?? 'Original Owner';
 
                         Log::info('Subdivision lineage resolved', [
                             'mother_file' => $motherFileNo,

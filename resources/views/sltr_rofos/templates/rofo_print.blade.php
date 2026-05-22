@@ -296,8 +296,12 @@
                 With reference to your application dated
                 <span class="inline-data" style="min-width: 120px">{{ $appDate }}</span>,
                 I am directed to inform you that the Governor of Kano State has approved the grant of
-                Right of Occupancy to you over piece of land/plot No.
-                <span class="inline-data" style="min-width: 70px">{{ $recommendation->plot_number ?? 'piece of land' }}</span>
+                Right of Occupancy to you over
+                @if(!empty($recommendation->plot_number))
+                    plot No. <span class="inline-data" style="min-width: 70px">{{ $recommendation->plot_number }}</span>
+                @else
+                    piece of land
+                @endif
                 situated at
                 <span class="inline-data" style="min-width: 130px">{{ $recommendation->location }}</span>
                 in <span class="inline-data" style="min-width: 130px">{{ $recommendation->lga }}</span>
@@ -417,7 +421,7 @@
                     </tr>
                     <tr>
                         <td style="text-align: right"><span class="bold">TOTAL</span></td>
-                        <td>₦ <span class="inline-data" style="width: 150px">{{ number_format($recommendation->ground_rent + $recommendation->processing_fee, 2) }}</span></td>
+                        <td></td>
                     </tr>
                 </tbody>
             </table>
@@ -469,40 +473,17 @@
     });
 </script>
 
-<!-- Color Scheme Switcher -->
-<div id="scheme-toolbar" style="position: fixed; top: 20px; left: 20px; z-index: 9999; display: flex; gap: 8px; background: #fff; padding: 10px 14px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); font-family: Arial, sans-serif; font-size: 13px; align-items: center;">
-    <span style="font-weight: bold; margin-right: 4px;">Scheme:</span>
-    <button onclick="applyScheme('A')" class="scheme-btn" data-scheme="A" style="padding: 6px 14px; border: 2px solid #1a5c3a; border-radius: 5px; cursor: pointer; font-weight: bold; background: #1a5c3a; color: #fff;">A</button>
-    <button onclick="applyScheme('B')" class="scheme-btn" data-scheme="B" style="padding: 6px 14px; border: 2px solid #1a5c3a; border-radius: 5px; cursor: pointer; font-weight: bold; background: #fff; color: #1a5c3a;">B</button>
-    <button onclick="applyScheme('C')" class="scheme-btn" data-scheme="C" style="padding: 6px 14px; border: 2px solid #1a5c3a; border-radius: 5px; cursor: pointer; font-weight: bold; background: #fff; color: #1a5c3a;">C</button>
-    <span id="scheme-label" style="margin-left: 8px; color: #666; font-size: 12px;">Current: A (SLTR border, dark green badge)</span>
-</div>
+<div id="scheme-toolbar" style="display: none;"></div>
 <style id="scheme-override"></style>
-<style>@media print { #scheme-toolbar { display: none !important; } }</style>
 <script>
-    var sltrSchemes = {
-        A: { frame: 'sltr.jpeg', badge: '#1a5c3a', titleColor: '#1a5c3a', label: 'A (SLTR border, dark green badge)' },
-        B: { frame: 'st.png',    badge: '#1a3a5c', titleColor: '#1a3a5c', label: 'B (ST border, navy badge)' },
-        C: { frame: 'sltr.jpeg', badge: '#e07b20', titleColor: '#e07b20', label: 'C (SLTR border, orange badge)' }
-    };
-    document.addEventListener('DOMContentLoaded', function() { applyScheme('A'); });
-    function applyScheme(key) {
-        var s = sltrSchemes[key];
-        var frameUrl = 'http://app.klaes.ng/storage/template_frames/' + s.frame;
+    document.addEventListener('DOMContentLoaded', function() {
+        var frameUrl = 'http://app.klaes.ng/storage/template_frames/sltr.jpeg';
         var css = '.ornate-border { border-image-source: url("' + frameUrl + '") !important; }\n'
-                + '.green-header { background-color: ' + s.badge + ' !important; }\n'
-                + '.sltr-title { color: ' + s.titleColor + ' !important; }\n'
+                + '.green-header { background-color: #4ebf97 !important; }\n'
+                + '.sltr-title { color: #4ebf97 !important; }\n'
                 + '@media print { .ornate-border { border-image-source: url("' + frameUrl + '") !important; } }';
         document.getElementById('scheme-override').textContent = css;
-        document.getElementById('scheme-label').textContent = 'Current: ' + s.label;
-        document.querySelectorAll('.scheme-btn').forEach(function(btn) {
-            if (btn.dataset.scheme === key) {
-                btn.style.background = '#1a5c3a'; btn.style.color = '#fff';
-            } else {
-                btn.style.background = '#fff'; btn.style.color = '#1a5c3a';
-            }
-        });
-    }
+    });
 </script>
 </body>
 </html>

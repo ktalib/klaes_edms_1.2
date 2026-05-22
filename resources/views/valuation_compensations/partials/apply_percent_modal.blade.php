@@ -31,7 +31,7 @@
                     <div class="relative">
                         <input type="number" id="apply-percentage-input" 
                                class="w-full pl-4 pr-12 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-bold text-slate-700 transition-all"
-                               placeholder="100" min="0" max="200" step="0.1">
+                               placeholder="10" min="0" max="200" step="0.1">
                         <div class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</div>
                     </div>
                 </div>

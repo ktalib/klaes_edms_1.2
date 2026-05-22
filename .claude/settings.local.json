@@ -20,7 +20,8 @@
       "Read(//c/wamp64/www/klaes/app/Http/Controllers/**)",
       "Bash(grep -rn \"TEMP-\" /c/wamp64/www/klaes/app --include=\"*.php\" | grep -i \"match\\\\|serial\\\\|duplicate\" | head -20)",
       "Read(//c/wamp64/www/klaes/app/**)",
-      "Bash(xargs grep -l \"saveFfrChangeOfName\\\\|captureFfrExisting\")"
+      "Bash(xargs grep -l \"saveFfrChangeOfName\\\\|captureFfrExisting\")",
+      "Bash(php \"c:/wamp64/www/klaes/artisan\" make:migration add_page_numbers_to_sltr_recommendations_table --path=database/migrations)"
     ]
   }
 }

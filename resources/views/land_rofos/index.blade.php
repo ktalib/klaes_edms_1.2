@@ -49,25 +49,6 @@
                     </div>
                 </div>
 
-                <!-- Pending -->
-                <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
-                    <div class="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:scale-110 transition-transform duration-500">
-                        <i data-lucide="zap-off" class="h-32 w-32 text-amber-600"></i>
-                    </div>
-                    <div class="flex items-center gap-4 relative z-10">
-                        <div class="p-3 bg-amber-50 text-amber-600 rounded-2xl border border-amber-100 shadow-sm">
-                            <i data-lucide="zap-off" class="h-6 w-6"></i>
-                        </div>
-                        <div>
-                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pending Generation</p>
-                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($stats['pending_generation']) }}</h3>
-                        </div>
-                    </div>
-                    <div class="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        <span>Waiting to process</span>
-                        <span class="text-amber-500">Action Required</span>
-                    </div>
-                </div>
 
                 <!-- Generated -->
                 <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
@@ -141,7 +122,9 @@
                     <table class="w-full text-left min-w-[2000px] border-collapse">
                         <thead>
                             <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                <th class="px-4 py-4 text-center whitespace-nowrap">S/N</th>
                                 <th class="px-6 py-4 whitespace-nowrap">File Number</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Source</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Applicant Name</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Land Use / Purpose</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Location</th>
@@ -153,7 +136,6 @@
                                 <th class="px-6 py-4 text-right whitespace-nowrap">Survey Fees</th>
                                 <th class="px-6 py-4 text-right whitespace-nowrap">Dev. Value</th>
                                 <th class="px-6 py-4 text-right whitespace-nowrap">Dev. Charge</th>
-                                <th class="px-6 py-4 whitespace-nowrap">Source</th>
                                 <th class="px-6 py-4 text-center whitespace-nowrap">Status</th>
                                 <th class="px-6 py-4 text-center text-green-600 whitespace-nowrap">Approved On</th>
                                 <!-- <th class="px-6 py-4 text-center text-blue-600 whitespace-nowrap">RofO Status</th> -->
@@ -167,18 +149,8 @@
                             @forelse($recommendations as $rec)
                             @php $isOssRec = strtoupper($rec->type ?? '') === 'OSS'; @endphp
                             <tr class="hover:bg-slate-50/50 transition {{ $isOssRec ? 'bg-purple-50/30' : '' }}">
+                                <td class="px-4 py-2 text-center text-slate-500 whitespace-nowrap">{{ ($recommendations->currentPage() - 1) * $recommendations->perPage() + $loop->iteration }}</td>
                                 <td class="px-4 py-2 font-mono font-bold text-slate-900 whitespace-nowrap">{{ $rec->file_number }}</td>
-                                <td class="px-4 py-2 text-slate-700 whitespace-nowrap">{{ $rec->applicant_name }}</td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->purpose_of_clause }}</td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->location }}</td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->plot_number }}</td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->layout_plan_no }}</td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->term }}</td>
-                                <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->ground_rent, 2) }}</td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->development_period }}</td>
-                                <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->survey_fees, 2) }}</td>
-                                <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->development_value, 2) }}</td>
-                                <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->development_charge, 2) }}</td>
                                 <td class="px-4 py-2 whitespace-nowrap">
                                     @if($isOssRec)
                                         <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">
@@ -190,6 +162,17 @@
                                         </span>
                                     @endif
                                 </td>
+                                <td class="px-4 py-2 text-slate-700 whitespace-nowrap">{{ $rec->applicant_name }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->purpose_of_clause }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->location }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->plot_number }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->layout_plan_no }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->term }}</td>
+                                <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->ground_rent, 2) }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->development_period }}</td>
+                                <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->survey_fees, 2) }}</td>
+                                <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->development_value, 2) }}</td>
+                                <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->development_charge, 2) }}</td>
                                 <td class="px-4 py-2 text-center whitespace-nowrap">
                                     @if($isOssRec)
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">
@@ -261,16 +244,6 @@
                                              class="min-w-[13rem] w-max rounded-xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 overflow-hidden"
                                              style="display: none;">
                                             <div class="py-1">
-                                                @if($rec->rofo_status !== \App\Models\LandRecommendation::ROFO_GENERATED)
-                                                    <button type="button" onclick="generateRofo('{{ $rec->id }}', '{{ $rec->file_number }}', '{{ $rec->development_charge }}', '{{ addslashes($rec->land_use) }}', '{{ addslashes($rec->purpose_of_clause) }}', '{{ $rec->land_use_id }}', '{{ $rec->purpose_id }}', '{{ $rec->survey_fees }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 transition gap-2 font-bold">
-                                                        <i data-lucide="zap" class="h-4 w-4"></i> Generate RofO
-                                                    </button>
-                                                @else
-                                                    <span class="flex items-center px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed gap-2 italic">
-                                                        <i data-lucide="check-circle" class="h-4 w-4 text-slate-200"></i> Generate RofO
-                                                    </span>
-                                                @endif
-
                                                 <button type="button" onclick="editRofORecord('{{ $rec->id }}', '{{ route('land-recommendations.edit', $rec->id) }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition gap-2">
                                                     <i data-lucide="edit-3" class="h-4 w-4"></i> Edit Record
                                                 </button>
@@ -283,17 +256,11 @@
 
                                                 <div class="border-t border-slate-100 my-1"></div>
 
-                                                @if($rec->rofo_status === \App\Models\LandRecommendation::ROFO_GENERATED)
-                                                    <button type="button"
-                                                            onclick="SmartPrintManager.open('{{ $rec->file_number }}', 'Land RofO', '{{ route('land-rofos.print', $rec->id) }}')"
-                                                            class="flex w-full items-center px-4 py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition gap-2 font-bold">
-                                                        <i data-lucide="printer" class="h-4 w-4"></i> Print Manager
-                                                    </button>
-                                                @else
-                                                    <span class="flex items-center px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed gap-2 italic">
-                                                        <i data-lucide="printer" class="h-4 w-4 text-slate-200"></i> Print
-                                                    </span>
-                                                @endif
+                                                <button type="button"
+                                                        onclick="SmartPrintManager.open('{{ $rec->file_number }}', 'Land RofO', '{{ route('land-rofos.print', $rec->id) }}')"
+                                                        class="flex w-full items-center px-4 py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition gap-2 font-bold">
+                                                    <i data-lucide="printer" class="h-4 w-4"></i> Print Manager
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
@@ -705,7 +672,7 @@ function bpmCancelConfirm() {
     </div>
 </div>
 
-@push('scripts')
+ 
 <script>
     document.addEventListener('alpine:init', () => {
         Alpine.data('rofoModal', () => ({
@@ -844,9 +811,42 @@ function bpmCancelConfirm() {
     });
 
     function generateRofo(id, fileNumber, developmentCharge, landUse, purposeClause, landUseId, purposeId, surveyFees) {
-        window.dispatchEvent(new CustomEvent('open-rofo-modal', { 
-            detail: { id, fileNumber, developmentCharge, landUse, purposeClause, landUseId, purposeId, surveyFees } 
+        window.dispatchEvent(new CustomEvent('open-rofo-modal', {
+            detail: { id, fileNumber, developmentCharge, landUse, purposeClause, landUseId, purposeId, surveyFees }
         }));
+    }
+
+    function quickGenerateRofo(id, fileNumber) {
+        Swal.fire({
+            title: 'Generate RofO?',
+            html: `Generate RofO for file <strong class="text-blue-600">${fileNumber}</strong>?<br><small class="text-slate-500">Survey method and dates are pre-filled from the recommendation form.</small>`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#2563eb',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: 'Yes, Generate',
+            showLoaderOnConfirm: true,
+            preConfirm: () => {
+                return fetch(`{{ url('land-rofos') }}/${id}/generate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                })
+                .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
+                .catch(err => Swal.showValidationMessage(`Request failed: ${err}`));
+            }
+        }).then(result => {
+            if (result.isConfirmed && result.value?.success) {
+                Swal.fire('Generated!', 'RofO has been generated successfully.', 'success')
+                .then(() => window.location.reload());
+            } else if (result.isConfirmed) {
+                Swal.fire('Error', result.value?.message || 'Generation failed.', 'error');
+            }
+        });
     }
 
     // Edit RofO Record with Reason
@@ -879,46 +879,86 @@ function bpmCancelConfirm() {
         });
     }
 
-    // Assign Security Paper Code with Select2
+    // Assign Security Paper Code — custom vanilla JS search
+    var _spcCodes = @json($availableSerials->pluck('paper_code'));
+
     function assignSecurityPaperCode(id, fileNumber, currentSerial) {
-        const serials = @json($availableSerials);
-        let options = '<option value="">-- Enter Security Paper Code --</option>';
-        
-        serials.forEach(s => {
-            options += `<option value="${s.paper_code}">${s.paper_code}</option>`;
-        });
+        var codes = _spcCodes;
+
+        var html  = '<p style="font-size:13px;color:#64748b;margin-bottom:10px;text-align:left;">';
+            html += 'Security paper code for file <strong style="color:#2563eb;">' + fileNumber + '</strong></p>';
+            html += '<div style="position:relative;">';
+            html += '<input id="spc-search" type="text" autocomplete="off" placeholder="Type to search..." ';
+            html += 'style="width:100%;padding:10px 14px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box;">';
+            html += '<div id="spc-dropdown" style="display:none;position:absolute;top:calc(100% + 2px);left:0;right:0;';
+            html += 'background:#fff;border:1px solid #cbd5e1;border-radius:8px;max-height:200px;overflow-y:auto;';
+            html += 'z-index:99999;box-shadow:0 8px 24px rgba(0,0,0,0.12);"></div></div>';
+            html += '<input id="spc-value" type="hidden">';
+            html += '<p id="spc-label" style="margin-top:8px;font-size:12px;color:#10b981;font-weight:700;min-height:18px;text-align:left;"></p>';
 
         Swal.fire({
             title: 'Enter Security Paper Code',
-            html: `
-                <div class="text-left mb-4">
-                    <p class="text-sm text-slate-500 mb-2">Enter security paper code for file <span class="font-bold text-blue-600">${fileNumber}</span></p>
-                    ${currentSerial ? `<p class="text-xs text-amber-600 font-bold mb-4">Current Code: ${currentSerial}</p>` : ''}
-                </div>
-                <select id="swal-serial-select" class="w-full border border-slate-200 rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm">
-                    ${options}
-                </select>
-            `,
+            html: html,
             showCancelButton: true,
             confirmButtonText: 'Assign Code',
             cancelButtonText: 'Cancel',
             confirmButtonColor: '#10b981',
-            didOpen: () => {
-                // Initialize Select2 on the swal-select
-                $('#swal-serial-select').select2({
-                    dropdownParent: $('.swal2-container'),
-                    width: '100%',
-                    placeholder: 'Enter Security Paper Code'
-                });
+            didOpen: function() {
+                var searchEl = document.getElementById('spc-search');
+                var dropdown = document.getElementById('spc-dropdown');
+                var valueEl  = document.getElementById('spc-value');
+                var labelEl  = document.getElementById('spc-label');
+
+                function renderList(term) {
+                    var lower   = (term || '').toLowerCase();
+                    var matches = lower === ''
+                        ? codes
+                        : codes.filter(function(c) { return c && c.toLowerCase().indexOf(lower) !== -1; });
+
+                    dropdown.innerHTML = '';
+                    if (!matches || matches.length === 0) {
+                        dropdown.innerHTML = '<div style="padding:10px 14px;color:#94a3b8;font-size:13px;">No matching code found</div>';
+                    } else {
+                        matches.forEach(function(code) {
+                            var item = document.createElement('div');
+                            item.textContent = code;
+                            item.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:14px;color:#1e293b;border-bottom:1px solid #f1f5f9;';
+                            item.onmouseenter = function() { item.style.background = '#f0fdf4'; };
+                            item.onmouseleave = function() { item.style.background = ''; };
+                            item.onmousedown  = function(e) {
+                                e.preventDefault();
+                                searchEl.value = code;
+                                valueEl.value  = code;
+                                labelEl.innerHTML = '<span style="color:#10b981;">&#10003; Selected:</span> ' + code;
+                                dropdown.style.display = 'none';
+                            };
+                            dropdown.appendChild(item);
+                        });
+                    }
+                    dropdown.style.display = 'block';
+                }
+
+                searchEl.oninput = function() {
+                    valueEl.value    = '';
+                    labelEl.textContent = '';
+                    renderList(searchEl.value);
+                };
+                searchEl.onfocus = function() { renderList(searchEl.value); };
+                searchEl.onblur  = function() {
+                    setTimeout(function() { dropdown.style.display = 'none'; }, 200);
+                };
+
+                searchEl.focus();
             },
-            preConfirm: () => {
-                const paperCode = $('#swal-serial-select').val();
+            preConfirm: function() {
+                var paperCode = (document.getElementById('spc-value').value || '').trim();
                 if (!paperCode) {
-                    Swal.showValidationMessage('Please enter a security paper code');
+                    Swal.showValidationMessage('Please select a security paper code from the list');
+                    return false;
                 }
                 return paperCode;
             }
-        }).then((result) => {
+        }).then(function(result) {
             if (result.isConfirmed) {
                 Swal.fire({
                     title: 'Assigning...',
@@ -950,6 +990,8 @@ function bpmCancelConfirm() {
             }
         });
     }
+
+    
 </script>
-@endpush
+ 
 @endsection

@@ -6928,7 +6928,9 @@
         function assembleKangisPlaceholder() {
             const prefix = kangisPlaceholderPrefix ? kangisPlaceholderPrefix.value.trim() : '';
             const serial = kangisPlaceholderSerial ? kangisPlaceholderSerial.value.trim() : '';
-            const assembled = (prefix && serial) ? (prefix === 'KN' ? `${prefix}${serial}` : `${prefix} ${serial}`) : '';
+            const isTemp = document.getElementById('kangis-fileno-is-temp')?.checked || false;
+            let assembled = (prefix && serial) ? (prefix === 'KN' ? `${prefix}${serial}` : `${prefix} ${serial}`) : '';
+            if (assembled && isTemp) assembled += '(T)';
             if (kangisPlaceholderInput) kangisPlaceholderInput.value = assembled;
             if (kangisPlaceholderPreview && kangisPlaceholderPreviewValue) {
                 if (assembled) {
@@ -7112,6 +7114,10 @@
         if (kangisPlaceholderSerial) {
             kangisPlaceholderSerial.addEventListener('input', onKangisInputChange);
             kangisPlaceholderSerial.addEventListener('blur', onKangisInputBlur);
+        }
+        const kangisTempCheckbox = document.getElementById('kangis-fileno-is-temp');
+        if (kangisTempCheckbox) {
+            kangisTempCheckbox.addEventListener('change', onKangisInputChange);
         }
 
         if (registrySelect) {

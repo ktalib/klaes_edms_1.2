@@ -146,9 +146,17 @@
                 <input type="text" id="kangis-fileno-serial"
                     class="flex-1 px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm font-mono uppercase"
                     placeholder="e.g. 01, 001, 1234"
-                    autocomplete="off" 
+                    autocomplete="off"
                     inputmode="numeric"
                     oninput="this.value = this.value.replace(/[^0-9]/g,'')" required>
+            </div>
+            {{-- Temporary checkbox --}}
+            <div class="mt-2 flex items-center gap-2">
+                <input type="checkbox" id="kangis-fileno-is-temp"
+                    class="h-4 w-4 rounded border-gray-300 text-orange-500 focus:ring-orange-400">
+                <label for="kangis-fileno-is-temp" class="text-sm font-medium text-gray-700 cursor-pointer">
+                    Temporary <span class="text-gray-400 font-normal">(T)</span>
+                </label>
             </div>
             {{-- Assembled preview --}}
             <p id="kangis-placeholder-preview" class="mt-1 text-xs text-gray-400 hidden">

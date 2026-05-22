@@ -208,8 +208,14 @@
             Kano State.
         </div>
 
+        @php
+            $pageApp      = $recommendation->page_application ?? 1;
+            $pageSurvey   = $recommendation->page_survey      ?? 9;
+            $pagePlanning = $recommendation->page_planning     ?? 17;
+        @endphp
+
         <div class="content-grid">
-            <div class="label-bold">Page <span class="red-num">1</span></div>
+            <div class="label-bold">Page <span class="red-num">{{ $pageApp }}</span></div>
             <div>
                 Application by: <span class="caps-bold">{{ strtoupper($recommendation->applicant_name ?? 'N/A') }}</span><br>
                 for the right of Occupancy <span class="label-bold">over a piece of Land</span> at <span class="red-bold">{{ $recommendation->location ?? 'N/A' }}</span> in <span class="red-bold">{{ $recommendation->lga ?? 'N/A' }}</span> Local Government Area.<br>
@@ -218,7 +224,7 @@
         </div>
 
         <div class="content-grid">
-            <div class="label-bold">Page <span class="red-num">9</span></div>
+            <div class="label-bold">Page <span class="red-num">{{ $pageSurvey }}</span></div>
             <div>
                 Survey Report The <span class="label-bold">Correct description of the plot is a piece of Land at {{ $recommendation->location ?? 'N/A' }}</span>{{ $recommendation->plot_number ? ', Plot No. '.$recommendation->plot_number : '' }}, in <span class="label-bold">{{ $recommendation->lga ?? 'N/A' }} Local Government Area.</span>
             </div>
@@ -227,7 +233,7 @@
         <div class="section-center">Planning Recommendation (If Any)</div>
 
         <div class="highlight-box">
-            This is a case of SLTR process from customary title to statutory right of occupancy, As per physical planning recommendation at page 17 herein.
+            This is a case of SLTR process from customary title to statutory right of occupancy, As per physical planning recommendation at page {{ $pagePlanning }} herein.
         </div>
 
         <p style="margin: 5px 0;">The grant of Right of occupancy is recommended on the terms set out as follows:</p>
@@ -241,7 +247,7 @@
         </ul>
 
         <p style="text-align: justify; font-size: 12pt;">
-            You may wish to approve this application on the terms set above and subject to Survey Report and recommendation of the Urban Board/Physical Planning Department at page <span class="red-bold">9 and 17 refer</span>
+            You may wish to approve this application on the terms set above and subject to Survey Report and recommendation of the Urban Board/Physical Planning Department at page <span class="red-bold">{{ $pageSurvey }} and {{ $pagePlanning }} refer</span>
         </p>
 
         <div class="sig-row">

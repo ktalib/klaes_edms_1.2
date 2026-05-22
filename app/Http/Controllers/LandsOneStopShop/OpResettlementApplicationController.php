@@ -18,6 +18,7 @@ class OpResettlementApplicationController extends Controller
 {
     public function index(Request $request): View
     {
+        set_time_limit(120);
         $limit = (int) $request->input('limit', 25);
         $limit = max(10, min($limit, 200));
         $page = max(1, (int) $request->input('page', 1));
@@ -128,12 +129,14 @@ class OpResettlementApplicationController extends Controller
                 $join->whereRaw("fn.mlsfNo = COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)")
                     ->where('fn.fn_rn', 1);
             })
-            ->leftJoin(DB::raw("(
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY tracking_id, full_file_number ORDER BY id DESC) as mfn_rn
-                FROM mls_file_no
-            ) as mfn"), function ($join) {
+            ->leftJoin('mls_file_no as mfn', function ($join) {
+                // Correlated MAX(id) lets SQL Server seek by index per row of p
+                // instead of scanning the entire table with ROW_NUMBER().
                 $join->whereRaw("mfn.full_file_number = COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)")
-                    ->where('mfn.mfn_rn', 1);
+                     ->whereRaw("mfn.id = (
+                         SELECT MAX(x.id) FROM mls_file_no x
+                         WHERE x.full_file_number = COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)
+                     )");
             })
             ->leftJoin(DB::raw("(
                 SELECT
@@ -289,7 +292,39 @@ class OpResettlementApplicationController extends Controller
             });
         }
 
-        $totalRecords = (clone $query)->count();
+        // For fc/fefr, the full cloned query is too expensive to count (many LEFT JOINs +
+        // ROW_NUMBER subqueries). Use a lightweight count on pra directly instead.
+        if ($recordType === 'fc' || $recordType === 'fefr') {
+            $instrumentWhereClause = $isChangeOfName
+                ? "(p.instrument_type LIKE '%Transfer of Title%' OR p.transaction_type LIKE '%Transfer of Title%')"
+                : "((p.instrument_type IS NULL OR p.instrument_type NOT LIKE '%Transfer of Title%') AND (p.transaction_type IS NULL OR p.transaction_type NOT LIKE '%Transfer of Title%'))";
+
+            $lightCountQuery = DB::connection('sqlsrv')
+                ->table('pra as p')
+                ->where('p.system_source', 'OSSOPCHANGEOFNAME')
+                ->whereNotNull('p.prop_id')
+                ->where('p.prop_id', '!=', '')
+                ->whereRaw($instrumentWhereClause);
+
+            if ($recordType === 'fc') {
+                $lightCountQuery->join('mls_file_no as mfn_c', function ($j) {
+                    $j->whereRaw("mfn_c.full_file_number = COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)")
+                      ->whereNotNull('mfn_c.full_file_number');
+                });
+            } else {
+                $lightCountQuery->whereNotExists(function ($q) {
+                    $q->select(DB::raw(1))
+                      ->from('mls_file_no as mfn_c')
+                      ->whereRaw("mfn_c.full_file_number = COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)")
+                      ->whereNotNull('mfn_c.full_file_number');
+                });
+            }
+
+            $totalRecords = $lightCountQuery->distinct()->count('p.prop_id');
+        } else {
+            $totalRecords = (clone $query)->count();
+        }
+
         $totalPages = max(1, (int) ceil($totalRecords / $limit));
         $page = min($page, $totalPages);
 
@@ -463,26 +498,24 @@ class OpResettlementApplicationController extends Controller
             ) as stats_source"));
 
         if ($recordType === 'fc') {
-            $statsBaseQuery->whereExists(function ($q) {
-                $q->select(DB::raw(1))
-                    ->from('mls_file_no as mfn_stat')
-                    ->whereRaw("mfn_stat.full_file_number = COALESCE(NULLIF(stats_source.mlsFNo, ''), stats_source.fileno)");
+            // INNER JOIN instead of correlated EXISTS — SQL Server can use indexes on both sides
+            $statsBaseQuery->join('mls_file_no as mfn_stat', function ($join) {
+                $join->whereRaw("mfn_stat.full_file_number = COALESCE(NULLIF(stats_source.mlsFNo, ''), stats_source.fileno)")
+                     ->whereNotNull('mfn_stat.full_file_number');
             });
         } elseif ($recordType === 'fefr') {
-            $statsBaseQuery->whereNotExists(function ($q) {
-                $q->select(DB::raw(1))
-                    ->from('mls_file_no as mfn_stat')
-                    ->whereRaw("mfn_stat.full_file_number = COALESCE(NULLIF(stats_source.mlsFNo, ''), stats_source.fileno)");
-            });
+            $statsBaseQuery->leftJoin('mls_file_no as mfn_stat', function ($join) {
+                $join->whereRaw("mfn_stat.full_file_number = COALESCE(NULLIF(stats_source.mlsFNo, ''), stats_source.fileno)");
+            })->whereNull('mfn_stat.full_file_number');
         }
 
         $cardCountRows = $statsBaseQuery
             ->selectRaw("
-                COUNT(DISTINCT prop_id) as total_count,
-                COUNT(DISTINCT CASE WHEN land_use LIKE '%RES%' OR land_use LIKE '%res%' THEN prop_id END) as res_count,
-                COUNT(DISTINCT CASE WHEN land_use LIKE '%COM%' OR land_use LIKE '%com%' THEN prop_id END) as com_count,
-                COUNT(DISTINCT CASE WHEN land_use LIKE '%IND%' OR land_use LIKE '%ind%' THEN prop_id END) as ind_count,
-                COUNT(DISTINCT CASE WHEN land_use LIKE '%AGR%' OR land_use LIKE '%agr%' THEN prop_id END) as agr_count
+                COUNT(DISTINCT stats_source.prop_id) as total_count,
+                COUNT(DISTINCT CASE WHEN stats_source.land_use LIKE '%RES%' OR stats_source.land_use LIKE '%res%' THEN stats_source.prop_id END) as res_count,
+                COUNT(DISTINCT CASE WHEN stats_source.land_use LIKE '%COM%' OR stats_source.land_use LIKE '%com%' THEN stats_source.prop_id END) as com_count,
+                COUNT(DISTINCT CASE WHEN stats_source.land_use LIKE '%IND%' OR stats_source.land_use LIKE '%ind%' THEN stats_source.prop_id END) as ind_count,
+                COUNT(DISTINCT CASE WHEN stats_source.land_use LIKE '%AGR%' OR stats_source.land_use LIKE '%agr%' THEN stats_source.prop_id END) as agr_count
             ")
             ->first();
 

@@ -364,14 +364,14 @@ class ManualFileLinkageController extends Controller
 
                     // PRA transaction for this child
                     DB::connection('sqlsrv')->table('pra')->insert([
-                        'Prop_id'                    => $childPropId,
-                        'mlsFNo'                     => $childFileNumber,
-                        'transaction'                => 'Subdivision',
-                        'instrument'                 => 'Plot Subdivision',
-                        'Property_Description_part1' => $remarks
+                        'prop_id'              => $childPropId,
+                        'mlsFNo'               => $childFileNumber,
+                        'title_type'           => 'Subdivision',
+                        'transaction_type'     => 'Plot Subdivision',
+                        'property_description' => $remarks
                             ?: "Manual Processed: Plot Subdivision from {$firstOldFile}",
-                        'Entry_Date'                 => now(),
-                        'Reg_Date'                   => now(),
+                        'created_at'           => now(),
+                        'updated_at'           => now(),
                     ]);
 
                     // Audit row in manual_file_linkages for this child
@@ -505,13 +505,13 @@ class ManualFileLinkageController extends Controller
                 }
 
                 DB::connection('sqlsrv')->table('pra')->insert([
-                    'Prop_id'                    => $propId,
-                    'mlsFNo'                     => $newFileNumber,
-                    'transaction'                => $workflowType,
-                    'instrument'                 => $workflowType,
-                    'Property_Description_part1' => $remarks ?: "Manual Processed: {$workflowType} linkage",
-                    'Entry_Date'                 => now(),
-                    'Reg_Date'                   => now(),
+                    'prop_id'              => $propId,
+                    'mlsFNo'               => $newFileNumber,
+                    'title_type'           => $workflowType,
+                    'transaction_type'     => $workflowType,
+                    'property_description' => $remarks ?: "Manual Processed: {$workflowType} linkage",
+                    'created_at'           => now(),
+                    'updated_at'           => now(),
                 ]);
 
                 $linkageId = $this->insertLinkageRow(

@@ -111,6 +111,7 @@
                                 <th class="px-4 py-4">Party 4</th>
                                 <th class="px-4 py-4">Location</th>
                                 <th class="px-4 py-4">Date Captured</th>
+                                <th class="px-4 py-4">Transaction Date</th>
                                 <th class="px-4 py-4 text-center rounded-tr-xl">Source</th>
                             </tr>
                         </thead>
@@ -296,8 +297,17 @@ $(function() {
             { data: 'party_4', name: 'party_4', defaultContent: '—' },
             { data: 'location', name: 'location', defaultContent: '—' },
             { data: 'date_captured', name: 'date_captured' },
-            { 
-                data: 'source_table', 
+            {
+                data: 'transaction_date',
+                name: 'transaction_date',
+                render: function(data) {
+                    return data && data !== '—'
+                        ? `<span class="font-mono text-slate-600 text-xs">${data}</span>`
+                        : '<span class="text-slate-300">—</span>';
+                }
+            },
+            {
+                data: 'source_table',
                 name: 'source_table',
                 className: 'text-center',
                 render: function(data) {
@@ -310,7 +320,7 @@ $(function() {
             }
         ],
         pageLength: 25,
-        order: [[9, 'desc']],
+        order: [[10, 'desc']],
         language: {
             search: "",
             searchPlaceholder: "Search records...",

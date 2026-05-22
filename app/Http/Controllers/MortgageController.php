@@ -62,6 +62,7 @@ class MortgageController extends Controller
                 'party_4_name as party_4',
                 'property_location as location',
                 'created_at as date_captured',
+                DB::raw("TRY_CONVERT(DATE, reg_date) as transaction_date"),
                 DB::raw("'Instrument Capture' as source_table")
             ])
             ->whereIn('instrument_type', ['Deed of Mortgage', 'Tripartite Mortgage'])
@@ -80,6 +81,7 @@ class MortgageController extends Controller
                 DB::raw("NULL as party_4"),
                 'location',
                 'created_at as date_captured',
+                DB::raw("TRY_CONVERT(DATE, transaction_date) as transaction_date"),
                 DB::raw("'Property Records' as source_table")
             ])
             ->whereIn('instrument_type', ['Deed of Mortgage', 'Tripartite Mortgage'])
@@ -98,6 +100,7 @@ class MortgageController extends Controller
                 'party_4',
                 'location',
                 'created_at as date_captured',
+                DB::raw("TRY_CONVERT(DATE, transaction_date) as transaction_date"),
                 DB::raw("'File History Staging' as source_table")
             ])
             ->whereIn('instrument_type', ['Deed of Mortgage', 'Tripartite Mortgage'])
@@ -133,6 +136,13 @@ class MortgageController extends Controller
                     return $row->date_captured ? Carbon::parse($row->date_captured)->format('Y-m-d H:i') : '—';
                 } catch (\Exception $e) {
                     return $row->date_captured ?? '—';
+                }
+            })
+            ->editColumn('transaction_date', function ($row) {
+                try {
+                    return $row->transaction_date ? Carbon::parse($row->transaction_date)->format('Y-m-d') : '—';
+                } catch (\Exception $e) {
+                    return $row->transaction_date ?? '—';
                 }
             })
             ->make(true);

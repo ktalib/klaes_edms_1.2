@@ -22,20 +22,6 @@
             position: relative;
         }
 
-        .ctc-watermark-bg {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) rotate(-45deg);
-            font-size: 50pt;
-            color: rgba(255, 0, 0, 0.05);
-            font-weight: bold;
-            z-index: 0;
-            white-space: nowrap;
-            pointer-events: none;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
 
         .page-container {
             background-color: #fff;
@@ -74,13 +60,19 @@
 
         /* EXACT ORIGINAL DIMENSIONS - only margin adjusted */
         .ornate-border {
-            border: 45px solid transparent;
+            border: 18px solid transparent;
             border-image-source: url("http://app.klaes.ng/storage/template_frames/land.png");
             border-image-slice: 160;
             border-image-repeat: round;
-            border-image-width: 45px;
-            /* Small negative bottom to close visual gap with footer, but not enough to cover QR */
-            margin: 6mm 8mm -4mm 8mm;
+            border-image-width: 18px;
+            margin: 4mm 3mm 60mm 3mm;
+        }
+
+        @media print {
+            .ornate-border {
+                border-width: 22px !important;
+                border-image-width: 22px !important;
+            }
         }
 
         .simple-margin {
@@ -88,7 +80,7 @@
         }
 
         .inner-content {
-            padding: 12px 30px 8px 30px;
+            padding: 12px 30px 0 30px;
             flex: 1;
             box-sizing: border-box;
             font-size: 14.5px;
@@ -147,24 +139,22 @@
 
         /* SIGNATURE BLOCK - Commissioner line uses the exact CSS technique provided, no double lines */
         .signature-block {
-            margin-top: auto;
             display: flex;
             justify-content: space-between;
-            padding: 0 40px 20px 40px;
+            padding: 0 40px 14px 40px;
             text-align: center;
             font-weight: bold;
             align-items: flex-end;
         }
 
-        /* Security line container - acts as the line, NO EXTRA BORDERS */
+        /* Security line container - acts as the line */
         .security-line-container {
             position: relative;
-            width: 280px;           /* width of the line */
-            height: 15px;           /* enough to contain the microtext */
-            margin-bottom: 1px;
+            width: 280px;
+            height: 4px;
+            margin-bottom: 6px;
             overflow: hidden;
             background: transparent;
-            /* No border here - the pseudo-element provides the visual line effect */
         }
 
         /* Exact CSS from user's request applied to pseudo-element */
@@ -209,7 +199,7 @@
 
         /* FOOTER - exactly as your original */
         .footer-barcode-area {
-            height: 22mm;
+            height: 55mm;
             padding: 0 22mm 4mm 22mm;
             display: flex;
             justify-content: space-between;
@@ -328,7 +318,8 @@
             .page-container {
                 box-shadow: none !important;
                 margin: 0 !important;
-                height: 100vh !important;
+                width: 210mm !important;
+                height: 297mm !important;
                 page-break-after: always !important;
             }
             .page-container:last-of-type {
@@ -363,13 +354,16 @@
         .right-address {
             padding: 10px;
             width: 50%;
+            font-size: 13px;
         }
         .address-line-box {
-            height: 20px;
+            min-height: 22px;
             border-bottom: 1px dotted #000;
-            display: flex;
-            align-items: center;
-            margin-top: 8px;
+            display: block;
+            padding-bottom: 3px;
+            margin-top: 6px;
+            word-break: break-word;
+            line-height: 1.3;
         }
         .address-line-box:first-of-type {
             margin-top: 0;
@@ -411,7 +405,7 @@
         }
     </style>
 </head>
-<body>
+<body spellcheck="false">
     <div class="print-btn-container no-print">
         <button class="print-btn" onclick="window.print()">Print Document</button>
     </div>
@@ -431,12 +425,12 @@
 
     @foreach($printVersions as $index => $version)
     <!-- PAGE 1 – Signature line uses exact CSS technique, no double lines -->
-    <div class="page-container" id="page1-{{ $index }}" style="{{ $index > 0 ? 'page-break-before: always;' : '' }}">
-        <div class="security-bg"></div>
+      {{-- <div class="page-container" id="page1-{{ $index }}" style="{{ $index > 0 ? 'page-break-before: always;' : '' }} background-image: url('/assets/images/pages/backgrand.jpg'); background-size: cover; background-position: center; background-repeat: no-repeat;">   --}}
 
-        @if($isCTCBatch)
-            <div class="ctc-watermark-bg">CERTIFIED TRUE COPY</div>
-        @endif
+              <div class="page-container" id="page1-{{ $index }}">  
+
+
+        <div class="security-bg"></div>
 
         <!-- @if($recommendation->land_rofo_serial_no)
             <div style="position: absolute; top: 15mm; right: 25mm; font-family: 'Arial', sans-serif; font-weight: 900; font-size: 16pt; color: #c90202; z-index: 50; letter-spacing: 2px;">
@@ -483,9 +477,9 @@
                 <!-- Centered Blue Banner -->
                 <div style="text-align: center; margin-bottom: 8px;">
                     <div style="display: inline-block; border: 2px solid #000; border-radius: 8px; padding: 3px; background: #fff;">
-                        <div data-rofo-badge style="background: #662631; padding: 8px 16px; border-radius: 5px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+                        <div data-rofo-badge style="background: #fff; padding: 8px 16px; border-radius: 5px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
                             <p style="font-weight: bold; color: #fff; text-transform: uppercase; font-size: 15px; margin: 0; letter-spacing: 0.5px;">KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</p>
-                            <p style="font-size: 10px; color: #fff; margin: 3px 0 0 0; letter-spacing: 0.3px;">No. 2 Dr Bala Mohammed Road, Kano State, Nigeria</p>
+                            <p style="font-size: 13px; font-weight: bold; color: #fff; margin: 3px 0 0 0; letter-spacing: 0.3px;">No. 2 Dr Bala Mohammed Road, Kano State, Nigeria</p>
                         </div>
                     </div>
                 </div>
@@ -524,7 +518,7 @@
 
                 <div class="title-center">
                     TERMS OF OFFER OF GRANT/CONVEYANCE OF APPROVAL
-                </div>
+                </div> 
 
                 <!-- CONDITIONS SECTION -->
                 <div class="conditions-list-fixed">
@@ -532,9 +526,12 @@
                         With reference to your application dated
                         <span class="inline-data" style="min-width: 80px">{{ $recommendation->created_at->format('jS F') }}</span>
                         <span class="inline-data" style="min-width: 30px">{{ $recommendation->created_at->format('y') }}</span>, I am directed to inform you that the Governor of Kano State has
-                        approved the grant of a Right of Occupancy to you over piece of
-                        land/plot No
-                        <span class="inline-data" style="min-width: 40px">{{ $recommendation->plot_number }}</span>
+                        approved the grant of a Right of Occupancy to you over
+                        @if(!empty($recommendation->plot_number))
+                            plot No <span class="inline-data" style="min-width: 40px">{{ $recommendation->plot_number }}</span>
+                        @else
+                            piece of land
+                        @endif
                         situated at
                         <span class="inline-data" style="min-width: 150px">{{ $recommendation->location }}</span>
                        
@@ -606,20 +603,20 @@
                     </p>
                 </div>
 
-                <!-- SIGNATURE BLOCK - FIXED: no double lines, date line is clean single border -->
-                <br>
-                <div class="signature-block">
+                <!-- SIGNATURE BLOCK -->
+                <div class="signature-block" style="margin-top: auto;" spellcheck="false">
                     <div>
-                        <!-- the line container with pseudo-element security text - NO EXTRA BORDER -->
+                        <div style="height: 45px;"></div>
                         <div class="security-line-container"></div>
-                        <div>HONOURABLE COMMISSIONER</div>
+                        <div spellcheck="false">HONOURABLE COMMISSIONER</div>
                     </div>
                     <div>
-                        <!-- single clean line via border-top, no extra underscores -->
-                        <div class="security-line-container"></div>                       
-                         <div style="margin-top:5px;">DATE</div>
+                        <div style="height: 45px;"></div>
+                        <div class="security-line-container" style="width:160px;"></div>
+                        <div style="margin-top:5px;" spellcheck="false">DATE</div>
                     </div>
                 </div>
+
             </div>
         </div>
 
@@ -639,10 +636,6 @@
     <div class="page-container" id="page2-{{ $index }}" style="page-break-before: always;">
         <div class="security-bg"></div>
         
-        @if($isCTCBatch)
-            <div class="ctc-watermark-bg">CERTIFIED TRUE COPY</div>
-        @endif
-
         <div class="content-wrapper simple-margin">
             <div class="inner-content">
                 <div class="applicant-address-block">
@@ -653,20 +646,15 @@
                         </div>
                     </div>
                     <div class="right-address">
-                        <div class="address-line-box" style="margin-top: 0">
-                            <span class="inline-data" style="width: 100%; border: none; min-width: auto; font-weight: bold;">{{ $recommendation->applicant_address }}</span>
+                        <div class="address-line-box" style="font-weight: bold;">
+                            {{ $recommendation->applicant_address }}
                         </div>
-                        <div class="address-line-box">
-                            <span class="inline-data" style="width: 100%; border: none; min-width: auto"></span>
+                        <div class="address-line-box">&nbsp;</div>
+                        <div class="address-line-box">&nbsp;</div>
+                        <div style="margin-top: 10px;">
+                            Date: <span style="border-bottom: 1px dotted #000; display: inline-block; min-width: 160px; padding-bottom: 2px;">{{ $recommendation->application_date ? $recommendation->application_date->format('Y-m-d') : '' }}</span>
                         </div>
-                        <div class="address-line-box">
-                            <span class="inline-data" style="width: 100%; border: none; min-width: auto"></span>
-                        </div>
-                        <br />
-                        Date:
-                        <span class="inline-data" style="min-width: 200px">{{ $recommendation->application_date ? $recommendation->application_date->format('Y-m-d') : '' }}</span><br />
-                        <div style="height: 10px;"></div>
-                        <center>Applicant's Address</center>
+                        <div style="text-align: center; margin-top: 8px; font-size: 12px;">Applicant's Address</div>
                     </div>
                 </div>
 
@@ -759,17 +747,17 @@
                     @endforeach
                     <tr>
                         <td><strong>TOTAL</strong></td>
-                        <td>N <span>{{ number_format($totalSurvey + $totalDev, 2) }}</span></td>
+                        <td></td>
                         <td></td>
                     </tr>
                 </table>
 
                 <p style="margin-top: 10px;">
-                    <span class="checkbox" style="display: inline-block; width: 14px; height: 14px; border: 1.5px solid #000; vertical-align: middle; margin-right: 6px;">{{-- @if($recommendation->rofo_director_survey === 'YES')&#10003;@endif --}}</span>
+                    <span class="checkbox" style="display: inline-block; width: 14px; height: 14px; border: 1.5px solid #000; vertical-align: middle; margin-right: 6px;">@if($recommendation->rofo_director_survey === 'YES')&#10003;@endif</span>
                     I require the Director Survey to carry out the land survey for me
                 </p>
                 <p>
-                    <span class="checkbox" style="display: inline-block; width: 14px; height: 14px; border: 1.5px solid #000; vertical-align: middle; margin-right: 6px;">{{-- @if($recommendation->rofo_licensed_surveyor === 'YES')&#10003;@endif --}}</span>
+                    <span class="checkbox" style="display: inline-block; width: 14px; height: 14px; border: 1.5px solid #000; vertical-align: middle; margin-right: 6px;">@if($recommendation->rofo_licensed_surveyor === 'YES')&#10003;@endif</span>
                     I require a licensed Surveyor to carry out the land survey for me
                 </p>
 
@@ -820,43 +808,20 @@
         }, 1000);
     </script>
 
-    <!-- Color Scheme Switcher (hidden in print) -->
-    <div id="scheme-toolbar" style="position: fixed; top: 20px; left: 20px; z-index: 9999; display: flex; gap: 8px; background: #fff; padding: 10px 14px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); font-family: Arial, sans-serif; font-size: 13px; align-items: center;">
-        <span style="font-weight: bold; margin-right: 4px;">Scheme:</span>
-        <button onclick="applyScheme('A')" class="scheme-btn" data-scheme="A" style="padding: 6px 14px; border: 2px solid #662631; border-radius: 5px; cursor: pointer; font-weight: bold; background: #662631; color: #fff;">A</button>
-        <button onclick="applyScheme('B')" class="scheme-btn" data-scheme="B" style="padding: 6px 14px; border: 2px solid #662631; border-radius: 5px; cursor: pointer; font-weight: bold; background: #fff; color: #662631;">B</button>
-        <button onclick="applyScheme('C')" class="scheme-btn" data-scheme="C" style="padding: 6px 14px; border: 2px solid #662631; border-radius: 5px; cursor: pointer; font-weight: bold; background: #fff; color: #662631;">C</button>
-        <span id="scheme-label" style="margin-left: 8px; color: #666; font-size: 12px;">Current: A (land border, burgundy badge)</span>
-    </div>
+    <!-- Color Scheme Switcher — hidden, locked -->
+    <div id="scheme-toolbar" style="display: none;"></div>
     <style id="scheme-override"></style>
-    <style>
-        @media print { #scheme-toolbar { display: none !important; } }
-    </style>
-    <script> 
-        var landSchemes = {
-            A: { frame: 'land.png', badge: '#662631', label: 'A (land border, burgundy badge)' },
-            B: { frame: 'sltr.jpeg', badge: '#662631', label: 'B (green border, burgundy badge)' },
-            C: { frame: 'sltr.jpeg', badge: '#4ebf97', label: 'C (green border, green badge)' }
-        };
-        function applyScheme(key) {
-            var s = landSchemes[key];
-            var frameUrl = 'http://app.klaes.ng/storage/template_frames/' + s.frame;
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var frameUrl = 'http://app.klaes.ng/storage/template_frames/land.png';
             var css = '.ornate-border { border-image-source: url("' + frameUrl + '") !important; }\n';
             document.getElementById('scheme-override').textContent = css;
-            // Update badge inline style on ALL pages
             document.querySelectorAll('[data-rofo-badge]').forEach(function(badge) {
-                badge.style.background = s.badge;
+                badge.style.background = '#662631';
             });
-            document.getElementById('scheme-label').textContent = 'Current: ' + s.label;
-            document.querySelectorAll('.scheme-btn').forEach(function(btn) {
-                var active = '#662631';
-                if (btn.dataset.scheme === key) {
-                    btn.style.background = active; btn.style.color = '#fff';
-                } else {
-                    btn.style.background = '#fff'; btn.style.color = active;
-                }
-            });
-        }
+        });
+
+      
     </script>
 </body>
 </html>

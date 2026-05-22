@@ -52,6 +52,8 @@ class LandRecommendation extends Model
         'rofo_director_survey',
         'rofo_licensed_surveyor',
         'rofo_land_use_category',
+        'rofo_date_generated',
+        'rofo_time_generated',
         'print_count',
         'application_date',
         'applicant_address',

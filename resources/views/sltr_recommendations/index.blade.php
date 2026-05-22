@@ -260,6 +260,10 @@
                                     <i data-lucide="x-circle" class="h-5 w-5"></i>
                                 </button>
                             </div>
+                            <div id="file-number-duplicate-warning" class="hidden mt-2 flex items-start gap-2 bg-red-50 border border-red-300 text-red-700 rounded-lg px-4 py-3 text-sm font-medium">
+                                <i data-lucide="alert-triangle" class="h-4 w-4 mt-0.5 flex-shrink-0"></i>
+                                <span id="file-number-duplicate-msg"></span>
+                            </div>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Applicant Name <span class="text-red-500">*</span></label>
@@ -454,6 +458,30 @@
                             </select>
                         </div> 
                         <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Plot Number <span class="font-normal normal-case text-slate-400">(leave blank for "piece of land")</span></label>
+                            <input type="text" id="f-plot_number"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="e.g. 222">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Application Page No.</label>
+                            <input type="number" id="f-page_application" value="1" min="1"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="e.g. 1">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Survey Report Page No.</label>
+                            <input type="number" id="f-page_survey" value="9" min="1"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="e.g. 9">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Planning Page No.</label>
+                            <input type="number" id="f-page_planning" value="17" min="1"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="e.g. 17">
+                        </div>
+                        <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Term (Years)</label>
                             <input type="text" id="f-term" value="99"
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition focus:bg-white text-sm font-medium">
@@ -511,6 +539,9 @@ function sltrOpenFileSelector() {
             document.getElementById('f-sltr_number-display').value = fileNo;
             document.getElementById('f-sltr-clear-btn').classList.remove('hidden');
 
+            // Check for duplicate file number
+            sltrCheckDuplicateFileNumber(fileNo);
+
             // Backfill from fileNumber table record (file_name only)
             var r = fileData.record;
             if (r && r.file_name) {
@@ -566,6 +597,33 @@ function sltrClearFileNumber() {
     document.getElementById('f-sltr_number').value = '';
     document.getElementById('f-sltr_number-display').value = '';
     document.getElementById('f-sltr-clear-btn').classList.add('hidden');
+    sltrHideDuplicateWarning();
+}
+
+function sltrHideDuplicateWarning() {
+    var w = document.getElementById('file-number-duplicate-warning');
+    if (w) w.classList.add('hidden');
+}
+
+function sltrCheckDuplicateFileNumber(fileNo) {
+    var excludeId = document.getElementById('rec-id').value || '';
+    sltrHideDuplicateWarning();
+
+    $.ajax({
+        url: '{{ route("sltr-recommendations.check-file-number") }}',
+        method: 'GET',
+        data: { file_number: fileNo, exclude_id: excludeId },
+        dataType: 'json',
+        timeout: 6000
+    }).done(function(res) {
+        if (res.exists && res.record) {
+            var msg = 'This file number is already used by: <strong>' + (res.record.applicant_name || 'Unknown') + '</strong>'
+                    + ' (Status: ' + (res.record.status || '—') + '). Saving will be blocked.';
+            document.getElementById('file-number-duplicate-msg').innerHTML = msg;
+            document.getElementById('file-number-duplicate-warning').classList.remove('hidden');
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+    });
 }
 </script>
 <script>
@@ -682,7 +740,7 @@ function resetPropBuilder() {
 }
 
 // ── Scalar fields (not address-builder) ────────────────────────────
-const SCALAR_FIELDS = ['applicant_name','application_date','plot_number','purpose_of_clause','term','ground_rent','processing_fee','notes'];
+const SCALAR_FIELDS = ['applicant_name','application_date','plot_number','page_application','page_survey','page_planning','purpose_of_clause','term','ground_rent','processing_fee','notes'];
 function syncLandUseText() {
     const sel = document.getElementById('f-land_use_id');
     const hid = document.getElementById('f-land_use');
@@ -702,6 +760,13 @@ function openCreateModal() {
     document.getElementById('f-sltr_number').value = '';
     document.getElementById('f-sltr_number-display').value = '';
     document.getElementById('f-sltr-clear-btn').classList.add('hidden');
+    sltrHideDuplicateWarning();
+    // Reset page number defaults
+    var pageDefaults = { 'page_application': 1, 'page_survey': 9, 'page_planning': 17 };
+    Object.keys(pageDefaults).forEach(function(k) {
+        var el = document.getElementById('f-' + k);
+        if (el) el.value = pageDefaults[k];
+    });
     // Reset land use
     const luSel = document.getElementById('f-land_use_id');
     if (luSel) luSel.selectedIndex = 0;

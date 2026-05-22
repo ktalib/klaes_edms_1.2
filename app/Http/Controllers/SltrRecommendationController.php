@@ -9,6 +9,7 @@ use App\Models\StreetName;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class SltrRecommendationController extends Controller
 {
@@ -58,10 +59,32 @@ class SltrRecommendationController extends Controller
         ));
     }
 
+    public function checkFileNumber(Request $request)
+    {
+        $fileNumber = $request->input('file_number');
+        $excludeId  = $request->input('exclude_id');
+
+        if (!$fileNumber) {
+            return response()->json(['exists' => false]);
+        }
+
+        $query = SltrRecommendation::where('sltr_number', $fileNumber);
+        if ($excludeId) {
+            $query->where('id', '!=', $excludeId);
+        }
+
+        $existing = $query->select('id', 'applicant_name', 'sltr_number', 'status')->first();
+
+        return response()->json([
+            'exists' => (bool) $existing,
+            'record' => $existing,
+        ]);
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'sltr_number'      => 'nullable|string|max:100',
+            'sltr_number'      => ['nullable', 'string', 'max:100', Rule::unique('sltr_recommendations', 'sltr_number')->whereNull('deleted_at')],
             'applicant_name'   => 'required|string|max:300',
             'applicant_address'=> 'nullable|string|max:500',
             'application_date' => 'nullable|date',
@@ -69,6 +92,9 @@ class SltrRecommendationController extends Controller
             'lga'              => 'nullable|string|max:200',
             'land_use'         => 'nullable|string|max:200',
             'plot_number'      => 'nullable|string|max:100',
+            'page_application' => 'nullable|integer|min:1',
+            'page_survey'      => 'nullable|integer|min:1',
+            'page_planning'    => 'nullable|integer|min:1',
             'term'             => 'nullable|integer|min:1',
             'ground_rent'      => 'nullable|numeric|min:0',
             'processing_fee'   => 'nullable|numeric|min:0',
@@ -90,7 +116,7 @@ class SltrRecommendationController extends Controller
         $rec = SltrRecommendation::findOrFail($id);
 
         $validated = $request->validate([
-            'sltr_number'      => 'nullable|string|max:100',
+            'sltr_number'      => ['nullable', 'string', 'max:100', Rule::unique('sltr_recommendations', 'sltr_number')->ignore($rec->id)->whereNull('deleted_at')],
             'applicant_name'   => 'required|string|max:300',
             'applicant_address'=> 'nullable|string|max:500',
             'application_date' => 'nullable|date',
@@ -98,6 +124,9 @@ class SltrRecommendationController extends Controller
             'lga'              => 'nullable|string|max:200',
             'land_use'         => 'nullable|string|max:200',
             'plot_number'      => 'nullable|string|max:100',
+            'page_application' => 'nullable|integer|min:1',
+            'page_survey'      => 'nullable|integer|min:1',
+            'page_planning'    => 'nullable|integer|min:1',
             'term'             => 'nullable|integer|min:1',
             'ground_rent'      => 'nullable|numeric|min:0',
             'processing_fee'   => 'nullable|numeric|min:0',

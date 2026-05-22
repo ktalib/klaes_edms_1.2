@@ -841,6 +841,7 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/sltr-recommendations/{id}', [\App\Http\Controllers\SltrRecommendationController::class, 'update'])->name('sltr-recommendations.update');
     Route::delete('/sltr-recommendations/{id}', [\App\Http\Controllers\SltrRecommendationController::class, 'destroy'])->name('sltr-recommendations.destroy');
     Route::post('/sltr-recommendations/{id}/approve', [\App\Http\Controllers\SltrRecommendationController::class, 'approve'])->name('sltr-recommendations.approve');
+    Route::get('/sltr-recommendations/check-file-number', [\App\Http\Controllers\SltrRecommendationController::class, 'checkFileNumber'])->name('sltr-recommendations.check-file-number');
 
     // SLTR RofO Routes
     Route::prefix('sltr-rofos')->name('sltr-rofos.')->group(function () {
@@ -851,6 +852,7 @@ Route::middleware(['auth'])->group(function () {
     });
 
     // Land Recommendation Form Routes
+    Route::post('land-recommendations/batch-approve', [\App\Http\Controllers\LandRecommendationController::class, 'batchApprove'])->name('land-recommendations.batch-approve');
     Route::resource('land-recommendations', \App\Http\Controllers\LandRecommendationController::class);
     Route::post('land-recommendations/{id}/log-print', [\App\Http\Controllers\LandRecommendationController::class, 'logPrint'])->name('land-recommendations.log-print');
     Route::post('land-recommendations/{id}/approve', [\App\Http\Controllers\LandRecommendationController::class, 'approve'])->name('land-recommendations.approve');

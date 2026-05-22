@@ -98,16 +98,30 @@
             </div>
 
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-3">
                     <h3 class="font-bold text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2">
                         <i data-lucide="list" class="h-4 w-4 text-blue-600"></i>
                         Application Records
                     </h3>
+                    @if(empty($isOssView))
+                    <div id="batch-toolbar" class="hidden items-center gap-3">
+                        <span id="batch-count-label" class="text-xs font-bold text-slate-500"></span>
+                        <button type="button" onclick="batchApprove()" class="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 transition shadow-sm">
+                            <i data-lucide="check-circle" class="h-4 w-4"></i> Batch Approve
+                        </button>
+                    </div>
+                    @endif
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left min-w-[2000px] border-collapse">
                         <thead>
                             <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                @if(empty($isOssView))
+                                <th class="px-4 py-4 text-center whitespace-nowrap">
+                                    <input type="checkbox" id="select-all-chk" class="rounded border-slate-300 text-green-600 focus:ring-green-500 cursor-pointer" title="Select all pending">
+                                </th>
+                                @endif
+                                <th class="px-4 py-4 text-center whitespace-nowrap">S/N</th>
                                 <th class="px-6 py-4 whitespace-nowrap">File Number</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Applicant Name</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Purpose Clause</th>
@@ -130,7 +144,15 @@
                         </thead>
                         <tbody class="divide-y divide-slate-100 text-sm">
                             @forelse($recommendations as $rec)
-                            <tr class="hover:bg-slate-50/50 transition">
+                            <tr class="hover:bg-slate-50/50 transition row-item" data-id="{{ $rec->id }}" data-status="{{ $rec->status }}">
+                                @if(empty($isOssView))
+                                <td class="px-4 py-2 text-center whitespace-nowrap">
+                                    @if($rec->status === \App\Models\LandRecommendation::STATUS_PENDING)
+                                        <input type="checkbox" class="row-checkbox rounded border-slate-300 text-green-600 focus:ring-green-500 cursor-pointer" value="{{ $rec->id }}">
+                                    @endif
+                                </td>
+                                @endif
+                                <td class="px-4 py-2 text-center text-slate-500 whitespace-nowrap">{{ ($recommendations->currentPage() - 1) * $recommendations->perPage() + $loop->iteration }}</td>
                                 <td class="px-4 py-2 font-mono font-bold text-slate-900 whitespace-nowrap">{{ $rec->file_number }}</td>
                                 <td class="px-4 py-2 text-slate-700 whitespace-nowrap uppercase font-bold text-blue-900">{{ $rec->applicant_name }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->purpose_of_clause }}</td>
@@ -217,8 +239,8 @@
 
                                                     <div class="border-t border-slate-100 my-1"></div>
 
-                                                    <!-- Approval Action  hidden if user assign_role not = Supper Admin-->
-                                                    @if($rec->status === \App\Models\LandRecommendation::STATUS_PENDING && auth()->user()->assign_role === 'Super Admin')
+                                                    <!-- Approval Action -->
+                                                    @if($rec->status === \App\Models\LandRecommendation::STATUS_PENDING)
                                                         <button type="button" onclick="approveRecord('{{ $rec->id }}', '{{ $rec->file_number }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-green-600 hover:bg-green-50 transition gap-2 font-bold">
                                                             <i data-lucide="check-circle" class="h-4 w-4"></i> Approve 
                                                         </button>
@@ -356,6 +378,73 @@
     });
 
     @if(empty($isOssView))
+    // Checkbox & batch toolbar
+    const selectAllChk = document.getElementById('select-all-chk');
+    const batchToolbar  = document.getElementById('batch-toolbar');
+    const batchCountLabel = document.getElementById('batch-count-label');
+
+    function getChecked() {
+        return [...document.querySelectorAll('.row-checkbox:checked')].map(c => c.value);
+    }
+
+    function updateBatchToolbar() {
+        const ids = getChecked();
+        if (ids.length > 0) {
+            batchToolbar?.classList.remove('hidden');
+            batchToolbar?.classList.add('flex');
+            if (batchCountLabel) batchCountLabel.textContent = `${ids.length} selected`;
+        } else {
+            batchToolbar?.classList.add('hidden');
+            batchToolbar?.classList.remove('flex');
+        }
+    }
+
+    document.querySelectorAll('.row-checkbox').forEach(chk => {
+        chk.addEventListener('change', updateBatchToolbar);
+    });
+
+    if (selectAllChk) {
+        selectAllChk.addEventListener('change', function () {
+            document.querySelectorAll('.row-checkbox').forEach(chk => {
+                chk.checked = this.checked;
+            });
+            updateBatchToolbar();
+        });
+    }
+
+    function batchApprove() {
+        const ids = getChecked();
+        if (!ids.length) return;
+        Swal.fire({
+            title: 'Batch Approve?',
+            text: `Approve ${ids.length} selected recommendation(s)? They cannot be edited after approval.`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#059669',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: `Yes, Approve ${ids.length} Record(s)`,
+            showLoaderOnConfirm: true,
+            preConfirm: () => {
+                return fetch(`{{ url('land-recommendations/batch-approve') }}`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ ids })
+                })
+                .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
+                .catch(err => Swal.showValidationMessage(`Request failed: ${err}`));
+            }
+        }).then(result => {
+            if (result.isConfirmed) {
+                Swal.fire('Approved!', `${result.value?.approved ?? ids.length} record(s) approved successfully.`, 'success')
+                .then(() => window.location.reload());
+            }
+        });
+    }
+
     function approveRecord(id, fileNumber) {
         Swal.fire({
             title: 'Approve Recommendation?',

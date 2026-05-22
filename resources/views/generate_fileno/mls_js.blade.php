@@ -688,8 +688,8 @@
             processing: true,
             serverSide: true,
             deferRender: true, // Improve performance for large datasets
-            stateSave: true, // Save pagination/sorting state
-            stateDuration: 300, // 5 minutes state duration
+            stateSave: false,
+            stateLoadCallback: function() { return null; },
             ajax: {
                 url: '{{ route("file-numbers.data") }}',
                 type: 'GET',
@@ -1025,7 +1025,7 @@
                     }
                 }
             ],
-            order: [[0, 'desc']],
+            order: [[11, 'desc']],
             pageLength: 20,
             lengthMenu: [[10, 20, 25, 50, 100], [10, 20, 25, 50, 100]],
             responsive: true,
@@ -3936,8 +3936,8 @@
                                     self.relatedFileNo = data.fileNumber;
                                     self.subdivisionAppId = res.data.id;
                                     
-                                    // Backfill details
-                                    self.fileName = res.data.applicant_name || res.data.file_title || '';
+                                    // Backfill details — use file_title from mother file only, not applicant_name
+                                    self.fileName = res.data.file_title || '';
                                     self.plotNo = res.data.plot_no || '';
                                     self.lga = res.data.lga || '';
                                     

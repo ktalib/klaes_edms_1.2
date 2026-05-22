@@ -181,14 +181,29 @@ class LandRofoController extends Controller
             if ($p) $validated['purpose_of_clause'] = $p->name;
         }
 
+        // Use stored values if the request is empty (quick-generate from index)
+        $mergedDate = $request->rofo_date_generated ?: $recommendation->rofo_date_generated;
+        $mergedTime = $request->rofo_time_generated ?: $recommendation->rofo_time_generated;
+
         $generatedAt = now();
-        if ($request->rofo_date_generated && $request->rofo_time_generated) {
-            $generatedAt = \Carbon\Carbon::parse($request->rofo_date_generated . ' ' . $request->rofo_time_generated);
+        if ($mergedDate && $mergedTime) {
+            $generatedAt = \Carbon\Carbon::parse($mergedDate . ' ' . $mergedTime);
+        } elseif ($mergedDate) {
+            $generatedAt = \Carbon\Carbon::parse($mergedDate);
         }
 
+        // Fill missing validated fields from stored record when quick-generating
+        if (empty($validated['rofo_director_survey']))  $validated['rofo_director_survey']  = $recommendation->rofo_director_survey;
+        if (empty($validated['rofo_licensed_surveyor'])) $validated['rofo_licensed_surveyor'] = $recommendation->rofo_licensed_surveyor;
+        if (empty($validated['rofo_survey_fees']))       $validated['rofo_survey_fees']       = $recommendation->survey_fees ?? $recommendation->preparation_fees;
+        if (empty($validated['rofo_dev_charge']))        $validated['rofo_dev_charge']        = $recommendation->development_charge;
+        if (empty($validated['rofo_land_use_category'])) $validated['rofo_land_use_category'] = $recommendation->land_use;
+
         $recommendation->update(array_merge($validated, [
-            'rofo_status' => LandRecommendation::ROFO_GENERATED,
-            'rofo_generated_at' => $generatedAt
+            'rofo_status'        => LandRecommendation::ROFO_GENERATED,
+            'rofo_generated_at'  => $generatedAt,
+            'rofo_date_generated'=> $mergedDate,
+            'rofo_time_generated'=> $mergedTime,
         ]));
 
         return response()->json(['success' => true]);
@@ -197,9 +212,17 @@ class LandRofoController extends Controller
     public function print(Request $request, $id)
     {
         $recommendation = LandRecommendation::findOrFail($id);
-        
-        if ($recommendation->rofo_status !== LandRecommendation::ROFO_GENERATED) {
-            abort(403, 'ROFO must be generated before printing.');
+
+        // Resolve land_use text from land_use_id if the text column is empty
+        if (empty($recommendation->land_use) && $recommendation->land_use_id) {
+            $lu = \App\Models\LandUse::find($recommendation->land_use_id);
+            if ($lu) $recommendation->land_use = $lu->landuse;
+        }
+
+        // Resolve purpose_of_clause text from purpose_id if the text column is empty
+        if (empty($recommendation->purpose_of_clause) && $recommendation->purpose_id) {
+            $p = \App\Models\Purpose::find($recommendation->purpose_id);
+            if ($p) $recommendation->purpose_of_clause = $p->name;
         }
 
         // Bypass limit check for Certified True Copy

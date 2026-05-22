@@ -13,7 +13,7 @@
                     <p class="text-slate-500 text-sm mt-1">Data entry form</p>
                 </div>
                 <div class="flex items-center gap-3">
-                    <a href="{{ route('land-recommendations.index') }}" class="px-4 py-2 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-lg transition border border-slate-200 shadow-sm">
+                    <a href="{{ route('land-recommendations.index') }}?type=ROFO" class="px-4 py-2 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-lg transition border border-slate-200 shadow-sm">
                         View Records
                     </a>
                 </div>
@@ -232,21 +232,6 @@
                         </div>
                     </div>
 
-                    <!-- Section 3: Recommendation & Reasons -->
-                    <div class="bg-slate-50 border border-slate-100 rounded-xl p-6 space-y-4 hidden">
-                        <div class="flex items-center gap-2 mb-2">
-                            <i data-lucide="check-circle" class="h-4 w-4 text-blue-600"></i>
-                            <h3 class="text-sm font-bold text-slate-900 uppercase tracking-tight">Recommendation & Reasons</h3>
-                        </div>
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">The Director of Land recommends/does not recommend for the following reasons:</label>
-                                <textarea name="recommendation" rows="6" placeholder="Enter reasons for recommendation..."
-                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">{{ old('recommendation', $recommendation->recommendation ?? '') }}</textarea>
-                            </div>
-                        </div>
-                    </div>
-
               <!-- Section: Conversion Specific Fields (Conditional) -->
                     <div id="conversion-fields-section" class="{{ old('type', $recommendation->type ?? '') == 'Conversion' ? '' : 'hidden' }} bg-amber-50/50 border border-amber-200 rounded-xl p-6 space-y-4 col-span-2">
                         <div class="flex items-center gap-2 mb-2">
@@ -289,6 +274,60 @@
                                 <input type="text" name="time_of_erection" value="{{ old('time_of_erection', $recommendation->time_of_erection ?? '') }}"
                                     class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Section: RofO Generation Data -->
+                    <div class="bg-green-50/40 border border-green-200 rounded-xl p-6 space-y-4 col-span-2">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i data-lucide="zap" class="h-4 w-4 text-green-600"></i>
+                            <h3 class="text-sm font-bold text-green-900 uppercase tracking-tight">RofO Generation Data</h3>
+                        </div>
+                        <div class="space-y-4">
+                            <div class="p-4 bg-white rounded-xl border border-green-100">
+                                <span class="block text-xs font-bold text-slate-500 uppercase mb-3">Survey Method (Select One)</span>
+                                <div class="space-y-3">
+                                    <label class="flex items-center gap-3 cursor-pointer p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition">
+                                        <input type="radio" name="rofo_survey_method" value="DIRECTOR"
+                                            {{ old('rofo_survey_method', ($recommendation->rofo_director_survey ?? '') === 'YES' ? 'DIRECTOR' : (($recommendation->rofo_licensed_surveyor ?? '') === 'YES' ? 'LICENSED' : '')) === 'DIRECTOR' ? 'checked' : '' }}
+                                            class="w-5 h-5 text-green-600 border-slate-300 focus:ring-green-500">
+                                        <span class="text-sm font-medium text-slate-700">Require <strong>Director Survey</strong> to carry out survey</span>
+                                    </label>
+                                    <label class="flex items-center gap-3 cursor-pointer p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition">
+                                        <input type="radio" name="rofo_survey_method" value="LICENSED"
+                                            {{ old('rofo_survey_method', ($recommendation->rofo_director_survey ?? '') === 'YES' ? 'DIRECTOR' : (($recommendation->rofo_licensed_surveyor ?? '') === 'YES' ? 'LICENSED' : '')) === 'LICENSED' ? 'checked' : '' }}
+                                            class="w-5 h-5 text-green-600 border-slate-300 focus:ring-green-500">
+                                        <span class="text-sm font-medium text-slate-700">Require <strong>Licensed Surveyor</strong> to carry out survey</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Date Generated</label>
+                                    <input type="date" name="rofo_date_generated"
+                                        value="{{ old('rofo_date_generated', isset($recommendation) && $recommendation->rofo_date_generated ? \Carbon\Carbon::parse($recommendation->rofo_date_generated)->format('Y-m-d') : now()->format('Y-m-d')) }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Time Generated</label>
+                                    <input type="time" name="rofo_time_generated"
+                                        value="{{ old('rofo_time_generated', isset($recommendation) && $recommendation->rofo_time_generated ? $recommendation->rofo_time_generated : now()->format('H:i')) }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 3: Recommendation & Reasons -->
+                    <div class="bg-slate-50 border border-slate-100 rounded-xl p-6 space-y-4 col-span-2">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i data-lucide="check-circle" class="h-4 w-4 text-blue-600"></i>
+                            <h3 class="text-sm font-bold text-slate-900 uppercase tracking-tight">Recommendation & Reasons</h3>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">The Director of Land recommends/does not recommend for the following reasons:</label>
+                            <textarea name="recommendation" rows="4" placeholder="Enter reasons for recommendation..."
+                                class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm resize-none">{{ old('recommendation', $recommendation->recommendation ?? '') }}</textarea>
                         </div>
                     </div>
 

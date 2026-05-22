@@ -234,6 +234,13 @@
               <i data-lucide="expand" class="h-3.5 w-3.5 text-teal-400"></i>
               <span>Plot Extension</span>
             </a>
+
+            <!-- 4. Legacy Parcel Update Registry -->
+            <a href="{{ route('admin.manual-linkage.index') }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('admin.manual-linkage.*') ? 'active' : '' }}">
+              <i data-lucide="archive-restore" class="h-3.5 w-3.5 text-teal-400"></i>
+              <span>Legacy Parcel Update</span>
+            </a>
           </div>
         </div>
       @endif

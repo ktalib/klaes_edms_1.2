@@ -9,21 +9,21 @@
     .child-row-enter { animation: fadeIn 0.2s ease-out; }
 </style>
 @endsection
-
+ 
 @section('content')
 <div class="flex-1 overflow-auto bg-slate-50/60">
     @include('admin.header', [
-        'PageTitle'       => 'Manually Processed File Linkages',
+        'PageTitle'       => 'Legacy Parcel Update',
         'PageDescription' => 'Backfill lineage for files already processed manually before Change of Purpose and Parcel Update workflows were built.'
     ])
-
+  
     <div class="py-10 bg-slate-50 min-h-screen">
         <div class="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
 
             {{-- Page Heading --}}
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h1 class="text-3xl font-extrabold text-slate-900 mt-1">Manual File Linkage Portal</h1>
+                    <h1 class="text-3xl font-extrabold text-slate-900 mt-1">Legacy Parcel Update</h1>
                     <p class="text-sm text-slate-500 mt-1">Link already-processed legacy files, decommission old sources, and restore Parcel Update history.</p>
                 </div>
                 <button type="button" onclick="openLinkageModal()"
@@ -292,9 +292,89 @@
                                     <input type="text" name="applicant_name" placeholder="e.g. Musa Ibrahim"
                                         class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm">
                                 </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Remarks</label>
-                                    <textarea name="remarks" rows="3" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm" placeholder="Optional notes..."></textarea>
+                            </div>
+
+                            {{-- Subdivision: Parent File selector + Mother Plot Location --}}
+                            <div id="subdivision-parent-panel" class="hidden space-y-5">
+                                <p class="text-[11px] text-slate-500">Select the one parent file that was subdivided. It will be decommissioned on save.</p>
+                                <div class="border border-indigo-200 rounded-2xl p-4 bg-indigo-50/30 space-y-3">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <div class="flex-1 min-w-0 space-y-1">
+                                            <span class="px-2 py-0.5 bg-indigo-600 text-white text-[9px] font-black rounded uppercase tracking-wider">Parent File <span class="text-red-300">*</span></span>
+                                            <div id="sub-parent-file-no" class="text-sm font-bold text-slate-800 font-mono mt-1">NOT SELECTED</div>
+                                            <input type="hidden" name="old_file_numbers[]" id="sub-parent-hidden" value="">
+                                        </div>
+                                        <button type="button" onclick="openSubdivisionParentSelector()"
+                                            class="flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition shadow-sm whitespace-nowrap flex-shrink-0">
+                                            <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                                            Select File
+                                        </button>
+                                    </div>
+                                    <div id="sub-parent-details" class="hidden border-t border-indigo-200 pt-3">
+                                        <table class="w-full text-xs text-slate-600">
+                                            <tr><td class="text-slate-400 pr-2 pb-1 w-20">Title:</td><td id="sub-parent-title" class="font-semibold text-slate-800 pb-1">—</td></tr>
+                                            <tr><td class="text-slate-400 pr-2 pb-1">Land Use:</td><td id="sub-parent-land" class="text-slate-700 pb-1">—</td></tr>
+                                            <tr><td class="text-slate-400 pr-2 pb-1">Location:</td><td id="sub-parent-location" class="text-slate-600 pb-1">—</td></tr>
+                                            <tr><td class="text-slate-400 pr-2">Prop ID:</td><td id="sub-parent-propid" class="font-bold text-blue-600">—</td></tr>
+                                        </table>
+                                        <button type="button" onclick="clearSubdivisionParent()" class="mt-2 text-[10px] text-slate-400 hover:text-red-500 transition">✕ Clear</button>
+                                    </div>
+                                    <p class="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1 border border-amber-200">
+                                        If you cannot find the file, it has not been indexed yet — index it first.
+                                    </p>
+                                </div>
+
+                                {{-- Mother Plot Location Details --}}
+                                <div class="border border-slate-200 rounded-2xl p-4 bg-slate-50/40 space-y-4">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-slate-600">Mother Plot Location Details</span>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Plot No</label>
+                                            <input type="text" name="plot_number" id="plot_number" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" placeholder="e.g. 123">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">House No</label>
+                                            <input type="text" name="house_no" id="house_no" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" placeholder="e.g. 322">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Street Name</label>
+                                            <select name="street_name" id="street_name" onchange="updateManualLocationPreview()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                                                <option value="">SELECT STREET</option>
+                                                @foreach($streetNames as $street)
+                                                    <option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">District</label>
+                                            <select name="district" id="district" onchange="updateManualLocationPreview()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                                                <option value="">SELECT DISTRICT</option>
+                                                @foreach($districts as $district)
+                                                    <option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">LGA</label>
+                                            <select name="lga" id="lga" onchange="updateManualLocationPreview()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                                                <option value="">SELECT LGA</option>
+                                                @foreach($lgas as $lga)
+                                                    <option value="{{ $lga->name }}">{{ strtoupper($lga->name) }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">State</label>
+                                            <select name="state" id="state" onchange="updateManualLocationPreview()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">@foreach($states as $st)<option value="{{ $st->StateName }}" @selected($st->StateName == 'Kano')>{{ strtoupper($st->StateName) }}</option>@endforeach</select>
+                                        </div>
+                                        <div class="md:col-span-2">
+                                            <div class="bg-white p-3 rounded-lg border border-dashed border-slate-200">
+                                                <p class="text-[9px] font-bold text-slate-400 uppercase mb-1">Location Preview</p>
+                                                <p id="manual-location-preview" class="text-xs font-bold text-slate-600 italic">No location details entered yet.</p>
+                                                <input type="hidden" name="location" id="location">
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -395,8 +475,8 @@ let mergedFileData    = null;
 let mergerResultFile  = null;
 
 // Pre-build select option strings once (used by manualLocationBlock / merger cards)
-const manualStreetOptions   = `<option value="">SELECT STREET</option>@foreach($streetNames as $street)<option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>@endforeach<option value="OTHER">OTHER</option>`;
-const manualDistrictOptions = `<option value="">SELECT DISTRICT</option>@foreach($districts as $district)<option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>@endforeach<option value="OTHER">OTHER</option>`;
+const manualStreetOptions   = `<option value="">SELECT STREET</option>@foreach($streetNames as $street)<option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>@endforeach`;
+const manualDistrictOptions = `<option value="">SELECT DISTRICT</option>@foreach($districts as $district)<option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>@endforeach`;
 const manualLgaOptions      = `<option value="">SELECT LGA</option>@foreach($lgas as $lga)<option value="{{ $lga->name }}">{{ strtoupper($lga->name) }}</option>@endforeach`;
 const manualStateOptions    = `@foreach($states as $state)<option value="{{ $state->StateName }}" @selected($state->StateName == 'Kano')>{{ strtoupper($state->StateName) }}</option>@endforeach`;
 
@@ -432,6 +512,12 @@ function goBackToStep1() {
     subdivisionChildCounter = 0;
     mergedFileData         = null;
     mergerResultFile       = null;
+    const subParentHidden = document.getElementById('sub-parent-hidden');
+    if (subParentHidden) subParentHidden.value = '';
+    const subParentFileNo = document.getElementById('sub-parent-file-no');
+    if (subParentFileNo) subParentFileNo.textContent = 'NOT SELECTED';
+    const subParentDetails = document.getElementById('sub-parent-details');
+    if (subParentDetails) subParentDetails.classList.add('hidden');
     const mrFileNo = document.getElementById('merger-result-file-no');
     if (mrFileNo) mrFileNo.textContent = 'NOT SELECTED';
     const mrTitle = document.getElementById('merger-result-title');
@@ -467,10 +553,13 @@ function tailorLeftForm() {
     document.getElementById('old-side-header').textContent = t.header || 'Source File';
 
     const isMerger       = selectedWorkflow === 'Merger';
+    const isSubdivision  = selectedWorkflow === 'Subdivision';
     const sourcePanel    = document.getElementById('source-verify-panel');
     const mergerPanel    = document.getElementById('merger-result-panel');
-    if (sourcePanel) sourcePanel.classList.toggle('hidden', isMerger);
+    const subPanel       = document.getElementById('subdivision-parent-panel');
+    if (sourcePanel) sourcePanel.classList.toggle('hidden', isMerger || isSubdivision);
     if (mergerPanel) mergerPanel.classList.toggle('hidden', !isMerger);
+    if (subPanel)    subPanel.classList.toggle('hidden', !isSubdivision);
 
     if (!isMerger) {
         document.getElementById('old-input-label').textContent = t.label || 'Add File Number';
@@ -566,11 +655,12 @@ function updateManualLocationPreview() {
 function addSubdivisionChild() {
     subdivisionChildCounter++;
     subdivisionChildren.push({
-        index:          subdivisionChildCounter,
+        index:           subdivisionChildCounter,
         new_file_number: '',
-        plot_number:    '',
-        plot_size:      '',
-        survey_plan_no: '',
+        file_title:      '',
+        plot_number:     '',
+        plot_size:       '',
+        survey_plan_no:  '',
     });
     renderSubdivisionChildren();
 }
@@ -593,38 +683,34 @@ function renderSubdivisionChildren() {
     if (empty) empty.classList.add('hidden');
 
     container.innerHTML = subdivisionChildren.map((child, i) => `
-        <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-3 child-row-enter">
-            <span class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center flex-shrink-0">${i + 1}</span>
-            <div class="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2">
-                <div>
-                    <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Child File No <span class="text-red-500">*</span></label>
-                    <input type="text" name="children[${child.index}][new_file_number]"
-                           value="${child.new_file_number}"
-                           placeholder="e.g. RES-2019-0542A"
-                           onchange="subdivisionChildren.find(c=>c.index===${child.index}).new_file_number=this.value.toUpperCase().trim();this.value=this.value.toUpperCase().trim()"
-                           class="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-xs font-mono font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+        <div class="bg-white border border-slate-200 rounded-xl p-3 child-row-enter space-y-2">
+            <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center flex-shrink-0">${i + 1}</span>
+                <div class="flex-1 flex items-center gap-2 min-w-0">
+                    <div class="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 min-w-0">
+                        <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-400 flex-shrink-0"></i>
+                        <div class="min-w-0">
+                            <span id="sub-child-fileno-display-${child.index}" class="text-xs font-mono font-bold text-slate-800 block">${child.new_file_number || 'NOT SELECTED'}</span>
+                            <span id="sub-child-title-display-${child.index}" class="text-[10px] text-slate-400 block truncate">${child.file_title || 'Click Select to choose child file'}</span>
+                        </div>
+                        <input type="hidden" name="children[${child.index}][new_file_number]" value="${child.new_file_number || ''}">
+                    </div>
+                    <button type="button" onclick="openSubdivisionChildSelector(${child.index})"
+                        class="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition whitespace-nowrap flex-shrink-0">
+                        <i data-lucide="search" class="w-3 h-3"></i> Select
+                    </button>
                 </div>
-                <div>
+                <button type="button" onclick="removeSubdivisionChild(${child.index})"
+                    class="w-7 h-7 rounded-full bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center text-base font-bold flex-shrink-0 transition">&times;</button>
+            </div>
+            <div class="pl-8">
+                <div class="w-40">
                     <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Plot No</label>
                     <input type="text" name="children[${child.index}][plot_number]"
                            value="${child.plot_number}" placeholder="e.g. 45A"
                            class="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-xs">
                 </div>
-                <div>
-                    <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Size (m²)</label>
-                    <input type="text" name="children[${child.index}][plot_size]"
-                           value="${child.plot_size}" placeholder="e.g. 450"
-                           class="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-xs">
-                </div>
-                <div>
-                    <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Survey Plan No</label>
-                    <input type="text" name="children[${child.index}][survey_plan_no]"
-                           value="${child.survey_plan_no}" placeholder="e.g. KN/SP/123"
-                           class="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-xs">
-                </div>
             </div>
-            <button type="button" onclick="removeSubdivisionChild(${child.index})"
-                class="w-7 h-7 rounded-full bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center text-base font-bold flex-shrink-0 transition">&times;</button>
         </div>
     `).join('');
 }
@@ -639,6 +725,15 @@ function openFileSelectorForMergerCard(index) {
 }
 
 function backfillMergerCardFromModal(index, data) {
+    if (!data.record) {
+        Swal.fire({
+            icon: 'error',
+            title: 'File Not Indexed',
+            html: `<strong>${data.fileNumber}</strong> was not found in the File Indexing system.<br><br>
+                   The source file must be <strong>indexed first</strong> before it can be used here.`,
+        });
+        return;
+    }
     const card = document.getElementById(`manual_merger_location_card_${index}`);
     if (!card) return;
 
@@ -919,6 +1014,15 @@ function openMergerResultSelector() {
 }
 
 function backfillMergerResult(data) {
+    if (!data.record) {
+        Swal.fire({
+            icon: 'error',
+            title: 'File Not Indexed',
+            html: `<strong>${data.fileNumber}</strong> was not found in the File Indexing system.<br><br>
+                   The merged result file must be <strong>indexed first</strong> before it can be linked here.`,
+        });
+        return;
+    }
     mergerResultFile = data;
     const fileNo = data.fileNumber || '';
     const record = data.record    || {};
@@ -971,6 +1075,169 @@ function calculateManualCopFee() {
     if (hidden)  hidden.value  = fee.toFixed(2);
 }
 
+// ─── Subdivision Parent File Selector ────────────────────────────────────────
+function openSubdivisionParentSelector() {
+    GlobalFileNoModal.open({
+        callback: function(data) {
+            if (!data.record) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'File Not Indexed',
+                    html: `<strong>${data.fileNumber}</strong> was not found in the File Indexing system.<br><br>
+                           The parent file must be <strong>indexed first</strong> before it can be used here.`,
+                });
+                return;
+            }
+            backfillSubdivisionParent(data);
+        }
+    });
+}
+
+function backfillSubdivisionParent(data) {
+    const fileNo  = data.fileNumber || '';
+    const record  = data.record    || {};
+    const title   = (record.file_name || record.file_title || '').toUpperCase();
+    const landUse = record.land_use  || '—';
+    const loc     = [record.street_name, record.district, record.lga, record.state].filter(Boolean).join(', ') || '—';
+    const propId  = record.prop_id   || '—';
+
+    const hidden = document.getElementById('sub-parent-hidden');
+    if (hidden) hidden.value = fileNo;
+
+    const fileNoEl = document.getElementById('sub-parent-file-no');
+    if (fileNoEl) fileNoEl.textContent = fileNo;
+
+    document.getElementById('sub-parent-title').textContent    = title;
+    document.getElementById('sub-parent-land').textContent     = landUse;
+    document.getElementById('sub-parent-location').textContent = loc;
+    document.getElementById('sub-parent-propid').textContent   = propId;
+
+    const detailsEl = document.getElementById('sub-parent-details');
+    if (detailsEl) detailsEl.classList.remove('hidden');
+
+    // Auto-fill mother plot location fields from indexed record
+    const plotEl = document.getElementById('plot_number');
+    if (plotEl && !plotEl.value && record.plot_no && record.plot_no !== 'N/A') plotEl.value = record.plot_no;
+    if (record.street_name) setManualSelectValue(document.getElementById('street_name'), record.street_name);
+    if (record.district)    setManualSelectValue(document.getElementById('district'),    record.district);
+    if (record.lga)         setManualSelectValue(document.getElementById('lga'),         record.lga);
+    if (record.state)       setManualSelectValue(document.getElementById('state'),       record.state);
+    updateManualLocationPreview();
+
+    if (window.lucide) window.lucide.createIcons();
+}
+
+function clearSubdivisionParent() {
+    const hidden = document.getElementById('sub-parent-hidden');
+    if (hidden) hidden.value = '';
+    const fileNoEl = document.getElementById('sub-parent-file-no');
+    if (fileNoEl) fileNoEl.textContent = 'NOT SELECTED';
+    const detailsEl = document.getElementById('sub-parent-details');
+    if (detailsEl) detailsEl.classList.add('hidden');
+}
+
+// ─── Destination File Selector (Plot Extension & Change of Purpose) ──────────
+function openDestinationFileSelector(workflow) {
+    GlobalFileNoModal.open({
+        callback: function(data) {
+            if (!data.record) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'File Not Indexed',
+                    html: `<strong>${data.fileNumber}</strong> was not found in the File Indexing system.<br><br>
+                           The file must be <strong>indexed first</strong> before it can be linked here.`,
+                });
+                return;
+            }
+            backfillDestinationFile(workflow, data);
+        }
+    });
+}
+
+function backfillDestinationFile(workflow, data) {
+    const fileNo  = data.fileNumber || '';
+    const record  = data.record    || {};
+    const title   = (record.file_name || record.file_title || '').toUpperCase();
+    const landUse = record.land_use  || '—';
+    const loc     = [record.street_name, record.district, record.lga, record.state].filter(Boolean).join(', ') || '—';
+    const propId  = record.prop_id   || '—';
+    const prefix  = workflow === 'Plot Extension' ? 'ext' : 'cop';
+
+    const hidden = document.getElementById('new_file_number');
+    if (hidden) hidden.value = fileNo;
+
+    const fileNoEl = document.getElementById(`${prefix}-dest-file-no`);
+    if (fileNoEl) fileNoEl.textContent = fileNo;
+
+    const titleEl = document.getElementById(`${prefix}-dest-title`);
+    if (titleEl) titleEl.textContent = title || '—';
+
+    const landEl = document.getElementById(`${prefix}-dest-land`);
+    if (landEl) landEl.textContent = landUse;
+
+    const locEl = document.getElementById(`${prefix}-dest-location`);
+    if (locEl) locEl.textContent = loc;
+
+    const propEl = document.getElementById(`${prefix}-dest-propid`);
+    if (propEl) propEl.textContent = propId;
+
+    const detailsEl = document.getElementById(`${prefix}-dest-details`);
+    if (detailsEl) detailsEl.classList.remove('hidden');
+
+    if (window.lucide) window.lucide.createIcons();
+}
+
+function clearDestinationFile(workflow) {
+    const prefix = workflow === 'Plot Extension' ? 'ext' : 'cop';
+    const hidden = document.getElementById('new_file_number');
+    if (hidden) hidden.value = '';
+    const fileNoEl = document.getElementById(`${prefix}-dest-file-no`);
+    if (fileNoEl) fileNoEl.textContent = 'NOT SELECTED';
+    const detailsEl = document.getElementById(`${prefix}-dest-details`);
+    if (detailsEl) detailsEl.classList.add('hidden');
+}
+
+// ─── Subdivision Child File Selector ─────────────────────────────────────────
+function openSubdivisionChildSelector(childIndex) {
+    GlobalFileNoModal.open({
+        callback: function(data) {
+            if (!data.record) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'File Not Indexed',
+                    html: `<strong>${data.fileNumber}</strong> was not found in the File Indexing system.<br><br>
+                           The child file must be <strong>indexed first</strong> before it can be linked here.`,
+                });
+                return;
+            }
+            backfillSubdivisionChildFile(childIndex, data);
+        }
+    });
+}
+
+function backfillSubdivisionChildFile(childIndex, data) {
+    const fileNo = data.fileNumber || '';
+    const record = data.record    || {};
+    const title  = (record.file_name || record.file_title || '').toUpperCase();
+
+    const child = subdivisionChildren.find(c => c.index === childIndex);
+    if (child) {
+        child.new_file_number = fileNo;
+        child.file_title      = title;
+    }
+
+    const fileNoDisplay = document.getElementById(`sub-child-fileno-display-${childIndex}`);
+    if (fileNoDisplay) fileNoDisplay.textContent = fileNo || 'NOT SELECTED';
+
+    const titleDisplay = document.getElementById(`sub-child-title-display-${childIndex}`);
+    if (titleDisplay) titleDisplay.textContent = title || '—';
+
+    const hiddenInput = document.querySelector(`input[name="children[${childIndex}][new_file_number]"]`);
+    if (hiddenInput) hiddenInput.value = fileNo;
+
+    if (window.lucide) window.lucide.createIcons();
+}
+
 // ─── Render Right-Side Form (tailored per workflow) ──────────────────────────
 function renderTailoredForm() {
     const fieldsContainer = document.getElementById('dynamic-form-fields');
@@ -1006,30 +1273,6 @@ function renderTailoredForm() {
                 </div>
             </div>
 
-            <div class="border border-slate-200 rounded-2xl p-4 bg-slate-50/40 space-y-4">
-                <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Application Details</span>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Land Value (NGN)</label>
-                        <input type="number" name="land_value" id="manual_sub_land_value" oninput="calculateManualSubdivisionFee()"
-                            class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm" placeholder="Enter land value">
-                    </div>
-                    <div class="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
-                        <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Application Fee (0.25%)</label>
-                        <input type="text" id="manual_sub_fee_display" class="w-full bg-transparent border-none text-sm font-bold text-blue-700 p-0" value="0.00" readonly>
-                        <input type="hidden" name="knupda_fee" id="manual_sub_fee_hidden" value="0">
-                    </div>
-                </div>
-            </div>
-
-            ${approvalFieldsHTML()}
-
-            ${manualLocationBlock('Mother Plot Location Details')}
-
-            <div>
-                <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Remarks</label>
-                <textarea name="remarks" rows="2" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm" placeholder="Optional notes..."></textarea>
-            </div>
         `;
     } else if (selectedWorkflow === 'Merger') {
         html = `
@@ -1081,54 +1324,61 @@ function renderTailoredForm() {
         `;
     } else if (selectedWorkflow === 'Plot Extension') {
         html = `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Right of Occupancy (New File No) <span class="text-red-500">*</span></label>
-                    <input type="text" name="new_file_number" id="new_file_number" required placeholder="Existing extended file"
-                        class="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold font-mono">
+            <div class="border border-emerald-200 rounded-2xl p-4 bg-emerald-50/30 space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex-1 min-w-0 space-y-1">
+                        <span class="px-2 py-0.5 bg-emerald-600 text-white text-[9px] font-black rounded uppercase tracking-wider">Extended / New File <span class="text-red-300">*</span></span>
+                        <div id="ext-dest-file-no" class="text-sm font-bold text-slate-800 font-mono mt-1">NOT SELECTED</div>
+                        <input type="hidden" name="new_file_number" id="new_file_number" value="">
+                    </div>
+                    <button type="button" onclick="openDestinationFileSelector('Plot Extension')"
+                        class="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition shadow-sm whitespace-nowrap flex-shrink-0">
+                        <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                        Select File
+                    </button>
                 </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Land Use Type</label>
-                    <input type="text" name="land_use_type" id="land_use_type" placeholder="e.g. Residential"
-                        class="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm">
+                <div id="ext-dest-details" class="hidden border-t border-emerald-200 pt-3">
+                    <table class="w-full text-xs text-slate-600">
+                        <tr><td class="text-slate-400 pr-2 pb-1 w-20">Title:</td><td id="ext-dest-title" class="font-semibold text-slate-800 pb-1">—</td></tr>
+                        <tr><td class="text-slate-400 pr-2 pb-1">Land Use:</td><td id="ext-dest-land" class="text-slate-700 pb-1">—</td></tr>
+                        <tr><td class="text-slate-400 pr-2 pb-1">Location:</td><td id="ext-dest-location" class="text-slate-600 pb-1">—</td></tr>
+                        <tr><td class="text-slate-400 pr-2">Prop ID:</td><td id="ext-dest-propid" class="font-bold text-blue-600">—</td></tr>
+                    </table>
+                    <button type="button" onclick="clearDestinationFile('Plot Extension')" class="mt-2 text-[10px] text-slate-400 hover:text-red-500 transition">✕ Clear Selection</button>
                 </div>
+                <p class="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1 border border-amber-200">
+                    If you cannot find the file, it has not been indexed yet — index it first, then return here.
+                </p>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Survey / Plan No</label>
-                    <input type="text" name="plan_no" id="plan_no" placeholder="e.g. KN/123"
-                        class="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Extended Plot Size (m²)</label>
-                    <input type="text" name="plot_size" id="plot_size" placeholder="e.g. 750"
-                        class="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm">
-                </div>
-            </div>
-
-            ${approvalFieldsHTML()}
-
-            ${manualLocationBlock('Property Details')}
-
-            <div>
-                <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Remarks</label>
-                <textarea name="remarks" rows="2" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm" placeholder="Optional notes..."></textarea>
-            </div>
         `;
     } else if (selectedWorkflow === 'Change of Purpose') {
         html = `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Changed-Purpose File Number <span class="text-red-500">*</span></label>
-                    <input type="text" name="new_file_number" id="new_file_number" required placeholder="e.g. COM-2026-302"
-                        class="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold font-mono">
+            <div class="border border-blue-200 rounded-2xl p-4 bg-blue-50/30 space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex-1 min-w-0 space-y-1">
+                        <span class="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-black rounded uppercase tracking-wider">Changed-Purpose / New File <span class="text-red-300">*</span></span>
+                        <div id="cop-dest-file-no" class="text-sm font-bold text-slate-800 font-mono mt-1">NOT SELECTED</div>
+                        <input type="hidden" name="new_file_number" id="new_file_number" value="">
+                    </div>
+                    <button type="button" onclick="openDestinationFileSelector('Change of Purpose')"
+                        class="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition shadow-sm whitespace-nowrap flex-shrink-0">
+                        <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                        Select File
+                    </button>
                 </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Current (Old) Land Use</label>
-                    <input type="text" name="land_use_type" id="land_use_type" placeholder="Auto-detected / previous land use"
-                        class="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm">
+                <div id="cop-dest-details" class="hidden border-t border-blue-200 pt-3">
+                    <table class="w-full text-xs text-slate-600">
+                        <tr><td class="text-slate-400 pr-2 pb-1 w-20">Title:</td><td id="cop-dest-title" class="font-semibold text-slate-800 pb-1">—</td></tr>
+                        <tr><td class="text-slate-400 pr-2 pb-1">Land Use:</td><td id="cop-dest-land" class="text-slate-700 pb-1">—</td></tr>
+                        <tr><td class="text-slate-400 pr-2 pb-1">Location:</td><td id="cop-dest-location" class="text-slate-600 pb-1">—</td></tr>
+                        <tr><td class="text-slate-400 pr-2">Prop ID:</td><td id="cop-dest-propid" class="font-bold text-blue-600">—</td></tr>
+                    </table>
+                    <button type="button" onclick="clearDestinationFile('Change of Purpose')" class="mt-2 text-[10px] text-slate-400 hover:text-red-500 transition">✕ Clear Selection</button>
                 </div>
+                <p class="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1 border border-amber-200">
+                    If you cannot find the file, it has not been indexed yet — index it first, then return here.
+                </p>
             </div>
 
             <div>
@@ -1160,10 +1410,6 @@ function renderTailoredForm() {
 
             ${manualLocationBlock('File & Purpose Location Details')}
 
-            <div>
-                <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Remarks</label>
-                <textarea name="remarks" rows="2" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm" placeholder="Optional notes..."></textarea>
-            </div>
         `;
     }
 
@@ -1407,6 +1653,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     container.appendChild(inp);
                 });
             }
+        } else if (selectedWorkflow === 'Subdivision') {
+            const parentFile = document.getElementById('sub-parent-hidden')?.value?.trim();
+            if (!parentFile) {
+                Swal.fire({ icon: 'error', title: 'Parent File Not Selected',
+                    text: 'Please use the "Select File" button to choose the parent file to be decommissioned.' });
+                return;
+            }
         } else if (selectedOldFiles.length === 0) {
             Swal.fire({ icon: 'error', title: 'Legacy Files Missing', text: 'Please verify and add at least one old file number.' });
             return;
@@ -1418,7 +1671,16 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             const emptyChild = subdivisionChildren.find(c => !c.new_file_number.trim());
             if (emptyChild) {
-                Swal.fire({ icon: 'error', title: 'Incomplete Child Row', text: 'All child rows must have a file number. Fill in or remove the empty row.' });
+                Swal.fire({ icon: 'error', title: 'Incomplete Child Row', text: 'All child plot rows must have a file selected. Use the "Select" button on each row.' });
+                return;
+            }
+        }
+
+        if (selectedWorkflow === 'Plot Extension' || selectedWorkflow === 'Change of Purpose') {
+            const newFile = document.getElementById('new_file_number')?.value?.trim();
+            if (!newFile) {
+                Swal.fire({ icon: 'error', title: 'Destination File Not Selected',
+                    text: 'Please use the "Select File" button to choose the already-processed destination file.' });
                 return;
             }
         }
@@ -1427,6 +1689,7 @@ document.addEventListener('DOMContentLoaded', function () {
         let newFileDisplay = '';
         let sourceFilesDisplay = selectedOldFiles.join(', ');
         if (selectedWorkflow === 'Subdivision') {
+            sourceFilesDisplay = document.getElementById('sub-parent-hidden')?.value?.trim() || '—';
             newFileDisplay = subdivisionChildren.map((c, i) => `Child ${i + 1}: <strong>${c.new_file_number}</strong>`).join('<br>');
         } else if (selectedWorkflow === 'Merger') {
             newFileDisplay = `<strong>${document.getElementById('new_file_number')?.value?.trim() || '(not set)'}</strong>`;

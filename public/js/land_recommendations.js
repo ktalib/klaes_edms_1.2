@@ -10,6 +10,12 @@ document.addEventListener('DOMContentLoaded', function () {
     const trackingInput = document.getElementById('tracking_id');
     const submitBtn = form?.querySelector('button[type="submit"]');
 
+    // Declare dropdowns early so all callbacks can reference them
+    const landUseSelect = document.getElementById('land_use_id');
+    const purposeSelect = document.getElementById('purpose_id');
+    const landUseText = document.getElementById('land_use_text');
+    const purposeText = document.getElementById('purpose_of_clause_text');
+
     // Recommendation Type Toggle
     const typeRadios = document.querySelectorAll('input[name="type"]');
     const conversionSection = document.getElementById('conversion-fields-section');
@@ -24,6 +30,58 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
+    // Derive land use keyword from file number prefix (e.g. RES-2026-1 → "RESIDENTIAL")
+    function landUseFromFileNo(fileNo) {
+        const fn = (fileNo || '').toUpperCase().trim();
+        if (/^RES[-\/]/.test(fn) || fn.startsWith('RES')) return 'RESIDENTIAL';
+        if (/^AG[-\/]/.test(fn) || fn.startsWith('AGR'))  return 'AGRICULTURAL';
+        if (/^COM[-\/]/.test(fn) || fn.startsWith('COM'))  return 'COMMERCIAL';
+        if (/^IND[-\/]/.test(fn) || fn.startsWith('IND'))  return 'INDUSTRIAL';
+        if (/^MIX[-\/]/.test(fn) || fn.startsWith('MIX'))  return 'MIXED';
+        return null;
+    }
+
+    // Match land use from file record into the select dropdown
+    function applyLandUse(record) {
+        if (!landUseSelect) return;
+
+        // Try by ID first (most reliable)
+        const recordId = record.land_use_id || record.LandUseID || record.landuse_id;
+        if (recordId) {
+            const optById = Array.from(landUseSelect.options).find(o => String(o.value) === String(recordId));
+            if (optById) {
+                landUseSelect.value = optById.value;
+                landUseSelect.dispatchEvent(new Event('change'));
+                return;
+            }
+        }
+
+        // Try by name from record — exact, then includes both directions
+        const recordLU = (record.land_use || record.LandUse || record.ma_land_use || '').trim().toLowerCase();
+
+        // Also try deriving from the file number prefix (most reliable fallback)
+        const currentFileNo = fileNoInput ? fileNoInput.value : '';
+        const prefixLU = (landUseFromFileNo(currentFileNo) || '').toLowerCase();
+
+        const candidates = [recordLU, prefixLU].filter(Boolean);
+
+        for (const lu of candidates) {
+            let matched = Array.from(landUseSelect.options).find(o =>
+                o.text.trim().toLowerCase() === lu
+            );
+            if (!matched) {
+                matched = Array.from(landUseSelect.options).find(o =>
+                    o.text.trim().toLowerCase().includes(lu) || lu.includes(o.text.trim().toLowerCase())
+                );
+            }
+            if (matched) {
+                landUseSelect.value = matched.value;
+                landUseSelect.dispatchEvent(new Event('change'));
+                return;
+            }
+        }
+    }
+
     // Initialize Global File Number Modal
     if (window.GlobalFileNoModal) {
         window.GlobalFileNoModal.init();
@@ -36,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         console.log('File selected:', data);
                         if (data.record) {
                             const record = data.record;
-                            
+
                             // Auto-populate fields
                             if (applicantInput) applicantInput.value = record.file_name || record.FileName || '';
                             if (locationInput) locationInput.value = record.location || '';
@@ -45,25 +103,18 @@ document.addEventListener('DOMContentLoaded', function () {
                             if (layoutPlanInput) layoutPlanInput.value = record.layout_plan_no || '';
                             if (trackingInput) trackingInput.value = record.tracking_id || '';
 
-                            // Try to match Land Use
-                            if (landUseSelect && record.land_use) {
-                                Array.from(landUseSelect.options).forEach(option => {
-                                    if (option.text.trim().toLowerCase() === record.land_use.trim().toLowerCase()) {
-                                        landUseSelect.value = option.value;
-                                        landUseSelect.dispatchEvent(new Event('change'));
-                                    }
-                                });
-                            }
+                            // Auto-populate Land Use (and trigger purpose load)
+                            applyLandUse(record);
 
-                            // Trigger change event for any listeners
+                            // Trigger change event for text inputs
                             [applicantInput, locationInput, lgaInput, plotInput, layoutPlanInput, trackingInput].forEach(input => {
                                 if (input) input.dispatchEvent(new Event('change'));
                             });
 
-                            // Auto-detect term based on Land Use
+                            // Auto-detect term based on Land Use name
                             const termInput = document.querySelector('input[name="term"]');
-                            if (termInput && record.land_use) {
-                                const lu = record.land_use.toUpperCase().trim();
+                            if (termInput && (record.land_use || record.LandUse)) {
+                                const lu = (record.land_use || record.LandUse).toUpperCase().trim();
                                 if (lu.includes('RESIDENTIAL') || lu.includes('AGRICULTURAL') || lu.includes('AGRICULTURE')) {
                                     termInput.value = '99';
                                 } else if (lu.includes('COMMERCIAL') || lu.includes('INDUSTRIAL')) {
@@ -75,6 +126,10 @@ document.addEventListener('DOMContentLoaded', function () {
                             if (fileNoInput && fileNoInput.value.includes('(Block)')) {
                                 fileNoInput.value = fileNoInput.value.replace(/\s*\(Block\)/, '').trim();
                             }
+
+                            // Auto-detect recommendation type from file number
+                            const fileNo = (fileNoInput ? fileNoInput.value : '') || (data.fileNumber || '');
+                            autoDetectRecommendationType(fileNo);
                         }
                     }
                 });
@@ -82,68 +137,67 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // Handle Form Submission via AJAX (optional, but requested "api js")
+    function autoDetectRecommendationType(fileNo) {
+        const isConversion = /CON/i.test(fileNo);
+        const directRadio     = document.querySelector('input[name="type"][value="Direct"]');
+        const conversionRadio = document.querySelector('input[name="type"][value="Conversion"]');
+        const directLabel     = directRadio?.closest('label');
+        const conversionLabel = conversionRadio?.closest('label');
+
+        if (isConversion) {
+            if (conversionRadio) { conversionRadio.checked = true; conversionRadio.disabled = false; }
+            if (directRadio)     { directRadio.checked = false; directRadio.disabled = true; }
+            if (directLabel)     { directLabel.classList.add('opacity-40', 'cursor-not-allowed'); directLabel.classList.remove('cursor-pointer'); }
+            if (conversionLabel) { conversionLabel.classList.remove('opacity-40', 'cursor-not-allowed'); conversionLabel.classList.add('cursor-pointer'); }
+            conversionSection?.classList.remove('hidden');
+        } else {
+            if (directRadio)     { directRadio.checked = true; directRadio.disabled = false; }
+            if (conversionRadio) { conversionRadio.checked = false; conversionRadio.disabled = true; }
+            if (conversionLabel) { conversionLabel.classList.add('opacity-40', 'cursor-not-allowed'); conversionLabel.classList.remove('cursor-pointer'); }
+            if (directLabel)     { directLabel.classList.remove('opacity-40', 'cursor-not-allowed'); directLabel.classList.add('cursor-pointer'); }
+            conversionSection?.classList.add('hidden');
+        }
+
+        const active = isConversion ? conversionRadio : directRadio;
+        if (active) active.dispatchEvent(new Event('change'));
+    }
+
+    // Form submission validation
     if (form) {
         form.addEventListener('submit', function (e) {
-            // Check if we want to use AJAX or standard POST
-            // For now, let's keep it standard POST but add a loader if possible
-            // Or if really wanted "api js", we do fetch.
-            
             if (!fileNoInput.value) {
                 e.preventDefault();
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'File Number Required',
-                    text: 'Please select a file number before saving.'
-                });
+                Swal.fire({ icon: 'warning', title: 'File Number Required', text: 'Please select a file number before saving.' });
                 return;
             }
-
             if (landUseSelect && !landUseSelect.value) {
                 e.preventDefault();
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Land Use Required',
-                    text: 'Please select a land use category.'
-                });
+                Swal.fire({ icon: 'warning', title: 'Land Use Required', text: 'Please select a land use category.' });
                 return;
             }
-
             if (purposeSelect && !purposeSelect.value) {
                 e.preventDefault();
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Purpose Clause Required',
-                    text: 'Please select a purpose clause.'
-                });
+                Swal.fire({ icon: 'warning', title: 'Purpose Clause Required', text: 'Please select a purpose clause.' });
                 return;
             }
-
             if (submitBtn) {
-                const originalText = submitBtn.innerText;
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<i class="animate-spin mr-2"></i> Processing...';
             }
         });
     }
 
-    // Dynamic Dropdowns for Land Use and Purpose
-    const landUseSelect = document.getElementById('land_use_id');
-    const purposeSelect = document.getElementById('purpose_id');
-    const landUseText = document.getElementById('land_use_text');
-    const purposeText = document.getElementById('purpose_of_clause_text');
-
+    // Dynamic Dropdowns — Land Use change loads purposes
     if (landUseSelect) {
         landUseSelect.addEventListener('change', function () {
             const landUseId = this.value;
             const landUseName = this.options[this.selectedIndex].text;
-            
-            // Set text value for hidden input
+
             if (landUseText) {
                 landUseText.value = landUseId ? landUseName : '';
             }
 
-            // Auto-detect term based on Land Use
+            // Auto-detect term
             const termInput = document.querySelector('input[name="term"]');
             if (termInput && landUseName) {
                 const lu = landUseName.toUpperCase().trim();
@@ -154,7 +208,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
 
-            // Reset Purpose select
+            // Reset purpose select
             if (purposeSelect) {
                 purposeSelect.innerHTML = '<option value="">Loading...</option>';
                 purposeSelect.disabled = true;
@@ -162,12 +216,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (landUseId) {
                 fetch(`/api/reference/purposes?landuseid=${landUseId}`)
-                    .then(response => response.json())
+                    .then(r => r.json())
                     .then(result => {
                         if (result.success) {
                             let options = '<option value="">Select Purpose</option>';
-                            result.data.forEach(purpose => {
-                                options += `<option value="${purpose.id}">${purpose.name}</option>`;
+                            result.data.forEach(p => {
+                                options += `<option value="${p.id}">${p.name}</option>`;
                             });
                             purposeSelect.innerHTML = options;
                             purposeSelect.disabled = false;
@@ -175,8 +229,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             purposeSelect.innerHTML = '<option value="">Error loading purposes</option>';
                         }
                     })
-                    .catch(error => {
-                        console.error('Error fetching purposes:', error);
+                    .catch(() => {
                         purposeSelect.innerHTML = '<option value="">Error loading purposes</option>';
                     });
             } else {
@@ -196,12 +249,11 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Trigger change event if land use is already selected on page load
+    // Trigger change if land use already selected on page load (edit mode)
     if (landUseSelect && landUseSelect.value) {
         landUseSelect.dispatchEvent(new Event('change'));
     }
 
-    // Initialize Lucide icons if available
     if (window.lucide) {
         window.lucide.createIcons();
     }

@@ -333,50 +333,85 @@
                         @endphp
 
                         @foreach($ownerRecords as $record)
-                            @php 
+                            @php
                                 $recordTotal = (float)$record->compensation_amount;
                                 $ownerSubTotal += $recordTotal;
-                                
-                                // Prepare sub-items from compensated_items string
+
+                                // Parse compensated_items — supports JSON (new) and legacy string (old)
+                                $buildings = [];
                                 $subItems = [];
                                 if ($record->compensated_items) {
-                                    $items = explode(', ', $record->compensated_items);
-                                    foreach($items as $itemStr) {
-                                        if (strpos($itemStr, '[') === 0) continue;
-                                        if (strpos($itemStr, ' (₦') !== false) {
-                                            $parts = explode(' (₦', $itemStr);
-                                            $name = trim($parts[0]);
-                                            $amount = (float)str_replace([')', ','], '', $parts[1]);
-                                            $subItems[] = ['name' => $name, 'amount' => $amount];
+                                    $decoded = json_decode($record->compensated_items, true);
+                                    if (json_last_error() === JSON_ERROR_NONE && isset($decoded['buildings'])) {
+                                        $buildings = $decoded['buildings'] ?? [];
+                                        $subItems  = $decoded['items'] ?? [];
+                                    } else {
+                                        // Legacy string format
+                                        $legacyItems = explode(', ', $record->compensated_items);
+                                        foreach ($legacyItems as $itemStr) {
+                                            if (strpos($itemStr, '[') === 0) continue;
+                                            if (strpos($itemStr, ' (₦') !== false) {
+                                                $parts = explode(' (₦', $itemStr);
+                                                $name  = trim($parts[0]);
+                                                $amt   = (float) str_replace([')', ','], '', $parts[1]);
+                                                $subItems[] = ['name' => $name, 'amount' => $amt];
+                                            }
                                         }
                                     }
                                 }
                                 $mainAmount = $record->compensation_amount - collect($subItems)->sum('amount');
                             @endphp
 
-                            <!-- Main Record Row -->
-                            <tr>
-                                <td>{{ $globalIndex++ }}</td>
-                                <td style="font-weight: bold; text-align: left; padding-left: 8px;">{{ $record->owner_name }}</td>
-                                <td style="text-align: left; padding-left: 8px;">{{ $record->building_type }}</td>
-                                <td>{{ $record->building_count }}</td>
-                                <td>{{ $record->area_covered > 0 ? number_format($record->area_covered, 2) : 'Allow' }}</td>
-                                <td style="text-align: right; padding-right: 8px;">{{ number_format($record->rate_of_cost, 2) }}</td>
-                                <td style="text-align: right; padding-right: 8px;">{{ number_format($mainAmount, 2) }}</td>
-                                <td style="font-size: 11px;">
-                                    <div style="font-weight: bold;">{{ $record->account_number }}</div>
-                                    <div style="color: #666;">{{ $record->bank_name }}</div>
-                                </td>
-                                <td>{{ $record->phone_number }}</td>
-                                <td style="font-size: 9px; text-align: left;">{{ Str::limit($record->remarks, 50) }}</td>
-                            </tr>
+                            @if(count($buildings) > 0)
+                                {{-- JSON format: one row per building --}}
+                                @foreach($buildings as $bIdx => $building)
+                                <tr>
+                                    <td>{{ $bIdx === 0 ? $globalIndex++ : '' }}</td>
+                                    <td style="font-weight: bold; text-align: left; padding-left: 8px;">
+                                        {{ $bIdx === 0 ? $record->owner_name : '' }}
+                                    </td>
+                                    <td style="text-align: left; padding-left: {{ $bIdx > 0 ? '20px' : '8px' }};">
+                                        {{ $bIdx > 0 ? '• ' : '' }}{{ $building['building_type'] ?? '' }}
+                                    </td>
+                                    <td>1</td>
+                                    <td>{{ ($building['area'] ?? 0) > 0 ? number_format($building['area'], 2) : 'Allow' }}</td>
+                                    <td style="text-align: right; padding-right: 8px;">{{ number_format($building['rate'] ?? 0, 2) }}</td>
+                                    <td style="text-align: right; padding-right: 8px;">{{ number_format($building['amount'] ?? 0, 2) }}</td>
+                                    <td style="font-size: 11px;">
+                                        @if($bIdx === 0)
+                                            <div style="font-weight: bold;">{{ $record->account_number }}</div>
+                                            <div style="color: #666;">{{ $record->bank_name }}</div>
+                                        @endif
+                                    </td>
+                                    <td>{{ $bIdx === 0 ? $record->phone_number : '' }}</td>
+                                    <td style="font-size: 9px; text-align: left;">{{ $bIdx === 0 ? Str::limit($record->remarks, 50) : '' }}</td>
+                                </tr>
+                                @endforeach
+                            @else
+                                {{-- Legacy / fallback: single aggregated row --}}
+                                <tr>
+                                    <td>{{ $globalIndex++ }}</td>
+                                    <td style="font-weight: bold; text-align: left; padding-left: 8px;">{{ $record->owner_name }}</td>
+                                    <td style="text-align: left; padding-left: 8px;">{{ $record->building_type }}</td>
+                                    <td>{{ $record->building_count }}</td>
+                                    <td>{{ $record->area_covered > 0 ? number_format($record->area_covered, 2) : 'Allow' }}</td>
+                                    <td style="text-align: right; padding-right: 8px;">{{ number_format($record->rate_of_cost, 2) }}</td>
+                                    <td style="text-align: right; padding-right: 8px;">{{ number_format($mainAmount, 2) }}</td>
+                                    <td style="font-size: 11px;">
+                                        <div style="font-weight: bold;">{{ $record->account_number }}</div>
+                                        <div style="color: #666;">{{ $record->bank_name }}</div>
+                                    </td>
+                                    <td>{{ $record->phone_number }}</td>
+                                    <td style="font-size: 9px; text-align: left;">{{ Str::limit($record->remarks, 50) }}</td>
+                                </tr>
+                            @endif
 
-                            <!-- Sub-items Rows -->
+                            {{-- Compensated items sub-rows --}}
                             @foreach($subItems as $sub)
                             <tr style="font-size: 10px; color: #444; font-style: italic;">
                                 <td></td>
-                                <td style="text-align: left; padding-left: 20px;">• {{ $sub['name'] }}</td>
                                 <td></td>
+                                <td style="text-align: left; padding-left: 20px;">• {{ $sub['name'] }}</td>
                                 <td>1</td>
                                 <td>Allow</td>
                                 <td style="text-align: right; padding-right: 8px;">{{ number_format($sub['amount'], 2) }}</td>

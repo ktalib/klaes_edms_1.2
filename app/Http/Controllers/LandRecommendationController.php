@@ -161,7 +161,15 @@ class LandRecommendationController extends Controller
             'improvement' => 'nullable|string',
             'revision_period' => 'nullable|string',
             'time_of_erection' => 'nullable|string',
+            'rofo_survey_method' => 'nullable|string|in:DIRECTOR,LICENSED',
+            'rofo_date_generated' => 'nullable|date',
+            'rofo_time_generated' => 'nullable|string',
         ]);
+
+        // Map survey method radio to YES/NO flags
+        $validated['rofo_director_survey']  = ($request->rofo_survey_method === 'DIRECTOR') ? 'YES' : 'NO';
+        $validated['rofo_licensed_surveyor'] = ($request->rofo_survey_method === 'LICENSED') ? 'YES' : 'NO';
+        unset($validated['rofo_survey_method']);
 
         if ($request->filled('land_use_id')) {
             $lu = LandUse::find($request->land_use_id);
@@ -235,7 +243,14 @@ class LandRecommendationController extends Controller
             'improvement' => 'nullable|string',
             'revision_period' => 'nullable|string',
             'time_of_erection' => 'nullable|string',
+            'rofo_survey_method' => 'nullable|string|in:DIRECTOR,LICENSED',
+            'rofo_date_generated' => 'nullable|date',
+            'rofo_time_generated' => 'nullable|string',
         ]);
+
+        $validated['rofo_director_survey']  = ($request->rofo_survey_method === 'DIRECTOR') ? 'YES' : 'NO';
+        $validated['rofo_licensed_surveyor'] = ($request->rofo_survey_method === 'LICENSED') ? 'YES' : 'NO';
+        unset($validated['rofo_survey_method']);
 
         if ($request->filled('land_use_id')) {
             $lu = LandUse::find($request->land_use_id);
@@ -264,6 +279,17 @@ class LandRecommendationController extends Controller
         ]);
 
         return response()->json(['success' => true]);
+    }
+
+    public function batchApprove(Request $request)
+    {
+        $ids = $request->validate(['ids' => 'required|array', 'ids.*' => 'integer'])['ids'];
+
+        $count = LandRecommendation::whereIn('id', $ids)
+            ->where('status', LandRecommendation::STATUS_PENDING)
+            ->update(['status' => LandRecommendation::STATUS_APPROVED, 'approved_at' => now()]);
+
+        return response()->json(['success' => true, 'approved' => $count]);
     }
 
     public function print(Request $request, $id)

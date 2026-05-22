@@ -80,7 +80,7 @@ window.VFC = {
 
         // Confirm Apply Percent
         $(document).on('click', '#confirm-apply-percent', function () {
-            const percent = parseFloat($('#apply-percentage-input').val()) || 100;
+            const percent = parseFloat($('#apply-percentage-input').val()) || 10;
             self.currentProjectApplyPercentage = percent;
 
             console.log('VFC: Calculation confirmed. Applied percentage:', percent);
@@ -525,37 +525,48 @@ window.VFC = {
     },
 
     updateCompensatedItemsValue: function () {
-        let selectedItems = [];
+        const data = {
+            structure_type: '',
+            buildings: [],
+            items: []
+        };
 
-        // 1. Get Categorized Dropdown Values
+        // 1. Get structure type from categorized dropdown
         $('.structure-type-dropdown').each(function () {
             const val = $(this).val();
-            const label = $(this).prev('label').text().trim();
-            if (val) {
-                selectedItems.push(`[${label}: ${val}]`);
-            }
+            if (val) data.structure_type = val;
         });
 
-        // 2. Get Selected Items and their Amounts
+        // 2. Get per-building data from each building row
+        $('.building-type-row').each(function () {
+            let type = $(this).find('.building-type-select').val() || '';
+            const typeOther = $(this).find('.building-type-other').val();
+            if ((type === 'Other' || type === 'Others') && typeOther) type = typeOther;
+
+            let stage = $(this).find('.building-stage-select').val() || '';
+            const stageOther = $(this).find('.building-stage-other').val();
+            if ((stage === 'Other' || stage === 'Others') && stageOther) stage = stageOther;
+
+            data.buildings.push({
+                building_type: type,
+                stage: stage,
+                length: parseFloat($(this).find('.building-length').val()) || 0,
+                breadth: parseFloat($(this).find('.building-breadth').val()) || 0,
+                area: parseFloat($(this).find('.building-area').val()) || 0,
+                rate: parseFloat($(this).find('.building-rate').val()) || 0,
+                amount: parseFloat($(this).find('.building-comp').val()) || 0
+            });
+        });
+
+        // 3. Get selected compensated items and their amounts
         $('.item-checkbox:checked').each(function () {
             const itemName = $(this).val();
             const $wrapper = $(this).closest('.item-container').find('.item-amount-wrapper');
-            const amount = $wrapper.find('.item-amount-input').val();
-
-            if (amount) {
-                selectedItems.push(`${itemName} (₦${parseFloat(amount).toLocaleString()})`);
-            } else {
-                selectedItems.push(itemName);
-            }
+            const amount = parseFloat($wrapper.find('.item-amount-input').val()) || 0;
+            data.items.push({ name: itemName, amount: amount });
         });
 
-        const hasOther = $('.item-checkbox:checked').toArray().some(s => $(s).val().toLowerCase().includes('other'));
-        if (hasOther) {
-            const other = $('#compensated_items_other').val();
-            if (other) selectedItems.push(other);
-        }
-
-        $('#compensated_items_val').val(selectedItems.join(', '));
+        $('#compensated_items_val').val(JSON.stringify(data));
     },
 
     buildLocation: function () {
@@ -855,59 +866,89 @@ window.VFC = {
         $('#remarks').val(record.remarks);
 
         if (record.compensated_items) {
-            const rawItems = record.compensated_items.split(', ').map(i => i.trim());
-            let otherItems = [];
+            let parsed = null;
+            try { parsed = JSON.parse(record.compensated_items); } catch (e) {}
 
-            rawItems.forEach(itemStr => {
-                // Handle Categorized Dropdowns [Label: Value]
-                if (itemStr.startsWith('[') && itemStr.includes(': ') && itemStr.endsWith(']')) {
-                    const content = itemStr.replace('[', '').replace(']', '');
-                    const [label, val] = content.split(': ').map(s => s.trim());
-
-                    // Match by label (Structure Type, Wall Type, etc.)
-                    $('.structure-type-dropdown').each(function () {
-                        const dropdownLabel = $(this).prev('label').text().trim();
-                        if (dropdownLabel === label) {
-                            $(this).val(val);
-                        }
-                    });
-                    return;
+            if (parsed && parsed.buildings) {
+                // JSON format (new)
+                if (parsed.structure_type) {
+                    $('.structure-type-dropdown').val(parsed.structure_type);
                 }
 
-                // Handle Items with amounts: Name (₦1,000)
-                let itemName = itemStr;
-                let amount = '';
-                if (itemStr.includes(' (₦')) {
-                    const parts = itemStr.split(' (₦');
-                    itemName = parts[0].trim();
-                    amount = parts[1].replace(')', '').replace(/,/g, '');
-                }
+                const count = parsed.buildings.length || 1;
+                $('#building_count').val(count);
+                this.syncBuildingTypes();
 
-                const $cb = $(`.item-checkbox[value="${itemName}"]`);
-                if ($cb.length > 0) {
-                    $cb.prop('checked', true);
-                    const $wrapper = $cb.closest('.flex-col').find('.item-amount-wrapper');
-                    $wrapper.removeClass('hidden');
-                    if (amount) {
-                        $wrapper.find('.item-amount-input').val(amount);
-                    }
-                    if (itemName.toLowerCase().includes('other')) {
-                        $('#compensated_items_other').removeClass('hidden');
-                    }
-                } else {
-                    otherItems.push(itemStr);
-                }
-            });
-
-            if (otherItems.length > 0 || record.compensated_items_other) {
-                const $otherCb = $('.item-checkbox').filter(function () {
-                    return $(this).val().toLowerCase().includes('other');
+                parsed.buildings.forEach((bldg, idx) => {
+                    const $row = $('.building-type-row').eq(idx);
+                    $row.find('.building-type-select').val(bldg.building_type || '');
+                    $row.find('.building-stage-select').val(bldg.stage || '');
+                    $row.find('.building-length').val(bldg.length || '');
+                    $row.find('.building-breadth').val(bldg.breadth || '');
+                    $row.find('.building-area').val(bldg.area || '');
+                    $row.find('.building-rate').val(bldg.rate || '');
+                    $row.find('.building-comp').val(bldg.amount || '');
                 });
 
-                if (otherItems.length > 0) {
-                    $otherCb.prop('checked', true);
-                    $otherCb.closest('.flex-col').find('.item-amount-wrapper').removeClass('hidden');
-                    $('#compensated_items_other').val(record.compensated_items_other || otherItems.join(', ')).removeClass('hidden');
+                if (parsed.items) {
+                    parsed.items.forEach(item => {
+                        const $cb = $(`.item-checkbox[value="${item.name}"]`);
+                        if ($cb.length > 0) {
+                            $cb.prop('checked', true);
+                            const $wrapper = $cb.closest('.flex-col').find('.item-amount-wrapper');
+                            $wrapper.removeClass('hidden');
+                            if (item.amount) $wrapper.find('.item-amount-input').val(item.amount);
+                            if (item.name.toLowerCase().includes('other')) {
+                                $('#compensated_items_other').removeClass('hidden');
+                            }
+                        }
+                    });
+                }
+            } else {
+                // Legacy string format fallback
+                const rawItems = record.compensated_items.split(', ').map(i => i.trim());
+                let otherItems = [];
+
+                rawItems.forEach(itemStr => {
+                    if (itemStr.startsWith('[') && itemStr.includes(': ') && itemStr.endsWith(']')) {
+                        const content = itemStr.replace('[', '').replace(']', '');
+                        const [label, val] = content.split(': ').map(s => s.trim());
+                        $('.structure-type-dropdown').each(function () {
+                            const dropdownLabel = $(this).prev('label').text().trim();
+                            if (dropdownLabel === label) $(this).val(val);
+                        });
+                        return;
+                    }
+                    let itemName = itemStr;
+                    let amount = '';
+                    if (itemStr.includes(' (₦')) {
+                        const parts = itemStr.split(' (₦');
+                        itemName = parts[0].trim();
+                        amount = parts[1].replace(')', '').replace(/,/g, '');
+                    }
+                    const $cb = $(`.item-checkbox[value="${itemName}"]`);
+                    if ($cb.length > 0) {
+                        $cb.prop('checked', true);
+                        const $wrapper = $cb.closest('.flex-col').find('.item-amount-wrapper');
+                        $wrapper.removeClass('hidden');
+                        if (amount) $wrapper.find('.item-amount-input').val(amount);
+                        if (itemName.toLowerCase().includes('other')) {
+                            $('#compensated_items_other').removeClass('hidden');
+                        }
+                    } else {
+                        otherItems.push(itemStr);
+                    }
+                });
+
+                if (otherItems.length > 0 || record.compensated_items_other) {
+                    const $otherCb = $('.item-checkbox').filter(function () {
+                        return $(this).val().toLowerCase().includes('other');
+                    });
+                    if (otherItems.length > 0) {
+                        $otherCb.prop('checked', true);
+                        $otherCb.closest('.flex-col').find('.item-amount-wrapper').removeClass('hidden');
+                        $('#compensated_items_other').val(record.compensated_items_other || otherItems.join(', ')).removeClass('hidden');
+                    }
                 }
             }
             $('#compensated_items_val').val(record.compensated_items);
@@ -1019,32 +1060,63 @@ window.VFC = {
 
                 // 2. Records
                 subGroup.records.forEach((record, recordIndex) => {
-                    const bType = record.building_type === 'Other' ? (record.building_type_other || 'Other') : record.building_type;
-
-                    // Prepare sub-items from compensated_items string
-                    const subItems = [];
+                    // Parse compensated_items — JSON (new) or legacy string
+                    let buildings = [];
+                    let subItems  = [];
                     if (record.compensated_items) {
-                        const items = record.compensated_items.split(', ');
-                        items.forEach(itemStr => {
-                            if (itemStr.startsWith('[Structure: ')) return; // Skip main structure tag
+                        let parsed = null;
+                        try { parsed = JSON.parse(record.compensated_items); } catch(e) {}
 
-                            let name = itemStr;
-                            let amount = 0;
-                            if (itemStr.includes(' (₦')) {
-                                const parts = itemStr.split(' (₦');
-                                name = parts[0].trim();
-                                amount = parseFloat(parts[1].replace(')', '').replace(/,/g, '')) || 0;
-                            }
-
-                            if (amount > 0 || name) {
-                                subItems.push({ name, amount });
-                            }
-                        });
+                        if (parsed && parsed.buildings) {
+                            buildings = parsed.buildings || [];
+                            subItems  = parsed.items    || [];
+                        } else {
+                            // Legacy string fallback
+                            record.compensated_items.split(', ').forEach(itemStr => {
+                                if (itemStr.startsWith('[')) return;
+                                let name = itemStr, amount = 0;
+                                if (itemStr.includes(' (₦')) {
+                                    const p = itemStr.split(' (₦');
+                                    name   = p[0].trim();
+                                    amount = parseFloat(p[1].replace(')', '').replace(/,/g, '')) || 0;
+                                }
+                                if (name) subItems.push({ name, amount });
+                            });
+                        }
                     }
 
-                    const totalRows = 1 + subItems.length;
+                    // Fallback: if no JSON buildings, build one from aggregate columns
+                    if (buildings.length === 0) {
+                        const bType = record.building_type === 'Other' ? (record.building_type_other || 'Other') : (record.building_type || '');
+                        buildings = [{
+                            building_type: bType,
+                            stage: record.completion_stage || '',
+                            area:  parseFloat(record.area_covered)  || 0,
+                            rate:  parseFloat(record.rate_of_cost)  || 0,
+                            amount: parseFloat(record.compensation_amount) - subItems.reduce((a, i) => a + i.amount, 0)
+                        }];
+                    }
 
-                    // Row 1: Main building details
+                    const dataRows  = buildings.length + subItems.length;
+                    const totalRows = dataRows + (dataRows > 1 ? 1 : 0); // +1 for record total row
+                    const actionsTd = `
+                        <td rowspan="${totalRows}" class="px-2 py-4 text-right align-top">
+                            <div class="flex justify-end gap-1 transition-opacity">
+                                <a href="${this.config.routes.store}/${record.id}" target="_blank" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="View/Print">
+                                    <i data-lucide="printer" class="h-3.5 w-3.5"></i>
+                                </a>
+                                <button onclick='VFC.openEditModalFromBase64("${btoa(unescape(encodeURIComponent(JSON.stringify(record))))}")' class="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg" title="Edit">
+                                    <i data-lucide="edit-3" class="h-3.5 w-3.5"></i>
+                                </button>
+                                <button onclick="VFC.deleteRecord(${record.id}, '${record.owner_name}')" class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg" title="Delete">
+                                    <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+
+                    // First building row — includes rowspan cells for owner, account, phone, actions
+                    const b0 = buildings[0];
                     html += `
                         <tr class="hover:bg-blue-50/10 transition-colors group/row border-b border-slate-50">
                             <td rowspan="${totalRows}" class="px-2 py-4 text-xs font-bold text-slate-400 align-top">${recordIndex + 1}</td>
@@ -1052,50 +1124,48 @@ window.VFC = {
                                 ${record.owner_name}
                                 <div class="text-[9px] font-normal text-slate-400 mt-1 font-mono">${record.our_ref || ''}</div>
                             </td>
-                            
-                            <td class="px-2 py-4 text-[11px] text-slate-600 font-bold">${bType}</td>
-                            <td class="px-2 py-4 text-[11px] text-center text-slate-500">${record.building_count}</td>
-                            <td class="px-2 py-4 text-[11px] text-center text-slate-500">${record.area_covered > 0 ? record.area_covered : 'Allow'}</td>
-                            <td class="px-2 py-4 text-[11px] text-right text-slate-500 font-mono">₦${parseFloat(record.rate_of_cost).toLocaleString()}</td>
-                            <td class="px-2 py-4 text-[11px] text-right text-slate-700 font-bold font-mono">₦${parseFloat(record.compensation_amount - subItems.reduce((acc, i) => acc + i.amount, 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-
+                            <td class="px-2 py-4 text-[11px] text-slate-600 font-bold">${b0.building_type || ''}</td>
+                            <td class="px-2 py-4 text-[11px] text-center text-slate-500">1</td>
+                            <td class="px-2 py-4 text-[11px] text-center text-slate-500">${(b0.area || 0) > 0 ? parseFloat(b0.area).toLocaleString() : 'Allow'}</td>
+                            <td class="px-2 py-4 text-[11px] text-right text-slate-500 font-mono">₦${parseFloat(b0.rate || 0).toLocaleString()}</td>
+                            <td class="px-2 py-4 text-[11px] text-right text-slate-700 font-bold font-mono">₦${parseFloat(b0.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                             <td rowspan="${totalRows}" class="px-2 py-4 align-top">
                                 <div class="text-[10px] font-bold text-slate-600">${record.account_number || 'N/A'}</div>
                                 <div class="text-[9px] text-slate-400">${record.bank_name || ''}</div>
                             </td>
                             <td rowspan="${totalRows}" class="px-2 py-4 text-[10px] text-slate-500 align-top">${record.phone_number || 'N/A'}</td>
-                            
-                            <td rowspan="${totalRows}" class="px-2 py-4 text-right align-top">
-                                <div class="flex justify-end gap-1 transition-opacity">
-                                    <a href="${this.config.routes.store}/${record.id}" target="_blank" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="View/Print">
-                                        <i data-lucide="printer" class="h-3.5 w-3.5"></i>
-                                    </a>
-                                    <button onclick='VFC.openEditModalFromBase64("${btoa(unescape(encodeURIComponent(JSON.stringify(record))))}")' class="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg" title="Edit">
-                                        <i data-lucide="edit-3" class="h-3.5 w-3.5"></i>
-                                    </button>
-                                    <button onclick="VFC.deleteRecord(${record.id}, '${record.owner_name}')" class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg" title="Delete">
-                                        <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
-                                    </button>
-                                </div>
-                            </td>
+                            ${actionsTd}
                         </tr>
                     `;
 
-                    // Sub-Rows for items
+                    // Additional building rows (Building 2, 3, …)
+                    buildings.slice(1).forEach(b => {
+                        html += `
+                            <tr class="hover:bg-blue-50/10 border-b border-slate-50/50">
+                                <td class="px-2 py-2 text-[11px] text-slate-600 font-bold pl-4">• ${b.building_type || ''}</td>
+                                <td class="px-2 py-2 text-[11px] text-center text-slate-500">1</td>
+                                <td class="px-2 py-2 text-[11px] text-center text-slate-500">${(b.area || 0) > 0 ? parseFloat(b.area).toLocaleString() : 'Allow'}</td>
+                                <td class="px-2 py-2 text-[11px] text-right text-slate-500 font-mono">₦${parseFloat(b.rate || 0).toLocaleString()}</td>
+                                <td class="px-2 py-2 text-[11px] text-right text-slate-700 font-bold font-mono">₦${parseFloat(b.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                        `;
+                    });
+
+                    // Compensated items sub-rows
                     subItems.forEach(item => {
                         html += `
                             <tr class="hover:bg-blue-50/10 border-b border-slate-50/50 bg-slate-50/20">
                                 <td class="px-2 py-1.5 text-[9px] text-indigo-400 italic font-medium pl-4">• ${item.name}</td>
                                 <td class="px-2 py-1.5 text-[9px] text-center text-slate-400 font-mono">1</td>
                                 <td class="px-2 py-1.5 text-[9px] text-center text-slate-400 font-mono">Allow</td>
-                                <td class="px-2 py-1.5 text-[9px] text-right text-slate-400 font-mono">₦${item.amount.toLocaleString()}</td>
-                                <td class="px-2 py-1.5 text-[9px] text-right text-indigo-500/70 font-bold font-mono">₦${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                <td class="px-2 py-1.5 text-[9px] text-right text-slate-400 font-mono">₦${parseFloat(item.amount || 0).toLocaleString()}</td>
+                                <td class="px-2 py-1.5 text-[9px] text-right text-indigo-500/70 font-bold font-mono">₦${parseFloat(item.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                             </tr>
                         `;
                     });
 
-                    // Owner Total Row (Optional, but helps with visual grouping)
-                    if (totalRows > 1) {
+                    // Record total row
+                    if (dataRows > 1) {
                         html += `
                             <tr class="bg-slate-50/30">
                                 <td colspan="4" class="px-2 py-1.5 text-[9px] text-right font-bold text-slate-400 uppercase tracking-tighter">Record Total:</td>
@@ -1123,7 +1193,7 @@ window.VFC = {
 
             // 4. Final Project Sub Total
             this.currentProjectSubTotal = projectGrandTotal;
-            this.currentProjectApplyPercentage = project ? (project.apply_percentage || 100) : 100;
+            this.currentProjectApplyPercentage = project ? (project.apply_percentage || 10) : 10;
 
             // Reset Batch Workflow Buttons
             $('#generate-batch-btn').removeClass('hidden');

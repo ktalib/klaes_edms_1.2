@@ -1141,7 +1141,7 @@ class FileIndexingController extends Controller
                     );
                 }
 
-                // Update related tables
+                // Update related tables (no inserts — edit only updates existing rows)
                 $this->updateRelatedTables(
                     $existingRecord,
                     $validated,
@@ -1149,23 +1149,9 @@ class FileIndexingController extends Controller
                     $resolvedTestControl,
                     $requestHasCofo,
                     $normalizedPropId,
-                    !$skipEntityCustomerUpdates
+                    !$skipEntityCustomerUpdates,
+                    false  // $allowInserts = false during edit
                 );
-
-                // Sync kangis_fileno_placeholder (and resolved) to fileNumber table when provided
-                $kangisPlaceholder = trim((string) ($validated['kangis_fileno_placeholder'] ?? ''));
-                if ($kangisPlaceholder !== '' && $newFileNumber !== '') {
-                    DB::connection('sqlsrv')->table('fileNumber')
-                        ->where(function ($q) use ($newFileNumber) {
-                            $q->whereRaw('UPPER(LTRIM(RTRIM(mlsfNo))) = UPPER(?)', [$newFileNumber])
-                                ->orWhereRaw('UPPER(LTRIM(RTRIM(kangisFileNo))) = UPPER(?)', [$newFileNumber])
-                                ->orWhereRaw('UPPER(LTRIM(RTRIM(NewKANGISFileNo))) = UPPER(?)', [$newFileNumber]);
-                        })
-                        ->update([
-                            'kangis_fileno_placeholder' => $kangisPlaceholder,
-                            'kangis_fileno_resolved' => $newFileNumber,
-                        ]);
-                }
 
                 // Handle related file links for update
                 $rawRelatedFiles = $validated['related_fileno'] ?? null;
@@ -1623,7 +1609,7 @@ class FileIndexingController extends Controller
     /**
      * Update related tables (fileNumber, CofO, Entity, Customer) when updating file indexing
      */
-    protected function updateRelatedTables($existingRecord, $validated, Request $request, ?string $testControl = null, bool $hasCofo = false, ?int $propId = null, bool $shouldUpdateEntityCustomer = true)
+    protected function updateRelatedTables($existingRecord, $validated, Request $request, ?string $testControl = null, bool $hasCofo = false, ?int $propId = null, bool $shouldUpdateEntityCustomer = true, bool $allowInserts = true)
     {
         $fileNumber = $validated['file_number'];
         $trackingId = $validated['tracking_id'] ?? $existingRecord->tracking_id;
@@ -1654,7 +1640,7 @@ class FileIndexingController extends Controller
             'updated_by' => $currentUserName,
             'source' => 'indexing',
             'type' => 'indexing',
-        ]);
+        ], $allowInserts);
 
         // Update CofO record
         $this->updateCofORecord($existingRecord, $validated, $request, $testControl, $hasCofo, $propId);
@@ -1670,7 +1656,7 @@ class FileIndexingController extends Controller
 
         // Update Entity and Customer records
         if ($shouldUpdateEntityCustomer) {
-            $this->updateEntityAndCustomerRecords($existingRecord, $request, $testControl);
+            $this->updateEntityAndCustomerRecords($existingRecord, $request, $testControl, $allowInserts);
         }
 
         $this->updateFileHistoryPropId($fileNumber, $propId, $testControl);
@@ -1754,7 +1740,7 @@ class FileIndexingController extends Controller
     /**
      * Update fileNumber table records
      */
-    protected function updateFileNumberTable(string $fileNumber, ?string $trackingId, ?string $testControl = null, array $extraAttributes = [])
+    protected function updateFileNumberTable(string $fileNumber, ?string $trackingId, ?string $testControl = null, array $extraAttributes = [], bool $allowInsert = true)
     {
         try {
             $isKangis = !empty($extraAttributes['is_kangis']);
@@ -1855,39 +1841,46 @@ class FileIndexingController extends Controller
             }
 
             if ($affected === 0) {
-                $defaultName = $this->resolveCurrentUserName();
-                $insertData = [
-                    'mlsfNo' => $isKangis ? null : $fileNumber,
-                    'kangisFileNo' => $isKangis ? ($kangisResolved !== '' ? $kangisResolved : $fileNumber) : null,
-                    'NewKANGISFileNo' => $isKangis ? ($kangisResolved !== '' ? $kangisResolved : $fileNumber) : null,
-                    'kangis_fileno_placeholder' => ($isKangis && $kangisPlaceholder !== '') ? $kangisPlaceholder : null,
-                    'kangis_fileno_resolved' => $isKangis ? ($kangisResolved !== '' ? $kangisResolved : $fileNumber) : null,
-                    'FileName' => $extraAttributes['file_title'] ?? $fileNumber,
-                    'location' => $extraAttributes['location'] ?? null,
-                    'lga' => $extraAttributes['lga'] ?? null,
-                    'plot_no' => $extraAttributes['plot_no'] ?? null,
-                    'tp_no' => $extraAttributes['tp_no'] ?? null,
-                    'has_temp_file' => !empty($extraAttributes['has_temp_file']) ? 1 : 0,
-                    'temp_file_no' => isset($extraAttributes['temp_file_no']) && trim((string) $extraAttributes['temp_file_no']) !== ''
-                        ? trim((string) $extraAttributes['temp_file_no'])
-                        : null,
-                    'tracking_id' => $trackingId,
-                    'test_control' => $testControl,
-                    'type' => $extraAttributes['type'] ?? 'indexing',
-                    'SOURCE' => $extraAttributes['source'] ?? 'indexing',
-                    'created_by' => $extraAttributes['created_by'] ?? $defaultName,
-                    'updated_by' => $extraAttributes['updated_by'] ?? $defaultName,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
+                if (!$allowInsert) {
+                    Log::info('FileIndexing::updateFileNumberTable - no matching row found, insert skipped (edit mode)', [
+                        'file_number' => $fileNumber,
+                        'tracking_id' => $trackingId,
+                    ]);
+                } else {
+                    $defaultName = $this->resolveCurrentUserName();
+                    $insertData = [
+                        'mlsfNo' => $isKangis ? null : $fileNumber,
+                        'kangisFileNo' => $isKangis ? ($kangisResolved !== '' ? $kangisResolved : $fileNumber) : null,
+                        'NewKANGISFileNo' => $isKangis ? ($kangisResolved !== '' ? $kangisResolved : $fileNumber) : null,
+                        'kangis_fileno_placeholder' => ($isKangis && $kangisPlaceholder !== '') ? $kangisPlaceholder : null,
+                        'kangis_fileno_resolved' => $isKangis ? ($kangisResolved !== '' ? $kangisResolved : $fileNumber) : null,
+                        'FileName' => $extraAttributes['file_title'] ?? $fileNumber,
+                        'location' => $extraAttributes['location'] ?? null,
+                        'lga' => $extraAttributes['lga'] ?? null,
+                        'plot_no' => $extraAttributes['plot_no'] ?? null,
+                        'tp_no' => $extraAttributes['tp_no'] ?? null,
+                        'has_temp_file' => !empty($extraAttributes['has_temp_file']) ? 1 : 0,
+                        'temp_file_no' => isset($extraAttributes['temp_file_no']) && trim((string) $extraAttributes['temp_file_no']) !== ''
+                            ? trim((string) $extraAttributes['temp_file_no'])
+                            : null,
+                        'tracking_id' => $trackingId,
+                        'test_control' => $testControl,
+                        'type' => $extraAttributes['type'] ?? 'indexing',
+                        'SOURCE' => $extraAttributes['source'] ?? 'indexing',
+                        'created_by' => $extraAttributes['created_by'] ?? $defaultName,
+                        'updated_by' => $extraAttributes['updated_by'] ?? $defaultName,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
 
-                DB::connection('sqlsrv')->table('fileNumber')->insert($insertData);
+                    DB::connection('sqlsrv')->table('fileNumber')->insert($insertData);
 
-                Log::info('FileIndexing::updateFileNumberTable - inserted new fileNumber row', [
-                    'file_number' => $fileNumber,
-                    'tracking_id' => $trackingId,
-                    'insert_data' => $insertData,
-                ]);
+                    Log::info('FileIndexing::updateFileNumberTable - inserted new fileNumber row', [
+                        'file_number' => $fileNumber,
+                        'tracking_id' => $trackingId,
+                        'insert_data' => $insertData,
+                    ]);
+                }
             } else {
                 Log::info('FileIndexing::updateFileNumberTable - completed', [
                     'file_number' => $fileNumber,
@@ -1993,7 +1986,7 @@ class FileIndexingController extends Controller
     /**
      * Update Entity and Customer records
      */
-    protected function updateEntityAndCustomerRecords($existingRecord, Request $request, ?string $testControl = null)
+    protected function updateEntityAndCustomerRecords($existingRecord, Request $request, ?string $testControl = null, bool $allowCreate = true)
     {
         // Use the request's file_number (already validated and potentially renamed) so that
         // any file_number rename cascaded by cascadeFileNumberRename() is reflected here.
@@ -2018,20 +2011,24 @@ class FileIndexingController extends Controller
             }
 
             if (!$entity) {
-                $entity = Entity::on('sqlsrv')->firstOrNew([
-                    'file_number' => $fileNumber,
-                ]);
+                if ($allowCreate) {
+                    $entity = Entity::on('sqlsrv')->firstOrNew(['file_number' => $fileNumber]);
+                } else {
+                    $entity = Entity::on('sqlsrv')->where('file_number', $fileNumber)->first();
+                }
             }
 
-            $entity->entity_name = $entityName;
-            $entity->entity_type = $entityPayload['entity_type'] ?? 'Individual';
-            $entity->file_number = $fileNumber;
+            if ($entity) {
+                $entity->entity_name = $entityName;
+                $entity->entity_type = $entityPayload['entity_type'] ?? 'Individual';
+                $entity->file_number = $fileNumber;
 
-            if ($testControl) {
-                $entity->test_control = $testControl;
+                if ($testControl) {
+                    $entity->test_control = $testControl;
+                }
+
+                $entity->save();
             }
-
-            $entity->save();
         }
 
         // Update Customer
@@ -2079,34 +2076,43 @@ class FileIndexingController extends Controller
             }
 
             if (!$customer) {
-                $customer = Customer::on('sqlsrv')->firstOrNew([
-                    'file_number' => $fileNumber,
-                    'customer_name' => $customerName,
-                ]);
+                if ($allowCreate) {
+                    $customer = Customer::on('sqlsrv')->firstOrNew([
+                        'file_number' => $fileNumber,
+                        'customer_name' => $customerName,
+                    ]);
+                } else {
+                    $customer = Customer::on('sqlsrv')
+                        ->where('file_number', $fileNumber)
+                        ->where('customer_name', $customerName)
+                        ->first();
+                }
             }
 
-            $customer->customer_type = $customerPayload['customer_type'] ?? 'Individual';
-            $customer->status = $customerPayload['status'] ?? 'Active';
-            $customer->customer_name = $customerName;
-            $customer->file_number = $fileNumber;
-            $customer->account_no = $this->normalizeValue($customerPayload['account_no'] ?? null);
-            $customer->customer_code = $this->normalizeValue($customerPayload['customer_code'] ?? null);
-            $customer->email = $this->normalizeValue($customerPayload['email'] ?? null);
-            $customer->phone = $this->normalizeValue($customerPayload['phone'] ?? null);
-            $customer->property_address = $this->normalizeValue($customerPayload['property_address'] ?? null);
-            $customer->reason_retired = $this->normalizeValue($customerPayload['reason_retired'] ?? null);
-            $customer->retired_by = $this->normalizeValue($customerPayload['retired_by'] ?? null);
+            if ($customer) {
+                $customer->customer_type = $customerPayload['customer_type'] ?? 'Individual';
+                $customer->status = $customerPayload['status'] ?? 'Active';
+                $customer->customer_name = $customerName;
+                $customer->file_number = $fileNumber;
+                $customer->account_no = $this->normalizeValue($customerPayload['account_no'] ?? null);
+                $customer->customer_code = $this->normalizeValue($customerPayload['customer_code'] ?? null);
+                $customer->email = $this->normalizeValue($customerPayload['email'] ?? null);
+                $customer->phone = $this->normalizeValue($customerPayload['phone'] ?? null);
+                $customer->property_address = $this->normalizeValue($customerPayload['property_address'] ?? null);
+                $customer->reason_retired = $this->normalizeValue($customerPayload['reason_retired'] ?? null);
+                $customer->retired_by = $this->normalizeValue($customerPayload['retired_by'] ?? null);
 
-            if ($testControl) {
-                $customer->test_control = $testControl;
+                if ($testControl) {
+                    $customer->test_control = $testControl;
+                }
+
+                if (!$customer->exists) {
+                    $customer->created_by = Auth::id();
+                }
+                $customer->updated_by = Auth::id();
+
+                $customer->save();
             }
-
-            if (!$customer->exists) {
-                $customer->created_by = Auth::id();
-            }
-            $customer->updated_by = Auth::id();
-
-            $customer->save();
         }
     }
 

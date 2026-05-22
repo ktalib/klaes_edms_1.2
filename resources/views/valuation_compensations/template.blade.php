@@ -207,8 +207,14 @@
             {{ $record->location }}
         </span>
         @if($record->compensated_items)
+            @php
+                $tmplDecoded = json_decode($record->compensated_items, true);
+                $tmplItemNames = (json_last_error() === JSON_ERROR_NONE && isset($tmplDecoded['items']))
+                    ? collect($tmplDecoded['items'])->pluck('name')->implode(', ')
+                    : $record->compensated_items;
+            @endphp
             <div style="font-size: 12px; font-weight: normal; text-transform: none; margin-top: 10px; color: #444;">
-                <strong>Items Considered:</strong> {{ $record->compensated_items }}
+                <strong>Items Considered:</strong> {{ $tmplItemNames }}
             </div>
         @endif
     </div>
@@ -229,20 +235,63 @@
             </tr>
         </thead>
         <tbody>
-            <tr>
-                <td>1</td>
-                <td style="font-weight: bold;">{{ $record->owner_name }}</td>
-                <td>{{ $record->building_type }}</td>
-                <td>{{ $record->building_count }}</td>
-                <td>{{ number_format($record->area_covered, 2) }}</td>
-                <td>{{ number_format($record->rate_of_cost, 2) }}</td>
-                <td style="font-weight: bold;">{{ number_format($record->compensation_amount, 2) }}</td>
-                <td>{{ $record->account_number }}</td>
-                <td>{{ $record->phone_number }}</td>
-                <td style="font-size: 11px;">{{ $record->remarks ?? '-' }}</td>
-            </tr>
-            <!-- Empty rows for spacing as in template -->
-            @for($i=0; $i<5; $i++)
+            @php
+                $tmplBuildings = [];
+                $tmplSubItems  = [];
+                if ($record->compensated_items) {
+                    $tmplJson = json_decode($record->compensated_items, true);
+                    if (json_last_error() === JSON_ERROR_NONE && isset($tmplJson['buildings'])) {
+                        $tmplBuildings = $tmplJson['buildings'] ?? [];
+                        $tmplSubItems  = $tmplJson['items'] ?? [];
+                    }
+                }
+            @endphp
+
+            @if(count($tmplBuildings) > 0)
+                @foreach($tmplBuildings as $bIdx => $building)
+                <tr>
+                    <td>{{ $bIdx + 1 }}</td>
+                    <td style="font-weight: bold;">{{ $bIdx === 0 ? $record->owner_name : '' }}</td>
+                    <td>{{ $building['building_type'] ?? '' }}</td>
+                    <td>1</td>
+                    <td>{{ ($building['area'] ?? 0) > 0 ? number_format($building['area'], 2) : 'Allow' }}</td>
+                    <td>{{ number_format($building['rate'] ?? 0, 2) }}</td>
+                    <td style="font-weight: bold;">{{ number_format($building['amount'] ?? 0, 2) }}</td>
+                    <td>{{ $bIdx === 0 ? $record->account_number : '' }}</td>
+                    <td>{{ $bIdx === 0 ? $record->phone_number : '' }}</td>
+                    <td style="font-size: 11px;">{{ $bIdx === 0 ? ($record->remarks ?? '-') : '' }}</td>
+                </tr>
+                @endforeach
+                @foreach($tmplSubItems as $sub)
+                <tr style="font-size: 11px; color: #444; font-style: italic;">
+                    <td></td>
+                    <td></td>
+                    <td style="padding-left: 15px;">• {{ $sub['name'] }}</td>
+                    <td>1</td>
+                    <td>Allow</td>
+                    <td>{{ number_format($sub['amount'], 2) }}</td>
+                    <td>{{ number_format($sub['amount'], 2) }}</td>
+                    <td colspan="3"></td>
+                </tr>
+                @endforeach
+            @else
+                {{-- Legacy / fallback: single aggregated row --}}
+                <tr>
+                    <td>1</td>
+                    <td style="font-weight: bold;">{{ $record->owner_name }}</td>
+                    <td>{{ $record->building_type }}</td>
+                    <td>{{ $record->building_count }}</td>
+                    <td>{{ number_format($record->area_covered, 2) }}</td>
+                    <td>{{ number_format($record->rate_of_cost, 2) }}</td>
+                    <td style="font-weight: bold;">{{ number_format($record->compensation_amount, 2) }}</td>
+                    <td>{{ $record->account_number }}</td>
+                    <td>{{ $record->phone_number }}</td>
+                    <td style="font-size: 11px;">{{ $record->remarks ?? '-' }}</td>
+                </tr>
+            @endif
+
+            <!-- Spacing rows -->
+            @for($i=0; $i<3; $i++)
             <tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
             @endfor
         </tbody>
