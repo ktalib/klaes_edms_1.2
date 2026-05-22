@@ -61,7 +61,7 @@
         /* EXACT ORIGINAL DIMENSIONS - only margin adjusted */
         .ornate-border {
             border: 18px solid transparent;
-            border-image-source: url("http://app.klaes.ng/storage/template_frames/land.png");
+            border-image-source: url("http://app.klaes.ng/storage/template_frames/sltr.jpeg");
             border-image-slice: 160;
             border-image-repeat: round;
             border-image-width: 18px;
@@ -525,7 +525,7 @@
                     <p class="condition-item">
                         With reference to your application dated
                         <span class="inline-data" style="min-width: 80px">{{ $recommendation->created_at->format('jS F') }}</span>
-                        <span class="inline-data" style="min-width: 30px">{{ $recommendation->created_at->format('y') }}</span>, I am directed to inform you that the Governor of Kano State has
+                        <span class="inline-data" style="min-width: 30px">{{ $recommendation->created_at->format('Y') }}</span>, I am directed to inform you that the Governor of Kano State has
                         approved the grant of a Right of Occupancy to you over
                         @if(!empty($recommendation->plot_number))
                             plot No <span class="inline-data" style="min-width: 40px">{{ $recommendation->plot_number }}</span>
@@ -570,11 +570,18 @@
                             </div>
                             <div class="sub-item-line" style="padding-left: 18px;">
                                 <span class="sub-item-label">(b)</span> Purpose:
-                                <span class="inline-data" style="min-width: 120px">{{ $recommendation->purpose_of_clause }}</span>
+                                <span class="inline-data" style="min-width: 120px">
+                                    {{ $recommendation->land_use ?? $recommendation->rofo_land_use_category }}
+                                    @if($recommendation->purpose_of_clause)
+                                        ({{ $recommendation->purpose_of_clause }})
+                                    @endif
+                                </span>
                             </div>
-                    <div class="sub-item-line" style="padding-left: 18px;">
-                        <span class="sub-item-label">(c)</span> Improvement Value: N
-                        <span class="inline-data" style="min-width: 80px">{{ number_format($recommendation->development_value, 2) }} </span>  within&nbsp;<span class="inline-data" style="min-width: 8px">{{ $recommendation->development_period }}</span>&nbsp;years
+                    <div class="sub-item-line" style="padding-left: 18px; display:flex; flex-wrap:wrap; align-items:baseline; gap:0 4px;">
+                        <span class="sub-item-label">(c)</span>
+                        <span>Improvement Value: N</span>
+                        <span class="inline-data" style="min-width:80px; white-space:nowrap;">{{ number_format($recommendation->development_value, 2) }}</span>
+                        <span style="white-space:nowrap;">within&nbsp;<span class="inline-data" style="min-width:8px; display:inline-block;">{{ $recommendation->development_period }}</span>&nbsp;years</span>
                     </div>
                         </div>
                     </div>
@@ -809,11 +816,11 @@
     </script>
 
     <!-- Color Scheme Switcher — hidden, locked -->
-    <div id="scheme-toolbar" style="display: none;"></div>
+    <div id="scheme-toolbar"></div>
     <style id="scheme-override"></style>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            var frameUrl = 'http://app.klaes.ng/storage/template_frames/land.png';
+            var frameUrl = 'http://app.klaes.ng/storage/template_frames/sltr.jpeg';
             var css = '.ornate-border { border-image-source: url("' + frameUrl + '") !important; }\n';
             document.getElementById('scheme-override').textContent = css;
             document.querySelectorAll('[data-rofo-badge]').forEach(function(badge) {
@@ -821,7 +828,7 @@
             });
         });
 
-      
+
     </script>
 </body>
 </html>

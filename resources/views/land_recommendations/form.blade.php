@@ -152,6 +152,7 @@
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">(b) Purpose Clause</label>
                                     <select name="purpose_id" id="purpose_id" required
+                                        data-selected="{{ old('purpose_id', $recommendation->purpose_id ?? '') }}"
                                         class="w-full border @error('purpose_id') border-red-500 @else border-slate-200 @enderror rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
                                         <option value="">Select Purpose</option>
                                         @if(isset($purposes))
@@ -168,24 +169,79 @@
                                     <input type="hidden" name="purpose_of_clause" id="purpose_of_clause_text" value="{{ old('purpose_of_clause', $recommendation->purpose_of_clause ?? '') }}">
                                 </div>
                             </div>
-                            <div class="grid grid-cols-1 gap-4">
-                                <div>
-                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">(c) Location</label>
-                                    <input type="text" name="location" id="location" value="{{ old('location', $recommendation->location ?? '') }}"
-                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
-                                </div>
-                            </div>
+                            {{-- TP No. — placed here after Land Use / Purpose --}}
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">(d) Plot Number</label>
-                                    <input type="text" name="plot_number" id="plot_number" value="{{ old('plot_number', $recommendation->plot_number ?? '') }}"
-                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">TP No.</label>
+                                    <select name="layout_plan_no" id="layout_plan_no" style="width:100%;">
+                                        @php $existingTp = old('layout_plan_no', $recommendation->layout_plan_no ?? ''); @endphp
+                                        @if($existingTp)
+                                            <option value="{{ $existingTp }}" selected>{{ $existingTp }}</option>
+                                        @endif
+                                    </select>
+                                </div>
+                            </div>
+                            {{-- Location structured fields --}}
+                            <div class="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">House No</label>
+                                    <input type="text" name="house_no" id="house_no" value="{{ old('house_no', $recommendation->house_no ?? '') }}"
+                                        class="loc-part w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm" placeholder="e.g. 15">
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">(e) Layout Plan No.</label>
-                                    <input type="text" name="layout_plan_no" id="layout_plan_no" value="{{ old('layout_plan_no', $recommendation->layout_plan_no ?? '') }}"
-                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Plot No</label>
+                                    <input type="text" name="plot_number" id="plot_number" value="{{ old('plot_number', $recommendation->plot_number ?? '') }}"
+                                        class="loc-part w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm" placeholder="e.g. 1002">
                                 </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Street Name</label>
+                                    @php $existingStreet = old('street_name', $recommendation->street_name ?? ''); @endphp
+                                    <input type="hidden" name="street_name" id="street_name" value="{{ $existingStreet }}">
+                                    <select id="street_name_select" style="width:100%;">
+                                        @if($existingStreet)
+                                            <option value="{{ $existingStreet }}" selected>{{ $existingStreet }}</option>
+                                        @endif
+                                    </select>
+                                    <input type="text" id="street_name_other" placeholder="Specify street name..."
+                                        class="mt-2 w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition bg-amber-50" style="display:none;">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">District</label>
+                                    @php $existingDistrict = old('district', $recommendation->district ?? ''); @endphp
+                                    <input type="hidden" name="district" id="district" value="{{ $existingDistrict }}">
+                                    <select id="district_select" style="width:100%;">
+                                        @if($existingDistrict)
+                                            <option value="{{ $existingDistrict }}" selected>{{ $existingDistrict }}</option>
+                                        @endif
+                                    </select>
+                                    <input type="text" id="district_other" placeholder="Specify district..."
+                                        class="mt-2 w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition bg-amber-50" style="display:none;">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">LGA</label>
+                                    @php $existingLga = old('lga', $recommendation->lga ?? ''); @endphp
+                                    <input type="hidden" name="lga" id="lga" value="{{ $existingLga }}">
+                                    <select id="lga_select" style="width:100%;">
+                                        @if($existingLga)
+                                            <option value="{{ $existingLga }}" selected>{{ $existingLga }}</option>
+                                        @endif
+                                    </select>
+                                    <input type="text" id="lga_other" placeholder="Specify LGA..."
+                                        class="mt-2 w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition bg-amber-50" style="display:none;">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">State</label>
+                                    <input type="hidden" name="state" value="{{ old('state', $recommendation->state ?? 'Kano State') }}">
+                                    <input type="text" id="state" value="{{ old('state', $recommendation->state ?? 'Kano State') }}"
+                                        class="loc-part w-full border border-slate-200 rounded-lg px-4 py-2.5 outline-none bg-slate-100 text-slate-400 cursor-not-allowed" disabled>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Full Location <span class="text-slate-400 normal-case font-normal">(auto-generated)</span></label>
+                                <input type="text" name="location" id="location" value="{{ old('location', $recommendation->location ?? '') }}"
+                                    class="w-full border border-blue-200 rounded-lg px-4 py-2.5 bg-blue-50 focus:border-blue-500 outline-none transition shadow-sm font-medium" readonly>
                             </div>
                         </div>
                     </div>
@@ -224,10 +280,17 @@
                                         class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
                                 </div>
                             </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Survey & Processing charges (₦)</label>
-                                <input type="number" step="0.01" name="preparation_fees" value="{{ old('preparation_fees', $recommendation->preparation_fees ?? '') }}"
-                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Survey & Processing Fees (₦)</label>
+                                    <input type="number" step="0.01" name="survey_fees" id="survey_fees" value="{{ old('survey_fees', $recommendation->survey_fees ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Preparation Fees (₦)</label>
+                                    <input type="number" step="0.01" name="preparation_fees" id="preparation_fees" value="{{ old('preparation_fees', $recommendation->preparation_fees ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -376,10 +439,138 @@
 @include('components.global-fileno-modal')
 
 @push('scripts')
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet"/>
+<style>
+    /* Make Select2 match Tailwind form inputs */
+    .select2-container--default .select2-selection--single {
+        height: 42px;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.5rem;
+        background-color: #fff;
+        box-shadow: 0 1px 2px 0 rgb(0 0 0 / .05);
+        display: flex;
+        align-items: center;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        color: #0f172a;
+        line-height: 42px;
+        padding-left: 1rem;
+        padding-right: 2rem;
+        font-size: 0.875rem;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__placeholder {
+        color: #94a3b8;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 42px;
+        right: 8px;
+    }
+    .select2-container--default.select2-container--focus .select2-selection--single,
+    .select2-container--default.select2-container--open .select2-selection--single {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 1px #3b82f6;
+        outline: none;
+    }
+    .select2-dropdown {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.5rem;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / .1);
+        font-size: 0.875rem;
+    }
+    .select2-container--default .select2-results__option--highlighted[aria-selected] {
+        background-color: #3b82f6;
+    }
+    .select2-search--dropdown .select2-search__field {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.375rem;
+        padding: 0.375rem 0.75rem;
+        font-size: 0.875rem;
+        outline: none;
+    }
+    .select2-search--dropdown .select2-search__field:focus {
+        border-color: #3b82f6;
+    }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script src="{{ asset('js/land_recommendations.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        // TP No Select2 — lazy search against tp_lookups (200k+ rows)
+        $('#layout_plan_no').select2({
+            placeholder: 'Type to search TP No...',
+            allowClear: true,
+            minimumInputLength: 1,
+            ajax: {
+                url: '{{ route("instruments.tpLookups.search") }}',
+                dataType: 'json',
+                delay: 300,
+                data: function (params) { return { q: params.term }; },
+                processResults: function (data) { return data; },
+                cache: true
+            }
+        });
+
+        // Helper: wire up a Select2 with an "Other → specify" pattern
+        // selectId: jQuery selector for the <select>
+        // hiddenId: jQuery selector for the hidden input (actual submitted value)
+        // otherId:  jQuery selector for the specify text input
+        function initOtherSelect2(selectId, hiddenId, otherId, ajaxUrl, searchParam) {
+            var $sel    = $(selectId);
+            var $hidden = $(hiddenId);
+            var $other  = $(otherId);
+
+            $sel.select2({
+                placeholder: 'Type to search...',
+                allowClear: true,
+                minimumInputLength: 1,
+                ajax: {
+                    url: ajaxUrl,
+                    dataType: 'json',
+                    delay: 300,
+                    data: function (params) {
+                        var d = {};
+                        d[searchParam] = params.term;
+                        return d;
+                    },
+                    processResults: function (data) {
+                        return {
+                            results: (data.data || []).map(function (item) {
+                                return { id: item.name, text: item.name };
+                            })
+                        };
+                    },
+                    cache: true
+                }
+            });
+
+            $sel.on('change', function () {
+                var val = $(this).val() || '';
+                if (val.toLowerCase() === 'other') {
+                    $other.show().focus();
+                    $hidden.val('');
+                } else {
+                    $other.hide().val('');
+                    $hidden.val(val);
+                }
+                if (window._buildLocation) window._buildLocation();
+            });
+
+            $other.on('input', function () {
+                $hidden.val($(this).val());
+                if (window._buildLocation) window._buildLocation();
+            });
+        }
+
+        initOtherSelect2('#street_name_select', '#street_name', '#street_name_other',
+            '/api/reference/streets', 'search');
+
+        initOtherSelect2('#district_select', '#district', '#district_other',
+            '/api/reference/districts', 'search');
+
+        initOtherSelect2('#lga_select', '#lga', '#lga_other',
+            '/api/reference/lgas', 'search');
+
         @if($errors->any())
             if (typeof Swal !== 'undefined') {
                 Swal.fire({

@@ -10,6 +10,36 @@ document.addEventListener('DOMContentLoaded', function () {
     const trackingInput = document.getElementById('tracking_id');
     const submitBtn = form?.querySelector('button[type="submit"]');
 
+    // Location auto-builder
+    const houseNoInput   = document.getElementById('house_no');
+    const streetInput    = document.getElementById('street_name');
+    const districtInput  = document.getElementById('district');
+    const stateInput     = document.getElementById('state');
+
+    function buildLocation() {
+        const houseNo  = (houseNoInput?.value || '').trim();
+        const plotNo   = (plotInput?.value || '').trim();
+        // street, district, lga are now hidden inputs — read .value directly
+        const street   = (streetInput?.value || '').trim();
+        const district = (districtInput?.value || '').trim();
+        const lga      = (lgaInput?.value || '').trim();
+        // state is fixed — read from the hidden input (stateInput points to the disabled display input)
+        const stateHidden = document.querySelector('input[type="hidden"][name="state"]');
+        const state    = ((stateHidden?.value || stateInput?.value || '')).trim();
+
+        const prefix = plotNo ? 'Plot ' + plotNo : (houseNo ? 'No. ' + houseNo : '');
+        const parts = [prefix, street, district, lga, state].filter(Boolean);
+        if (locationInput) locationInput.value = parts.join(' ');
+    }
+
+    // Expose globally so Select2 change handlers in the blade script can call it
+    window._buildLocation = buildLocation;
+
+    // lga/street/district are hidden inputs updated by Select2 — no input listener needed
+    [houseNoInput, plotInput, stateInput].forEach(el => {
+        if (el) el.addEventListener('input', buildLocation);
+    });
+
     // Declare dropdowns early so all callbacks can reference them
     const landUseSelect = document.getElementById('land_use_id');
     const purposeSelect = document.getElementById('purpose_id');
@@ -98,9 +128,32 @@ document.addEventListener('DOMContentLoaded', function () {
                             // Auto-populate fields
                             if (applicantInput) applicantInput.value = record.file_name || record.FileName || '';
                             if (locationInput) locationInput.value = record.location || '';
-                            if (lgaInput) lgaInput.value = record.lga || '';
                             if (plotInput) plotInput.value = record.plot_no || '';
-                            if (layoutPlanInput) layoutPlanInput.value = record.layout_plan_no || '';
+                            // street_name, district, lga are now Select2 with hidden inputs
+                            const streetVal = record.street_name || '';
+                            if (streetVal) {
+                                document.getElementById('street_name').value = streetVal;
+                                const opt = new Option(streetVal, streetVal, true, true);
+                                $('#street_name_select').append(opt).trigger('change');
+                            }
+                            const districtVal = record.district || '';
+                            if (districtVal) {
+                                document.getElementById('district').value = districtVal;
+                                const opt = new Option(districtVal, districtVal, true, true);
+                                $('#district_select').append(opt).trigger('change');
+                            }
+                            const lgaVal = record.lga || '';
+                            if (lgaVal) {
+                                document.getElementById('lga').value = lgaVal;
+                                const opt = new Option(lgaVal, lgaVal, true, true);
+                                $('#lga_select').append(opt).trigger('change');
+                            }
+                            // layout_plan_no is now a Select2 — set via jQuery
+                            const tpVal = record.layout_plan_no || '';
+                            if (tpVal && $('#layout_plan_no').length) {
+                                const opt = new Option(tpVal, tpVal, true, true);
+                                $('#layout_plan_no').append(opt).trigger('change');
+                            }
                             if (trackingInput) trackingInput.value = record.tracking_id || '';
 
                             // Auto-populate Land Use (and trigger purpose load)
@@ -219,12 +272,19 @@ document.addEventListener('DOMContentLoaded', function () {
                     .then(r => r.json())
                     .then(result => {
                         if (result.success) {
+                            const savedPurpose = purposeSelect.dataset.selected || '';
                             let options = '<option value="">Select Purpose</option>';
                             result.data.forEach(p => {
-                                options += `<option value="${p.id}">${p.name}</option>`;
+                                const sel = String(p.id) === String(savedPurpose) ? ' selected' : '';
+                                options += `<option value="${p.id}"${sel}>${p.name}</option>`;
                             });
                             purposeSelect.innerHTML = options;
                             purposeSelect.disabled = false;
+                            // Sync the hidden text field
+                            if (savedPurpose) {
+                                const selOpt = purposeSelect.options[purposeSelect.selectedIndex];
+                                if (purposeText && selOpt) purposeText.value = selOpt.text;
+                            }
                         } else {
                             purposeSelect.innerHTML = '<option value="">Error loading purposes</option>';
                         }

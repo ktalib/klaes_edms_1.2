@@ -229,6 +229,11 @@ function datatable() {
                     "colvis",
                 ],
             });
+
+            function toggleColumn(column) {
+                var column = table.column(column);
+                column.visible(!column.visible());
+            }
         }
     }
 }
