@@ -577,82 +577,17 @@
                     <div style="display: inline-block; border: 2px solid #000; border-radius: 8px; padding: 3px; background: #fff;">
                         <div data-rofo-badge style="background: #1a3a5c; padding: 8px 16px; border-radius: 5px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
                             <p style="font-weight: bold; color: #fff; text-transform: uppercase; font-size: 15px; margin: 0; letter-spacing: 0.5px;">KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</p>
+                            <p style="font-size: 10px; color: #fff; margin: 3px 0 0 0; letter-spacing: 0.3px;">No. 2 Dr Bala Mohammed Road, Kano State, Nigeria</p>
                         </div>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-4 mb-2 items-stretch">
 
-                    <!-- Address Box -->
-                    <div>
-                        <div class="border-2 border-black p-2 rounded font-bold">
-                            <div class="mb-2">
-                                <label class="font-bold">ADDRESS:</label>
-                            </div>
-                            <div class="mb-2">
-                                <span class="font-bold">No. 2 Dr Bala Mohammed Road,</span>
-                            </div>
-                            <div class="mb-2">
-                                <span class="font-bold">P.M.B. 3083</span>
-                            </div>
-                            <div class="mb-2">
-                                <span class="font-bold">Kano State, Nigeria.</span>
-                            </div>
-                            <div>
-                                <span class="font-bold">Tel: 064-6321551, 634202</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- File No / Land Use -->
-
-
-                    <div class="text-right">
-                        <p class="mb-1">
-                            <label class="font-bold text-sm text-justify">ROFO NO. <span
-                                    class="font-bold">{{ $rofoData->fileno ?? $rofo->fileno ?? '-' }}</span></label>
-                        </p>
-                        <p class="mb-1">
-                            <label class="font-bold text-sm text-justify"><span class="font-bold uppercase">
-                                    @php
-                                        $landUse = $rofoData->land_use ?? $rofo->land_use ?? '-';
-
-                                        // Priority 1: Aliased specific use from controller
-                                        $specificLandUse = $rofo->unit_specific_use ?? '';
-
-                                        // Priority 2: Direct property (if alias missing)
-                                        if (empty($specificLandUse)) {
-                                            $specificLandUse = $rofoData->specific_land_use ?? $rofo->specific_land_use ?? '';
-                                        }
-
-                                        // Check if main land use indicates Mixed
-                                        if (\Str::contains(strtolower(trim($landUse)), 'mixed')) {
-                                            if (!empty($specificLandUse)) {
-                                                echo strtoupper($specificLandUse);
-                                            } else {
-                                                // Fallback: Infer from Fee
-                                                $fee = $rofoData->recertification_fee ?? $rofoData->ground_rent ?? '';
-                                                if (\Str::contains($fee, ['100.00K', '50.00K', '20.00K'])) {
-                                                    echo 'COMMERCIAL';
-                                                } elseif (\Str::contains($fee, ['12.00K', '10.00K', '8.00K'])) {
-                                                    echo 'RESIDENTIAL';
-                                                } else {
-                                                    echo strtoupper($landUse);
-                                                }
-                                            }
-                                        } else {
-                                            echo strtoupper($landUse);
-                                        }
-                                    @endphp
-                                </span></label>
-                        </p>
-                    </div>
-
-                    <!-- Name Box -->
+                    <!-- Left: Applicant Name & Address -->
                     <div class="flex">
                         <div class="border-2 border-black p-2 rounded flex-1">
                             <div class="mb-2">
                                 <label class="font-bold">TO: <span class="font-bold uppercase">
-
                                         @php
                                             $corporateName = $rofoData->corporate_name ?? $rofo->corporate_name ?? '';
                                             if ($corporateName) {
@@ -667,45 +602,59 @@
                                     </span></label>
                                 <div class="border-b border-black mt-1"></div>
                             </div>
-
                             <div class="mb-2">
-                                <label class="font-bold">ADDRESS: <span class="font-bold uppercase">
-                                        {{ $subApplication->address ?? '' }}
-                                    </span></label>
+                                <label class="font-bold">ADDRESS: <span class="font-bold uppercase">{{ $subApplication->address ?? '' }}</span></label>
                                 <div class="border-b border-black mt-1"></div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Property Details Box -->
+                    <!-- Right: ROFO No, Land Use, Unit, Section, Location -->
                     <div class="flex">
                         <div class="border-2 border-black p-2 rounded font-bold flex-1">
-
-
-                            <div class="mb-3">
-                                <label class="font-bold">UNIT NO/SCHEME NO <span class="font-bold">
+                            <div class="mb-2">
+                                <label class="font-bold">ROFO NO: <span class="font-bold">{{ $rofoData->fileno ?? $rofo->fileno ?? '-' }}</span></label>
+                                <div class="border-b border-black mt-1"></div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="font-bold">LAND USE: <span class="font-bold uppercase">
+                                        @php
+                                            $landUse = $rofoData->land_use ?? $rofo->land_use ?? '-';
+                                            $specificLandUse = $rofo->unit_specific_use ?? $rofoData->specific_land_use ?? $rofo->specific_land_use ?? '';
+                                            if (\Str::contains(strtolower(trim($landUse)), 'mixed')) {
+                                                if (!empty($specificLandUse)) {
+                                                    echo strtoupper($specificLandUse);
+                                                } else {
+                                                    $fee = $rofoData->recertification_fee ?? $rofoData->ground_rent ?? '';
+                                                    if (\Str::contains($fee, ['100.00K', '50.00K', '20.00K'])) { echo 'COMMERCIAL'; }
+                                                    elseif (\Str::contains($fee, ['12.00K', '10.00K', '8.00K'])) { echo 'RESIDENTIAL'; }
+                                                    else { echo strtoupper($landUse); }
+                                                }
+                                            } else {
+                                                echo strtoupper($landUse);
+                                            }
+                                        @endphp
+                                    </span></label>
+                                <div class="border-b border-black mt-1"></div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="font-bold">UNIT NO/SCHEME NO: <span class="font-bold">
                                         @if($unitLineHasData)
-                                            <span class="font-bold uppercase">{{ $unitNumberValue }}</span>
-                                            <span class="font-bold uppercase">{{ $schemeNumberValue }}</span>
-                                            <span class="font-bold uppercase"
-                                                style="color: #b91c1c;">{{ $unitTypeValue }}</span>
+                                            <span class="uppercase">{{ $unitNumberValue }}</span>
+                                            <span class="uppercase">{{ $schemeNumberValue }}</span>
+                                            <span class="uppercase" style="color: #b91c1c;">{{ $unitTypeValue }}</span>
                                         @else
-                                            <span class="font-bold">-</span>
+                                            -
                                         @endif
                                     </span></label>
                                 <div class="border-b border-black mt-1"></div>
                             </div>
-
-
-                            <div class="mb-3">
-                                <label class="font-bold">SECTION NO. <span
-                                        class="font-bold">{{ $rofoData->floor_no ?? $rofo->floor_number ?? '1' }}</span></label>
+                            <div class="mb-2">
+                                <label class="font-bold">SECTION NO: <span class="font-bold">{{ $rofoData->floor_no ?? $rofo->floor_number ?? '1' }}</span></label>
                                 <div class="border-b border-black mt-1"></div>
                             </div>
-
                             <div>
-                                <label class="font-bold">LOCATION. <span
-                                        class="font-bold">{{ $rofoData->location ?? '-' }}</span></label>
+                                <label class="font-bold">LOCATION: <span class="font-bold">{{ $rofoData->location ?? '-' }}</span></label>
                                 <div class="border-b border-black mt-1"></div>
                             </div>
                         </div>

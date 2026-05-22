@@ -97,12 +97,14 @@
         }
         .green-header h1 { font-weight: bold; color: #fff !important; text-transform: uppercase; font-size: 15px; margin: 0; letter-spacing: 0.5px; }
 
-        .meta-grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 15px; margin: 8px 0; }
+        .meta-grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 15px; margin: 8px 0; align-items: stretch; }
+        .meta-grid > div { display: flex; flex-direction: column; }
+        .meta-grid > div > .bordered-section { flex: 1; height: 100%; box-sizing: border-box; }
         .bordered-section { border: 2px solid #000; padding: 15px 12px; background-color: #fff; }
         .row { display: flex; margin-bottom: 3px; font-weight: bold; align-items: baseline; }
 
         .sltr-section { text-align: center; margin-top: 5px; }
-        .sltr-title { color: #8b2d2d !important; font-size: 15px; font-weight: bold; text-decoration: underline; margin: 5px 0; }
+        .sltr-title { color: #1a5c3a !important; font-size: 15px; font-weight: bold; text-decoration: underline; margin: 5px 0; }
 
         .body-text { font-size: 11.5pt; text-align: justify; line-height: 1.4; margin-bottom: 8px; }
         .conditions-list-fixed p { margin: 4px 0; text-align: justify; line-height: 1.4; }
@@ -243,6 +245,7 @@
                 <div class="green-header-outer">
                     <div class="green-header">
                         <h1>KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</h1>
+                        <p style="font-size: 10px; color: #fff; margin: 3px 0 0 0; letter-spacing: 0.3px; text-align: center;">No. 2 Dr Bala Mohammed Road, Kano State, Nigeria</p>
                     </div>
                 </div>
             </div>
@@ -478,10 +481,11 @@
 <style>@media print { #scheme-toolbar { display: none !important; } }</style>
 <script>
     var sltrSchemes = {
-        A: { frame: 'sltr.jpeg', badge: '#1a5c3a', titleColor: '#8b2d2d', label: 'A (SLTR border, dark green badge)' },
-        B: { frame: 'st.png',    badge: '#1a3a5c', titleColor: '#8b2d2d', label: 'B (ST border, navy badge)' },
+        A: { frame: 'sltr.jpeg', badge: '#1a5c3a', titleColor: '#1a5c3a', label: 'A (SLTR border, dark green badge)' },
+        B: { frame: 'st.png',    badge: '#1a3a5c', titleColor: '#1a3a5c', label: 'B (ST border, navy badge)' },
         C: { frame: 'sltr.jpeg', badge: '#e07b20', titleColor: '#e07b20', label: 'C (SLTR border, orange badge)' }
     };
+    document.addEventListener('DOMContentLoaded', function() { applyScheme('A'); });
     function applyScheme(key) {
         var s = sltrSchemes[key];
         var frameUrl = 'http://app.klaes.ng/storage/template_frames/' + s.frame;
