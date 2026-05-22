@@ -411,7 +411,7 @@
           </div>
         </div>
 
-        <p style="font-size:10px;font-style:italic;font-weight:bold;text-align:center;margin:4px 0 0;color:#555;">N.B: This search report is deduced based on the available records from the file and does not represent any document in possession of any body.</p>
+        <p style="font-size:10px;font-style:italic;font-weight:bold;text-align:center;margin:4px 0 0;color:#555;">N.B: This search report is deduced based on the available records from the file and does not represent any document in possession of any body.<span id="report-nb-fileno"></span></p>
 
         <div class="footer-bottom">
           <div class="disclaimer-box" id="report-generated-by">
@@ -480,6 +480,11 @@
             setText('report-remarks', d.remarks);
             setText('report-generated-by', d.generated_by);
             setText('report-full-name', d.full_name);
+
+            const nbFileNoEl = document.getElementById('report-nb-fileno');
+            if (nbFileNoEl && d.file_number) {
+              nbFileNoEl.textContent = ' File No: ' + d.file_number + '.';
+            }
 
             // Caveat note
             const caveatEl = document.getElementById('report-caveat-note');

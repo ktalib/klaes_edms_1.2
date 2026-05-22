@@ -12,9 +12,20 @@ class LandRofoController extends Controller
 {
     public function index(Request $request)
     {
-        // Only show approved recommendations
+        // Show approved recommendations AND OSS-type records (CoN applications ready to print)
+        // Select only the columns the view needs — avoids loading large text fields (recommendation, survey_report, etc.)
         $query = LandRecommendation::with('creator')
-            ->where('status', LandRecommendation::STATUS_APPROVED);
+            ->select([
+                'id', 'file_number', 'applicant_name', 'purpose_of_clause', 'location',
+                'plot_number', 'layout_plan_no', 'term', 'ground_rent', 'development_period',
+                'survey_fees', 'development_value', 'development_charge', 'type',
+                'rofo_status', 'status', 'approved_at', 'land_rofo_serial_no',
+                'created_at', 'created_by', 'land_use', 'land_use_id', 'purpose_id',
+            ])
+            ->where(function ($q) {
+                $q->where('status', LandRecommendation::STATUS_APPROVED)
+                  ->orWhereRaw("UPPER(ISNULL(type, '')) = 'OSS'");
+            });
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -26,20 +37,43 @@ class LandRofoController extends Controller
         }
 
         $recommendations = $query->latest()->paginate(20);
-        
-        $PageTitle='Lands RofO';
+
+        $PageTitle='Land RofO';
         $landUses = \App\Models\LandUse::orderBy('landuse')->get();
 
+        // Single aggregated query for all stats to avoid multiple full-table scans
+        $statsRow = DB::connection('sqlsrv')->table('land_recommendations')->selectRaw("
+            COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND status = 'approved'                                          THEN 1 END)   AS total_eligible,
+            COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND status = 'approved' AND ISNULL(rofo_status,'') = 'pending'   THEN 1 END)   AS pending_generation,
+            COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND ISNULL(rofo_status,'') = 'generated'                        THEN 1 END)   AS generated,
+            ISNULL(SUM(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND ISNULL(rofo_status,'') = 'generated' THEN ISNULL(rofo_dev_charge,0) ELSE 0 END), 0) AS total_dev_charge
+        ")->first();
+
+        // Count OSS Applications from the authoritative source (oss_applications) so
+        // the stat matches the Change of Name page instead of counting type='OSS' rows
+        // in land_recommendations which may have duplicates or test records.
+        $ossColumns = DB::connection('sqlsrv')->getSchemaBuilder()->getColumnListing('oss_applications');
+        $ossHasIsDeleted = in_array('is_deleted', array_map('strtolower', $ossColumns));
+        $ossTotal = DB::connection('sqlsrv')->table('oss_applications')
+            ->where('system_source', 'OSSOPCHANGEOFNAME')
+            ->where(function ($q) use ($ossHasIsDeleted) {
+                if ($ossHasIsDeleted) {
+                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                }
+            })
+            ->count();
+
         $stats = [
-            'total_eligible' => LandRecommendation::where('status', LandRecommendation::STATUS_APPROVED)->count(),
-            'pending_generation' => LandRecommendation::where('status', LandRecommendation::STATUS_APPROVED)
-                ->where('rofo_status', LandRecommendation::ROFO_PENDING)->count(),
-            'generated' => LandRecommendation::where('rofo_status', LandRecommendation::ROFO_GENERATED)->count(),
-            'total_dev_charge' => LandRecommendation::where('rofo_status', LandRecommendation::ROFO_GENERATED)->sum('rofo_dev_charge')
+            'total_eligible'    => (int) ($statsRow->total_eligible    ?? 0),
+            'pending_generation'=> (int) ($statsRow->pending_generation ?? 0),
+            'generated'         => (int) ($statsRow->generated          ?? 0),
+            'total_dev_charge'  => (float) ($statsRow->total_dev_charge ?? 0),
+            'oss_total'         => $ossTotal,
         ];
 
-        // Fetch available (unused) security paper codes sorted ascending
+        // Only fetch the paper_code column — the view only ever reads s.paper_code
         $availableSerials = DB::connection('sqlsrv')->table('land_rofo_security_paper_codes')
+            ->select('paper_code')
             ->where('is_used', false)
             ->orderBy('paper_code', 'asc')
             ->get();
@@ -92,16 +126,16 @@ class LandRofoController extends Controller
 
             // Also update security_codes table for tracking/linking
             DB::connection('sqlsrv')->table('security_codes')->insert([
-                'code' => 'L-' . $request->paper_code, // Use L- prefix for Lands
+                'code' => 'L-' . $request->paper_code, // Use L- prefix for Land
                 'security_paper_code' => $request->paper_code,
                 'used_security_paper_code' => $request->paper_code,
                 'is_used' => true,
-                'assigned_to' => 'Lands ROFO',
+                'assigned_to' => 'Land ROFO',
                 'assigned_by' => Auth::id(),
                 'assigned_at' => now(),
                 'file_number' => $recommendation->file_number,
                 'document_id' => $recommendation->id,
-                'document_type' => 'Lands ROFO',
+                'document_type' => 'Land ROFO',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -175,7 +209,7 @@ class LandRofoController extends Controller
         $securityCode = $securityCodeService->getOrGenerateForDocument(
             $recommendation->file_number,
             $recommendation->id,
-            'Lands ROFO'
+            'Land ROFO'
         );
 
         if (!$isCTC && $recommendation->rofo_print_count >= 2) {
@@ -183,6 +217,88 @@ class LandRofoController extends Controller
         }
 
         return view('land_rofos.templates.rofo_print', compact('recommendation', 'securityCode'));
+    }
+
+    public function unprintedJson()
+    {
+        // File numbers already batch-printed
+        $printed = DB::connection('sqlsrv')->table('print_logs')
+            ->where('document_type', 'Land ROFO')
+            ->where('print_type', 'LandRofoBatch')
+            ->pluck('reference_number')
+            ->map(fn($r) => strtoupper(trim((string) $r)))
+            ->unique()
+            ->all();
+
+        $records = LandRecommendation::select([
+                'id', 'file_number', 'applicant_name', 'location', 'plot_number',
+                'land_rofo_serial_no', 'rofo_status',
+            ])
+            ->where('rofo_status', LandRecommendation::ROFO_GENERATED)
+            ->get()
+            ->filter(fn($r) => !in_array(strtoupper(trim((string) $r->file_number)), $printed))
+            ->values();
+
+        return response()->json(['success' => true, 'data' => $records, 'count' => $records->count()]);
+    }
+
+    public function batchPrint(Request $request)
+    {
+        $ids = array_filter((array) $request->input('ids', []), 'is_numeric');
+
+        $records = LandRecommendation::whereIn('id', $ids)
+            ->where('rofo_status', LandRecommendation::ROFO_GENERATED)
+            ->get();
+
+        // Use the same service the individual print uses so codes are consistent
+        $securityCodeService = app(\App\Services\SecurityCodeService::class);
+        $securityCodes = [];
+        foreach ($records as $rec) {
+            $sc = $securityCodeService->getOrGenerateForDocument(
+                $rec->file_number,
+                $rec->id,
+                'Land ROFO'
+            );
+            if ($sc) {
+                $securityCodes[$rec->id] = $sc;
+            }
+        }
+
+        return view('land_rofos.templates.batch_rofo_print', compact('records', 'securityCodes'));
+    }
+
+    public function batchPrintLog(Request $request)
+    {
+        $ids = array_filter((array) $request->input('ids', []), 'is_numeric');
+
+        if (empty($ids)) {
+            return response()->json(['success' => false, 'message' => 'No records specified.'], 422);
+        }
+
+        $records = LandRecommendation::whereIn('id', $ids)
+            ->where('rofo_status', LandRecommendation::ROFO_GENERATED)
+            ->get();
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            foreach ($records as $rec) {
+                foreach (['Original', 'Duplicate', 'Triplicate'] as $copy) {
+                    PrintLog::create([
+                        'reference_number' => $rec->file_number,
+                        'document_type'    => 'Land ROFO',
+                        'print_type'       => 'LandRofoBatch',
+                        'status'           => $copy,
+                        'user_id'          => Auth::id(),
+                    ]);
+                }
+                $rec->increment('rofo_print_count');
+            }
+            DB::connection('sqlsrv')->commit();
+            return response()->json(['success' => true, 'count' => $records->count()]);
+        } catch (\Exception $e) {
+            DB::connection('sqlsrv')->rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
     }
 
     public function logPrint(Request $request, $id)

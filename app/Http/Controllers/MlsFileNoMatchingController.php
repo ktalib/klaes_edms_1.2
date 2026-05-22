@@ -42,11 +42,22 @@ class MlsFileNoMatchingController extends Controller
     }
 
     /**
-     * Fetch available records for preview (Deprecated for manual matching but kept for API compatibility if needed).
+     * Check if a file number exists in the system (FileNumber table).
+     * Also used for preview compatibility.
      */
     public function getAvailableMls(Request $request)
     {
-        return response()->json(['success' => true, 'data' => [], 'message' => 'Manual matching enabled']);
+        $fileNumber = trim((string) $request->query('file_number', ''));
+        if ($fileNumber === '') {
+            return response()->json(['success' => true, 'data' => [], 'message' => 'Manual matching enabled']);
+        }
+
+        $exists = FileNumber::mlsfExists($fileNumber);
+        return response()->json([
+            'success' => true,
+            'exists'  => $exists,
+            'message' => $exists ? 'File number found in system.' : 'File number not found in system.',
+        ]);
     }
 
     /**
@@ -65,63 +76,54 @@ class MlsFileNoMatchingController extends Controller
         ]);
 
         $fullFileNumber = $validated['full_file_number'];
-        $entityName = $validated['file_title'];
+        $entityName     = $validated['file_title'];
 
         DB::connection('sqlsrv')->beginTransaction();
 
         try {
-            // Find the record in FileNumber (Record MUST exist in system to be matched)
-            $existingFile = FileNumber::where('mlsfNo', $fullFileNumber)->first();
+            // Select only the columns we actually use
+            $existingFile = FileNumber::select('id', 'tracking_id')
+                ->where('mlsfNo', $fullFileNumber)
+                ->first();
 
             if (!$existingFile) {
-                 throw new \Exception("Record not found in system for File Number: {$fullFileNumber}. Only existing file numbers can be matched.");
+                throw new \Exception("Record not found in system for File Number: {$fullFileNumber}. Only existing file numbers can be matched.");
             }
 
-            // We need a way to identify this file (tracking_id)
             $trackingId = $existingFile->tracking_id ?? null;
+            $now        = now();
+            $userId     = Auth::id();
 
-            $now = now();
-            $userId = Auth::id();
-            $userName = Auth::user()->name ?? Auth::user()->email ?? 'System';
-            
-            // Fetch names for district and lga
-            $district = District::find($validated['district_id']);
-            $lga = Lga::find($validated['lga_id']);
-            
-            $currentDistrictName = $district->name ?? null;
-            $currentLgaName = $lga->name ?? null;
+            // Fetch only the name column — avoids loading the full model
+            $lgaName      = Lga::where('id', $validated['lga_id'])->value('name');
+            $districtName = $validated['district_id']
+                ? District::where('id', $validated['district_id'])->value('name')
+                : null;
 
+            // Reuse the already-loaded model — eliminates a second SELECT round-trip
+            $existingFile->update(['csf' => '1']);
 
-
-            // Update fileNumber table: set csf = '1' (Cadastral Shadow File)
-            FileNumber::where('mlsfNo', $fullFileNumber)->update([
-                'csf' => '1'
-            ]);
-
-            // Create Cadastral Shadow File record
             CadastralShadowFile::create([
-                'ref_number' => 'CSF-' . date('Ymd') . '-' . rand(1000, 9999),
-                'full_number' => $fullFileNumber,
-                'file_name' => $entityName,
-                'plot_no' => $validated['plot_number'],
-                'location' => $validated['location'],
-                'lga' => $currentLgaName,
-                'tracking_id' => $trackingId,
-                'created_by' => $userId,
+                'ref_number'   => 'CSF-' . $now->format('Ymd') . '-' . $now->format('His'),
+                'full_number'  => $fullFileNumber,
+                'file_name'    => $entityName,
+                'plot_no'      => $validated['plot_number'],
+                'location'     => $validated['location'],
+                'lga'          => $lgaName,
+                'tracking_id'  => $trackingId,
+                'created_by'   => $userId,
                 'date_matched' => $now->toDateString(),
                 'time_matched' => $now->toTimeString(),
-                'is_deleted' => 0,
+                'is_deleted'   => 0,
             ]);
 
-            // Set corresponding file flags in file_indexings for matching record
+            // Single UPDATE — OR lets SQL Server use an index union on both columns
             DB::connection('sqlsrv')->table('file_indexings')
-                ->where(function($query) use ($fullFileNumber) {
-                    $query->where('file_number', $fullFileNumber)
-                          ->orWhere('st_fillno', $fullFileNumber);
-                })
+                ->where('file_number', $fullFileNumber)
+                ->orWhere('st_fillno', $fullFileNumber)
                 ->update([
                     'is_corresponding_file' => 1,
-                    'corresponding_fileno' => $fullFileNumber,
+                    'corresponding_fileno'  => $fullFileNumber,
                 ]);
 
             DB::connection('sqlsrv')->commit();
@@ -239,8 +241,9 @@ class MlsFileNoMatchingController extends Controller
 
             $data = null;
 
-            // 1. Try fileNumber (Legacy Table) - Often contains most location info
+            // 1. Try fileNumber (Legacy Table) — select only needed columns
             $file = DB::connection('sqlsrv')->table('fileNumber')
+                ->select('FileName', 'plot_no', 'location', 'lga', 'district', 'type', 'tracking_id')
                 ->where('mlsfNo', $fileNumber)
                 ->first();
 
@@ -257,20 +260,19 @@ class MlsFileNoMatchingController extends Controller
                 ];
             }
 
-            // 2. Try file_indexings (Dedicated Indexing Table) - Good for specific fields
-            $indexing = DB::connection('sqlsrv')->table('file_indexings')
-                ->where(function($query) use ($fileNumber, $data) {
-                    $cleanNumber = trim($fileNumber);
-                    $query->where('file_number', $cleanNumber)
-                          ->orWhere('st_fillno', $cleanNumber)
-                          ->orWhere('file_number', 'LIKE', '%' . $cleanNumber . '%')
-                          ->orWhere('st_fillno', 'LIKE', '%' . $cleanNumber . '%');
-                    
-                    if (!empty($data['tracking_id'])) {
-                        $query->orWhere('tracking_id', $data['tracking_id']);
-                    }
-                })
-                ->first();
+            // 2. Try file_indexings — exact matches only (LIKE with leading wildcard is a full scan)
+            $cleanNumber  = trim($fileNumber);
+            $indexingQuery = DB::connection('sqlsrv')->table('file_indexings')
+                ->select('file_title', 'plot_number', 'tp_no', 'location', 'district',
+                         'lga', 'file_type', 'tracking_id')
+                ->where('file_number', $cleanNumber)
+                ->orWhere('st_fillno', $cleanNumber);
+
+            if (!empty($data['tracking_id'])) {
+                $indexingQuery->orWhere('tracking_id', $data['tracking_id']);
+            }
+
+            $indexing = $indexingQuery->first();
 
             if ($indexing) {
                 $data = $data ?? [];
@@ -307,15 +309,15 @@ class MlsFileNoMatchingController extends Controller
                 return response()->json(['success' => false, 'message' => 'No record found for this file number']);
             }
 
-            // Map LGA and District names to IDs if possible
+            // Map LGA and District names to IDs — exact match; LIKE with % is a full scan
             if (!empty($data['lga_name'])) {
-                $lga = Lga::where('name', 'LIKE', '%' . trim($data['lga_name']) . '%')->first();
-                if ($lga) $data['lga_id'] = $lga->id;
+                $lgaId = Lga::where('name', trim($data['lga_name']))->value('id');
+                if ($lgaId) $data['lga_id'] = $lgaId;
             }
 
             if (!empty($data['district_name'])) {
-                $district = District::where('name', 'LIKE', '%' . trim($data['district_name']) . '%')->first();
-                if ($district) $data['district_id'] = $district->id;
+                $districtId = District::where('name', trim($data['district_name']))->value('id');
+                if ($districtId) $data['district_id'] = $districtId;
             }
 
             return response()->json(['success' => true, 'data' => $data]);

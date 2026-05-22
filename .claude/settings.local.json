@@ -1,7 +1,26 @@
 {
   "permissions": {
     "allow": [
-      "Bash(php artisan *)"
+      "Bash(php artisan *)",
+      "Bash(Get-ChildItem -Path . -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(node --check \"c:\\\\wamp64\\\\www\\\\klaes\\\\public\\\\js\\\\gkn_generation.js\")",
+      "Bash(php -l \"c:\\\\wamp64\\\\www\\\\klaes\\\\app\\\\Http\\\\Controllers\\\\FilearchiveController.php\")",
+      "Bash(git checkout *)",
+      "Bash(php _fix_op_detach.php)",
+      "Bash(php _diag_op_check.php)",
+      "Bash(php _fix_op_detach.php --execute)",
+      "Bash(php _fix_op_party1.php)",
+      "Bash(php -r ' *)",
+      "Bash(Get-ChildItem -Path c:\\\\wamp64\\\\www\\\\klaes -Directory)",
+      "Bash(Select-Object -First 20)",
+      "Bash(ls -la /c/wamp64/www/klaes | head -30)",
+      "Read(//c/c/wamp64/www/klaes/**)",
+      "Bash(wc -l /c/wamp64/www/klaes/app/Http/Controllers/ApplicationController.php)",
+      "Read(//c/wamp64/www/klaes/app/Http/Controllers/**)",
+      "Bash(grep -rn \"TEMP-\" /c/wamp64/www/klaes/app --include=\"*.php\" | grep -i \"match\\\\|serial\\\\|duplicate\" | head -20)",
+      "Read(//c/wamp64/www/klaes/app/**)",
+      "Bash(xargs grep -l \"saveFfrChangeOfName\\\\|captureFfrExisting\")"
     ]
   }
 }

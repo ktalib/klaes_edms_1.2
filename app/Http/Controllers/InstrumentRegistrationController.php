@@ -682,6 +682,238 @@ class InstrumentRegistrationController extends Controller
         }
     }
 
+    /**
+     * Build grouped ST data: one group per mother application (with its PUA units)
+     * and one group per standalone SUA. Each group tracks Fragmentation, Assignment,
+     * and CofO status independently, enforcing the registration order rules.
+     */
+    private function buildSTGroups($approvedSubapplications, $approvedMotherApplications): \Illuminate\Support\Collection
+    {
+        $groups = collect();
+
+        // Collect all file numbers for a single batch deed_registrations query
+        $subFilenos       = $approvedSubapplications->pluck('fileno')->filter()->unique()->values()->toArray();
+        $motherFilenos    = $approvedMotherApplications->pluck('fileno')->filter()->unique()->values()->toArray();
+        $motherNpFilenos  = $approvedMotherApplications->pluck('np_fileno')->filter()->unique()->values()->toArray();
+        $allFilenos       = array_unique(array_merge($subFilenos, $motherFilenos, $motherNpFilenos));
+
+        if (empty($allFilenos)) {
+            return $groups;
+        }
+
+        $deedRegs = DB::connection('sqlsrv')->table('deed_registrations')
+            ->whereIn('fileno', $allFilenos)
+            ->whereIn('instrument_type', [
+                'ST Assignment (Transfer of Title)',
+                'Sectional Titling CofO',
+                'ST Fragmentation',
+            ])
+            ->where('status', 'registered')
+            ->get();
+
+        // Lookup: "fileno::instrument_type" => registration row
+        $deedLookup = [];
+        foreach ($deedRegs as $reg) {
+            $deedLookup[$reg->fileno . '::' . $reg->instrument_type] = $reg;
+        }
+
+        // Partition subapplications into PUA (grouped by mother) and SUA (standalone)
+        $puaByMother = [];
+        $suaList     = [];
+
+        foreach ($approvedSubapplications as $sub) {
+            if ((int) ($sub->is_sua_unit ?? 0) === 1) {
+                $suaList[] = $sub;
+            } elseif (!empty($sub->main_application_id)) {
+                $puaByMother[$sub->main_application_id][] = $sub;
+            }
+        }
+
+        // --- Build Mother + PUA groups ---
+        foreach ($approvedMotherApplications as $m) {
+            $units = $puaByMother[$m->id] ?? [];
+
+            // Mother-level ST Fragmentation (try both np_fileno and fileno)
+            $fragReg = $deedLookup[($m->np_fileno ?? $m->fileno) . '::ST Fragmentation']
+                    ?? $deedLookup[$m->fileno . '::ST Fragmentation']
+                    ?? null;
+
+            $unitData        = [];
+            $assignRegistered = 0;
+            $cofoRegistered  = 0;
+
+            foreach ($units as $sub) {
+                $isPrimary = (int) ($sub->is_primary_the_owner ?? 0) === 1;
+
+                if ($isPrimary) {
+                    // Primary-owner-retention unit: gets a Fragmentation instead of Assignment
+                    $uFragReg         = $deedLookup[$sub->fileno . '::ST Fragmentation'] ?? null;
+                    $assignStatus     = 'fragmentation';
+                    $assignDeedRegId  = $uFragReg ? 'deed_reg_' . $uFragReg->id : null;
+                    $cofoEnabled      = (bool) $uFragReg; // CofO only enabled once the unit-level fragmentation is registered
+                    if ($uFragReg) {
+                        $assignRegistered++;
+                    }
+                } else {
+                    $aReg            = $deedLookup[$sub->fileno . '::ST Assignment (Transfer of Title)'] ?? null;
+                    $assignStatus    = $aReg ? 'registered' : 'pending';
+                    $assignDeedRegId = $aReg ? 'deed_reg_' . $aReg->id : null;
+                    $cofoEnabled     = (bool) $aReg;
+                    if ($aReg) {
+                        $assignRegistered++;
+                    }
+                }
+
+                $cReg = $deedLookup[$sub->fileno . '::Sectional Titling CofO'] ?? null;
+                if ($cReg) {
+                    $cofoRegistered++;
+                }
+
+                // Separate reg data for each instrument type
+                $fragRegForUnit = $isPrimary
+                    ? ($deedLookup[$sub->fileno . '::ST Fragmentation'] ?? null)
+                    : null;
+
+                $unitData[] = [
+                    'subapp_id'              => $sub->id,
+                    'fileno'                 => $sub->fileno,
+                    'applicant'              => $this->buildApplicantDisplayName(
+                        $sub->sub_applicant_title ?? null,
+                        $sub->sub_applicant_first_name ?? null,
+                        $sub->sub_applicant_middle_name ?? null,
+                        $sub->sub_applicant_surname ?? null,
+                        $sub->sub_applicant_corporate_name ?? null,
+                        $sub->sub_applicant_rc_number ?? null,
+                        $sub->sub_applicant_multiple_owners ?? null
+                    ) ?: ($sub->sub_applicant ?? 'N/A'),
+                    'is_primary_owner'       => $isPrimary,
+                    'captured_date'          => $sub->created_at,
+                    'assignment_status'      => $assignStatus,
+                    'assignment_deed_reg_id' => $assignDeedRegId,
+                    'cofo_status'            => $cReg ? 'registered' : 'pending',
+                    'cofo_enabled'           => $cofoEnabled,
+                    'cofo_deed_reg_id'       => $cReg ? 'deed_reg_' . $cReg->id : null,
+                    'cofo_rds_exists'        => (bool) ($cReg ? ($cReg->rds_exists ?? false) : false),
+                    'cofo_cor_exists'        => (bool) ($cReg ? ($cReg->cor_exists ?? false) : false),
+                    // Fragmentation reg (primary-owner units only)
+                    'frag_registered'        => (bool) $fragRegForUnit,
+                    'frag_reg_particulars'   => $fragRegForUnit ? '0/0/0' : null,
+                    'frag_reg_date'          => $fragRegForUnit ? ($fragRegForUnit->instrumentDate ?? null) : null,
+                    'frag_reg_time'          => $fragRegForUnit ? ($fragRegForUnit->deeds_time ?? null) : null,
+                    // Assignment reg (non-primary units only)
+                    'assign_registered'      => (bool) ($aReg ?? null),
+                    'assign_reg_particulars' => ($aReg ?? null) ? ($aReg->particularsRegistrationNumber ?? null) : null,
+                    'assign_reg_date'        => ($aReg ?? null) ? ($aReg->instrumentDate ?? null) : null,
+                    'assign_reg_time'        => ($aReg ?? null) ? ($aReg->deeds_time ?? null) : null,
+                    // CofO reg (all units)
+                    'cofo_reg_particulars'   => $cReg ? ($cReg->particularsRegistrationNumber ?? null) : null,
+                    'cofo_reg_date'          => $cReg ? ($cReg->instrumentDate ?? null) : null,
+                    'cofo_reg_time'          => $cReg ? ($cReg->deeds_time ?? null) : null,
+                ];
+            }
+
+            // CofO at group level is enabled when at least one unit has its prerequisite met:
+            // primary-owner units need their unit-level fragmentation; non-primary units need assignment.
+            $cofoGroupEnabled = $assignRegistered > 0;
+
+            $motherName = $this->buildApplicantDisplayName(
+                $m->applicant_title ?? null,
+                $m->first_name ?? null,
+                $m->middle_name ?? null,
+                $m->surname ?? null,
+                $m->corporate_name ?? null,
+                $m->rc_number ?? null,
+                $m->multiple_owners_names ?? null
+            ) ?: ($m->mother_applicant ?? 'N/A');
+
+            $groups->push([
+                'id'                 => 'grp_m_' . $m->id,
+                'type'               => 'mother_pua',
+                'display_fileno'     => $m->np_fileno ?? $m->fileno,
+                'applicant'          => $motherName,
+                'unit_count'         => count($units),
+                'lga'                => $m->lga ?? null,
+                'district'           => $m->district ?? null,
+                'captured_date'      => $m->created_at,
+                'frag_status'        => $fragReg ? 'registered' : 'pending',
+                'frag_deed_reg_id'   => $fragReg ? 'deed_reg_' . $fragReg->id : null,
+                'frag_serial'        => $fragReg ? ($fragReg->registration_number ?? '0/0/0') : null,
+                'frag_rds_exists'    => (bool) ($fragReg ? ($fragReg->rds_exists ?? false) : false),
+                'frag_cor_exists'    => (bool) ($fragReg ? ($fragReg->cor_exists ?? false) : false),
+                'units'              => $unitData,
+                'assign_registered'  => $assignRegistered,
+                'assign_total'       => count($units),
+                'cofo_registered'    => $cofoRegistered,
+                'cofo_total'         => count($units),
+                'cofo_enabled'       => $cofoGroupEnabled,
+            ]);
+        }
+
+        // --- Build SUA groups (no mother, no fragmentation) ---
+        foreach ($suaList as $sub) {
+            $aReg = $deedLookup[$sub->fileno . '::ST Assignment (Transfer of Title)'] ?? null;
+            $cReg = $deedLookup[$sub->fileno . '::Sectional Titling CofO'] ?? null;
+
+            $applicant = $this->buildApplicantDisplayName(
+                $sub->sub_applicant_title ?? null,
+                $sub->sub_applicant_first_name ?? null,
+                $sub->sub_applicant_middle_name ?? null,
+                $sub->sub_applicant_surname ?? null,
+                $sub->sub_applicant_corporate_name ?? null,
+                $sub->sub_applicant_rc_number ?? null,
+                $sub->sub_applicant_multiple_owners ?? null
+            ) ?: ($sub->sub_applicant ?? 'N/A');
+
+            $groups->push([
+                'id'                => 'grp_sua_' . $sub->id,
+                'type'              => 'sua',
+                'display_fileno'    => $sub->fileno,
+                'applicant'         => $applicant,
+                'unit_count'        => 1,
+                'lga'               => $sub->lga ?? null,
+                'district'          => $sub->district ?? null,
+                'captured_date'     => $sub->created_at,
+                'frag_status'       => null,
+                'frag_deed_reg_id'  => null,
+                'frag_serial'       => null,
+                'frag_rds_exists'   => false,
+                'frag_cor_exists'   => false,
+                'units'             => [[
+                    'subapp_id'              => $sub->id,
+                    'fileno'                 => $sub->fileno,
+                    'applicant'             => $applicant,
+                    'is_primary_owner'       => false,
+                    'captured_date'          => $sub->created_at,
+                    'assignment_status'      => $aReg ? 'registered' : 'pending',
+                    'assignment_deed_reg_id' => $aReg ? 'deed_reg_' . $aReg->id : null,
+                    'cofo_status'            => $cReg ? 'registered' : 'pending',
+                    'cofo_enabled'           => (bool) $aReg,
+                    'cofo_deed_reg_id'       => $cReg ? 'deed_reg_' . $cReg->id : null,
+                    'cofo_rds_exists'        => (bool) ($cReg ? ($cReg->rds_exists ?? false) : false),
+                    'cofo_cor_exists'        => (bool) ($cReg ? ($cReg->cor_exists ?? false) : false),
+                    'frag_registered'        => false,
+                    'frag_reg_particulars'   => null,
+                    'frag_reg_date'          => null,
+                    'frag_reg_time'          => null,
+                    'assign_registered'      => (bool) $aReg,
+                    'assign_reg_particulars' => $aReg ? ($aReg->particularsRegistrationNumber ?? null) : null,
+                    'assign_reg_date'        => $aReg ? ($aReg->instrumentDate ?? null) : null,
+                    'assign_reg_time'        => $aReg ? ($aReg->deeds_time ?? null) : null,
+                    'cofo_reg_particulars'   => $cReg ? ($cReg->particularsRegistrationNumber ?? null) : null,
+                    'cofo_reg_date'          => $cReg ? ($cReg->instrumentDate ?? null) : null,
+                    'cofo_reg_time'          => $cReg ? ($cReg->deeds_time ?? null) : null,
+                ]],
+                'assign_registered' => $aReg ? 1 : 0,
+                'assign_total'      => 1,
+                'cofo_registered'   => $cReg ? 1 : 0,
+                'cofo_total'        => 1,
+                'cofo_enabled'      => (bool) $aReg,
+            ]);
+        }
+
+        return $groups->sortByDesc('captured_date')->values();
+    }
+
     private function getApplication($id)
     {
         $application = DB::connection('sqlsrv')->table('mother_applications')
@@ -881,6 +1113,7 @@ class InstrumentRegistrationController extends Controller
                     's.created_at',
                     's.is_sua_unit',
                     's.is_primary_the_owner',
+                    's.main_application_id',
                     DB::raw("CONCAT(COALESCE(users.first_name, ''), ' ', COALESCE(users.last_name, '')) as reg_creator_name")
                 )
                 ->get();
@@ -1577,6 +1810,9 @@ class InstrumentRegistrationController extends Controller
                 'rejected_count' => $rejectedCount,
             ]);
 
+            // Build grouped ST structure for the grouped view
+            $stGroups = $this->buildSTGroups($approvedSubapplications, $approvedMotherApplications);
+
             // Sort by captured_date descending THEN reg_date descending
             $allInstrumentsSorted = $allInstruments->sortByDesc(function ($item) {
                 return [
@@ -1661,7 +1897,8 @@ class InstrumentRegistrationController extends Controller
                 'totalCount',
                 'instrumentTypes',
                 'fullDataForJs',
-                'isStDeeds'
+                'isStDeeds',
+                'stGroups'
             ));
 
         } catch (\Exception $e) {
@@ -1672,6 +1909,7 @@ class InstrumentRegistrationController extends Controller
 
             $approvedApplications = collect();
             $fullDataForJs = collect();
+            $stGroups = collect();
             $pendingCount = $registeredCount = $rejectedCount = $totalCount = 0;
             $instrumentTypes = collect();
 
@@ -1685,7 +1923,8 @@ class InstrumentRegistrationController extends Controller
                 'totalCount',
                 'instrumentTypes',
                 'fullDataForJs',
-                'isStDeeds'
+                'isStDeeds',
+                'stGroups'
             ))->with('error', 'Error loading instrument data: ' . $e->getMessage());
         }
     }

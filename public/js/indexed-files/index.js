@@ -208,7 +208,9 @@ function renderRows(rows) {
         return `
             ${col('shelf_location', `<td class="${standardCellClass}">${escapeHtml(row.shelf_location)}</td>`)}
             ${col('file_number', `<td class="p-3 whitespace-nowrap">
-              ${newKangisVal ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">${escapeHtml(newKangisVal)}</span>` : '<span class="text-gray-400">-</span>'}
+              ${tableVariant === 'sltr'
+                ? (row.file_number ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-200">${escapeHtml(row.file_number)}</span>` : '<span class="text-gray-400">-</span>')
+                : (newKangisVal ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">${escapeHtml(newKangisVal)}</span>` : '<span class="text-gray-400">-</span>')}
               ${tableVariant === 'sltr' && row.has_edms_files ? `<div class="mt-1"><button type="button" class="edms-view-files-btn inline-flex items-center gap-1 text-[10px] font-bold text-violet-600 hover:text-violet-800 hover:underline transition-colors" data-id="${row.id}" data-file-number="${escapeHtml(row.file_number)}" data-registry-folder="SLTR_Registry"><i data-lucide="folder-open" class="w-3 h-3"></i><span>View Files</span></button></div>` : ''}
               ${tableVariant === 'kangis' && row.has_edms_files ? `<div class="mt-1"><button type="button" class="edms-view-files-btn inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 hover:text-purple-800 hover:underline transition-colors" data-id="${row.id}" data-file-number="${escapeHtml(row.file_number)}" data-registry-folder="KANGIS_Registry"><i data-lucide="folder-open" class="w-3 h-3"></i><span>View Files</span></button></div>` : ''}
             </td>`)}

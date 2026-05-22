@@ -429,6 +429,6 @@
     <script>
         window.indexedFilesConfig = Object.assign({}, @json($mergedConfig));
     </script>
-    <script type="module" src="{{ asset('js/indexed-files/index.js') }}"></script>
+    <script type="module" src="{{ asset('js/indexed-files/index.js') }}?v={{ filemtime(public_path('js/indexed-files/index.js')) }}"></script>
 @endpush
  

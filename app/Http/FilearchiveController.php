@@ -8,7 +8,6 @@ use App\Models\PageTyping;
 use App\Models\Scanning;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -52,7 +51,7 @@ class FilearchiveController extends Controller
     {
         $module = $request->get('url', '');
         $moduleTheme = $this->getModuleTheme($module);
-
+        
         $PageTitle = $moduleTheme ? $moduleTheme['title'] . ' Digital Archive' : 'File Digital Archive';
         $PageDescription = 'Access and manage digitally archived files';
         $isStorageDemoMode = $this->isStorageDemoMode($module);
@@ -221,32 +220,29 @@ class FilearchiveController extends Controller
             $isStorageDemoFallback = true;
         }
 
-        // Calculate statistics — cached for 5 minutes to avoid repeated heavy queries
-        $statsCacheKey = "filearchive_stats_{$module}";
-        $stats = Cache::remember($statsCacheKey, 300, function () use ($module, $isStorageDemoMode) {
-            $statsBase = FileIndexing::query();
-            if (!$isStorageDemoMode) {
-                $statsBase->whereHas('pagetypings')
-                    ->whereHas('scannings')
-                    ->whereColumn(
-                        DB::raw('(SELECT COUNT(*) FROM pagetypings WHERE pagetypings.file_indexing_id = file_indexings.id)'),
-                        '>=',
-                        DB::raw('(SELECT COUNT(*) FROM scannings WHERE scannings.file_indexing_id = file_indexings.id)')
-                    );
-            }
-            if ($module !== '') {
-                $statsBase = $statsBase->where('registry', 'like', '%' . $module . '%');
-            }
-            return [
-                'total_archived' => (clone $statsBase)->count(),
-                'recently_added' => (clone $statsBase)
-                    ->where('updated_at', '>=', now()->subDays(30))->count(),
-                'total_pages' => $module !== ''
-                    ? PageTyping::whereHas('fileIndexing', fn($q) => $q->where('registry', 'like', '%' . $module . '%'))->count()
-                    : PageTyping::count(),
-                'storage_used' => $this->calculateStorageUsed($module),
-            ];
-        });
+        // Calculate statistics (scoped to module when filtered)
+        $statsBase = FileIndexing::query();
+        if (!$isStorageDemoMode) {
+            $statsBase->whereHas('pagetypings')
+                ->whereHas('scannings')
+                ->whereColumn(
+                    DB::raw('(SELECT COUNT(*) FROM pagetypings WHERE pagetypings.file_indexing_id = file_indexings.id)'),
+                    '>=',
+                    DB::raw('(SELECT COUNT(*) FROM scannings WHERE scannings.file_indexing_id = file_indexings.id)')
+                );
+        }
+        if ($module !== '') {
+            $statsBase = $statsBase->where('registry', 'like', '%' . $module . '%');
+        }
+        $stats = [
+            'total_archived' => (clone $statsBase)->count(),
+            'recently_added' => (clone $statsBase)
+                ->where('updated_at', '>=', now()->subDays(30))->count(),
+            'total_pages' => $module !== ''
+                ? PageTyping::whereHas('fileIndexing', fn ($q) => $q->where('registry', 'like', '%' . $module . '%'))->count()
+                : PageTyping::count(),
+            'storage_used' => $this->calculateStorageUsed($module),
+        ];
 
         if ($isStorageDemoFallback) {
             $stats['total_archived'] = $completedFiles->total();
@@ -353,7 +349,7 @@ class FilearchiveController extends Controller
     }
 
     /**
-     * Get document pages for viewer    
+     * Get document pages for viewer
      */
     public function getDocumentPages(Request $request, $id)
     {
@@ -570,13 +566,9 @@ class FilearchiveController extends Controller
                 '>=',
                 DB::raw('(SELECT COUNT(*) FROM scannings WHERE scannings.file_indexing_id = file_indexings.id)')
             )
-            ->with([
-                'pagetypings.typedBy',
-                'scannings',
-                'fileTracking' => function ($query) {
+            ->with(['pagetypings.typedBy', 'scannings', 'fileTracking' => function ($query) {
                     $query->select(['id', 'file_indexing_id', 'status', 'assignment_status']);
-                }
-            ])
+                }])
             ->withCount(['pagetypings', 'scannings']);
 
         // Apply registry/module filter
@@ -690,126 +682,125 @@ class FilearchiveController extends Controller
 
     private function buildStorageDemoPaginator(Request $request, string $module): LengthAwarePaginator
     {
-        $disk     = $this->getStorageDisk($module);
+        $disk = $this->getStorageDisk($module);
         $basePath = $this->getStorageBasePath($module);
 
         if (!$disk->exists($basePath)) {
             return new LengthAwarePaginator([], 0, 12, (int) $request->get('page', 1), [
-                'path'  => $request->url(),
+                'path' => $request->url(),
                 'query' => $request->query(),
             ]);
         }
 
         $allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif'];
-        $search             = trim((string) $request->get('search', ''));
+        $search = trim((string) $request->get('search', ''));
 
-        // ── Cached folder index ──────────────────────────────────────────────────
-        // The filesystem scan + group-by is expensive when there are many files.
-        // Cache it for 5 minutes; the cache is busted when a new file is uploaded
-        // (call Cache::forget("filearchive_folder_index_{$module}") after uploads).
-        $cacheKey    = "filearchive_folder_index_{$module}";
-        $folderIndex = Cache::remember($cacheKey, 300, function () use ($disk, $basePath, $allowedExtensions) {
-            try {
-                $allFiles = collect($disk->allFiles($basePath));
-            } catch (\Throwable $e) {
-                $allFiles = collect();
-            }
-
-            $normalizedBase = rtrim(str_replace('\\', '/', $basePath), '/');
-
-            // Group by top-level folder
-            $groups = $allFiles
-                ->filter(fn($p) => in_array(strtolower(pathinfo($p, PATHINFO_EXTENSION)), $allowedExtensions, true))
-                ->groupBy(function (string $path) use ($normalizedBase) {
-                    $normalized = ltrim(str_replace('\\', '/', $path), '/');
-                    if (str_starts_with($normalized, $normalizedBase . '/')) {
-                        $relative = substr($normalized, strlen($normalizedBase) + 1);
-                    } elseif (str_starts_with($normalized, $normalizedBase)) {
-                        $relative = ltrim(substr($normalized, strlen($normalizedBase)), '/');
-                    } else {
-                        $relative = $normalized;
-                    }
-                    $top = explode('/', $relative)[0] ?? $relative;
-                    return rtrim($normalizedBase . '/' . trim($top, '/'), '/');
-                })
-                ->map(fn($files) => collect($files)->values());
-
-            // Compute sort timestamp once per folder (avoids N lastModified calls at render time)
-            $sorted = $groups->keys()->values()
-                ->map(function (string $folderPath) use ($groups, $disk) {
-                    $first = $groups->get($folderPath)?->first();
-                    $ts = 0;
-                    if ($first) {
-                        try { $ts = (int) $disk->lastModified($first); } catch (\Throwable $e) {}
-                    }
-                    return ['path' => $folderPath, 'ts' => $ts];
-                })
-                ->sortByDesc('ts')
-                ->values();
-
-            return [
-                'groups'      => $groups->all(),          // folder → [file paths]
-                'sorted'      => $sorted->all(),           // [['path' => ..., 'ts' => ...]]
-                'total_files' => $allFiles
-                    ->filter(fn($p) => in_array(strtolower(pathinfo($p, PATHINFO_EXTENSION)), $allowedExtensions, true))
-                    ->count(),
-            ];
-        });
-
-        $groups      = collect($folderIndex['groups']);
-        $sortedPaths = collect($folderIndex['sorted']);   // [{path, ts}]
-        $totalFiles  = (int) ($folderIndex['total_files'] ?? 0);
-
-        // ── Apply search filter (cheap — only basename matching) ─────────────
-        if ($search !== '') {
-            $sortedPaths = $sortedPaths->filter(
-                fn($entry) => stripos(basename($entry['path']), $search) !== false
-            )->values();
+        // Perform a single recursive listing of files under the base path,
+        // filter allowed extensions, then group by the top-level folder
+        // under the base path. This avoids calling `allFiles` repeatedly
+        // per-directory which is extremely slow on large storage trees.
+        try {
+            $allFiles = collect($disk->allFiles($basePath));
+        } catch (\Throwable $e) {
+            $allFiles = collect();
         }
 
-        // ── Paginate the folder list ─────────────────────────────────────────
-        $perPage     = 12;
-        $currentPage = max(1, (int) $request->get('page', 1));
-        $offset      = ($currentPage - 1) * $perPage;
-        $totalFolders = $sortedPaths->count();
+        $filteredFiles = $allFiles->filter(function (string $path) use ($allowedExtensions) {
+            $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+            return in_array($extension, $allowedExtensions, true);
+        });
 
-        $pageItems = $sortedPaths->slice($offset, $perPage)->map(function (array $entry) use ($groups, $module) {
-            $path     = $entry['path'];
-            $ts       = $entry['ts'];
-            $files    = collect($groups[$path] ?? [])->values();
-            $preview  = $this->pickPreviewFileFromFiles($files->all());
-            $encoded  = rtrim(strtr(base64_encode($path), '+/', '-_'), '=');
+        $normalizedBase = rtrim(str_replace('\\', '/', $basePath), '/');
+
+        $groups = $filteredFiles->groupBy(function (string $path) use ($normalizedBase) {
+            $normalized = ltrim(str_replace('\\', '/', $path), '/');
+
+            if (str_starts_with($normalized, $normalizedBase . '/')) {
+                $relative = substr($normalized, strlen($normalizedBase) + 1);
+            } elseif (str_starts_with($normalized, $normalizedBase)) {
+                $relative = substr($normalized, strlen($normalizedBase));
+                $relative = ltrim($relative, '/');
+            } else {
+                $relative = $normalized;
+            }
+
+            $parts = explode('/', $relative);
+            $top = $parts[0] ?? $relative;
+            return rtrim($normalizedBase . '/' . trim($top, '/'), '/');
+        });
+
+        if ($search !== '') {
+            $groups = $groups->filter(function ($files, $folder) use ($search) {
+                $name = basename($folder);
+                return stripos($name, $search) !== false;
+            });
+        }
+
+        // Normalize groups to collections and determine ordering by first-file modified time
+        $groups = $groups->map(function ($files) {
+            return collect($files)->values();
+        });
+
+        $entries = $groups->keys()->values();
+
+        $entries = $entries->sortByDesc(function ($folderPath) use ($groups, $disk) {
+            $files = $groups->get($folderPath);
+            $firstFile = is_array($files) ? ($files[0] ?? null) : $files->first();
+            try {
+                return $firstFile ? $disk->lastModified($firstFile) : 0;
+            } catch (\Throwable $e) {
+                return 0;
+            }
+        })->values();
+
+        $perPage = 12;
+        $currentPage = max(1, (int) $request->get('page', 1));
+        $offset = ($currentPage - 1) * $perPage;
+
+        $pageItems = $entries->slice($offset, $perPage)->map(function (string $path) use ($groups, $disk, $module) {
+            $files = collect($groups->get($path))->values();
+            $firstFile = $files->first();
+            $timestamp = $firstFile ? (int) $disk->lastModified($firstFile) : 0;
+            $encodedPath = rtrim(strtr(base64_encode($path), '+/', '-_'), '=');
+            $previewPath = $this->pickPreviewFileFromFiles($files->all());
 
             return (object) [
-                'id'                  => 'storage-demo-' . $encoded,
-                'file_number'         => strtoupper(basename($path)),
-                'file_title'          => str_replace(['_', '-'], ' ', basename($path)),
-                'land_use_type'       => null,
-                'district'            => $this->getRegistryFolderName($module),
-                'updated_at'          => $ts ? date('Y-m-d H:i:s', $ts) : now()->format('Y-m-d H:i:s'),
-                'plot_number'         => null,
-                'location'            => null,
-                'registry'            => $this->getRegistryFolderName($module),
-                'pagetypings_count'   => max(1, $files->count()),
-                'scannings_count'     => max(1, $files->count()),
-                'fileTracking'        => null,
-                'pagetypings'         => collect(),
-                'scannings'           => collect(),
-                'firstPageTyping'     => null,
-                'storage_preview_path' => $preview,
-                'storage_preview_url'  => $preview ? $this->getStorageUrl($preview, $module) : null,
+                'id' => 'storage-demo-' . $encodedPath,
+                'file_number' => strtoupper(basename($path)),
+                'file_title' => str_replace(['_', '-'], ' ', basename($path)),
+                'land_use_type' => null,
+                'district' => $this->getRegistryFolderName($module),
+                'updated_at' => $timestamp ? date('Y-m-d H:i:s', $timestamp) : now()->format('Y-m-d H:i:s'),
+                'plot_number' => null,
+                'location' => null,
+                'registry' => $this->getRegistryFolderName($module),
+                'pagetypings_count' => max(1, $files->count()),
+                'scannings_count' => max(1, $files->count()),
+                'fileTracking' => null,
+                'pagetypings' => collect(),
+                'scannings' => collect(),
+                'firstPageTyping' => null,
+                'storage_preview_path' => $previewPath,
+                'storage_preview_url' => $previewPath ? $this->getStorageUrl($previewPath, $module) : null,
             ];
         });
+
+        $totalEntries = $entries->count();
+        $totalPagesFiles = $filteredFiles->count();
 
         $paginator = new LengthAwarePaginator(
             $pageItems,
-            $totalFolders,
+            $totalEntries,
             $perPage,
             $currentPage,
-            ['path' => $request->url(), 'query' => $request->query()]
+            [
+                'path' => $request->url(),
+                'query' => $request->query(),
+            ]
         );
 
-        $paginator->storage_total_pages = $totalFiles;
+        // Attach totals computed from a single listing to avoid re-scanning the filesystem
+        $paginator->storage_total_pages = $totalPagesFiles;
         $paginator->storage_total_bytes = null;
 
         return $paginator;
@@ -849,39 +840,22 @@ class FilearchiveController extends Controller
 
     private function calculateStorageFolderSize(string $module): string
     {
-        // Use the already-cached folder index to avoid a second full allFiles scan
-        $cacheKey    = "filearchive_folder_index_{$module}";
-        $folderIndex = Cache::get($cacheKey);
-
-        if ($folderIndex !== null) {
-            $groups = collect($folderIndex['groups'] ?? []);
-            $disk   = $this->getStorageDisk($module);
-            $totalBytes = $groups->flatten(1)->sum(function ($path) use ($disk) {
-                try { return (int) $disk->size($path); } catch (\Throwable $e) { return 0; }
-            });
-            return $this->formatBytes((int) $totalBytes);
-        }
-
-        // Fallback: full scan (only when cache is cold)
-        $disk     = $this->getStorageDisk($module);
+        $disk = $this->getStorageDisk($module);
         $basePath = $this->getStorageBasePath($module);
 
         if (!$disk->exists($basePath)) {
             return '0 B';
         }
 
-        $totalBytes = collect($disk->allFiles($basePath))->sum(function (string $path) use ($disk) {
-            try { return (int) $disk->size($path); } catch (\Throwable $e) { return 0; }
+        $totalBytes = collect($disk->allFiles($basePath))->sum(function (string $path) use ($disk, $module) {
+            try {
+                return (int) $disk->size($path);
+            } catch (\Throwable $e) {
+                return 0;
+            }
         });
 
         return $this->formatBytes((int) $totalBytes);
-    }
-
-    /** Call this after a file upload to invalidate the folder listing cache. */
-    public static function bustFolderIndexCache(string $module): void
-    {
-        Cache::forget("filearchive_folder_index_{$module}");
-        Cache::forget("filearchive_stats_{$module}");
     }
 
     private function getStorageDisk(string $module)
@@ -904,7 +878,7 @@ class FilearchiveController extends Controller
     {
         $registry = strtoupper(trim($module));
         $folderName = $this->getRegistryFolderName($module);
-
+        
         $configuredBasePath = trim(str_replace('\\', '/', (string) env("{$registry}_REGISTRY_BASE_PATH", env('KANGIS_REGISTRY_BASE_PATH', ''))), '/');
         if ($configuredBasePath !== '') {
             return $configuredBasePath;

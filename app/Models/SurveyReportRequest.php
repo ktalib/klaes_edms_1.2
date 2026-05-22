@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class SurveyReportRequest extends Model
 {
@@ -16,9 +17,19 @@ class SurveyReportRequest extends Model
                 return;
             }
 
-            $request->forceFill([
-                'serial_no' => str_pad((string) $request->getKey(), 6, '0', STR_PAD_LEFT),
-            ])->saveQuietly();
+            $serialNo = str_pad((string) $request->getKey(), 6, '0', STR_PAD_LEFT);
+
+            // Use a raw DB update to avoid Eloquent's dirty-tracking, which at this
+            // point in the created event hasn't yet run syncOriginal() — causing all
+            // attributes (including the identity column 'id') to appear dirty and
+            // making SQL Server reject the UPDATE.
+            DB::connection('sqlsrv')
+                ->table('survey_report_requests')
+                ->where('id', $request->getKey())
+                ->update(['serial_no' => $serialNo]);
+
+            $request->setAttribute('serial_no', $serialNo);
+            $request->syncOriginal();
         });
     }
 

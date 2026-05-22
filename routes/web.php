@@ -1369,6 +1369,12 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'property-index-card'
     })->name('property_index_card.cofo');
 });
 
+Route::middleware(['auth', 'XSS'])->prefix('cadastral/index-cards')->name('cadastral.index-cards.')->group(function () {
+    Route::get('/', [App\Http\Controllers\CadastralIndexCardController::class, 'index'])->name('index');
+    Route::get('/data', [App\Http\Controllers\CadastralIndexCardController::class, 'data'])->name('data');
+    Route::get('/folder-files', [App\Http\Controllers\CadastralIndexCardController::class, 'folderFiles'])->name('folder-files');
+});
+
 Route::middleware(['auth', 'XSS'])->group(function () {
     Route::get('/file-index-view', [\App\Http\Controllers\FileIndexViewController::class, 'index'])->name('file-index-view.index');
     Route::get('/file-index-view/data', [\App\Http\Controllers\FileIndexViewController::class, 'data'])->name('file-index-view.data');

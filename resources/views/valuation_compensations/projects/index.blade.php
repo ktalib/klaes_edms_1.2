@@ -93,13 +93,11 @@
                                 {{ substr($worker->user->first_name, 0, 1) }}{{ substr($worker->user->last_name, 0, 1) }}
                             </div>
                             <span class="text-xs font-semibold text-slate-700">{{ $worker->user->first_name }} {{ $worker->user->last_name }}</span>
-                            <span class="text-[10px] text-emerald-600 font-black font-mono bg-emerald-50 px-1.5 py-0.5 rounded tracking-tighter">{{ $worker->worker_code }}</span>
                         </div>
                         @else
                         <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-100" title="User record missing">
                             <div class="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center text-[10px] text-white font-bold">?</div>
                             <span class="text-xs font-semibold text-red-700">Deleted User</span>
-                            <span class="text-[10px] text-red-600 font-black font-mono bg-red-50 px-1.5 py-0.5 rounded tracking-tighter">{{ $worker->worker_code }}</span>
                         </div>
                         @endif
                         @endforeach
@@ -113,13 +111,11 @@
                                     {{ substr($worker->user->first_name, 0, 1) }}{{ substr($worker->user->last_name, 0, 1) }}
                                 </div>
                                 <span class="text-xs font-semibold text-slate-700">{{ $worker->user->first_name }} {{ $worker->user->last_name }}</span>
-                                <span class="text-[10px] text-emerald-600 font-black font-mono bg-emerald-50 px-1.5 py-0.5 rounded tracking-tighter">{{ $worker->worker_code }}</span>
                             </div>
                             @else
                             <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-100">
                                 <div class="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center text-[10px] text-white font-bold">?</div>
                                 <span class="text-xs font-semibold text-red-700">Deleted User</span>
-                                <span class="text-[10px] text-red-600 font-black font-mono bg-red-50 px-1.5 py-0.5 rounded tracking-tighter">{{ $worker->worker_code }}</span>
                             </div>
                             @endif
                             @endforeach
@@ -130,7 +126,23 @@
                         </button>
                         @endif
                     </div>
-                    
+
+                    @if($project->subProjects->count() > 0)
+                    <div class="mb-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i data-lucide="layers" class="h-3.5 w-3.5 text-indigo-400"></i>
+                            <span class="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Sub-Projects</span>
+                        </div>
+                        <div class="flex flex-wrap gap-1.5">
+                            @foreach($project->subProjects as $subProject)
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                {{ $subProject->name }}
+                            </span>
+                            @endforeach
+                        </div>
+                    </div>
+                    @endif
+
                     <div class="flex items-center justify-between pt-4 border-t border-slate-50">
                         <div class="flex items-center gap-2 text-xs text-slate-400">
                             <i data-lucide="calendar" class="h-3 w-3"></i>

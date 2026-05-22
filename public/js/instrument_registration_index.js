@@ -1208,16 +1208,26 @@ function updateCheckboxStates() {
 function handleMainTableCheckboxChange() {
     const checkedBoxes = document.querySelectorAll('.main-table-checkbox:checked:not([disabled])');
     const checkedCount = checkedBoxes.length;
+    const stCheckedCount = document.querySelectorAll('.st-batch-checkbox:checked:not([disabled])').length;
+    const totalCount = checkedCount + stCheckedCount;
     const batchBtn = document.getElementById('batchRegisterBtn');
     const batchBtnText = document.getElementById('batchBtnText');
 
-    // Update button state and text based on selection
+    // Drive the new Batch Registration button
+    const groupBatchBtn = document.getElementById('groupBatchRegBtn');
+    const batchBadge   = document.getElementById('batchSelectedBadge');
+    if (groupBatchBtn) {
+        groupBatchBtn.style.display = totalCount > 0 ? 'flex' : 'none';
+    }
+    if (batchBadge) batchBadge.textContent = totalCount;
+
+    // Update legacy button state and text based on selection
     if (checkedCount === 0) {
-        batchBtnText.textContent = 'Registration';
+        if (batchBtnText) batchBtnText.textContent = 'Registration';
     } else if (checkedCount === 1) {
-        batchBtnText.textContent = 'Registration';
+        if (batchBtnText) batchBtnText.textContent = 'Registration';
     } else {
-        batchBtnText.textContent = 'Batch Registration';
+        if (batchBtnText) batchBtnText.textContent = 'Batch Registration';
 
         // Get the selected instrument data
         const selectedInstruments = Array.from(checkedBoxes).map(checkbox => {
@@ -1444,16 +1454,30 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Populate table with page data
         pageData.forEach(app => {
-            let isDisabled = app.status === 'registered';
+            let isDisabled;
 
-            // For ST CofO, check if corresponding ST Assignment is registered
-            if (app.status === 'pending' && app.instrument_type === 'Sectional Titling CofO') {
-                const stAssignmentRegistered = serverCofoData.find(item =>
-                    item.fileno === app.fileno &&
-                    (item.instrument_type === 'ST Assignment (Transfer of Title)' || item.instrument_type === 'ST Fragmentation') &&
-                    item.status === 'registered'
-                );
-                isDisabled = !stAssignmentRegistered;
+            if (app._isAggregate) {
+                // Aggregate row: enabled when there are pending units to register
+                const hasPending = (app._pendingUnits || []).length > 0;
+                isDisabled = !hasPending || (app._aggType === 'sectional_cofo' && !app._cofoEnabled);
+            } else {
+                isDisabled = app.status === 'registered';
+
+                // For ST CofO, enable only if corresponding ST Assignment is registered
+                if (app.status === 'pending' && app.instrument_type === 'Sectional Titling CofO') {
+                    const stAssignmentRegistered = serverCofoData.find(item =>
+                        item.fileno === app.fileno &&
+                        (item.instrument_type === 'ST Assignment (Transfer of Title)' || item.instrument_type === 'ST Fragmentation') &&
+                        item.status === 'registered'
+                    );
+                    isDisabled = !stAssignmentRegistered;
+                }
+
+                // In batch mode, force-enable pending non-CofO items.
+                // CofO qualification is enforced by the check above — don't override it.
+                if (window.batchModeActive && app.status === 'pending' && app.instrument_type !== 'Sectional Titling CofO') {
+                    isDisabled = false;
+                }
             }
 
             // Format dates with robust detection for swapped fields
@@ -1500,7 +1524,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Format reg particulars
             let regParticulars = '<span class="text-gray-400 text-xs">-</span>';
-            if (app.status === 'registered') {
+            if (app._isAggregate) {
+                const reg   = app._registeredCount || 0;
+                const total = app._totalCount || 0;
+                const pct   = total > 0 ? Math.round((reg / total) * 100) : 0;
+                const clr   = app._aggType === 'sectional_cofo' ? '#0d9488' : '#6366f1';
+                regParticulars = `<span style="font-size:12px;font-weight:700;color:${clr};">${reg}/${total}</span>`
+                    + `<div style="height:4px;background:#e5e7eb;border-radius:2px;margin-top:3px;width:60px;">`
+                    + `<div style="height:4px;background:${clr};border-radius:2px;width:${pct}%;"></div></div>`;
+            } else if (app.status === 'registered') {
                 if (app.instrument_type === 'ST Fragmentation') {
                     regParticulars = '<span class="px-2 py-1 bg-purple-100 text-purple-800 rounded-md font-mono text-xs">0/0/0</span>';
                 } else {
@@ -1549,6 +1581,8 @@ document.addEventListener('DOMContentLoaded', function () {
                             badgeClass = 'bg-blue-100 text-blue-800 border-blue-200';
                         } else if (typeKey === 'primary') {
                             badgeClass = 'bg-orange-100 text-orange-800 border-orange-200';
+                        } else if (typeKey === 'mother_st') {
+                            return '';
                         } else {
                             displayType = 'Deeds';
                         }
@@ -1560,7 +1594,7 @@ document.addEventListener('DOMContentLoaded', function () {
             `;
 
             const row = `
-                <tr class="cofo-row" data-status="${app.status}" data-id="${app.id}">
+                <tr class="cofo-row${app._isAggregate ? ' st-aggregate-row' : ''}" data-status="${app.status}" data-id="${app.id}"${app._isAggregate ? ` style="border-left:3px solid ${app._aggType === 'sectional_cofo' ? '#0d9488' : '#6366f1'};"` : ''}>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <input type="checkbox" class="rounded main-table-checkbox"
                             data-id="${app.id}"
@@ -1578,7 +1612,28 @@ document.addEventListener('DOMContentLoaded', function () {
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">${capturedTime}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">${capturedDate}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
-                        <span class="file-number">${app.fileno || '-'}</span>
+                        ${(() => {
+                            const isPrimary = (app.application_type || '').toLowerCase() === 'primary';
+                            const motherId  = app.original_mother_app_id ? String(app.original_mother_app_id) : null;
+                            const groupInfo = isPrimary && motherId && window.stGroupLookup ? window.stGroupLookup[motherId] : null;
+                            if (groupInfo) {
+                                const cnt = groupInfo.unit_count || 0;
+                                return `<button class="st-fileno-link" onclick="openUnitsModal('grp_m_${motherId}')">${app.fileno || '-'}</button>
+                                        <div style="font-size:11px;color:#9ca3af;margin-top:3px;display:flex;align-items:center;gap:3px;">
+                                            <i class="fas fa-home" style="font-size:9px;"></i>
+                                            ${cnt} unit${cnt !== 1 ? 's' : ''}
+                                        </div>`;
+                            }
+                            if (app._isAggregate) {
+                                const cnt = app._totalCount || 0;
+                                return `<span class="file-number">${app.fileno || '-'}</span>
+                                        <div style="font-size:11px;color:#9ca3af;margin-top:3px;display:flex;align-items:center;gap:3px;">
+                                            <i class="fas fa-layer-group" style="font-size:9px;"></i>
+                                            ${cnt} unit${cnt !== 1 ? 's' : ''}
+                                        </div>`;
+                            }
+                            return `<span class="file-number">${app.fileno || '-'}</span>`;
+                        })()}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         <span class="status-badge badge-${app.status}">${app.status.charAt(0).toUpperCase() + app.status.slice(1)}</span>

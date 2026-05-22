@@ -52,7 +52,7 @@
             @include('components.indexed-files-table', ['config' => [
                 'registry' => 'SLTR',
                 'tableVariant' => 'sltr',
-                'hiddenColumns' => ['related_file_no', 'related_fileno_action', 'registry', 'corresponding_fileno', 'kangis_fileno_placeholder'],
+                'hiddenColumns' => ['related_file_no', 'related_fileno_action', 'registry', 'corresponding_fileno', 'kangis_fileno_placeholder', 'new_kangis_file_no'],
                 'columnLabels' => [
                     'file_number' => 'SLTR FileNo',
                 ],

@@ -339,5 +339,32 @@
 @push('scripts')
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script src="{{ asset('js/land_recommendations.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        @if($errors->any())
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Validation Error',
+                    html: `<ul style="text-align:left;padding-left:16px">{{ implode('', array_map(fn($e) => "<li>$e</li>", $errors->all())) }}</ul>`,
+                    confirmButtonColor: '#dc2626',
+                });
+            }
+        @endif
+
+        @if(session('success'))
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success',
+                    text: @json(session('success')),
+                    confirmButtonColor: '#059669',
+                    timer: 4000,
+                    timerProgressBar: true,
+                });
+            }
+        @endif
+    });
+</script>
 @endpush
 @endsection

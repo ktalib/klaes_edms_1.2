@@ -2918,9 +2918,10 @@ class MlsFileNoController extends Controller
                         $lineageFileNumbers = json_decode($relatedFileNumbers, true) ?: [];
                         if (!empty($lineageFileNumbers)) {
                             // Fetch the newly created indexing records to get their IDs
+                            // Note: batch_no is INT in file_indexings; $indexingData does not set it,
+                            // so rows have batch_no=NULL. Filter by file_number only.
                             $newIndexings = DB::connection('sqlsrv')->table('file_indexings')
                                 ->whereIn('file_number', $generatedFiles)
-                                ->where('batch_no', $batchNo)
                                 ->get(['id', 'file_number', 'land_use_type', 'plot_number', 'tp_no', 'location', 'lga', 'tracking_id', 'file_title']);
 
                             $batchLinksToCreate = [];

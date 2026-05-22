@@ -111,6 +111,7 @@ class SurveyReportController extends Controller
             $data['status'] = 'Completed';
         }
 
+        unset($data['id'], $data['serial_no'], $data['created_at']);
         $requestRecord->update($data);
 
         $this->forgetSignatureVerification('lands');

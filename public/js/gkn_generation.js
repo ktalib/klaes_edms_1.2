@@ -15,6 +15,7 @@ function gknGeneratorFixed(config) {
         batchMembers: [],
         loading: false,
         refreshing: false,
+        partialUrl: config.partialUrl,
         currentDate: config.currentDate,
         currentTimeOnly: config.currentTimeOnly,
         formData: {
@@ -59,6 +60,11 @@ function gknGeneratorFixed(config) {
         },
 
         init() {
+            // Expose Alpine handlers so onclick="" in partial HTML can reach this component
+            window.__gknEdit = (id) => this.editRecord(id);
+            window.__gknView = (id) => this.viewRecord(id);
+            window.__gknOpenBatch = (batchNo) => this.openBatchModal(batchNo);
+
             console.log('GKN Generator Initialized', this);
             this.$watch('batchMode', (val) => {
                 setTimeout(() => lucide.createIcons(), 50);
@@ -125,8 +131,26 @@ function gknGeneratorFixed(config) {
         },
 
         async refreshSerialControl() {
+            await this.refreshTable();
+        },
+
+        async refreshTable() {
             this.refreshing = true;
             try {
+                const params = new URLSearchParams(window.location.search);
+                const search = params.get('search') || '';
+                const query = new URLSearchParams();
+                if (search) query.set('search', search);
+                const url = this.partialUrl + (query.toString() ? `?${query}` : '');
+                const response = await fetch(url, {
+                    headers: { 'Accept': 'text/html', 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const html = await response.text();
+                const container = document.getElementById('gkn-records-container');
+                container.innerHTML = html;
+                if (window.lucide) lucide.createIcons();
+            } catch (e) {
+                console.error('AJAX refresh failed, falling back to reload', e);
                 window.location.reload();
             } finally {
                 this.refreshing = false;
@@ -346,13 +370,15 @@ function gknGeneratorFixed(config) {
 
                 const data = await response.json();
                 if (data.success) {
+                    this.showEditModal = false;
                     Swal.fire({
                         icon: 'success',
                         title: 'Updated',
                         text: data.message,
                         timer: 1500,
                         showConfirmButton: false
-                    }).then(() => window.location.reload());
+                    });
+                    await this.refreshTable();
                 } else {
                     Swal.fire('Error', data.message || 'Update failed', 'error');
                 }
@@ -498,14 +524,17 @@ function gknGeneratorFixed(config) {
             });
 
             if (result.isConfirmed) {
+                this.showGenerateModal = false;
                 Swal.fire({
                     title: 'Generated!',
                     text: result.value.message,
                     icon: 'success',
+                    timer: 1800,
+                    showConfirmButton: false,
                     confirmButtonColor: '#2563eb'
-                }).then(() => {
-                    window.location.reload();
                 });
+                await this.refreshTable();
+                this.fetchNextGkn();
             }
         },
 
@@ -548,6 +577,11 @@ function gknGeneratorFixed(config) {
         },
 
         async submitRowInitialization(prefix, manualValue = null) {
+            // Use a mixin so every alert in this method renders above the serial modal (z-[9999])
+            const ModalSwal = Swal.mixin({
+                customClass: { container: 'swal-above-modal' }
+            });
+
             let startVal = manualValue;
             if (startVal === null) {
                 const input = document.getElementById(`serial_start_gkn_${prefix}`);
@@ -555,7 +589,7 @@ function gknGeneratorFixed(config) {
             }
 
             if (startVal === null || startVal === '' || isNaN(startVal)) {
-                Swal.fire('Error', 'Please enter a valid last manual serial number.', 'error');
+                ModalSwal.fire('Error', 'Please enter a valid last manual serial number.', 'error');
                 return;
             }
 
@@ -576,24 +610,24 @@ function gknGeneratorFixed(config) {
 
                 const data = await response.json();
                 if (data.success) {
-                    Swal.fire({
+                    ModalSwal.fire({
                         icon: 'success',
                         title: 'Initialized',
                         text: data.message,
                         timer: 1500,
                         showConfirmButton: false
-                    }).then(() => {
+                    }).then(async () => {
                         if (manualValue !== null) {
                             this.showSerialModal = false;
                         }
                         this.fetchNextGkn();
-                        if (manualValue === null) window.location.reload();
+                        if (manualValue === null) await this.refreshTable();
                     });
                 } else {
-                    Swal.fire('Error', data.message || 'Initialization failed', 'error');
+                    ModalSwal.fire('Error', data.message || 'Initialization failed', 'error');
                 }
             } catch (e) {
-                Swal.fire('Error', 'An unexpected error occurred', 'error');
+                ModalSwal.fire('Error', 'An unexpected error occurred', 'error');
             } finally {
                 this.loading = false;
             }

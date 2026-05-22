@@ -746,7 +746,7 @@
                                 </div>
 
                                 <!-- Comments/Remarks -->
-                                <div class=>
+                                <div class='hidden'>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Transaction Comments (e.g. Temp File Number)</label>
                                     <textarea x-model="transaction.comments"
                                         :name="'transactions[' + index + '][comments]'"

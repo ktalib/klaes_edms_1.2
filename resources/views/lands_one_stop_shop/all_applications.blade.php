@@ -188,7 +188,7 @@
                     <p class="text-[11px] font-black uppercase tracking-[0.4em] text-slate-400">Land One Stop Shop</p>
                     <h1 class="text-3xl font-extrabold text-slate-900 mt-1">{{ $dynamicPageTitle }}</h1>
                     @php
-                        $headerTotal = is_array($cardCounts ?? null) ? array_sum($cardCounts) : 0;
+                        $headerTotal = $cardTotal ?? (is_array($cardCounts ?? null) ? array_sum($cardCounts) : 0);
                         $headerLoaded = $records->count();
                     @endphp
                     <p class="text-slate-500 mt-1 text-sm">
@@ -224,7 +224,7 @@
 
             {{-- ── Summary Cards ── --}}
             @php
-                $totalRecords = is_array($cardCounts ?? null) ? array_sum($cardCounts) : 0;
+                $totalRecords = $cardTotal ?? (is_array($cardCounts ?? null) ? array_sum($cardCounts) : 0);
             @endphp
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                     {{-- Total Records --}}

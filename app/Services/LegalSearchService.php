@@ -73,9 +73,20 @@ class LegalSearchService
             $activeFileNo = $conn->table('fileNumber')
                 ->where('mlsfNo', $fileNo)
                 ->first(['parent_prop_id']);
-            if ($activeFileNo) {
-                if ($activeFileNo->parent_prop_id) {
-                    $activePropIds = array_merge($activePropIds, array_map('trim', explode(',', $activeFileNo->parent_prop_id)));
+            if ($activeFileNo && $activeFileNo->parent_prop_id) {
+                $activePropIds = array_merge($activePropIds, array_map('trim', explode(',', $activeFileNo->parent_prop_id)));
+            }
+
+            // PRA merger records store parent_prop_id (source file prop_ids) directly on the row.
+            // Extract these so the search expands to include the source files' records.
+            foreach ($praRecords as $praRow) {
+                $ppid = trim((string) ($praRow['parent_prop_id'] ?? ''));
+                if ($ppid !== '') {
+                    foreach (array_map('trim', explode(',', $ppid)) as $pid) {
+                        if ($pid !== '') {
+                            $activePropIds[] = $pid;
+                        }
+                    }
                 }
             }
         }
@@ -402,6 +413,7 @@ class LegalSearchService
                 DB::raw("volumeNo AS volume_no"),
                 'regNo',
                 'prop_id',
+                'parent_prop_id',
                 'comments',
                 DB::raw("plot_size AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
@@ -680,6 +692,7 @@ class LegalSearchService
             'comments' => $row->comments ?? '-',
             'cofo_comment' => $row->cofo_comment ?? null,
             'prop_id' => $row->prop_id ?? null,
+            'parent_prop_id' => $row->parent_prop_id ?? null,
             'deeds_date' => $row->deeds_date ?? null,
             'deeds_time' => $row->deeds_time ?? null,
             'reg_date' => $row->reg_date ?? null,
@@ -845,6 +858,7 @@ class LegalSearchService
                 DB::raw("volumeNo AS volume_no"),
                 'regNo',
                 'prop_id',
+                'parent_prop_id',
                 'comments',
                 DB::raw("plot_size AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),

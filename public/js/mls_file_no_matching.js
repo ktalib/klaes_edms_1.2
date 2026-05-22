@@ -25,6 +25,7 @@ function mlsMatchingGenerator(config) {
             quantity: 1
         },
         dataFetched: false,
+        fileIndexed: null,
         locationEntries: [],
         currentEntryIndex: 0,
         applyLocationToAll: false,
@@ -335,44 +336,49 @@ function mlsMatchingGenerator(config) {
                     exclude_matched: config.excludeMatchedType || '',
                     callback: async (data) => {
                         this.formData.full_file_number = data.fileNumber;
-                        
-                        // Auto-fetch file details and location
-                        try {
-                            const response = await fetch(`${config.detailsUrl}?file_number=${encodeURIComponent(data.fileNumber)}`);
-                            const result = await response.json();
-                            if (result.success && result.data) {
-                                const details = result.data;
-                                this.formData.file_title = details.title || '';
-                                this.formData.plot_number = details.plot_no || '';
-                                this.formData.tp_no = details.tp_no || '';
-                                this.formData.lga_id = details.lga_id || '';
-                                this.formData.customer_type = details.customer_type || '';
-                                this.formData.tracking_id = details.tracking_id || '';
-                                this.assignDistrictFromDetails(details);
-                                
-                                Swal.fire({
-                                    toast: true,
-                                    position: 'top-end',
-                                    icon: 'success',
-                                    title: 'Details Populated',
-                                    showConfirmButton: false,
-                                    timer: 2000
-                                });
-                                this.dataFetched = true;
-                            } else {
-                                this.formData.tracking_id = '';
-                                Swal.fire({
-                                    toast: true,
-                                    position: 'top-end',
-                                    icon: 'info',
-                                    title: 'No Location Details Found',
-                                    text: 'Please enter details manually',
-                                    showConfirmButton: false,
-                                    timer: 3000
-                                });
-                            }
-                        } catch (err) {
-                            console.error('Failed to auto-fetch file details', err);
+                        this.fileIndexed = null;
+
+                        const encoded = encodeURIComponent(data.fileNumber);
+
+                        // Fire both checks in parallel — avoids sequential round-trips
+                        const [checkResult, detailsResult] = await Promise.allSettled([
+                            config.availableUrl
+                                ? fetch(`${config.availableUrl}?file_number=${encoded}`).then(r => r.json())
+                                : Promise.resolve(null),
+                            config.detailsUrl
+                                ? fetch(`${config.detailsUrl}?file_number=${encoded}`).then(r => r.json())
+                                : Promise.resolve(null),
+                        ]);
+
+                        // Handle existence check
+                        if (checkResult.status === 'fulfilled' && checkResult.value) {
+                            this.fileIndexed = checkResult.value.exists === true;
+                        }
+
+                        // Handle file details
+                        const detailsData = detailsResult.status === 'fulfilled' ? detailsResult.value : null;
+                        if (detailsData && detailsData.success && detailsData.data) {
+                            const details = detailsData.data;
+                            this.formData.file_title    = details.title || '';
+                            this.formData.plot_number   = details.plot_no || '';
+                            this.formData.tp_no         = details.tp_no || '';
+                            this.formData.lga_id        = details.lga_id || '';
+                            this.formData.customer_type = details.customer_type || '';
+                            this.formData.tracking_id   = details.tracking_id || '';
+                            this.assignDistrictFromDetails(details);
+                            Swal.fire({
+                                toast: true, position: 'top-end', icon: 'success',
+                                title: 'Details Populated', showConfirmButton: false, timer: 2000
+                            });
+                            this.dataFetched = true;
+                        } else {
+                            this.formData.tracking_id = '';
+                            Swal.fire({
+                                toast: true, position: 'top-end', icon: 'info',
+                                title: 'No Location Details Found',
+                                text: 'Please enter details manually',
+                                showConfirmButton: false, timer: 3000
+                            });
                         }
                     }
                 });
@@ -491,6 +497,7 @@ function mlsMatchingGenerator(config) {
             this.currentEntryIndex = 0;
             this.applyLocationToAll = false;
             this.dataFetched = false;
+            this.fileIndexed = null;
         },
 
         handleDistrictSelectChange(entry = null) {

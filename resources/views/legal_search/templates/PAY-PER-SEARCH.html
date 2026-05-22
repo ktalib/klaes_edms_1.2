@@ -566,7 +566,9 @@
 
           const tsEl = document.getElementById('report-timestamp');
           if (tsEl) {
-            tsEl.textContent = ' This is a single-use paid search report generated as at Date: ' + (d.date_line || new Date().toLocaleString()) + '.';
+            const dateStr = (d.date_line || new Date().toLocaleDateString()).replace(/^Date:\s*/i, '');
+            const fileNoStr = d.file_number || '-';
+            tsEl.textContent = ' This is a single-use paid search report for File No: ' + fileNoStr + ', generated as at ' + dateStr + '.';
             tsEl.style.display = 'inline';
           }
 

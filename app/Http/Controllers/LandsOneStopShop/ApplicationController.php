@@ -329,16 +329,18 @@ class ApplicationController extends Controller
             ? "WHERE system_source = 'OSSOPCHANGEOFNAME'\n                  AND (is_deleted IS NULL OR is_deleted = 0)"
             : "WHERE system_source = 'OSSOPCHANGEOFNAME'";
 
-        $praFileNoExpr = "COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)";
+        // oa.file_no is the authoritative file number; p columns are supplementary
+        // and may be NULL when no Transfer of Title pra row exists for the application.
         $resolvedLandUseSql = "COALESCE(
             mfn.land_use,
             p.land_use,
+            oa.land_use,
             CASE
-                WHEN $praFileNoExpr LIKE 'RES%' THEN 'RES'
-                WHEN $praFileNoExpr LIKE 'COM%' THEN 'COM'
-                WHEN $praFileNoExpr LIKE 'CON%' THEN 'COM'
-                WHEN $praFileNoExpr LIKE 'IND%' THEN 'IND'
-                WHEN $praFileNoExpr LIKE 'AGR%' THEN 'AGR'
+                WHEN oa.file_no LIKE 'RES%' THEN 'RES'
+                WHEN oa.file_no LIKE 'COM%' THEN 'COM'
+                WHEN oa.file_no LIKE 'CON%' THEN 'COM'
+                WHEN oa.file_no LIKE 'IND%' THEN 'IND'
+                WHEN oa.file_no LIKE 'AGR%' THEN 'AGR'
                 ELSE NULL
             END
         )";
@@ -347,47 +349,50 @@ class ApplicationController extends Controller
             WHEN $resolvedLandUseSql LIKE '%COM%' THEN 'commercial'
             WHEN $resolvedLandUseSql LIKE '%IND%' THEN 'industrial'
             WHEN $resolvedLandUseSql LIKE '%AGR%' THEN 'agricultural'
-            ELSE 'residential'
+            ELSE COALESCE(oa.application_type, 'residential')
         END";
 
+        // Drive from oss_applications so every CoN application record is visible
+        // even when its Transfer of Title pra row is absent (e.g. after a failed
+        // restore). pra, fileNumber, and mls_file_no are LEFT-joined for enrichment.
         $query = DB::connection('sqlsrv')
             ->table(DB::raw("(
-              SELECT id, prop_id, mlsFNo, fileno, temp_fileno, instrument_type,
-                  Grantor, Grantee, party_1, party_2, regNo, op_type,
-                  op_serial_number, property_description, location,
-                  created_by, created_at, plot_no, tp_no, lgsaOrCity,
-                  land_use, system_source,
-                  ROW_NUMBER() OVER (PARTITION BY prop_id ORDER BY id DESC) as rn
-              FROM pra
-              WHERE system_source = 'OSSOPCHANGEOFNAME'
-                AND prop_id IS NOT NULL AND prop_id != ''
-                AND instrument_type LIKE '%Transfer of Title%'
-             ) as p"))
-            ->where('p.rn', 1)
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY file_no ORDER BY id DESC) as oa_rn
+                FROM oss_applications
+                $ossWhereSql
+            ) as oa"))
+            ->where('oa.oa_rn', 1)
+            ->leftJoin(DB::raw("(
+                SELECT id, prop_id, mlsFNo, fileno, temp_fileno, instrument_type,
+                    Grantor, Grantee, party_1, party_2, regNo, op_type,
+                    op_serial_number, property_description, location,
+                    created_by, created_at, plot_no, tp_no, lgsaOrCity,
+                    land_use, system_source,
+                    ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(mlsFNo,''), fileno) ORDER BY id DESC) as p_rn
+                FROM pra
+                WHERE system_source = 'OSSOPCHANGEOFNAME'
+                  AND prop_id IS NOT NULL AND prop_id != ''
+                  AND (instrument_type LIKE '%Transfer of Title%' OR transaction_type LIKE '%Transfer of Title%')
+            ) as p"), function ($join) {
+                $join->whereRaw("(p.mlsFNo = oa.file_no OR p.fileno = oa.file_no)")
+                    ->where('p.p_rn', 1);
+            })
             ->leftJoin(DB::raw("(
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY mlsfNo ORDER BY id DESC) as fn_rn
                 FROM fileNumber
-            ) as fn"), function ($join) use ($praFileNoExpr) {
-                $join->whereRaw("fn.mlsfNo = $praFileNoExpr")
+            ) as fn"), function ($join) {
+                $join->whereRaw("fn.mlsfNo = oa.file_no")
                     ->where('fn.fn_rn', 1);
             })
             ->leftJoin(DB::raw("(
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY tracking_id, full_file_number ORDER BY id DESC) as mfn_rn
                 FROM mls_file_no
-            ) as mfn"), function ($join) use ($praFileNoExpr) {
+            ) as mfn"), function ($join) {
                 $join->on('fn.tracking_id', '=', 'mfn.tracking_id')
-                    ->whereRaw("mfn.full_file_number = $praFileNoExpr")
+                    ->whereRaw("mfn.full_file_number = oa.file_no")
                     ->where('mfn.mfn_rn', 1);
             })
             ->leftJoin('instrument_capture as source_capture', 'mfn.source_instrument_capture_id', '=', 'source_capture.id')
-            ->leftJoin(DB::raw("(
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY file_no ORDER BY id DESC) as oa_rn
-                FROM oss_applications
-                $ossWhereSql
-            ) as oa"), function ($join) use ($praFileNoExpr) {
-                $join->whereRaw("oa.file_no = $praFileNoExpr")
-                    ->where('oa.oa_rn', 1);
-            })
             ->leftJoin('users as cb', DB::raw('cb.id'), '=', DB::raw('TRY_CONVERT(int, p.created_by)'))
             ->leftJoin('users as oa_cb', 'oa_cb.id', '=', 'oa.captured_by')
             ->select([
@@ -430,7 +435,7 @@ class ApplicationController extends Controller
                 'p.property_description as pra_property_description',
                 'p.created_at as pra_created_at',
                 'p.temp_fileno',
-                DB::raw("$praFileNoExpr as file_no"),
+                DB::raw("COALESCE(NULLIF(oa.file_no, ''), NULLIF(p.mlsFNo, ''), p.fileno) as file_no"),
                 'fn.FileName as indexed_file_title',
                 'fn.plot_no as fn_plot_no',
                 'fn.tp_no as fn_plan_no',
@@ -452,12 +457,13 @@ class ApplicationController extends Controller
                 DB::raw("$applicationTypeSql as resolved_application_type")
             ])
             ->where(function ($builder) {
+                // Allow rows with no fileNumber entry (fn.is_deleted IS NULL covers that)
                 $builder->whereNull('fn.is_deleted')
                     ->orWhere('fn.is_deleted', 0);
             })
-            ->when($search, function ($builder) use ($search, $praFileNoExpr) {
-                $builder->where(function ($sub) use ($search, $praFileNoExpr) {
-                    $sub->whereRaw("$praFileNoExpr LIKE ?", ["%{$search}%"])
+            ->when($search, function ($builder) use ($search) {
+                $builder->where(function ($sub) use ($search) {
+                    $sub->whereRaw("oa.file_no LIKE ?", ["%{$search}%"])
                         ->orWhere('p.Grantee', 'LIKE', "%{$search}%")
                         ->orWhere('p.Grantor', 'LIKE', "%{$search}%")
                         ->orWhere('oa.applicant_name', 'LIKE', "%{$search}%")
@@ -472,12 +478,7 @@ class ApplicationController extends Controller
             ->when($appTypeFilter, function ($builder) use ($appTypeFilter, $applicationTypeSql) {
                 $builder->whereRaw("$applicationTypeSql = ?", [$appTypeFilter]);
             })
-            ->whereNotNull('oa.id')
-            ->where(function ($q) {
-                $q->whereNull('oa.is_deleted')
-                    ->orWhere('oa.is_deleted', 0);
-            })
-            ->orderByDesc('p.created_at');
+            ->orderByRaw('COALESCE(p.created_at, oa.created_at) DESC');
 
         $records = $query->paginate($limit)->appends($request->query());
 
@@ -559,26 +560,21 @@ class ApplicationController extends Controller
         $districts = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
         $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
 
+        // Count from oss_applications (the authoritative CoN list) so the cards
+        // reflect all applications, not just those with a pra Transfer of Title row.
         $cardCountRows = DB::connection('sqlsrv')
-            ->table('pra')
-            ->selectRaw("COUNT(DISTINCT CASE WHEN land_use LIKE '%RES%' OR land_use LIKE '%res%' THEN prop_id END) as residential_count")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN land_use LIKE '%COM%' OR land_use LIKE '%com%' THEN prop_id END) as commercial_count")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN land_use LIKE '%IND%' OR land_use LIKE '%ind%' THEN prop_id END) as industrial_count")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN land_use LIKE '%AGR%' OR land_use LIKE '%agr%' THEN prop_id END) as agricultural_count")
+            ->table('oss_applications')
+            ->selectRaw("
+                COUNT(*) as total_count,
+                COUNT(CASE WHEN application_type = 'residential' THEN 1 END) as residential_count,
+                COUNT(CASE WHEN application_type = 'commercial'  THEN 1 END) as commercial_count,
+                COUNT(CASE WHEN application_type = 'industrial'  THEN 1 END) as industrial_count,
+                COUNT(CASE WHEN application_type = 'agricultural' THEN 1 END) as agricultural_count
+            ")
             ->where('system_source', 'OSSOPCHANGEOFNAME')
-            ->where('instrument_type', 'LIKE', '%Transfer of Title%')
-            ->whereNotNull('prop_id')
-            ->where('prop_id', '!=', '')
-            ->whereExists(function ($sub) use ($ossHasIsDeleted) {
-                $sub->select(DB::raw(1))
-                    ->from('oss_applications')
-                    ->whereRaw("oss_applications.file_no = COALESCE(NULLIF(pra.mlsFNo, ''), pra.fileno)")
-                    ->where('oss_applications.system_source', 'OSSOPCHANGEOFNAME');
+            ->where(function ($q) use ($ossHasIsDeleted) {
                 if ($ossHasIsDeleted) {
-                    $sub->where(function ($q) {
-                        $q->whereNull('oss_applications.is_deleted')
-                            ->orWhere('oss_applications.is_deleted', 0);
-                    });
+                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
                 }
             })
             ->first();
@@ -589,6 +585,7 @@ class ApplicationController extends Controller
             'industrial' => (int) ($cardCountRows->industrial_count ?? 0),
             'agricultural' => (int) ($cardCountRows->agricultural_count ?? 0),
         ];
+        $cardTotal = (int) ($cardCountRows->total_count ?? 0);
 
         return view('lands_one_stop_shop.all_applications', [
             'pageTitle' => 'Applications',
@@ -602,6 +599,7 @@ class ApplicationController extends Controller
             'typeOptions' => LandsOneStopShopApplication::typeOptions(),
             'statusOptions' => LandsOneStopShopApplication::statusOptions(),
             'cardCounts' => $cardCounts,
+            'cardTotal' => $cardTotal,
             'isChangeOfNamePage' => true,
             'isNoChangeOfNamePage' => false,
         ]);

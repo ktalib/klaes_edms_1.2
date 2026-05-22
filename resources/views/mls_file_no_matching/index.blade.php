@@ -227,7 +227,16 @@
                                                  </div>
                                              </div>
                                              <!-- customer type  -->
-                                              <div x-show="dataFetched">
+                                              <!-- Not-indexed warning -->
+                                             <div x-show="fileIndexed === false"
+                                                  x-transition
+                                                  class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                                                 <i data-lucide="alert-triangle" class="h-4 w-4 text-red-500 mt-0.5 shrink-0"></i>
+                                                 <p class="text-xs font-bold text-red-700">
+                                                     This file number is <span class="underline">not found</span> in the system. Matching is disabled until a valid indexed file number is selected.
+                                                 </p>
+                                             </div>
+                                             <div x-show="dataFetched">
                                                 <label class="block text-xs font-bold text-slate-600 mb-1 uppercase">Customer Type</label>
                                                 <div class="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-bold" x-text="formData.customer_type || 'N/A'"></div>
                                              </div>
@@ -382,7 +391,7 @@
                                     <button @click="showGenerateModal = false" class="px-6 py-2.5 text-[11px] font-black uppercase tracking-wider text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-xl transition-all">
                                         <span>Cancel</span>
                                     </button>
-                                    <button @click="generateMls()" :disabled="loading || !formData.full_file_number" class="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white text-[11px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 shadow-lg shadow-blue-100 flex items-center gap-2 min-w-[140px] justify-center">
+                                    <button @click="generateMls()" :disabled="loading || !formData.full_file_number || fileIndexed === false" class="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white text-[11px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 shadow-lg shadow-blue-100 flex items-center gap-2 min-w-[140px] justify-center">
                                         <template x-if="loading">
                                              <i data-lucide="loader-2" class="h-4 w-4 animate-spin"></i>
                                         </template>

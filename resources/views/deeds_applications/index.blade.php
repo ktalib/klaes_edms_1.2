@@ -538,7 +538,7 @@
             tbody.innerHTML += `
                 <tr class="hover:bg-slate-50 transition whitespace-nowrap">
                   <td class="px-4 py-3 text-slate-600">${idx + 1}</td>
-                  <td class="px-4 py-3 text-slate-900 font-bold">${unit.unit_fileno || fileNo}</td>
+                  <td class="px-4 py-3 text-slate-900 font-bold">${unit.unit_fileno || 'N/A'}</td>
                   <td class="px-4 py-3 text-slate-600">
                     <span class="px-2.5 py-1 bg-purple-50 text-purple-700 border border-purple-100 rounded-full text-[10px] font-bold uppercase whitespace-nowrap inline-block">ST Assignment</span>
                   </td>
@@ -773,7 +773,7 @@
             tbody.innerHTML += `
                           <tr class="hover:bg-slate-50 transition whitespace-nowrap">
                               <td class="px-4 py-3 text-slate-600">${idx + 1}</td>
-                              <td class="px-4 py-3 text-slate-900 font-bold">${unit.unit_fileno || fileNo}</td>
+                              <td class="px-4 py-3 text-slate-900 font-bold">${unit.unit_fileno || 'N/A'}</td>
                               <td class="px-4 py-3 text-slate-600">
                                   <span class="px-2.5 py-1 bg-purple-50 text-purple-700 border border-purple-100 rounded-full text-[10px] font-bold uppercase whitespace-nowrap inline-block">ST Assignment</span>
                               </td>

@@ -208,6 +208,9 @@
     $appDate = $recommendation->application_date
         ? $recommendation->application_date->format('jS F, Y')
         : '';
+    // Security code: generated once per ROFO from its stable identifier only.
+    // Same across Original/Duplicate/Triplicate and consistent on reprint.
+    $securityCode = str_pad(substr(abs(crc32($recommendation->sltr_number ?? (string) $recommendation->id)), 0, 6), 6, '0', STR_PAD_LEFT);
 @endphp
 
 @foreach($printVersions as $index => $version)
@@ -224,7 +227,7 @@
                             <span style="border-bottom: 1.5px solid #334155; padding-bottom: 1px; font-size: 8px;">V</span>
                             <span style="padding-top: 1px; font-size: 8px;">{{ now()->format('y') }}</span>
                         </span>
-                        <span style="font-size: 13px; font-weight: 900; letter-spacing: 0.1em; color: #334155; font-family: 'Courier New', monospace;">{{ substr(abs(crc32($recommendation->id . $version)), 0, 6) }}</span>
+                        <span style="font-size: 13px; font-weight: 900; letter-spacing: 0.1em; color: #334155; font-family: 'Courier New', monospace;">{{ $securityCode }}</span>
                     </div>
                 </div>
             </div>

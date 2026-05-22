@@ -93,7 +93,9 @@ class GknGenerationController extends Controller
             });
         }
 
-        $indexedFiles = $indexedQuery->orderBy('id', 'desc')->get();
+        $indexedFiles = $indexedQuery->orderBy('id', 'desc')
+            ->paginate(20, ['*'], 'fi_page')
+            ->appends(['search' => $search]);
 
         // Calculate Statistics (always unfiltered totals)
         $indexedFilesTotal = FileIndexing::where('registry', 'Survey')
@@ -120,6 +122,80 @@ class GknGenerationController extends Controller
         return view('gkn_generation.index', compact(
             'PageTitle', 'PageDescription', 'records', 'districts', 'lgas', 'landUses', 'purposes', 'stats', 'search', 'user', 'customerTypes', 'serialStatuses', 'gknPrefixes', 'indexedFiles'
         ));
+    }
+
+    /**
+     * Return the stats + table partial for AJAX refresh.
+     */
+    public function getPartial(Request $request)
+    {
+        $search = $request->query('search');
+
+        $query = GknFileNo::with(['user', 'landUse', 'purpose'])
+            ->whereIn('id', function($q) {
+                $q->select(DB::raw('MAX(id)'))
+                    ->from('gkn_file_no')
+                    ->where('is_deleted', 0)
+                    ->groupBy(DB::raw("CASE WHEN batch_no IS NULL THEN CAST(id AS VARCHAR(100)) ELSE batch_no END"));
+            })
+            ->where('is_deleted', 0);
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('full_file_number', 'LIKE', "%{$search}%")
+                  ->orWhere('file_name', 'LIKE', "%{$search}%")
+                  ->orWhere('location', 'LIKE', "%{$search}%")
+                  ->orWhere('plot_no', 'LIKE', "%{$search}%")
+                  ->orWhere('lga', 'LIKE', "%{$search}%");
+            });
+        }
+
+        $records = $query->orderBy('id', 'desc')
+            ->paginate(20)
+            ->appends(['search' => $search]);
+
+        foreach ($records as $record) {
+            $record->batch_count = $record->batch_no
+                ? GknFileNo::where('batch_no', $record->batch_no)->count()
+                : 1;
+        }
+
+        $indexedQuery = FileIndexing::where('registry', 'Survey')
+            ->where(function($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+            ->whereNotIn('file_number', function($q) {
+                $q->select('full_file_number')->from('gkn_file_no')->where('is_deleted', 0);
+            });
+
+        if ($search) {
+            $indexedQuery->where(function($q) use ($search) {
+                $q->where('file_number', 'LIKE', "%{$search}%")
+                  ->orWhere('file_title', 'LIKE', "%{$search}%")
+                  ->orWhere('location', 'LIKE', "%{$search}%")
+                  ->orWhere('plot_number', 'LIKE', "%{$search}%")
+                  ->orWhere('lga', 'LIKE', "%{$search}%");
+            });
+        }
+
+        $indexedFiles = $indexedQuery->orderBy('id', 'desc')
+            ->paginate(20, ['*'], 'fi_page')
+            ->appends(['search' => $search]);
+
+        $indexedFilesTotal = FileIndexing::where('registry', 'Survey')
+            ->where(function($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+            ->whereNotIn('file_number', function($q) {
+                $q->select('full_file_number')->from('gkn_file_no')->where('is_deleted', 0);
+            })->count();
+
+        $stats = [
+            'total' => GknFileNo::where('is_deleted', 0)->count() + $indexedFilesTotal,
+            'today' => GknFileNo::where('is_deleted', 0)->whereDate('commissioning_date', date('Y-m-d'))->count(),
+            'month' => GknFileNo::where('is_deleted', 0)
+                ->whereMonth('commissioning_date', date('m'))
+                ->whereRaw('YEAR(commissioning_date) = ?', [date('Y')])
+                ->count(),
+        ];
+
+        return view('gkn_generation.partials.table', compact('records', 'stats', 'indexedFiles'));
     }
 
     /**

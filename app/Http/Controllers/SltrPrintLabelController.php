@@ -507,9 +507,30 @@ class SltrPrintLabelController extends Controller
             $perPage = min(100, max(1, (int) $request->get('per_page', 20)));
             $batches = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
+            $batchCollection = $batches->getCollection();
+            $batchIds = $batchCollection->pluck('id')->filter()->values()->toArray();
+
+            $firstFileNumbers = [];
+            if (!empty($batchIds)) {
+                $firstFileNumbers = SltrPrintLabelBatchItem::whereIn('batch_id', $batchIds)
+                    ->select('batch_id', 'file_number')
+                    ->orderBy('label_position')
+                    ->get()
+                    ->groupBy('batch_id')
+                    ->map(fn($items) => $items->first()->file_number ?? null)
+                    ->toArray();
+            }
+
+            $data = $batchCollection->map(function ($batch) use ($firstFileNumbers) {
+                $arr = $batch->toArray();
+                $fileNumber = $firstFileNumbers[$batch->id] ?? null;
+                $arr['digit_rank'] = $fileNumber ? SltrDigitRank::fromFileNumber($fileNumber) : null;
+                return $arr;
+            });
+
             return response()->json([
                 'success' => true,
-                'data'    => $batches->items(),
+                'data'    => $data->values(),
                 'pagination' => [
                     'current_page' => $batches->currentPage(),
                     'last_page'    => $batches->lastPage(),

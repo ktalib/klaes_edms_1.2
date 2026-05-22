@@ -501,7 +501,7 @@
                     </div>
 
                     {{-- Director Cadastral Approval Date --}}
-                    <div class="space-y-1.5">
+                    <div class="space-y-1.5 hidden">
                         <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wide">Director Cadastral Approval Date</label>
                         <input type="date" name="director_cadastral_approval_date"
                             class="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-50 disabled:text-slate-500"
@@ -1358,8 +1358,6 @@
             if (step === 3) {
                 requireValue(errors, 3, 'item_g_no', itemGInput, 'Item G number is required.');
                 requireValue(errors, 3, 'plot_description', inputs.plot, 'Enter the plot number.');
-                requireResolvedSelect(errors, 3, 'street_meta', inputs.street, inputs.streetOther, 'Select the street.', 'Specify the street name.');
-                requireResolvedSelect(errors, 3, 'district_meta', inputs.district, inputs.districtOther, 'Select the district.', 'Specify the district name.');
                 requireValue(errors, 3, 'lga_meta', inputs.lga, 'Select the LGA.');
 
                 if (previewField && !previewField.disabled && !String(previewField.value || '').trim()) {
@@ -1511,10 +1509,6 @@
         [rofoInput, 'rofo_no', 'input'],
         [itemGInput, 'item_g_no', 'input'],
         [inputs.plot, 'plot_description', 'input'],
-        [inputs.street, 'street_meta', 'change'],
-        [inputs.streetOther, 'street_meta', 'input'],
-        [inputs.district, 'district_meta', 'change'],
-        [inputs.districtOther, 'district_meta', 'input'],
         [inputs.lga, 'lga_meta', 'change'],
         [surveyNecessaryInput, 'survey_necessary', 'input'],
         [dcMethodSelect, 'director_cadastral_signature_method', 'change'],

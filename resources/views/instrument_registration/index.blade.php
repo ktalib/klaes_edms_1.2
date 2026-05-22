@@ -53,12 +53,130 @@
         }
 
         // Pass PHP data to JavaScript globally
-        window.serverCofoData = @json($fullDataForJs).map(item => {
-            // Format Grantor and Grantee if they contain JSON arrays
-            if (item.Grantor) item.Grantor = formatMultipleOwners(item.Grantor);
-            if (item.Grantee) item.Grantee = formatMultipleOwners(item.Grantee);
-            return item;
-        });
+        window.serverCofoData = @json($fullDataForJs)
+            .filter(function(item) {
+                // PUA units (Assignment + CofO for mother-application sub-units) are
+                // shown grouped in the ST Groups tab — exclude them from the flat list.
+                return (item.application_type || '').toUpperCase() !== 'PUA';
+            })
+            .map(item => {
+                // Format Grantor and Grantee if they contain JSON arrays
+                if (item.Grantor) item.Grantor = formatMultipleOwners(item.Grantor);
+                if (item.Grantee) item.Grantee = formatMultipleOwners(item.Grantee);
+                return item;
+            });
+
+        // ST group lookup: keyed by mother_app_id, includes unit count, fileno, and full units array
+        @php
+            $stGroupLookupData = [];
+            foreach ($stGroups ?? collect() as $g) {
+                if (($g['type'] ?? '') === 'mother_pua') {
+                    $mid = str_replace('grp_m_', '', $g['id'] ?? '');
+                    if ($mid !== '') {
+                        $stGroupLookupData[$mid] = [
+                            'unit_count'    => (int)($g['unit_count'] ?? 0),
+                            'display_fileno'=> $g['display_fileno'] ?? '',
+                            'is_mother'     => true,
+                            'units'         => $g['units'] ?? [],
+                            'group_id'      => $g['id'] ?? '',
+                        ];
+                    }
+                }
+            }
+        @endphp
+        window.stGroupLookup = @json($stGroupLookupData);
+
+        // Push mother-level aggregate records (one row per mother per instrument type)
+        @php
+        $motherAggregates = [];
+        foreach ($stGroups ?? [] as $group) {
+            if (($group['type'] ?? '') !== 'mother_pua') continue;
+            $mid = str_replace('grp_m_', '', $group['id'] ?? '');
+            if (!$mid) continue;
+
+            $assignTotal = (int)($group['assign_total'] ?? 0);
+            $assignReg   = (int)($group['assign_registered'] ?? 0);
+            $cofoTotal   = (int)($group['cofo_total'] ?? 0);
+            $cofoReg     = (int)($group['cofo_registered'] ?? 0);
+
+            $pendingAssignUnits = [];
+            $pendingCofoUnits   = [];
+            foreach ($group['units'] ?? [] as $unit) {
+                $isPrimaryUnit = (bool)($unit['is_primary_owner'] ?? false);
+
+                // Assignment: non-primary units only, not yet registered
+                if (!$isPrimaryUnit && ($unit['assignment_status'] ?? '') !== 'registered') {
+                    $pendingAssignUnits[] = [
+                        'subapp_id' => $unit['subapp_id'],
+                        'fileno'    => $unit['fileno'],
+                        'applicant' => $unit['applicant'] ?? '',
+                    ];
+                }
+
+                // CofO eligibility re-derived directly from raw data (bypasses cached cofo_enabled):
+                // - primary owner unit → needs its own unit-level fragmentation registered
+                // - non-primary unit   → needs assignment registered first
+                $unitCofoEligible = $isPrimaryUnit
+                    ? (bool)($unit['frag_registered'] ?? false)
+                    : ($unit['assignment_status'] ?? '') === 'registered';
+
+                if (($unit['cofo_status'] ?? '') !== 'registered' && $unitCofoEligible) {
+                    $pendingCofoUnits[] = [
+                        'subapp_id' => $unit['subapp_id'],
+                        'fileno'    => $unit['fileno'],
+                        'applicant' => $unit['applicant'] ?? '',
+                    ];
+                }
+            }
+
+            // Group-level CofO enabled only when at least one unit is actually eligible
+            $cofoEnabled = count($pendingCofoUnits) > 0;
+
+            if ($assignTotal > 0) {
+                $motherAggregates[] = [
+                    'id'               => 'mother_assign_' . $mid,
+                    'fileno'           => $group['display_fileno'] ?? '',
+                    'instrument_type'  => 'ST Assignment (Transfer of Title)',
+                    'status'           => ($assignReg < $assignTotal) ? 'pending' : 'registered',
+                    'application_type' => 'MOTHER_ST',
+                    'Grantor'          => $group['applicant'] ?? '',
+                    'Grantee'          => $group['applicant'] ?? '',
+                    'captured_date'    => $group['captured_date'] ?? null,
+                    'reg_date'         => null,
+                    'reg_time'         => null,
+                    'Deeds_Serial_No'  => null,
+                    '_isAggregate'     => true,
+                    '_aggType'         => 'st_assignment',
+                    '_registeredCount' => $assignReg,
+                    '_totalCount'      => $assignTotal,
+                    '_pendingUnits'    => $pendingAssignUnits,
+                ];
+            }
+
+            if ($cofoTotal > 0) {
+                $motherAggregates[] = [
+                    'id'               => 'mother_cofo_' . $mid,
+                    'fileno'           => $group['display_fileno'] ?? '',
+                    'instrument_type'  => 'Sectional Titling CofO',
+                    'status'           => ($cofoReg < $cofoTotal) ? 'pending' : 'registered',
+                    'application_type' => 'MOTHER_ST',
+                    'Grantor'          => 'Kano State Government',
+                    'Grantee'          => $group['applicant'] ?? '',
+                    'captured_date'    => $group['captured_date'] ?? null,
+                    'reg_date'         => null,
+                    'reg_time'         => null,
+                    'Deeds_Serial_No'  => null,
+                    '_isAggregate'     => true,
+                    '_aggType'         => 'sectional_cofo',
+                    '_registeredCount' => $cofoReg,
+                    '_totalCount'      => $cofoTotal,
+                    '_pendingUnits'    => $pendingCofoUnits,
+                    '_cofoEnabled'     => $cofoEnabled,
+                ];
+            }
+        }
+        @endphp
+        @json($motherAggregates).forEach(function(rec) { window.serverCofoData.push(rec); });
 
         // Base URL for instrument registration AJAX endpoints
         window.baseUrl = "{{ url('') }}";
@@ -155,13 +273,27 @@
                         </div>
                     @endif
 
-                    @if(!($isStDeeds ?? false))
-                    <button id="batchRegisterBtn" onclick="openBatchRegisterModal()"
+                    {{-- Old Registration button hidden; kept for legacy JS references --}}
+                    <button id="batchRegisterBtn" onclick="openBatchRegisterModal()" style="display:none;"
                         class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg flex items-center gap-2">
                         <i class="fas fa-layer-group"></i>
                         <span id="batchBtnText">Registration</span>
                     </button>
-                    @endif
+
+                    {{-- Batch mode toggle --}}
+                    <button id="batchModeToggleBtn" onclick="toggleBatchMode()"
+                        class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-4 rounded-lg flex items-center gap-2 border border-gray-300 transition-all duration-150">
+                        <i class="fas fa-check-square"></i>
+                        <span>Batch</span>
+                    </button>
+
+                    {{-- Batch Registration button (hidden until items are checked) --}}
+                    <button id="groupBatchRegBtn" onclick="openGroupBatchModal()" style="display:none;"
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg flex items-center gap-2 shadow transition-all duration-150">
+                        <i class="fas fa-layer-group"></i>
+                        <span>Batch Registration</span>
+                        <span id="batchSelectedBadge" class="ml-1 bg-white text-indigo-700 rounded-full text-xs font-bold px-2 py-0.5">0</span>
+                    </button>
                     <button id="exportRegistryBtn" onclick="openCaptureExportModal()"
                         class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg flex items-center gap-2 shadow-md hover:shadow-lg transition-all duration-200">
                         <i class="fas fa-file-export"></i>
@@ -184,7 +316,7 @@
             <div class="table-container">
                 <!-- Table tabs & controls -->
                 <div class="table-header px-6 py-4 flex justify-between items-center flex-wrap gap-4">
-                    <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-4 flex-wrap">
                         <h2 class="text-lg font-semibold text-gray-900">Instruments</h2>
                         <div class="flex items-center gap-2 text-sm text-gray-600">
                             <i class="fas fa-database text-blue-500"></i>
@@ -197,6 +329,21 @@
                             <span>Print Batch RDS and CoR</span>
                         </button>
                         @endif
+
+                        {{-- View toggle: List / Grouped --}}
+                        <div class="flex rounded-lg overflow-hidden border border-gray-300 shadow-sm" role="group">
+                            <button id="toggleListView"
+                                onclick="switchIRView('list')"
+                                class="ir-view-btn px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 bg-blue-600 text-white border-r border-blue-700">
+                                <i class="fas fa-list text-[11px]"></i>List
+                            </button>
+                            <button id="toggleGroupedView"
+                                onclick="switchIRView('grouped')"
+                                class="ir-view-btn px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 bg-white text-gray-600 hover:bg-gray-50"
+                                style="display:none;">
+                                <i class="fas fa-layer-group text-[11px]"></i>ST Groups
+                            </button>
+                        </div>
                     </div>
 
 
@@ -251,6 +398,14 @@
                         </div>
                     </div>
                 </div>
+
+                {{-- ===== GROUPED VIEW (hidden by default) ===== --}}
+                <div id="irGroupedViewContainer" style="display: none;">
+                    @include('instrument_registration.partials.st_grouped_table')
+                </div>
+
+                {{-- ===== LIST VIEW (default) ===== --}}
+                <div id="irListViewContainer">
 
                 <!-- Table with Fixed Header -->
                 <div class="table-wrapper" style="max-height: 600px; overflow-y: auto;">
@@ -360,7 +515,19 @@
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200" id="cofoTableBody">
+                            @php
+                                // Build lookup: mother_application_id => group for Primary rows
+                                $groupByMotherId = [];
+                                foreach ($stGroups ?? collect() as $g) {
+                                    if (($g['type'] ?? '') === 'mother_pua') {
+                                        $mid = str_replace('grp_m_', '', $g['id'] ?? '');
+                                        if ($mid !== '') $groupByMotherId[$mid] = $g;
+                                    }
+                                }
+                            @endphp
                             @forelse($approvedApplications as $app)
+                                @php $normAppType = strtoupper(trim($app->application_type ?? '')); @endphp
+                                @if($normAppType === 'PUA') @continue @endif
                                 <tr class="cofo-row" data-status="{{ $app->status }}" data-id="{{ $app->id }}">
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @php
@@ -421,7 +588,24 @@
                                         @if($app->captured_date ?? null)<div class="flex items-center"><i class="fas fa-calendar-plus text-blue-400 mr-2"></i>{{ date('M d, Y', strtotime($app->captured_date)) }}</div>@else<span class="text-gray-400">-</span>@endif
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                        <span class="file-number">{{ $app->fileno ?? '-' }}</span>
+                                        @php
+                                            $isPrimary = strtoupper(trim($app->application_type ?? '')) === 'PRIMARY';
+                                            $grpForRow = $isPrimary && isset($app->original_mother_app_id)
+                                                ? ($groupByMotherId[$app->original_mother_app_id] ?? null)
+                                                : null;
+                                        @endphp
+                                        @if($grpForRow)
+                                            <button class="st-fileno-link"
+                                                onclick="openUnitsModal('grp_m_{{ $app->original_mother_app_id }}')">
+                                                {{ $app->fileno ?? '-' }}
+                                            </button>
+                                            <div style="font-size:11px;color:#9ca3af;margin-top:3px;display:flex;align-items:center;gap:3px;">
+                                                <i class="fas fa-home" style="font-size:9px;"></i>
+                                                {{ $grpForRow['unit_count'] }} unit{{ $grpForRow['unit_count'] !== 1 ? 's' : '' }}
+                                            </div>
+                                        @else
+                                            <span class="file-number">{{ $app->fileno ?? '-' }}</span>
+                                        @endif
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                                         <span class="status-badge badge-{{ $app->status }}">{{ ucfirst($app->status) }}</span>
@@ -505,6 +689,8 @@
                         </button>
                     </div>
                 </div>
+
+                </div>{{-- /irListViewContainer --}}
             </div>
 
             <!-- Application Type Legend -->
@@ -553,6 +739,50 @@
     </div>
 
     <script>
+        // Move #stUnitsModal to document.body so it's not hidden inside irGroupedViewContainer
+        document.addEventListener('DOMContentLoaded', function () {
+            var modal = document.getElementById('stUnitsModal');
+            if (modal && modal.parentElement !== document.body) {
+                document.body.appendChild(modal);
+            }
+        });
+
+        // --- Grouped / List view toggle ---
+        function switchIRView(view) {
+            var grouped = document.getElementById('irGroupedViewContainer');
+            var list    = document.getElementById('irListViewContainer');
+            var btnG    = document.getElementById('toggleGroupedView');
+            var btnL    = document.getElementById('toggleListView');
+            var isList  = view === 'list';
+
+            if (list)    list.style.display    = isList ? '' : 'none';
+            if (grouped) grouped.style.display = isList ? 'none' : '';
+
+            var activeClass   = 'ir-view-btn px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 bg-blue-600 text-white border-r border-blue-700';
+            var inactiveClass = 'ir-view-btn px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 bg-white text-gray-600 hover:bg-gray-50';
+
+            if (btnL) btnL.className = isList  ? activeClass : inactiveClass;
+            if (btnG) btnG.className = !isList ? activeClass : inactiveClass;
+
+            // When entering grouped view with batch mode on, expand all groups
+            // so CofO and Assignment checkboxes are immediately visible
+            if (!isList && window.batchModeActive) {
+                _expandAllSTGroups();
+            }
+        }
+
+        // Expand every collapsed group row in the ST grouped table
+        function _expandAllSTGroups() {
+            document.querySelectorAll('.st-group-row').forEach(function(row) {
+                var groupId = row.getAttribute('data-group-id');
+                if (!groupId) return;
+                var icon = document.getElementById('icon-' + groupId);
+                if (icon && !icon.classList.contains('open')) {
+                    if (typeof toggleSTGroup === 'function') toggleSTGroup(groupId);
+                }
+            });
+        }
+
         // Initialize caches with the globally defined data
         window.appData = window.appData || {};
         window.instrumentLookup = window.instrumentLookup || new Map();
@@ -693,4 +923,477 @@
     <script src="{{ asset('js/instrument_registration_index.js') }}"></script>
     <script src="{{ asset('js/instrument_registration_batch_print.js') }}?v={{ time() }}"></script>
     <script src="{{ asset('js/instrument_capture_export.js') }}?v={{ time() }}"></script>
+
+{{-- ===== GROUP BATCH REGISTRATION MODAL ===== --}}
+<style>
+#groupBatchModal { display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; }
+.gbm-table th { padding:10px 14px; text-align:left; font-size:11px; font-weight:600; color:#6b7280; text-transform:uppercase; background:#f9fafb; white-space:nowrap; border-bottom:1px solid #e5e7eb; }
+.gbm-table td { padding:10px 14px; font-size:13px; border-bottom:1px solid #f3f4f6; vertical-align:middle; }
+.gbm-table tr:last-child td { border-bottom:none; }
+.gbm-reg-badge { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:5px; font-family:monospace; font-weight:700; font-size:12px; background:#dbeafe; color:#1e40af; }
+</style>
+
+<div id="groupBatchModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; width:94%; max-width:860px; max-height:90vh; display:flex; flex-direction:column; box-shadow:0 25px 50px rgba(0,0,0,0.25);">
+
+        {{-- Header --}}
+        <div style="padding:18px 24px 14px; border-bottom:1px solid #e5e7eb; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+            <div>
+                <h3 style="font-size:16px; font-weight:700; color:#111827; margin:0; display:flex; align-items:center; gap:8px;">
+                    <i class="fas fa-layer-group" style="color:#6366f1;"></i>
+                    Batch Registration
+                </h3>
+                <p id="gbmSubtitle" style="font-size:12px; color:#6b7280; margin:4px 0 0;"></p>
+            </div>
+            <button onclick="closeGroupBatchModal()" style="background:none; border:none; cursor:pointer; color:#9ca3af; font-size:20px; padding:2px 6px;"><i class="fas fa-times"></i></button>
+        </div>
+
+        {{-- Assigned-to notice --}}
+        <div style="padding:10px 24px; background:#f0fdf4; border-bottom:1px solid #dcfce7; font-size:12px; color:#166534; display:flex; align-items:center; gap:6px; flex-shrink:0;">
+            <i class="fas fa-user-check" style="color:#22c55e;"></i>
+            This batch will be registered and assigned to: <strong>{{ Auth::user()->name ?? Auth::user()->username ?? 'You' }}</strong>
+        </div>
+
+        {{-- Body --}}
+        <div id="gbmBody" style="overflow:auto; flex:1; padding:0;">
+
+            {{-- Selection table (shown before registration) --}}
+            <div id="gbmSelectionView">
+                <div style="padding:16px 24px 8px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <label style="font-size:13px; font-weight:600; color:#374151;">Reg Date:</label>
+                        <input type="date" id="gbmDeedsDate" style="border:1px solid #d1d5db; border-radius:6px; padding:6px 10px; font-size:13px; outline:none;" />
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <label style="font-size:13px; font-weight:600; color:#374151;">Reg Time:</label>
+                        <input type="time" id="gbmDeedsTime" style="border:1px solid #d1d5db; border-radius:6px; padding:6px 10px; font-size:13px; outline:none;" />
+                    </div>
+                </div>
+                <div style="overflow:auto;">
+                    <table class="gbm-table" style="width:100%; border-collapse:collapse;">
+                        <thead>
+                            <tr>
+                                <th style="width:36px; text-align:center;">#</th>
+                                <th>File No</th>
+                                <th>Instrument Type</th>
+                                <th>Party 1 (Grantor)</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gbmSelectionBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            {{-- Results view (shown after registration) --}}
+            <div id="gbmResultsView" style="display:none;">
+                {{-- Success banner --}}
+                <div style="margin:20px 24px 0; padding:14px 18px; background:linear-gradient(135deg,#f0fdf4,#dcfce7); border:1px solid #bbf7d0; border-radius:10px; display:flex; align-items:center; gap:12px;">
+                    <div style="width:42px;height:42px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                        <i class="fas fa-check" style="color:#fff;font-size:18px;"></i>
+                    </div>
+                    <div>
+                        <div id="gbmResultsTitle" style="font-size:15px;font-weight:700;color:#166534;"></div>
+                        <div style="font-size:12px;color:#16a34a;margin-top:2px;">Registration particulars have been assigned and saved.</div>
+                        <div id="gbmResultsRange" style="display:none;margin-top:6px;"></div>
+                    </div>
+                </div>
+                {{-- Cards grid --}}
+                <div id="gbmResultsCards" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; padding:16px 24px 20px;"></div>
+            </div>
+
+        </div>
+
+        {{-- Footer --}}
+        <div id="gbmFooter" style="padding:14px 24px; border-top:1px solid #e5e7eb; display:flex; justify-content:flex-end; gap:10px; flex-shrink:0;">
+            <button onclick="closeGroupBatchModal()" style="padding:8px 18px; border:1px solid #d1d5db; border-radius:7px; background:#fff; color:#374151; font-size:13px; font-weight:600; cursor:pointer;">Cancel</button>
+            <button id="gbmSubmitBtn" onclick="submitGroupBatch()"
+                style="padding:8px 22px; border:none; border-radius:7px; background:#6366f1; color:#fff; font-size:13px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                <i class="fas fa-file-signature"></i> Register All
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ===== BATCH MODE =====
+window.batchModeActive = false;
+
+function toggleBatchMode() {
+    window.batchModeActive = !window.batchModeActive;
+    var btn = document.getElementById('batchModeToggleBtn');
+
+    if (window.batchModeActive) {
+        btn.classList.remove('bg-gray-100','text-gray-700','border-gray-300');
+        btn.classList.add('bg-indigo-600','text-white','border-indigo-700');
+        btn.innerHTML = '<i class="fas fa-times-circle"></i><span>Exit Batch</span>';
+    } else {
+        btn.classList.remove('bg-indigo-600','text-white','border-indigo-700');
+        btn.classList.add('bg-gray-100','text-gray-700','border-gray-300');
+        btn.innerHTML = '<i class="fas fa-check-square"></i><span>Batch</span>';
+        // Uncheck all main-table checkboxes and hide the batch button
+        document.querySelectorAll('.main-table-checkbox:checked').forEach(function(cb) {
+            cb.checked = false;
+        });
+        var groupBtn = document.getElementById('groupBatchRegBtn');
+        if (groupBtn) groupBtn.style.display = 'none';
+        var badge = document.getElementById('batchSelectedBadge');
+        if (badge) badge.textContent = '0';
+        var allChk = document.getElementById('selectAll');
+        if (allChk) allChk.checked = false;
+    }
+
+    // Toggle ST unit checkboxes (Assignment / CofO pending rows)
+    document.querySelectorAll('.st-batch-checkbox').forEach(function(cb) {
+        if (window.batchModeActive) {
+            cb.style.display = 'inline-block';
+            cb.disabled = false;
+            var regBtn = cb.parentElement ? cb.parentElement.querySelector('.st-register-btn') : null;
+            if (regBtn) regBtn.style.display = 'none';
+        } else {
+            cb.style.display = 'none';
+            cb.disabled = true;
+            cb.checked = false;
+            var regBtn = cb.parentElement ? cb.parentElement.querySelector('.st-register-btn') : null;
+            if (regBtn) regBtn.style.display = '';
+        }
+    });
+
+    // Show/hide "Select X pending" group-header buttons
+    document.querySelectorAll('.st-group-select-all').forEach(function(btn) {
+        if (window.batchModeActive) {
+            btn.style.display = 'inline-flex';
+        } else {
+            btn.style.display = 'none';
+            btn.classList.remove('all-selected');
+            // Reset label
+            var lbl = btn.getAttribute('data-pending-label');
+            if (lbl) btn.innerHTML = '<i class="fas fa-check-square" style="font-size:9px;"></i> ' + lbl;
+        }
+    });
+
+    // If the grouped view is currently visible and batch mode just turned on,
+    // expand all groups so CofO / Assignment checkboxes are immediately visible
+    var groupedContainer = document.getElementById('irGroupedViewContainer');
+    if (window.batchModeActive && groupedContainer && groupedContainer.style.display !== 'none') {
+        _expandAllSTGroups();
+    }
+
+    // Re-render table to apply/remove the batch-mode checkbox overrides
+    if (typeof window.updateTable === 'function') window.updateTable();
+}
+
+// ===== GROUP BATCH MODAL =====
+
+var _gbmItems = [];
+
+function openGroupBatchModal() {
+    var checkedBoxes   = document.querySelectorAll('.main-table-checkbox:checked:not([disabled])');
+    var stCheckedBoxes = document.querySelectorAll('.st-batch-checkbox:checked:not([disabled])');
+    if (!checkedBoxes.length && !stCheckedBoxes.length) return;
+
+    _gbmItems = [];
+
+    // Collect main-table instruments (aggregate records expand into individual units)
+    checkedBoxes.forEach(function(cb) {
+        var id = cb.getAttribute('data-id');
+        var rec = (window.serverCofoData || []).find(function(x) { return String(x.id) === String(id); });
+        if (rec) {
+            if (rec._isAggregate && (rec._pendingUnits || []).length) {
+                rec._pendingUnits.forEach(function(unit) {
+                    _gbmItems.push({
+                        application_id:      unit.subapp_id + '_' + rec._aggType,
+                        fileno:              unit.fileno || '-',
+                        instrument_type:     rec.instrument_type || '',
+                        grantor:             unit.applicant || '',
+                        grantee:             '',
+                        status:              'pending',
+                        lga:                 '',
+                        district:            '',
+                        plotNumber:          '',
+                        size:                '',
+                        propertyDescription: '',
+                        duration:            '',
+                        file_no:             unit.fileno || '',
+                        op_type:             ''
+                    });
+                });
+            } else {
+                _gbmItems.push({
+                    application_id: rec.id,
+                    fileno: rec.fileno || '-',
+                    instrument_type: rec.instrument_type || '',
+                    grantor: rec.Grantor || '',
+                    grantee: rec.Grantee || '',
+                    status: rec.status || 'pending',
+                    lga: rec.lga || '',
+                    district: rec.district || '',
+                    plotNumber: rec.plotNumber || '',
+                    size: rec.size || '',
+                    propertyDescription: rec.propertyDescription || '',
+                    duration: rec.duration || rec.leasePeriod || '',
+                    file_no: rec.fileno || '',
+                    op_type: rec.op_type || ''
+                });
+            }
+        }
+    });
+
+    // Collect ST unit instruments (Assignment / CofO)
+    stCheckedBoxes.forEach(function(cb) {
+        var subappId  = cb.getAttribute('data-subapp-id');
+        var regType   = cb.getAttribute('data-reg-type');       // 'st_assignment' | 'sectional_cofo'
+        var instrType = cb.getAttribute('data-instrument-type');
+        var fileno    = cb.getAttribute('data-fileno') || '-';
+        var applicant = cb.getAttribute('data-applicant') || '';
+        _gbmItems.push({
+            application_id:      subappId + '_' + regType,
+            fileno:              fileno,
+            instrument_type:     instrType,
+            grantor:             applicant,
+            grantee:             '',
+            status:              'pending',
+            lga:                 '',
+            district:            '',
+            plotNumber:          '',
+            size:                '',
+            propertyDescription: '',
+            duration:            '',
+            file_no:             fileno,
+            op_type:             ''
+        });
+    });
+
+    if (!_gbmItems.length) return;
+
+    // Reset to selection view
+    document.getElementById('gbmSelectionView').style.display = 'block';
+    document.getElementById('gbmResultsView').style.display  = 'none';
+    document.getElementById('gbmSubmitBtn').style.display    = 'flex';
+    document.getElementById('gbmSubmitBtn').disabled         = false;
+    document.getElementById('gbmSubmitBtn').innerHTML        = '<i class="fas fa-file-signature"></i> Register All';
+
+    // Set default date/time to now
+    var now = new Date();
+    document.getElementById('gbmDeedsDate').value = now.toISOString().split('T')[0];
+    document.getElementById('gbmDeedsTime').value = now.toTimeString().substring(0, 5);
+
+    // Build subtitle
+    document.getElementById('gbmSubtitle').textContent =
+        _gbmItems.length + ' instrument' + (_gbmItems.length !== 1 ? 's' : '') + ' selected for registration';
+
+    // Build selection table
+    var tbody = document.getElementById('gbmSelectionBody');
+    tbody.innerHTML = '';
+    _gbmItems.forEach(function(item, i) {
+        var statusHtml = item.status === 'pending'
+            ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#fef9c3;color:#854d0e;"><i class="fas fa-clock"></i>Pending</span>'
+            : '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#dcfce7;color:#166534;"><i class="fas fa-check"></i>Registered</span>';
+        var grantor = (item.grantor || '-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        tbody.insertAdjacentHTML('beforeend',
+            '<tr style="background:' + (i%2?'#fafafa':'#fff') + ';">'
+            + '<td style="text-align:center;color:#9ca3af;">' + (i+1) + '</td>'
+            + '<td style="font-family:monospace;font-weight:700;color:#1d4ed8;">' + item.fileno + '</td>'
+            + '<td>' + (item.instrument_type || '-') + '</td>'
+            + '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + grantor + '">' + grantor + '</td>'
+            + '<td>' + statusHtml + '</td>'
+            + '</tr>'
+        );
+    });
+
+    document.getElementById('groupBatchModal').style.display = 'flex';
+}
+
+function closeGroupBatchModal() {
+    document.getElementById('groupBatchModal').style.display = 'none';
+}
+
+function submitGroupBatch() {
+    var deedsDate = document.getElementById('gbmDeedsDate').value;
+    var deedsTime = document.getElementById('gbmDeedsTime').value;
+
+    if (!deedsDate || !deedsTime) {
+        Swal.fire({ icon:'warning', title:'Missing Fields', text:'Please enter both Reg Date and Reg Time before registering.', confirmButtonColor:'#6366f1' });
+        return;
+    }
+
+    var pendingItems = _gbmItems.filter(function(x) { return x.status === 'pending'; });
+    if (!pendingItems.length) {
+        Swal.fire({ icon:'info', title:'No Pending Items', text:'All selected instruments are already registered.', confirmButtonColor:'#6366f1' });
+        return;
+    }
+
+    var batchEntries = pendingItems.map(function(item) {
+        return {
+            application_id:      item.application_id,
+            instrument_type:     item.instrument_type,
+            grantor:             item.grantor,
+            grantee:             item.grantee,
+            lga:                 item.lga,
+            district:            item.district,
+            plotNumber:          item.plotNumber,
+            size:                item.size,
+            propertyDescription: item.propertyDescription,
+            duration:            item.duration,
+            file_no:             item.file_no,
+            op_type:             item.op_type
+        };
+    });
+
+    var submitBtn = document.getElementById('gbmSubmitBtn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registering…';
+
+    fetch('{{ url("instrument_registration/register-batch") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+            batch_entries: batchEntries,
+            deeds_date: deedsDate,
+            deeds_time: deedsTime
+        })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            _gbmShowResults(data.results || [], deedsDate, deedsTime);
+        } else {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-file-signature"></i> Register All';
+            Swal.fire({ icon:'error', title:'Registration Failed', text: data.error || 'An error occurred.', confirmButtonColor:'#ef4444' });
+        }
+    })
+    .catch(function(err) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-file-signature"></i> Register All';
+        Swal.fire({ icon:'error', title:'Request Failed', text:'A network error occurred. Please try again.', confirmButtonColor:'#ef4444' });
+    });
+}
+
+function _gbmShowResults(results, deedsDate, deedsTime) {
+    var resultMap = {};
+    results.forEach(function(r) { resultMap[String(r.application_id)] = r; });
+
+    var fmtDate = deedsDate
+        ? new Date(deedsDate).toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'})
+        : '—';
+    var fmtTime = deedsTime || '—';
+
+    var grid = document.getElementById('gbmResultsCards');
+    grid.innerHTML = '';
+
+    _gbmItems.forEach(function(item) {
+        var res = resultMap[String(item.application_id)];
+        var particulars = res ? (res.deeds_serial_no || 'N/A') : null;
+        var typeName = (item.instrument_type || 'Instrument').replace('(Transfer of Title)','').trim();
+
+        // Pick accent colour per type
+        var accent = '#6366f1'; // indigo default
+        if (/Fragmentation/i.test(item.instrument_type)) accent = '#a855f7';
+        else if (/Assignment/i.test(item.instrument_type)) accent = '#2563eb';
+        else if (/CofO|Certificate/i.test(item.instrument_type)) accent = '#0d9488';
+
+        var cardHtml;
+        if (res && particulars) {
+            cardHtml = '<div style="border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">'
+                // Coloured top strip
+                + '<div style="height:5px;background:' + accent + ';"></div>'
+                // Card body
+                + '<div style="padding:14px 16px;">'
+                    // File No row
+                    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
+                        + '<span style="font-family:monospace;font-weight:700;font-size:13px;color:#1d4ed8;">' + _gbmEsc(item.fileno) + '</span>'
+                        + '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700;background:#dcfce7;color:#166534;">'
+                            + '<i class="fas fa-check" style="font-size:8px;"></i>Registered'
+                        + '</span>'
+                    + '</div>'
+                    // Instrument type
+                    + '<div style="font-size:11px;color:#6b7280;margin-bottom:12px;">' + _gbmEsc(typeName) + '</div>'
+                    // Reg Particulars (large focal element)
+                    + '<div style="background:#f5f3ff;border:1.5px dashed ' + accent + ';border-radius:8px;padding:10px 14px;text-align:center;margin-bottom:10px;">'
+                        + '<div style="font-size:10px;font-weight:600;color:#7c3aed;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Reg Particulars</div>'
+                        + '<div style="font-family:monospace;font-size:20px;font-weight:800;color:' + accent + ';letter-spacing:0.03em;">' + _gbmEsc(particulars) + '</div>'
+                    + '</div>'
+                    // Date / Time row
+                    + '<div style="display:flex;gap:8px;font-size:11px;color:#6b7280;">'
+                        + '<div style="display:flex;align-items:center;gap:4px;">'
+                            + '<i class="fas fa-calendar-check" style="color:#34d399;"></i>'
+                            + '<span>' + fmtDate + '</span>'
+                        + '</div>'
+                        + '<div style="display:flex;align-items:center;gap:4px;">'
+                            + '<i class="fas fa-clock" style="color:#9ca3af;"></i>'
+                            + '<span>' + fmtTime + '</span>'
+                        + '</div>'
+                    + '</div>'
+                + '</div>'
+            + '</div>';
+        } else {
+            // Failed card
+            cardHtml = '<div style="border:1px solid #fecaca;border-radius:12px;overflow:hidden;">'
+                + '<div style="height:5px;background:#ef4444;"></div>'
+                + '<div style="padding:14px 16px;">'
+                    + '<div style="font-family:monospace;font-weight:700;font-size:13px;color:#1d4ed8;margin-bottom:6px;">' + _gbmEsc(item.fileno) + '</div>'
+                    + '<div style="font-size:11px;color:#6b7280;margin-bottom:10px;">' + _gbmEsc(typeName) + '</div>'
+                    + '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px;text-align:center;font-size:12px;color:#dc2626;">'
+                        + '<i class="fas fa-exclamation-circle" style="margin-right:4px;"></i>Not registered'
+                    + '</div>'
+                + '</div>'
+            + '</div>';
+        }
+
+        grid.insertAdjacentHTML('beforeend', cardHtml);
+    });
+
+    // Compute reg particulars range from successful results (in insertion order)
+    var successParticulars = [];
+    _gbmItems.forEach(function(item) {
+        var res = resultMap[String(item.application_id)];
+        if (res && res.deeds_serial_no) successParticulars.push(res.deeds_serial_no);
+    });
+
+    document.getElementById('gbmSelectionView').style.display = 'none';
+    document.getElementById('gbmResultsView').style.display  = 'block';
+    document.getElementById('gbmResultsTitle').textContent   =
+        results.length + ' instrument' + (results.length !== 1 ? 's' : '') + ' registered successfully';
+
+    var rangeEl = document.getElementById('gbmResultsRange');
+    if (rangeEl) {
+        if (successParticulars.length > 0) {
+            var first = successParticulars[0];
+            var last  = successParticulars[successParticulars.length - 1];
+            var rangeText = first === last ? first : first + ' – ' + last;
+            rangeEl.style.display = 'block';
+            rangeEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:5px;">'
+                + '<span style="font-size:10px;font-weight:600;color:#166534;text-transform:uppercase;letter-spacing:0.05em;">Reg Particulars:</span>'
+                + '<span style="font-family:monospace;font-size:14px;font-weight:800;color:#166534;background:#bbf7d0;padding:2px 10px;border-radius:6px;letter-spacing:0.04em;">'
+                + _gbmEsc(rangeText) + '</span></span>';
+        } else {
+            rangeEl.style.display = 'none';
+        }
+    }
+
+    // Hide Register button, replace Cancel with Close
+    document.getElementById('gbmSubmitBtn').style.display = 'none';
+    var footer = document.getElementById('gbmFooter');
+    footer.querySelector('button').textContent = 'Close';
+
+    // Exit batch mode and refresh table
+    if (window.batchModeActive) toggleBatchMode();
+    if (typeof window.updateTable === 'function') window.updateTable();
+}
+
+function _gbmEsc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Close on backdrop click
+document.addEventListener('DOMContentLoaded', function() {
+    var m = document.getElementById('groupBatchModal');
+    if (m) m.addEventListener('click', function(e) { if (e.target === this) closeGroupBatchModal(); });
+});
+</script>
 @endsection

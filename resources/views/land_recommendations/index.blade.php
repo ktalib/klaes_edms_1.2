@@ -217,8 +217,8 @@
 
                                                     <div class="border-t border-slate-100 my-1"></div>
 
-                                                    <!-- Approval Action -->
-                                                    @if($rec->status === \App\Models\LandRecommendation::STATUS_PENDING)
+                                                    <!-- Approval Action  hidden if user assign_role not = Supper Admin-->
+                                                    @if($rec->status === \App\Models\LandRecommendation::STATUS_PENDING && auth()->user()->assign_role === 'Super Admin')
                                                         <button type="button" onclick="approveRecord('{{ $rec->id }}', '{{ $rec->file_number }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-green-600 hover:bg-green-50 transition gap-2 font-bold">
                                                             <i data-lucide="check-circle" class="h-4 w-4"></i> Approve 
                                                         </button>
@@ -329,6 +329,32 @@
 
 @push('scripts')
 <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        @if(session('success'))
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success',
+                    text: @json(session('success')),
+                    confirmButtonColor: '#059669',
+                    timer: 4000,
+                    timerProgressBar: true,
+                });
+            }
+        @endif
+
+        @if(session('error'))
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: @json(session('error')),
+                    confirmButtonColor: '#dc2626',
+                });
+            }
+        @endif
+    });
+
     @if(empty($isOssView))
     function approveRecord(id, fileNumber) {
         Swal.fire({

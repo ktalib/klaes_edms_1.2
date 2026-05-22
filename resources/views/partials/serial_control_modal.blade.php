@@ -5,6 +5,10 @@
     $prefixes = $prefixes ?? [];
     $year = $year ?? date('Y');
 @endphp
+<style>
+    /* Ensures SweetAlert popups triggered inside this modal render on top of it */
+    .swal-above-modal.swal2-container { z-index: 100000 !important; }
+</style>
 
 <div x-show="{{ $showVariable }}" 
      x-cloak

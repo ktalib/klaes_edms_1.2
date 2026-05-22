@@ -169,12 +169,29 @@ class LegalSearchController extends Controller
         $results = $this->searchService->search(['query' => $fileNo]);
         $transactions = $results['transactions'] ?? [];
 
-        // When prop_id is provided, filter to only records belonging to that prop_id group.
+        // Build the full set of allowed prop_ids for the filter.
+        // For merger files, the PRA merger row stores parent_prop_id with the source file prop_ids
+        // (e.g. RES-2026-2123's PRA row has parent_prop_id="80000455,77505").
+        // We must include those so all source records pass the filter and appear on the print.
+        $allowedPropIds = $propId !== '' ? [$propId] : [];
+        foreach ($transactions as $tx) {
+            $ppid = trim((string) ($tx['parent_prop_id'] ?? ''));
+            if ($ppid !== '') {
+                foreach (array_map('trim', explode(',', $ppid)) as $pid) {
+                    if ($pid !== '') {
+                        $allowedPropIds[] = $pid;
+                    }
+                }
+            }
+        }
+        $allowedPropIds = array_values(array_unique($allowedPropIds));
+
+        // When prop_id is provided, filter to only records belonging to the allowed prop_id group.
         // This ensures dropped records (prop_id = NULL) are excluded from the print template.
         if (!empty($transactions) && $propId !== '') {
-            $transactions = array_values(array_filter($transactions, function ($row) use ($propId) {
+            $transactions = array_values(array_filter($transactions, function ($row) use ($allowedPropIds) {
                 $rowPropId = trim((string) ($row['prop_id'] ?? ''));
-                return $rowPropId === $propId;
+                return in_array($rowPropId, $allowedPropIds, true);
             }));
         }
 

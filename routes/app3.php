@@ -192,6 +192,7 @@ Route::middleware(['auth'])->group(function () {
     // GKN Generation Routes
     Route::prefix('gkn/generation')->name('gkn-generation.')->group(function () {
         Route::get('/', [GknGenerationController::class, 'index'])->name('index');
+        Route::get('/partial', [GknGenerationController::class, 'getPartial'])->name('partial');
         Route::get('/available', [GknGenerationController::class, 'getAvailableGkn'])->name('available');
         Route::post('/store', [GknGenerationController::class, 'store'])->name('store');
         Route::get('/batch-members/{batchNo}', [GknGenerationController::class, 'getBatchMembers'])->name('batch-members');
@@ -823,6 +824,9 @@ Route::middleware(['auth'])->group(function () {
     // Land ROFO Routes
     Route::prefix('land-rofos')->name('land-rofos.')->group(function () {
         Route::get('/', [\App\Http\Controllers\LandRofoController::class, 'index'])->name('index');
+        Route::get('/unprinted-json', [\App\Http\Controllers\LandRofoController::class, 'unprintedJson'])->name('unprinted-json');
+        Route::post('/batch-print', [\App\Http\Controllers\LandRofoController::class, 'batchPrint'])->name('batch-print');
+        Route::post('/batch-print-log', [\App\Http\Controllers\LandRofoController::class, 'batchPrintLog'])->name('batch-print-log');
         Route::post('/{id}/generate', [\App\Http\Controllers\LandRofoController::class, 'generate'])->name('generate');
         Route::post('/{id}/assign-security-paper', [\App\Http\Controllers\LandRofoController::class, 'assignSecurityPaperCode'])->name('assign-security-paper');
         Route::get('/{id}/print', [\App\Http\Controllers\LandRofoController::class, 'print'])->name('print');

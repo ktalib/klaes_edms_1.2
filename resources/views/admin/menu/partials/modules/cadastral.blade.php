@@ -61,8 +61,8 @@
           </a>
 
           <!-- ii. Index Cards -->
-          <a href="#"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
+          <a href="{{ route('cadastral.index-cards.index') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('cadastral.index-cards.index') ? 'active' : '' }}">
             <i data-lucide="id-card" class="h-3.5 w-3.5 text-rose-400"></i>
             <span>Index Cards</span>
           </a>
