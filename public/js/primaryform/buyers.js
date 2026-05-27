@@ -456,7 +456,7 @@ function createBuyerRowHtml(index) {
                 </div>
             </div>
 
-            <div class="grid grid-cols-4 gap-4">
+            <div class="grid grid-cols-4 gap-4 mb-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Land Use</label>
                     ${createLandUseFieldHtml(index)}
@@ -466,12 +466,18 @@ function createBuyerRowHtml(index) {
                     <input type="text" name="records[${index}][unit_no]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm uppercase" placeholder="Enter Unit Number" oninput="this.value = this.value.toUpperCase()">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Unit Measurement (Optional)</label>
-                    <input type="text" name="records[${index}][unitMeasurement]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm" placeholder="e.g. 50sqm">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Block No</label>
+                    <input type="text" name="records[${index}][block_no]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm uppercase" placeholder="e.g. BLK-1" oninput="this.value = this.value.toUpperCase()">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Section Number <span class="text-red-500">*</span></label>
                     <input type="text" name="records[${index}][sectionNumber]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm" placeholder="Enter Section Number">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Unit Measurement <span class="text-red-500">*</span></label>
+                    <input type="text" name="records[${index}][unitMeasurement]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm" placeholder="e.g. 50sqm">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Unit Cubic Measurement (Optional)</label>
@@ -612,6 +618,12 @@ function handleCsvImport() {
                         case 'unit_measurement':
                             buyer.unitMeasurement = value;
                             break;
+                        case 'block':
+                        case 'block_no':
+                        case 'block number':
+                        case 'block_number':
+                            buyer.blockNo = value.toUpperCase();
+                            break;
                         case 'unit cubic measurement':
                         case 'unit_cubic_measurement':
                         case 'cubic measurement':
@@ -683,6 +695,7 @@ function populateBuyersFromCsv(buyers) {
         const middleNameInput = buyerRow.querySelector(`input[name="records[${index}][middleName]"]`);
         const surnameInput = buyerRow.querySelector(`input[name="records[${index}][surname]"]`);
         const unitNoInput = buyerRow.querySelector(`input[name="records[${index}][unit_no]"]`);
+        const blockNoInput = buyerRow.querySelector(`input[name="records[${index}][block_no]"]`);
         const landUseSelect = buyerRow.querySelector('[data-land-use-select]');
         const landUseHidden = buyerRow.querySelector('input[data-land-use-hidden="true"]');
     const unitMeasurementInput = buyerRow.querySelector(`input[name="records[${index}][unitMeasurement]"]`);
@@ -692,6 +705,7 @@ function populateBuyersFromCsv(buyers) {
         if (middleNameInput) middleNameInput.value = buyer.middleName || '';
         if (surnameInput) surnameInput.value = buyer.surname || '';
         if (unitNoInput) unitNoInput.value = buyer.unit_no || '';
+        if (blockNoInput) blockNoInput.value = buyer.blockNo || '';
         applyLandUseToRow(buyerRow, buyer.landUse);
         if (unitMeasurementInput) unitMeasurementInput.value = buyer.unitMeasurement || '';
         if (cubicMeasurementInput) cubicMeasurementInput.value = buyer.cubicMeasurement || '';
@@ -737,12 +751,69 @@ function debugLandUseFields() {
     console.log('=== End Debug ===');
 }
 
+// Populate buyers from draft state records (mirrors populateBuyersFromCsv but uses state field names)
+function populateBuyersFromState(records) {
+    if (!Array.isArray(records) || records.length === 0) {
+        return;
+    }
+
+    const container = document.getElementById('buyers-container');
+    if (!container) {
+        return;
+    }
+
+    if (typeof window.showBuyersAndAddBuyer === 'function') {
+        window.showBuyersAndAddBuyer();
+    } else {
+        container.style.display = 'block';
+    }
+
+    container.innerHTML = '';
+
+    records.forEach((record, index) => {
+        const buyerHtml = createBuyerRowHtml(index);
+        container.insertAdjacentHTML('beforeend', buyerHtml);
+
+        const buyerRow = container.children[index];
+        setupBuyerTitleRow(buyerRow);
+        applyCustomTitleValue(buyerRow, record.buyerTitle || '');
+
+        const firstNameInput = buyerRow.querySelector(`input[name="records[${index}][firstName]"]`);
+        const middleNameInput = buyerRow.querySelector(`input[name="records[${index}][middleName]"]`);
+        const surnameInput = buyerRow.querySelector(`input[name="records[${index}][surname]"]`);
+        const unitNoInput = buyerRow.querySelector(`input[name="records[${index}][unit_no]"]`);
+        const blockNoInput = buyerRow.querySelector(`input[name="records[${index}][block_no]"]`);
+        const unitMeasurementInput = buyerRow.querySelector(`input[name="records[${index}][unitMeasurement]"]`);
+        const cubicMeasurementInput = buyerRow.querySelector(`input[name="records[${index}][cubicMeasurement]"]`);
+        const sectionNumberInput = buyerRow.querySelector(`input[name="records[${index}][sectionNumber]"]`);
+
+        if (firstNameInput) firstNameInput.value = record.firstName || '';
+        if (middleNameInput) middleNameInput.value = record.middleName || '';
+        if (surnameInput) surnameInput.value = record.surname || '';
+        if (unitNoInput) unitNoInput.value = record.unit_no || '';
+        if (blockNoInput) blockNoInput.value = record.blockNo || record.block_no || '';
+        applyLandUseToRow(buyerRow, record.landUse);
+        if (unitMeasurementInput) unitMeasurementInput.value = record.unitMeasurement || '';
+        if (cubicMeasurementInput) cubicMeasurementInput.value = record.cubicMeasurement || '';
+        if (sectionNumberInput) sectionNumberInput.value = record.sectionNumber || '';
+    });
+
+    buyersCount = records.length;
+    updateRemoveButtons();
+    initializeBuyerTitleFields();
+
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
+}
+
 // Make functions globally accessible
 window.addBuyer = addBuyer;
 window.removeBuyer = removeBuyer;
 window.handleCsvImport = handleCsvImport;
 window.debugLandUseFields = debugLandUseFields;
 window.ensureBuyerRowCount = ensureBuyerRowCount;
+window.populateBuyersFromState = populateBuyersFromState;
 window.initPrimaryBuyerFormFields = initPrimaryBuyerFormFields;
 
 if (Array.isArray(window.__addBuyerQueue) && window.__addBuyerQueue.length) {
@@ -770,4 +841,10 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initPrimaryBuyerFormFields);
 } else {
     initPrimaryBuyerFormFields();
+}
+
+// Restore buyers from draft if draft-autosave stored them before buyers.js was loaded
+if (Array.isArray(window.__pendingBuyerRestore) && window.__pendingBuyerRestore.length > 0) {
+    populateBuyersFromState(window.__pendingBuyerRestore);
+    window.__pendingBuyerRestore = null;
 }

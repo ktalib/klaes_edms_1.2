@@ -164,12 +164,13 @@
                                                     class="flex w-full items-center px-4 py-2.5 text-blue-700 hover:bg-blue-50 transition gap-2 font-bold">
                                                 <i data-lucide="printer" class="h-4 w-4"></i> Print Manager
                                             </button>
-                                            {{-- <button type="button"
-                                                    onclick="openGenerateModal({{ $rec->id }}, '{{ $rec->sltr_number }}')"
-                                                    class="flex w-full items-center px-4 py-2.5 text-slate-600 hover:bg-slate-50 transition gap-2">
-                                                <i data-lucide="refresh-cw" class="h-4 w-4"></i> Re-generate
-                                            </button> --}}
                                             @endif
+                                            <button type="button"
+                                                    onclick="openAssignSecurityPaperModal({{ $rec->id }}, '{{ $rec->sltr_number }}', '{{ $rec->sltr_rofo_serial_no }}', '{{ route('sltr-rofos.assign-security-paper', $rec->id) }}')"
+                                                    class="flex w-full items-center px-4 py-2.5 text-sm {{ $rec->sltr_rofo_serial_no ? 'text-emerald-600 font-bold' : 'text-slate-600' }} hover:bg-emerald-50 transition gap-2">
+                                                <i data-lucide="hash" class="h-4 w-4"></i>
+                                                {{ $rec->sltr_rofo_serial_no ? 'Code: '.$rec->sltr_rofo_serial_no : 'Enter Security Paper Code' }}
+                                            </button>
                                         </div>
                                     </div>
                                 </td>

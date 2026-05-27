@@ -84,6 +84,13 @@ return [
             'days' => 30,
         ],
 
+        'fileno_duplicates' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/fileno_duplicates.log'),
+            'level' => 'info',
+            'days' => 90,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

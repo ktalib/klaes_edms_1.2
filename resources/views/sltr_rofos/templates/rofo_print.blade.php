@@ -164,7 +164,7 @@
         .security-line-container::after {
             content: "Kano State Ministry of Land and Physical Planning Kano State Ministry of Land and Physical Planning Kano State Ministry of Land and Physical Planning Kano State Ministry of Land and Physical Planning ";
             position: absolute; bottom: 0; left: 0; width: 100%;
-            font-size: 3px; font-weight: 900; letter-spacing: -0.65px; word-spacing: -3.2px;
+            font-size: 3.5px; font-weight: 900; letter-spacing: -0.65px; word-spacing: -3.2px;
             color: #000; white-space: nowrap; overflow: hidden; text-transform: uppercase;
             pointer-events: none; z-index: 2;
             font-family: "Arial Narrow", "Helvetica Condensed", "Courier New", monospace;
@@ -245,7 +245,7 @@
                 <div class="green-header-outer">
                     <div class="green-header">
                         <h1>KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</h1>
-                        <p style="font-size: 10px; color: #fff; margin: 3px 0 0 0; letter-spacing: 0.3px; text-align: center;">No. 2 Dr Bala Mohammed Road, Kano State, Nigeria</p>
+                        <p style="font-size: 15px; color: #fff; margin: 3px 0 0 0; letter-spacing: 0.3px; text-align: center;">No. 2 Dr Bala Mohammed Road, Kano State, Nigeria</p>
                     </div>
                 </div>
             </div>

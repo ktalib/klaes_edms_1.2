@@ -759,12 +759,13 @@ const FormSubmission = {
     },
 
     // Perform the AJAX submission
-    performAjaxSubmission: function(formData) {
-        console.log('📡 Sending AJAX request...');
+    performAjaxSubmission: function(formData, isRetry) {
+        console.log('📡 Sending AJAX request' + (isRetry ? ' (retry after CSRF refresh)' : '') + '...');
 
         fetch(this.submitUrl, {
             method: 'POST',
             body: formData,
+            credentials: 'same-origin',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest',
                 'Accept': 'application/json'
@@ -772,22 +773,185 @@ const FormSubmission = {
         })
         .then(response => {
             console.log('📡 Response received:', response.status);
-            return response.json().then(data => ({
-                status: response.status,
-                ok: response.ok,
-                data: data
-            }));
+            const status = response.status;
+            const ok = response.ok;
+
+            // CSRF token mismatch — attempt a silent token refresh then retry once
+            if (status === 419) {
+                if (isRetry) {
+                    // Already retried — session is truly dead
+                    throw { __sessionDead: true, status };
+                }
+                throw { __csrfExpired: true, status };
+            }
+
+            // Session dead — server rejected authentication
+            if (status === 401 || status === 403) {
+                throw { __sessionDead: true, status };
+            }
+
+            // PHP-level payload too large (before Laravel runs)
+            if (status === 413) {
+                throw { __serverError: true, status, message: 'The submission is too large. Please reduce file sizes and try again.' };
+            }
+
+            return response.text().then(text => {
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    console.error('❌ Non-JSON response (status ' + status + '):', text.substring(0, 500));
+                    throw { __serverError: true, status, message: 'The server returned an unexpected response (HTTP ' + status + '). Please contact support if this persists.' };
+                }
+                return { status, ok, data };
+            });
         })
         .then(result => {
             this.handleSubmissionResponse(result);
         })
         .catch(error => {
-            console.error('❌ Submission error:', error);
-            this.handleSubmissionError(error);
-        })
-        .finally(() => {
+            if (error && error.__csrfExpired) {
+                // Part 2: silently refresh the CSRF token and retry once
+                this._refreshCsrfAndRetry(formData);
+                return;
+            }
+
             this.hideLoadingState();
             this.isSubmitting = false;
+
+            if (error && error.__sessionDead) {
+                // Part 3: session recovery modal
+                this._showSessionExpiredModal();
+                return;
+            }
+
+            if (error && error.__serverError) {
+                this.showError(error.message);
+                return;
+            }
+
+            // True network failure (offline, DNS, CORS)
+            this.showError('Network error occurred. Please check your connection and try again.');
+        })
+        .finally(() => {
+            // Only reset state if not handing off to a retry (retry manages its own state)
+            if (!this._pendingRetry) {
+                this.hideLoadingState();
+                this.isSubmitting = false;
+            }
+        });
+    },
+
+    // Part 2: fetch a fresh CSRF token then replay the submission
+    _refreshCsrfAndRetry: function(formData) {
+        console.log('🔄 419 received — refreshing CSRF token...');
+        this._pendingRetry = true;
+
+        const keepAliveUrl = window.SESSION_KEEPALIVE_URL || '/session/keep-alive';
+
+        fetch(keepAliveUrl, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        })
+        .then(res => {
+            if (!res.ok) {
+                // Keep-alive itself failed — session is truly dead
+                this._pendingRetry = false;
+                this.hideLoadingState();
+                this.isSubmitting = false;
+                this._showSessionExpiredModal();
+                return null;
+            }
+            return res.json();
+        })
+        .then(data => {
+            if (!data) return;
+
+            // Update CSRF token everywhere
+            const newToken = data.csrf_token;
+            if (newToken) {
+                const meta = document.querySelector('meta[name="csrf-token"]');
+                if (meta) meta.setAttribute('content', newToken);
+                document.querySelectorAll('input[name="_token"]').forEach(el => { el.value = newToken; });
+                formData.set('_token', newToken);
+                console.log('✅ CSRF token refreshed — retrying submission...');
+            }
+
+            this._pendingRetry = false;
+            // Retry — pass isRetry=true so a second 419 goes straight to the dead-session modal
+            this.performAjaxSubmission(formData, true);
+        })
+        .catch(() => {
+            this._pendingRetry = false;
+            this.hideLoadingState();
+            this.isSubmitting = false;
+            this._showSessionExpiredModal();
+        });
+    },
+
+    // Part 3: show a recovery modal when the session is truly dead
+    _showSessionExpiredModal: function() {
+        const manager = typeof window.PrimaryFormDraftManager !== 'undefined'
+            ? window.PrimaryFormDraftManager
+            : null;
+
+        const lastSaved = manager && manager.state && manager.state.lastSavedAt
+            ? 'Your draft was last saved at ' + new Date(manager.state.lastSavedAt).toLocaleTimeString() + '.'
+            : 'If autosave was active, your draft may have been preserved.';
+
+        const loginUrl = '/login';
+
+        if (typeof Swal === 'undefined') {
+            const msg = 'Your session has expired.\n\n' + lastSaved +
+                '\n\nPlease open the login page in a new tab, log back in, then click OK here to retry.';
+            if (confirm(msg)) {
+                window.open(loginUrl, '_blank');
+            }
+            return;
+        }
+
+        Swal.fire({
+            title: 'Session Expired',
+            html:
+                '<p class="text-gray-700 mb-3">Your login session has timed out. ' +
+                'Your form data is still here.</p>' +
+                '<p class="text-sm text-gray-500">' + lastSaved + '</p>',
+            icon: 'warning',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            showCancelButton: true,
+            confirmButtonText: 'Open Login in New Tab',
+            cancelButtonText: 'Dismiss',
+            confirmButtonColor: '#2563eb',
+            cancelButtonColor: '#6b7280',
+        }).then(result => {
+            if (result.isConfirmed) {
+                const loginTab = window.open(loginUrl, '_blank');
+
+                // After they close the login tab or come back, offer a retry
+                Swal.fire({
+                    title: 'Ready to retry?',
+                    html: '<p class="text-gray-700">Log back in the new tab, then click <strong>Retry</strong> to submit your form.</p>',
+                    icon: 'info',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    confirmButtonText: 'Retry Submission',
+                    showCancelButton: true,
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#16a34a',
+                    cancelButtonColor: '#6b7280',
+                }).then(retryResult => {
+                    if (retryResult.isConfirmed) {
+                        // Re-collect form data (CSRF token may have been refreshed in the new tab's session)
+                        this.isSubmitting = false;
+                        this.showLoadingState();
+                        this.isSubmitting = true;
+                        const freshFormData = this.collectFormData();
+                        this._refreshCsrfAndRetry(freshFormData);
+                    }
+                });
+            }
         });
     },
 

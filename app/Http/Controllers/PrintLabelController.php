@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
-
+   
 use App\Models\FileIndexing;
 use App\Models\PrintLabelBatch;
 use App\Models\PrintLabelBatchItem;
@@ -628,17 +628,6 @@ class PrintLabelController extends Controller
                 $start = $autoStart;
             }
 
-            $remainingWithinCapacity = max(0, self::RACK_SHELF_CAPACITY - ($registryProgress['printed_within_capacity'] ?? $printedTotal));
-            if ($remainingWithinCapacity <= 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Registry batch {$primaryRegistryBatch} has already been fully processed.",
-                    'data' => [
-                        'registry_progress' => $registryProgress,
-                    ],
-                ], 409);
-            }
-            $perBatchLimit = min($perBatchLimit, $remainingWithinCapacity);
         }
 
         $rangeEnd = $start + $perBatchLimit - 1;
@@ -1180,14 +1169,6 @@ SQL;
                     $indexingCaches = $groupingPreparation['indexingCaches'];
                     $registryBatchNo = trim((string) $validated['registry_batch_no']);
                     $registryProgressBefore = $this->getRegistryBatchProgress($registryBatchNo, $validated['registry'] ?? null);
-                    $printedWithinCapacity = (int) ($registryProgressBefore['printed_within_capacity'] ?? $registryProgressBefore['printed'] ?? 0);
-                    $remainingWithinCapacity = max(0, self::RACK_SHELF_CAPACITY - $printedWithinCapacity);
-
-                    if (!$manualOverride && $remainingWithinCapacity <= 0) {
-                        throw ValidationException::withMessages([
-                            'registry_batch_no' => 'All available shelf positions for this registry batch have already been used.',
-                        ]);
-                    }
 
                     static $fileIndexingColumnCache = null;
                     if ($fileIndexingColumnCache === null) {
@@ -1912,54 +1893,13 @@ SQL;
         $hasRegistryAssignment = $assignment['registry'] !== null && $normalizedRegistry !== null;
         $registriesMatch = $hasRegistryAssignment && strcasecmp($assignment['registry'], $normalizedRegistry) === 0;
         $registriesConflict = $hasRegistryAssignment && !$registriesMatch;
-        $effectiveCounter = $registriesConflict ? 0 : $currentCounter;
-        $remainingSlots = self::RACK_SHELF_CAPACITY - $effectiveCounter;
-        $capacityOverridden = false;
-        $assignable = $requestedCount;
 
-        if (
-            !$allowCapacityOverride
-            && !$registriesConflict
-            && $assignment['batch'] !== null
-            && strcasecmp($assignment['batch'], $registryBatchNo) !== 0
-            && $effectiveCounter > 0
-        ) {
-            throw ValidationException::withMessages([
-                'full_label' => "Label {$label->full_label} is already assigned to registry batch {$assignment['batch']}.",
-            ]);
-        }
-        if ($remainingSlots <= 0) {
-            if ($allowCapacityOverride) {
-                $capacityOverridden = true;
-            } elseif ($allowPartial) {
-                return [
-                    'label' => $label,
-                    'assignable' => 0,
-                    'remaining' => 0,
-                    'capacity_overridden' => false,
-                ];
-            } else {
-                throw ValidationException::withMessages([
-                    'full_label' => "Label {$label->full_label} is already full. Please choose the next shelf.",
-                ]);
-            }
-        } elseif ($requestedCount > $remainingSlots) {
-            if ($allowCapacityOverride) {
-                $capacityOverridden = true;
-            } elseif (!$allowPartial) {
-                throw ValidationException::withMessages([
-                    'range_key' => "Label {$label->full_label} only has {$remainingSlots} slots remaining.",
-                ]);
-            } else {
-                $assignable = $remainingSlots;
-            }
-        }
-
+        // Freestyle: no capacity limit — always assign the full requested count
         return [
-            'label' => $label,
-            'assignable' => $assignable,
-            'remaining' => max(0, $remainingSlots),
-            'capacity_overridden' => $capacityOverridden,
+            'label'              => $label,
+            'assignable'         => $requestedCount,
+            'remaining'          => PHP_INT_MAX,
+            'capacity_overridden' => false,
         ];
     }
 
@@ -2140,7 +2080,6 @@ SQL;
         ?string $expectedRegistry = null
     ): array
     {
-        $capacity = self::RACK_SHELF_CAPACITY;
         $actualUsage = max(0, (int) ($label->counter ?? 0));
         $assignment = $this->parseRegistryAssignmentValue($label->assigned);
         $assignedBatch = $assignment['batch'];
@@ -2151,10 +2090,8 @@ SQL;
             && $assignedRegistry !== null
             && strcasecmp($assignedRegistry, $normalizedExpectedRegistry) !== 0;
         $displayUsage = $registryMismatch ? 0 : $actualUsage;
-        $clampedUsed = min($displayUsage, $capacity);
-        $remaining = max(0, $capacity - $clampedUsed);
-        $nextLabelStart = $remaining > 0 ? $clampedUsed + 1 : null;
-        $nextLabelRangeKey = $nextLabelStart !== null ? $this->determineRangeKeyForPosition($nextLabelStart) : null;
+        $nextLabelStart = $displayUsage + 1;
+        $nextLabelRangeKey = $this->determineRangeKeyForPosition($nextLabelStart);
 
         if ($registryProgress === null && $assignedBatch !== null && !$registryMismatch) {
             $progressRegistry = $assignedRegistry ?? $normalizedExpectedRegistry;
@@ -2170,14 +2107,14 @@ SQL;
             'shelf' => $label->shelf,
             'counter' => $displayUsage,
             'raw_counter' => $actualUsage,
-            'capacity' => $capacity,
-            'remaining' => $remaining,
+            'capacity' => null,
+            'remaining' => null,
             'next_start' => $nextLabelStart,
             'next_range_key' => $nextLabelRangeKey,
             'assigned' => $label->assigned,
             'assigned_registry' => $assignedRegistry,
             'assigned_batch' => $assignedBatch,
-            'is_full' => $clampedUsed >= $capacity,
+            'is_full' => false,
             'registry_conflict' => $registryMismatch,
             'reserved_by' => $label->reserved_by,
             'reserved_at' => optional($label->reserved_at)->toIso8601String(),
@@ -2204,27 +2141,22 @@ SQL;
                 'registry_batch_no' => null,
                 'printed' => 0,
                 'printed_within_capacity' => 0,
-                'remaining' => self::RACK_SHELF_CAPACITY,
+                'remaining' => null,
                 'next_start' => 1,
                 'next_range_key' => '1-100',
                 'next_range_start' => 1,
                 'next_range_end' => 100,
                 'is_complete' => false,
                 'auto_advance' => false,
-                'capacity' => self::RACK_SHELF_CAPACITY,
+                'capacity' => null,
                 'registry' => $normalizedRegistry,
             ];
         }
 
         $statistics = $this->buildShelfStatistics($normalized, $normalizedRegistry) ?? [];
         $totalUsed = max(0, (int) ($statistics['total_used'] ?? 0));
-        $withinCapacityUsed = $totalUsed % self::RACK_SHELF_CAPACITY;
-
-        if ($withinCapacityUsed === 0 && $totalUsed > 0) {
-            $withinCapacityUsed = self::RACK_SHELF_CAPACITY;
-        }
-
-        $remaining = max(0, self::RACK_SHELF_CAPACITY - $withinCapacityUsed);
+        $withinCapacityUsed = $totalUsed;
+        $remaining = null;
 
         $nextStart = $totalUsed + 1;
         $nextRangeKey = $nextStart !== null ? $this->determineRangeKeyForPosition($nextStart) : null;
@@ -2245,14 +2177,14 @@ SQL;
             'registry_batch_no' => $normalized,
             'printed' => $totalUsed,
             'printed_within_capacity' => $withinCapacityUsed,
-            'remaining' => $remaining,
+            'remaining' => null,
             'next_start' => $nextStart,
             'next_range_key' => $nextRangeKey,
             'next_range_start' => $rangeStart,
             'next_range_end' => $rangeEnd,
-            'is_complete' => $remaining === 0,
-            'auto_advance' => $withinCapacityUsed > 0,
-            'capacity' => self::RACK_SHELF_CAPACITY,
+            'is_complete' => false,
+            'auto_advance' => false,
+            'capacity' => null,
             'registry' => $normalizedRegistry,
         ];
     }

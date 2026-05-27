@@ -72,7 +72,7 @@ class LandRofoController extends Controller
         ];
 
         // Only fetch the paper_code column — the view only ever reads s.paper_code
-        $availableSerials = DB::connection('sqlsrv')->table('land_rofo_security_paper_codes')
+        $availableSerials = DB::connection('sqlsrv')->table('global_security_paper_codes')
             ->select('paper_code')
             ->where('is_used', false)
             ->orderBy('paper_code', 'asc')
@@ -84,7 +84,7 @@ class LandRofoController extends Controller
     public function assignSecurityPaperCode(Request $request, $id)
     {
         $request->validate([
-            'paper_code' => 'required|string|exists:sqlsrv.land_rofo_security_paper_codes,paper_code',
+            'paper_code' => 'required|string|exists:sqlsrv.global_security_paper_codes,paper_code',
         ]);
 
         $recommendation = LandRecommendation::findOrFail($id);
@@ -92,7 +92,7 @@ class LandRofoController extends Controller
         DB::connection('sqlsrv')->beginTransaction();
         try {
             // Check if paper code is already used
-            $serial = DB::connection('sqlsrv')->table('land_rofo_security_paper_codes')
+            $serial = DB::connection('sqlsrv')->table('global_security_paper_codes')
                 ->where('paper_code', $request->paper_code)
                 ->first();
 
@@ -102,11 +102,12 @@ class LandRofoController extends Controller
 
             // If recommendation already has a paper code, mark the old one as unused
             if ($recommendation->land_rofo_serial_no) {
-                DB::connection('sqlsrv')->table('land_rofo_security_paper_codes')
+                DB::connection('sqlsrv')->table('global_security_paper_codes')
                     ->where('paper_code', $recommendation->land_rofo_serial_no)
                     ->update([
                         'is_used' => false,
-                        'assigned_to' => null,
+                        'assigned_to_type' => null,
+                        'assigned_to_id' => null,
                         'assigned_by' => null,
                         'assigned_at' => null,
                     ]);
@@ -115,11 +116,12 @@ class LandRofoController extends Controller
             // Assign new paper code
             $recommendation->update(['land_rofo_serial_no' => $request->paper_code]);
 
-            DB::connection('sqlsrv')->table('land_rofo_security_paper_codes')
+            DB::connection('sqlsrv')->table('global_security_paper_codes')
                 ->where('paper_code', $request->paper_code)
                 ->update([
                     'is_used' => true,
-                    'assigned_to' => $recommendation->id,
+                    'assigned_to_type' => 'LandRecommendation',
+                    'assigned_to_id' => $recommendation->id,
                     'assigned_by' => Auth::id(),
                     'assigned_at' => now(),
                 ]);

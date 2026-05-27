@@ -178,6 +178,24 @@
       @endif
 
 
+      @if($rofoExists)
+      <hr class="my-2 border-gray-200">
+      @php
+         $stRofoSerial = DB::connection('sqlsrv')
+            ->table('rofo')
+            ->where('sub_application_id', $app->id)
+            ->value('security_paper_code');
+      @endphp
+      <li>
+         <button type="button"
+            class="w-full text-left px-4 py-2 hover:bg-emerald-50 flex items-center space-x-2 {{ $stRofoSerial ? 'text-emerald-600 font-semibold' : 'text-slate-600' }}"
+            onclick="openAssignSecurityPaperModal({{ $app->id }}, '{{ addslashes($app->unit_number ?? $app->id) }}', '{{ $stRofoSerial }}', '{{ url('programmes/rofo/assign-security-paper') }}/{{ $app->id }}', { codesApiUrl: '{{ url('security-paper-codes/available') }}', fieldName: 'security_paper_code' })">
+            <i data-lucide="hash" class="w-4 h-4"></i>
+            <span>{{ $stRofoSerial ? 'Code: '.$stRofoSerial : 'Enter Security Paper Code' }}</span>
+         </button>
+      </li>
+      @endif
+
    </ul>
 </div>
 <script>

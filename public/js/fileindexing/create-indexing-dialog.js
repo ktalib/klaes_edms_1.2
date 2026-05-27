@@ -5519,20 +5519,29 @@
                         wrapper.classList.remove('hidden');
                         wrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }
-                    const target = !placeholderPrefix
+                    // Show inline error on both fields, not just the first empty one
+                    if (typeof validateKangisPlaceholderFields === 'function') {
+                        validateKangisPlaceholderFields(true);
+                    } else {
+                        const target = !placeholderPrefix
+                            ? document.getElementById('kangis-fileno-prefix')
+                            : document.getElementById('kangis-fileno-serial');
+                        if (target) {
+                            target.focus();
+                            target.classList.add('error-border');
+                            const clearError = () => {
+                                target.classList.remove('error-border');
+                                target.removeEventListener('change', clearError);
+                                target.removeEventListener('input', clearError);
+                            };
+                            target.addEventListener('change', clearError);
+                            target.addEventListener('input', clearError);
+                        }
+                    }
+                    const focusTarget = !placeholderPrefix
                         ? document.getElementById('kangis-fileno-prefix')
                         : document.getElementById('kangis-fileno-serial');
-                    if (target) {
-                        target.focus();
-                        target.classList.add('error-border');
-                        const clearError = () => {
-                            target.classList.remove('error-border');
-                            target.removeEventListener('change', clearError);
-                            target.removeEventListener('input', clearError);
-                        };
-                        target.addEventListener('change', clearError);
-                        target.addEventListener('input', clearError);
-                    }
+                    if (focusTarget) focusTarget.focus();
                 };
 
                 if (typeof Swal !== 'undefined') {
@@ -6943,6 +6952,52 @@
             return assembled;
         }
 
+        /** Show/hide inline validation error for KANGIS FileNo Placeholder fields.
+         *  Returns true if valid (both prefix and serial are filled), false otherwise. */
+        function validateKangisPlaceholderFields(showError) {
+            const errorEl  = document.getElementById('kangis-placeholder-error');
+            const errorTxt = document.getElementById('kangis-placeholder-error-text');
+            const prefix   = (kangisPlaceholderPrefix?.value || '').trim();
+            const serial   = (kangisPlaceholderSerial?.value || '').trim();
+
+            const prefixMissing = !prefix;
+            const serialMissing = !serial;
+
+            if (kangisPlaceholderPrefix) {
+                kangisPlaceholderPrefix.classList.toggle('error-border', prefixMissing);
+            }
+            if (kangisPlaceholderSerial) {
+                kangisPlaceholderSerial.classList.toggle('error-border', serialMissing);
+            }
+
+            if (errorEl) {
+                if (showError && (prefixMissing || serialMissing)) {
+                    if (errorTxt) {
+                        if (prefixMissing && serialMissing) {
+                            errorTxt.textContent = 'Please select a prefix and enter the serial number.';
+                        } else if (prefixMissing) {
+                            errorTxt.textContent = 'Please select a prefix.';
+                        } else {
+                            errorTxt.textContent = 'Please enter the serial number.';
+                        }
+                    }
+                    errorEl.classList.remove('hidden');
+                    if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [errorEl] });
+                } else {
+                    errorEl.classList.add('hidden');
+                }
+            }
+
+            return !prefixMissing && !serialMissing;
+        }
+
+        /** Clear all KANGIS placeholder inline errors (called when KANGIS registry is deselected). */
+        function clearKangisPlaceholderErrors() {
+            document.getElementById('kangis-placeholder-error')?.classList.add('hidden');
+            kangisPlaceholderPrefix?.classList.remove('error-border');
+            kangisPlaceholderSerial?.classList.remove('error-border');
+        }
+
         function updateState() {
             let isDciv = false;
             let isKangis = false;
@@ -7010,11 +7065,28 @@
                 } else if (isKangis) {
                     kangisPlaceholderWrapper.classList.remove('hidden');
                     // Mark the serial input as required (the hidden field is assembled by JS)
-                    if (kangisPlaceholderPrefix) kangisPlaceholderPrefix.setAttribute('required', 'required');
-                    if (kangisPlaceholderSerial) kangisPlaceholderSerial.setAttribute('required', 'required');
+                    if (kangisPlaceholderPrefix) {
+                        kangisPlaceholderPrefix.setAttribute('required', 'required');
+                        if (!kangisPlaceholderPrefix._kangisBlurBound) {
+                            kangisPlaceholderPrefix._kangisBlurBound = true;
+                            kangisPlaceholderPrefix.addEventListener('blur', () => validateKangisPlaceholderFields(true));
+                            kangisPlaceholderPrefix.addEventListener('change', () => validateKangisPlaceholderFields(true));
+                        }
+                    }
+                    if (kangisPlaceholderSerial) {
+                        kangisPlaceholderSerial.setAttribute('required', 'required');
+                        if (!kangisPlaceholderSerial._kangisBlurBound) {
+                            kangisPlaceholderSerial._kangisBlurBound = true;
+                            kangisPlaceholderSerial.addEventListener('blur', () => validateKangisPlaceholderFields(true));
+                            kangisPlaceholderSerial.addEventListener('input', () => {
+                                if (kangisPlaceholderSerial.value.trim()) validateKangisPlaceholderFields(false);
+                            });
+                        }
+                    }
                     checkKangisPlaceholderSiblings();
                 } else {
                     kangisPlaceholderWrapper.classList.add('hidden');
+                    clearKangisPlaceholderErrors();
                     if (kangisPlaceholderPrefix) {
                         kangisPlaceholderPrefix.removeAttribute('required');
                         kangisPlaceholderPrefix.value = '';
@@ -7088,6 +7160,7 @@
             }
         }
         window.checkKangisPlaceholderSiblings = checkKangisPlaceholderSiblings;
+        window.validateKangisPlaceholderFields = validateKangisPlaceholderFields;
 
         // Track which file numbers have already shown the "first variant" Swal
         let kangisFirstVariantShown = new Set();
@@ -7096,6 +7169,8 @@
         let kangisDebounceTimer = null;
         function onKangisInputChange() {
             const assembled = assembleKangisPlaceholder();
+            // Clear inline errors once both fields are filled
+            if (assembled) validateKangisPlaceholderFields(false);
             clearTimeout(kangisDebounceTimer);
             // We don't hide immediately if we have a file selected, just let the debounce run
             kangisDebounceTimer = setTimeout(() => {
@@ -7105,6 +7180,8 @@
         function onKangisInputBlur() {
             const assembled = assembleKangisPlaceholder();
             clearTimeout(kangisDebounceTimer);
+            // Show inline errors on blur if fields are incomplete
+            validateKangisPlaceholderFields(true);
             checkKangisPlaceholderSiblings();
         }
 

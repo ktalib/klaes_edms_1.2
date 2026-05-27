@@ -91,6 +91,36 @@
                                   </div>
                               </div>
 
+                              {{-- CSV Format Guide --}}
+                              <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                                  <div class="flex items-center mb-3">
+                                      <i data-lucide="book-open" class="w-4 h-4 text-blue-600 mr-2 flex-shrink-0"></i>
+                                      <h5 class="text-sm font-semibold text-blue-800">How to prepare your CSV file</h5>
+                                  </div>
+
+                                  <p class="text-xs text-blue-700 mb-3">
+                                      Your CSV must have a <strong>header row</strong> as the first line, followed by one buyer per row.
+                                      Click <strong>Download Template</strong> above to get a pre-formatted file you can fill in directly.
+                                  </p>
+
+                                  {{-- Expected fields --}}
+                                  <p class="text-xs font-semibold text-blue-800 mb-1.5">Expected columns:</p>
+                                  <div class="flex flex-wrap gap-1.5 mb-3">
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono">title</span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">first name <span class="ml-1 text-red-500">*</span></span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono">middle name</span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">surname <span class="ml-1 text-red-500">*</span></span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">land use <span class="ml-1 text-red-500">*</span></span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">unit number <span class="ml-1 text-red-500">*</span></span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">block <span class="ml-1 text-red-500">*</span></span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">section number <span class="ml-1 text-red-500">*</span></span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">unit measurement <span class="ml-1 text-red-500">*</span></span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono">cubic measurement</span>
+                                  </div>
+                                  <p class="text-xs text-blue-600 mb-3"><span class="text-red-500 font-semibold">*</span> Required</p>
+
+                              </div>
+
                               <div class="border-2 border-dashed border-gray-300 rounded-md p-4 text-center hover:border-blue-400 transition-colors">
                                   <div class="flex justify-center mb-2">
                                       <i data-lucide="file-text" class="w-8 h-8 text-gray-400"></i>

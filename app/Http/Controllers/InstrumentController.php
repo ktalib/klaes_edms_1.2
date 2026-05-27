@@ -95,8 +95,15 @@ class InstrumentController extends Controller
                 return str_starts_with($t, 'OP ') ? $t : 'OP ' . $t;
             })->toArray();
 
+        // Also include ST instrument types from deed_registrations (not captured via IC)
+        $stTypes = DB::connection('sqlsrv')->table('deed_registrations')
+            ->whereRaw("(instrument_type LIKE 'ST %' OR instrument_type = 'Sectional Titling CofO')")
+            ->whereNotNull('instrument_type')
+            ->distinct()
+            ->pluck('instrument_type')->toArray();
+
         // Merge and unique
-        $instrumentTypes = array_unique(array_merge($baseTypes, $opTypes));
+        $instrumentTypes = array_unique(array_merge($baseTypes, $opTypes, $stTypes));
         sort($instrumentTypes);
 
         return view('instruments.index', compact('PageTitle', 'PageDescription', 'instruments', 'totalCount', 'pendingCount', 'verifiedCount', 'todayCount', 'fullDataForJs', 'instrumentTypes'));
@@ -1393,69 +1400,113 @@ class InstrumentController extends Controller
             $startDate = $request->query('start_date');
             $endDate = $request->query('end_date');
 
-            $query = DB::connection('sqlsrv')->table('instrument_capture as ic')
-                ->leftJoin('deed_registrations as dr', function ($join) {
-                    $join->on('ic.registration_number', '=', 'dr.registration_number')
-                        ->on('ic.instrument_type', '=', 'dr.instrument_type');
-                })
-                ->where(function ($q) {
-                    $q->where('ic.is_deleted', 0)
-                        ->orWhereNull('ic.is_deleted');
-                })
-                ->select(
-                    'ic.*',
-                    'dr.volume_no',
-                    'dr.page_no',
-                    'dr.serial_no as reg_serial_no',
-                    'dr.deeds_date as reg_date'
-                );
+            // ST instruments are registered directly in deed_registrations (no IC record)
+            $isSTType = $instrumentType && (
+                str_starts_with($instrumentType, 'ST ') || $instrumentType === 'Sectional Titling CofO'
+            );
 
-            if ($instrumentType) {
-                if ($instrumentType === 'Occupancy Permit (OP)') {
-                    $query->where('ic.instrument_type', 'Occupancy Permit (OP)');
-                } elseif (str_starts_with($instrumentType, 'OP ')) {
-                    $query->where('ic.instrument_type', 'Occupancy Permit (OP)')
-                        ->where(function ($q) use ($instrumentType) {
-                            $q->where('ic.op_type', $instrumentType)
-                                ->orWhere('ic.op_type', str_replace('OP ', '', $instrumentType));
-                        });
-                } else {
-                    $query->where('ic.instrument_type', $instrumentType);
+            $icResults = collect();
+
+            // Skip IC query when a specific ST type is selected
+            if (!$isSTType) {
+                $query = DB::connection('sqlsrv')->table('instrument_capture as ic')
+                    ->leftJoin('deed_registrations as dr', function ($join) {
+                        $join->on('ic.registration_number', '=', 'dr.registration_number')
+                            ->on('ic.instrument_type', '=', 'dr.instrument_type');
+                    })
+                    ->where(function ($q) {
+                        $q->where('ic.is_deleted', 0)
+                            ->orWhereNull('ic.is_deleted');
+                    })
+                    ->select(
+                        'ic.*',
+                        'dr.volume_no',
+                        'dr.page_no',
+                        'dr.serial_no as reg_serial_no',
+                        'dr.deeds_date as reg_date'
+                    );
+
+                if ($instrumentType) {
+                    if ($instrumentType === 'Occupancy Permit (OP)') {
+                        $query->where('ic.instrument_type', 'Occupancy Permit (OP)');
+                    } elseif (str_starts_with($instrumentType, 'OP ')) {
+                        $query->where('ic.instrument_type', 'Occupancy Permit (OP)')
+                            ->where(function ($q) use ($instrumentType) {
+                                $q->where('ic.op_type', $instrumentType)
+                                    ->orWhere('ic.op_type', str_replace('OP ', '', $instrumentType));
+                            });
+                    } else {
+                        $query->where('ic.instrument_type', $instrumentType);
+                    }
                 }
+
+                if ($volumeNo) {
+                    $query->where('dr.volume_no', $volumeNo);
+                }
+
+                if ($startDate) {
+                    $query->whereRaw("CAST(COALESCE(dr.deeds_date, ic.reg_date, ic.created_at) AS DATE) >= ?", [$startDate]);
+                }
+
+                if ($endDate) {
+                    $query->whereRaw("CAST(COALESCE(dr.deeds_date, ic.reg_date, ic.created_at) AS DATE) <= ?", [$endDate]);
+                }
+
+                $icResults = $query
+                    ->orderBy('ic.instrument_type', 'asc')
+                    ->orderByRaw("CASE WHEN dr.volume_no IS NULL THEN 1 ELSE 0 END")
+                    ->orderByRaw("TRY_CONVERT(INT, dr.volume_no)")
+                    ->orderByRaw("CASE WHEN dr.serial_no IS NULL THEN 1 ELSE 0 END")
+                    ->orderByRaw("TRY_CONVERT(INT, dr.serial_no)")
+                    ->orderBy('ic.created_at', 'desc')
+                    ->get();
             }
 
-            if ($volumeNo) {
-                $query->where('dr.volume_no', $volumeNo);
+            // Fetch ST instruments from deed_registrations (no IC counterpart)
+            $stResults = collect();
+            if (!$instrumentType || $isSTType) {
+                $stQuery = DB::connection('sqlsrv')->table('deed_registrations as dr')
+                    ->where('dr.status', 'registered')
+                    ->whereRaw("(dr.instrument_type LIKE 'ST %' OR dr.instrument_type = 'Sectional Titling CofO')");
+
+                if ($isSTType) {
+                    $stQuery->where('dr.instrument_type', $instrumentType);
+                }
+
+                if ($volumeNo) {
+                    $stQuery->where('dr.volume_no', $volumeNo);
+                }
+
+                if ($startDate) {
+                    $stQuery->whereRaw("CAST(dr.deeds_date AS DATE) >= ?", [$startDate]);
+                }
+
+                if ($endDate) {
+                    $stQuery->whereRaw("CAST(dr.deeds_date AS DATE) <= ?", [$endDate]);
+                }
+
+                $stResults = $stQuery
+                    ->orderBy('dr.instrument_type', 'asc')
+                    ->orderByRaw("CASE WHEN dr.volume_no IS NULL THEN 1 ELSE 0 END")
+                    ->orderByRaw("TRY_CONVERT(INT, dr.volume_no)")
+                    ->orderByRaw("CASE WHEN dr.serial_no IS NULL THEN 1 ELSE 0 END")
+                    ->orderByRaw("TRY_CONVERT(INT, dr.serial_no)")
+                    ->get();
             }
 
-            if ($startDate) {
-                $query->whereRaw("CAST(COALESCE(dr.deeds_date, ic.reg_date, ic.created_at) AS DATE) >= ?", [$startDate]);
-            }
-
-            if ($endDate) {
-                $query->whereRaw("CAST(COALESCE(dr.deeds_date, ic.reg_date, ic.created_at) AS DATE) <= ?", [$endDate]);
-            }
-
-            $results = $query
-                ->orderBy('ic.instrument_type', 'asc')
-                ->orderByRaw("CASE WHEN dr.volume_no IS NULL THEN 1 ELSE 0 END")
-                ->orderByRaw("TRY_CONVERT(INT, dr.volume_no)")
-                ->orderByRaw("CASE WHEN dr.serial_no IS NULL THEN 1 ELSE 0 END")
-                ->orderByRaw("TRY_CONVERT(INT, dr.serial_no)")
-                ->orderBy('ic.created_at', 'desc')
-                ->get();
-
-            $data = $results->map(function ($item, $index) {
+            // Map IC results
+            $icMapped = $icResults->map(function ($item) {
                 $deedDate = $item->reg_date ?? $item->deeds_date ?? $item->created_at;
                 $location = $item->property_location ?? $item->location ?? $item->property_description ?? null;
 
                 return [
-                    'SN' => $index + 1,
                     'fileno' => $item->mlsFNo ?: $item->kangisFileNo ?: $item->NewKANGISFileno ?: $item->temp_fileno,
                     'serialNo' => $item->reg_serial_no ?? 'N/A',
                     'pageNo' => $item->page_no ?? 'N/A',
                     'volumeNo' => $item->volume_no ?? 'N/A',
-                    'reg_particulars' => ($item->reg_serial_no || $item->page_no || $item->volume_no) ? (($item->reg_serial_no ?? '0') . '/' . ($item->page_no ?? '0') . '/' . ($item->volume_no ?? '0')) : '-',
+                    'reg_particulars' => ($item->reg_serial_no || $item->page_no || $item->volume_no)
+                        ? (($item->reg_serial_no ?? '0') . '/' . ($item->page_no ?? '0') . '/' . ($item->volume_no ?? '0'))
+                        : '-',
                     'party_1' => $item->party_1_name,
                     'party_2' => $item->party_2_name,
                     'party_3' => $item->party_3_name,
@@ -1463,8 +1514,53 @@ class InstrumentController extends Controller
                     'deed_time' => $item->created_at ? \Carbon\Carbon::parse($item->created_at)->format('g:i A') : 'N/A',
                     'deed_date' => $deedDate ? \Carbon\Carbon::parse($deedDate)->format('d/m/Y') : 'N/A',
                     'op_serial' => $item->op_serial_number ?? 'N/A',
-                    'location' => $location ?? 'N/A'
+                    'location' => $location ?? 'N/A',
+                    '_sort_type' => $item->instrument_type ?? '',
+                    '_sort_vol' => $item->volume_no,
+                    '_sort_serial' => $item->reg_serial_no,
                 ];
+            });
+
+            // Map ST (DR) results
+            $stMapped = $stResults->map(function ($item) {
+                $location = trim(
+                    ($item->lga ? $item->lga . ', ' : '') .
+                    ($item->district ? $item->district . ', ' : '') .
+                    ($item->plot_number ? 'Plot ' . $item->plot_number . ', ' : '') .
+                    ($item->property_description ?? '')
+                );
+
+                return [
+                    'fileno' => $item->fileno,
+                    'serialNo' => $item->serial_no ?? 'N/A',
+                    'pageNo' => $item->page_no ?? 'N/A',
+                    'volumeNo' => $item->volume_no ?? 'N/A',
+                    'reg_particulars' => ($item->serial_no ?? '0') . '/' . ($item->page_no ?? '0') . '/' . ($item->volume_no ?? '0'),
+                    'party_1' => $item->grantor,
+                    'party_2' => $item->grantee,
+                    'party_3' => 'N/A',
+                    'instrument_type' => $item->instrument_type,
+                    'deed_time' => $item->deeds_time ?? 'N/A',
+                    'deed_date' => $item->deeds_date ? \Carbon\Carbon::parse($item->deeds_date)->format('d/m/Y') : 'N/A',
+                    'op_serial' => 'N/A',
+                    'location' => $location ?: 'N/A',
+                    '_sort_type' => $item->instrument_type ?? '',
+                    '_sort_vol' => $item->volume_no,
+                    '_sort_serial' => $item->serial_no,
+                ];
+            });
+
+            // Merge and sort by type → volume → serial
+            $merged = $icMapped->concat($stMapped)->sortBy([
+                ['_sort_type', 'asc'],
+                ['_sort_vol', 'asc'],
+                ['_sort_serial', 'asc'],
+            ])->values();
+
+            $data = $merged->map(function ($item, $index) {
+                unset($item['_sort_type'], $item['_sort_vol'], $item['_sort_serial']);
+                $item['SN'] = $index + 1;
+                return $item;
             });
 
             return response()->json([

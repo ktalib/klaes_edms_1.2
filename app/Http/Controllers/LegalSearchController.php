@@ -153,6 +153,7 @@ class LegalSearchController extends Controller
     public function reportTemplateData(Request $request)
     {
         $fileNo = trim((string) $request->query('file_number', ''));
+        $searchedFileNo = $fileNo; // Preserve the user's searched file number — fallback may overwrite $fileNo later.
         $propId = trim((string) $request->query('prop_id', ''));
         $displayFileNumber = trim((string) $request->query('display_file_number', ''));
         $displayFileTitle = trim((string) $request->query('display_file_title', ''));
@@ -164,6 +165,17 @@ class LegalSearchController extends Controller
 
         if ($fileNo === '' && $propId === '') {
             return response()->json(['success' => false, 'message' => 'file_number or prop_id is required'], 422);
+        }
+
+        // Parse timeline_order early so it can be used in the prop_id filter below.
+        // The client passes a comma-separated list of "table:id" pairs representing
+        // every record the user saw in the Timeline tab (including those with null prop_id).
+        $timelineOrderRaw = trim((string) $request->query('timeline_order', ''));
+        $timelineOrderKeys = [];
+        if ($timelineOrderRaw !== '') {
+            foreach (array_filter(array_map('trim', explode(',', $timelineOrderRaw))) as $tok) {
+                $timelineOrderKeys[$tok] = true;
+            }
         }
 
         $results = $this->searchService->search(['query' => $fileNo]);
@@ -186,12 +198,30 @@ class LegalSearchController extends Controller
         }
         $allowedPropIds = array_values(array_unique($allowedPropIds));
 
+        // Map source_table label → DB table name (same map used for timeline_order).
+        $labelToDb = [
+            'PRA' => 'pra',
+            'File History' => 'file_history_staging',
+            'CofO' => 'CofO_staging',
+            'Deed Registration' => 'deed_registrations',
+        ];
+
         // When prop_id is provided, filter to only records belonging to the allowed prop_id group.
-        // This ensures dropped records (prop_id = NULL) are excluded from the print template.
+        // Always keep records explicitly listed in timeline_order so the print matches the
+        // Timeline tab exactly (records with null prop_id can appear there too).
         if (!empty($transactions) && $propId !== '') {
-            $transactions = array_values(array_filter($transactions, function ($row) use ($allowedPropIds) {
+            $transactions = array_values(array_filter($transactions, function ($row) use ($allowedPropIds, $timelineOrderKeys, $labelToDb) {
                 $rowPropId = trim((string) ($row['prop_id'] ?? ''));
-                return in_array($rowPropId, $allowedPropIds, true);
+                if (in_array($rowPropId, $allowedPropIds, true)) {
+                    return true;
+                }
+                if (!empty($timelineOrderKeys)) {
+                    $label = (string) ($row['source_table'] ?? '');
+                    $db = $labelToDb[$label] ?? $label;
+                    $key = $db . ':' . (string) ($row['id'] ?? '');
+                    return isset($timelineOrderKeys[$key]);
+                }
+                return false;
             }));
         }
 
@@ -555,14 +585,8 @@ class LegalSearchController extends Controller
         // If the client supplied a timeline_order (built from the rendered
         // Timeline table after dedupe / Arrange), reorder $transactions to
         // match exactly so the printed report mirrors the on-screen order.
-        $timelineOrderRaw = trim((string) $request->query('timeline_order', ''));
+        // $timelineOrderRaw and $labelToDb are already defined above.
         if ($timelineOrderRaw !== '') {
-            $labelToDb = [
-                'PRA' => 'pra',
-                'File History' => 'file_history_staging',
-                'CofO' => 'CofO_staging',
-                'Deed Registration' => 'deed_registrations',
-            ];
             $orderTokens = array_values(array_filter(array_map('trim', explode(',', $timelineOrderRaw))));
             $orderIndex = [];
             foreach ($orderTokens as $i => $tok) {
@@ -622,7 +646,10 @@ class LegalSearchController extends Controller
             return $parts[0];
         };
 
-        $fileNumber = $first['fileno'] ?: ($first['file_number'] ?: ($first['mlsFNo'] ?: '-'));
+        // Always prefer the user's originally searched file number over whatever the first
+        // transaction record holds — related transactions may belong to a different (parent) file,
+        // and the fallback path can overwrite $fileNo with the parent's file number.
+        $fileNumber = $searchedFileNo ?: ($first['fileno'] ?: ($first['file_number'] ?: ($first['mlsFNo'] ?: '-')));
         $kangisNumber = $first['kangisFileNo'] ?? null;
         if ($kangisNumber === '-')
             $kangisNumber = null;
@@ -656,15 +683,26 @@ class LegalSearchController extends Controller
             }
         }
 
-        // Display rule: for KANGIS-numbered files, show "KANGIS (related MLSF)"
+        // Display rule: show what the user actually searched for.
+        // Only apply KANGIS formatting when the searched file number itself is a KANGIS number.
+        // If the user searched by an MLS number (e.g. CON-COM-2026-336), show that — never
+        // override it with the KANGIS number found on a related transaction record.
         $fileNumberDisplay = $fileNumber;
-        if ($kangisNumber) {
-            $fileNumberDisplay = $kangisNumber;
-            if ($relatedMls && strcasecmp(trim($relatedMls), trim($kangisNumber)) !== 0) {
+        if ($isKangis($searchedFileNo)) {
+            // Searched by KANGIS — append related MLS in parentheses if it differs
+            if ($relatedMls && strcasecmp(trim($relatedMls), trim($searchedFileNo)) !== 0) {
                 $fileNumberDisplay .= ' (' . $relatedMls . ')';
             }
-        } elseif ($relatedMls && $isKangis($fileNo)) {
-            $fileNumberDisplay = $fileNo . ' (' . $relatedMls . ')';
+        } elseif ($searchedFileNo === '') {
+            // No file number searched (prop_id-only) — fall back to legacy KANGIS rule
+            if ($kangisNumber) {
+                $fileNumberDisplay = $kangisNumber;
+                if ($relatedMls && strcasecmp(trim($relatedMls), trim($kangisNumber)) !== 0) {
+                    $fileNumberDisplay .= ' (' . $relatedMls . ')';
+                }
+            } elseif ($relatedMls && $isKangis($fileNo)) {
+                $fileNumberDisplay = $fileNo . ' (' . $relatedMls . ')';
+            }
         }
         // Fallback to party_2 if file_indexings has no title
         if ($fileTitle === '-') {
@@ -765,8 +803,10 @@ class LegalSearchController extends Controller
                 ? $cleanReg($serialNo) . '/' . $cleanReg($pageNoVal) . '/' . $cleanReg($volumeNo)
                 : '0/0/0';
 
+            $rowFileNo = (string) ($t['fileno'] ?: ($t['file_number'] ?: ($t['mlsFNo'] ?: '-')));
             $rows[] = [
                 'sn' => $idx + 1,
+                'file_no' => $rowFileNo,
                 'grantor' => $tc($t['party_1'] ?: '-'),
                 'grantee' => $tc($t['party_2'] ?: '-'),
                 'party_3' => $tc($t['party_3'] ?: '-'),

@@ -1,4 +1,16 @@
 <style>
+  /* Batch-mode checkbox visibility: hidden until "Batch" button is activated */
+  #instrumentTable .main-table-checkbox,
+  #instrumentTable #selectAll {
+    display: none;
+    pointer-events: none;
+  }
+  #instrumentTable.batch-mode-on .main-table-checkbox,
+  #instrumentTable.batch-mode-on #selectAll {
+    display: inline-block;
+    pointer-events: auto;
+  }
+
   /* Custom styles to match the React components */
   .badge {
     display: inline-flex;

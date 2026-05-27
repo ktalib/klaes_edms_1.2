@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\SltrRecommendation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class SltrRofoController extends Controller
 {
@@ -77,6 +78,43 @@ class SltrRofoController extends Controller
         }
 
         return view('sltr_rofos.templates.rofo_print', compact('recommendation'));
+    }
+
+    public function assignSecurityPaperCode(Request $request, $id)
+    {
+        $request->validate([
+            'paper_code' => 'required|string|exists:sqlsrv.global_security_paper_codes,paper_code',
+        ]);
+
+        $rec = SltrRecommendation::findOrFail($id);
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            $serial = DB::connection('sqlsrv')->table('global_security_paper_codes')
+                ->where('paper_code', $request->paper_code)->first();
+
+            if ($serial->is_used) {
+                return response()->json(['success' => false, 'message' => 'Security paper code already in use.'], 422);
+            }
+
+            if ($rec->sltr_rofo_serial_no) {
+                DB::connection('sqlsrv')->table('global_security_paper_codes')
+                    ->where('paper_code', $rec->sltr_rofo_serial_no)
+                    ->update(['is_used' => false, 'assigned_to_type' => null, 'assigned_to_id' => null, 'assigned_by' => null, 'assigned_at' => null]);
+            }
+
+            $rec->update(['sltr_rofo_serial_no' => $request->paper_code]);
+
+            DB::connection('sqlsrv')->table('global_security_paper_codes')
+                ->where('paper_code', $request->paper_code)
+                ->update(['is_used' => true, 'assigned_to_type' => 'SltrRecommendation', 'assigned_to_id' => $rec->id, 'assigned_by' => Auth::id(), 'assigned_at' => now()]);
+
+            DB::connection('sqlsrv')->commit();
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            DB::connection('sqlsrv')->rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
     }
 
     public function logPrint(Request $request, $id)

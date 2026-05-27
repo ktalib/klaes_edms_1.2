@@ -503,10 +503,10 @@ window.downloadExportPdf = function () {
                         if (data.column.index === 1 && data.cell.text[0] === 'N/A') {
                             data.cell.styles.textColor = [150, 150, 150];
                         }
-                        // Prevent file number (column 1) from wrapping
+                        // Allow file number (column 1) to wrap across two lines
                         if (data.column.index === 1) {
-                            data.cell.styles.overflow = 'hidden';
-                            data.cell.styles.cellWidth = 24;
+                            data.cell.styles.overflow = 'linebreak';
+                            data.cell.styles.cellWidth = 32;
                         }
                     }
                 });

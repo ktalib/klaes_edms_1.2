@@ -253,7 +253,17 @@
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="md:col-span-2">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Type <span class="text-red-500">*</span></label>
+                            <select name="project_type" id="project_type" required class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
+                                <option value="Ministry" selected>Ministry</option>
+                                <option value="LGA">LGA</option>
+                                <option value="Court">Court</option>
+                                <option value="Other">Other</option>
+                            </select>
+                            <input type="text" name="project_type_other" id="project_type_other" class="hidden mt-3 w-full px-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 text-sm font-medium" placeholder="Specify project type...">
+                        </div>
+                        <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Title <span class="text-red-500">*</span></label>
                             <input type="text" name="project_name" required class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium" placeholder="e.g. Zaria Road Expansion Phase 1">
                         </div>
@@ -285,7 +295,7 @@ Planning, Kano State</textarea>
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-bold"
                                 placeholder="e.g. 5">
                         </div>
-                        
+
                         <div class="md:col-span-2">
                             <!-- Preview Container -->
                             <div id="sub_projects_preview" class="hidden mt-3 p-4 rounded-xl bg-indigo-50/50 border border-indigo-100/50">
@@ -298,18 +308,6 @@ Planning, Kano State</textarea>
                             </div>
                         </div>
                         <input type="hidden" name="number_of_items" value="10">
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Project Type <span class="text-red-500">*</span></label>
-                            <select name="project_type" id="project_type" required class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
-                                <option value="">Select Type</option>
-                                <option value="Road Construction">Road Construction</option>
-                                <option value="Airport">Airport</option>
-                                <option value="Housing">Housing</option>
-                                <option value="Infrastructure">Infrastructure</option>
-                                <option value="Other">Other</option>
-                            </select>
-                            <input type="text" name="project_type_other" id="project_type_other" class="hidden mt-3 w-full px-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 text-sm font-medium" placeholder="Specify project type...">
-                        </div>
                     </div>
                 </div>
 
@@ -474,6 +472,7 @@ Planning, Kano State</textarea>
             } else {
                 $('#project_type_other').addClass('hidden').prop('required', false);
             }
+            toggleFileNoInput($(this).val());
         });
 
         $('#proj_district').select2({
@@ -505,6 +504,22 @@ Planning, Kano State</textarea>
             saveProject();
         });
     });
+
+    function toggleFileNoInput(projectType) {
+        const $fileno = $('#project_fileno');
+        if (projectType && projectType !== 'Ministry') {
+            $fileno.prop('readonly', false)
+                   .removeClass('border-blue-100 bg-blue-50/50 text-blue-600 font-mono shadow-sm')
+                   .addClass('border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white')
+                   .attr('placeholder', 'Enter file number...')
+                   .val('');
+        } else {
+            $fileno.prop('readonly', true)
+                   .removeClass('border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white')
+                   .addClass('border-blue-100 bg-blue-50/50 text-blue-600 font-mono shadow-sm')
+                   .attr('placeholder', 'Generating...');
+        }
+    }
 
     function generateWorkerCards(num) {
         const container = $('#worker-cards');
@@ -612,6 +627,7 @@ Planning, Kano State</textarea>
         $('#project-form')[0].reset();
         $('#worker-cards').empty();
         $('#project_type_other').addClass('hidden');
+        toggleFileNoInput('Ministry');
         $('#project_fileno').val('Generating...');
         $('#project_code').val('Generating...');
         $('#project-id').val('');

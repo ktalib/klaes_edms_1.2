@@ -51,6 +51,7 @@
     @include('admin.menu.partials.modules.gis')
     @include('admin.menu.partials.modules.sectional_titling')
     @include('admin.menu.partials.modules.sltr')
+    @include('admin.menu.partials.modules.special_assignment')
     @include('admin.menu.partials.modules.systems')
     @include('admin.menu.partials.modules.legacy_systems')
     @include('admin.menu.partials.modules.payroll')

@@ -75,6 +75,7 @@ class SltrRecommendation extends Model
         'rofo_date_generated',
         'created_by',
         'updated_by',
+        'sltr_rofo_serial_no',
     ];
 
     protected $casts = [

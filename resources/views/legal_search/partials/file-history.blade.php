@@ -583,10 +583,10 @@
                   <th style="min-width:140px;white-space:nowrap;">File No</th>
                   <th style="min-width:60px;">Source</th>
                   <th style="min-width:70px;">Weight</th>
+                  <th style="min-width:120px;">Instrument Type</th>
                   <th style="min-width:110px;">Party 1</th>
                   <th style="min-width:110px;">Party 2</th>
                   <th style="min-width:100px;">Party 3</th>
-                  <th style="min-width:120px;">Instrument Type</th>
                   <th style="min-width:80px;">Reg Particulars</th>
                   <th style="min-width:100px;">Transaction Date</th>
                   <th style="min-width:70px;">Reg Time</th>
@@ -687,7 +687,7 @@
             </div>
 
             {{-- No CoFO Remark --}}
-            <div id="no-cofo-comment-section" class="p-3 bg-blue-50 border border-blue-200 rounded-lg hidden">
+            <div id="no-cofo-comment-section" class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <div class="flex items-center justify-between mb-2">
                 <h4 class="text-sm font-semibold text-blue-800">No Certificate of Occupancy Remark</h4>
                 <button class="save-comment-btn inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-600 text-white hover:bg-blue-700" data-type="no_cofo">
@@ -700,7 +700,7 @@
             </div>
 
             {{-- Encumbrance / Free Title Remark --}}
-            <div id="encumbrance-comment-section" class="p-3 bg-green-50 border border-green-200 rounded-lg hidden">
+            <div id="encumbrance-comment-section" class="p-3 bg-green-50 border border-green-200 rounded-lg">
               <div class="flex items-center justify-between mb-2">
                 <h4 class="text-sm font-semibold text-green-800">Title Encumbrance Remark</h4>
                 <button class="save-comment-btn inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-600 text-white hover:bg-green-700" data-type="encumbrance">
@@ -769,6 +769,38 @@
           <div class="sticky bottom-0 bg-gray-50 border-t px-6 py-3 flex justify-end gap-2">
             <button id="edit-modal-cancel" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
             <button id="edit-modal-save" class="px-4 py-2 text-sm font-medium text-white bg-black rounded-md hover:bg-black/90">Save Changes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {{-- Record Comment Modal --}}
+    <div id="ls-add-comment-modal" class="fixed inset-0 z-[9999] hidden" aria-modal="true" role="dialog">
+      <div class="absolute inset-0 bg-black/50" id="ls-add-comment-backdrop"></div>
+      <div class="relative z-10 flex items-center justify-center min-h-screen px-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col">
+          {{-- Header --}}
+          <div class="flex items-center justify-between px-6 py-4 border-b">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-900">Record Comment</h3>
+              <p class="text-xs text-gray-500 mt-0.5" id="ls-add-comment-row-label"></p>
+            </div>
+            <button id="ls-add-comment-close" type="button" class="text-gray-400 hover:text-gray-600">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+          {{-- Body --}}
+          <div class="px-6 py-4 space-y-4">
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Comment</label>
+              <textarea id="ls-add-comment-text" rows="5" class="form-input text-sm w-full resize-none" placeholder="Type your comment here…"></textarea>
+            </div>
+            <p id="ls-add-comment-status" class="text-xs hidden"></p>
+          </div>
+          {{-- Footer --}}
+          <div class="flex justify-end gap-2 px-6 py-4 border-t bg-gray-50 rounded-b-xl">
+            <button id="ls-add-comment-cancel" type="button" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+            <button id="ls-add-comment-save" type="button" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">Save Comment</button>
           </div>
         </div>
       </div>

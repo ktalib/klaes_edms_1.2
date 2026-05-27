@@ -60,18 +60,18 @@
 
         /* EXACT ORIGINAL DIMENSIONS - only margin adjusted */
         .ornate-border {
-            border: 18px solid transparent;
-            border-image-source: url("http://app.klaes.ng/storage/template_frames/sltr.jpeg");
+            border: 34px solid transparent;
+            border-image-source: url("{{ asset('assets/images/pages/1779539656370(1).png') }}");
             border-image-slice: 160;
             border-image-repeat: round;
-            border-image-width: 18px;
-            margin: 4mm 3mm 60mm 3mm;
+            border-image-width: 34px;
+            margin: 1mm 3mm 60mm 3mm;
         }
 
         @media print {
             .ornate-border {
-                border-width: 22px !important;
-                border-image-width: 22px !important;
+                border-width: 38px !important;
+                border-image-width: 38px !important;
             }
         }
 
@@ -80,11 +80,11 @@
         }
 
         .inner-content {
-            padding: 12px 30px 0 30px;
+            padding: 18px 42px 0 42px;
             flex: 1;
             box-sizing: border-box;
-            font-size: 14.5px;
-            line-height: 1.35;
+            font-size: 13.5px;
+            line-height: 1.32;
             display: flex;
             flex-direction: column;
         }
@@ -164,7 +164,7 @@
             top: -1px;
             left: 0;
             width: 100%;
-            font-size: 3px;
+            font-size: 3.5px;
             font-weight: 900;
             letter-spacing: -0.65px;
             word-spacing: -3.2px;
@@ -320,12 +320,14 @@
                 margin: 0 !important;
                 width: 210mm !important;
                 height: 297mm !important;
-                page-break-after: always !important;
             }
-            .page-container:last-of-type {
-                page-break-after: auto !important;
+            .page-container ~ .page-container {
+                page-break-before: always !important;
             }
             .print-btn-container {
+                display: none !important;
+            }
+            #scheme-toolbar {
                 display: none !important;
             }
             .barcode-group {
@@ -393,7 +395,7 @@
         }
         .signature-item {
             border-top: 1px solid #000;
-            width: 45%;
+            width: 35%;
             text-align: center;
             padding-top: 5px;
         }
@@ -425,9 +427,9 @@
 
     @foreach($printVersions as $index => $version)
     <!-- PAGE 1 – Signature line uses exact CSS technique, no double lines -->
-      {{-- <div class="page-container" id="page1-{{ $index }}" style="{{ $index > 0 ? 'page-break-before: always;' : '' }} background-image: url('/assets/images/pages/backgrand.jpg'); background-size: cover; background-position: center; background-repeat: no-repeat;">   --}}
+        {{-- <div class="page-container" id="page1-{{ $index }}" style="{{ $index > 0 ? 'page-break-before: always;' : '' }} background-image: url('/assets/images/pages/backgrand.jpg'); background-size: cover; background-position: center; background-repeat: no-repeat;">     --}}
 
-              <div class="page-container" id="page1-{{ $index }}">  
+                 <div class="page-container" id="page1-{{ $index }}">     
 
 
         <div class="security-bg"></div>
@@ -820,11 +822,11 @@
     <style id="scheme-override"></style>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            var frameUrl = 'http://app.klaes.ng/storage/template_frames/sltr.jpeg';
+            var frameUrl = '{{ asset('assets/images/pages/1779539656370(1).png') }}';
             var css = '.ornate-border { border-image-source: url("' + frameUrl + '") !important; }\n';
             document.getElementById('scheme-override').textContent = css;
             document.querySelectorAll('[data-rofo-badge]').forEach(function(badge) {
-                badge.style.background = '#662631';
+                badge.style.background = '#c90202';
             });
         });
 

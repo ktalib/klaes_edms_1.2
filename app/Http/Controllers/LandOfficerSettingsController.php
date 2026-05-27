@@ -53,7 +53,10 @@ class LandOfficerSettingsController extends Controller
 
         $signaturePath = null;
         if ($request->hasFile('signature_file')) {
-            $signaturePath = $request->file('signature_file')->store('public/signing_officer_signatures');
+            // Store on the 'public' disk (root: storage/app/public) so the file lands at
+            // storage/app/public/signing_officer_signatures/ and is served via the
+            // public/storage symlink at /storage/signing_officer_signatures/...
+            $signaturePath = $request->file('signature_file')->store('signing_officer_signatures', 'public');
         }
 
         // Persist rank + signature on the user record.
@@ -101,7 +104,8 @@ class LandOfficerSettingsController extends Controller
 
         $signaturePath = null;
         if ($request->hasFile('signature_file')) {
-            $signaturePath = $request->file('signature_file')->store('public/signing_officer_signatures');
+            // Store on the 'public' disk so the file is web-accessible via /storage/...
+            $signaturePath = $request->file('signature_file')->store('signing_officer_signatures', 'public');
         }
 
         // Persist rank + signature on the user record.

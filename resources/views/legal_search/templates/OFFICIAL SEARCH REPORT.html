@@ -129,10 +129,10 @@
         background: #fff;
         text-align: left;
       }
-      .c1 { width: 3%; } .c2 { width: 10%; } .c3 { width: 10%; }
-      .c3b { width: 8%; } .c3c { width: 8%; }
-      .c4 { width: 11%; } .c5 { width: 9%; } .c6 { width: 8%; }
-      .c7 { width: 5%; } .c8 { width: 28%; }
+      .c1 { width: 3%; } .c1b { width: 8%; } .c2 { width: 9%; } .c3 { width: 9%; }
+      .c3b { width: 7%; } .c3c { width: 7%; }
+      .c4 { width: 10%; } .c5 { width: 9%; } .c6 { width: 8%; }
+      .c7 { width: 5%; } .c8 { width: 25%; }
 
       .content-pusher { flex-grow: 1; }
 
@@ -318,6 +318,7 @@
         <tbody id="report-transactions-body">
           <tr class="header-row">
             <th class="c1">S/N</th>
+            <th class="c1b">File No</th>
             <th class="c4">Instrument Type</th>
             <th class="c2">Party 1</th>
             <th class="c3">Party 2</th>
@@ -484,6 +485,7 @@
               const rows = d.rows.map(row => `
                 <tr>
                   <td>${row.sn}</td>
+                  <td>${row.file_no || '-'}</td>
                   <td>${row.instrument_type}</td>
                   <td>${row.grantor}</td>
                   <td>${row.grantee}</td>

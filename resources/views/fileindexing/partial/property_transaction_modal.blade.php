@@ -70,6 +70,7 @@
 
             // File indexing data (will be populated from outside)
             fileIndexingData: {
+                file_number: '',
                 lga: '',
                 district: '',
                 state: 'KANO',
@@ -483,7 +484,7 @@
                                 <h4 class="text-sm font-semibold text-blue-800 mb-2">File Indexing Information</h4>
                                 <div class="grid grid-cols-2 gap-2 text-sm text-blue-700">
                                     <div><strong>File Number:</strong> <span
-                                            x-text="fileIndexingData.file_number || 'N/A'"></span></div>
+                                            x-text="fileIndexingData.file_number || fileIndexingData.temp_file_no || 'N/A'"></span></div>
                                     <div><strong>LGA:</strong> <span x-text="fileIndexingData.lga || 'N/A'"></span>
                                     </div>
                                     <div><strong>Plot No:</strong> <span
@@ -1084,9 +1085,23 @@
         return parts.length > 0 ? parts.join(', ').toUpperCase() : 'N/A';
     }
 
+    // Module-level store: keeps the last fileIndexingData passed to the modal
+    // so submitPropertyTransactions can fall back to it even if Alpine state is stale
+    let _lastFileIndexingData = null;
+
+    // Resolve file_number from temp_file_no when file_number is absent
+    function resolveFileNumber(data) {
+        if (!data.file_number && data.temp_file_no) {
+            data.file_number = data.temp_file_no;
+        }
+        return data;
+    }
+
     // Global function to open the property transaction modal
     // IMPORTANT: Defined outside DOMContentLoaded to be globally accessible immediately
     function openPropertyTransactionModal(fileIndexingData) {
+        resolveFileNumber(fileIndexingData);
+        _lastFileIndexingData = fileIndexingData;
         console.log('Opening property transaction modal with data:', fileIndexingData);
 
         const modal = document.getElementById('property-transaction-dialog');
@@ -1357,8 +1372,27 @@
         console.log('2. File Number:', fileIndexingData?.file_number);
         console.log('3. Original transactions:', transactions);
 
-        // Validate file indexing data
-        if (!fileIndexingData || !fileIndexingData.file_number) {
+        // Validate file indexing data — fall back to the stored data from openPropertyTransactionModal
+        if (!fileIndexingData) {
+            fileIndexingData = {};
+        }
+        resolveFileNumber(fileIndexingData);
+        if (!fileIndexingData.file_number) {
+            // Try the module-level store set when the modal was last opened
+            const stored = _lastFileIndexingData;
+            if (stored && stored.file_number) {
+                console.log('file_number missing from Alpine data, using stored fallback:', stored.file_number);
+                fileIndexingData.file_number = stored.file_number;
+            } else {
+                // Last resort: check a DOM input named file_number
+                const domFileNo = document.getElementById('file_number')?.value?.trim();
+                if (domFileNo) {
+                    console.log('file_number missing from Alpine data, using DOM fallback:', domFileNo);
+                    fileIndexingData.file_number = domFileNo;
+                }
+            }
+        }
+        if (!fileIndexingData.file_number) {
             console.error('ERROR: File indexing data or file number is missing!');
             if (typeof Swal !== 'undefined') {
                 Swal.fire({

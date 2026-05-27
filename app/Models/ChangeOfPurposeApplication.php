@@ -24,6 +24,7 @@ class ChangeOfPurposeApplication extends Model
         'file_no',
         'land_use',
         'purpose',
+        'new_purpose',
         'plot_no',
         'plan_no',
         'location',

@@ -225,12 +225,13 @@ const FormSubmission = {
     },
 
     // Perform the AJAX submission
-    performAjaxSubmission: function(formData) {
-        console.log('📡 Sending AJAX request...');
+    performAjaxSubmission: function(formData, isRetry) {
+        console.log('📡 Sending AJAX request' + (isRetry ? ' (retry after CSRF refresh)' : '') + '...');
 
         fetch(this.submitUrl, {
             method: 'POST',
             body: formData,
+            credentials: 'same-origin',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest',
                 'Accept': 'application/json'
@@ -238,22 +239,147 @@ const FormSubmission = {
         })
         .then(response => {
             console.log('📡 Response received:', response.status);
-            return response.json().then(data => ({
-                status: response.status,
-                ok: response.ok,
-                data: data
-            }));
+            const status = response.status;
+            const ok = response.ok;
+
+            if (status === 419) {
+                if (isRetry) { throw { __sessionDead: true, status }; }
+                throw { __csrfExpired: true, status };
+            }
+            if (status === 401 || status === 403) {
+                throw { __sessionDead: true, status };
+            }
+            if (status === 413) {
+                throw { __serverError: true, status, message: 'The submission is too large. Please reduce file sizes and try again.' };
+            }
+
+            return response.text().then(text => {
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    console.error('❌ Non-JSON response (status ' + status + '):', text.substring(0, 500));
+                    throw { __serverError: true, status, message: 'The server returned an unexpected response (HTTP ' + status + '). Please contact support if this persists.' };
+                }
+                return { status, ok, data };
+            });
         })
         .then(result => {
             this.handleSubmissionResponse(result);
         })
         .catch(error => {
-            console.error('❌ Submission error:', error);
-            this.handleSubmissionError(error);
-        })
-        .finally(() => {
+            if (error && error.__csrfExpired) {
+                this._refreshCsrfAndRetry(formData);
+                return;
+            }
+
             this.hideLoadingState();
             this.isSubmitting = false;
+
+            if (error && error.__sessionDead) {
+                this._showSessionExpiredModal();
+                return;
+            }
+            if (error && error.__serverError) {
+                this.showError(error.message);
+                return;
+            }
+            this.showError('Network error occurred. Please check your connection and try again.');
+        })
+        .finally(() => {
+            if (!this._pendingRetry) {
+                this.hideLoadingState();
+                this.isSubmitting = false;
+            }
+        });
+    },
+
+    _refreshCsrfAndRetry: function(formData) {
+        console.log('🔄 419 received — refreshing CSRF token...');
+        this._pendingRetry = true;
+        const keepAliveUrl = window.SESSION_KEEPALIVE_URL || '/session/keep-alive';
+
+        fetch(keepAliveUrl, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        })
+        .then(res => {
+            if (!res.ok) {
+                this._pendingRetry = false;
+                this.hideLoadingState();
+                this.isSubmitting = false;
+                this._showSessionExpiredModal();
+                return null;
+            }
+            return res.json();
+        })
+        .then(data => {
+            if (!data) return;
+            const newToken = data.csrf_token;
+            if (newToken) {
+                const meta = document.querySelector('meta[name="csrf-token"]');
+                if (meta) meta.setAttribute('content', newToken);
+                document.querySelectorAll('input[name="_token"]').forEach(el => { el.value = newToken; });
+                formData.set('_token', newToken);
+            }
+            this._pendingRetry = false;
+            this.performAjaxSubmission(formData, true);
+        })
+        .catch(() => {
+            this._pendingRetry = false;
+            this.hideLoadingState();
+            this.isSubmitting = false;
+            this._showSessionExpiredModal();
+        });
+    },
+
+    _showSessionExpiredModal: function() {
+        const manager = typeof window.PrimaryFormDraftManager !== 'undefined' ? window.PrimaryFormDraftManager : null;
+        const lastSaved = manager && manager.state && manager.state.lastSavedAt
+            ? 'Your draft was last saved at ' + new Date(manager.state.lastSavedAt).toLocaleTimeString() + '.'
+            : 'If autosave was active, your draft may have been preserved.';
+
+        if (typeof Swal === 'undefined') {
+            if (confirm('Session expired.\n\n' + lastSaved + '\n\nOpen login in a new tab?')) {
+                window.open('/login', '_blank');
+            }
+            return;
+        }
+
+        Swal.fire({
+            title: 'Session Expired',
+            html: '<p class="text-gray-700 mb-3">Your login session has timed out. Your form data is still here.</p><p class="text-sm text-gray-500">' + lastSaved + '</p>',
+            icon: 'warning',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            showCancelButton: true,
+            confirmButtonText: 'Open Login in New Tab',
+            cancelButtonText: 'Dismiss',
+            confirmButtonColor: '#2563eb',
+            cancelButtonColor: '#6b7280',
+        }).then(result => {
+            if (!result.isConfirmed) return;
+            window.open('/login', '_blank');
+            Swal.fire({
+                title: 'Ready to retry?',
+                html: '<p class="text-gray-700">Log back in the new tab, then click <strong>Retry</strong>.</p>',
+                icon: 'info',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                confirmButtonText: 'Retry Submission',
+                showCancelButton: true,
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#16a34a',
+                cancelButtonColor: '#6b7280',
+            }).then(retryResult => {
+                if (!retryResult.isConfirmed) return;
+                this.isSubmitting = false;
+                this.showLoadingState();
+                this.isSubmitting = true;
+                const freshFormData = this.collectFormData();
+                this._refreshCsrfAndRetry(freshFormData);
+            });
         });
     },
 
@@ -265,6 +391,10 @@ const FormSubmission = {
             // Success
             console.log('✅ Form submitted successfully');
             this.showSuccessMessage(result.data);
+            // Delete the draft so it doesn't reappear on next visit
+            if (window.PrimaryDraftAutosave && typeof window.PrimaryDraftAutosave.finalizeAfterSubmit === 'function') {
+                window.PrimaryDraftAutosave.finalizeAfterSubmit();
+            }
         } else {
             // Server error or validation error
             console.error('❌ Server error:', result);
@@ -275,13 +405,19 @@ const FormSubmission = {
     // Handle server/validation errors
     handleServerError: function(result) {
         let errorMessage = 'An error occurred while submitting the form.';
-        
-        if (result.data && result.data.message) {
+
+        if (result.status === 422 && result.data && result.data.errors) {
+            // Laravel validation errors — show each failing field
+            const lines = [];
+            Object.entries(result.data.errors).forEach(([field, messages]) => {
+                const label = field.replace(/records\.\d+\./g, 'Buyer > ')
+                                   .replace(/_/g, ' ')
+                                   .replace(/\b\w/g, c => c.toUpperCase());
+                lines.push(`• ${label}: ${[].concat(messages).join(', ')}`);
+            });
+            errorMessage = lines.length ? lines.join('\n') : (result.data.message || errorMessage);
+        } else if (result.data && result.data.message) {
             errorMessage = result.data.message;
-        } else if (result.data && result.data.errors) {
-            // Laravel validation errors
-            const errors = Object.values(result.data.errors).flat();
-            errorMessage = errors.join('\n');
         }
 
         this.showError(errorMessage);

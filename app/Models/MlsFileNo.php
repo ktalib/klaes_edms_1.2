@@ -19,6 +19,7 @@ class MlsFileNo extends Model
         'tp_no',
         'location',
         'lga',
+        'district',
         'tracking_id',
         'customer_type',
         'file_option',

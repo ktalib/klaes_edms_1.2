@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Entity;
 use App\Models\ChangeOfPurposeApplication;
+use App\Services\ParcelUpdateNotificationService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,6 +18,10 @@ use App\Models\StreetName;
 
 class ChangeOfPurposeController extends Controller
 {
+    public function __construct(
+        protected ParcelUpdateNotificationService $parcelNotifier
+    ) {}
+
     private const LAND_USE_OPTIONS = [
         'RES' => 'Residential',
         'COM' => 'Commercial',
@@ -147,6 +152,14 @@ class ChangeOfPurposeController extends Controller
                 ->update(['comments' => $comment]);
         }
 
+        $this->parcelNotifier->notifyCreated(
+            'change_of_purpose',
+            $record->id,
+            $record->file_no,
+            '',
+            $record->applicant_name ?? ''
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Application submitted successfully. Awaiting approval.',
@@ -167,6 +180,16 @@ class ChangeOfPurposeController extends Controller
             'status' => ChangeOfPurposeApplication::STATUS_APPROVED,
             'updated_by' => Auth::id(),
         ]);
+
+        $approver = Auth::user();
+        $approverName = $approver ? ($approver->name ?? $approver->username ?? '') : '';
+        $this->parcelNotifier->notifyApproved(
+            'change_of_purpose',
+            $record->id,
+            $record->file_no,
+            '',
+            $approverName
+        );
 
         return response()->json(['success' => true, 'message' => 'Application approved.']);
     }
@@ -596,6 +619,7 @@ class ChangeOfPurposeController extends Controller
             'applicant_name' => 'required|string|max:255',
             'file_no' => 'required|string|max:255',
             'purpose' => 'required|string|max:50',
+            'new_purpose' => 'nullable|string|max:500',
             'land_use' => 'nullable|string|max:255',
             'location' => 'nullable|string|max:2000',
             'plot_no' => 'nullable|string|max:100',

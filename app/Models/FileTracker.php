@@ -147,11 +147,12 @@ class FileTracker extends Model
     /**
      * Generate a unique tracking ID
      */
-    public static function generateTrackingId()
+    public static function generateTrackingId(?string $registryCode = null)
     {
         $timestamp = now()->format('ymdHis');
         $random = strtoupper(substr(str_shuffle('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'), 0, 4));
-        return "TRK-{$timestamp}-{$random}";
+        $base = "TRK-{$timestamp}-{$random}";
+        return $registryCode ? "{$base}-{$registryCode}" : $base;
     }
 
     /**

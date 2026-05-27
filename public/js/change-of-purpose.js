@@ -62,6 +62,79 @@
     }
 
     /* ----------------------------------------
+       Land Use / Purpose dynamic dropdowns
+       ---------------------------------------- */
+    var copLandUsesCache = null; // [{id, name, prefixes:[]}]
+
+    function copFetchLandUses(cb) {
+        if (copLandUsesCache) { cb(copLandUsesCache); return; }
+        fetch('/api/reference/land-uses', { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                copLandUsesCache = res.success ? res.data : [];
+                cb(copLandUsesCache);
+            })
+            .catch(function () { cb([]); });
+    }
+
+    function copPopulateLandUseSelect(landUses) {
+        var sel = document.getElementById('cop-land-use-id');
+        if (!sel) return;
+        var current = sel.value;
+        sel.innerHTML = '<option value="">- Select New Land Use -</option>';
+        (landUses || []).forEach(function (lu) {
+            var opt = document.createElement('option');
+            opt.value = lu.id;
+            opt.textContent = lu.name;
+            if (String(lu.id) === String(current)) opt.selected = true;
+            sel.appendChild(opt);
+        });
+    }
+
+    function copOnLandUseChange(landUseId) {
+        var purposeSel = document.getElementById('cop-new-purpose');
+        var purposeCode = document.getElementById('cop-purpose');
+        if (!purposeSel) return;
+
+        // Reset purpose code
+        if (purposeCode) purposeCode.value = '';
+
+        if (!landUseId) {
+            purposeSel.innerHTML = '<option value="">- Select Land Use First -</option>';
+            purposeSel.disabled = true;
+            return;
+        }
+
+        // Set prefix code from cached land use data
+        if (copLandUsesCache) {
+            var lu = copLandUsesCache.find(function (l) { return String(l.id) === String(landUseId); });
+            if (lu && lu.prefixes && lu.prefixes.length > 0 && purposeCode) {
+                purposeCode.value = lu.prefixes[0].toUpperCase();
+            }
+        }
+
+        purposeSel.innerHTML = '<option value="">Loading...</option>';
+        purposeSel.disabled = true;
+
+        fetch('/api/reference/purposes?landuseid=' + landUseId, { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                purposeSel.innerHTML = '<option value="">- Select New Purpose -</option>';
+                (res.data || []).forEach(function (p) {
+                    var opt = document.createElement('option');
+                    opt.value = p.name;
+                    opt.textContent = p.name;
+                    purposeSel.appendChild(opt);
+                });
+                purposeSel.disabled = false;
+            })
+            .catch(function () {
+                purposeSel.innerHTML = '<option value="">- Failed to load -</option>';
+                purposeSel.disabled = false;
+            });
+    }
+
+    /* ----------------------------------------
        Tab switching
        ---------------------------------------- */
     window.copSwitchTab = function (tab, btn) {
@@ -119,16 +192,19 @@
 
     window.copNextStep = function () {
         if (copStep === 1) {
-            var fileNo   = (document.getElementById('cop-file-no')?.value || '').trim();
-            var purpose  = (document.getElementById('cop-purpose')?.value || '').trim();
-            if (!fileNo)   { Swal.fire({ icon: 'warning', title: 'Select a file number' }); return; }
-            if (!purpose)  { Swal.fire({ icon: 'warning', title: 'Select a new purpose' }); return; }
+            var fileNo      = (document.getElementById('cop-file-no')?.value || '').trim();
+            var landUseId   = (document.getElementById('cop-land-use-id')?.value || '').trim();
+            var newPurpose  = (document.getElementById('cop-new-purpose')?.value || '').trim();
+            var purposeCode = (document.getElementById('cop-purpose')?.value || '').trim();
+            if (!fileNo)     { Swal.fire({ icon: 'warning', title: 'Select a file number' }); return; }
+            if (!landUseId)  { Swal.fire({ icon: 'warning', title: 'Select a new land use' }); return; }
+            if (!newPurpose) { Swal.fire({ icon: 'warning', title: 'Select a new purpose' }); return; }
             var curCode = detectLandUseCode(fileNo);
-            if (curCode && curCode === purpose.toUpperCase()) {
-                Swal.fire({ icon: 'warning', title: 'Same Purpose', text: 'The new purpose matches the current land use.' });
+            if (purposeCode && curCode && curCode === purposeCode.toUpperCase()) {
+                Swal.fire({ icon: 'warning', title: 'Same Land Use', text: 'The new land use matches the current land use.' });
                 return;
             }
-            if (!computeNewFileNo(fileNo, purpose)) {
+            if (purposeCode && !computeNewFileNo(fileNo, purposeCode)) {
                 Swal.fire({ icon: 'warning', title: 'Unsupported Format', text: 'Cannot compute new file number from this file number format.' });
                 return;
             }
@@ -144,17 +220,23 @@
         if (copStep > 1) setStep(copStep - 1);
     };
 
+    function copGetSelectedLandUseName() {
+        var sel = document.getElementById('cop-land-use-id');
+        if (!sel || !sel.value) return '';
+        var opt = sel.options[sel.selectedIndex];
+        return opt ? opt.textContent : '';
+    }
+
     function populateReview() {
         var fileNo  = (document.getElementById('cop-file-no')?.value || '').trim();
-        var purpose = (document.getElementById('cop-purpose')?.value || '').trim();
-        var purposeLabel = purpose ? (LAND_USE_MAP[purpose.toUpperCase()] || purpose) : '';
         var knupdaStatus = document.querySelector('input[name="knupda_status"]:checked')?.value || 'Pending';
         var rows = [
             ['Applicant',     document.getElementById('cop-applicant-name')?.value],
             ['Phone',         document.getElementById('cop-phone')?.value],
             ['File No',       fileNo],
             ['Current Use',   document.getElementById('cop-land-use')?.value],
-            ['New Purpose',   purposeLabel],
+            ['New Land Use',  copGetSelectedLandUseName()],
+            ['New Purpose',   document.getElementById('cop-new-purpose')?.value],
             ['Plot No',       document.getElementById('cop-plot-no')?.value],
             ['Plan No',       document.getElementById('cop-plan-no')?.value],
             ['Location',      document.getElementById('cop-location')?.value],
@@ -187,9 +269,16 @@
         document.getElementById('cop-file-indicator')?.classList.add('hidden');
         document.getElementById('cop-file-details')?.classList.add('hidden');
         document.getElementById('cop-land-use').value = '';
+        document.getElementById('cop-purpose').value = '';
         document.getElementById('cop-res-addr-street-other-wrapper')?.classList.add('hidden');
         document.getElementById('cop-res-addr-district-other-wrapper')?.classList.add('hidden');
         document.getElementById('cop-residential-address').value = '';
+        // Reset land use select
+        var luSel = document.getElementById('cop-land-use-id');
+        if (luSel) luSel.value = '';
+        // Reset and disable purpose select
+        var purSel = document.getElementById('cop-new-purpose');
+        if (purSel) { purSel.innerHTML = '<option value="">- Select Land Use First -</option>'; purSel.disabled = true; }
         selectedFileRecord = null;
         resetPrefilled();
         setStep(1);
@@ -369,7 +458,8 @@
         if (!data) return;
 
         var currentPurpose = safe(data.land_use || '-');
-        var newPurpose = safe(LAND_USE_MAP[(data.purpose || '').toUpperCase()] || data.purpose || '-');
+        var newLandUse = safe(LAND_USE_MAP[(data.purpose || '').toUpperCase()] || data.purpose || '-');
+        var newPurpose = safe(data.new_purpose || '-');
         var statusRaw = (data.status || 'pending').toLowerCase();
         var statusColors = { pending: 'bg-amber-100 text-amber-700', approved: 'bg-green-100 text-green-700', rejected: 'bg-red-100 text-red-700', processing: 'bg-blue-100 text-blue-700', commissioned: 'bg-emerald-100 text-emerald-700' };
         var statusClass = statusColors[statusRaw] || 'bg-slate-100 text-slate-600';
@@ -380,10 +470,14 @@
         html += '<div class="rounded-xl bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 p-4">';
         html += '<p class="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-3">Purpose Change</p>';
         html += '<div class="flex items-center gap-3">';
-        html += '<div class="flex-1 text-center"><p class="text-[10px] text-slate-400 mb-1">Current Purpose</p><p class="text-sm font-bold text-slate-700">' + currentPurpose + '</p></div>';
+        html += '<div class="flex-1 text-center"><p class="text-[10px] text-slate-400 mb-1">Current Land Use</p><p class="text-sm font-bold text-slate-700">' + currentPurpose + '</p></div>';
         html += '<div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0"><i data-lucide="arrow-right" class="w-4 h-4 text-indigo-500"></i></div>';
-        html += '<div class="flex-1 text-center"><p class="text-[10px] text-slate-400 mb-1">New Purpose</p><p class="text-sm font-bold text-indigo-600">' + newPurpose + '</p></div>';
-        html += '</div></div>';
+        html += '<div class="flex-1 text-center"><p class="text-[10px] text-slate-400 mb-1">New Land Use</p><p class="text-sm font-bold text-indigo-600">' + newLandUse + '</p></div>';
+        html += '</div>';
+        html += '<div class="mt-3 pt-3 border-t border-indigo-100">';
+        html += '<p class="text-[10px] text-slate-400 mb-1">New Purpose</p><p class="text-sm font-semibold text-slate-700">' + newPurpose + '</p>';
+        html += '</div>';
+        html += '</div>';
 
         // File & property details grid
         html += '<div class="grid grid-cols-2 gap-3">';
@@ -821,6 +915,19 @@
             pendingTable.page.len(len).draw();
             approvedTable.page.len(len).draw();
         });
+
+        // Pre-fetch land uses and populate NEW LAND USE dropdown
+        copFetchLandUses(function (landUses) {
+            copPopulateLandUseSelect(landUses);
+        });
+
+        // Wire NEW LAND USE change → populate NEW PURPOSE + set hidden purpose code
+        var landUseSel = document.getElementById('cop-land-use-id');
+        if (landUseSel) {
+            landUseSel.addEventListener('change', function () {
+                copOnLandUseChange(this.value);
+            });
+        }
 
         // Init the global file-number modal once (binds its events, loads recent selections)
         if (window.GlobalFileNoModal) GlobalFileNoModal.init();

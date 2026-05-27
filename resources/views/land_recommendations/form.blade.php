@@ -9,7 +9,7 @@
             <!-- Header -->
             <div class="bg-slate-50 px-8 py-6 flex justify-between items-center border-b border-slate-200">
                 <div>
-                    <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Recommendation for Grant of Statutory Right of Occupancy</h1>
+                    <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Recommendation for Grant of Change of Purpose</h1>
                     <p class="text-slate-500 text-sm mt-1">Data entry form</p>
                 </div>
                 <div class="flex items-center gap-3">
@@ -79,32 +79,403 @@
 
                 <!-- Form Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    @php
+                        $savedAppType = old('application_type', $recommendation->application_type ?? '');
+                        $hasAppType   = $savedAppType !== '';
+                        $savedRecType = old('type', $recommendation->type ?? 'Direct');
+                    @endphp
+
                     <!-- Recommendation Type Selection -->
-                    <div class="bg-blue-50/30 border border-blue-100 rounded-xl p-6 col-span-2">
+                    <div id="recommendation-type-block" class="bg-blue-50/30 border border-blue-100 rounded-xl p-6 col-span-2 transition-opacity {{ $hasAppType ? 'opacity-40 pointer-events-none' : '' }}">
                         <label class="block text-xs font-bold text-blue-700 uppercase tracking-wider mb-3">Recommendation Type</label>
                         <div class="flex flex-col sm:flex-row gap-4">
                             <label class="flex items-center gap-3 cursor-pointer p-4 bg-white border border-blue-200 rounded-xl hover:border-blue-500 transition shadow-sm flex-1 group">
-                                <input type="radio" name="type" value="Direct" 
-                                    {{ old('type', $recommendation->type ?? 'Direct') == 'Direct' ? 'checked' : '' }}
+                                <input type="radio" id="rec-direct" name="type" value="Direct"
+                                    {{ $savedRecType == 'Direct' && !$hasAppType ? 'checked' : '' }}
+                                    {{ $hasAppType ? 'disabled' : '' }}
                                     class="w-5 h-5 text-blue-600 focus:ring-blue-500 border-slate-300">
                                 <div>
                                     <span class="block text-sm font-bold text-slate-900 group-hover:text-blue-700 transition">Direct</span>
-                                    <!-- <span class="block text-[10px] text-slate-500">Standard grant of occupancy</span> -->
                                 </div>
                             </label>
                             <label class="flex items-center gap-3 cursor-pointer p-4 bg-white border border-blue-200 rounded-xl hover:border-amber-500 transition shadow-sm flex-1 group">
-                                <input type="radio" name="type" value="Conversion"
-                                    {{ old('type', $recommendation->type ?? '') == 'Conversion' ? 'checked' : '' }}
+                                <input type="radio" id="rec-conversion" name="type" value="Conversion"
+                                    {{ $savedRecType == 'Conversion' && !$hasAppType ? 'checked' : '' }}
+                                    {{ $hasAppType ? 'disabled' : '' }}
                                     class="w-5 h-5 text-amber-600 focus:ring-amber-500 border-slate-300">
                                 <div>
                                     <span class="block text-sm font-bold text-slate-900 group-hover:text-amber-700 transition">Conversion</span>
-                                    <!-- <span class="block text-[10px] text-slate-500">From customary to statutory</span> -->
                                 </div>
                             </label>
                         </div>
                     </div>
 
-                   
+                    <!-- Application Type -->
+                    <div class="bg-slate-50/60 border border-slate-100 rounded-xl p-6 col-span-2">
+                        <div class="flex items-center justify-between mb-3">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider">Application Type</label>
+                            <!-- Toggle switch -->
+                            <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+                                <span class="text-xs text-slate-500 font-medium">Enable</span>
+                                <div class="relative">
+                                    <input type="checkbox" id="app-type-toggle" class="sr-only peer" {{ $hasAppType ? 'checked' : '' }}>
+                                    <div class="w-9 h-5 bg-slate-300 peer-checked:bg-blue-600 rounded-full transition-colors"></div>
+                                    <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4"></div>
+                                </div>
+                            </label>
+                        </div>
+                        <input type="hidden" id="application-type-hidden" name="application_type" value="">
+                        <div id="application-type-panel" class="{{ $hasAppType ? '' : 'hidden' }}">
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                @foreach([
+                                    'Private Layout',
+                                    'Plot Subdivision',
+                                    'Plot Extension',
+                                    'Temporary File No',
+                                    'Ministry of Works',
+                                    'Change of Purpose',
+                                ] as $appType)
+                                <label class="flex items-center gap-3 cursor-pointer p-3 bg-white border border-slate-200 rounded-xl hover:border-blue-400 transition shadow-sm group">
+                                    <input type="radio" name="application_type_radio" value="{{ $appType }}"
+                                        {{ $savedAppType === $appType ? 'checked' : '' }}
+                                        class="app-type-radio w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300">
+                                    <span class="text-sm font-medium text-slate-700 group-hover:text-blue-700 transition leading-tight">{{ $appType }}</span>
+                                </label>
+                                @endforeach
+                            </div>
+                        </div>
+                    </div>
+
+                    <script>
+                    (function () {
+                        const toggle   = document.getElementById('app-type-toggle');
+                        const panel    = document.getElementById('application-type-panel');
+                        const hidden   = document.getElementById('application-type-hidden');
+                        const recBlock = document.getElementById('recommendation-type-block');
+                        const recDirect = document.getElementById('rec-direct');
+                        const recConv   = document.getElementById('rec-conversion');
+                        const appRadios = document.querySelectorAll('.app-type-radio');
+
+                        function applyState(enabled) {
+                            if (enabled) {
+                                panel.classList.remove('hidden');
+                                recBlock.classList.add('opacity-40', 'pointer-events-none');
+                                recDirect.checked = false;
+                                recConv.checked   = false;
+                                recDirect.disabled = true;
+                                recConv.disabled   = true;
+                                const checked = document.querySelector('.app-type-radio:checked');
+                                hidden.value = checked ? checked.value : '';
+                            } else {
+                                panel.classList.add('hidden');
+                                recBlock.classList.remove('opacity-40', 'pointer-events-none');
+                                recDirect.disabled = false;
+                                recConv.disabled   = false;
+                                recDirect.checked  = true;
+                                appRadios.forEach(r => r.checked = false);
+                                hidden.value = '';
+                            }
+                        }
+
+                        toggle.addEventListener('change', () => applyState(toggle.checked));
+
+                        appRadios.forEach(r => r.addEventListener('change', () => {
+                            hidden.value = r.value;
+                        }));
+
+                        // Sync hidden field on load if toggle is already on
+                        if (toggle.checked) {
+                            const checked = document.querySelector('.app-type-radio:checked');
+                            hidden.value = checked ? checked.value : '';
+                        }
+                    })();
+                    </script>
+
+                    {{-- ── Application Type: Conditional Extra Fields ── --}}
+                    @php $savedAppType = old('application_type', $recommendation->application_type ?? ''); @endphp
+                    <div id="app-type-extra" class="{{ $savedAppType ? '' : 'hidden' }} col-span-2 bg-indigo-50/30 border border-indigo-100 rounded-xl p-6 space-y-5">
+                        <div class="flex items-center gap-2 mb-1">
+                            <i data-lucide="settings-2" class="h-4 w-4 text-indigo-600"></i>
+                            <h3 class="text-sm font-bold text-indigo-900 uppercase tracking-tight">
+                                Additional Fields &mdash; <span id="app-type-extra-label" class="text-indigo-600 normal-case font-semibold">{{ $savedAppType }}</span>
+                            </h3>
+                        </div>
+
+                        {{-- Page No. (common to all application types) --}}
+                        <div class="grid grid-cols-4 gap-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Page No.</label>
+                                <input type="number" name="page" id="atx_page" min="1"
+                                    value="{{ old('page', $recommendation->page ?? '') }}"
+                                    placeholder="e.g. 4"
+                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                            </div>
+                        </div>
+
+                        {{-- PANEL: Private Layout (with No. count) --}}
+                        <div id="atx-panel-private-layout" class="atx-panel {{ $savedAppType === 'Private Layout' ? '' : 'hidden' }} space-y-4">
+                            <div class="grid grid-cols-4 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Number of Plots / Portions</label>
+                                    <input type="number" name="num_plots" id="num_plots" min="1"
+                                        value="{{ old('num_plots', $recommendation->num_plots ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Auth. Memo Page</label>
+                                    <input type="number" name="page_2" min="1"
+                                        value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Site Plan Page</label>
+                                    <input type="number" name="page_3" min="1"
+                                        value="{{ old('page_3', $recommendation->page_3 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-2">Plot Dimensions <span class="text-slate-400 normal-case font-normal">(Length × Width — No.)</span></label>
+                                <div id="plot-sizes-rows-pl" class="space-y-2 mb-2"></div>
+                                <button type="button" onclick="addPlotSizeRow('pl', null, true)"
+                                    class="px-4 py-1.5 text-xs font-semibold bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg transition">
+                                    + Add Dimension Row
+                                </button>
+                            </div>
+                        </div>
+
+                        {{-- PANEL: Plot Subdivision (no count) --}}
+                        <div id="atx-panel-subdivision" class="atx-panel {{ $savedAppType === 'Plot Subdivision' ? '' : 'hidden' }} space-y-4">
+                            <div class="grid grid-cols-4 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Number of Portions</label>
+                                    <input type="number" name="num_plots" min="1"
+                                        value="{{ old('num_plots', $recommendation->num_plots ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Auth. Memo Page</label>
+                                    <input type="number" name="page_2" min="1"
+                                        value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Site Plan Page</label>
+                                    <input type="number" name="page_3" min="1"
+                                        value="{{ old('page_3', $recommendation->page_3 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-2">Plot Dimensions <span class="text-slate-400 normal-case font-normal">(Length × Width)</span></label>
+                                <div id="plot-sizes-rows-sub" class="space-y-2 mb-2"></div>
+                                <button type="button" onclick="addPlotSizeRow('sub', null, false)"
+                                    class="px-4 py-1.5 text-xs font-semibold bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg transition">
+                                    + Add Dimension Row
+                                </button>
+                            </div>
+                        </div>
+
+                        {{-- PANEL: Plot Extension (no count) --}}
+                        <div id="atx-panel-extension" class="atx-panel {{ $savedAppType === 'Plot Extension' ? '' : 'hidden' }} space-y-4">
+                            <div class="grid grid-cols-4 gap-4 mb-3">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Planning Views Page</label>
+                                    <input type="number" name="page_2" min="1"
+                                        value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">KNUPDA Page</label>
+                                    <input type="number" name="page_3" min="1"
+                                        value="{{ old('page_3', $recommendation->page_3 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Site Plan Page</label>
+                                    <input type="number" name="page_4" min="1"
+                                        value="{{ old('page_4', $recommendation->page_4 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-2">Plot Dimensions <span class="text-slate-400 normal-case font-normal">(Length × Width)</span></label>
+                                <div id="plot-sizes-rows-ext" class="space-y-2 mb-2"></div>
+                                <button type="button" onclick="addPlotSizeRow('ext', null, false)"
+                                    class="px-4 py-1.5 text-xs font-semibold bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg transition">
+                                    + Add Dimension Row
+                                </button>
+                            </div>
+                        </div>
+
+                        {{-- PANEL: Temporary File No --}}
+                        <div id="atx-panel-temp" class="atx-panel {{ $savedAppType === 'Temporary File No' ? '' : 'hidden' }}"></div>
+
+                        {{-- PANEL: Ministry of Works (Premium / Purchase Price) --}}
+                        <div id="atx-panel-premium" class="atx-panel {{ $savedAppType === 'Ministry of Works' ? '' : 'hidden' }} space-y-4">
+                            <div class="grid grid-cols-4 gap-4 mb-2">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Clearance Letter Page</label>
+                                    <input type="number" name="page_2" min="1"
+                                        value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Receipt Page</label>
+                                    <input type="number" name="page_3" min="1"
+                                        value="{{ old('page_3', $recommendation->page_3 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Premium / Purchase Price (&#x20A6;)</label>
+                                    <input type="number" step="0.01" name="premium" id="premium"
+                                        value="{{ old('premium', $recommendation->premium ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Premium in Words <span class="text-slate-400 normal-case font-normal">(auto)</span></label>
+                                    <input type="text" name="premium_words" id="premium_words"
+                                        value="{{ old('premium_words', $recommendation->premium_words ?? '') }}"
+                                        class="w-full border border-blue-100 bg-blue-50 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition shadow-sm"
+                                        placeholder="Auto-filled from amount above">
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- PANEL: Change of Purpose --}}
+                        <div id="atx-panel-change-of-purpose" class="atx-panel {{ $savedAppType === 'Change of Purpose' ? '' : 'hidden' }} space-y-4">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="col-span-2">
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Purpose Description <span class="text-slate-400 normal-case font-normal">(e.g. Commercial (Warehouse))</span></label>
+                                    <input type="text" name="purpose_description" id="purpose_description"
+                                        value="{{ old('purpose_description', $recommendation->purpose_description ?? '') }}"
+                                        placeholder="e.g. Commercial (Warehouse)"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Planning Dept Page</label>
+                                    <input type="number" name="page_2" id="cop_page_2" min="1"
+                                        value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Conditions Page</label>
+                                    <input type="number" name="page_3" id="cop_page_3" min="1"
+                                        value="{{ old('page_3', $recommendation->page_3 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Acceptance Letter Page</label>
+                                    <input type="number" name="page_4" id="cop_page_4" min="1"
+                                        value="{{ old('page_4', $recommendation->page_4 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Site Plan Page</label>
+                                    <input type="number" name="page_5" id="cop_page_5" min="1"
+                                        value="{{ old('page_5', $recommendation->page_5 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div class="col-span-2">
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Plot Dimensions <span class="text-slate-400 normal-case font-normal">(polygon measurements)</span></label>
+                                    <textarea name="dimensions_text" rows="2"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm"
+                                        placeholder="e.g. 307m x 65.92 x 106.72m ... = 39,591m²/3.9591ha">{{ old('dimensions_text', $recommendation->dimensions_text ?? '') }}</textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Hidden: serialized plot sizes (written by JS on submit) --}}
+                        <input type="hidden" name="plot_sizes" id="plot_sizes_json"
+                            value="{{ old('plot_sizes', $recommendation->plot_sizes ?? '') }}">
+                    </div>
+
+                    <script>
+                    // Panel show/hide wired to application type radios
+                    (function () {
+                        var panelMap = {
+                            'Private Layout':               'atx-panel-private-layout',
+                            'Plot Subdivision':             'atx-panel-subdivision',
+                            'Plot Extension':               'atx-panel-extension',
+                            'Temporary File No':            'atx-panel-temp',
+                            'Ministry of Works':            'atx-panel-premium',
+                            'Change of Purpose':            'atx-panel-change-of-purpose',
+                        };
+
+                        var extraContainer = document.getElementById('app-type-extra');
+                        var extraLabel     = document.getElementById('app-type-extra-label');
+
+                        function showExtraPanel(appType) {
+                            document.querySelectorAll('.atx-panel').forEach(function (p) { p.classList.add('hidden'); });
+                            var panelId = panelMap[appType];
+                            if (panelId) {
+                                document.getElementById(panelId).classList.remove('hidden');
+                                extraContainer.classList.remove('hidden');
+                                if (extraLabel) extraLabel.textContent = appType;
+                            } else {
+                                extraContainer.classList.add('hidden');
+                            }
+                        }
+
+                        function hideExtra() {
+                            extraContainer.classList.add('hidden');
+                            document.querySelectorAll('.atx-panel').forEach(function (p) { p.classList.add('hidden'); });
+                        }
+
+                        window._showExtraPanel = showExtraPanel;
+                        window._hideExtraPanel  = hideExtra;
+
+                        document.querySelectorAll('.app-type-radio').forEach(function (r) {
+                            r.addEventListener('change', function () {
+                                if (this.checked) showExtraPanel(this.value);
+                            });
+                        });
+
+                        document.getElementById('app-type-toggle').addEventListener('change', function () {
+                            if (!this.checked) hideExtra();
+                        });
+                    })();
+
+                    // Global helpers for plot size rows (called via onclick)
+                    // showCount=true → Private Layout (has No. column); false → Subdivision/Extension
+                    function addPlotSizeRow(suffix, data, showCount) {
+                        if (showCount === undefined) showCount = true;
+                        var container = document.getElementById('plot-sizes-rows-' + suffix);
+                        if (!container) return;
+                        var idx = container.children.length;
+                        var labels = ['i.','ii.','iii.','iv.','v.','vi.','vii.','viii.'];
+                        var lbl = labels[idx] !== undefined ? labels[idx] : (idx + 1) + '.';
+                        var row = document.createElement('div');
+                        row.className = 'plot-size-row flex items-center gap-2 flex-wrap';
+                        var countHtml = showCount
+                            ? '<input type="text" placeholder="No." class="plot-count w-20 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-indigo-400 outline-none bg-white">' +
+                              '<span class="text-slate-500 text-sm shrink-0">No.</span>'
+                            : '<input type="hidden" class="plot-count" value="">';
+                        row.innerHTML =
+                            '<span class="text-xs font-semibold text-slate-500 w-6 shrink-0">' + lbl + '</span>' +
+                            '<input type="text" placeholder="Length" class="plot-length w-24 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-indigo-400 outline-none bg-white">' +
+                            '<span class="text-slate-500 text-sm shrink-0">m \xd7</span>' +
+                            '<input type="text" placeholder="Width" class="plot-width w-24 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-indigo-400 outline-none bg-white">' +
+                            '<span class="text-slate-500 text-sm shrink-0">m</span>' +
+                            countHtml +
+                            '<button type="button" onclick="removePlotSizeRow(this)" class="text-red-400 hover:text-red-600 text-sm px-2 shrink-0">\xd7</button>';
+                        if (data) {
+                            row.querySelector('.plot-length').value = data.length || '';
+                            row.querySelector('.plot-width').value  = data.width  || '';
+                            var cEl = row.querySelector('.plot-count');
+                            if (cEl) cEl.value = data.count || '';
+                        }
+                        container.appendChild(row);
+                    }
+
+                    function removePlotSizeRow(btn) {
+                        var row = btn.closest('.plot-size-row');
+                        if (row) row.remove();
+                    }
+                    </script>
+
                     <!-- Section 1: Applicant & Property (Template a-e) -->
                     <div class="bg-slate-50 border border-slate-100 rounded-xl p-6 space-y-4">
                         <div class="flex items-center gap-2 mb-2">
@@ -253,10 +624,21 @@
                             <h3 class="text-sm font-bold text-slate-900 uppercase tracking-tight">Grant Conditions</h3>
                         </div>
                         <div class="space-y-4">
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Term:</label>
-                                <input type="text" name="term" value="{{ old('term', $recommendation->term ?? '99') }}"  
-                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-slate-100 text-slate-500">
+                            <input type="hidden" id="base_term" value="{{ old('term', $recommendation->term ?? '99') }}">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Year of CoFO</label>
+                                    <input type="number" name="cofo_year" id="cofo_year"
+                                        value="{{ old('cofo_year', $recommendation->cofo_year ?? '') }}"
+                                        min="1900" max="{{ date('Y') }}" placeholder="{{ date('Y') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Term (Years):</label>
+                                    <input type="text" name="term" id="term_input"
+                                        value="{{ old('term', $recommendation->term ?? '99') }}" readonly
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-slate-100 text-slate-500 cursor-not-allowed outline-none">
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Value for Proposed Dev. (₦):</label>
@@ -291,6 +673,13 @@
                                     <input type="number" step="0.01" name="preparation_fees" id="preparation_fees" value="{{ old('preparation_fees', $recommendation->preparation_fees ?? '') }}"
                                         class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
                                 </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Preparation Fees in Words <span class="text-slate-400 normal-case font-normal">(auto)</span></label>
+                                <input type="text" name="preparation_fees_words" id="preparation_fees_words"
+                                    value="{{ old('preparation_fees_words', $recommendation->preparation_fees_words ?? '') }}"
+                                    class="w-full border border-blue-100 bg-blue-50 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition shadow-sm"
+                                    placeholder="Auto-filled from Preparation Fees above">
                             </div>
                         </div>
                     </div>
@@ -362,20 +751,6 @@
                                             class="w-5 h-5 text-green-600 border-slate-300 focus:ring-green-500">
                                         <span class="text-sm font-medium text-slate-700">Require <strong>Licensed Surveyor</strong> to carry out survey</span>
                                     </label>
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Date Generated</label>
-                                    <input type="date" name="rofo_date_generated"
-                                        value="{{ old('rofo_date_generated', isset($recommendation) && $recommendation->rofo_date_generated ? \Carbon\Carbon::parse($recommendation->rofo_date_generated)->format('Y-m-d') : now()->format('Y-m-d')) }}"
-                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition bg-white shadow-sm">
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Time Generated</label>
-                                    <input type="time" name="rofo_time_generated"
-                                        value="{{ old('rofo_time_generated', isset($recommendation) && $recommendation->rofo_time_generated ? $recommendation->rofo_time_generated : now()->format('H:i')) }}"
-                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition bg-white shadow-sm">
                                 </div>
                             </div>
                         </div>
@@ -570,6 +945,91 @@
 
         initOtherSelect2('#lga_select', '#lga', '#lga_other',
             '/api/reference/lgas', 'search');
+
+        // ── Number to Naira Words ──
+        function numberToNairaWords(num) {
+            num = parseFloat(num);
+            if (isNaN(num) || num < 0) return '';
+            if (num === 0) return 'Zero Naira Only';
+            var ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine',
+                        'Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen',
+                        'Seventeen','Eighteen','Nineteen'];
+            var tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+            function h(n) {
+                if (n === 0) return '';
+                if (n < 20) return ones[n] + ' ';
+                if (n < 100) return tens[Math.floor(n/10)] + (n%10 ? '-'+ones[n%10] : '') + ' ';
+                return ones[Math.floor(n/100)] + ' Hundred ' + h(n % 100);
+            }
+            function convert(n) {
+                if (n === 0) return '';
+                if (n < 1000) return h(n);
+                if (n < 1000000) return convert(Math.floor(n/1000)) + 'Thousand ' + h(n%1000);
+                if (n < 1000000000) return convert(Math.floor(n/1000000)) + 'Million ' + convert(n%1000000);
+                return convert(Math.floor(n/1000000000)) + 'Billion ' + convert(n%1000000000);
+            }
+            var intPart = Math.floor(Math.abs(num));
+            var decPart = Math.round((Math.abs(num) - intPart) * 100);
+            var result = convert(intPart).trim() + ' Naira';
+            if (decPart > 0) result += ' and ' + h(decPart).trim() + ' Kobo';
+            return result.trim() + ' Only';
+        }
+
+        // Auto-fill Premium in Words from Premium ₦
+        var premiumEl = document.getElementById('premium');
+        var premiumWordsEl = document.getElementById('premium_words');
+        if (premiumEl && premiumWordsEl) {
+            premiumEl.addEventListener('input', function () {
+                premiumWordsEl.value = this.value ? numberToNairaWords(this.value) : '';
+            });
+        }
+
+        // Auto-fill Preparation Fees in Words from Preparation Fees ₦
+        var prepEl = document.getElementById('preparation_fees');
+        var prepWordsEl = document.getElementById('preparation_fees_words');
+        if (prepEl && prepWordsEl) {
+            prepEl.addEventListener('input', function () {
+                prepWordsEl.value = this.value ? numberToNairaWords(this.value) : '';
+            });
+        }
+
+        // ── Plot sizes: serialize rows to JSON on form submit ──
+        document.getElementById('land-recommendation-form').addEventListener('submit', function () {
+            var activeSuffix = null;
+            var plPanel  = document.getElementById('atx-panel-private-layout');
+            var subPanel = document.getElementById('atx-panel-subdivision');
+            var extPanel = document.getElementById('atx-panel-extension');
+            if (plPanel  && !plPanel.classList.contains('hidden'))  activeSuffix = 'pl';
+            if (subPanel && !subPanel.classList.contains('hidden')) activeSuffix = 'sub';
+            if (extPanel && !extPanel.classList.contains('hidden')) activeSuffix = 'ext';
+            if (!activeSuffix) return;
+            var rows  = document.querySelectorAll('#plot-sizes-rows-' + activeSuffix + ' .plot-size-row');
+            var sizes = Array.from(rows).map(function (row) {
+                var cEl = row.querySelector('.plot-count');
+                return {
+                    length: row.querySelector('.plot-length').value.trim(),
+                    width:  row.querySelector('.plot-width').value.trim(),
+                    count:  cEl ? cEl.value.trim() : '',
+                };
+            }).filter(function (s) { return s.length || s.width || s.count; });
+            document.getElementById('plot_sizes_json').value = sizes.length ? JSON.stringify(sizes) : '';
+        });
+
+        // ── Plot sizes: load saved rows on page load (edit mode) ──
+        (function () {
+            var el = document.getElementById('plot_sizes_json');
+            if (!el || !el.value) return;
+            var savedAppType = @json($savedAppType);
+            var suffix = null, showCount = true;
+            if (savedAppType === 'Private Layout')    { suffix = 'pl';  showCount = true; }
+            else if (savedAppType === 'Plot Subdivision') { suffix = 'sub'; showCount = false; }
+            else if (savedAppType === 'Plot Extension')   { suffix = 'ext'; showCount = false; }
+            if (!suffix) return;
+            var sizes;
+            try { sizes = JSON.parse(el.value); } catch (e) { return; }
+            if (!Array.isArray(sizes)) return;
+            sizes.forEach(function (s) { addPlotSizeRow(suffix, s, showCount); });
+        })();
 
         @if($errors->any())
             if (typeof Swal !== 'undefined') {

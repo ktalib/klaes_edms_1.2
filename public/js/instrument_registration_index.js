@@ -1162,15 +1162,23 @@ function updateCheckboxStates() {
 
         // Handle ST CofO (Sectional Titling CofO) - should be enabled only if corresponding ST Assignment is registered
         else if (status === 'pending' && instrumentType === 'Sectional Titling CofO') {
-            // Check if there's a registered ST Assignment OR ST Fragmentation for the same file number
-            const stAssignmentRegistered = serverCofoData.find(item => {
-                return item.fileno === fileno &&
-                    (item.instrument_type === 'ST Assignment (Transfer of Title)' || item.instrument_type === 'ST Fragmentation') &&
-                    item.status === 'registered';
-            });
+            // For aggregate rows use the pre-computed _cofoEnabled flag stamped as a data attribute;
+            // for individual unit rows fall back to the serverCofoData lookup.
+            const aggCofoEnabled = checkbox.getAttribute('data-agg-cofo-enabled');
+            let shouldEnable;
+            if (aggCofoEnabled !== null) {
+                shouldEnable = aggCofoEnabled === '1';
+            } else {
+                const stAssignmentRegistered = serverCofoData.find(item => {
+                    return item.fileno === fileno &&
+                        item.instrument_type === 'ST Assignment (Transfer of Title)' &&
+                        item.status === 'registered';
+                });
+                shouldEnable = !!stAssignmentRegistered;
+            }
 
             // Enable/disable checkbox based on ST Assignment registration status
-            const shouldEnable = !!stAssignmentRegistered;
+            // (shouldEnable already set above)
             checkbox.disabled = !shouldEnable;
 
             // Add visual indicator for disabled ST CofO checkboxes
@@ -1205,7 +1213,18 @@ function updateCheckboxStates() {
 }
 
 // Enhanced batch registration functionality
-function handleMainTableCheckboxChange() {
+function handleMainTableCheckboxChange(changedCheckbox) {
+    // Enforce single selection: uncheck all other checkboxes when one is checked
+    if (changedCheckbox && changedCheckbox.checked) {
+        document.querySelectorAll('.main-table-checkbox:not([disabled])').forEach(function(cb) {
+            if (cb !== changedCheckbox) cb.checked = false;
+        });
+        // Also uncheck any ST batch checkboxes so only one item is ever selected
+        document.querySelectorAll('.st-batch-checkbox:checked:not([disabled])').forEach(function(cb) {
+            cb.checked = false;
+        });
+    }
+
     const checkedBoxes = document.querySelectorAll('.main-table-checkbox:checked:not([disabled])');
     const checkedCount = checkedBoxes.length;
     const stCheckedCount = document.querySelectorAll('.st-batch-checkbox:checked:not([disabled])').length;
@@ -1275,14 +1294,9 @@ function handleMainTableCheckboxChange() {
     }
 }
 
-// Update the toggleSelectAll function to work with the new checkbox class
+// Select-all is disabled in single-select batch mode — clicking it does nothing
 function toggleSelectAll(checkbox) {
-    const checkboxes = document.querySelectorAll('.main-table-checkbox:not([disabled])');
-    checkboxes.forEach(cb => {
-        cb.checked = checkbox.checked;
-    });
-
-    handleMainTableCheckboxChange();
+    checkbox.checked = false;
 }
 
 // Pagination and Search Functionality
@@ -1602,8 +1616,9 @@ document.addEventListener('DOMContentLoaded', function () {
                             data-instrument-type="${app.instrument_type}"
                             data-op-type="${app.op_type || ''}"
                             data-fileno="${app.fileno}"
+                            ${app._isAggregate && app._aggType === 'sectional_cofo' ? `data-agg-cofo-enabled="${app._cofoEnabled ? '1' : '0'}"` : ''}
                             ${isDisabled ? 'disabled' : ''}
-                            onchange="handleMainTableCheckboxChange()">
+                            onchange="handleMainTableCheckboxChange(this)">
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">${regParticulars}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">${instrumentAndAppTypeContent}</td>
@@ -1626,7 +1641,8 @@ document.addEventListener('DOMContentLoaded', function () {
                             }
                             if (app._isAggregate) {
                                 const cnt = app._totalCount || 0;
-                                return `<span class="file-number">${app.fileno || '-'}</span>
+                                const aggMid = String(app.id || '').replace(/^mother_(cofo|assign)_/, '');
+                                return `<button class="st-fileno-link" onclick="openUnitsModal('grp_m_${aggMid}')">${app.fileno || '-'}</button>
                                         <div style="font-size:11px;color:#9ca3af;margin-top:3px;display:flex;align-items:center;gap:3px;">
                                             <i class="fas fa-layer-group" style="font-size:9px;"></i>
                                             ${cnt} unit${cnt !== 1 ? 's' : ''}

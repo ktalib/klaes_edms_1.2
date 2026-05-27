@@ -138,6 +138,7 @@ class LandRecommendationController extends Controller
             'purpose_id' => 'required|exists:sqlsrv.purposes,id',
             'location' => 'nullable|string',
             'term' => 'nullable|string',
+            'cofo_year' => 'nullable|integer|min:1900|max:' . date('Y'),
             'ground_rent' => 'nullable|numeric',
             'effective_date' => 'nullable|date',
             'premium' => 'nullable|numeric',
@@ -160,6 +161,7 @@ class LandRecommendationController extends Controller
             'application_date' => 'nullable|date',
             'applicant_address' => 'nullable|string',
             'type' => 'nullable|string',
+            'application_type' => 'nullable|string',
             'page' => 'nullable|string',
             'page_survey_report' => 'nullable|string',
             'survey_report' => 'nullable|string',
@@ -169,6 +171,18 @@ class LandRecommendationController extends Controller
             'rofo_survey_method' => 'nullable|string|in:DIRECTOR,LICENSED',
             'rofo_date_generated' => 'nullable|date',
             'rofo_time_generated' => 'nullable|string',
+            'premium' => 'nullable|numeric',
+            'num_plots' => 'nullable|string',
+            'file_title' => 'nullable|string',
+            'premium_words' => 'nullable|string',
+            'preparation_fees_words' => 'nullable|string',
+            'plot_sizes' => 'nullable|string',
+            'page_2' => 'nullable|string',
+            'page_3' => 'nullable|string',
+            'page_4' => 'nullable|string',
+            'page_5' => 'nullable|string',
+            'purpose_description' => 'nullable|string',
+            'dimensions_text' => 'nullable|string',
         ]);
 
         // Map survey method radio to YES/NO flags
@@ -224,6 +238,7 @@ class LandRecommendationController extends Controller
             'purpose_id' => 'required|exists:sqlsrv.purposes,id',
             'location' => 'nullable|string',
             'term' => 'nullable|string',
+            'cofo_year' => 'nullable|integer|min:1900|max:' . date('Y'),
             'ground_rent' => 'nullable|numeric',
             'effective_date' => 'nullable|date',
             'premium' => 'nullable|numeric',
@@ -256,6 +271,20 @@ class LandRecommendationController extends Controller
             'rofo_survey_method' => 'nullable|string|in:DIRECTOR,LICENSED',
             'rofo_date_generated' => 'nullable|date',
             'rofo_time_generated' => 'nullable|string',
+            'type' => 'nullable|string',
+            'application_type' => 'nullable|string',
+            'premium' => 'nullable|numeric',
+            'num_plots' => 'nullable|string',
+            'file_title' => 'nullable|string',
+            'premium_words' => 'nullable|string',
+            'preparation_fees_words' => 'nullable|string',
+            'plot_sizes' => 'nullable|string',
+            'page_2' => 'nullable|string',
+            'page_3' => 'nullable|string',
+            'page_4' => 'nullable|string',
+            'page_5' => 'nullable|string',
+            'purpose_description' => 'nullable|string',
+            'dimensions_text' => 'nullable|string',
         ]);
 
         $validated['rofo_director_survey']  = ($request->rofo_survey_method === 'DIRECTOR') ? 'YES' : 'NO';
@@ -358,6 +387,35 @@ class LandRecommendationController extends Controller
         $isCTC = $request->query('status') === 'CTC' || $request->query('isCTC') == 1;
         if (!$isCTC && $recommendation->print_count >= 2) {
             abort(403, 'Maximum print limit reached.');
+        }
+
+        // Route by Application Type first; fall back to Recommendation Type
+        $primaryAppType = $recommendation->application_type ?? null;
+
+        $appTypeTemplates = [
+            'Private Layout'                                     => 'land_recommendations.templates.application_for_plot_merger',
+            'Plot Merger'                                        => 'land_recommendations.templates.application_for_plot_merger',
+            'Plot Subdivision'                                   => 'land_recommendations.templates.application_for_plot_subdivision',
+            'Plot Extension'                                     => 'land_recommendations.templates.application_for_plot_extension',
+            'Temporary File No'             => 'land_recommendations.templates.application_for_temporary_file_no',
+            'Ministry of Works'             => 'land_recommendations.templates.application_for_ministry_of_works',
+            'Change of Purpose'             => 'land_recommendations.templates.application_for_change_of_purpose',
+            // Legacy keys kept for old records
+            'Statutory Right of Occupancy'                => 'land_recommendations.templates.application_for_statutory_right_of_occupancy',
+            'Statutory Right of Occupancy (Residential)'  => 'land_recommendations.templates.application_for_statutory_right_of_occupancy',
+            'Statutory Right of Occupancy (Commercial)'   => 'land_recommendations.templates.application_for_statutory_right_of_occupancy',
+        ];
+
+        if ($primaryAppType && isset($appTypeTemplates[$primaryAppType])) {
+            $record = $recommendation;
+            // Attach plotSizes as a collection for templates that use dimension tables
+            $plotSizesRaw = $recommendation->plot_sizes ?? null;
+            $record->plotSizes = $plotSizesRaw ? collect(json_decode($plotSizesRaw)) : collect([]);
+            // Detect residential vs commercial from file number prefix
+            $filePrefix = strtoupper(substr($recommendation->file_number ?? '', 0, 3));
+            $isResidential = $filePrefix === 'RES';
+            $isCommercial  = in_array($filePrefix, ['COM', 'IND', 'CON']);
+            return view($appTypeTemplates[$primaryAppType], compact('recommendation', 'record', 'isResidential', 'isCommercial'));
         }
 
         if ($recommendation->type === 'Conversion') {

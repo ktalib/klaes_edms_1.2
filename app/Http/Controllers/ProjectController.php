@@ -61,6 +61,7 @@ class ProjectController extends Controller
             'project_name' => 'required|string',
             'number_of_items' => 'required|integer|min:1',
             'project_type' => 'required|string',
+            'project_fileno' => $request->project_type !== 'Ministry' ? 'required|string' : 'nullable|string',
             'number_of_sub_projects' => 'required|integer|min:1',
             'our_reference' => 'required|string',
             'your_reference' => 'nullable|string',
@@ -72,8 +73,10 @@ class ProjectController extends Controller
         DB::connection('sqlsrv')->beginTransaction();
         try {
             $projectCode = $this->generateNextProjectCode();
-            $projectFileNo = $this->fileNumberService->generateNextFileNumber();
-            
+            $projectFileNo = $request->project_type === 'Ministry'
+                ? $this->fileNumberService->generateNextFileNumber()
+                : $request->project_fileno;
+
             $project = Project::create([
                 'project_name' => $request->project_name,
                 'project_code' => $projectCode,

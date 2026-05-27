@@ -5,6 +5,7 @@ namespace App\Http\Controllers\LandsOneStopShop;
 use App\Http\Controllers\Controller;
 use App\Models\PlotExtensionApplication;
 use App\Models\StreetName;
+use App\Services\ParcelUpdateNotificationService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,6 +15,10 @@ use Illuminate\Support\Facades\Validator;
 
 class PlotExtensionController extends Controller
 {
+    public function __construct(
+        protected ParcelUpdateNotificationService $parcelNotifier
+    ) {}
+
     public function index(Request $request): View
     {
         $limit = max(10, min((int) $request->input('limit', 50), 200));
@@ -77,12 +82,25 @@ class PlotExtensionController extends Controller
 
         $record = PlotExtensionApplication::create($data);
 
-        if ($request->hasFile('site_plan')) {
-            $file = $request->file('site_plan');
-            $filename = 'extension_' . $record->id . '_' . time() . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('site_plans', $filename, 'public');
-            $record->update(['site_plan' => $path]);
+        $docUpdates = [];
+        foreach (['site_plan', 'ownership_document', 'application_letter', 'means_of_id', 'tax_clearance'] as $field) {
+            if ($request->hasFile($field)) {
+                $file = $request->file($field);
+                $filename = 'extension_' . $record->id . '_' . $field . '_' . time() . '.' . $file->getClientOriginalExtension();
+                $docUpdates[$field] = $file->storeAs('parcel_documents/extension', $filename, 'public');
+            }
         }
+        if (!empty($docUpdates)) {
+            $record->update($docUpdates);
+        }
+
+        $this->parcelNotifier->notifyCreated(
+            'extension',
+            $record->id,
+            $record->file_no,
+            $record->file_title ?? '',
+            $record->applicant_name ?? ''
+        );
 
         return response()->json([
             'success' => true,
@@ -145,6 +163,16 @@ class PlotExtensionController extends Controller
             'status' => PlotExtensionApplication::STATUS_APPROVED,
             'updated_by' => Auth::id(),
         ]);
+
+        $approver = Auth::user();
+        $approverName = $approver ? ($approver->name ?? $approver->username ?? '') : '';
+        $this->parcelNotifier->notifyApproved(
+            'extension',
+            $record->id,
+            $record->file_no,
+            $record->file_title ?? '',
+            $approverName
+        );
 
         return response()->json(['success' => true, 'message' => 'Application approved.']);
     }
@@ -223,7 +251,11 @@ class PlotExtensionController extends Controller
             'plan_no' => 'nullable|string|max:100',
             'remarks' => 'nullable|string',
             'knupda_fee' => 'nullable|numeric',
-            'site_plan' => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
+            'site_plan'          => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
+            'ownership_document' => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
+            'application_letter' => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
+            'means_of_id'        => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
+            'tax_clearance'      => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
         ];
     }
 }

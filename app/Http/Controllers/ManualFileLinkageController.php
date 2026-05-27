@@ -131,6 +131,14 @@ class ManualFileLinkageController extends Controller
 
         $workflowType = $request->input('workflow_type');
 
+        // Strip empty values submitted by hidden inputs in non-active panels
+        $request->merge([
+            'old_file_numbers' => array_values(array_filter(
+                $request->input('old_file_numbers', []),
+                fn($v) => trim((string) $v) !== ''
+            )),
+        ]);
+
         // --- Validation -------------------------------------------------------
         $baseRules = [
             'workflow_type'      => 'required|in:Subdivision,Merger,Plot Extension,Change of Purpose',
@@ -264,7 +272,7 @@ class ManualFileLinkageController extends Controller
             // Decommission old files once (regardless of child count for Subdivision)
             $workflowService = app(PlotWorkflowService::class);
             $decommReason = $workflowType === 'Subdivision'
-                ? 'Manual Linkage: Subdivision → ' . implode(', ', array_column($children, 'new_file_number'))
+                ? 'Subdivision → ' . implode(', ', array_column($children, 'new_file_number'))
                 : "Manual Linkage: {$workflowType} → {$newFileNumber}";
             $workflowService->decommissionFiles($oldFileNumbers, $decommReason, $commissionedBy);
 

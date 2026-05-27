@@ -1,5 +1,13 @@
 @extends('layouts.app')
 
+@push('styles')
+<style>
+/* Ensure SweetAlert2 popups always sit above all fixed overlays on this page
+   (print-manager z-999999, batchPrintModal z-1000090, dropdown z-9999). */
+.swal2-container { z-index: 9999999 !important; }
+</style>
+@endpush
+
 @section('content')
 <div class="flex-1 overflow-auto bg-slate-50/60">
     @include('admin.header')
@@ -154,11 +162,11 @@
                                 <td class="px-4 py-2 whitespace-nowrap">
                                     @if($isOssRec)
                                         <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">
-                                            <i data-lucide="layers" class="h-3 w-3"></i> OSS Applications
+                                            <i data-lucide="layers" class="h-3 w-3"></i> OSS
                                         </span>
                                     @else
                                         <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
-                                            <i data-lucide="file" class="h-3 w-3"></i> Land ROFO
+                                            <i data-lucide="file" class="h-3 w-3"></i> Land
                                         </span>
                                     @endif
                                 </td>
@@ -250,9 +258,15 @@
 
                                                 <div class="border-t border-slate-100 my-1"></div>
 
-                                                <button type="button" onclick="assignSecurityPaperCode('{{ $rec->id }}', '{{ $rec->file_number }}', '{{ $rec->land_rofo_serial_no }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-emerald-600 hover:bg-emerald-50 transition gap-2 font-bold">
+                                                @if($rec->land_rofo_serial_no)
+                                                <button type="button" disabled class="flex w-full items-center px-4 py-2.5 text-sm text-slate-300 gap-2 font-bold cursor-not-allowed" title="Security paper code already assigned">
                                                     <i data-lucide="hash" class="h-4 w-4"></i> Enter Security Paper Code
                                                 </button>
+                                                @else
+                                                <button type="button" onclick="openAssignSecurityPaperModal('{{ $rec->id }}', '{{ $rec->file_number }}', '{{ $rec->land_rofo_serial_no }}', '{{ route('land-rofos.assign-security-paper', $rec->id) }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-emerald-600 hover:bg-emerald-50 transition gap-2 font-bold">
+                                                    <i data-lucide="hash" class="h-4 w-4"></i> Enter Security Paper Code
+                                                </button>
+                                                @endif
 
                                                 <div class="border-t border-slate-100 my-1"></div>
 
@@ -879,22 +893,33 @@ function bpmCancelConfirm() {
         });
     }
 
-    // Assign Security Paper Code — custom vanilla JS search
-    var _spcCodes = @json($availableSerials->pluck('paper_code'));
-
-    function assignSecurityPaperCode(id, fileNumber, currentSerial) {
+    // Legacy local modal — kept temporarily; buttons now call openAssignSecurityPaperModal (global component).
+    function _showSpcModal_unused(id, fileNumber, currentSerial) {
         var codes = _spcCodes;
+
+        // Dropdown is appended to <body> so it is never clipped by the Swal overflow container.
+        var dropdown = document.createElement('div');
+        dropdown.id  = 'spc-dropdown';
+        dropdown.style.cssText = [
+            'display:none',
+            'position:fixed',
+            'background:#fff',
+            'border:1.5px solid #cbd5e1',
+            'border-radius:10px',
+            'max-height:220px',
+            'overflow-y:auto',
+            'z-index:10000000',
+            'box-shadow:0 12px 32px rgba(0,0,0,0.15)',
+            'font-family:inherit',
+        ].join(';');
+        document.body.appendChild(dropdown);
 
         var html  = '<p style="font-size:13px;color:#64748b;margin-bottom:10px;text-align:left;">';
             html += 'Security paper code for file <strong style="color:#2563eb;">' + fileNumber + '</strong></p>';
-            html += '<div style="position:relative;">';
-            html += '<input id="spc-search" type="text" autocomplete="off" placeholder="Type to search..." ';
+            html += '<input id="spc-search" type="text" autocomplete="off" placeholder="Type to search a code..." ';
             html += 'style="width:100%;padding:10px 14px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box;">';
-            html += '<div id="spc-dropdown" style="display:none;position:absolute;top:calc(100% + 2px);left:0;right:0;';
-            html += 'background:#fff;border:1px solid #cbd5e1;border-radius:8px;max-height:200px;overflow-y:auto;';
-            html += 'z-index:99999;box-shadow:0 8px 24px rgba(0,0,0,0.12);"></div></div>';
             html += '<input id="spc-value" type="hidden">';
-            html += '<p id="spc-label" style="margin-top:8px;font-size:12px;color:#10b981;font-weight:700;min-height:18px;text-align:left;"></p>';
+            html += '<p id="spc-label" style="margin-top:10px;font-size:12px;color:#10b981;font-weight:700;min-height:18px;text-align:left;"></p>';
 
         Swal.fire({
             title: 'Enter Security Paper Code',
@@ -905,21 +930,33 @@ function bpmCancelConfirm() {
             confirmButtonColor: '#10b981',
             didOpen: function() {
                 var searchEl = document.getElementById('spc-search');
-                var dropdown = document.getElementById('spc-dropdown');
                 var valueEl  = document.getElementById('spc-value');
                 var labelEl  = document.getElementById('spc-label');
+                var MAX_VISIBLE = 50;
+
+                function positionDropdown() {
+                    var rect = searchEl.getBoundingClientRect();
+                    dropdown.style.left  = rect.left + 'px';
+                    dropdown.style.width = rect.width + 'px';
+                    dropdown.style.top   = (rect.bottom + 4) + 'px';
+                }
 
                 function renderList(term) {
-                    var lower   = (term || '').toLowerCase();
-                    var matches = lower === ''
-                        ? codes
-                        : codes.filter(function(c) { return c && c.toLowerCase().indexOf(lower) !== -1; });
+                    var lower = (term || '').trim().toLowerCase();
+                    if (lower === '') {
+                        dropdown.style.display = 'none';
+                        return;
+                    }
+
+                    var matches = codes.filter(function(c) {
+                        return c && c.toLowerCase().indexOf(lower) !== -1;
+                    });
 
                     dropdown.innerHTML = '';
-                    if (!matches || matches.length === 0) {
+                    if (matches.length === 0) {
                         dropdown.innerHTML = '<div style="padding:10px 14px;color:#94a3b8;font-size:13px;">No matching code found</div>';
                     } else {
-                        matches.forEach(function(code) {
+                        matches.slice(0, MAX_VISIBLE).forEach(function(code) {
                             var item = document.createElement('div');
                             item.textContent = code;
                             item.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:14px;color:#1e293b;border-bottom:1px solid #f1f5f9;';
@@ -934,12 +971,19 @@ function bpmCancelConfirm() {
                             };
                             dropdown.appendChild(item);
                         });
+                        if (matches.length > MAX_VISIBLE) {
+                            var more = document.createElement('div');
+                            more.textContent = (matches.length - MAX_VISIBLE) + ' more — type more characters to narrow';
+                            more.style.cssText = 'padding:8px 14px;color:#94a3b8;font-size:12px;font-style:italic;border-top:1px solid #f1f5f9;';
+                            dropdown.appendChild(more);
+                        }
                     }
+                    positionDropdown();
                     dropdown.style.display = 'block';
                 }
 
                 searchEl.oninput = function() {
-                    valueEl.value    = '';
+                    valueEl.value = '';
                     labelEl.textContent = '';
                     renderList(searchEl.value);
                 };
@@ -949,6 +993,10 @@ function bpmCancelConfirm() {
                 };
 
                 searchEl.focus();
+            },
+            willClose: function() {
+                // Always clean up the body-level dropdown element
+                if (dropdown.parentNode) dropdown.parentNode.removeChild(dropdown);
             },
             preConfirm: function() {
                 var paperCode = (document.getElementById('spc-value').value || '').trim();

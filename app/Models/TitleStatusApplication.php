@@ -1,0 +1,68 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class TitleStatusApplication extends Model
+{
+    protected $connection = 'sqlsrv';
+    protected $table = 'title_status_applications';
+
+    public const STATUS_PENDING  = 'pending';
+    public const STATUS_APPROVED = 'approved';
+    public const STATUS_REJECTED = 'rejected';
+
+    public const TYPE_WITHDRAWAL   = 'Withdrawal (Application)';
+    public const TYPE_CANCELLATION = 'Cancellation (RofO)';
+    public const TYPE_REVOKE       = 'Revoke (CofO)';
+    public const TYPE_LITIGATION   = 'Litigation';
+    public const TYPE_AMENDMENT    = 'Amendment/Reconsideration (Application/RofO/CofO)';
+
+    public const AUTHORITY_OPTIONS = [
+        "Governor's Directive",
+        "Ministerial Directive",
+        "Court Order",
+        "Administrative Decision",
+        "Regulatory Notice",
+        "Other",
+    ];
+
+    protected $fillable = [
+        'url',
+        'title_type',
+        'source_table',
+        'source_id',
+        'file_no',
+        'file_title',
+        'applicant_name',
+        'plot_no',
+        'house_no',
+        'street_name',
+        'district',
+        'lga',
+        'state',
+        'location',
+        'land_use',
+        'title_no',
+        'date_of_issue',
+        'date_of_expiry',
+        'authority',
+        'authority_reference',
+        'remark',
+        'status',
+        'captured_by',
+        'updated_by',
+        'approved_by',
+        'approved_at',
+        'is_deleted',
+        'deleted_by',
+        'deleted_at',
+    ];
+
+    protected $casts = [
+        'date_of_issue'  => 'date',
+        'date_of_expiry' => 'date',
+        'approved_at'    => 'datetime',
+    ];
+}

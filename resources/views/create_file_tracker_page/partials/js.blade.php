@@ -2,6 +2,26 @@
     // CSRF Token for Laravel
     const csrfToken = '{{ csrf_token() }}';
 
+    // ── Tracking-ID display helper ─────────────────────────────────────────────
+    // Shows a base64-encoded (encrypted-looking) string in the visible field
+    // while the real value is stored in the hidden #tracking-id-real input.
+    function setTrackingDisplay(realValue) {
+        const displayEl = document.getElementById('tracking-id');
+        const realEl    = document.getElementById('tracking-id-real');
+        if (realEl) realEl.value = realValue || '';
+        if (!displayEl) return;
+        if (realValue) {
+            // btoa() produces a base64 string that looks like an encrypted key
+            try { displayEl.value = btoa(realValue).replace(/=/g, ''); }
+            catch (_) { displayEl.value = realValue; } // fallback for non-Latin chars
+        } else {
+            displayEl.value = '';
+        }
+    }
+
+    // Digital Request module flag — set once from Blade so JS never has to parse strings
+    window.isDigitalRequestModule = {{ in_array(strtolower($module ?? ''), ['digital_request','digital-request']) ? 'true' : 'false' }};
+
     // Set up default headers for AJAX requests
     $.ajaxSetup({
         headers: {
@@ -26,6 +46,35 @@
     const receivingOfficerHint = $('#receiving-officer-hint');
     let receivingOfficerOptionsCache = [];
     const originOfficeSelect = $('#origin-office');
+
+    // Registry (Origin) change → toast + tracking ID preview update
+    originOfficeSelect.on('change', function () {
+        const $selected = $(this).find('option:selected');
+        const registryCode = $selected.data('registry-code') || null;
+        const registryName = $selected.val() || '';
+
+        console.log('[Registry Change] selected:', registryName, '| registry_code:', registryCode);
+
+        const $trackingField = $('#tracking-id');
+        const baseId = $trackingField.data('base-tracking-id') || $trackingField.val() || '';
+
+        if (!$trackingField.data('base-tracking-id') && baseId) {
+            $trackingField.data('base-tracking-id', baseId);
+        }
+
+        if (registryCode && baseId) {
+            const previewId = baseId + '-' + registryCode;
+            setTrackingDisplay(previewId);
+            showNotification(
+                `Registry "${registryName}" selected — Tracking ID will include code ${registryCode}`,
+                'info'
+            );
+            console.log('[Registry Change] preview tracking ID:', previewId);
+        } else if (!registryCode && $trackingField.data('base-tracking-id')) {
+            setTrackingDisplay($trackingField.data('base-tracking-id'));
+        }
+    });
+
     const destinationOfficeSelect = $('#current-office');
     const originOfficeIdInput = document.getElementById('origin-office-id');
     const originOfficeInfoPanel = document.getElementById('origin-office-info');
@@ -167,6 +216,8 @@
                 saveBtn.innerHTML = `<i data-lucide="send" class="h-4 w-4 mr-2"></i>Send to ${target}`;
             } else if (modKey === 'kangis') {
                 saveBtn.innerHTML = '<i data-lucide="send" class="h-4 w-4 mr-2"></i>Send to Director GIS';
+            } else if ({{ in_array(strtolower($module ?? ''), ['digital_request','digital-request']) ? 'true' : 'false' }}) {
+                saveBtn.innerHTML = '<i data-lucide="send" class="h-4 w-4 mr-2"></i>Send Request';
             } else {
                 saveBtn.innerHTML = '<i data-lucide="save" class="h-4 w-4 mr-2"></i>Save File Log';
             }
@@ -2162,9 +2213,9 @@
         const trackingField = $('#tracking-id');
         const fileNameField = $('#file-name');
 
+        setTrackingDisplay('');
         trackingField.removeClass('metadata-loading tracking-id-locked')
-            .prop('disabled', false)
-            .val('');
+            .prop('disabled', false);
         trackingField.removeData('prevValue');
 
         fileNameField.removeClass('metadata-loading metadata-locked')
@@ -2208,19 +2259,28 @@
 
         trackingField.removeClass('metadata-loading');
         if (trackingValue !== '') {
+            setTrackingDisplay(trackingValue);
             trackingField
-                .val(trackingValue)
                 .prop('disabled', true)
-                .addClass('tracking-id-locked');
+                .addClass('tracking-id-locked')
+                .data('base-tracking-id', trackingValue); // store real base for registry code preview
         } else {
+            setTrackingDisplay('');
             trackingField
-                .val('')
                 .prop('disabled', false)
-                .removeClass('tracking-id-locked');
+                .removeClass('tracking-id-locked')
+                .removeData('base-tracking-id');
         }
         trackingField.removeData('prevValue');
 
-        const resolvedName = (data.file_name || '').trim();
+        // Re-apply registry code preview if a registry is already selected
+        const $selectedReg = $('#origin-office option:selected');
+        const existingCode = $selectedReg.data('registry-code');
+        if (existingCode && trackingValue) {
+            setTrackingDisplay(trackingValue + '-' + existingCode);
+        }
+
+        const resolvedName = (data.file_name || data.file_title || '').trim();
         fileNameField.removeClass('metadata-loading');
 
         if (resolvedName !== '') {
@@ -2343,7 +2403,98 @@
                 }));
             }
         }
+
+        // ── Digital Request: immediately check file availability after metadata loads ──
+        @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
+        const _drFileNo = resolvedFileNumber || (data.file_number || data.fileNumber || '').toString().trim();
+        if (_drFileNo) {
+            checkDigitalRequestFileAvailability(_drFileNo);
+        }
+        @endif
     }
+
+    @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
+    // ── Immediate availability check for Digital Request module ──────────────
+    let _drAvailabilityBannerShown = false; // debounce — only show once per file selection
+
+    function checkDigitalRequestFileAvailability(fileNo) {
+        _drAvailabilityBannerShown = false;
+        $.ajax({
+            url: '/digital-request/check-availability',
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': csrfToken },
+            data: JSON.stringify({ file_no: fileNo }),
+            contentType: 'application/json',
+            dataType: 'json',
+        })
+        .done(function (res) {
+            if (!res.found || res.available || _drAvailabilityBannerShown) return;
+            _drAvailabilityBannerShown = true;
+
+            const office   = res.current_office   || 'Unknown Office';
+            const officer  = res.receiving_officer || 'Unknown Officer';
+            const status   = res.status            || 'In-Transit';
+
+            Swal.fire({
+                icon: 'warning',
+                title: 'File Not Available in Registry',
+                html: `
+                    <div class="text-left space-y-3 text-sm">
+                        <p class="text-gray-700">This file is currently <strong>not physically available</strong> in the Registry.</p>
+
+                        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1.5">
+                            <div class="flex items-center gap-2">
+                                <span class="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
+                                <span class="text-amber-800"><strong>Status:</strong>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold
+                                        ${status === 'In-Transit' ? 'bg-yellow-100 text-yellow-800' : 'bg-orange-100 text-orange-800'}">
+                                        ${status}
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
+                                <span class="text-amber-800"><strong>Current Office:</strong> ${office}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
+                                <span class="text-amber-800"><strong>Held by Officer:</strong> ${officer}</span>
+                            </div>
+                        </div>
+
+                        <p class="text-gray-600 text-xs mt-2">
+                            Would you like to send the request directly to the
+                            <strong>${office}</strong> (the office currently holding this file)?
+                        </p>
+                    </div>`,
+                showCancelButton: true,
+                confirmButtonText: 'Yes, Send Request to Current Holder',
+                cancelButtonText: 'No, Cancel',
+                confirmButtonColor: '#7c3aed',
+                cancelButtonColor: '#6b7280',
+                reverseButtons: true,
+                width: '480px',
+            }).then(function (result) {
+                if (!result.isConfirmed) {
+                    // User chose not to continue — clear the file selection
+                    document.getElementById('file-no').value = '';
+                    document.getElementById('file-name').value = '';
+                    if (document.getElementById('tracking-id')) {
+                        setTrackingDisplay('');
+                        $('#tracking-id').prop('disabled', false).removeClass('tracking-id-locked');
+                    }
+                    // Show a brief info toast
+                    showNotification('File selection cleared. Please enter a different file number.', 'info');
+                }
+                // If confirmed: form proceeds normally — the request goes to the normal workflow.
+                // The receiving officer / office is still the user's own office (logged-in user).
+            });
+        })
+        .fail(function () {
+            // Silently ignore — availability check failure should never block the workflow
+        });
+    }
+    @endif
 
     function displayRegistryInformation(data) {
         // In Cross-Registry Request mode the user has already chosen the
@@ -2402,9 +2553,9 @@
         const previousTracking = trackingField.data('prevValue') || '';
         const previousName = fileNameField.data('prevValue') || '';
 
+        setTrackingDisplay(previousTracking);
         trackingField.removeClass('metadata-loading tracking-id-locked')
-            .prop('disabled', false)
-            .val(previousTracking);
+            .prop('disabled', false);
         trackingField.removeData('prevValue');
 
         fileNameField.removeClass('metadata-loading metadata-locked')
@@ -3383,7 +3534,8 @@
                 nameInput.type = 'hidden';
                 nameInput.id = 'receiving-office-name-hidden';
                 nameInput.name = 'receiving_office_name';
-                document.getElementById('create-file-tracker-form').appendChild(nameInput);
+                // Append to the select's own parent — the form ID does not exist in this layout
+                (this.parentNode || document.body).appendChild(nameInput);
             }
             nameInput.value = officeName;
         });
@@ -3408,7 +3560,11 @@
     function createFileTracker() {
         const fileNo = document.getElementById('file-no').value;
         const fileName = document.getElementById('file-name').value;
-        const trackingId = document.getElementById('tracking-id').value.trim();
+        // Read from the hidden real-value field (the visible field shows an encrypted display)
+        const trackingIdRaw = (document.getElementById('tracking-id-real') || document.getElementById('tracking-id')).value.trim();
+        const originRegistryCodeNow = $('#origin-office option:selected').data('registry-code') || null;
+        const trackingId = trackingIdRaw; // already has registry code appended via the change handler
+        console.log('[createFileTracker] trackingId:', trackingId, '| originRegistryCode:', originRegistryCodeNow);
         const fileIndexingId = resolvedFileIndexingId;
         const workflowSubmissionMode = isKangisWorkflowSubmissionMode();
 
@@ -3426,9 +3582,15 @@
         const priority = document.getElementById('file-priority').value;
         const notes = document.getElementById('office-notes').value;
 
-        const receivingOfficerIdRaw = receivingOfficerSelect ? receivingOfficerSelect.val() : '';
+        // When #receiving-officer select is absent (e.g. digital_request module uses hidden inputs instead),
+        // fall back to the hidden input values so validation and payload construction still work correctly.
+        const _hasReceivingOfficerSelect = receivingOfficerSelect && receivingOfficerSelect.length > 0;
+        const receivingOfficerIdRaw = _hasReceivingOfficerSelect
+            ? receivingOfficerSelect.val()
+            : ($('input[name="receiving_officer_id"]').val() || '');
         const receivingOfficerKey = receivingOfficerIdRaw;
-        const $officerOption = $('#receiving-officer option:selected');
+        const $officerOption = _hasReceivingOfficerSelect ? $('#receiving-officer option:selected') : $();
+        const _hiddenOfficerName = $('input[name="receiving_officer_name"]').val() || '';
 
         const selectedDestinationOption = $('#current-office').find('option:selected');
         const finalDestinationCode = destinationSelection === CUSTOM_DESTINATION_OPTION_VALUE
@@ -3441,7 +3603,7 @@
         let effectiveReceivingOfficeCode = receivingOfficeCode;
         let effectiveReceivingOfficeName = receivingOfficeName;
         let effectiveReceivingOfficerId = receivingOfficerIdRaw;
-        let effectiveReceivingOfficerName = $officerOption.text();
+        let effectiveReceivingOfficerName = $officerOption.text() || _hiddenOfficerName;
 
         // Cross-Registry Request mode overrides the standard KANGIS workflow
         // routing. Per docs/file_reqest, workflow.md the first hop is the
@@ -3487,7 +3649,8 @@
             return;
         }
 
-        if (!workflowSubmissionMode && !_crossModuleRequestMode && !effectiveReceivingOfficeCode) {
+        const _isDigitalRequest = {{ in_array(strtolower($module ?? ''), ['digital_request','digital-request']) ? 'true' : 'false' }};
+        if (!workflowSubmissionMode && !_crossModuleRequestMode && !_isDigitalRequest && !effectiveReceivingOfficeCode) {
             Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Please select a Receiving Office.' }); return;
             return;
         }
@@ -3497,8 +3660,14 @@
             return;
         }
 
-        if (!workflowSubmissionMode && !_crossModuleRequestMode && !receivingOfficerKey) {
+        if (!workflowSubmissionMode && !_crossModuleRequestMode && !_isDigitalRequest && !receivingOfficerKey) {
             Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Select the receiving officer.' }); return;
+            return;
+        }
+
+        if (_isDigitalRequest && !notes.trim()) {
+            Swal.fire({ icon: 'warning', title: 'Request Reason Required', text: 'Please state the reason for requesting this file.' });
+            document.getElementById('office-notes')?.focus();
             return;
         }
 
@@ -3539,6 +3708,7 @@
             trackingId,
             fileIndexingId,
             priority,
+            originRegistryCode: originRegistryCodeNow,
             originOffice: originOfficeObj,
             originOfficeId,
             currentOffice: effectiveReceivingOfficeName,
@@ -3589,7 +3759,54 @@
             createdAt: now.toISOString()
         };
 
-        showPreview();
+        // ── Digital Request: check In-Transit status before opening preview ──
+        if ({{ in_array(strtolower($module ?? ''), ['digital_request','digital-request']) ? 'true' : 'false' }} && currentTracker && currentTracker.fileNo) {
+            $.ajax({
+                url: '/digital-request/check-availability',
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+                data: JSON.stringify({ file_no: currentTracker.fileNo }),
+                contentType: 'application/json',
+                dataType: 'json',
+            })
+            .done(function (res) {
+                if (res.found && !res.available) {
+                    // File is not available — final confirmation before submitting
+                    const office  = res.current_office   || 'Unknown Office';
+                    const officer = res.receiving_officer || 'Unknown Officer';
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Confirm Request Submission',
+                        html: `
+                            <div class="text-left text-sm space-y-2">
+                                <p class="text-gray-700">This file is currently held by
+                                    <strong>${officer}</strong> in <strong>${office}</strong>.</p>
+                                <p class="text-gray-500 text-xs">Are you sure you want to submit this request?</p>
+                            </div>`,
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, Submit Request',
+                        cancelButtonText: 'No, Cancel',
+                        confirmButtonColor: '#7c3aed',
+                        cancelButtonColor: '#6b7280',
+                        reverseButtons: true,
+                    }).then(function (result) {
+                        if (result.isConfirmed) {
+                            showPreview();
+                        }
+                        // else: user cancelled — do nothing, form stays open
+                    });
+                } else {
+                    // File is available or not yet tracked — proceed normally
+                    showPreview();
+                }
+            })
+            .fail(function () {
+                // If check fails for any reason, still allow the user to proceed
+                showPreview();
+            });
+        } else {
+            showPreview();
+        }
     }
 
     // Show preview dialog
@@ -3773,7 +3990,195 @@
 
         document.getElementById('preview-dialog').classList.add('show');
         lucide.createIcons();
+
+        // Reset digital signature panel state each time preview opens
+        resetDigitalSignaturePanel();
     }
+
+    // ── Digital Signature Panel helpers (safe no-op when panel absent) ────────
+    function resetDigitalSignaturePanel() {
+        const sigPanel   = document.getElementById('dr-sig-panel');
+        if (!sigPanel) return; // not digital_request module — bail
+
+        const sigVerifiedHidden = document.getElementById('dr-sig-verified');
+        const sigImgWrap        = document.getElementById('dr-sig-img-wrap');
+        const sigImg            = document.getElementById('dr-sig-img');
+        const sigMethod         = document.getElementById('dr-sig-method');
+        const sigOtpWrapper     = document.getElementById('dr-sig-otp-wrapper');
+        const sigPwdWrapper     = document.getElementById('dr-sig-pwd-wrapper');
+        const sigOtpCode        = document.getElementById('dr-sig-otp-code');
+        const sigPwd            = document.getElementById('dr-sig-password');
+        const sigFeedback       = document.getElementById('dr-sig-feedback');
+        const sigVerifyText     = document.getElementById('dr-sig-verify-text');
+        const sigVerifyBtn      = document.getElementById('dr-sig-verify-btn');
+        const saveBtn           = document.getElementById('save-tracker-btn');
+
+        if (sigVerifiedHidden) sigVerifiedHidden.value = '0';
+        if (sigImgWrap)  { sigImgWrap.classList.add('hidden'); }
+        if (sigImg)      { sigImg.src = ''; }
+        if (sigMethod)   { sigMethod.value = ''; }
+        if (sigOtpWrapper) { sigOtpWrapper.style.display = 'none'; }
+        if (sigPwdWrapper) { sigPwdWrapper.style.display = 'none'; }
+        if (sigOtpCode)  { sigOtpCode.value = ''; }
+        if (sigPwd)      { sigPwd.value = ''; }
+        if (sigFeedback) { sigFeedback.textContent = ''; sigFeedback.className = 'text-xs font-medium text-slate-500'; }
+        if (sigVerifyText) { sigVerifyText.textContent = 'Verify'; }
+        if (sigVerifyBtn) {
+            sigVerifyBtn.disabled = false;
+            sigVerifyBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+            sigVerifyBtn.classList.add('bg-violet-600', 'hover:bg-violet-700');
+        }
+        // Disable save button until verified
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+    }
+
+    // ── Wire up digital signature panel (runs once on page load) ─────────────
+    (function initDigitalSignaturePanel() {
+        const sigPanel = document.getElementById('dr-sig-panel');
+        if (!sigPanel) return; // not digital_request — nothing to wire
+
+        const CSRF          = document.querySelector('meta[name="csrf-token"]')?.content ?? '{{ csrf_token() }}';
+        const sigMethod     = document.getElementById('dr-sig-method');
+        const sigOtpWrapper = document.getElementById('dr-sig-otp-wrapper');
+        const sigPwdWrapper = document.getElementById('dr-sig-pwd-wrapper');
+        const sigOtpCode    = document.getElementById('dr-sig-otp-code');
+        const sigPwd        = document.getElementById('dr-sig-password');
+        const sigSendOtpBtn = document.getElementById('dr-sig-send-otp');
+        const sigVerifyBtn  = document.getElementById('dr-sig-verify-btn');
+        const sigVerifyText = document.getElementById('dr-sig-verify-text');
+        const sigFeedback   = document.getElementById('dr-sig-feedback');
+        const sigImgWrap    = document.getElementById('dr-sig-img-wrap');
+        const sigImg        = document.getElementById('dr-sig-img');
+        const sigVerifiedH  = document.getElementById('dr-sig-verified');
+        const saveBtn       = document.getElementById('save-tracker-btn');
+
+        function syncMethodUI() {
+            if (!sigMethod) return;
+            const m = sigMethod.value;
+            if (sigOtpWrapper) sigOtpWrapper.style.display = (m === 'email' || m === 'sms') ? '' : 'none';
+            if (sigPwdWrapper) sigPwdWrapper.style.display  = m === 'password' ? '' : 'none';
+        }
+
+        function resetVerificationState() {
+            if (sigVerifiedH) sigVerifiedH.value = '0';
+            if (sigImgWrap)  sigImgWrap.classList.add('hidden');
+            if (sigImg)      sigImg.src = '';
+            if (sigFeedback) { sigFeedback.textContent = ''; sigFeedback.className = 'text-xs font-medium text-slate-500'; }
+            if (sigVerifyText) sigVerifyText.textContent = 'Verify';
+            if (sigVerifyBtn) {
+                sigVerifyBtn.disabled = false;
+                sigVerifyBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                sigVerifyBtn.classList.add('bg-violet-600', 'hover:bg-violet-700');
+            }
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        if (sigMethod) {
+            sigMethod.addEventListener('change', function () {
+                syncMethodUI();
+                resetVerificationState();
+            });
+        }
+        if (sigOtpCode) { sigOtpCode.addEventListener('input', resetVerificationState); }
+        if (sigPwd)     { sigPwd.addEventListener('input',     resetVerificationState); }
+
+        // ── Send OTP ──────────────────────────────────────────────────────────
+        if (sigSendOtpBtn) {
+            sigSendOtpBtn.addEventListener('click', async function () {
+                const method = sigMethod ? sigMethod.value : '';
+                if (!(method === 'email' || method === 'sms')) {
+                    if (window.Swal) Swal.fire('Required', 'Select Email OTP or SMS OTP to request a code.', 'warning');
+                    return;
+                }
+                sigSendOtpBtn.disabled = true;
+                sigSendOtpBtn.textContent = 'Sending…';
+                try {
+                    const res  = await fetch('/digital-request/send-otp', {
+                        method: 'POST',
+                        headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ method }),
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        if (window.Swal) Swal.fire({ icon: 'success', title: 'OTP Sent', text: data.message, timer: 2500, showConfirmButton: false });
+                    } else {
+                        if (window.Swal) Swal.fire('Error', data.message || 'Could not send OTP.', 'error');
+                    }
+                } catch (e) {
+                    if (window.Swal) Swal.fire('Error', 'Network error. Please try again.', 'error');
+                } finally {
+                    sigSendOtpBtn.disabled = false;
+                    sigSendOtpBtn.textContent = 'Send OTP';
+                }
+            });
+        }
+
+        // ── Verify signature ──────────────────────────────────────────────────
+        if (sigVerifyBtn) {
+            sigVerifyBtn.addEventListener('click', async function () {
+                const method   = sigMethod ? sigMethod.value : '';
+                const otpCode  = sigOtpCode ? sigOtpCode.value.trim() : '';
+                const password = sigPwd     ? sigPwd.value             : '';
+
+                if (!method) {
+                    if (window.Swal) Swal.fire('Required', 'Please select a verification method.', 'warning');
+                    return;
+                }
+                if ((method === 'email' || method === 'sms') && !otpCode) {
+                    if (window.Swal) Swal.fire('Required', 'Please enter the OTP code sent to you.', 'warning');
+                    return;
+                }
+                if (method === 'password' && !password) {
+                    if (window.Swal) Swal.fire('Required', 'Please enter your password to confirm.', 'warning');
+                    return;
+                }
+
+                sigVerifyBtn.disabled = true;
+                if (sigVerifyText) sigVerifyText.textContent = 'Verifying…';
+                if (sigFeedback) { sigFeedback.textContent = ''; sigFeedback.className = 'text-xs font-medium text-slate-500'; }
+
+                try {
+                    const res  = await fetch('/digital-request/verify-signature', {
+                        method: 'POST',
+                        headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ method, verification_code: otpCode, password }),
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        if (sigVerifiedH) sigVerifiedH.value = '1';
+                        if (data.signature_url && sigImg) { sigImg.src = data.signature_url; }
+                        if (sigImgWrap) sigImgWrap.classList.remove('hidden');
+                        sigVerifyBtn.classList.remove('bg-violet-600', 'hover:bg-violet-700');
+                        sigVerifyBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+                        if (sigVerifyText) sigVerifyText.textContent = 'Verified ✓';
+                        if (sigFeedback)  { sigFeedback.textContent = 'Signature verified.'; sigFeedback.className = 'text-xs font-medium text-green-600'; }
+                        // Enable save button
+                        if (saveBtn) {
+                            saveBtn.disabled = false;
+                            saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        }
+                        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+                    } else {
+                        sigVerifyBtn.disabled = false;
+                        if (sigVerifyText) sigVerifyText.textContent = 'Retry Verify';
+                        if (sigFeedback)  { sigFeedback.textContent = data.message || 'Verification failed.'; sigFeedback.className = 'text-xs font-medium text-red-600'; }
+                    }
+                } catch (e) {
+                    sigVerifyBtn.disabled = false;
+                    if (sigVerifyText) sigVerifyText.textContent = 'Retry Verify';
+                    if (sigFeedback)  { sigFeedback.textContent = 'Network error. Please try again.'; sigFeedback.className = 'text-xs font-medium text-red-600'; }
+                }
+            });
+        }
+    })();
 
     // Save file tracker
     function saveFileTracker() {
@@ -3832,7 +4237,9 @@
             receiving_office_name: receivingOfficeName,
             receiving_officer_id: receivingOfficerId,
             receiving_officer_name: receivingOfficerName,
-            module: window.currentModule || null
+            module: window.currentModule || null,
+            origin_registry_code: currentTracker.originRegistryCode || null,
+            proposed_tracking_id: currentTracker.trackingId || null
         };
 
         // Show loading state
@@ -3930,20 +4337,38 @@
                     document.getElementById('preview-dialog').classList.remove('show');
                     const wasKangisWorkflow = currentTracker?.workflowSubmissionMode;
                     const wasCrossModule = _crossModuleRequestMode;
+                    const wasDigitalRequest = {{ in_array(strtolower($module ?? ''), ['digital_request','digital-request']) ? 'true' : 'false' }};
                     _crossModuleRequestMode = false;
                     applyCrossModuleFieldLabels(false);
-                    if (wasCrossModule) {
+                    resetForm();
+                    currentTracker = null;
+
+                    if (wasDigitalRequest) {
+                        // Digital Request: rich SweetAlert on success
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Request Sent Successfully!',
+                            html: `
+                                <div class="text-center space-y-2">
+                                    <p class="text-gray-600 text-sm">Your digital file request has been submitted.</p>
+                                    <div class="inline-flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-full px-4 py-1.5 mt-2">
+                                        <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block"></span>
+                                        <span class="text-amber-700 text-sm font-semibold">Pending Approval</span>
+                                    </div>
+                                    <p class="text-xs text-gray-400 mt-2">Tracking ID: <strong>${response.data.tracking_id ?? '—'}</strong></p>
+                                    <p class="text-xs text-gray-400">The receiving officer will be notified to approve your request.</p>
+                                </div>`,
+                            confirmButtonText: 'OK',
+                            showCancelButton: false,
+                            confirmButtonColor: '#7c3aed',
+                        });
+                    } else if (wasCrossModule) {
                         showNotification(`File request sent — awaiting approval. Tracking ID: ${response.data.tracking_id}`, 'success');
                     } else if (wasKangisWorkflow) {
                         showNotification(`Sent to Director GIS for recommendation. Tracking ID: ${response.data.tracking_id}`, 'success');
+                        applyKangisWorkflowButtonGate(response.data);
                     } else {
                         showNotification(`File tracker created successfully. Tracking ID: ${response.data.tracking_id}`, 'success');
-                    }
-                    resetForm();
-                    currentTracker = null;
-                    // After KANGIS workflow submission, lock button to Pending state
-                    if (wasKangisWorkflow) {
-                        applyKangisWorkflowButtonGate(response.data);
                     }
                 } else {
                     const message = response.message || 'Error creating file tracker';
@@ -5968,15 +6393,18 @@
                     <div class="print-container">
                         <div class="header">
                             <img class="logo" src="/assets/logo/logo.png" alt="Organization Logo">
-                            ${urlView === 'st' 
-                                ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF SECTIONAL TITLING</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>' 
+                            ${urlView === 'st'
+                                ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF SECTIONAL TITLING</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
                                 : (urlView === 'dciv'
                                     ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF COMPLAINT INVESTIGATION AND VERIFICATION</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
                                     : (urlView === 'sltr'
                                         ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">SYSTEMATIC LAND TITLING AND REGISTRATION</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
                                         : (urlView && urlView.toLowerCase() === 'cadastral'
                                             ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">CADASTRAL DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
-                                            : '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">LAND DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
+                                            : (urlView && ['digital_request','digital-request'].includes(urlView.toLowerCase())
+                                                ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">LAND DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet <span style="color:#7c3aed;">(Digital Request)</span></h2>'
+                                                : '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">LAND DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
+                                            )
                                         )
                                     )
                                 )
@@ -7268,6 +7696,9 @@
         const activePriorityBtn = document.querySelector('.filter-btn[data-priority].ring-2');
         const priorityFilter = activePriorityBtn ? activePriorityBtn.getAttribute('data-priority') : 'all';
 
+        const dateFrom = document.getElementById('mr-date-from')?.value || undefined;
+        const dateTo   = document.getElementById('mr-date-to')?.value || undefined;
+
         $.ajax({
             url: '/create-file-tracker/list',
             method: 'GET',
@@ -7278,7 +7709,9 @@
                 status: statusFilter,
                 priority: priorityFilter,
                 module: window.currentModule || undefined,
-                tab: window._dgLogTab || undefined
+                tab: window._dgLogTab || undefined,
+                date_from: dateFrom,
+                date_to: dateTo
             },
             success: function (response) {
                 if (response.success && response.data) {
@@ -7787,29 +8220,75 @@
         const refreshLogsButton = document.getElementById('refresh-logs');
         if (refreshLogsButton) {
             refreshLogsButton.addEventListener('click', function () {
-                currentPage = 1; // Reset to first page
+                currentPage = 1;
                 const searchInput = document.getElementById('search-logs');
-                if (searchInput) {
-                    searchInput.value = ''; // Clear search
-                }
-                // Reset status filter
+                if (searchInput) searchInput.value = '';
                 const statusFilterEl = document.getElementById('status-filter');
                 if (statusFilterEl) statusFilterEl.value = 'all';
-                // Reset priority filter
                 document.querySelectorAll('.filter-btn[data-priority]').forEach(btn => {
                     btn.classList.remove('ring-2', 'ring-offset-1', 'ring-blue-500');
                 });
                 const allBtn = document.querySelector('.filter-btn[data-priority="all"]');
                 if (allBtn) allBtn.classList.add('ring-2', 'ring-offset-1', 'ring-blue-500');
-                loadFileTrackers();
+                loadFileTrackers(1);
                 updateLogCount();
+            });
+        }
+
+        // Apply date filter when dates change
+        ['mr-date-from', 'mr-date-to'].forEach(function (id) {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('change', function () { currentPage = 1; loadFileTrackers(1); });
+        });
+
+        // Export dropdown toggle
+        const exportDropdownBtn = document.getElementById('export-dropdown-btn');
+        const exportDropdownMenu = document.getElementById('export-dropdown-menu');
+        if (exportDropdownBtn && exportDropdownMenu) {
+            exportDropdownBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                exportDropdownMenu.classList.toggle('hidden');
+            });
+            document.addEventListener('click', function () {
+                exportDropdownMenu.classList.add('hidden');
+            });
+            exportDropdownMenu.addEventListener('click', function (e) {
+                e.stopPropagation();
             });
         }
 
         const exportLogsButton = document.getElementById('export-logs');
         if (exportLogsButton) {
             exportLogsButton.addEventListener('click', function () {
-                exportFileTrackersToCSV();
+                if (exportDropdownMenu) exportDropdownMenu.classList.add('hidden');
+                const dateFrom = document.getElementById('mr-date-from')?.value || '';
+                const dateTo   = document.getElementById('mr-date-to')?.value || '';
+                const params   = new URLSearchParams({
+                    date_from: dateFrom,
+                    date_to:   dateTo,
+                    module:    window.currentModule || '',
+                });
+                window.location.href = `/create-file-tracker/list/export-csv?${params.toString()}`;
+            });
+        }
+
+        const exportPdfButton = document.getElementById('export-pdf-logs');
+        if (exportPdfButton) {
+            exportPdfButton.addEventListener('click', function () {
+                if (exportDropdownMenu) exportDropdownMenu.classList.add('hidden');
+                const dateFrom = document.getElementById('mr-date-from')?.value || '';
+                const dateTo   = document.getElementById('mr-date-to')?.value || '';
+                if (!dateFrom || !dateTo) {
+                    Swal.fire({ icon: 'warning', title: 'Date Range Required', text: 'Please select both From Date and To Date before exporting PDF.' });
+                    return;
+                }
+                const params = new URLSearchParams({
+                    date_from: dateFrom,
+                    date_to: dateTo,
+                    module: window.currentModule || '',
+                    format: 'pdf'
+                });
+                window.open(`/create-file-tracker/list/export?${params.toString()}`, '_blank');
             });
         }
 
@@ -8269,10 +8748,10 @@
         const trackingField = $('#tracking-id');
         trackingField.prop('disabled', false).removeClass('tracking-id-locked');
         if (record.tracking_id) {
-            trackingField.val(record.tracking_id);
+            setTrackingDisplay(record.tracking_id);
             $('#sidebar-tracking-id').text(record.tracking_id);
         } else {
-            trackingField.val('');
+            setTrackingDisplay('');
             $('#sidebar-tracking-id').text('-');
         }
 
@@ -8429,7 +8908,8 @@
         $('#sidebar-file-no').text(returnFileNo || '-');
 
         if (returnTracking) {
-            $('#tracking-id').val(returnTracking).prop('disabled', true).addClass('tracking-id-locked');
+            setTrackingDisplay(returnTracking);
+            $('#tracking-id').prop('disabled', true).addClass('tracking-id-locked');
             $('#sidebar-tracking-id').text(returnTracking);
         }
 

@@ -162,8 +162,16 @@ class FileTrackerApiController extends Controller
 
             DB::beginTransaction();
 
-            // Generate tracking ID
-            $trackingId = FileTracker::generateTrackingId();
+            // Use the client-supplied preview tracking ID (base + registry code) when available,
+            // so the saved ID always matches what was shown to the user.
+            $proposedTrackingId = trim((string) $request->input('proposed_tracking_id', ''));
+            $registryCode       = $request->input('origin_registry_code') ?: null;
+
+            if ($proposedTrackingId !== '' && !FileTracker::where('tracking_id', $proposedTrackingId)->exists()) {
+                $trackingId = $proposedTrackingId;
+            } else {
+                $trackingId = FileTracker::generateTrackingId($registryCode);
+            }
 
             if ($isKangisWorkflowSubmission) {
                 $request->merge([
@@ -342,6 +350,68 @@ class FileTrackerApiController extends Controller
                         'tracker_id' => $tracker->id,
                         'module' => $request->input('module'),
                         'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // ── Auto-create DigitalFileRequest record for digital_request module ──
+            if ($request->input('module') === 'digital_request') {
+                try {
+                    $drUser       = Auth::user();
+                    $drSenderName = trim(($drUser->first_name ?? '') . ' ' . ($drUser->last_name ?? ''))
+                                    ?: ($drUser->name ?? 'Unknown');
+
+                    // Resolve source office from user's department
+                    $drSrcOffice = null;
+                    if ($drUser->department_id) {
+                        $drDeptName = \Illuminate\Support\Facades\DB::connection('sqlsrv')
+                            ->table('departments')
+                            ->where('id', $drUser->department_id)
+                            ->value('name');
+                        if ($drDeptName) {
+                            $drSrcOffice = \App\Models\Office::active()
+                                ->where('department', $drDeptName)
+                                ->first();
+                        }
+                    }
+
+                    $drRecord = \App\Models\DigitalFileRequest::create([
+                        'request_no'              => \App\Models\DigitalFileRequest::generateRequestNo(),
+                        'file_no'                 => $tracker->file_number,
+                        'file_title'              => $tracker->file_title,
+                        'requester_user_id'       => $drUser->id,
+                        'sending_officer'         => $drSenderName,
+                        'receiving_officer'       => $resolvedOfficerName,
+                        'source_office_id'        => $drSrcOffice?->id,
+                        'source_office_name'      => $drSrcOffice?->office_name ?? $tracker->origin_office_name,
+                        'destination_office_id'   => null,
+                        'destination_office_name' => $tracker->receiving_office_name,
+                        'current_file_location'   => $tracker->origin_office_name,
+                        'request_status'          => \App\Models\DigitalFileRequest::STATUS_PENDING,
+                        'remarks'                 => $tracker->notes,
+                        'requested_at'            => now(),
+                    ]);
+
+                    // Notify receiving officer
+                    if ($receivingOfficerId) {
+                        $this->notificationService->create(
+                            $receivingOfficerId,
+                            'digital_request',
+                            "Digital File Request: {$drRecord->request_no}",
+                            "{$drSenderName} is requesting file {$tracker->file_number} ({$tracker->file_title}) to be sent to {$tracker->receiving_office_name}.",
+                            [
+                                'request_id'  => $drRecord->id,
+                                'request_no'  => $drRecord->request_no,
+                                'file_number' => $tracker->file_number,
+                                'office_name' => $tracker->receiving_office_name,
+                            ],
+                            ['module' => 'digital_request']
+                        );
+                    }
+                } catch (Exception $e) {
+                    Log::warning('DigitalFileRequest auto-create failed (API)', [
+                        'tracker_id' => $tracker->id,
+                        'error'      => $e->getMessage(),
                     ]);
                 }
             }

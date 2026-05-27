@@ -438,7 +438,7 @@ class PrimaryFormDraftController extends Controller
             return MotherApplicationDraft::where('application_id', $applicationId)->lockForUpdate()->first();
         }
 
-        return MotherApplicationDraft::where('last_saved_by', Auth::id())->lockForUpdate()->first();
+        return null;
     }
 
     private function createBlankDraft(?int $applicationId, int $userId): MotherApplicationDraft

@@ -44,7 +44,7 @@
               <img src="{{ asset('assets/logo/logo.png') }}" alt="Notification logo"
                 class="h-8 w-8 rounded-full border border-gray-200 bg-white object-contain" loading="lazy">
               <div>
-                <p class="text-sm font-semibold text-gray-800">Workflow Alerts</p>
+                <p class="text-sm font-semibold text-gray-800">Notifications</p>
                 <p class="text-xs text-gray-500">Latest updates across the system</p>
               </div>
             </div>

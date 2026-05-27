@@ -86,6 +86,17 @@
                 <span class="text-amber-100 text-sm">Log a File</span>
             </div>
         </div>
+        @elseif(in_array(strtolower($module ?? ''), ['digital_request', 'digital-request']))
+        <div class="bg-gradient-to-r from-violet-700 via-purple-600 to-violet-800 px-6 py-3 flex items-center gap-3 shadow-sm">
+            <i data-lucide="send" class="h-5 w-5 text-white shrink-0"></i>
+            <div class="flex items-center gap-2">
+                <span class="text-white font-bold text-sm uppercase tracking-widest">Digital File Request</span>
+                <span class="text-violet-200 text-sm">·</span>
+                <span class="text-white text-sm font-medium">e-Registry</span>
+                <span class="text-violet-200 text-sm">·</span>
+                <span class="text-violet-200 text-sm">Request a Physical File</span>
+            </div>
+        </div>
         @else
         <div class="bg-gradient-to-r from-red-950 via-red-800 to-red-950 px-6 py-3 flex items-center gap-3 shadow-sm">
             <i data-lucide="file-text" class="h-5 w-5 text-white shrink-0"></i>
@@ -353,6 +364,105 @@
                             <!-- Create File Tracker Tab -->
                             @if(!in_array($module ?? '', ['dgis', 'dg']))
                             <div id="content-create" class="main-tab-content active p-6">
+
+                                {{-- ===== DIGITAL REQUEST: Steps Illustration ===== --}}
+                                @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
+                                <div class="mb-6">
+
+                                    {{-- Header card --}}
+                                    <div class="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 via-purple-50 to-white shadow-sm overflow-hidden">
+
+                                        {{-- Top accent bar --}}
+                                        <div class="h-1 w-full bg-gradient-to-r from-violet-600 via-purple-500 to-violet-400"></div>
+
+                                        <div class="px-6 pt-5 pb-4">
+                                            {{-- Title row --}}
+                                            <div class="flex items-center justify-between flex-wrap gap-3 mb-5">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-violet-600 flex items-center justify-center shadow">
+                                                        <i data-lucide="send" class="h-5 w-5 text-white"></i>
+                                                    </div>
+                                                    <div>
+                                                        <h2 class="text-base font-bold text-violet-900 leading-tight">Digital File Request</h2>
+                                                        <p class="text-xs text-violet-500">Request a physical file to be sent to your office</p>
+                                                    </div>
+                                                </div>
+                                                <a href="/digital-request"
+                                                    class="inline-flex items-center gap-1.5 text-xs font-medium text-violet-700 bg-violet-100 hover:bg-violet-200 border border-violet-200 px-3 py-1.5 rounded-full transition">
+                                                    <i data-lucide="layout-list" class="h-3.5 w-3.5"></i>
+                                                    View All Requests
+                                                </a>
+                                            </div>
+
+                                            {{-- Steps row --}}
+                                            <div class="relative flex items-start gap-0">
+
+                                                {{-- Connector line (behind steps) --}}
+                                                <div class="absolute top-5 left-[calc(10%+20px)] right-[calc(10%+20px)] h-0.5 bg-violet-200 z-0"></div>
+
+                                                @php
+                                                    $drSteps = [
+                                                        ['n'=>1,'icon'=>'search','label'=>'Search File','desc'=>'Enter file number to look up','color'=>'bg-violet-500','ring'=>'ring-violet-200','text'=>'text-violet-700','state'=>'done'],
+                                                        ['n'=>2,'icon'=>'file-check','label'=>'Details Auto-filled','desc'=>'Title, your office & officer pre-loaded','color'=>'bg-violet-500','ring'=>'ring-violet-200','text'=>'text-violet-700','state'=>'done'],
+                                                        ['n'=>3,'icon'=>'send','label'=>'Send Request','desc'=>'Click "Send Request" to submit','color'=>'bg-violet-600','ring'=>'ring-violet-400','text'=>'text-violet-800','state'=>'current'],
+                                                        ['n'=>4,'icon'=>'bell','label'=>'Await Approval','desc'=>'Receiver approves via notification','color'=>'bg-gray-300','ring'=>'ring-gray-100','text'=>'text-gray-500','state'=>'upcoming'],
+                                                        ['n'=>5,'icon'=>'archive','label'=>'File Dispatched','desc'=>'File is sent to your office','color'=>'bg-gray-300','ring'=>'ring-gray-100','text'=>'text-gray-500','state'=>'upcoming'],
+                                                    ];
+                                                @endphp
+
+                                                @foreach($drSteps as $step)
+                                                <div class="relative z-10 flex flex-col items-center flex-1 px-1">
+
+                                                    {{-- Step circle --}}
+                                                    <div class="w-10 h-10 rounded-full {{ $step['color'] }} ring-4 {{ $step['ring'] }} flex items-center justify-center shadow-sm transition-all
+                                                        @if($step['state']==='current') ring-violet-300 shadow-violet-200 shadow-md scale-110 @endif">
+                                                        @if($step['state'] === 'done')
+                                                            <i data-lucide="check" class="h-4 w-4 text-white"></i>
+                                                        @elseif($step['state'] === 'current')
+                                                            <i data-lucide="{{ $step['icon'] }}" class="h-4 w-4 text-white"></i>
+                                                        @else
+                                                            <span class="text-xs font-bold text-white">{{ $step['n'] }}</span>
+                                                        @endif
+                                                    </div>
+
+                                                    {{-- Labels --}}
+                                                    <div class="mt-2 text-center">
+                                                        <p class="text-xs font-semibold {{ $step['text'] }} leading-tight
+                                                            @if($step['state']==='current') font-bold @endif">
+                                                            {{ $step['label'] }}
+                                                            @if($step['state']==='current')
+                                                                <span class="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse align-middle"></span>
+                                                            @endif
+                                                        </p>
+                                                        <p class="text-[10px] text-gray-400 leading-snug mt-0.5 hidden sm:block">{{ $step['desc'] }}</p>
+                                                    </div>
+                                                </div>
+                                                @endforeach
+
+                                            </div>{{-- end steps row --}}
+                                        </div>
+
+                                        {{-- Info footer strip --}}
+                                        <div class="bg-violet-50 border-t border-violet-100 px-6 py-2.5 flex items-center gap-4 flex-wrap">
+                                            <div class="flex items-center gap-1.5 text-xs text-violet-700">
+                                                <i data-lucide="user-check" class="h-3.5 w-3.5 text-violet-500 shrink-0"></i>
+                                                <span><strong>Requester:</strong> {{ auth()->user()->first_name }} {{ auth()->user()->last_name }}</span>
+                                            </div>
+                                            <div class="flex items-center gap-1.5 text-xs text-violet-700">
+                                                <i data-lucide="building-2" class="h-3.5 w-3.5 text-violet-500 shrink-0"></i>
+                                                <span><strong>Your Department:</strong> {{ $userDepartmentName ?? 'Not assigned' }}</span>
+                                            </div>
+                                            <div class="flex items-center gap-1.5 text-xs text-amber-700 ml-auto">
+                                                <i data-lucide="info" class="h-3.5 w-3.5 text-amber-500 shrink-0"></i>
+                                                <span>The receiver will be notified and must approve before the file is dispatched.</span>
+                                            </div>
+                                        </div>
+
+                                    </div>{{-- end card --}}
+                                </div>
+                                @endif
+                                {{-- ===== END DIGITAL REQUEST STEPS ===== --}}
+
                                 <div class="grid grid-cols-1 xl:grid-cols-[1fr,320px] gap-6">
                                     <!-- Main Form -->
                                     <div class="space-y-6">
@@ -392,7 +502,9 @@
                                                             class="block text-sm font-medium text-gray-700">File Tracking
                                                             ID</label>
                                                         <input type="text" id="tracking-id" readonly
-                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 font-mono text-sm">
+                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 font-mono text-sm tracking-wide text-amber-700">
+                                                        {{-- Hidden field carries the real (un-encrypted) value to the backend --}}
+                                                        <input type="hidden" id="tracking-id-real">
                                                         <p class="text-xs text-gray-500">Auto-fetched from File Indexing
                                                             after selecting a file number</p>
                                                     </div>
@@ -439,6 +551,16 @@
 
                                                 <!-- Notes/Remarks Field -->
                                                 <div class="space-y-2">
+                                                    @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
+                                                    <label for="office-notes"
+                                                        class="block text-sm font-medium text-gray-700">
+                                                        Request Reason <span class="text-red-500">*</span>
+                                                    </label>
+                                                    <textarea id="office-notes" name="remarks" rows="3" required
+                                                        placeholder="State the reason for requesting this file…"
+                                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500"></textarea>
+                                                    <p class="text-xs text-gray-500">This reason will be visible to the approving officer.</p>
+                                                    @else
                                                     <label for="office-notes"
                                                         class="block text-sm font-medium text-gray-700">Notes/Remarks</label>
                                                     <textarea id="office-notes" name="remarks" rows="3"
@@ -446,6 +568,7 @@
                                                         class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
                                                     <p class="text-xs text-gray-500">Enter the reason for the file being in
                                                         this office</p>
+                                                    @endif
                                                 </div>
 
                                             </div>
@@ -590,30 +713,24 @@
                                                             @if(in_array(($module ?? ''), ['kangis', 'new_kangis'])) data-default="KANGIS Registry" @elseif(($module ?? '') === 'sltr') data-default="SLTR Registry" @elseif(($module ?? '') === 'st') data-default="ST Registry" @elseif(($module ?? '') === 'dciv') data-default="DCIV Registry" @endif
                                                             {{ in_array(strtolower($module ?? ''), ['sltr', 'dciv', 'st']) ? 'disabled' : '' }}>
                                                             <option value="">Select Registry (Origin)</option>
-                                                            @if(in_array(strtolower($module ?? ''), ['cadastral']))
-                                                                <option value="Registry 1 - Cadastral">Registry 1 - Cadastral</option>
-                                                                <option value="Registry 2 - Cadastral">Registry 2 - Cadastral</option>
-                                                            @else
-                                                                @foreach ($registries as $registry)
-                                                                    @php
-                                                                        // Normalize old plural "Registry 1 - Lands" to the
-                                                                        // canonical singular "Registry 1 - Land" used
-                                                                        // throughout the system (FileSearchController,
-                                                                        // FileIndexingController, etc.).
-                                                                        $registryDisplay = ($registry->name === 'Registry 1 - Lands')
-                                                                            ? 'Registry 1 - Land'
-                                                                            : $registry->name;
-                                                                        
-                                                                        // Enforce SLTR or ST Registry selection if in their respective modules
-                                                                        $isSelected = (
-                                                                            (($module ?? '') === 'sltr' && $registry->name === 'SLTR Registry') || 
-                                                                            (($module ?? '') === 'st' && $registry->name === 'ST Registry')
-                                                                        );
-                                                                    @endphp
-                                                                    <option value="{{ $registry->name }}" {{ $isSelected ? 'selected' : '' }}>{{ $registryDisplay }}
-                                                                    </option>
-                                                                @endforeach
-                                                            @endif
+                                                            @foreach ($registries as $registry)
+                                                                @php
+                                                                    $registryDisplay = ($registry->name === 'Registry 1 - Lands')
+                                                                        ? 'Registry 1 - Land'
+                                                                        : $registry->name;
+                                                                    $isCadastral = str_contains(strtolower($registry->name), 'cadastr');
+                                                                    $currentModule = strtolower($module ?? '');
+                                                                    $isSelected = (
+                                                                        ($currentModule === 'sltr' && $registry->name === 'SLTR Registry') ||
+                                                                        ($currentModule === 'st'   && $registry->name === 'ST Registry')
+                                                                    );
+                                                                @endphp
+                                                                @continue($currentModule === 'cadastral' && !$isCadastral)
+                                                                @continue($currentModule !== 'cadastral' && $isCadastral)
+                                                                <option value="{{ $registry->name }}"
+                                                                    data-registry-code="{{ $registry->registry_code }}"
+                                                                    {{ $isSelected ? 'selected' : '' }}>{{ $registryDisplay }}</option>
+                                                            @endforeach
                                                         </select>                 </select>
                                                         <p class="text-xs text-gray-500">Defaults to Officers as the origin
                                                             registry</p>
@@ -622,16 +739,24 @@
                                                         <label for="current-office"
                                                             class="block text-sm font-medium text-gray-700">Destination
                                                             Office (Departments) *</label>
+                                                        @php
+                                                            $isDigitalRequestModule = in_array(strtolower($module ?? ''), ['digital_request','digital-request']);
+                                                        @endphp
                                                         <select id="current-office" name="receiving_office_name"
-                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                            class="block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none {{ $isDigitalRequestModule ? 'border-violet-300 bg-violet-50 text-violet-900 pointer-events-none cursor-default' : 'border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500' }}">
                                                             <option value="">Select destination</option>
                                                             @foreach ($departments as $dept)
-                                                                <option value="{{ $dept->department }}">{{ $dept->department }}
+                                                                <option value="{{ $dept->department }}"
+                                                                    @if($isDigitalRequestModule && ($userDepartmentName ?? '') === $dept->department) selected @endif>
+                                                                    {{ $dept->department }}
                                                                 </option>
                                                             @endforeach
                                                         </select>
-                                                        <p class="text-xs text-gray-500">Select the destination
-                                                            department/office</p>
+                                                        @if($isDigitalRequestModule)
+                                                            <p class="text-xs text-violet-600">Auto-set to your department</p>
+                                                        @else
+                                                            <p class="text-xs text-gray-500">Select the destination department/office</p>
+                                                        @endif
                                                     </div>
                                                     @if(($module ?? '') === 'kangis')
                                                     <div class="space-y-2">
@@ -793,34 +918,72 @@
                                                         <label for="receiving-office"
                                                             class="block text-sm font-medium text-gray-700">Receiving Office
                                                             *</label>
-                                                        <select id="receiving-office" name="receiving_office_code"
-                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                                            <option value="">Select receiving office</option>
-                                                            @foreach ($offices as $office)
-                                                                <option value="{{ $office->office_code }}"
-                                                                    data-name="{{ $office->office_name }}"
-                                                                    data-department="{{ $office->department }}">
-                                                                    {{ $office->office_name }}
-                                                                </option>
-                                                            @endforeach
-                                                        </select>
+
+                                                        @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
+                                                            {{-- Digital Request: dropdown scoped to the user's department --}}
+                                                            @if($userDepartmentOffices->isEmpty())
+                                                                <div class="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-md">
+                                                                    <i data-lucide="alert-triangle" class="h-4 w-4 text-amber-500 shrink-0"></i>
+                                                                    <span class="text-xs text-amber-700">No offices found for your department. Contact admin.</span>
+                                                                </div>
+                                                                <select id="receiving-office" name="receiving_office_code" class="hidden" aria-hidden="true">
+                                                                    <option value=""></option>
+                                                                </select>
+                                                            @else
+                                                                <select id="receiving-office" name="receiving_office_code"
+                                                                    class="block w-full px-3 py-2 border border-violet-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500 bg-white">
+                                                                    <option value="">— Select your office —</option>
+                                                                    @foreach($userDepartmentOffices as $deptOffice)
+                                                                        <option value="{{ $deptOffice->office_code }}"
+                                                                            data-name="{{ $deptOffice->office_name }}"
+                                                                            data-department="{{ $deptOffice->department }}"
+                                                                            @if($loop->first) selected @endif>
+                                                                            {{ $deptOffice->office_name }}
+                                                                        </option>
+                                                                    @endforeach
+                                                                </select>
+                                                                <p class="text-xs text-violet-600">Offices under your department: <strong>{{ $userDepartmentName }}</strong></p>
+                                                            @endif
+                                                        @else
+                                                            <select id="receiving-office" name="receiving_office_code"
+                                                                class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                                <option value="">Select receiving office</option>
+                                                                @foreach ($offices as $office)
+                                                                    <option value="{{ $office->office_code }}"
+                                                                        data-name="{{ $office->office_name }}"
+                                                                        data-department="{{ $office->department }}">
+                                                                        {{ $office->office_name }}
+                                                                    </option>
+                                                                @endforeach
+                                                            </select>
+                                                        @endif
                                                     </div>
                                                     <div id="receiving-officer-group" class="space-y-2 @if(($module ?? '') === 'new_kangis') hidden @endif" @if(($module ?? '') === 'new_kangis') aria-hidden="true" @endif>
                                                         <label for="receiving-officer"
-                                                            class="block text-sm font-medium text-gray-700">Receiving
-                                                            Officer *</label>
-                                                        <select id="receiving-officer"
-                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                                            <option value="">Select receiving officer</option>
-                                                            @foreach ($receivingOfficers as $officer)
-                                                                <option value="{{ $officer->id }}">{{ $officer->first_name }}
-                                                                    {{ $officer->last_name }}
-                                                                </option>
-                                                            @endforeach
-                                                            <option value="__ADD_OTHER__" class="font-bold text-blue-600">+ Add Other Officer...</option>
-                                                        </select>
-                                                        <p id="receiving-officer-hint" class="text-xs text-gray-500">
-                                                            Select a MLPP officer</p>
+                                                            class="block text-sm font-medium text-gray-700">Receiving Officer *</label>
+
+                                                        @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
+                                                            {{-- Digital Request: show read-only field only; NO <select id="receiving-officer"> so Select2 never initialises --}}
+                                                            <input type="text"
+                                                                value="{{ auth()->user()->first_name }} {{ auth()->user()->last_name }}"
+                                                                class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 focus:outline-none"
+                                                                readonly>
+                                                            <input type="hidden" name="receiving_officer_id" value="{{ auth()->id() }}">
+                                                            <input type="hidden" name="receiving_officer_name" value="{{ auth()->user()->first_name }} {{ auth()->user()->last_name }}">
+                                                            <p class="text-xs text-gray-500">The officer receiving this file (Current User)</p>
+                                                        @else
+                                                            <select id="receiving-officer"
+                                                                class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                                <option value="">Select receiving officer</option>
+                                                                @foreach ($receivingOfficers as $officer)
+                                                                    <option value="{{ $officer->id }}">
+                                                                        {{ $officer->first_name }} {{ $officer->last_name }}
+                                                                    </option>
+                                                                @endforeach
+                                                                <option value="__ADD_OTHER__" class="font-bold text-blue-600">+ Add Other Officer...</option>
+                                                            </select>
+                                                            <p id="receiving-officer-hint" class="text-xs text-gray-500">Select a MLPP officer</p>
+                                                        @endif
                                                     </div>
                                                     @if(($module ?? '') === 'kangis')
                                                     <p id="receiving-details-lock-note" class="hidden text-xs text-amber-600 font-medium mt-1">
@@ -833,19 +996,29 @@
                                                 @endif
 
 
-                                                <!-- Sending Officer Section -->
+                                                <!-- Sending Officer / Requester Section -->
                                                 <div class="space-y-2">
                                                     <label for="sending-officer-name"
-                                                        class="block text-sm font-medium text-gray-700">Sending
-                                                        Officer</label>
+                                                        class="block text-sm font-medium text-gray-700">
+                                                        @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
+                                                            Requester
+                                                        @else
+                                                            Sending Officer
+                                                        @endif
+                                                    </label>
                                                     <input type="text" id="sending-officer-name"
                                                         value="{{ auth()->user()->first_name }} {{ auth()->user()->last_name }}"
                                                         class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 focus:outline-none"
                                                         readonly>
                                                     <input type="hidden" name="sending_officer_id"
                                                         value="{{ auth()->user()->id }}">
-                                                    <p class="text-xs text-gray-500">The officer sending this file (Current
-                                                        User)</p>
+                                                    <p class="text-xs text-gray-500">
+                                                        @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
+                                                            The officer requesting this file (Current User)
+                                                        @else
+                                                            The officer sending this file (Current User)
+                                                        @endif
+                                                    </p>
                                                 </div>
                                                 <div id="office-info" class="hidden p-3 bg-gray-50 rounded-lg">
                                                     <div class="flex items-center gap-2 mb-1">
@@ -1097,6 +1270,12 @@
                                                 class="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 min-w-[170px]">
                                                 <i data-lucide="send" class="h-4 w-4 mr-2"></i>
                                                 Send to Director GIS
+                                            </button>
+                                            @elseif(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
+                                            <button id="saveFileLogBtn"
+                                                class="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-violet-600 hover:bg-violet-700 min-w-[150px]">
+                                                <i data-lucide="send" class="h-4 w-4 mr-2"></i>
+                                                Send Request
                                             </button>
                                             @else
                                             <button id="saveFileLogBtn"
@@ -1352,11 +1531,6 @@
                                                 <input type="date" id="mr-date-to"
                                                     class="px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                             </div>
-                                            <button id="refresh-logs"
-                                                class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
-                                                <i data-lucide="refresh-cw" class="h-4 w-4 mr-2"></i>
-                                                Refresh
-                                            </button>
                                             <!-- Export dropdown -->
                                             <div class="relative" id="export-dropdown-wrapper">
                                                 <button id="export-dropdown-btn"
@@ -1375,10 +1549,15 @@
                                                     <button id="export-pdf-logs"
                                                         class="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-slate-50 rounded-b-lg">
                                                         <i data-lucide="file" class="h-4 w-4 text-rose-500"></i>
-                                                        Export PDF (Date Range)
+                                                        Export PDF
                                                     </button>
                                                 </div>
                                             </div>
+                                            <button id="refresh-logs"
+                                                class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+                                                <i data-lucide="refresh-cw" class="h-4 w-4 mr-2"></i>
+                                                Refresh
+                                            </button>
                                         </div>
                                     </div>
                                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1495,16 +1674,99 @@
                                 <div id="preview-content" class="py-4">
                                     <!-- Preview content will be dynamically generated -->
                                 </div>
-                                <div class="flex justify-end gap-3 pt-4 border-t border-gray-200">
+
+                                @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
+                                {{-- ── Digital Signature Verification Panel (Digital Request only) ── --}}
+                                <div id="dr-sig-panel" class="border-t border-violet-100 pt-4 mt-1">
+                                    <div class="flex items-center gap-2 mb-3">
+                                        <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100 shrink-0">
+                                            <i data-lucide="shield-check" class="h-4 w-4 text-violet-600"></i>
+                                        </div>
+                                        <div>
+                                            <h4 class="text-sm font-bold text-slate-800">Digital Signature Verification</h4>
+                                            <p class="text-xs text-slate-500">Verify your identity to sign and send this request.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/80 to-white p-4 space-y-3">
+                                        <input type="hidden" id="dr-sig-verified" value="0">
+
+                                        <div class="grid gap-3 sm:grid-cols-3">
+                                            {{-- Method --}}
+                                            <div class="space-y-1">
+                                                <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wide">Verification Method</label>
+                                                <select id="dr-sig-method"
+                                                    class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-violet-500 focus:ring-2 focus:ring-violet-100">
+                                                    <option value="">Select Method</option>
+                                                    <option value="email">Email OTP</option>
+                                                    <option value="sms">SMS OTP</option>
+                                                    <option value="password">Password Confirmation</option>
+                                                </select>
+                                            </div>
+
+                                            {{-- OTP Code --}}
+                                            <div class="space-y-1" id="dr-sig-otp-wrapper" style="display:none">
+                                                <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wide">OTP Code</label>
+                                                <div class="flex gap-2">
+                                                    <input type="text" id="dr-sig-otp-code" maxlength="6" placeholder="Enter OTP"
+                                                        class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100">
+                                                    <button type="button" id="dr-sig-send-otp"
+                                                        class="inline-flex items-center justify-center rounded-lg bg-indigo-600 hover:bg-indigo-700 px-3 py-2 text-xs font-bold text-white whitespace-nowrap shadow-sm">
+                                                        Send OTP
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {{-- Password --}}
+                                            <div class="space-y-1" id="dr-sig-pwd-wrapper" style="display:none">
+                                                <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wide">Confirm Password</label>
+                                                <input type="password" id="dr-sig-password" placeholder="Your account password"
+                                                    class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100">
+                                            </div>
+                                        </div>
+
+                                        <div class="flex items-center gap-3 flex-wrap">
+                                            <button type="button" id="dr-sig-verify-btn"
+                                                class="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 px-4 py-2 text-xs font-bold text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                                                <i data-lucide="shield-check" class="h-3.5 w-3.5"></i>
+                                                <span id="dr-sig-verify-text">Verify</span>
+                                            </button>
+                                            <span id="dr-sig-feedback" class="text-xs font-medium text-slate-500"></span>
+
+                                            <div id="dr-sig-img-wrap" class="hidden ml-auto flex items-center gap-2">
+                                                <img id="dr-sig-img" src="" alt="Your Signature"
+                                                    class="h-9 object-contain border border-violet-300 rounded bg-white px-2 py-1">
+                                                <span class="inline-flex items-center gap-1 text-[10px] font-black text-violet-700 uppercase tracking-wide">
+                                                    <i data-lucide="check-circle" class="h-3 w-3"></i> Verified
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div class="text-right text-xs text-slate-400 italic border-t border-slate-100 pt-2">
+                                            Signing as: <strong class="text-slate-600">{{ trim(auth()->user()->first_name . ' ' . auth()->user()->last_name) }}</strong>
+                                        </div>
+                                    </div>
+                                </div>
+                                @endif
+
+                                <div class="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-2">
                                     <button id="close-preview-btn"
                                         class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
                                         Cancel
                                     </button>
+                                    @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
+                                    <button id="save-tracker-btn" disabled
+                                        class="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-md text-sm font-medium text-white bg-violet-600 hover:bg-violet-700 transition-colors opacity-50 cursor-not-allowed">
+                                        <i data-lucide="send" class="h-4 w-4 mr-2"></i>
+                                        Send Request
+                                    </button>
+                                    @else
                                     <button id="save-tracker-btn"
                                         class="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors">
                                         <i data-lucide="save" class="h-4 w-4 mr-2"></i>
                                         Save File Tracker
                                     </button>
+                                    @endif
                                 </div>
                             </div>
                         </div>
@@ -2088,6 +2350,7 @@
                             window.isNewKangisMode = {{ ($module ?? '') === 'new_kangis' ? 'true' : 'false' }};
                             window.currentModule = '{{ $module ?? '' }}';
                             window.isApprovalModule = {{ in_array($module ?? '', ['dgis', 'dg']) ? 'true' : 'false' }};
+                            window.isDigitalRequestModule = {{ in_array(strtolower($module ?? ''), ['digital_request', 'digital-request']) ? 'true' : 'false' }};
                         </script>
 
                         @include('create_file_tracker_page.partials.quick-actions-js')

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PlotSubdivisionApplication;
 use App\Models\PlotApplicationSize;
 use App\Models\StreetName;
+use App\Services\ParcelUpdateNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +15,10 @@ use Illuminate\Support\Facades\Validator;
 
 class PlotSubdivisionController extends Controller
 {
+    public function __construct(
+        protected ParcelUpdateNotificationService $parcelNotifier
+    ) {}
+
     public function index(Request $request)
     {
         $limit = max(10, min((int) $request->input('limit', 50), 200));
@@ -67,7 +72,11 @@ class PlotSubdivisionController extends Controller
             'state' => 'nullable|string|max:100',
             'plot_sizes' => 'required|array',
             'plot_sizes.*' => 'required|numeric|min:0',
-            'site_plan' => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
+            'site_plan'          => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
+            'ownership_document' => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
+            'application_letter' => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
+            'means_of_id'        => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
+            'tax_clearance'      => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
         ]);
 
         if ($validator->fails()) {
@@ -94,11 +103,16 @@ class PlotSubdivisionController extends Controller
                 'knupda_fee' => $request->knupda_fee,
             ]);
 
-            if ($request->hasFile('site_plan')) {
-                $file = $request->file('site_plan');
-                $filename = 'subdivision_' . $application->id . '_' . time() . '.' . $file->getClientOriginalExtension();
-                $path = $file->storeAs('site_plans', $filename, 'public');
-                $application->update(['site_plan' => $path]);
+            $docUpdates = [];
+            foreach (['site_plan', 'ownership_document', 'application_letter', 'means_of_id', 'tax_clearance'] as $field) {
+                if ($request->hasFile($field)) {
+                    $file = $request->file($field);
+                    $filename = 'subdivision_' . $application->id . '_' . $field . '_' . time() . '.' . $file->getClientOriginalExtension();
+                    $docUpdates[$field] = $file->storeAs('parcel_documents/subdivision', $filename, 'public');
+                }
+            }
+            if (!empty($docUpdates)) {
+                $application->update($docUpdates);
             }
 
             foreach ($request->plot_sizes as $index => $size) {
@@ -112,6 +126,15 @@ class PlotSubdivisionController extends Controller
             }
 
             DB::connection('sqlsrv')->commit();
+
+            $this->parcelNotifier->notifyCreated(
+                'subdivision',
+                $application->id,
+                $application->file_no,
+                $application->file_title,
+                $application->applicant_name ?? ''
+            );
+
             return response()->json(['success' => true, 'message' => 'Subdivision application created successfully.']);
         } catch (\Exception $e) {
             DB::connection('sqlsrv')->rollBack();
@@ -135,6 +158,17 @@ class PlotSubdivisionController extends Controller
             'status' => PlotSubdivisionApplication::STATUS_APPROVED,
             'updated_by' => Auth::id(),
         ]);
+
+        $approver = Auth::user();
+        $approverName = $approver ? ($approver->name ?? $approver->username ?? '') : '';
+        $this->parcelNotifier->notifyApproved(
+            'subdivision',
+            $record->id,
+            $record->file_no,
+            $record->file_title,
+            $approverName
+        );
+
         return response()->json(['success' => true, 'message' => 'Application approved.']);
     }
 

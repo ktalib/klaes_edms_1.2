@@ -474,15 +474,25 @@
                         </div>
                     </div>
 
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">New Purpose <span class="text-red-500">*</span></label>
-                        <select id="cop-purpose" name="purpose"
-                            class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm font-medium">
-                            <option value="">- Select New Purpose -</option>
-                            @foreach($landUseOptions as $code => $label)
-                                <option value="{{ $code }}">{{ $label }}</option>
-                            @endforeach
-                        </select>
+                    {{-- Hidden field keeps the prefix code (RES/COM/IND) used for file-number generation --}}
+                    <input type="hidden" name="purpose" id="cop-purpose">
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">New Land Use <span class="text-red-500">*</span></label>
+                            <select id="cop-land-use-id"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm font-medium">
+                                <option value="">- Select New Land Use -</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">New Purpose <span class="text-red-500">*</span></label>
+                            <select id="cop-new-purpose" name="new_purpose"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm font-medium"
+                                disabled>
+                                <option value="">- Select Land Use First -</option>
+                            </select>
+                        </div>
                     </div>
 
                     {{-- File Details (populated after file selection) --}}

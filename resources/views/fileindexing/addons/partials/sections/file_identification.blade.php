@@ -150,6 +150,11 @@
                     inputmode="numeric"
                     oninput="this.value = this.value.replace(/[^0-9]/g,'')" required>
             </div>
+            {{-- Inline validation error --}}
+            <p id="kangis-placeholder-error" class="hidden mt-1.5 text-xs text-red-600 flex items-center gap-1">
+                <i data-lucide="alert-circle" class="h-3.5 w-3.5 shrink-0"></i>
+                <span id="kangis-placeholder-error-text">Please select a prefix and enter the serial number.</span>
+            </p>
             {{-- Temporary checkbox --}}
             <div class="mt-2 flex items-center gap-2">
                 <input type="checkbox" id="kangis-fileno-is-temp"

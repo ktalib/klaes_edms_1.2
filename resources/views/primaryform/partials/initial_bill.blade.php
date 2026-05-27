@@ -70,10 +70,9 @@
             <i data-lucide="calendar" class="w-4 h-4 mr-1 text-green-600"></i>
             has been paid on
           </label>
-          <input type="text"
+          <input type="date"
                  class="w-full p-2 border border-gray-300 rounded-md initial-bill-date"
                  name="application_fee_payment_date"
-                 placeholder="YYYY-MM-DD"
                  value="{{ $draftValue('application_fee_payment_date') }}">
         </div>
         <div>
@@ -101,10 +100,9 @@
             <i data-lucide="calendar" class="w-4 h-4 mr-1 text-green-600"></i>
             has been paid on
           </label>
-          <input type="text"
+          <input type="date"
                  class="w-full p-2 border border-gray-300 rounded-md initial-bill-date"
                  name="processing_fee_payment_date"
-                 placeholder="YYYY-MM-DD"
                  value="{{ $draftValue('processing_fee_payment_date') }}">
         </div>
         <div>
@@ -132,10 +130,9 @@
             <i data-lucide="calendar" class="w-4 h-4 mr-1 text-green-600"></i>
             has been paid on
           </label>
-          <input type="text"
+          <input type="date"
                  class="w-full p-2 border border-gray-300 rounded-md initial-bill-date"
                  name="site_plan_fee_payment_date"
-                 placeholder="YYYY-MM-DD"
                  value="{{ $draftValue('site_plan_fee_payment_date') }}">
         </div>
         <div>
@@ -173,10 +170,9 @@
             <i data-lucide="calendar" class="w-4 h-4 mr-1 text-green-600"></i>
             has been paid on
           </label>
-          <input type="text"
+          <input type="date"
                  class="w-full p-2 border border-gray-300 rounded-md initial-bill-date"
                  name="application_fee_payment_date"
-                 placeholder="YYYY-MM-DD"
                  value="{{ $draftValue('application_fee_payment_date') }}">
         </div>
         <div>
@@ -204,10 +200,9 @@
             <i data-lucide="calendar" class="w-4 h-4 mr-1 text-green-600"></i>
             has been paid on
           </label>
-          <input type="text"
+          <input type="date"
                  class="w-full p-2 border border-gray-300 rounded-md initial-bill-date"
                  name="processing_fee_payment_date"
-                 placeholder="YYYY-MM-DD"
                  value="{{ $draftValue('processing_fee_payment_date') }}">
         </div>
         <div>
@@ -235,10 +230,9 @@
             <i data-lucide="calendar" class="w-4 h-4 mr-1 text-green-600"></i>
             has been paid on
           </label>
-          <input type="text"
+          <input type="date"
                  class="w-full p-2 border border-gray-300 rounded-md initial-bill-date"
                  name="site_plan_fee_payment_date"
-                 placeholder="YYYY-MM-DD"
                  value="{{ $draftValue('site_plan_fee_payment_date') }}">
         </div>
         <div>

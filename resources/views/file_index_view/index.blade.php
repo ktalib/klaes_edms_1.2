@@ -160,10 +160,11 @@
                                                    role="menuitem">
                                                     View Record
                                                 </a>
-                                                <a href="javascript:void(0)" 
-                                                   class="edit-transaction-btn block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900" 
+                                                <a href="javascript:void(0)"
+                                                   class="edit-transaction-btn block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
                                                    data-id="${row.id}"
-                                                   data-file-number="${row.file_number}"
+                                                   data-file-number="${row.file_number || ''}"
+                                                   data-temp-file-no="${row.temp_file_no || row.temp_fileno || ''}"
                                                    data-file-title="${row.file_title || ''}"
                                                    data-lga="${row.lga || ''}"
                                                    data-district="${row.district || ''}"
@@ -374,8 +375,8 @@
                     hideAllMenus();
                     
                     const dataset = editBtn.dataset;
-                    const fileNumber = dataset.fileNumber;
-                    
+                    const fileNumber = dataset.fileNumber || dataset.tempFileNo || '';
+
                     if (!fileNumber) {
                         alert('File number not found for this record.');
                         return;
@@ -397,6 +398,7 @@
                     const fileIndexingData = {
                         id: dataset.id,
                         file_number: fileNumber,
+                        temp_file_no: dataset.tempFileNo || '',
                         file_title: dataset.fileTitle,
                         lga: dataset.lga,
                         district: dataset.district,

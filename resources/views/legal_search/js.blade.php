@@ -2646,10 +2646,10 @@ const executeSearchAjax = (filters, searchData) => {
         <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(item, 'fileNumber')}</td>
         <td><span class="source-badge ${sourceBadgeClass(item.source_table)}">${item.source_table}</span></td>
         <td class="text-center text-xs ${weightColorClass}">${weightDisplay}</td>
+        <td>${transType}</td>
         <td>${party1}</td>
         <td>${party2}</td>
         <td>${party3}</td>
-        <td>${transType}</td>
         <td>${regParticulars}</td>
         <td>${date}</td>
         <td>${regTime}</td>
@@ -2666,6 +2666,10 @@ const executeSearchAjax = (filters, searchData) => {
               <button class="apply-file-info-action flex items-center w-full px-3 py-2 text-xs text-gray-700 hover:bg-gray-50" data-idx="${idx}">
                 <i data-lucide="check" class="w-3.5 h-3.5 mr-2 text-green-600"></i>
                 Apply to File Info
+              </button>
+              <button class="add-comment-btn flex items-center w-full px-3 py-2 text-xs text-blue-700 hover:bg-blue-50" data-idx="${idx}">
+                <i data-lucide="message-square" class="w-3.5 h-3.5 mr-2"></i>
+                Add Comment
               </button>
               ${alreadyCaveated && (timelineSourceToDbTable(item.source_table) === 'pra' || timelineSourceToDbTable(item.source_table) === 'CofO_staging') ? `
               <button class="transfer-caveat-btn flex items-center w-full px-3 py-2 text-xs text-red-700 hover:bg-red-50"
@@ -2768,6 +2772,117 @@ const executeSearchAjax = (filters, searchData) => {
           menu.style.marginBottom = '0.25rem';
         }
       });
+
+      // "Add Comment" button — opens the Record Comment modal for the clicked row.
+      timelineTable.addEventListener('click', (e) => {
+        const btn = e.target.closest('.add-comment-btn');
+        if (!btn) return;
+        e.stopPropagation();
+        btn.closest('.timeline-action-menu')?.classList.add('hidden');
+
+        const txns = window._timelineTransactions || [];
+        const idx = parseInt(btn.dataset.idx, 10);
+        const rowData = txns[idx] || null;
+
+        const modal = document.getElementById('ls-add-comment-modal');
+        if (!modal || !rowData) return;
+
+        // Store record identity on the modal for the save handler
+        modal.dataset.recordTable = timelineSourceToDbTable(rowData.source_table || '');
+        modal.dataset.recordId = rowData.id ?? '';
+
+        // Populate header subtitle
+        const rowLabel = document.getElementById('ls-add-comment-row-label');
+        if (rowLabel) {
+          const transType = toProperCase(getMappedValue(rowData, 'transactionType') || '');
+          const party1 = toProperCase(rowData.party_1 || rowData.grantor || '');
+          rowLabel.textContent = [transType, party1].filter(Boolean).join(' — ') || 'Selected record';
+        }
+
+        // Pre-fill with existing comment if any
+        const commentText = document.getElementById('ls-add-comment-text');
+        if (commentText) {
+          const existing = getMappedValue(rowData, 'comments') || '';
+          commentText.value = existing;
+        }
+
+        const status = document.getElementById('ls-add-comment-status');
+        if (status) { status.textContent = ''; status.classList.add('hidden'); }
+
+        modal.classList.remove('hidden');
+        setTimeout(() => commentText?.focus(), 50);
+      });
+
+      // Add Comment modal — close / save (bound once globally, not per render)
+      if (!window.__addCommentModalBound) {
+        window.__addCommentModalBound = true;
+
+        const closeAddCommentModal = () => {
+          const modal = document.getElementById('ls-add-comment-modal');
+          if (modal) modal.classList.add('hidden');
+          const status = document.getElementById('ls-add-comment-status');
+          if (status) { status.textContent = ''; status.classList.add('hidden'); }
+        };
+
+        document.getElementById('ls-add-comment-close')?.addEventListener('click', closeAddCommentModal);
+        document.getElementById('ls-add-comment-cancel')?.addEventListener('click', closeAddCommentModal);
+        document.getElementById('ls-add-comment-backdrop')?.addEventListener('click', closeAddCommentModal);
+
+        document.getElementById('ls-add-comment-save')?.addEventListener('click', () => {
+          const modal = document.getElementById('ls-add-comment-modal');
+          const recordTable = modal?.dataset.recordTable || '';
+          const recordId = parseInt(modal?.dataset.recordId || '0', 10);
+          const comment = document.getElementById('ls-add-comment-text')?.value?.trim() || '';
+          const saveBtn = document.getElementById('ls-add-comment-save');
+          const status = document.getElementById('ls-add-comment-status');
+
+          if (!recordTable || !recordId) { alert('Record information missing.'); return; }
+          if (!comment) { alert('Please enter a comment.'); return; }
+
+          if (saveBtn) saveBtn.disabled = true;
+
+          fetch('/legal_search/update', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
+            },
+            body: JSON.stringify({ table: recordTable, id: recordId, fields: { comments: comment } })
+          })
+          .then(r => r.json())
+          .then(res => {
+            if (status) {
+              status.textContent = res.success ? 'Comment saved successfully.' : (res.message || 'Failed to save.');
+              status.className = `text-xs ${res.success ? 'text-green-600' : 'text-red-600'}`;
+              status.classList.remove('hidden');
+            }
+            if (res.success) {
+              // Update the in-memory record so the timeline reflects the new comment
+              const txns = window._timelineTransactions || [];
+              const tbl = recordTable;
+              const rid = recordId;
+              txns.forEach(t => {
+                if (timelineSourceToDbTable(t.source_table || '') === tbl && Number(t.id) === rid) {
+                  t.comments = comment;
+                }
+              });
+              renderTimeline();
+              setTimeout(closeAddCommentModal, 1000);
+            } else {
+              if (saveBtn) saveBtn.disabled = false;
+            }
+          })
+          .catch(() => {
+            if (status) {
+              status.textContent = 'Network error. Please try again.';
+              status.className = 'text-xs text-red-600';
+              status.classList.remove('hidden');
+            }
+            if (saveBtn) saveBtn.disabled = false;
+          });
+        });
+      }
 
       // "Add Caveat" button in timeline action menu
       timelineTable.addEventListener('click', (e) => {
@@ -3393,17 +3508,8 @@ const executeSearchAjax = (filters, searchData) => {
     const mortgageCaveat = hasMortgage && !hasRelease;
     const isClear = hasCofo && !hasCaveat && !mortgageCaveat;
 
-    // No CoFO section: show when file has no CoFO
-    const noCofoSection = document.getElementById('no-cofo-comment-section');
-    if (noCofoSection) {
-      noCofoSection.classList.toggle('hidden', hasCofo);
-    }
-
-    // Encumbrance section: show when file is clear (has CoFO, no caveat, no mortgage issue)
-    const encSection = document.getElementById('encumbrance-comment-section');
-    if (encSection) {
-      encSection.classList.toggle('hidden', !isClear);
-    }
+    // Both sections are always visible regardless of CofO/caveat state.
+    // (Previously conditional; now enabled for all records per user requirement.)
   };
 
   document.querySelectorAll('.save-comment-btn').forEach(btn => {

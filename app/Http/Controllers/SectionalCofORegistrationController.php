@@ -107,6 +107,20 @@ class SectionalCofORegistrationController extends Controller
         $rejectedCount = 0;
         $totalCount = $approvedUnitApplications->count();
 
+        // Build lookup of file numbers that have a registered ST Assignment
+        $fileNos = $approvedUnitApplications->pluck('fileno')->filter()->unique()->values()->toArray();
+        $registeredAssignmentFilenos = [];
+        if (!empty($fileNos)) {
+            $registeredAssignmentFilenos = DB::connection('sqlsrv')
+                ->table('deed_registrations')
+                ->whereIn('fileno', $fileNos)
+                ->where('instrument_type', 'ST Assignment (Transfer of Title)')
+                ->where('status', 'registered')
+                ->pluck('fileno')
+                ->flip()
+                ->toArray();
+        }
+
         // Process owner names and determine status
         foreach ($approvedUnitApplications as $application) {
             if (!empty($application->multiple_owners_names)) {
@@ -134,7 +148,9 @@ class SectionalCofORegistrationController extends Controller
                 $application->status = 'pending';
                 $pendingCount++;
             }
-            
+
+            $application->assignment_registered = isset($registeredAssignmentFilenos[$application->fileno]);
+
             // Format property description
             $application->property_description = 'Unit ' . $application->unit_number . 
                 (!empty($application->block_number) ? ', Block ' . $application->block_number : '') .

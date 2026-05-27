@@ -1381,6 +1381,7 @@ class FileNumberApiController extends Controller
             $selects[] = 'fi.tp_no as fi_tp_no';
             $selects[] = 'fi.lga as fi_lga';
             $selects[] = 'fi.district as fi_district';
+            $selects[] = 'fi.file_title as fi_file_title';
             
             $selects[] = DB::raw("LTRIM(RTRIM(CONCAT(ISNULL(creator_users.first_name, ''), CASE WHEN ISNULL(creator_users.last_name, '') = '' THEN '' ELSE ' ' END, ISNULL(creator_users.last_name, '')))) as created_by_name");
         }
@@ -1405,7 +1406,7 @@ class FileNumberApiController extends Controller
             'st_file_no' => $record['st_file_no'] ?? null,
             'kangis_file_no' => $record['kangisFileNo'] ?? null,
             'new_kangis_file_no' => $record['NewKANGISFileNo'] ?? null,
-            'file_name' => $record['FileName'] ?? null,
+            'file_name' => $record['FileName'] ?? $record['fi_file_title'] ?? null,
             'location' => $record['location'] ?? $record['ma_location'] ?? null,
             'lga'      => $record['lga'] ?? $record['fi_lga'] ?? $record['ma_lga'] ?? null,
             'plot_no'  => $record['plot_no'] ?? $record['fi_plot_no'] ?? $record['ma_plot_no'] ?? null,

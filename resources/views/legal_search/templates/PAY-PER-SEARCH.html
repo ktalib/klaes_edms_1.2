@@ -438,13 +438,14 @@
         <thead>
           <tr class="header-row">
             <th style="width: 3%">S/N</th>
-            <th style="width: 12%">Instrument Type</th>
-            <th style="width: 14%">Party 1</th>
-            <th style="width: 14%">Party 2</th>
-            <th style="width: 10%" class="party-3-col">Party 3</th>
-            <th style="width: 10%" class="party-4-col">Party 4</th>
-            <th style="width: 10%">Reg. Time/Date</th>
-            <th style="width: 10%">Particulars</th>
+            <th style="width: 9%">File No</th>
+            <th style="width: 11%">Instrument Type</th>
+            <th style="width: 12%">Party 1</th>
+            <th style="width: 12%">Party 2</th>
+            <th style="width: 9%" class="party-3-col">Party 3</th>
+            <th style="width: 9%" class="party-4-col">Party 4</th>
+            <th style="width: 9%">Reg. Time/Date</th>
+            <th style="width: 9%">Particulars</th>
             <th style="width: 5%">Caveat</th>
             <th>Comments</th>
           </tr>
@@ -622,6 +623,7 @@
             const rows = d.rows.map(row => `
                 <tr>
                   <td>${row.sn}</td>
+                  <td>${row.file_no || '-'}</td>
                   <td>${row.instrument_type}</td>
                   <td>${row.grantor}</td>
                   <td>${row.grantee}</td>

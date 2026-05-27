@@ -477,6 +477,7 @@
                             <input type="hidden" name="new_purpose" x-model="newPurpose">
                             <input type="hidden" name="subdivision_app_id" x-model="subdivisionAppId">
                             <input type="hidden" name="merger_app_id" x-model="mergerAppId">
+                            <input type="hidden" name="separation_app_id" x-model="separationAppId">
 
                             <!-- Application Type Selection -->
                             <div class="bg-gray-50 p-4 rounded-lg border border-gray-100">
@@ -536,6 +537,7 @@
                                             <option value="change_of_purpose">Change of Purpose</option>
                                             <option value="subdivision">Subdivision</option>
                                             <option value="merger">Merger</option>
+                                            <option value="separation">Separation</option>
                                         </select>
                                     </div>
                                 </div>
@@ -1088,6 +1090,41 @@
                                             </div>
                                         </div>
 
+                                        <!-- Separation Related Section -->
+                                        <div x-show="fileOption === 'separation'" x-transition class="mb-4">
+                                            <div class="bg-violet-50 p-4 rounded-lg border border-violet-200 shadow-sm">
+                                                <div class="flex items-center justify-between mb-3">
+                                                    <label class="block text-sm font-semibold text-gray-700">
+                                                        <i data-lucide="split" class="w-4 h-4 inline mr-1 text-violet-600"></i>
+                                                        Separation Selection
+                                                    </label>
+                                                    <button type="button" @click="openSeparationFileModal()"
+                                                            class="px-3 py-1.5 bg-violet-600 text-white text-xs font-semibold rounded-md hover:bg-violet-700 transition-colors flex items-center gap-1.5">
+                                                        <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                                                        Select Separation File
+                                                    </button>
+                                                </div>
+                                                <div class="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">Source File Number</label>
+                                                        <input type="text" readonly x-model="separationFileNo"
+                                                            class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-mono"
+                                                            placeholder="No file selected">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">No. of Plots (Batch Size)</label>
+                                                        <input type="text" readonly :value="separationAppId ? batchQuantity : 'N/A'"
+                                                            class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-bold"
+                                                            placeholder="--">
+                                                    </div>
+                                                    <div x-show="relatedFileNo" class="col-span-2">
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">Related File Number</label>
+                                                        <div class="px-3 py-2 border border-gray-200 rounded-md bg-white text-blue-700 font-bold" x-text="relatedFileNo"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
                                     <!-- Year and Serial Number Grid -->
                                     <div class="grid grid-cols-2 gap-4 mb-4">
                                         <!-- Year -->
@@ -1109,7 +1146,7 @@
                                                     <i data-lucide="hash" class="w-4 h-4 inline mr-1"></i>
                                                     Serial No.
                                                 </span>
-                                                <template x-if="['normal', 'subdivision', 'merger', 'temporary'].includes(fileOption)">
+                                                <template x-if="['normal', 'subdivision', 'merger', 'separation', 'temporary'].includes(fileOption)">
                                                     <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100" 
                                                           x-text="'Next: ' + getNextSerialForLandUse(prefix || landUse)">
                                                     </span>
@@ -1241,67 +1278,107 @@
                                             </button>
                                         </div>
 
-                                        <!-- 2x2 Grid Layout -->
-                                        <div class="grid grid-cols-2 gap-4">
-                                            <!-- Row 1, Col 1: Plot Number -->
+                                        <!-- Location Details Fields -->
+                                        <div class="grid grid-cols-2 gap-3">
+
+                                            <!-- TP Number: custom search -->
+                                            <div class="relative">
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">TP Number</label>
+                                                <div class="relative">
+                                                    <input type="text"
+                                                           id="tp_search_input"
+                                                           :value="tpSearchQuery"
+                                                           @input="tpSearchQuery = $event.target.value; debounceTpSearch()"
+                                                           @keydown.escape="tpSearchOpen = false"
+                                                           @keydown.arrow-down.prevent="tpFocusNext()"
+                                                           @keydown.arrow-up.prevent="tpFocusPrev()"
+                                                           @keydown.enter.prevent="tpSelectFocused()"
+                                                           @blur="setTimeout(() => tpSearchOpen = false, 150)"
+                                                           autocomplete="off"
+                                                           placeholder="Type to search TP no..."
+                                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-7">
+                                                    <button type="button" x-show="tpNo"
+                                                            @click="clearTpNo()"
+                                                            class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none">&#215;</button>
+                                                </div>
+                                                <input type="hidden" name="tp_no" id="generator_tp_no_val" :value="tpNo">
+                                                <!-- Dropdown results -->
+                                                <div x-show="tpSearchOpen"
+                                                     x-cloak
+                                                     class="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                                                    <div x-show="tpSearchLoading" class="px-3 py-2 text-xs text-gray-500">Searching...</div>
+                                                    <div x-show="!tpSearchLoading && tpSearchResults.length === 0" class="px-3 py-2 text-xs text-gray-400">No results</div>
+                                                    <template x-for="(result, index) in tpSearchResults" :key="result.id">
+                                                        <div @mousedown.prevent="selectTpResult(result)"
+                                                             :class="tpFocusIndex === index ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'"
+                                                             class="px-3 py-2 text-sm cursor-pointer"
+                                                             x-text="result.text">
+                                                        </div>
+                                                    </template>
+                                                </div>
+                                            </div>
+
+                                            <!-- Plot Number: plain text input -->
                                             <div>
                                                 <label for="plotNo" class="block text-xs font-medium text-gray-600 mb-1">
                                                     Plot Number
                                                 </label>
-                                                <input type="text" id="plotNo" name="plot_no" 
+                                                <input type="text" id="plotNo" name="plot_no"
                                                        :value="batchMode ? locationEntries[currentEntryIndex]?.plotNo : plotNo"
-                                                       @input="batchMode ? updateLocationEntry('plotNo', $event.target.value) : plotNo = $event.target.value"
+                                                       @input="batchMode ? updateLocationEntry('plotNo', $event.target.value) : plotNo = $event.target.value; buildLocation()"
                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                       :class="{ '': isInherited }"
-                                                       
                                                        placeholder="Enter plot number">
                                             </div>
 
-                                            <!-- Row 1, Col 2: TP Number -->
+                                            <!-- District dropdown + "Other" specify -->
                                             <div>
-                                                <label for="tpNo" class="block text-xs font-medium text-gray-600 mb-1">
-                                                    TP Number
+                                                <label for="generator_district" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    District
                                                 </label>
-                                                <input type="text" id="tpNo" name="tp_no" 
-                                                       :value="batchMode ? locationEntries[currentEntryIndex]?.tpNo : tpNo"
-                                                       @input="batchMode ? updateLocationEntry('tpNo', $event.target.value) : tpNo = $event.target.value"
-                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                       :class="{ '': isInherited }"
-                                                       
-                                                       placeholder="Enter TP number">
+                                                <select id="generator_district"
+                                                        @change="onDistrictChange($event.target.value)"
+                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                                                    <option value="">Select District</option>
+                                                    @foreach($districts as $dist)
+                                                        <option value="{{ $dist->name }}">{{ $dist->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                                <input type="text" id="generator_district_other"
+                                                       x-show="districtIsOther"
+                                                       x-cloak
+                                                       @input="onDistrictOtherInput($event.target.value)"
+                                                       placeholder="Please specify district..."
+                                                       class="w-full mt-2 px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                                <input type="hidden" name="district" :value="district">
                                             </div>
 
-                                            <!-- Row 2, Col 1: Location -->
-                                            <div>
-                                                <label for="location" class="block text-xs font-medium text-gray-600 mb-1">
-                                                    Location
-                                                </label>
-                                                <input type="text" id="location" name="location" 
-                                                       :value="batchMode ? locationEntries[currentEntryIndex]?.location : location"
-                                                       @input="batchMode ? updateLocationEntry('location', $event.target.value) : location = $event.target.value"
-                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                       :class="{ '': isInherited }"
-                                                       
-                                                       placeholder="Enter location details" >
-                                            </div>
-
-                                            <!-- Row 2, Col 2: LGA -->
+                                            <!-- LGA -->
                                             <div>
                                                 <label for="generator_lga" class="block text-xs font-medium text-gray-600 mb-1">
                                                     LGA
                                                 </label>
-                                                <!-- Hidden input to ensure LGA is submitted if select is disabled -->
-                                                <select id="generator_lga" name="lga" 
-                                                        :value="batchMode ? locationEntries[currentEntryIndex]?.lga : lga"
-                                                        @change="batchMode ? updateLocationEntry('lga', $event.target.value) : lga = $event.target.value"
-                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                                                        :class="{ '': isInherited }">
-                                                    <option value="" >Select LGA</option>
+                                                <select id="generator_lga" name="lga"
+                                                        @change="onLgaChange($event.target.value)"
+                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                                                    <option value="">Select LGA</option>
                                                     @foreach($lgas as $lga)
                                                         <option value="{{ $lga->name }}">{{ $lga->name }}</option>
                                                     @endforeach
                                                 </select>
                                             </div>
+
+                                            <!-- Location: auto-built from plot + district + lga (readonly) -->
+                                            <div class="col-span-2">
+                                                <label for="generator_location" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    Location <span class="text-gray-400 font-normal">(auto-filled)</span>
+                                                </label>
+                                                <input type="text" id="generator_location" name="location"
+                                                       :value="batchMode ? locationEntries[currentEntryIndex]?.location : location"
+                                                       readonly
+                                                       class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-600 cursor-default"
+                                                       placeholder="Filled from plot number, district & LGA">
+                                            </div>
+
                                         </div>
 
                                         <!-- Entry Progress Indicator (shown in batch mode) -->

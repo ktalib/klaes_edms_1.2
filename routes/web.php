@@ -1157,7 +1157,27 @@ Route::group(['middleware' => ['auth'], 'prefix' => 'primaryform'], function () 
     Route::get('/', [\App\Http\Controllers\PrimaryFormDraftController::class, 'index'])->name('primaryform.index');
     Route::post('/', [\App\Http\Controllers\PrimaryApplicationController::class, 'store'])->name('primaryform.store');
 
+    // Draft management routes
+    Route::post('/draft/save', [\App\Http\Controllers\PrimaryFormDraftController::class, 'saveDraft'])->name('primaryform.draft.save');
+    Route::post('/draft/start', [\App\Http\Controllers\PrimaryFormDraftController::class, 'startFresh'])->name('primaryform.draft.start');
+    Route::post('/draft/submit', [\App\Http\Controllers\PrimaryFormDraftController::class, 'submitDraft'])->name('primaryform.draft.submit');
+    Route::post('/draft/share', [\App\Http\Controllers\PrimaryFormDraftController::class, 'shareDraft'])->name('primaryform.draft.share');
+    Route::get('/draft/mine', [\App\Http\Controllers\PrimaryFormDraftController::class, 'myDrafts'])->name('primaryform.draft.mine');
+    Route::get('/draft/check/{applicationId}', [\App\Http\Controllers\PrimaryFormDraftController::class, 'checkDraft'])->name('primaryform.draft.check');
+    Route::get('/draft/{draftId}', [\App\Http\Controllers\PrimaryFormDraftController::class, 'loadDraft'])->name('primaryform.draft.load');
+    Route::delete('/draft/{draftId}', [\App\Http\Controllers\PrimaryFormDraftController::class, 'deleteDraft'])->name('primaryform.draft.delete');
+    Route::get('/draft/{draftId}/export', [\App\Http\Controllers\PrimaryFormDraftController::class, 'exportDraft'])->name('primaryform.draft.export');
+    Route::get('/draft/{draftId}/analytics', [\App\Http\Controllers\PrimaryFormDraftController::class, 'analytics'])->name('primaryform.draft.analytics');
 });
+
+// Session keep-alive for long-running forms (e.g. primary application form)
+Route::get('/session/keep-alive', function () {
+    session(['_last_ping' => now()->toIso8601String()]);
+    return response()->json([
+        'alive' => true,
+        'csrf_token' => csrf_token(),
+    ]);
+})->middleware('auth')->name('session.keepalive');
 
 // Debug routes for primary form
 Route::get('/debug-primary-form', function (Request $request) {
@@ -1576,6 +1596,8 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'create-file-tracker'
     Route::get('/request-preview', [App\Http\Controllers\CreateFileTrackerController::class, 'requestPreview'])->name('create-file-tracker.request-preview');
     Route::get('/request-preview/file', [App\Http\Controllers\CreateFileTrackerController::class, 'requestPreviewFile'])->name('create-file-tracker.request-preview-file');
     Route::get('/list', [App\Http\Controllers\CreateFileTrackerController::class, 'list'])->name('create-file-tracker.list');
+    Route::get('/list/export', [App\Http\Controllers\CreateFileTrackerController::class, 'exportPdf'])->name('create-file-tracker.export-pdf');
+    Route::get('/list/export-csv', [App\Http\Controllers\CreateFileTrackerController::class, 'exportCsv'])->name('create-file-tracker.export-csv');
     Route::get('/search', [App\Http\Controllers\CreateFileTrackerController::class, 'search'])->name('create-file-tracker.search');
     Route::get('/kangis-checkout', [App\Http\Controllers\CreateFileTrackerController::class, 'kangisCheckoutList'])->name('create-file-tracker.kangis-checkout.list');
     Route::post('/kangis-checkout/request', [App\Http\Controllers\CreateFileTrackerController::class, 'kangisCheckoutRequest'])->name('create-file-tracker.kangis-checkout.request');
@@ -1587,6 +1609,21 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'create-file-tracker'
     Route::get('/workflow-progress/{id}', [App\Http\Controllers\CreateFileTrackerController::class, 'workflowProgress'])->name('create-file-tracker.workflow-progress');
     Route::post('/{id}/mark-printed', [App\Http\Controllers\CreateFileTrackerController::class, 'markAsPrinted'])->name('create-file-tracker.mark-printed');
     Route::get('/{id}/request-sheet', [App\Http\Controllers\CreateFileTrackerController::class, 'requestSheet'])->name('create-file-tracker.request-sheet');
+});
+
+// ── Digital File Request Module ───────────────────────────────────────────────
+Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'digital-request'], function () {
+    Route::get('/',                     [App\Http\Controllers\DigitalFileRequestController::class, 'index'])->name('digital-request.index');
+    Route::get('/list',                 [App\Http\Controllers\DigitalFileRequestController::class, 'listJson'])->name('digital-request.list');
+    Route::post('/store',               [App\Http\Controllers\DigitalFileRequestController::class, 'store'])->name('digital-request.store');
+    Route::get('/show/{id}',            [App\Http\Controllers\DigitalFileRequestController::class, 'show'])->name('digital-request.show');
+    Route::post('/approve/{id}',        [App\Http\Controllers\DigitalFileRequestController::class, 'approve'])->name('digital-request.approve');
+    Route::post('/reject/{id}',         [App\Http\Controllers\DigitalFileRequestController::class, 'reject'])->name('digital-request.reject');
+    Route::post('/check-availability',  [App\Http\Controllers\DigitalFileRequestController::class, 'checkFileAvailability'])->name('digital-request.check-availability');
+    Route::get('/offices-by-department',[App\Http\Controllers\DigitalFileRequestController::class, 'getOfficesByDepartment'])->name('digital-request.offices-by-department');
+    Route::get('/pending-count',        [App\Http\Controllers\DigitalFileRequestController::class, 'pendingCount'])->name('digital-request.pending-count');
+    Route::post('/send-otp',            [App\Http\Controllers\DigitalFileRequestController::class, 'sendOtp'])->name('digital-request.send-otp');
+    Route::post('/verify-signature',    [App\Http\Controllers\DigitalFileRequestController::class, 'verifySignature'])->name('digital-request.verify-signature');
 });
 
 // File Tracker API Routes for AJAX calls (Web session auth OR Sanctum Bearer token)
@@ -1998,4 +2035,139 @@ Route::post('/test-shared-areas', function (Illuminate\Http\Request $request) {
     ]);
 
     //$recentEntries = \App\Models\SecondaryForm::orderBy('created_at', 'desc')->take(5)->get();
+});
+
+// ─── Parcel Update Template Previews ─────────────────────────────────────────
+Route::get('/preview-parcel-templates', function (\Illuminate\Http\Request $request) {
+    $type = $request->query('type', 'all');
+
+    $plotSizes = collect([
+        (object)['length' => '30.0', 'width' => '30.0', 'count' => 4],
+        (object)['length' => '26.6', 'width' => '34.5', 'count' => 4],
+        (object)['length' => '20.0', 'width' => '35.0', 'count' => 3],
+    ]);
+
+    $merger = (object)[
+        'file_no'        => 'SIT/2026/117',
+        'file_title'     => 'TP/KAS/112A',
+        'applicant_name' => 'Kano Industrial Holdings Limited',
+        'plot_no'        => '22 & 23',
+        'house_no'       => 'No. 14',
+        'street_name'    => 'Murtala Muhammad Way',
+        'district'       => 'Bompai',
+        'lga'            => 'Nassarawa',
+        'state'          => 'Kano',
+        'num_plots'      => 2,
+        'land_use'       => 'Commercial',
+        'land_value'     => 8500000,
+        'knupda_remarks' => 'PL/KNUPDA/2026/118',
+        'plotSizes'      => collect([(object)['length'=>'40.0','width'=>'45.0','count'=>1]]),
+    ];
+
+    $subdivision = (object)[
+        'file_no'        => 'SIT/2026/041',
+        'file_title'     => 'TP/KAS/236A',
+        'applicant_name' => 'STH Nigeria Limited',
+        'plot_no'        => '541',
+        'house_no'       => null,
+        'street_name'    => 'Kwairanga Road',
+        'district'       => 'Nasarawa',
+        'lga'            => 'Nassarawa',
+        'state'          => 'Kano',
+        'num_plots'      => 11,
+        'land_use'       => 'Residential',
+        'land_value'     => 12000000,
+        'knupda_remarks' => 'PL/KNUPDA/2026/204',
+        'plotSizes'      => $plotSizes,
+    ];
+
+    $rooResidential = (object)[
+        'file_number'          => 'RES/2024/6162',
+        'applicant_name'       => 'Suwaiba Bello',
+        'plot_number'          => 'ED 05',
+        'location'             => 'Dukawuya',
+        'layout_plan_no'       => 'PL/KNUPDA/2024/089',
+        'purpose_of_clause'    => 'Residential',
+        'term'                 => 99,
+        'ground_rent'          => 5000,
+        'development_value'    => 15000000,
+        'development_period'   => '24 Months',
+        'preparation_fees'     => 263000,
+        'preparation_fees_words' => 'Two Hundred and Sixty Three Thousand Naira Only',
+        'premium'              => 5260000,
+        'premium_words'        => 'Five Million Two Hundred and Sixty Thousand Naira Only',
+        'recommendation'       => 'Application meets all statutory requirements.',
+        'tracking_id'          => 'KLAES-RES-2024-6162',
+    ];
+
+    $rooCommercial = (object)[
+        'file_number'          => 'CON/AG/2019/457',
+        'applicant_name'       => 'Dawakin Commercial Enterprises Ltd',
+        'plot_number'          => 'COM/07',
+        'location'             => 'Dawanau Market, Dawakin Tofa',
+        'layout_plan_no'       => 'PL/KNUPDA/2019/312',
+        'purpose_of_clause'    => 'Commercial/Warehousing',
+        'term'                 => 99,
+        'lga'                  => 'Dawakin Tofa',
+        'ground_rent'          => 25000,
+        'development_value'    => 45000000,
+        'development_period'   => '36 Months',
+        'preparation_fees'     => 850000,
+        'preparation_fees_words' => 'Eight Hundred and Fifty Thousand Naira Only',
+        'premium'              => 18500000,
+        'premium_words'        => 'Eighteen Million Five Hundred Thousand Naira Only',
+        'recommendation'       => 'Application meets all statutory requirements for commercial grant.',
+    ];
+
+    $tempFile = (object)[
+        'file_no'        => 'LKN/RES/2000/4212',
+        'file_title'     => 'TP/KAS/236A',
+        'applicant_name' => 'Sule Yusuf (Dogo)',
+        'plot_no'        => '541',
+        'house_no'       => null,
+        'street_name'    => 'Eastern Bypass',
+        'district'       => 'Kano Municipal',
+        'lga'            => 'Kano Municipal',
+        'state'          => 'Kano',
+        'land_use'       => 'Residential',
+    ];
+
+    $extension = (object)[
+        'file_no'        => 'SIT/2025/303',
+        'file_title'     => 'TP/KAS/188B',
+        'applicant_name' => 'Hajiya Fatima Umar Sule',
+        'plot_no'        => '88',
+        'house_no'       => 'No. 7',
+        'street_name'    => 'Ibrahim Taiwo Road',
+        'district'       => 'Bompai',
+        'lga'            => 'Fagge',
+        'state'          => 'Kano',
+        'num_plots'      => 1,
+        'land_use'       => 'Residential',
+        'land_value'     => 6200000,
+        'knupda_remarks' => 'PL/KNUPDA/2025/189',
+        'plotSizes'      => collect([(object)['length'=>'35.0','width'=>'30.0','count'=>1]]),
+    ];
+
+    $templates = [
+        'merger'          => ['label' => 'Application for Plot Merger',                          'view' => 'deeds.parcel_update.templates.application_for_plot_merger',                                'record' => $merger],
+        'subdivision'     => ['label' => 'Application for Plot Subdivision',                     'view' => 'deeds.parcel_update.templates.application_for_plot_subdivision',                           'record' => $subdivision],
+        'roo_residential' => ['label' => 'Application for Statutory Right of Occupancy (Res)',   'view' => 'deeds.parcel_update.templates.application_for_statutory_right_of_occupancy_residential',  'record' => $rooResidential],
+        'roo_commercial'  => ['label' => 'Application for Statutory Right of Occupancy (Com)',   'view' => 'deeds.parcel_update.templates.application_for_statutory_right_of_occupancy_commercial',   'record' => $rooCommercial],
+        'temp_file'       => ['label' => 'Application for Temporary File No.',                   'view' => 'deeds.parcel_update.templates.application_for_temporary_file_no',                         'record' => $tempFile],
+        'extension'       => ['label' => 'Application for Plot Extension',                       'view' => 'deeds.parcel_update.templates.application_for_plot_extension',                            'record' => $extension],
+    ];
+
+    if ($type === 'print_all') {
+        return view('deeds.parcel_update.templates.print_all', compact(
+            'merger', 'subdivision', 'rooResidential', 'rooCommercial', 'tempFile', 'extension'
+        ));
+    }
+
+    if ($type !== 'all' && isset($templates[$type])) {
+        $t = $templates[$type];
+        return view($t['view'], ['record' => $t['record']]);
+    }
+
+    return view('deeds.parcel_update.templates.preview', compact('templates', 'type'));
 });

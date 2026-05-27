@@ -7,7 +7,7 @@
     <li class="breadcrumb-item" aria-current="page"> {{ __('Scanning Assistant Interface ') }}</li>
 @endsection
 
-<style>
+<style> 
     /* Tab styles */
     .tab {
         overflow: hidden;

@@ -47,8 +47,10 @@ use App\Http\Controllers\LandsOneStopShop\PlotExtensionController;
 use App\Http\Controllers\LandsOneStopShop\LossOfDocumentController;
 use App\Http\Controllers\LandsOneStopShop\TemporaryFileController;
 use App\Http\Controllers\Deeds\ParcelUpdate\PlotSubdivisionController;
+use App\Http\Controllers\Deeds\ParcelUpdate\PlotSeparationController;
 use App\Http\Controllers\Deeds\ParcelUpdate\PlotMergerController;
 use App\Http\Controllers\ChangeOfPurpose\ChangeOfPurposeController;
+use App\Http\Controllers\TitleStatus\TitleStatusController;
 use App\Http\Controllers\ChangeOfName\ChangeOfNameController;
 use App\Http\Controllers\OpsDashboardController;
 use App\Http\Controllers\RofoStagingDashboardController;
@@ -76,12 +78,16 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('mortgages')->name('mortgages.')->group(function () {
         Route::get('/', [MortgageController::class, 'index'])->name('index');
         Route::get('/data', [MortgageController::class, 'getData'])->name('data');
+        Route::get('/{id}/edit', [MortgageController::class, 'edit'])->name('edit');
+        Route::put('/{id}', [MortgageController::class, 'update'])->name('update');
     });
 
     // Surrender & Release Table Routes
     Route::prefix('surrender-release')->name('surrender-release.')->group(function () {
         Route::get('/', [SurrenderReleaseController::class, 'index'])->name('index');
         Route::get('/data', [SurrenderReleaseController::class, 'getData'])->name('data');
+        Route::get('/{id}/edit', [SurrenderReleaseController::class, 'edit'])->name('edit');
+        Route::put('/{id}', [SurrenderReleaseController::class, 'update'])->name('update');
     });
 
     // OPs Dashboard
@@ -290,6 +296,21 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/{id}', [PlotSubdivisionController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
     });
 
+    Route::prefix('plot-separation')->name('plot-separation.')->group(function () {
+        Route::get('/', [PlotSeparationController::class, 'index'])->name('index');
+        Route::post('/', [PlotSeparationController::class, 'store'])->name('store');
+        Route::post('/{id}/approve', [PlotSeparationController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
+        Route::post('/{id}/reject', [PlotSeparationController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
+        Route::post('/{id}/generate-application', [PlotSeparationController::class, 'generateApplication'])->name('generate-application')->where('id', '[0-9]+');
+        Route::get('/{id}/print-application', [PlotSeparationController::class, 'printApplication'])->name('print-application')->where('id', '[0-9]+');
+        Route::post('/{id}/generate-recommendation', [PlotSeparationController::class, 'generateRecommendation'])->name('generate-recommendation')->where('id', '[0-9]+');
+        Route::get('/{id}/print-recommendation', [PlotSeparationController::class, 'printRecommendation'])->name('print-recommendation')->where('id', '[0-9]+');
+        Route::post('/{id}/knupda', [PlotSeparationController::class, 'updateKnupda'])->name('knupda')->where('id', '[0-9]+');
+        Route::get('/{id}', [PlotSeparationController::class, 'show'])->name('show')->where('id', '[0-9]+');
+        Route::get('/find-by-file/{fileNumber}', [PlotSeparationController::class, 'findByFileNo'])->name('find-by-file');
+        Route::delete('/{id}', [PlotSeparationController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
+    });
+
     Route::prefix('plot-merger')->name('plot-merger.')->group(function () {
         Route::get('/', [PlotMergerController::class, 'index'])->name('index');
         Route::post('/', [PlotMergerController::class, 'store'])->name('store');
@@ -312,6 +333,19 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/{id}', [LossOfDocumentController::class, 'show'])->name('show')->where('id', '[0-9]+');
         Route::put('/{id}', [LossOfDocumentController::class, 'update'])->name('update')->where('id', '[0-9]+');
         Route::delete('/{id}', [LossOfDocumentController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
+    });
+
+    // Title Status
+    Route::prefix('title-status')->name('title-status.')->group(function () {
+        Route::get('/', [TitleStatusController::class, 'index'])->name('index');
+        Route::post('/', [TitleStatusController::class, 'store'])->name('store');
+        Route::post('/generate-remark', [TitleStatusController::class, 'generateRemark'])->name('generate-remark');
+        Route::get('/file-info', [TitleStatusController::class, 'fileInfo'])->name('file-info');
+        Route::post('/{id}/approve', [TitleStatusController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
+        Route::post('/{id}/reject', [TitleStatusController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
+        Route::get('/{id}', [TitleStatusController::class, 'show'])->name('show')->where('id', '[0-9]+');
+        Route::put('/{id}', [TitleStatusController::class, 'update'])->name('update')->where('id', '[0-9]+');
+        Route::delete('/{id}', [TitleStatusController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
     });
 
     Route::prefix('change-of-purpose')->name('change-of-purpose.')->group(function () {
@@ -821,6 +855,18 @@ Route::middleware(['auth'])->group(function () {
     });
 
 
+    // Global: available security paper codes (used by the shared modal component)
+    Route::get('/security-paper-codes/available', function () {
+        $codes = \Illuminate\Support\Facades\DB::connection('sqlsrv')
+            ->table('global_security_paper_codes')
+            ->select('paper_code')
+            ->where('is_used', false)
+            ->orderBy('paper_code')
+            ->pluck('paper_code');
+        return response()->json(['codes' => $codes]);
+    })->name('security-paper-codes.available');
+
+
     // Land ROFO Routes
     Route::prefix('land-rofos')->name('land-rofos.')->group(function () {
         Route::get('/', [\App\Http\Controllers\LandRofoController::class, 'index'])->name('index');
@@ -847,6 +893,7 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('sltr-rofos')->name('sltr-rofos.')->group(function () {
         Route::get('/', [\App\Http\Controllers\SltrRofoController::class, 'index'])->name('index');
         Route::post('/{id}/generate', [\App\Http\Controllers\SltrRofoController::class, 'generate'])->name('generate');
+        Route::post('/{id}/assign-security-paper', [\App\Http\Controllers\SltrRofoController::class, 'assignSecurityPaperCode'])->name('assign-security-paper');
         Route::get('/{id}/print', [\App\Http\Controllers\SltrRofoController::class, 'print'])->name('print');
         Route::post('/{id}/log-print', [\App\Http\Controllers\SltrRofoController::class, 'logPrint'])->name('log-print');
     });

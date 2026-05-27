@@ -978,6 +978,32 @@
                     }
                 });
             }
+
+            // Auto-fill General Registry based on the selected tab (skip for related file number contexts)
+            if (this.config.autoPopulateGenericFields !== false) {
+                const tabRegistryMap = {
+                    'mls':       'Lands Registry',
+                    'kangis':    'KANGIS Registry',
+                    'newkangis': 'KANGIS Registry',
+                    'sltr':      'SLTR Registry',
+                    'sit':       'SIT Registry',
+                    'dciv':      'DCIV Registry',
+                    'gkn':       'Survey Registry'
+                };
+                const registryValue = tabRegistryMap[tabName];
+                if (registryValue) {
+                    const registryField = $('#general-registry, #general_registry');
+                    registryField.each(function () {
+                        const $field = $(this);
+                        const matchingOption = $field.find(`option`).filter(function () {
+                            return $(this).val().toLowerCase() === registryValue.toLowerCase();
+                        });
+                        if (matchingOption.length > 0) {
+                            $field.val(matchingOption.val()).trigger('change');
+                        }
+                    });
+                }
+            }
         },
 
         fetchFileDetails: async function (fileNumber, tabName) {
@@ -1431,8 +1457,10 @@
                 }
             });
 
-            // Initialize year field with current year
-            $('#mls-year, #mls-sit-year, #mls-dciv-lpcc-year, #mls-extension-year').val(new Date().getFullYear());
+            // Initialize year field with current year (skip on file indexing create page)
+            if (!window.location.pathname.includes('/fileindexing/create')) {
+                $('#mls-year, #mls-sit-year, #mls-dciv-lpcc-year, #mls-extension-year').val(new Date().getFullYear());
+            }
 
             // Enhanced preview updates with animations
             $(document).on('input change', '#global-fileno-modal input, #global-fileno-modal select', function () {

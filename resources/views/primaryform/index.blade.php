@@ -327,6 +327,38 @@ Step ${index + 1} (ID: ${step.id}):
 
 console.log('🔍 ========== END DIAGNOSTIC ==========\n');
 </script>
+{{-- Session Keep-Alive: prevents session expiry on long form fills --}}
+<script src="{{ asset('js/primaryform/session-keepalive.js') }}"></script>
+<script>
+    window.SESSION_KEEPALIVE_URL = "{{ route('session.keepalive') }}";
+
+    SessionKeepAlive.start({
+        url: window.SESSION_KEEPALIVE_URL,
+        interval: 4 * 60 * 1000
+    });
+
+    // If the keep-alive itself detects a dead session (401/403 on ping),
+    // warn the user before they waste time submitting a form that will fail.
+    window.addEventListener('session:expired', function () {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: 'Session Expired',
+                html: '<p class="text-gray-700">Your login session has timed out. Please save your work, log in again, and continue.</p>',
+                icon: 'warning',
+                confirmButtonText: 'Open Login in New Tab',
+                showCancelButton: true,
+                cancelButtonText: 'Dismiss',
+                confirmButtonColor: '#2563eb',
+                allowOutsideClick: false,
+            }).then(function (result) {
+                if (result.isConfirmed) {
+                    window.open('/login', '_blank');
+                }
+            });
+        }
+    });
+</script>
+
 {{-- Scan Upload Global Variables --}}
 <script src="{{ asset('js/primaryform/scan-upload-globals.js') }}"></script>
 

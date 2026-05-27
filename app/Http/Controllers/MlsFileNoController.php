@@ -16,8 +16,10 @@ use App\Models\Purpose;
 use App\Models\Prefix;
 use App\Models\PlotMergerApplication;
 use App\Models\PlotSubdivisionApplication;
+use App\Models\PlotSeparationApplication;
 use App\Models\ChangeOfPurposeApplication;
 use App\Models\PlotExtensionApplication;
+use App\Services\ParcelUpdateNotificationService;
 use App\Services\PlotWorkflowService;
 use App\Services\PropertyIdAllocationService;
 
@@ -1382,6 +1384,7 @@ class MlsFileNoController extends Controller
                 'tp_no' => 'nullable|string|max:100',
                 'location' => 'nullable|string',
                 'lga' => 'nullable|string|max:100',
+                'district' => 'nullable|string|max:100',
                 'tracking_id' => 'nullable|string|max:50',
                 'file_option' => 'nullable|string|max:50',
                 'commissioned_by' => 'nullable|string|max:255',
@@ -1412,6 +1415,7 @@ class MlsFileNoController extends Controller
                 'related_file_indexing_id' => 'nullable|integer',
                 'merger_app_id' => 'nullable|integer',
                 'subdivision_app_id' => 'nullable|integer',
+                'separation_app_id' => 'nullable|integer',
                 'change_of_purpose_app_id' => 'nullable|integer',
                 'file_option' => 'nullable|string|max:50',
             ]);
@@ -1483,15 +1487,49 @@ class MlsFileNoController extends Controller
                     }
 
                     // 1. Generate new file number, consuming new serial
-                    $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
-                    $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial);
+                    $forceFileNumber = $request->input('force_file_number');
+                    if ($forceFileNumber) {
+                        $fullFileNumber = $forceFileNumber;
+                        $serialParts = explode('-', $fullFileNumber);
+                        $serial = (int) end($serialParts);
+                        \App\Models\MlsSerialControl::initialize($landUse, $year, $serial);
+                        \Log::channel('fileno_duplicates')->info('COP: force_file_number used', [
+                            'forced_file_number' => $fullFileNumber,
+                            'land_use' => $landUse,
+                            'year' => $year,
+                            'serial' => $serial,
+                            'user_id' => Auth::id(),
+                            'user' => Auth::user()->name ?? Auth::user()->email ?? 'Unknown',
+                        ]);
+                    } else {
+                        $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
+                        $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial);
 
-                    // Check for duplicates in both modern and legacy tables
-                    if (
-                        \App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() ||
-                        DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()
-                    ) {
-                        throw new \Exception("The generated file number already exists: {$fullFileNumber}. Please check serial synchronization.");
+                        // Check for duplicates in both modern and legacy tables
+                        if (
+                            \App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() ||
+                            DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()
+                        ) {
+                            $suggested = $this->findNextAvailableFileNumber($landUse, $year, $serial);
+                            DB::connection('sqlsrv')->rollBack();
+                            \Log::channel('fileno_duplicates')->warning('COP: duplicate detected', [
+                                'conflicting_file_number' => $fullFileNumber,
+                                'suggested_file_number' => $suggested,
+                                'land_use' => $landUse,
+                                'year' => $year,
+                                'serial' => $serial,
+                                'original_file_no' => $originalFileNo,
+                                'user_id' => Auth::id(),
+                                'user' => Auth::user()->name ?? Auth::user()->email ?? 'Unknown',
+                            ]);
+                            return response()->json([
+                                'success' => false,
+                                'duplicate' => true,
+                                'conflicting_file_number' => $fullFileNumber,
+                                'suggested_file_number' => $suggested,
+                                'message' => "File number {$fullFileNumber} already exists.",
+                            ]);
+                        }
                     }
 
                     $commissionedBy = ($validated['commissioned_by'] ?? null) ?: ((Auth::user()->first_name . ' ' . Auth::user()->last_name) ?: Auth::user()->name ?: Auth::user()->email ?: 'System');
@@ -1676,11 +1714,43 @@ class MlsFileNoController extends Controller
                     }
 
                     // Check if this temporary file already exists to avoid duplicates
-                    if (
+                    $forceTempFileNumber = $request->input('force_file_number');
+                    if ($forceTempFileNumber) {
+                        $fullFileNumber = $forceTempFileNumber;
+                        $baseForced = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $fullFileNumber);
+                        $serialParts = explode('-', $baseForced);
+                        $serial = (int) end($serialParts);
+                        \App\Models\MlsSerialControl::initialize($landUse, $year, $serial);
+                        \Log::channel('fileno_duplicates')->info('Temporary: force_file_number used', [
+                            'forced_file_number' => $fullFileNumber,
+                            'land_use' => $landUse,
+                            'year' => $year,
+                            'serial' => $serial,
+                            'user_id' => Auth::id(),
+                            'user' => Auth::user()->name ?? Auth::user()->email ?? 'Unknown',
+                        ]);
+                    } elseif (
                         \App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() ||
                         DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()
                     ) {
-                        throw new \Exception("The generated temporary file number already exists: {$fullFileNumber}. Please check serial synchronization.");
+                        $suggested = $this->findNextAvailableFileNumber($landUse, $year, $serial, '(T)');
+                        DB::connection('sqlsrv')->rollBack();
+                        \Log::channel('fileno_duplicates')->warning('Temporary: duplicate detected', [
+                            'conflicting_file_number' => $fullFileNumber,
+                            'suggested_file_number' => $suggested,
+                            'land_use' => $landUse,
+                            'year' => $year,
+                            'serial' => $serial,
+                            'user_id' => Auth::id(),
+                            'user' => Auth::user()->name ?? Auth::user()->email ?? 'Unknown',
+                        ]);
+                        return response()->json([
+                            'success' => false,
+                            'duplicate' => true,
+                            'conflicting_file_number' => $fullFileNumber,
+                            'suggested_file_number' => $suggested,
+                            'message' => "Temporary file number {$fullFileNumber} already exists.",
+                        ]);
                     }
 
                 } elseif ($fileOption === 'extension') {
@@ -1705,18 +1775,50 @@ class MlsFileNoController extends Controller
 
                 } else {
                     // Normal Logic: Consume next available serial
-                    // Get next serial for this land use/year combination
-                    $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
+                    $forceFileNumber = $request->input('force_file_number');
+                    if ($forceFileNumber) {
+                        $fullFileNumber = $forceFileNumber;
+                        $serialParts = explode('-', $fullFileNumber);
+                        $serial = (int) end($serialParts);
+                        \App\Models\MlsSerialControl::initialize($landUse, $year, $serial);
+                        \Log::channel('fileno_duplicates')->info('Normal: force_file_number used', [
+                            'forced_file_number' => $fullFileNumber,
+                            'land_use' => $landUse,
+                            'year' => $year,
+                            'serial' => $serial,
+                            'file_option' => $fileOption,
+                            'user_id' => Auth::id(),
+                            'user' => Auth::user()->name ?? Auth::user()->email ?? 'Unknown',
+                        ]);
+                    } else {
+                        $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
+                        $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial);
 
-                    // Generate the full file number
-                    $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial);
-
-                    // Final safety check for duplicates across both modern and legacy systems
-                    if (
-                        \App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() ||
-                        DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()
-                    ) {
-                        throw new \Exception("The generated file number already exists: {$fullFileNumber}. Please ensure the serial counter is correctly synchronized.");
+                        // Final safety check for duplicates across both modern and legacy systems
+                        if (
+                            \App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() ||
+                            DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()
+                        ) {
+                            $suggested = $this->findNextAvailableFileNumber($landUse, $year, $serial);
+                            DB::connection('sqlsrv')->rollBack();
+                            \Log::channel('fileno_duplicates')->warning('Normal: duplicate detected', [
+                                'conflicting_file_number' => $fullFileNumber,
+                                'suggested_file_number' => $suggested,
+                                'land_use' => $landUse,
+                                'year' => $year,
+                                'serial' => $serial,
+                                'file_option' => $fileOption,
+                                'user_id' => Auth::id(),
+                                'user' => Auth::user()->name ?? Auth::user()->email ?? 'Unknown',
+                            ]);
+                            return response()->json([
+                                'success' => false,
+                                'duplicate' => true,
+                                'conflicting_file_number' => $fullFileNumber,
+                                'suggested_file_number' => $suggested,
+                                'message' => "File number {$fullFileNumber} already exists.",
+                            ]);
+                        }
                     }
                 }
 
@@ -1753,6 +1855,8 @@ class MlsFileNoController extends Controller
                     $appType = 'merger';
                 if (!empty($validated['subdivision_app_id']))
                     $appType = 'subdivision';
+                if (!empty($validated['separation_app_id']))
+                    $appType = 'separation';
 
                 $sourceValue = $this->resolveSourceValue(
                     $appType,
@@ -1785,6 +1889,7 @@ class MlsFileNoController extends Controller
                     'tp_no' => $validated['tp_no'] ?? null,
                     'location' => $validated['location'] ?? null,
                     'lga' => $validated['lga'] ?? null,
+                    'district' => $validated['district'] ?? null,
                     'tracking_id' => $trackingId,
                     'customer_type' => $validated['customer_type'],
                     'file_option' => $validated['file_option'] ?? 'normal',
@@ -1806,6 +1911,7 @@ class MlsFileNoController extends Controller
                         'tp_no' => $validated['tp_no'] ?? null,
                         'location' => $validated['location'] ?? null,
                         'lga' => $validated['lga'] ?? null,
+                        'district' => $validated['district'] ?? null,
                         'source' => 'MLS_Commissioned',
                         'type' => 'MlsFileNO',
                         'created_by' => $commissionedBy,
@@ -2010,6 +2116,26 @@ class MlsFileNoController extends Controller
                             $relatedFileNumbers = json_encode([$motherFileNo]);
                             $motherOwner = $motherFile->file_title ?? 'Original Owner';
                         }
+                    } elseif (!empty($validated['separation_app_id'])) {
+                        $separationApp = \App\Models\PlotSeparationApplication::find($validated['separation_app_id']);
+                        if ($separationApp) {
+                            $motherFileNo = (string) $separationApp->file_no;
+                            $motherFile = DB::connection('sqlsrv')->table('file_indexings')
+                                ->where('file_number', $motherFileNo)
+                                ->first();
+
+                            $resolvedPropId = $motherFile->prop_id ?? null;
+                            if (!$resolvedPropId) {
+                                try {
+                                    $resolvedPropId = $propIdService->allocateOrRetrievePropId($motherFileNo, null, null, null, ['skip_lookup' => false]);
+                                } catch (\Exception $e) {
+                                }
+                            }
+
+                            $parentPropId = $resolvedPropId;
+                            $relatedFileNumbers = json_encode([$motherFileNo]);
+                            $motherOwner = $motherFile->file_title ?? 'Original Owner';
+                        }
                     } elseif (($validated['file_option'] ?? '') === 'extension' && !empty($validated['existing_file_no'])) {
                         $extFileNo = (string) $validated['existing_file_no'];
                         $extFile = DB::connection('sqlsrv')->table('file_indexings')
@@ -2141,6 +2267,11 @@ class MlsFileNoController extends Controller
                                 $subdivisionApp = \App\Models\PlotSubdivisionApplication::find($validated['subdivision_app_id'] ?? 0);
                                 if ($subdivisionApp) {
                                     $praComment = 'Plot Subdivision: ' . ($subdivisionApp->num_plots ?? '0') . ' Subdivided from ' . ($subdivisionApp->file_no ?? '');
+                                }
+                            } elseif ($sourceValue === 'Separation') {
+                                $separationApp = \App\Models\PlotSeparationApplication::find($validated['separation_app_id'] ?? 0);
+                                if ($separationApp) {
+                                    $praComment = 'Plot Separation: ' . ($separationApp->num_plots ?? '0') . ' Separated from ' . ($separationApp->file_no ?? '');
                                 }
                             } elseif ($sourceValue === 'Extension') {
                                 $extFileNo = (string) ($validated['existing_file_no'] ?? '');
@@ -2297,6 +2428,7 @@ class MlsFileNoController extends Controller
 
                 $workflowService = app(PlotWorkflowService::class);
                 $propIdService = app(PropertyIdAllocationService::class);
+                $parcelNotifier = app(ParcelUpdateNotificationService::class);
                 $decommissionSummary = [
                     'archived' => [],
                     'history_updated' => 0
@@ -2371,6 +2503,14 @@ class MlsFileNoController extends Controller
                             'remarks' => "Commissioned to File No: {$fullFileNumber} on " . now()->toDateTimeString(),
                             'updated_by' => Auth::id()
                         ]);
+
+                        $parcelNotifier->notifyCommissioned(
+                            'merger',
+                            $mergerApp->id,
+                            $mergerApp->file_no,
+                            $fullFileNumber,
+                            $commissionedBy
+                        );
                     }
                     Log::info('Merger application marked as commissioned', ['app_id' => $validated['merger_app_id'], 'file_no' => $fullFileNumber]);
                 }
@@ -2421,13 +2561,78 @@ class MlsFileNoController extends Controller
                             'remarks' => "Commissioned fragment: {$fullFileNumber} on " . now()->toDateTimeString(),
                             'updated_by' => Auth::id()
                         ]);
+
+                        $parcelNotifier->notifyCommissioned(
+                            'subdivision',
+                            $subdivisionApp->id,
+                            $subdivisionApp->file_no,
+                            $fullFileNumber,
+                            $commissionedBy
+                        );
                     }
                     Log::info('Subdivision application marked as commissioned', ['app_id' => $validated['subdivision_app_id'], 'file_no' => $fullFileNumber]);
+                }
+
+                // Handle Separation Application Linkage
+                if (!empty($validated['separation_app_id'])) {
+                    $separationApp = PlotSeparationApplication::find($validated['separation_app_id']);
+                    if ($separationApp) {
+                        $motherFile    = $separationApp->file_no;
+                        $motherIndexing = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->first();
+
+                        if ($motherIndexing && $motherIndexing->prop_id) {
+                            DB::connection('sqlsrv')->table('file_indexings')
+                                ->where('file_number', $fullFileNumber)
+                                ->update([
+                                    'parent_prop_id' => $motherIndexing->prop_id,
+                                    'related_fileno' => json_encode([$motherFile])
+                                ]);
+
+                            DB::connection('sqlsrv')->table('fileNumber')
+                                ->where('mlsfNo', $fullFileNumber)
+                                ->update([
+                                    'parent_prop_id' => $motherIndexing->prop_id,
+                                    'related_fileno' => json_encode([$motherFile])
+                                ]);
+                        }
+
+                        // Decommission mother if not already done
+                        $motherRecord = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $motherFile)->first();
+                        if ($motherRecord && !$motherRecord->is_decommissioned) {
+                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Separation into fragments (e.g. $fullFileNumber)", $commissionedBy);
+                            $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
+                        }
+
+                        $separationPlotNo  = $validated['plot_no'] ?? '';
+                        $separationComment = "{$separationApp->num_plots} Separated from {$motherFile},{$separationPlotNo}";
+                        DB::connection('sqlsrv')->table('pra')
+                            ->where('mlsFNo', $fullFileNumber)
+                            ->update(['comments' => $separationComment]);
+                        DB::connection('sqlsrv')->table('pra')
+                            ->where('fileno', $motherFile)
+                            ->update(['comments' => $separationComment]);
+
+                        $separationApp->update([
+                            'status'     => PlotSeparationApplication::STATUS_COMMISSIONED,
+                            'remarks'    => "Commissioned fragment: {$fullFileNumber} on " . now()->toDateTimeString(),
+                            'updated_by' => Auth::id()
+                        ]);
+
+                        $parcelNotifier->notifyCommissioned(
+                            'separation',
+                            $separationApp->id,
+                            $separationApp->file_no,
+                            $fullFileNumber,
+                            $commissionedBy
+                        );
+                    }
+                    Log::info('Separation application marked as commissioned', ['app_id' => $validated['separation_app_id'], 'file_no' => $fullFileNumber]);
                 }
 
                 // Handle Normal Commissioning (Extension flow)
                 if (($validated['file_option'] ?? '') === 'extension' && !empty($validated['existing_file_no'])) {
                     $oldFile = $validated['existing_file_no'];
+
                     $oldIndexing = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $oldFile)->first();
 
                     if ($oldIndexing && $oldIndexing->prop_id) {
@@ -2460,16 +2665,34 @@ class MlsFileNoController extends Controller
                     DB::connection('sqlsrv')->table('pra')
                         ->where('fileno', $oldFile)
                         ->update(['comments' => $extensionComment]);
+
+                    $parcelNotifier->notifyCommissioned(
+                        'extension',
+                        null,
+                        $oldFile,
+                        $fullFileNumber,
+                        $commissionedBy
+                    );
                 }
 
                 // Handle Change of Purpose Application Linkage
                 if (!empty($validated['change_of_purpose_app_id'])) {
-                    ChangeOfPurposeApplication::where('id', $validated['change_of_purpose_app_id'])
-                        ->update([
+                    $copApp = ChangeOfPurposeApplication::find($validated['change_of_purpose_app_id']);
+                    if ($copApp) {
+                        $copApp->update([
                             'status' => ChangeOfPurposeApplication::STATUS_COMMISSIONED,
                             'remarks' => "Commissioned to File No: {$fullFileNumber} on " . now()->toDateTimeString(),
                             'updated_by' => Auth::id()
                         ]);
+
+                        $parcelNotifier->notifyCommissioned(
+                            'change_of_purpose',
+                            $copApp->id,
+                            $copApp->file_no,
+                            $fullFileNumber,
+                            $commissionedBy
+                        );
+                    }
                     Log::info('Change of Purpose application marked as commissioned', ['app_id' => $validated['change_of_purpose_app_id'], 'file_no' => $fullFileNumber]);
                 }
 
@@ -2550,6 +2773,20 @@ class MlsFileNoController extends Controller
         }
     }
 
+    private function findNextAvailableFileNumber(string $landUse, int $year, int $currentSerial, string $suffix = ''): string
+    {
+        $serial = $currentSerial;
+        $limit = 100;
+        do {
+            $serial++;
+            $candidate = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial) . $suffix;
+            $exists = \App\Models\MlsFileNo::where('full_file_number', $candidate)->exists() ||
+                      DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $candidate)->exists();
+        } while ($exists && $serial <= $currentSerial + $limit);
+
+        return $candidate;
+    }
+
     /**
      * Generate multiple MLS file numbers in batch mode
      */
@@ -2570,6 +2807,7 @@ class MlsFileNoController extends Controller
                 'location_entries.*.tpNo' => 'nullable|string|max:100',
                 'location_entries.*.location' => 'nullable|string',
                 'location_entries.*.lga' => 'nullable|string|max:100',
+                'location_entries.*.district' => 'nullable|string|max:100',
                 'location_entries.*.tracking_id' => 'nullable|string|max:100',
                 'location_entries.*.file_name' => 'nullable|string|max:500',
                 'location_entries.*.phone_no' => 'nullable|string|max:100',
@@ -2584,6 +2822,7 @@ class MlsFileNoController extends Controller
                 'source_instrument_capture_id' => 'nullable|integer',
                 'sub_source' => 'nullable|string|max:100',
                 'subdivision_app_id' => 'nullable|integer',
+                'separation_app_id' => 'nullable|integer',
                 'merger_app_id' => 'nullable|integer',
             ]);
 
@@ -2633,6 +2872,8 @@ class MlsFileNoController extends Controller
                     $appType = 'merger';
                 if (!empty($validated['subdivision_app_id']))
                     $appType = 'subdivision';
+                if (!empty($validated['separation_app_id']))
+                    $appType = 'separation';
 
                 $sourceValue = $this->resolveSourceValue(
                     $appType,
@@ -2776,6 +3017,33 @@ class MlsFileNoController extends Controller
                             ]);
                         }
                     }
+                } elseif (!empty($validated['separation_app_id'])) {
+                    $separationApp = \App\Models\PlotSeparationApplication::find($validated['separation_app_id']);
+                    if ($separationApp) {
+                        $motherFileNo = (string) $separationApp->file_no;
+                        $motherFile = DB::connection('sqlsrv')->table('file_indexings')
+                            ->where('file_number', $motherFileNo)
+                            ->first();
+
+                        $resolvedPropId = $motherFile->prop_id ?? null;
+                        if (!$resolvedPropId) {
+                            try {
+                                $resolvedPropId = $propIdService->allocateOrRetrievePropId($motherFileNo, null, null, null, ['skip_lookup' => false]);
+                            } catch (\Exception $e) {
+                                Log::warning('Failed to resolve mother prop_id via service (separation batch)', ['file' => $motherFileNo, 'error' => $e->getMessage()]);
+                            }
+                        }
+
+                        $parentPropId = $resolvedPropId;
+                        $relatedFileNumbers = json_encode([$motherFileNo]);
+                        $motherOwner = $motherFile->file_title ?? 'Original Owner';
+
+                        Log::info('Separation lineage resolved (batch)', [
+                            'mother_file'    => $motherFileNo,
+                            'parent_prop_id' => $parentPropId,
+                            'mother_owner'   => $motherOwner
+                        ]);
+                    }
                 } elseif (($validated['file_option'] ?? '') === 'extension' && !empty($validated['existing_file_no'])) {
                     $extFileNo = (string) $validated['existing_file_no'];
                     $extFile = DB::connection('sqlsrv')->table('file_indexings')
@@ -2847,6 +3115,7 @@ class MlsFileNoController extends Controller
                         'tp_no' => $entry['tpNo'] ?? null,
                         'location' => $entry['location'] ?? null,
                         'lga' => $entry['lga'] ?? null,
+                        'district' => $entry['district'] ?? null,
                         'tracking_id' => $trackingId,
                         'customer_type' => $validated['customer_type'],
                         'file_option' => $validated['file_option'],
@@ -2869,6 +3138,7 @@ class MlsFileNoController extends Controller
                         'tp_no' => $entry['tpNo'] ?? null,
                         'location' => $entry['location'] ?? null,
                         'lga' => $entry['lga'] ?? null,
+                        'district' => $entry['district'] ?? null,
                         'source' => 'MLS_Commissioned',
                         'type' => 'MlsFileNO',
                         'is_deleted' => 0,
@@ -3138,8 +3408,8 @@ class MlsFileNoController extends Controller
                             'land_use' => $landUse,
                             'transaction_type' => $opPraMetadata['transaction_type'],
                         ]);
-                    } else if (in_array($sourceValue, ['Subdivision', 'Merger', 'Extension'])) {
-                        // Create PRA transaction records for Subdivision/Merger/Extension
+                    } else if (in_array($sourceValue, ['Subdivision', 'Merger', 'Extension', 'Separation'])) {
+                        // Create PRA transaction records for Subdivision/Merger/Extension/Separation
                         $plotTransactionType = $sourceValue === 'Extension' ? 'Plot Extension' : $sourceValue;
                         $globalFileName = (string) ($validated['file_name'] ?? '');
 
@@ -3148,7 +3418,7 @@ class MlsFileNoController extends Controller
                         foreach ($validated['location_entries'] as $index => $entry) {
                             $entryFileName = $entry['file_name'] ?? $globalFileName;
                             $grantee = $entryFileName;
-                            $grantor = ($sourceValue === 'Subdivision' || $sourceValue === 'Merger' || $sourceValue === 'Extension') ? ($motherOwner ?: $entryFileName) : $entryFileName;
+                            $grantor = ($sourceValue === 'Subdivision' || $sourceValue === 'Merger' || $sourceValue === 'Extension' || $sourceValue === 'Separation') ? ($motherOwner ?: $entryFileName) : $entryFileName;
                             $batchFileNumber = $allFileNumbers[$index];
                             $batchTrackingId = $mlsData[$index]['tracking_id'] ?? null;
 
@@ -3172,6 +3442,11 @@ class MlsFileNoController extends Controller
                                 $subdivisionApp = \App\Models\PlotSubdivisionApplication::find($validated['subdivision_app_id'] ?? 0);
                                 if ($subdivisionApp) {
                                     $praComment = 'Plot Subdivision: ' . ($subdivisionApp->num_plots ?? '0') . ' Subdivided from ' . ($subdivisionApp->file_no ?? '');
+                                }
+                            } elseif ($sourceValue === 'Separation') {
+                                $separationApp = \App\Models\PlotSeparationApplication::find($validated['separation_app_id'] ?? 0);
+                                if ($separationApp) {
+                                    $praComment = 'Plot Separation: ' . ($separationApp->num_plots ?? '0') . ' Separated from ' . ($separationApp->file_no ?? '');
                                 }
                             } elseif ($sourceValue === 'Extension') {
                                 $extFileNo = (string) ($validated['existing_file_no'] ?? '');
@@ -3248,10 +3523,11 @@ class MlsFileNoController extends Controller
 
                 // Handle Application Linkage for Batch
                 $this->logPlotsWorkflow('info', 'Batch linkage check', [
-                    'merger_app_id' => $validated['merger_app_id'] ?? null,
-                    'subdivision_app_id' => $validated['subdivision_app_id'] ?? null,
-                    'file_option' => $validated['file_option'] ?? null,
-                    'source' => $sourceValue,
+                    'merger_app_id'     => $validated['merger_app_id'] ?? null,
+                    'subdivision_app_id'=> $validated['subdivision_app_id'] ?? null,
+                    'separation_app_id' => $validated['separation_app_id'] ?? null,
+                    'file_option'       => $validated['file_option'] ?? null,
+                    'source'            => $sourceValue,
                 ]);
 
                 if (!empty($validated['merger_app_id'])) {
@@ -3356,6 +3632,49 @@ class MlsFileNoController extends Controller
                     $this->logPlotsWorkflow('info', 'Batch Subdivision application marked as commissioned', ['app_id' => $validated['subdivision_app_id']]);
                 }
 
+                if (!empty($validated['separation_app_id'])) {
+                    $separationApp = \App\Models\PlotSeparationApplication::find($validated['separation_app_id']);
+                    if ($separationApp) {
+                        $motherFile = $separationApp->file_no;
+                        $motherIndexing = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->first();
+
+                        if ($motherIndexing && $motherIndexing->prop_id) {
+                            DB::connection('sqlsrv')->table('file_indexings')
+                                ->whereIn('file_number', $allFileNumbers)
+                                ->update([
+                                    'parent_prop_id' => $motherIndexing->prop_id,
+                                    'related_fileno' => json_encode([$motherFile])
+                                ]);
+
+                            DB::connection('sqlsrv')->table('fileNumber')
+                                ->whereIn('mlsfNo', $allFileNumbers)
+                                ->update([
+                                    'parent_prop_id' => $motherIndexing->prop_id,
+                                    'related_fileno' => json_encode([$motherFile])
+                                ]);
+                        }
+
+                        // Decommission mother if exists in registry
+                        $motherExists = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $motherFile)->exists()
+                            || DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->exists();
+
+                        if ($motherExists) {
+                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Separation into batch of " . count($allFileNumbers) . " fragments", $commissionedBy);
+                            $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
+                        }
+
+                        $separationApp->update([
+                            'status' => \App\Models\PlotSeparationApplication::STATUS_COMMISSIONED,
+                            'remarks' => "Commissioned to Batch of {$batchQuantity} files (First: {$allFileNumbers[0]}) on " . now()->toDateTimeString(),
+                            'updated_by' => Auth::id()
+                        ]);
+
+                        // Notify Deeds users
+                        $parcelNotifier->notifyCommissioned('separation', $separationApp->id, $motherFile, $allFileNumbers[0] ?? '', $commissionedBy);
+                    }
+                    $this->logPlotsWorkflow('info', 'Batch Separation application marked as commissioned', ['app_id' => $validated['separation_app_id']]);
+                }
+
                 DB::connection('sqlsrv')->commit();
 
                 foreach ($generatedFiles as $generatedFileNumber) {
@@ -3378,7 +3697,7 @@ class MlsFileNoController extends Controller
                     'data' => [
                         'batch_size' => $batchQuantity,
                         'land_use' => $landUse,
-                        'application_type' => in_array($validated['file_option'] ?? '', ['subdivision', 'merger', 'extension'])
+                        'application_type' => in_array($validated['file_option'] ?? '', ['subdivision', 'merger', 'extension', 'separation'])
                             ? $validated['file_option']
                             : ($validated['application_type'] ?? 'new'),
                         'year' => $year,

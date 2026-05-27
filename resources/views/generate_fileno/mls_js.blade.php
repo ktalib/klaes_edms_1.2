@@ -110,6 +110,7 @@
         setTimeout(() => {
             if (typeof updateAlpineSerialNumber === 'function') updateAlpineSerialNumber();
         }, 100);
+
     }
 
     // Create a JS object for quick lookup (normalized keys)
@@ -2218,6 +2219,11 @@
                         summaryTitle = 'Extension Summary';
                         summaryIcon = 'maximize';
                         summaryColor = 'teal';
+                    } else if (applicationType === 'separation') {
+                        successTitle = 'Separation Completed!';
+                        summaryTitle = 'Separation Summary';
+                        summaryIcon = 'split';
+                        summaryColor = 'violet';
                     }
 
                     const motherFileNo = data.data?.mother_file_no || 'N/A';
@@ -2283,6 +2289,16 @@
                                                 <span>Original File <b class="font-black text-${summaryColor}-900 underline decoration-2 underline-offset-2">${motherFileNo}</b> expanded and re-commissioned.</span>
                                             </li>
                                         ` : ''}
+                                        ${applicationType === 'separation' ? `
+                                            <li class="flex items-start gap-2.5">
+                                                <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
+                                                <span>Mother File <b class="font-black text-${summaryColor}-900 underline decoration-2 underline-offset-2">${motherFileNo}</b> has been retired and decommissioned.</span>
+                                            </li>
+                                            <li class="flex items-start gap-2.5">
+                                                <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
+                                                <span>New separated plot fragment commissioned.</span>
+                                            </li>
+                                        ` : ''}
                                         <li class="flex items-start gap-2.5">
                                             <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
                                             <span>Lineage established via Parent Property ID linkage${data.data.prop_id ? `: <b class="font-black text-${summaryColor}-900 underline decoration-2 underline-offset-2">${data.data.prop_id}</b>` : ''}.</span>
@@ -2333,6 +2349,63 @@
                     closeGenerateModal();
                     try { table.ajax.reload(); } catch(e) { /* server-rendered table, reload handled above */ }
                     try { updateStats(); } catch(e) { /* may not exist on all pages */ }
+                } else if (data.duplicate) {
+                    const conflictingNo = data.conflicting_file_number || '';
+                    const suggestedNo = data.suggested_file_number || '';
+                    const confirmResult = await Swal.fire({
+                        icon: 'warning',
+                        title: 'File Number Already Exists',
+                        html: `<p>The file number <strong>${conflictingNo}</strong> is already in use.</p>` +
+                              (suggestedNo ? `<p>Would you like to use <strong>${suggestedNo}</strong> instead?</p>` : ''),
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, use next available',
+                        cancelButtonText: 'No, cancel',
+                        confirmButtonColor: '#3085d6',
+                        cancelButtonColor: '#6b7280'
+                    });
+                    if (confirmResult.isConfirmed && suggestedNo) {
+                        formData.set('force_file_number', suggestedNo);
+                        showGlobalLoading();
+                        if (submitBtn) showLoadingButton(submitBtn, 'Generating...');
+                        fetch('{{ route("mls-fileno.generate") }}', {
+                            method: 'POST',
+                            body: formData,
+                            headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content') }
+                        })
+                        .then(r => r.json())
+                        .then(async retryData => {
+                            hideGlobalLoading();
+                            if (submitBtn) hideLoadingButton(submitBtn, originalText);
+                            if (retryData.success) {
+                                getNextSerialNumber();
+                                fetch('{{ route("file-numbers.clear-cache") }}', {
+                                    method: 'POST',
+                                    headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content') }
+                                }).catch(() => {});
+                                await Swal.fire({
+                                    icon: 'success',
+                                    title: 'File Number Generated!',
+                                    text: `File number ${retryData.data?.file_number || suggestedNo} has been generated successfully.`,
+                                    confirmButtonColor: '#22c55e'
+                                });
+                                resetForm();
+                                closeGenerateModal();
+                                if (!table.ajax || !table.ajax.url()) {
+                                    window.location.reload();
+                                } else {
+                                    try { table.ajax.reload(); } catch(e) {}
+                                    try { updateStats(); } catch(e) {}
+                                }
+                            } else {
+                                Swal.fire({ icon: 'error', title: 'Error!', text: retryData.message || 'An error occurred', confirmButtonColor: '#ef4444' });
+                            }
+                        })
+                        .catch(() => {
+                            hideGlobalLoading();
+                            if (submitBtn) hideLoadingButton(submitBtn, originalText);
+                            Swal.fire({ icon: 'error', title: 'Error!', text: 'An error occurred while generating the file number', confirmButtonColor: '#ef4444' });
+                        });
+                    }
                 } else {
                     Swal.fire({
                         icon: 'error',
@@ -2488,6 +2561,7 @@
             // Plot management app IDs — critical for decommissioning and lineage
             subdivision_app_id: alpineData.subdivisionAppId || null,
             merger_app_id: alpineData.mergerAppId || null,
+            separation_app_id: alpineData.separationAppId || null,
             // Contact fields
             phone_no: document.getElementById('generatePhoneNo')?.value || '',
             address: document.getElementById('generateAddress')?.value || '',
@@ -2550,6 +2624,11 @@
                         summaryTitle = 'Extension Summary';
                         summaryIcon = 'maximize';
                         summaryColor = 'teal';
+                    } else if (applicationType === 'separation') {
+                        batchSuccessTitle = 'Separation Completed!';
+                        summaryTitle = 'Separation Summary';
+                        summaryIcon = 'split';
+                        summaryColor = 'violet';
                     }
 
                     const motherFileNo = data.data?.mother_file_no || 'N/A';
@@ -2612,6 +2691,16 @@
                                             <li class="flex items-start gap-2.5">
                                                 <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
                                                 <span>Original File <b class="font-black text-${summaryColor}-900 underline decoration-2 underline-offset-2">${motherFileNo}</b> expanded and re-commissioned.</span>
+                                            </li>
+                                        ` : ''}
+                                        ${applicationType === 'separation' ? `
+                                            <li class="flex items-start gap-2.5">
+                                                <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
+                                                <span>Mother File <b class="font-black text-${summaryColor}-900 underline decoration-2 underline-offset-2">${motherFileNo}</b> has been retired and decommissioned.</span>
+                                            </li>
+                                            <li class="flex items-start gap-2.5">
+                                                <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
+                                                <span><b>${data.files.length}</b> new separated plot fragments commissioned.</span>
                                             </li>
                                         ` : ''}
                                         <li class="flex items-start gap-2.5">
@@ -3387,8 +3476,16 @@
             serialNo: '',
             plotNo: '',
             tpNo: '',
+            tpSearchQuery: '',
+            tpSearchResults: [],
+            tpSearchLoading: false,
+            tpSearchOpen: false,
+            tpSearchTimer: null,
+            tpFocusIndex: -1,
             location: '',
             lga: '',
+            district: '',
+            districtIsOther: false,
             preview: '-',
             // New fields for reset logic
             phone_no: '',
@@ -3414,11 +3511,13 @@
             relatedFileIndexingId: '',
             isRecertificationPrefix: false,
             
-            // Subdivision / Merger Properties
+            // Subdivision / Merger / Separation Properties
             subdivisionAppId: '',
             mergerAppId: '',
+            separationAppId: '',
             subdivisionFileNo: '',
             mergerFileNo: '',
+            separationFileNo: '',
 
             // Change of Purpose Properties
             changeOfPurposeAppId: '',
@@ -3486,9 +3585,151 @@
                     });
 
                     this.updatePreview();
+
                 } catch (e) {
                     console.error('Error in Alpine init():', e);
                 }
+            },
+
+            debounceTpSearch() {
+                clearTimeout(this.tpSearchTimer);
+                const q = this.tpSearchQuery.trim();
+                if (q.length < 1) {
+                    this.tpSearchResults = [];
+                    this.tpSearchOpen = false;
+                    this.tpFocusIndex = -1;
+                    return;
+                }
+                this.tpSearchLoading = true;
+                this.tpSearchOpen = true;
+                this.tpSearchTimer = setTimeout(() => {
+                    fetch('{{ route("instruments.tpLookups.search") }}?q=' + encodeURIComponent(q), {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        this.tpSearchResults = (data.results || []).filter(r => r.id !== '__other__');
+                        this.tpSearchLoading = false;
+                        this.tpSearchOpen = true;
+                        this.tpFocusIndex = -1;
+                    })
+                    .catch(e => {
+                        console.error('[TP Search] fetch error:', e);
+                        this.tpSearchLoading = false;
+                    });
+                }, 300);
+            },
+
+            selectTpResult(result) {
+                this.tpNo = result.id;
+                this.tpSearchQuery = result.text;
+                this.tpSearchOpen = false;
+                this.tpSearchResults = [];
+                this.tpFocusIndex = -1;
+                const hidden = document.getElementById('generator_tp_no_val');
+                if (hidden) hidden.value = result.id;
+                if (this.batchMode) this.updateLocationEntry('tpNo', result.id);
+            },
+
+            clearTpNo() {
+                this.tpNo = '';
+                this.tpSearchQuery = '';
+                this.tpSearchResults = [];
+                this.tpSearchOpen = false;
+                this.tpFocusIndex = -1;
+                const hidden = document.getElementById('generator_tp_no_val');
+                if (hidden) hidden.value = '';
+                if (this.batchMode) this.updateLocationEntry('tpNo', '');
+            },
+
+            tpFocusNext() {
+                if (!this.tpSearchOpen) return;
+                this.tpFocusIndex = Math.min(this.tpFocusIndex + 1, this.tpSearchResults.length - 1);
+            },
+
+            tpFocusPrev() {
+                if (!this.tpSearchOpen) return;
+                this.tpFocusIndex = Math.max(this.tpFocusIndex - 1, 0);
+            },
+
+            tpSelectFocused() {
+                if (this.tpFocusIndex >= 0 && this.tpSearchResults[this.tpFocusIndex]) {
+                    this.selectTpResult(this.tpSearchResults[this.tpFocusIndex]);
+                }
+            },
+
+            buildLocation() {
+                const parts = [this.plotNo, this.district, this.lga].filter(v => v && v.trim());
+                const loc = parts.join(', ').toUpperCase();
+                this.location = loc;
+                if (this.batchMode) {
+                    this.updateLocationEntry('location', loc);
+                }
+            },
+
+            onDistrictChange(val) {
+                if (val === 'Other') {
+                    this.districtIsOther = true;
+                    this.district = '';
+                    if (this.batchMode) this.updateLocationEntry('district', '');
+                } else {
+                    this.districtIsOther = false;
+                    this.district = val;
+                    if (this.batchMode) this.updateLocationEntry('district', val);
+                    this.buildLocation();
+                }
+            },
+
+            onDistrictOtherInput(val) {
+                this.district = val;
+                if (this.batchMode) this.updateLocationEntry('district', val);
+                this.buildLocation();
+            },
+
+            onLgaChange(val) {
+                this.lga = val;
+                if (this.batchMode) this.updateLocationEntry('lga', val);
+                this.buildLocation();
+            },
+
+            loadDistrictField(districtVal) {
+                const sel = document.getElementById('generator_district');
+                if (!sel) return;
+                const optionValues = Array.from(sel.options).map(o => o.value);
+                if (!districtVal) {
+                    sel.value = '';
+                    this.districtIsOther = false;
+                } else if (optionValues.includes(districtVal)) {
+                    sel.value = districtVal;
+                    this.districtIsOther = false;
+                } else {
+                    sel.value = 'Other';
+                    this.districtIsOther = true;
+                    const otherInput = document.getElementById('generator_district_other');
+                    if (otherInput) otherInput.value = districtVal;
+                }
+            },
+
+            loadLocationFieldsForEntry() {
+                const entry = this.locationEntries[this.currentEntryIndex];
+                if (!entry) return;
+                // Plot Number
+                this.plotNo = entry.plotNo || '';
+                // TP Number (custom search)
+                this.tpNo = entry.tpNo || '';
+                this.tpSearchQuery = entry.tpNo || '';
+                this.tpSearchOpen = false;
+                const hidden = document.getElementById('generator_tp_no_val');
+                if (hidden) hidden.value = entry.tpNo || '';
+                // District
+                this.district = entry.district || '';
+                this.loadDistrictField(entry.district || '');
+                // LGA
+                this.lga = entry.lga || '';
+                const lgaSel = document.getElementById('generator_lga');
+                if (lgaSel) lgaSel.value = entry.lga || '';
+                // Rebuild auto location
+                this.buildLocation();
             },
 
             initAllocationSelect2() {
@@ -3737,7 +3978,7 @@
             get filledEntriesCount() {
                 if (!this.batchMode) return 0;
                 return this.locationEntries.filter(entry =>
-                    entry.plotNo || entry.tpNo || entry.location || entry.lga
+                    entry.plotNo || entry.tpNo || entry.location || entry.lga || entry.district
                 ).length;
             },
 
@@ -4013,6 +4254,7 @@
                                                 tpNo: res.data.tp_no || '',
                                                 location: self.location,
                                                 lga: self.lga,
+                                                district: self.district,
                                                 tracking_id: null
                                             });
                                         }
@@ -4160,6 +4402,125 @@
                 };
             },
 
+            openSeparationFileModal() {
+                if (typeof GlobalFileNoModal === 'undefined' || typeof GlobalFileNoModal.open !== 'function') {
+                    alert('File number selector is not available. Please refresh the page.');
+                    return;
+                }
+                const self = this;
+                GlobalFileNoModal.open({
+                    callback: function(data) {
+                        if (!data || !data.fileNumber) return;
+
+                        showGlobalLoading('Verifying separation...');
+                        fetch(`{{ route('plot-separation.find-by-file', '') }}/${encodeURIComponent(data.fileNumber)}`)
+                            .then(response => response.json())
+                            .then(res => {
+                                hideGlobalLoading();
+                                if (res.success) {
+                                    self.separationFileNo = data.fileNumber;
+                                    self.relatedFileNo = data.fileNumber;
+                                    self.separationAppId = res.data.id;
+
+                                    // Backfill details — use file_title from mother file only
+                                    self.fileName = res.data.file_title || '';
+                                    self.plotNo = res.data.plot_no || '';
+                                    self.lga = res.data.lga || '';
+
+                                    // Construct location from available components
+                                    let locParts = [];
+                                    if (res.data.house_no) locParts.push(res.data.house_no);
+                                    if (res.data.street_name) locParts.push(res.data.street_name);
+                                    if (res.data.district) locParts.push(res.data.district);
+                                    self.location = locParts.length > 0 ? locParts.join(', ').toUpperCase() : '';
+
+                                    self.isInherited = true;
+
+                                    // Detect full prefix from source file number
+                                    let detectedPrefix = '';
+                                    if (data.fileNumber) {
+                                        const parts = data.fileNumber.split('-');
+                                        const yearIndex = parts.findIndex(p => /^(19|20)\d{2}$/.test(p));
+                                        if (yearIndex > 0) {
+                                            detectedPrefix = parts.slice(0, yearIndex).join('-').toUpperCase();
+                                        } else {
+                                            detectedPrefix = parts[0].toUpperCase();
+                                        }
+                                    }
+
+                                    self.$nextTick(() => {
+                                        if (detectedPrefix && self.allAllPrefixes) {
+                                            let bestPrefix = self.allAllPrefixes.find(p => p.prefix === detectedPrefix);
+                                            if (!bestPrefix) {
+                                                bestPrefix = self.allAllPrefixes.find(p => p.prefix.startsWith(detectedPrefix) || detectedPrefix.startsWith(p.prefix));
+                                            }
+                                            if (bestPrefix) {
+                                                self.prefix = bestPrefix.prefix;
+                                                self.handlePrefixChange({ target: { value: self.prefix } });
+                                            }
+                                        }
+                                    });
+
+                                    // Fallback for landUseId if prefix match fails
+                                    if (!self.prefix && self.landUses) {
+                                        const luCode = (res.data.land_use || detectedPrefix.split('-')[0]).toUpperCase();
+                                        const luEntity = self.landUses.find(l => {
+                                            const name = l.landuse.toUpperCase();
+                                            return (luCode === 'RES' && name.includes('RESIDENTIAL')) ||
+                                                   (luCode === 'COM' && name.includes('COMMERCIAL')) ||
+                                                   (luCode === 'IND' && name.includes('INDUSTRIAL')) ||
+                                                   (luCode.startsWith('AG') && name.includes('AGRICULTURAL'));
+                                        });
+                                        if (luEntity) self.landUseId = luEntity.id;
+                                    }
+
+                                    self.batchMode = true;
+
+                                    // Populate locationEntries for batch mode
+                                    const bQty = parseInt(res.data.num_plots) || 0;
+                                    if (bQty > 0) {
+                                        let entries = [];
+                                        for (let i = 0; i < bQty; i++) {
+                                            entries.push({
+                                                plotNo: res.data.plot_no || '',
+                                                tpNo: res.data.tp_no || '',
+                                                location: self.location,
+                                                lga: self.lga,
+                                                district: self.district,
+                                                tracking_id: null
+                                            });
+                                        }
+                                        self.locationEntries = entries;
+                                    }
+
+                                    self.batchQuantity = bQty;
+
+                                    self.$nextTick(() => {
+                                        if (typeof self.updatePreview === 'function') {
+                                            self.updatePreview();
+                                        }
+                                    });
+
+                                    Swal.fire({
+                                        icon: 'success',
+                                        title: 'Separation Found',
+                                        text: `This file has an approved separation for ${res.data.num_plots} plots. Batch mode enabled.`,
+                                        timer: 3000,
+                                        showConfirmButton: false
+                                    });
+                                } else {
+                                    Swal.fire('Not Found', res.message, 'warning');
+                                }
+                            })
+                            .catch(err => {
+                                hideGlobalLoading();
+                                console.error(err);
+                                Swal.fire('Error', 'Failed to lookup separation application.', 'error');
+                            });
+                    }
+                });
+            },
+
             openCopFileSelector() {
                 const modal = document.getElementById('copFileModal');
                 const searchInput = document.getElementById('copSearchInput');
@@ -4271,15 +4632,17 @@
                     if (this.landUse || this.prefix) {
                         this.serialNo = getNextSerialForLandUse(this.prefix || this.landUse);
                     }
-                } else if (this.fileOption === 'subdivision' || this.fileOption === 'merger') {
+                } else if (this.fileOption === 'subdivision' || this.fileOption === 'merger' || this.fileOption === 'separation') {
                     this.serialNo = '';
                     this.subdivisionAppId = '';
                     this.mergerAppId = '';
+                    this.separationAppId = '';
                     this.subdivisionFileNo = '';
                     this.mergerFileNo = '';
+                    this.separationFileNo = '';
                     this.batchMode = false;
                     this.isInherited = false;
-                    
+
                     // Reset fields
                     this.fileName = '';
                     this.plotNo = '';
@@ -4293,7 +4656,7 @@
 
             updatePreview() {
                 // Auto-update serial number when land use changes for normal, subdivision, merger, and temporary files
-                if (['normal', 'subdivision', 'merger', 'temporary'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
+                if (['normal', 'subdivision', 'merger', 'separation', 'temporary'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
                     if (this.fileOption === 'temporary' && this.existingFileNo) {
                         // Keep extracted serial from existing file for temporary files
                     } else {
@@ -4445,6 +4808,7 @@
                         tpNo: '',
                         location: '',
                         lga: '',
+                        district: '',
                         tracking_id: null,
                         file_name: this.fileName || '',
                         phone_no: this.phone_no || '',
@@ -4463,7 +4827,7 @@
                     if (field === 'phone_no') this.phone_no = value;
                     if (field === 'address') this.address = value;
 
-                    if (this.applyLocationToAll && ['plotNo', 'tpNo', 'location', 'lga'].includes(field)) {
+                    if (this.applyLocationToAll && ['plotNo', 'tpNo', 'location', 'lga', 'district'].includes(field)) {
                         for (let i = 0; i < this.batchQuantity; i++) {
                             if (this.locationEntries[i]) {
                                 this.locationEntries[i][field] = value;
@@ -4475,35 +4839,33 @@
 
             previousEntry() {
                 if (this.currentEntryIndex > 0) {
-                    // Save current fields before moving
                     this.saveCurrentApplicantToEntry();
                     this.currentEntryIndex--;
-                    // Load previous fields
                     this.loadApplicantFromEntry();
+                    this.$nextTick(() => this.loadLocationFieldsForEntry());
                 }
             },
 
             nextEntry() {
                 if (this.currentEntryIndex < this.batchQuantity - 1) {
-                    // Save current fields before moving
                     this.saveCurrentApplicantToEntry();
                     this.currentEntryIndex++;
-                    // Initialize entry if it doesn't exist
                     if (!this.locationEntries[this.currentEntryIndex]) {
                         this.locationEntries[this.currentEntryIndex] = {
                             plotNo: '',
                             tpNo: '',
                             location: '',
                             lga: '',
+                            district: '',
                             tracking_id: null,
                             file_name: this.fileName || '',
                             phone_no: this.phone_no || '',
                             address: this.address || ''
                         };
                     } else {
-                        // Load existing fields
                         this.loadApplicantFromEntry();
                     }
+                    this.$nextTick(() => this.loadLocationFieldsForEntry());
                 }
             },
 
@@ -4527,7 +4889,7 @@
             isEntryFilled(index) {
                 if (!this.locationEntries[index]) return false;
                 const entry = this.locationEntries[index];
-                return entry.plotNo || entry.tpNo || entry.location || entry.lga;
+                return entry.plotNo || entry.tpNo || entry.location || entry.lga || entry.district;
             },
 
             updateBatchPreview() {
@@ -4544,6 +4906,7 @@
                             tpNo: '',
                             location: '',
                             lga: '',
+                            district: '',
                             tracking_id: null,
                             file_name: this.fileName || '',
                             phone_no: this.phone_no || '',

@@ -323,7 +323,21 @@
               <i data-lucide="expand" class="h-3.5 w-3.5 text-orange-400"></i>
               <span>Plot Extension</span>
             </a>
+
+            <!-- 4. Plot Separation -->
+            <a href="#"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
+              <i data-lucide="scissors" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>Plot Separation</span>
+            </a>
           </div>
+
+          <!-- iii. Title Status -->
+          <a href="{{ route('title-status.index') }}?url=land"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('title-status.index') && request('url') === 'land' ? 'active' : '' }}">
+            <i data-lucide="badge-check" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>Title Status</span>
+          </a>
         </div>
       @endif
 

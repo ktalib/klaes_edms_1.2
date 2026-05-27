@@ -73,8 +73,7 @@
                 this.setAutoSaveFrequency(this.state.autoSaveFrequency);
             }
 
-            this.restoreFormState(this.bootstrap.form_state || {});
-            this.checkForRecoveryPrompt();
+            this.checkForRecoveryPrompt(this.bootstrap.form_state || {});
             this.startAutoSaveTimer();
             this.scheduleSessionWarning();
             this.updateStatus('Draft ready', 'ready');
@@ -1190,8 +1189,8 @@
 
         restoreFormState(state, options = {}) {
             console.log('[DraftAutosave] Starting form restoration', { stateKeys: Object.keys(state).length });
-            
-            const { resetForm = false, announce = true } = options;
+
+            const { resetForm = false, announce = true, triggeredByUser = false } = options;
             const keys = state && typeof state === 'object' ? Object.keys(state) : [];
 
             let applied = false;
@@ -1328,7 +1327,25 @@
                 }
             } finally {
                 this.state.silenceChanges = false;
-                this.state.hasPendingChanges = false;
+                // User-triggered restore marks pending so the next auto-save persists it
+                this.state.hasPendingChanges = triggeredByUser;
+            }
+
+            // B7: Show re-select reminders for file inputs that were in the draft
+            if (state && state.__files && this.form) {
+                Object.entries(state.__files).forEach(([fieldName, fileList]) => {
+                    if (!Array.isArray(fileList) || fileList.length === 0) return;
+                    const input = this.form.querySelector(`[name="${fieldName}"]`);
+                    if (!input || input.type !== 'file') return;
+                    const names = fileList.map(f => f.name).join(', ');
+                    let hint = input.parentElement.querySelector('.draft-file-hint');
+                    if (!hint) {
+                        hint = document.createElement('p');
+                        hint.className = 'draft-file-hint text-xs text-amber-600 mt-1';
+                        input.parentElement.appendChild(hint);
+                    }
+                    hint.textContent = `Previously uploaded: ${names} — please re-select`;
+                });
             }
 
             if (announce && applied) {
@@ -1374,10 +1391,13 @@
             if (typeof window.populateBuyersFromState === 'function') {
                 window.populateBuyersFromState(records);
                 recordKeys.forEach((key) => skipKeys.add(key));
-            } else if (typeof window.ensureBuyerRowCount === 'function') {
-                window.ensureBuyerRowCount(Math.max(1, count || this.detectBuyerRecordMax(recordKeys)));
             } else {
-                this.ensureBuyerRowStructureFallback(Math.max(1, count || this.detectBuyerRecordMax(recordKeys)));
+                // buyers.js not loaded yet (lazy-loaded on first "Add Buyer" click)
+                // Store records so buyers.js can pick them up when it initialises
+                if (records.length > 0) {
+                    window.__pendingBuyerRestore = records;
+                }
+                recordKeys.forEach((key) => skipKeys.add(key));
             }
         },
 
@@ -1514,8 +1534,10 @@
             }
         },
 
-        checkForRecoveryPrompt() {
-            if (!this.bootstrap || !this.bootstrap.form_state || Object.keys(this.bootstrap.form_state).length === 0) {
+        checkForRecoveryPrompt(formState) {
+            const hasData = formState && typeof formState === 'object' && Object.keys(formState).length > 0;
+
+            if (!hasData) {
                 return;
             }
 
@@ -1527,12 +1549,18 @@
                     showCancelButton: true,
                     confirmButtonText: 'Yes, continue',
                     cancelButtonText: 'Start fresh',
+                    allowOutsideClick: false,
                 }).then((result) => {
-                    if (!result.isConfirmed) {
+                    if (result.isConfirmed) {
+                        this.restoreFormState(formState, { triggeredByUser: true });
+                    } else {
                         this.form.reset();
                         this.state.hasPendingChanges = false;
                     }
                 });
+            } else {
+                // No Swal available — restore silently
+                this.restoreFormState(formState);
             }
         },
 
@@ -1620,24 +1648,24 @@
                 'property_lga',
                 'property_state',
                 'land_use',
-                'records',
             ];
 
             let completed = 0;
             required.forEach((field) => {
                 const value = formState[field];
                 if (Array.isArray(value)) {
-                    if (value.length > 0) {
-                        completed += 1;
-                    }
+                    if (value.length > 0) completed += 1;
                     return;
                 }
-                if (value && value !== '[]') {
-                    completed += 1;
-                }
+                if (value && value !== '[]') completed += 1;
             });
 
-            return Math.round((completed / required.length) * 100);
+            // Buyers are serialized as flat keys like records[0][firstName], not as an array
+            const hasBuyers = (Array.isArray(formState.records) && formState.records.length > 0)
+                || Object.keys(formState).some(key => /^records\[\d+\]/.test(key));
+            if (hasBuyers) completed += 1;
+
+            return Math.round((completed / (required.length + 1)) * 100);
         },
 
         getActiveStep() {
@@ -1886,6 +1914,9 @@
         },
 
         finalizeAfterSubmit() {
+            const draftId = this.state.draftId;
+            const deleteUrl = this.endpoints.delete;
+
             this.cleanupTimers();
             this.state.hasPendingChanges = false;
             this.state.draftId = null;
@@ -1895,6 +1926,20 @@
                 this.beforeUnloadHandler = null;
             }
             this.updateStatus('Draft submitted', 'submitted');
+
+            // Fire-and-forget: delete the draft from the server so it doesn't reappear on next visit
+            if (draftId && deleteUrl) {
+                const url = deleteUrl.replace('__DRAFT_ID__', encodeURIComponent(draftId));
+                fetch(url, {
+                    method: 'DELETE',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': this.getCsrfToken(),
+                    },
+                }).catch(() => {});
+            }
         },
 
         getCsrfToken() {

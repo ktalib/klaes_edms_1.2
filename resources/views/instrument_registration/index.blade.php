@@ -4,7 +4,6 @@
     {{ $PageTitle ?? __('Instrument Registration (New Registration)') }}
 @endsection
 
-
 @section('content')
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
@@ -15,7 +14,7 @@
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 
-    <!-- Inline script to make sure critical functions are defined early -->
+    <!-- Inline script to make sure critical functions are defined early ---->
     <script>
         // Define global configuration and data FIRST
         window.KlaesConfig = {
@@ -536,7 +535,7 @@
                                         <input type="checkbox" class="rounded main-table-checkbox" data-id="{{ $app->id }}"
                                             data-status="{{ $app->status }}" data-instrument-type="{{ $app->instrument_type }}"
                                             data-fileno="{{ $app->fileno }}" {{ $isDisabled ? 'disabled' : '' }}
-                                            onchange="handleMainTableCheckboxChange()">
+                                            onchange="handleMainTableCheckboxChange(this)">
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                                         @if($app->status === 'registered')
@@ -954,6 +953,16 @@
             This batch will be registered and assigned to: <strong>{{ Auth::user()->name ?? Auth::user()->username ?? 'You' }}</strong>
         </div>
 
+        {{-- Registration Particulars Preview --}}
+        <div id="gbmSerialPreview" style="display:none; padding:10px 24px; background:#eff6ff; border-bottom:1px solid #bfdbfe; flex-shrink:0; gap:10px; flex-wrap:wrap; align-items:center;">
+            <span style="font-size:12px; font-weight:600; color:#1e40af; display:flex; align-items:center; gap:5px;">
+                <i class="fas fa-tag" style="font-size:11px;"></i> Next Reg. Particulars:
+            </span>
+            <span id="gbmSerialPreviewContent" style="font-size:12px; color:#374151;">
+                <i class="fas fa-spinner fa-spin" style="color:#6366f1;"></i> Loading…
+            </span>
+        </div>
+
         {{-- Body --}}
         <div id="gbmBody" style="overflow:auto; flex:1; padding:0;">
 
@@ -977,6 +986,7 @@
                                 <th>File No</th>
                                 <th>Instrument Type</th>
                                 <th>Party 1 (Grantor)</th>
+                                <th>Party 2 (Grantee)</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
@@ -1022,15 +1032,18 @@ window.batchModeActive = false;
 function toggleBatchMode() {
     window.batchModeActive = !window.batchModeActive;
     var btn = document.getElementById('batchModeToggleBtn');
+    var table = document.getElementById('instrumentTable');
 
     if (window.batchModeActive) {
         btn.classList.remove('bg-gray-100','text-gray-700','border-gray-300');
         btn.classList.add('bg-indigo-600','text-white','border-indigo-700');
         btn.innerHTML = '<i class="fas fa-times-circle"></i><span>Exit Batch</span>';
+        if (table) table.classList.add('batch-mode-on');
     } else {
         btn.classList.remove('bg-indigo-600','text-white','border-indigo-700');
         btn.classList.add('bg-gray-100','text-gray-700','border-gray-300');
         btn.innerHTML = '<i class="fas fa-check-square"></i><span>Batch</span>';
+        if (table) table.classList.remove('batch-mode-on');
         // Uncheck all main-table checkboxes and hide the batch button
         document.querySelectorAll('.main-table-checkbox:checked').forEach(function(cb) {
             cb.checked = false;
@@ -1101,12 +1114,13 @@ function openGroupBatchModal() {
         if (rec) {
             if (rec._isAggregate && (rec._pendingUnits || []).length) {
                 rec._pendingUnits.forEach(function(unit) {
+                    var isCofO = rec._aggType === 'sectional_cofo';
                     _gbmItems.push({
                         application_id:      unit.subapp_id + '_' + rec._aggType,
                         fileno:              unit.fileno || '-',
                         instrument_type:     rec.instrument_type || '',
-                        grantor:             unit.applicant || '',
-                        grantee:             '',
+                        grantor:             isCofO ? (rec.Grantor || 'Kano State Government') : (unit.applicant || ''),
+                        grantee:             unit.applicant || '',
                         status:              'pending',
                         lga:                 '',
                         district:            '',
@@ -1146,12 +1160,13 @@ function openGroupBatchModal() {
         var instrType = cb.getAttribute('data-instrument-type');
         var fileno    = cb.getAttribute('data-fileno') || '-';
         var applicant = cb.getAttribute('data-applicant') || '';
+        var isCofOType = regType === 'sectional_cofo';
         _gbmItems.push({
             application_id:      subappId + '_' + regType,
             fileno:              fileno,
             instrument_type:     instrType,
-            grantor:             applicant,
-            grantee:             '',
+            grantor:             isCofOType ? 'Kano State Government' : applicant,
+            grantee:             applicant,
             status:              'pending',
             lga:                 '',
             district:            '',
@@ -1189,23 +1204,100 @@ function openGroupBatchModal() {
         var statusHtml = item.status === 'pending'
             ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#fef9c3;color:#854d0e;"><i class="fas fa-clock"></i>Pending</span>'
             : '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#dcfce7;color:#166534;"><i class="fas fa-check"></i>Registered</span>';
-        var grantor = (item.grantor || '-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        var grantor  = (item.grantor  || '-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        var grantee  = (item.grantee  || '-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         tbody.insertAdjacentHTML('beforeend',
             '<tr style="background:' + (i%2?'#fafafa':'#fff') + ';">'
             + '<td style="text-align:center;color:#9ca3af;">' + (i+1) + '</td>'
             + '<td style="font-family:monospace;font-weight:700;color:#1d4ed8;">' + item.fileno + '</td>'
             + '<td>' + (item.instrument_type || '-') + '</td>'
-            + '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + grantor + '">' + grantor + '</td>'
+            + '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + grantor + '">' + grantor + '</td>'
+            + '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + grantee + '">' + grantee + '</td>'
             + '<td>' + statusHtml + '</td>'
             + '</tr>'
         );
     });
 
     document.getElementById('groupBatchModal').style.display = 'flex';
+
+    // Fetch and show registration particulars preview
+    _gbmFetchSerialPreview();
+}
+
+// Compute the last serial in a range, respecting the 300-per-volume rollover
+function _gbmComputeEndSerial(startSerial, startVolume, count) {
+    var end = startSerial + count - 1;
+    var vol = startVolume;
+    while (end > 300) { end -= 300; vol++; }
+    return end + '/' + end + '/' + vol;
+}
+
+function _gbmFetchSerialPreview() {
+    var previewWrap    = document.getElementById('gbmSerialPreview');
+    var previewContent = document.getElementById('gbmSerialPreviewContent');
+    if (!previewWrap || !previewContent) return;
+
+    // Group pending items by instrument type
+    var typeGroups = {};
+    _gbmItems.forEach(function(item) {
+        if (item.status === 'registered') return;
+        var t = item.instrument_type || 'Unknown';
+        typeGroups[t] = (typeGroups[t] || 0) + 1;
+    });
+
+    var types = Object.keys(typeGroups);
+    if (!types.length) { previewWrap.style.display = 'none'; return; }
+
+    previewWrap.style.display = 'flex';
+    previewContent.innerHTML  = '<i class="fas fa-spinner fa-spin" style="color:#6366f1;"></i> Loading…';
+
+    var base = (window.KlaesConfig && window.KlaesConfig.urls && window.KlaesConfig.urls.base)
+        ? window.KlaesConfig.urls.base
+        : (window.baseUrl + '/instrument_registration');
+
+    var promises = types.map(function(type) {
+        return fetch(base + '/get-next-serial?instrument_type=' + encodeURIComponent(type), {
+            headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content') }
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) { return { type: type, count: typeGroups[type], data: data }; });
+    });
+
+    Promise.all(promises)
+        .then(function(results) {
+            var parts = results.map(function(r) {
+                var start  = r.data.deeds_serial_no || '—';
+                var startS = parseInt(r.data.serial_no, 10) || 1;
+                var startV = parseInt(r.data.volume_no, 10) || 1;
+                var count  = r.count;
+                var label  = count > 1 ? _gbmEsc(r.type) + ': ' : '';
+
+                if (count === 1) {
+                    return '<span style="font-family:monospace;font-weight:700;font-size:13px;color:#1d4ed8;background:#dbeafe;padding:2px 8px;border-radius:5px;">'
+                        + _gbmEsc(start) + '</span>'
+                        + '<span style="font-size:11px;color:#6b7280;margin-left:6px;">(' + count + ' instrument)</span>';
+                }
+
+                var end = _gbmComputeEndSerial(startS, startV, count);
+                return '<span style="font-size:11px;color:#6b7280;">' + label + '</span>'
+                    + '<span style="font-family:monospace;font-weight:700;font-size:13px;color:#1d4ed8;background:#dbeafe;padding:2px 8px;border-radius:5px;">'
+                    + _gbmEsc(start) + '</span>'
+                    + '<span style="font-size:13px;font-weight:700;color:#6366f1;margin:0 6px;">&rarr;</span>'
+                    + '<span style="font-family:monospace;font-weight:700;font-size:13px;color:#1d4ed8;background:#dbeafe;padding:2px 8px;border-radius:5px;">'
+                    + _gbmEsc(end) + '</span>'
+                    + '<span style="font-size:11px;color:#6b7280;margin-left:6px;">(' + count + ' instruments)</span>';
+            });
+            previewContent.innerHTML = parts.join('<span style="margin:0 12px;color:#d1d5db;">|</span>');
+        })
+        .catch(function() {
+            previewContent.innerHTML = '<span style="color:#dc2626;font-size:12px;"><i class="fas fa-exclamation-circle"></i> Preview unavailable</span>';
+        });
 }
 
 function closeGroupBatchModal() {
     document.getElementById('groupBatchModal').style.display = 'none';
+    var p = document.getElementById('gbmSerialPreview');
+    if (p) p.style.display = 'none';
 }
 
 function submitGroupBatch() {

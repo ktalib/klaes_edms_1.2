@@ -120,6 +120,7 @@
   <script src="{{ asset('js/print-manager.js') }}"></script>
   <script src="{{ asset('js/tailwind-modal.js') }}?v={{ time() }}"></script>
   <x-print-manager />
+  <x-assign-security-paper-modal />
   @livewireScripts
 </body>
 

@@ -439,70 +439,13 @@
             });
         });
         
-        // Security Paper Assignment Logic
+        // Bridge to global security paper modal component
         function openSecurityPaperModal(id, fileno, currentCode) {
-            const availablePapers = @json($availableSecurityPapers);
-            
-            let optionsHtml = '<option value="">-- Enter Security Paper Code --</option>';
-            availablePapers.forEach(paper => {
-                const selected = (paper.paper_code === currentCode) ? 'selected' : '';
-                optionsHtml += `<option value="${paper.paper_code}" ${selected}>${paper.paper_code}</option>`;
-            });
-
-            if (currentCode && !availablePapers.find(p => p.paper_code === currentCode)) {
-                 optionsHtml = `<option value="${currentCode}" selected>${currentCode} (Current)</option>` + optionsHtml;
-            }
-
-            Swal.fire({
-                title: 'Enter Security Paper Code',
-                html: `
-                    <div class="text-left mb-4">
-                        <p class="text-sm text-gray-600 mb-2">Enter physical security paper code for file: <strong>${fileno}</strong></p>
-                        <select id="swal-paper-code" class="swal2-select w-full" style="display: flex; margin: 1em auto; border: 1px solid #d9d9d9; border-radius: 5px; padding: 0.75em;">
-                            ${optionsHtml}
-                        </select>
-                        <p class="text-xs text-gray-500 mt-2">Note: This code is on the physical paper and will not be printed on the template.</p>
-                    </div>
-                `,
-                showCancelButton: true,
-                confirmButtonText: 'Assign Code',
-                showLoaderOnConfirm: true,
-                preConfirm: () => {
-                    const paperCode = document.getElementById('swal-paper-code').value;
-                    if (!paperCode) {
-                        Swal.showValidationMessage('Please enter a security paper code');
-                        return false;
-                    }
-                    return fetch(`{{ url('programmes/rofo/assign-security-paper') }}/${id}`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                        },
-                        body: JSON.stringify({ security_paper_code: paperCode })
-                    })
-                    .then(response => {
-                        if (!response.ok) {
-                            return response.json().then(error => { throw new Error(error.message || 'Failed to assign code') });
-                        }
-                        return response.json();
-                    })
-                    .catch(error => {
-                        Swal.showValidationMessage(`Request failed: ${error.message}`);
-                    });
-                },
-                allowOutsideClick: () => !Swal.isLoading()
-            }).then((result) => {
-                if (result.isConfirmed && result.value.success) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Assigned!',
-                        text: result.value.message || 'Security paper code assigned successfully.'
-                    }).then(() => {
-                        window.location.reload();
-                    });
-                }
-            });
+            openAssignSecurityPaperModal(
+                id, fileno, currentCode,
+                '{{ url("programmes/rofo/assign-security-paper") }}/' + id,
+                { codesApiUrl: '{{ url("security-paper-codes/available") }}', fieldName: 'security_paper_code' }
+            );
         }
         // goet setTab has_idapplications ? 'gen' : 'not';
         // if(getISnone) sys.name = 'not';

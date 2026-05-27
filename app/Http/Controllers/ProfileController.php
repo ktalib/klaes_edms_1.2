@@ -70,11 +70,19 @@ class ProfileController extends Controller
         if ($request->hasFile('signature_file')) {
             $officer = LandOfficer::where('user_id', $user->id)->first();
 
-            if ($officer && !empty($officer->signature_file) && Storage::exists($officer->signature_file)) {
-                Storage::delete($officer->signature_file);
+            if ($officer && !empty($officer->signature_file)) {
+                $oldPath = $officer->signature_file;
+                // Old paths: 'public/land_officer_signatures/...' stored on local disk
+                // New paths: 'land_officer_signatures/...' stored on public disk
+                if (str_starts_with($oldPath, 'public/')) {
+                    Storage::disk('local')->delete($oldPath);
+                } else {
+                    Storage::disk('public')->delete($oldPath);
+                }
             }
 
-            $signaturePath = $request->file('signature_file')->store('public/land_officer_signatures');
+            // Store on the 'public' disk so the file is web-accessible via /storage/...
+            $signaturePath = $request->file('signature_file')->store('land_officer_signatures', 'public');
 
             if (!$officer) {
                 $officer = new LandOfficer();

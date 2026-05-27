@@ -71,11 +71,9 @@
                                 <th class="px-5 py-4 whitespace-nowrap">Workflow</th>
                                 <th class="px-5 py-4 whitespace-nowrap">Old File(s) Decommissioned</th>
                                 <th class="px-5 py-4 whitespace-nowrap">Linked New File</th>
-                                <th class="px-5 py-4 whitespace-nowrap">Child Details</th>
-                                <th class="px-5 py-4 whitespace-nowrap">Approval Ref / Date</th>
                                 <th class="px-5 py-4 whitespace-nowrap">Applicant / Holder</th>
-                                <th class="px-5 py-4 whitespace-nowrap">Processed By</th>
-                                <th class="px-5 py-4 whitespace-nowrap">Logged</th>
+                                <th class="px-5 py-4 whitespace-nowrap">Created By</th>
+                                <th class="px-5 py-4 whitespace-nowrap">Date Created</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 text-sm text-slate-700">
@@ -107,34 +105,6 @@
                                         <span class="font-mono font-bold text-slate-900 text-xs block">{{ $link->new_file_number }}</span>
                                         <span class="text-[10px] text-blue-600 font-bold font-mono">Prop: {{ $link->prop_id ?: '—' }}</span>
                                     </td>
-                                    <td class="px-5 py-4 text-xs text-slate-600">
-                                        @if(!empty($link->child_plot_number ?? null) || !empty($link->child_plot_size ?? null))
-                                            <div class="space-y-0.5">
-                                                @if(!empty($link->child_plot_number))
-                                                    <div><span class="text-slate-400">Plot:</span> <strong>{{ $link->child_plot_number }}</strong></div>
-                                                @endif
-                                                @if(!empty($link->child_plot_size))
-                                                    <div><span class="text-slate-400">Size:</span> <strong>{{ $link->child_plot_size }}</strong> m²</div>
-                                                @endif
-                                                @if(!empty($link->survey_plan_no ?? null))
-                                                    <div><span class="text-slate-400">SP:</span> <span class="font-mono">{{ $link->survey_plan_no }}</span></div>
-                                                @endif
-                                            </div>
-                                        @else
-                                            <span class="text-slate-300">—</span>
-                                        @endif
-                                    </td>
-                                    <td class="px-5 py-4 text-xs">
-                                        @if(!empty($link->approval_reference ?? null))
-                                            <div class="font-medium text-slate-700">{{ $link->approval_reference }}</div>
-                                        @endif
-                                        @if(!empty($link->approval_date ?? null))
-                                            <div class="text-slate-400">{{ \Carbon\Carbon::parse($link->approval_date)->format('d/m/Y') }}</div>
-                                        @endif
-                                        @if(empty($link->approval_reference ?? null) && empty($link->approval_date ?? null))
-                                            <span class="text-slate-300">—</span>
-                                        @endif
-                                    </td>
                                     <td class="px-5 py-4 text-xs">{{ $link->applicant_name ?: '—' }}</td>
                                     <td class="px-5 py-4">
                                         <div class="flex items-center gap-2">
@@ -150,7 +120,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="8" class="px-6 py-12 text-center text-slate-400 italic">
+                                    <td colspan="6" class="px-6 py-12 text-center text-slate-400 italic">
                                         No legacy process linkages recorded yet. Click "Backfill Linkage" to record one.
                                     </td>
                                 </tr>
@@ -460,6 +430,20 @@
 @section('footer-scripts')
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script>
+// ─── Temp File No Auto-Generation ────────────────────────────────────────────
+const TEMP_FILENO_URL = '{{ route("instruments.getNextTempFileNo") }}';
+
+function fetchAndSetTempFileNo() {
+    const input = document.getElementById('temp_file_no');
+    if (!input) return;
+    input.value = 'Generating...';
+
+    fetch(TEMP_FILENO_URL)
+        .then(r => r.json())
+        .then(data => { input.value = data.temp_fileno || ''; })
+        .catch(() => { input.value = ''; });
+}
+
 // ─── Global State ───────────────────────────────────────────────────────────
 let selectedWorkflow = null;
 let selectedOldFiles = [];
@@ -1040,6 +1024,9 @@ function backfillMergerResult(data) {
     document.getElementById('mr-location').textContent = [record.street_name, record.district, record.lga, record.state].filter(Boolean).join(', ') || '—';
     document.getElementById('mr-propid').textContent   = record.prop_id || '—';
 
+    const applicantInput = document.querySelector('input[name="applicant_name"]');
+    if (applicantInput) applicantInput.value = title;
+
     const details = document.getElementById('merger-result-details');
     if (details) details.classList.remove('hidden');
     if (window.lucide) window.lucide.createIcons();
@@ -1279,8 +1266,9 @@ function renderTailoredForm() {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                     <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Temp File No</label>
-                    <input type="text" name="temp_file_no" id="temp_file_no" placeholder="Existing temp file, if any"
-                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold font-mono">
+                    <input type="text" name="temp_file_no" id="temp_file_no" readonly
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold font-mono text-slate-700"
+                        placeholder="Auto-generating...">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Number of Source Plots <span class="text-red-500">*</span></label>
@@ -1415,6 +1403,10 @@ function renderTailoredForm() {
 
     fieldsContainer.innerHTML = html;
     if (window.lucide) window.lucide.createIcons();
+
+    if (selectedWorkflow === 'Merger') {
+        fetchAndSetTempFileNo();
+    }
 }
 
 // ─── Badge Rendering (shared helper, called by DOMContentLoaded closures) ────

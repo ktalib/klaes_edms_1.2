@@ -551,7 +551,7 @@
                                         <div class="flex">
                                             <input type="text" id="file_number" name="file_number"
                                                 class="w-full form-input-clean mr-2 font-mono bg-gray-50"
-                                                value="{{ old('file_number', $fileIndexing->file_number) }}"
+                                                value="{{ old('file_number', $fileIndexing->file_number ?? $fileIndexing->temp_file_no) }}"
                                                 placeholder="Enter file number" readonly>
 
                                             <button type="button" id="change-file-number-btn"
@@ -580,6 +580,12 @@
                                                 </span>
                                                 <span class="text-gray-500">
                                                     The system will attempt to resolve one from the registry grouping table on save.
+                                                </span>
+                                            @endif
+                                            @if(!empty($fileIndexing->temp_file_no))
+                                                <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 font-mono">
+                                                    <i data-lucide="clock" class="h-3.5 w-3.5"></i>
+                                                    Temp File No: <strong class="font-bold">{{ $fileIndexing->temp_file_no }}</strong>
                                                 </span>
                                             @endif
                                         </div>
@@ -2334,7 +2340,8 @@
 
                     const fileIndexingData = {
                         id: {{ $fileIndexing->id }},
-                        file_number: (document.getElementById('file_number') && document.getElementById('file_number').value) || '',
+                        file_number: (document.getElementById('file_number') && document.getElementById('file_number').value) || '{{ $fileIndexing->temp_file_no ?? '' }}',
+                        temp_file_no: '{{ $fileIndexing->temp_file_no ?? '' }}',
                         file_title: (document.getElementById('file_title') && document.getElementById('file_title').value) || '',
                         plot_no: (document.getElementById('plot_number') && document.getElementById('plot_number').value) || '',
                         tp_no: (document.getElementById('tp_no') && document.getElementById('tp_no').value) || '',

@@ -502,6 +502,7 @@ class FileIndexingController extends Controller
             'NewFileNo',
             'np_fileno',
             'cofo_no',
+            'temp_fileno',
         ];
 
         $schema = Schema::connection('sqlsrv');
@@ -711,10 +712,19 @@ class FileIndexingController extends Controller
             $physicalRegistries = \App\Models\PhysicalRegistry::orderBy('name')->get();
             $landUseTypes = \App\Models\LandUseType::orderBy('name')->get()->pluck('name', 'name');
 
-            // Check if property records exist (CofO, PRA, or History)
-            $hasPropertyRecords = !empty($cofoDetails) ||
-                DB::connection('sqlsrv')->table('pra')->where('mlsFNo', $record->file_number)->exists() ||
-                DB::connection('sqlsrv')->table('file_history_staging')->where('mlsFNo', $record->file_number)->orWhere('fileno', $record->file_number)->exists();
+            // Check if property records exist (CofO, PRA, or History).
+            // For temp-only records (file_number = null) use temp_file_no as the lookup key.
+            $lookupFileNo = trim((string) ($record->file_number ?? ''));
+            $lookupTempNo = trim((string) ($record->temp_file_no ?? ''));
+            $effectiveLookupNo = $lookupFileNo !== '' ? $lookupFileNo : $lookupTempNo;
+
+            $hasPropertyRecords = !empty($cofoDetails) || ($effectiveLookupNo !== '' && (
+                DB::connection('sqlsrv')->table('pra')->where('mlsFNo', $effectiveLookupNo)->exists() ||
+                DB::connection('sqlsrv')->table('file_history_staging')
+                    ->where('mlsFNo', $effectiveLookupNo)
+                    ->orWhere('fileno', $effectiveLookupNo)
+                    ->exists()
+            ));
 
             // Return the original Edit View as requested
             $PageTitle = 'Edit File Indexing';
@@ -742,23 +752,39 @@ class FileIndexingController extends Controller
      */
     protected function prepareCofODetailsForEdit($fileIndexing): array
     {
-        $fileNumber = $fileIndexing->file_number ?? null;
-        if (empty($fileNumber)) {
+        $fileNumber = trim((string) ($fileIndexing->file_number ?? ''));
+        $tempFileNo = trim((string) ($fileIndexing->temp_file_no ?? ''));
+
+        if ($fileNumber === '' && $tempFileNo === '') {
             return [];
         }
 
+        $hasTempFileno = Schema::connection('sqlsrv')->hasColumn(self::COFO_TABLE, 'temp_fileno');
+
         // Try CofO_staging first (the definitive source for processed files)
         $record = DB::connection('sqlsrv')->table(self::COFO_TABLE)
-            ->where(function ($query) use ($fileNumber) {
-                $query->where('mlsFNo', $fileNumber)
-                    ->orWhere('fileno', $fileNumber)
-                    ->orWhere('kangisFileNo', $fileNumber)
-                    ->orWhere('NewKANGISFileno', $fileNumber);
+            ->where(function ($query) use ($fileNumber, $tempFileNo, $hasTempFileno) {
+                $added = false;
+                if ($fileNumber !== '') {
+                    $query->where('mlsFNo', $fileNumber)
+                        ->orWhere('fileno', $fileNumber)
+                        ->orWhere('kangisFileNo', $fileNumber)
+                        ->orWhere('NewKANGISFileno', $fileNumber);
+                    $added = true;
+                }
+                // For temp-only records look up by temp_fileno column when available
+                if ($tempFileNo !== '' && $hasTempFileno) {
+                    if ($added) {
+                        $query->orWhere('temp_fileno', $tempFileNo);
+                    } else {
+                        $query->where('temp_fileno', $tempFileNo);
+                    }
+                }
             })
             ->first();
 
         // Fallback to legacy deed_registrations if not in staging
-        if (!$record) {
+        if (!$record && $fileNumber !== '') {
             $record = DB::connection('sqlsrv')->table('deed_registrations')
                 ->where('fileno', $fileNumber)
                 ->first();
@@ -1027,7 +1053,16 @@ class FileIndexingController extends Controller
 
             if ($tempCandidate !== null) {
                 $baseFileNumber = trim((string) preg_replace($tempSuffixPattern, '', $tempCandidate));
-                $validated['file_number'] = $baseFileNumber;
+                $existingMainFileNumber = trim((string) ($existingRecord->file_number ?? ''));
+
+                // Only promote temp to main file_number when the record already had a real file_number
+                // (rename scenario). If existing file_number is null the user did not select a main
+                // file number — preserve null so we never accidentally assign the temp as the main.
+                if ($existingMainFileNumber !== '') {
+                    $validated['file_number'] = $baseFileNumber;
+                } else {
+                    $validated['file_number'] = null;
+                }
                 $validated['has_temp_file'] = true;
                 $validated['temp_file_no'] = $baseFileNumber . '(T)';
             } else {
@@ -1611,7 +1646,7 @@ class FileIndexingController extends Controller
      */
     protected function updateRelatedTables($existingRecord, $validated, Request $request, ?string $testControl = null, bool $hasCofo = false, ?int $propId = null, bool $shouldUpdateEntityCustomer = true, bool $allowInserts = true)
     {
-        $fileNumber = $validated['file_number'];
+        $fileNumber = trim((string) ($validated['file_number'] ?? ''));
         $trackingId = $validated['tracking_id'] ?? $existingRecord->tracking_id;
         $currentUserName = $this->resolveCurrentUserName();
 
@@ -1625,24 +1660,36 @@ class FileIndexingController extends Controller
             'KANGIS'
         );
 
-        $this->updateFileNumberTable($fileNumber, $trackingId, $testControl, [
-            'file_title' => $validated['file_title'] ?? $existingRecord->file_title ?? null,
-            'location' => $validated['location'] ?? $existingRecord->location ?? null,
-            'lga' => $validated['lga'] ?? $existingRecord->lga ?? null,
-            'plot_no' => $validated['plot_number'] ?? $existingRecord->plot_number ?? null,
-            'tp_no' => $validated['tp_no'] ?? $existingRecord->tp_no ?? null,
-            'has_temp_file' => $validated['has_temp_file'] ?? $existingRecord->has_temp_file ?? false,
-            'temp_file_no' => $validated['temp_file_no'] ?? $existingRecord->temp_file_no ?? null,
-            'is_kangis' => $isKangisRegistry,
-            'kangis_fileno_placeholder' => $validated['kangis_fileno_placeholder'] ?? $existingRecord->kangis_fileno_placeholder ?? null,
-            'kangis_fileno_resolved' => $validated['kangis_fileno_resolved'] ?? $validated['file_number'] ?? $existingRecord->kangis_fileno_resolved ?? null,
-            'created_by' => $currentUserName,
-            'updated_by' => $currentUserName,
-            'source' => 'indexing',
-            'type' => 'indexing',
-        ], $allowInserts);
+        // For temp-only records (file_number is null) the fileNumber table is looked up by
+        // temp_file_no/tracking_id instead. Skip the main file-number update to avoid
+        // accidentally writing the temp value into mlsfNo.
+        $fileNumberTableKey = $fileNumber !== ''
+            ? $fileNumber
+            : trim((string) ($validated['temp_file_no'] ?? $existingRecord->temp_file_no ?? ''));
 
-        // Update CofO record
+        if ($fileNumberTableKey !== '') {
+            $this->updateFileNumberTable($fileNumberTableKey, $trackingId, $testControl, [
+                'file_title' => $validated['file_title'] ?? $existingRecord->file_title ?? null,
+                'location' => $validated['location'] ?? $existingRecord->location ?? null,
+                'lga' => $validated['lga'] ?? $existingRecord->lga ?? null,
+                'plot_no' => $validated['plot_number'] ?? $existingRecord->plot_number ?? null,
+                'tp_no' => $validated['tp_no'] ?? $existingRecord->tp_no ?? null,
+                'has_temp_file' => $validated['has_temp_file'] ?? $existingRecord->has_temp_file ?? false,
+                'temp_file_no' => $validated['temp_file_no'] ?? $existingRecord->temp_file_no ?? null,
+                'is_kangis' => $isKangisRegistry,
+                // When looking up by temp_file_no, do NOT overwrite mlsfNo — pass null so the
+                // updateFileNumberTable skips the mlsfNo column for non-Kangis records.
+                'skip_mlsf_update' => $fileNumber === '',
+                'kangis_fileno_placeholder' => $validated['kangis_fileno_placeholder'] ?? $existingRecord->kangis_fileno_placeholder ?? null,
+                'kangis_fileno_resolved' => $validated['kangis_fileno_resolved'] ?? ($fileNumber !== '' ? $fileNumber : null) ?? $existingRecord->kangis_fileno_resolved ?? null,
+                'created_by' => $currentUserName,
+                'updated_by' => $currentUserName,
+                'source' => 'indexing',
+                'type' => 'indexing',
+            ], $allowInserts);
+        }
+
+        // Update CofO record (temp-only records use temp_fileno as the lookup key inside)
         $this->updateCofORecord($existingRecord, $validated, $request, $testControl, $hasCofo, $propId);
 
         // Update RoFO record
@@ -1659,7 +1706,9 @@ class FileIndexingController extends Controller
             $this->updateEntityAndCustomerRecords($existingRecord, $request, $testControl, $allowInserts);
         }
 
-        $this->updateFileHistoryPropId($fileNumber, $propId, $testControl);
+        if ($fileNumber !== '') {
+            $this->updateFileHistoryPropId($fileNumber, $propId, $testControl);
+        }
     }
 
     protected function fetchFileTransactionsForFileNumber(string $fileNumber, int $limit = 25): array
@@ -1744,6 +1793,7 @@ class FileIndexingController extends Controller
     {
         try {
             $isKangis = !empty($extraAttributes['is_kangis']);
+            $skipMlsfUpdate = !empty($extraAttributes['skip_mlsf_update']);
             $kangisPlaceholder = isset($extraAttributes['kangis_fileno_placeholder'])
                 ? trim((string) $extraAttributes['kangis_fileno_placeholder'])
                 : '';
@@ -1764,7 +1814,9 @@ class FileIndexingController extends Controller
                 if ($kangisPlaceholder !== '') {
                     $updateData['kangis_fileno_placeholder'] = $kangisPlaceholder;
                 }
-            } else {
+            } elseif (!$skipMlsfUpdate) {
+                // Only write mlsfNo when we have a confirmed main file number.
+                // Temp-only records (looked up by temp_file_no) must not overwrite mlsfNo.
                 $updateData['mlsfNo'] = $fileNumber;
             }
 
@@ -1916,13 +1968,20 @@ class FileIndexingController extends Controller
             return;
         }
 
-        $fileNumber = $validated['file_number'];
-        $matchColumns = [];
+        $fileNumber = trim((string) ($validated['file_number'] ?? ''));
+        $tempFileNo = trim((string) ($validated['temp_file_no'] ?? $existingRecord->temp_file_no ?? ''));
 
+        $hasTempFileno = Schema::connection('sqlsrv')->hasColumn(self::COFO_TABLE, 'temp_fileno');
+
+        // Determine the best match key for looking up / inserting the CofO row.
+        // Priority: explicit cofo_no > main file_number > temp_fileno (for temp-only records).
+        $matchColumns = [];
         if (!empty($cofoPayload['cofo_no'])) {
             $matchColumns['cofo_no'] = $cofoPayload['cofo_no'];
-        } else {
+        } elseif ($fileNumber !== '') {
             $matchColumns['mlsFNo'] = $fileNumber;
+        } elseif ($tempFileNo !== '' && $hasTempFileno) {
+            $matchColumns['temp_fileno'] = $tempFileNo;
         }
 
         if (empty($matchColumns)) {
@@ -1938,7 +1997,6 @@ class FileIndexingController extends Controller
         $transactionDate = $cofoPayload['transaction_date'] ?? $cofoPayload['cofo_date'] ?? $cofoPayload['deeds_date'] ?? null;
 
         $recordPayload = [
-            'mlsFNo' => $fileNumber,
             'cofo_no' => $cofoPayload['cofo_no'] ?? null,
             'transaction_type' => $cofoPayload['instrument_type'] ?? null,
             'instrument_type' => $cofoPayload['instrument_type'] ?? null,
@@ -1961,8 +2019,17 @@ class FileIndexingController extends Controller
             'lgsaOrCity' => $validated['lga'],
             'updated_by' => Auth::id(),
             'updated_at' => now(),
-
         ];
+
+        // Only set mlsFNo when a confirmed main file number exists.
+        if ($fileNumber !== '') {
+            $recordPayload['mlsFNo'] = $fileNumber;
+        }
+
+        // Always persist the temp file number so the row can be found by it later.
+        if ($tempFileNo !== '' && $hasTempFileno) {
+            $recordPayload['temp_fileno'] = $tempFileNo;
+        }
 
         if ($testControl) {
             $recordPayload['test_control'] = $testControl;

@@ -30,6 +30,13 @@
 
     <div class="pl-4 mt-1 space-y-0.5 hidden" data-content="physicalPlanning">
 
+      <!-- a. Title Status -->
+      <a href="{{ route('title-status.index') }}?url=pp"
+        class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('title-status.index') && request('url') === 'pp' ? 'active' : '' }}">
+        <i data-lucide="badge-check" class="h-4 w-4 text-red-500"></i>
+        <span>Title Status</span>
+      </a>
+
     @if($hasRole('Shadow File Commissioning'))
       <!-- Shadow File Commissioning -->
       <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"

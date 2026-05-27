@@ -21,7 +21,27 @@
       "Bash(grep -rn \"TEMP-\" /c/wamp64/www/klaes/app --include=\"*.php\" | grep -i \"match\\\\|serial\\\\|duplicate\" | head -20)",
       "Read(//c/wamp64/www/klaes/app/**)",
       "Bash(xargs grep -l \"saveFfrChangeOfName\\\\|captureFfrExisting\")",
-      "Bash(php \"c:/wamp64/www/klaes/artisan\" make:migration add_page_numbers_to_sltr_recommendations_table --path=database/migrations)"
+      "Bash(php \"c:/wamp64/www/klaes/artisan\" make:migration add_page_numbers_to_sltr_recommendations_table --path=database/migrations)",
+      "PowerShell(Select-String -Path \"c:\\\\wamp64\\\\www\\\\klaes\\\\app\\\\Http\\\\Controllers\\\\FileIndexingController.php\" -Pattern \"awaiting_file|grouping|customers_staging|entities_staging|tracking_id\" | Select-Object -First 30 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "PowerShell(Select-String -Path \"c:\\\\wamp64\\\\www\\\\klaes\\\\app\\\\Http\\\\Controllers\\\\MlsFileNoController.php\" -Pattern \"awaiting_file|grouping|customers_staging|entities_staging\" | Select-Object -First 20 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "PowerShell(Select-String -Path \"c:\\\\wamp64\\\\www\\\\klaes\\\\app\\\\Services\\\\GroupingFileNumberService.php\" -Pattern \"table\\\\\\(|awaiting_file|mlsfNo|file_number|tracking_id\" | Select-Object -First 20 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "PowerShell(Select-String -Path \"c:\\\\wamp64\\\\www\\\\klaes\\\\resources\\\\views\\\\generate_fileno\\\\mls_js.blade.php\" -Pattern \"file-numbers.store|generateMlsFileNo|submitGenerat|Error!\" | Select-Object -First 20 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "Bash(git -C c:\\\\wamp64\\\\www\\\\klaes log --oneline -10 -- resources/views/legal_search/js.blade.php)",
+      "PowerShell(php -r \"echo ini_get\\('memory_limit'\\) . PHP_EOL; echo ini_get\\('max_execution_time'\\) . PHP_EOL;\")",
+      "Bash(php -r \"echo 'PHP syntax OK';\")",
+      "Bash(php -l app/Helpers/SectionalTitleHelper.php)",
+      "Bash(php -l app/Http/Controllers/PrimaryApplicationController.php)",
+      "Bash(php -l app/Http/Controllers/PrimaryFormDraftController.php)",
+      "Bash(Get-Content \"c:\\\\wamp64\\\\www\\\\klaes\\\\storage\\\\logs\\\\laravel.log\" -Tail 80)",
+      "Bash(Select-String -Pattern \"Validation failed|validation|required|primary application\" -Context 2)",
+      "Bash(php -l app/Http/Controllers/DigitalFileRequestController.php)",
+      "Bash(php -l app/Http/Controllers/Api/FileTrackerApiController.php)",
+      "Bash(php -l routes/web.php)",
+      "PowerShell(cd C:\\\\wamp64\\\\www\\\\klaes; Get-Item public\\\\storage | Select-Object FullName, LinkType, @{N='Target';E={$_.Target}}; dir public\\\\storage | Select-Object -First 5)",
+      "PowerShell(cd C:\\\\wamp64\\\\www\\\\klaes; \\(Get-Item public\\\\storage\\).LinkType; \\(Get-Item public\\\\storage\\).Target; ls public\\\\storage\\\\signing_officer_signatures 2>$null | Select-Object -First 5 Name)",
+      "Read(//c/wamp64/www/klaes/storage/app/public//**)",
+      "Read(//c/wamp64/www/klaes/public/storage//**)",
+      "Read(//c/wamp64/www/klaes/storage/**)"
     ]
   }
 }

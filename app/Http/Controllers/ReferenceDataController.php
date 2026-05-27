@@ -83,7 +83,13 @@ class ReferenceDataController extends Controller
         $landUses = LandUse::query()
             ->select(['id', 'landuse as name'])
             ->orderBy('landuse')
-            ->get();
+            ->get()
+            ->map(function ($lu) {
+                $lu->prefixes = \App\Models\Prefix::where('land_use_id', $lu->id)
+                    ->pluck('prefix')
+                    ->toArray();
+                return $lu;
+            });
 
         return response()->json([
             'success' => true,

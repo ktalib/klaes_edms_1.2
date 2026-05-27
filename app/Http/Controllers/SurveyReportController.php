@@ -468,7 +468,13 @@ class SurveyReportController extends Controller
             return response()->json(['success' => false, 'message' => $verification['message']], 422);
         }
 
-        $signatureUrl = $resolvedSigPath ? Storage::url($resolvedSigPath) : null;
+        // Files stored via ->store('public/...') carry a 'public/' prefix in the DB.
+        // Strip it and use asset() to avoid the double-slash from APP_URL trailing slash.
+        $signatureUrl = null;
+        if ($resolvedSigPath) {
+            $urlPath      = ltrim(preg_replace('#^public/#', '', $resolvedSigPath), '/');
+            $signatureUrl = asset('storage/' . $urlPath);
+        }
         $this->rememberSignatureVerification($scope, $landOfficer?->id ?? $officerId, $verificationMethod);
 
         return response()->json([

@@ -378,7 +378,7 @@
 
                 const status = state.rackLabelStatus;
                 if (!status) {
-                    counterEl.textContent = `0 / ${LABEL_CAPACITY}`;
+                    counterEl.textContent = '0';
                     statusEl.textContent = 'Awaiting selection';
                     statusEl.classList.remove('text-red-600');
                     statusEl.classList.add('text-slate-500');
@@ -389,20 +389,11 @@
                     return;
                 }
 
-                const capacity = Number(status.capacity != null ? status.capacity : LABEL_CAPACITY);
                 const used = Number(status.counter != null ? status.counter : 0);
-                counterEl.textContent = `${used} / ${capacity}`;
-
-                if (status.is_full) {
-                    statusEl.textContent = 'Full – choose another label';
-                    statusEl.classList.remove('text-slate-500');
-                    statusEl.classList.add('text-red-600');
-                } else {
-                    const remaining = Math.max(0, capacity - used);
-                    statusEl.textContent = `${remaining} slots remaining`;
-                    statusEl.classList.remove('text-red-600');
-                    statusEl.classList.add('text-slate-500');
-                }
+                counterEl.textContent = used;
+                statusEl.textContent = `${used} file${used !== 1 ? 's' : ''} on this label`;
+                statusEl.classList.remove('text-red-600');
+                statusEl.classList.add('text-slate-500');
 
                 const labelValue = document.getElementById('fullLabelValue');
                 if (labelValue) {
@@ -1129,10 +1120,6 @@
                     return;
                 }
 
-                if (state.rackLabelStatus && state.rackLabelStatus.is_full && !state.registryOverrideMode) {
-                    showError('The selected rack/shelf label is full. Please choose the next shelf.');
-                    return;
-                }
 
                 const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
                 const payload = {
@@ -3620,6 +3607,7 @@
                 });
             }
 
+
             const shelfLabelModeToggle = document.getElementById("shelfLabelModeToggle");
             if (shelfLabelModeToggle) {
                 shelfLabelModeToggle.addEventListener("change", function () {
@@ -3788,12 +3776,6 @@
                         return;
                     }
 
-                    if (state.rackLabelStatus && state.rackLabelStatus.is_full) {
-                        showError('The selected rack/shelf label is full. Please choose the next shelf.');
-                        triggerButton.disabled = false;
-                        triggerButton.classList.remove('opacity-50', 'cursor-not-allowed');
-                        return;
-                    }
 
                     state.batchStartNumber = start;
                     state.batchCount = perBatchLimit;

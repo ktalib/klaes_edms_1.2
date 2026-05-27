@@ -89,6 +89,40 @@
     `;
   }
 
+  // ── Digital Request: Approve / Reject from notification bell ────────────────
+  function buildDigitalRequestActions(item) {
+    const isDigital = item.type === 'digital_request' || item.data?.module === 'digital_request';
+    const requestId = item.data?.request_id;
+
+    if (!isDigital || !requestId) return '';
+
+    return `
+      <div class="mt-3 space-y-2">
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            class="dr-notification-action bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition"
+            data-dr-action="approve"
+            data-dr-request-id="${requestId}"
+            data-notification-id="${item.id}"
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            class="dr-notification-action bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition"
+            data-dr-action="reject"
+            data-dr-request-id="${requestId}"
+            data-notification-id="${item.id}"
+          >
+            Reject
+          </button>
+        </div>
+        ${buildCloseButton(item, true)}
+      </div>
+    `;
+  }
+
   function buildCloseButton(item, subtle = false) {
     if (!item?.id) {
       return '';
@@ -221,7 +255,7 @@
           const createdLabel = formatRelativeTime(item.createdAt || item.created_at);
           const fileNo = item.data?.fileNumber || item.data?.file_number;
           const office = item.data?.officeName || item.data?.office_name;
-          const primaryActions = buildAssignmentActions(item);
+          const primaryActions = buildDigitalRequestActions(item) || buildAssignmentActions(item);
           const closeFallback = primaryActions ? '' : buildCloseButton(item);
 
           return `
@@ -368,6 +402,55 @@
           delete closeButton.dataset.originalLabel;
         }
 
+        return;
+      }
+
+      // ── Digital Request: Approve / Reject ──────────────────────────────────
+      const drButton = event.target.closest('[data-dr-action]');
+      if (drButton) {
+        event.preventDefault();
+        const requestId     = drButton.dataset.drRequestId;
+        const action        = drButton.dataset.drAction;
+        const notifId       = Number(drButton.dataset.notificationId || '');
+
+        if (!requestId || !action) return;
+
+        let rejectionReason = '';
+        if (action === 'reject') {
+          rejectionReason = window.prompt('Enter rejection reason:', '');
+          if (rejectionReason === null) return; // user cancelled
+          if (!rejectionReason.trim()) { alert('Rejection reason is required.'); return; }
+        }
+
+        const originalLabel = drButton.innerHTML;
+        drButton.disabled   = true;
+        drButton.innerHTML  = '<span class="inline-flex items-center gap-1"><span class="h-4 w-4 border-2 border-white/40 border-t-transparent rounded-full animate-spin"></span>Processing...</span>';
+
+        try {
+          const res = await fetch(`/digital-request/${action}/${requestId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+            body: JSON.stringify(action === 'reject' ? { rejection_reason: rejectionReason } : {}),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || data?.success === false) throw new Error(data?.message || 'Request failed.');
+
+          if (notifId) {
+            try { await markNotificationRead(notifId); } catch (_) { /* non-fatal */ }
+          }
+          notificationCenter.refresh();
+          if (window.showNotification) {
+            window.showNotification(
+              action === 'approve' ? 'File request approved successfully.' : 'File request rejected.',
+              action === 'approve' ? 'success' : 'warning'
+            );
+          }
+        } catch (err) {
+          alert(err?.message || 'Unable to process request.');
+          drButton.disabled  = false;
+          drButton.innerHTML = originalLabel;
+        }
         return;
       }
 

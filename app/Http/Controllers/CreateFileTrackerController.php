@@ -70,7 +70,35 @@ class CreateFileTrackerController extends Controller
 
         $module = request()->get('url', '');
 
-        return view('create_file_tracker_page.index', compact('PageTitle', 'PageDescription', 'registries', 'departments', 'offices', 'receivingOfficers', 'currentUserPayload', 'assignmentPermissionsPayload', 'module'));
+        // For digital_request module, resolve the user's department and its offices
+        // so the Receiving Office shows a department-scoped dropdown.
+        $userOffice             = null;
+        $userDepartmentName     = null;
+        $userDepartmentOffices  = collect();
+        if (in_array(strtolower($module), ['digital_request', 'digital-request'])) {
+            if ($user->department_id) {
+                $userDepartmentName = DB::connection('sqlsrv')
+                    ->table('departments')
+                    ->where('id', $user->department_id)
+                    ->value('name');
+                if ($userDepartmentName) {
+                    $userDepartmentOffices = DB::connection('sqlsrv')
+                        ->table('offices')
+                        ->where('department', $userDepartmentName)
+                        ->where('is_active', 1)
+                        ->orderBy('office_name')
+                        ->get();
+                    // Keep a single default office for the footer info strip
+                    $userOffice = $userDepartmentOffices->first();
+                }
+            }
+        }
+
+        return view('create_file_tracker_page.index', compact(
+            'PageTitle', 'PageDescription', 'registries', 'departments', 'offices',
+            'receivingOfficers', 'currentUserPayload', 'assignmentPermissionsPayload',
+            'module', 'userOffice', 'userDepartmentName', 'userDepartmentOffices'
+        ));
     }
 
     /**
@@ -117,8 +145,17 @@ class CreateFileTrackerController extends Controller
 
             DB::beginTransaction();
 
-            // Generate tracking ID
-            $trackingId = FileTracker::generateTrackingId();
+            // Use the preview tracking ID built on the client (base + registry code),
+            // so the saved ID always matches what was shown to the user.
+            // Fall back to a fresh server-generated ID when none is provided.
+            $proposedTrackingId = trim((string) $request->input('proposed_tracking_id', ''));
+            $registryCode       = $request->input('origin_registry_code') ?: null;
+
+            if ($proposedTrackingId !== '' && !FileTracker::where('tracking_id', $proposedTrackingId)->exists()) {
+                $trackingId = $proposedTrackingId;
+            } else {
+                $trackingId = FileTracker::generateTrackingId($registryCode);
+            }
 
             $rawOfficerId = $request->input('receiving_officer_id');
             $isReceivingOfficerTable = is_string($rawOfficerId) && str_starts_with($rawOfficerId, 'ro_');
@@ -300,6 +337,55 @@ class CreateFileTrackerController extends Controller
             }
 
             DB::commit();
+
+            // ── Digital Request module: auto-create approval record + notify ──
+            if ($resolvedModule === 'digital_request') {
+                try {
+                    $user = Auth::user();
+
+                    // Resolve source office from user's department
+                    $deptName   = DB::connection('sqlsrv')->table('departments')->where('id', $user->department_id)->value('name');
+                    $srcOffice  = $deptName ? \App\Models\Office::active()->where('department', $deptName)->first() : null;
+
+                    $senderName = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: ($user->name ?? 'Unknown');
+
+                    $digitalReq = \App\Models\DigitalFileRequest::create([
+                        'request_no'              => \App\Models\DigitalFileRequest::generateRequestNo(),
+                        'file_no'                 => $tracker->file_number,
+                        'file_title'              => $tracker->file_title,
+                        'requester_user_id'       => $user->id,
+                        'sending_officer'         => $senderName,
+                        'receiving_officer'       => $request->input('receiving_officer_name') ?: $receivingOfficeName,
+                        'source_office_id'        => $srcOffice?->id,
+                        'source_office_name'      => $srcOffice?->office_name ?? $tracker->origin_office_name,
+                        'destination_office_name' => $tracker->receiving_office_name ?? $tracker->destination,
+                        'current_file_location'   => $tracker->current_office_name,
+                        'request_status'          => \App\Models\DigitalFileRequest::STATUS_PENDING,
+                        'remarks'                 => $tracker->notes,
+                        'requested_at'            => now(),
+                    ]);
+
+                    // Notify the receiving officer with approve/reject actions in the bell
+                    if ($receivingOfficerId) {
+                        $this->notificationService->create(
+                            $receivingOfficerId,
+                            'digital_request',
+                            "Digital File Request: {$digitalReq->request_no}",
+                            "{$senderName} is requesting file {$tracker->file_number} ({$tracker->file_title}) to be sent to {$tracker->receiving_office_name}.",
+                            [
+                                'request_id'    => $digitalReq->id,
+                                'request_no'    => $digitalReq->request_no,
+                                'file_number'   => $tracker->file_number,
+                                'office_name'   => $tracker->receiving_office_name,
+                            ],
+                            ['module' => 'digital_request']
+                        );
+                    }
+
+                } catch (\Throwable $e) {
+                    Log::warning('DigitalFileRequest auto-create failed', ['tracker_id' => $tracker->id, 'error' => $e->getMessage()]);
+                }
+            }
 
             // Only notify system users (not receiving_officers table entries)
             if ($receivingOfficerId && !$isReceivingOfficerTable) {
@@ -577,6 +663,14 @@ class CreateFileTrackerController extends Controller
                     ->count();
             }
 
+            // Date range filter
+            if ($request->filled('date_from')) {
+                $query->whereDate('created_at', '>=', $request->get('date_from'));
+            }
+            if ($request->filled('date_to')) {
+                $query->whereDate('created_at', '<=', $request->get('date_to'));
+            }
+
             // Sorting
             $sortBy = $request->get('sort_by', 'created_at');
             $sortOrder = $request->get('sort_order', 'desc');
@@ -623,6 +717,308 @@ class CreateFileTrackerController extends Controller
                 'message' => 'Error retrieving file trackers: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    public function exportCsv(Request $request)
+    {
+        ini_set('memory_limit', '256M');
+        set_time_limit(300);
+
+        $dateFrom = $request->get('date_from');
+        $dateTo   = $request->get('date_to');
+        $module   = strtolower(trim((string) $request->get('module', '')));
+
+        $query = FileTracker::select([
+            'id', 'file_number', 'file_title', 'priority', 'status',
+            'origin_office_name', 'current_office_name', 'receiving_officer_name',
+            'movement_log', 'created_at',
+        ]);
+
+        if ($dateFrom) {
+            $query->whereDate('created_at', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('created_at', '<=', $dateTo);
+        }
+        if ($module !== '') {
+            $query->whereRaw("LOWER(LTRIM(RTRIM(ISNULL(module, '')))) = ?", [$module]);
+        }
+
+        // cursor() streams one row at a time — memory stays constant regardless of record count
+        $cursor = $query->orderByDesc('created_at')->cursor();
+
+        $headers = [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="file-trackers-' . ($dateFrom ?? 'all') . '-to-' . ($dateTo ?? 'all') . '.csv"',
+        ];
+
+        $callback = function () use ($cursor) {
+            $handle = fopen('php://output', 'w');
+            fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF)); // UTF-8 BOM for Excel
+
+            fputcsv($handle, [
+                '#', 'File Number', 'File Title', 'Priority',
+                'Origin Registry', 'Destination', 'Receiving Officer',
+                'Log In', 'Log Out', 'Status',
+            ]);
+
+            $row = 0;
+            foreach ($cursor as $tracker) {
+                $row++;
+                $log      = is_array($tracker->movement_log) ? $tracker->movement_log : json_decode($tracker->movement_log ?? '[]', true);
+                $first    = $log[0] ?? [];
+
+                $logInDate  = $first['log_in_date']  ?? null;
+                $logInTime  = $first['log_in_time']  ?? null;
+                $logOutDate = $first['log_out_date'] ?? null;
+                $logOutTime = $first['log_out_time'] ?? null;
+
+                $logIn  = $logInDate  ? $logInDate  . ($logInTime  ? ' ' . substr($logInTime,  0, 5) : '') : '';
+                $logOut = $logOutDate ? $logOutDate . ($logOutTime ? ' ' . substr($logOutTime, 0, 5) : '') : '';
+
+                $status = strtolower($tracker->status ?? '');
+                if ($status === 'canceled') {
+                    $label = 'Canceled';
+                } elseif (!empty($logOutDate)) {
+                    $label = 'Log-Out';
+                } else {
+                    $label = 'In-Transit';
+                }
+
+                fputcsv($handle, [
+                    $row,
+                    $tracker->file_number        ?? '',
+                    $tracker->file_title         ?? '',
+                    strtoupper($tracker->priority ?? 'LOW'),
+                    $tracker->origin_office_name  ?? '',
+                    $tracker->current_office_name ?? '',
+                    $tracker->receiving_officer_name ?? '',
+                    $logIn,
+                    $logOut,
+                    $label,
+                ]);
+            }
+
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    public function exportPdf(Request $request)
+    {
+        set_time_limit(300);
+
+        $dateFrom = $request->get('date_from');
+        $dateTo   = $request->get('date_to');
+        $module   = strtolower(trim((string) $request->get('module', '')));
+
+        $query = FileTracker::select([
+            'id', 'file_number', 'file_title', 'priority', 'status',
+            'origin_office_name', 'current_office_name', 'receiving_officer_name',
+            'movement_log', 'created_at',
+        ]);
+
+        if ($dateFrom) {
+            $query->whereDate('created_at', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('created_at', '<=', $dateTo);
+        }
+        if ($module !== '') {
+            $query->whereRaw("LOWER(LTRIM(RTRIM(ISNULL(module, '')))) = ?", [$module]);
+        }
+
+        $totalCount  = (clone $query)->count();
+        $generated   = now()->format('d M Y H:i');
+        $moduleLabel = $module ? strtoupper($module) : 'ALL MODULES';
+        $periodLabel = ($dateFrom ?? 'All dates') . ' — ' . ($dateTo ?? 'present');
+
+        // Stream the report as HTML directly — the browser renders it progressively
+        // and the user prints to PDF via the browser's native print dialog.
+        // This avoids DomPDF's in-memory DOM which exhausts RAM on large datasets.
+        $cursor = $query->orderByDesc('created_at')->cursor();
+
+        return response()->stream(
+            function () use ($cursor, $totalCount, $generated, $moduleLabel, $periodLabel) {
+                while (ob_get_level() > 0) {
+                    ob_end_clean();
+                }
+
+                echo $this->exportPdfHeader($moduleLabel, $periodLabel, $totalCount, $generated);
+                flush();
+
+                $row = 0;
+                foreach ($cursor as $tracker) {
+                    $row++;
+                    echo $this->exportPdfRow($row, $tracker);
+                    if ($row % 150 === 0) {
+                        flush();
+                    }
+                }
+
+                echo $this->exportPdfFooter($generated, $row);
+                flush();
+            },
+            200,
+            [
+                'Content-Type'      => 'text/html; charset=UTF-8',
+                'X-Accel-Buffering' => 'no',
+                'Cache-Control'     => 'no-cache, no-store, must-revalidate',
+            ]
+        );
+    }
+
+    private function exportPdfHeader(string $moduleLabel, string $periodLabel, int $totalCount, string $generated): string
+    {
+        $total = number_format($totalCount);
+        $logo1 = asset('assets/logo/ministry1.jpg');
+        $logo2 = asset('assets/logo/ministry2.jpeg');
+        $dept  = ($moduleLabel !== 'ALL MODULES')
+            ? strtoupper($moduleLabel) . ' Department'
+            : 'File Tracking Export';
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>File Tracking Export</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:9pt;color:#1e293b;background:#fff}
+  .toolbar{background:#1e293b;color:#fff;padding:10px 20px;display:flex;align-items:center;
+           justify-content:space-between;position:sticky;top:0;z-index:100;gap:12px}
+  .toolbar .status{font-size:12px;flex:1}
+  .toolbar .progress{height:4px;background:#334155;flex:1;border-radius:2px;overflow:hidden}
+  .toolbar .progress-bar{height:100%;background:#22c55e;width:0%;transition:width .3s}
+  .toolbar button{background:#166534;color:#fff;border:none;padding:7px 20px;border-radius:4px;
+                  cursor:pointer;font-size:13px;font-weight:bold;white-space:nowrap}
+  .toolbar button:hover{background:#15803d}
+  .report-wrap{padding:14px 18px}
+  .hdr-table{width:100%;border-collapse:collapse;margin-bottom:10px}
+  .hdr-table td{padding:0;vertical-align:middle}
+  .hdr-logo{width:88px;text-align:center}
+  .hdr-logo img{width:76px;height:76px;object-fit:contain}
+  .hdr-text{text-align:center}
+  .hdr-text .h1{font-size:14pt;font-weight:bold;text-transform:uppercase;color:#000}
+  .hdr-text .h2{font-size:11pt;font-weight:bold;margin-top:3px;color:#000}
+  .hdr-text .h3{font-size:9.5pt;font-weight:bold;margin-top:2px;color:#000}
+  .hdr-text .meta{font-size:8pt;color:#64748b;margin-top:5px}
+  hr.div{border:none;border-top:2px solid #1a1a1a;margin:8px 0 10px}
+  table.data{width:100%;border-collapse:collapse}
+  table.data thead tr{background:#166534;color:#fff}
+  table.data thead th{padding:6px 7px;text-align:left;font-size:8pt;font-weight:700;white-space:nowrap}
+  table.data tbody tr:nth-child(even){background:#f0fdf4}
+  table.data tbody tr:nth-child(odd){background:#fff}
+  table.data tbody td{padding:4px 6px;border-bottom:1px solid #e2e8f0;font-size:8pt;vertical-align:top}
+  .footer-row{margin-top:12px;border-top:1px solid #cbd5e1;padding-top:5px;
+              display:flex;justify-content:space-between;font-size:7.5pt;color:#64748b}
+  @media print{
+    .toolbar{display:none!important}
+    .report-wrap{padding:0}
+    table.data thead{display:table-header-group}
+    table.data tbody tr{page-break-inside:avoid}
+  }
+  @page{size:A4 landscape;margin:10mm}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <span class="status" id="load-status">Loading &mdash; {$total} records&hellip;</span>
+  <div class="progress"><div class="progress-bar" id="pbar"></div></div>
+  <button id="print-btn" onclick="window.print()" style="display:none">&#128438;&nbsp;Print / Save as PDF</button>
+</div>
+<div class="report-wrap">
+  <table class="hdr-table">
+    <tr>
+      <td class="hdr-logo"><img src="{$logo1}" alt="Coat of Arms"></td>
+      <td class="hdr-text">
+        <div class="h1">Kano State Government</div>
+        <div class="h2">Ministry of Land and Physical Planning</div>
+        <div class="h3">{$dept}</div>
+        <div class="meta">Generated: {$generated} &nbsp;|&nbsp; Period: {$periodLabel} &nbsp;|&nbsp; Total Records: {$total}</div>
+      </td>
+      <td class="hdr-logo"><img src="{$logo2}" alt="Ministry Seal"></td>
+    </tr>
+  </table>
+  <hr class="div">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>#</th><th>File Number</th><th>File Title</th>
+        <th>Origin Registry</th><th>Destination</th><th>Receiving Officer</th>
+        <th>Log In</th><th>Log Out</th>
+      </tr>
+    </thead>
+    <tbody>
+HTML;
+    }
+
+    private function exportPdfRow(int $row, $tracker): string
+    {
+        $priority   = strtolower($tracker->priority ?? '');
+        $badgeClass = $priority === 'high' ? 'badge-high' : ($priority === 'medium' ? 'badge-medium' : 'badge-low');
+
+        $log      = is_array($tracker->movement_log) ? $tracker->movement_log : json_decode($tracker->movement_log ?? '[]', true);
+        $firstLog = $log[0] ?? [];
+
+        $logInDate  = $firstLog['log_in_date']  ?? null;
+        $logInTime  = $firstLog['log_in_time']  ?? null;
+        $logOutDate = $firstLog['log_out_date'] ?? null;
+        $logOutTime = $firstLog['log_out_time'] ?? null;
+
+        $logIn  = $logInDate  ? $logInDate  . ($logInTime  ? ' ' . substr($logInTime,  0, 5) : '') : '&mdash;';
+        $logOut = $logOutDate ? $logOutDate . ($logOutTime ? ' ' . substr($logOutTime, 0, 5) : '') : '&mdash;';
+
+        $trackerStatus = strtolower($tracker->status ?? '');
+        if ($trackerStatus === 'canceled') {
+            $logStatus = 'Canceled'; $statusBg = '#fee2e2'; $statusColor = '#b91c1c';
+        } elseif (!empty($logOutDate)) {
+            $logStatus = 'Log-Out';  $statusBg = '#f1f5f9'; $statusColor = '#475569';
+        } else {
+            $logStatus = 'In-Transit'; $statusBg = '#fef9c3'; $statusColor = '#92400e';
+        }
+
+        $e = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+
+        return "<tr>"
+            . "<td>{$row}</td>"
+            . "<td>{$e($tracker->file_number ?? '—')}</td>"
+            . "<td>{$e($tracker->file_title ?? '—')}</td>"
+            . "<td>{$e($tracker->origin_office_name ?? '—')}</td>"
+            . "<td>{$e($tracker->current_office_name ?? '—')}</td>"
+            . "<td>{$e($tracker->receiving_officer_name ?? '—')}</td>"
+            . "<td>{$logIn}</td>"
+            . "<td>{$logOut}</td>"
+            . "</tr>\n";
+    }
+
+    private function exportPdfFooter(string $generated, int $loadedCount): string
+    {
+        $loaded = number_format($loadedCount);
+        return <<<HTML
+    </tbody>
+  </table>
+  <div class="footer-row">
+    <span>Kano State Ministry of Land &amp; Physical Planning &mdash; File Tracker System</span>
+    <span>Printed: {$generated}</span>
+  </div>
+</div>
+<script>
+  (function () {
+    var btn    = document.getElementById('print-btn');
+    var status = document.getElementById('load-status');
+    var pbar   = document.getElementById('pbar');
+    status.textContent = '{$loaded} records loaded — ready to print';
+    if (pbar) pbar.style.width = '100%';
+    if (btn)  btn.style.display = 'inline-block';
+    setTimeout(function () { window.print(); }, 700);
+  })();
+</script>
+</body>
+</html>
+HTML;
     }
 
     protected function findLinkedFileIndexing(?string $fileNumber): ?FileIndexing

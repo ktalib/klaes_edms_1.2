@@ -343,11 +343,18 @@ Route::get('/serial-status', function () {
 
 // Dashboard Statistics API Routes
 Route::prefix('dashboard')->controller(\App\Http\Controllers\Api\DashboardController::class)->group(function () {
+    // Combined – one round-trip for the whole dashboard
+    Route::get('/all-stats', 'getAllStats');
+    // Individual endpoints (kept for backward compatibility)
     Route::get('/total-applications', 'getTotalApplications');
     Route::get('/pending-approvals', 'getPendingApprovals');
     Route::get('/indexed-files', 'getIndexedFiles');
     Route::get('/blind-scans', 'getBlindScans');
     Route::get('/scan-uploads', 'getScanUploads');
+    Route::get('/pra-records', 'getPraRecords');
+    Route::get('/ic-records', 'getIcRecords');
+    Route::get('/fh-records', 'getFhRecords');
+    Route::get('/mls-commissioned', 'getMlsCommissioned');
 });
 
 // Grouping Analytics Fast API Routes (sample-based stats)

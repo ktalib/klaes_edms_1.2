@@ -2885,20 +2885,25 @@ class PropertyRecordController extends Controller
                 \Log::info('Using mlsfNo (modern fallback)', ['mlsFNo' => $mlsFNo]);
             }
 
-            $response = DB::connection('sqlsrv')->transaction(function () use ($request, $fileNumber, $transactions, $mlsFNo, $kangisFileNo, $newKangisFileNo, $testControl) {
+            $tempFileno = trim((string) ($request->input('temp_fileno') ?? '')) ?: null;
+
+            $response = DB::connection('sqlsrv')->transaction(function () use ($request, $fileNumber, $transactions, $mlsFNo, $kangisFileNo, $newKangisFileNo, $tempFileno, $testControl) {
                 $propertyTable = self::PROPERTY_TABLE;
 
-                // Check if file number already exists in fileNumber table
+                // Check if file number already exists in fileNumber table.
+                // Also search by temp_fileno so temp-file records are never duplicated.
                 $fileNumberExists = null;
-                if ($mlsFNo || $kangisFileNo || $newKangisFileNo) {
+                if ($mlsFNo || $kangisFileNo || $newKangisFileNo || $tempFileno) {
                     $fileNumberExists = DB::connection('sqlsrv')->table('fileNumber')
-                        ->where(function ($query) use ($mlsFNo, $kangisFileNo, $newKangisFileNo) {
+                        ->where(function ($query) use ($mlsFNo, $kangisFileNo, $newKangisFileNo, $tempFileno) {
                             if ($mlsFNo)
                                 $query->orWhere('mlsfNo', $mlsFNo);
                             if ($kangisFileNo)
                                 $query->orWhere('kangisFileNo', $kangisFileNo);
                             if ($newKangisFileNo)
                                 $query->orWhere('NewKANGISFileNo', $newKangisFileNo);
+                            if ($tempFileno)
+                                $query->orWhere('temp_fileno', $tempFileno);
                         })
                         ->lockForUpdate()
                         ->first();

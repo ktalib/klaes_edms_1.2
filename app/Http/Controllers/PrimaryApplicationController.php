@@ -180,11 +180,11 @@ class PrimaryApplicationController extends Controller
                 'site_plan_fee' => 'nullable|string|max:1000',
 
                 // Individual payment tracking
-                'application_fee_payment_date' => 'nullable|date',
+                'application_fee_payment_date' => 'nullable|sometimes|date',
                 'application_fee_receipt_number' => 'nullable|string|max:100',
-                'processing_fee_payment_date' => 'nullable|date',
+                'processing_fee_payment_date' => 'nullable|sometimes|date',
                 'processing_fee_receipt_number' => 'nullable|string|max:100',
-                'site_plan_fee_payment_date' => 'nullable|date',
+                'site_plan_fee_payment_date' => 'nullable|sometimes|date',
                 'site_plan_fee_receipt_number' => 'nullable|string|max:100',
 
                 // Legacy payment fields (for backward compatibility)
@@ -232,6 +232,8 @@ class PrimaryApplicationController extends Controller
                 'records.*.unit_no' => 'required_with:records|string|max:255',
                 'records.*.unitNumber' => 'nullable|string|max:255',
                 'records.*.unitMeasurement' => 'nullable|string|max:255',
+                'records.*.blockNo' => 'nullable|string|max:255',
+                'records.*.block_no' => 'nullable|string|max:255',
                 'records.*.cubicMeasurement' => 'nullable|string|max:255',
                 'records.*.sectionNumber' => 'required_with:records|string|max:255',
                 'records.*.section_number' => 'nullable|string|max:255',
@@ -908,10 +910,10 @@ class PrimaryApplicationController extends Controller
      */
     public function downloadBuyersTemplate()
     {
-        $csvContent = "title,first name,middle name,surname,land use,unit number,section number,unit measurement,cubic measurement\r\n";
-        $csvContent .= "Mr.,John,Michael,Doe,Residential,A001,SEC-01,50,15\r\n";
-        $csvContent .= "Mrs.,Jane,Elizabeth,Smith,Commercial,B002,SEC-02,75,20\r\n";
-        $csvContent .= "Dr.,Robert,James,Brown,Mixed,C003,SEC-03,100,35\r\n";
+        $csvContent = "title,first name,middle name,surname,land use,unit number,block,section number,unit measurement,cubic measurement\r\n";
+        $csvContent .= "Mr.,John,Michael,Doe,Residential,A001,BLK-1,SEC-01,50,15\r\n";
+        $csvContent .= "Mrs.,Jane,Elizabeth,Smith,Commercial,B002,BLK-2,SEC-02,75,20\r\n";
+        $csvContent .= "Dr.,Robert,James,Brown,Mixed,C003,BLK-3,SEC-03,100,35\r\n";
 
         $headers = [
             'Content-Type' => 'text/csv',
@@ -1177,6 +1179,12 @@ class PrimaryApplicationController extends Controller
                                     case 'cubic measurement (cbm)':
                                         $buyer['cubicMeasurement'] = $value;
                                         break;
+                                    case 'block':
+                                    case 'block_no':
+                                    case 'block number':
+                                    case 'block_number':
+                                        $buyer['blockNo'] = $value;
+                                        break;
                                     case 'section number':
                                     case 'section_number':
                                     case 'section':
@@ -1225,6 +1233,7 @@ class PrimaryApplicationController extends Controller
             $surname = $record['surname'] ?? ($record['lastName'] ?? $record['last_name'] ?? null);
             $buyerName = $record['buyerName'] ?? ($record['buyer_name'] ?? null);
             $unitNo = $record['unit_no'] ?? ($record['unitNo'] ?? $record['unitNumber'] ?? null);
+            $blockNo = $record['blockNo'] ?? ($record['block_no'] ?? null);
             $unitMeasurement = $record['unitMeasurement'] ?? ($record['measurement'] ?? null);
             $cubicMeasurement = $record['cubicMeasurement'] ?? ($record['cubic_measurement'] ?? null);
             $sectionNumber = $record['sectionNumber'] ?? ($record['section_number'] ?? null);
@@ -1252,6 +1261,7 @@ class PrimaryApplicationController extends Controller
                 'surname' => $surname,
                 'buyerName' => $buyerName,
                 'unit_no' => $unitNo,
+                'blockNo' => $blockNo,
                 'unitMeasurement' => $unitMeasurement,
                 'cubicMeasurement' => $cubicMeasurement,
                 'sectionNumber' => $sectionNumber,

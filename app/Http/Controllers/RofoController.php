@@ -15,7 +15,7 @@ class RofoController extends Controller
 {
     private function getAvailableSecurityPapers()
     {
-        return DB::connection('sqlsrv')->table('st_rofo_security_paper_codes')
+        return DB::connection('sqlsrv')->table('global_security_paper_codes')
             ->where('is_used', false)
             ->orderBy('paper_code', 'asc')
             ->get();
@@ -24,10 +24,10 @@ class RofoController extends Controller
     public function assignSecurityPaper(Request $request, $id)
     {
         $request->validate([
-            'security_paper_code' => 'required|string|exists:sqlsrv.st_rofo_security_paper_codes,paper_code',
+            'security_paper_code' => 'required|string|exists:sqlsrv.global_security_paper_codes,paper_code',
         ]);
 
-        $rofo = DB::connection('sqlsrv')->table('rofo')->where('id', $id)->first();
+        $rofo = DB::connection('sqlsrv')->table('rofo')->where('sub_application_id', $id)->first();
         if (!$rofo) {
             return response()->json(['success' => false, 'message' => 'RoFO record not found.'], 404);
         }
@@ -35,7 +35,7 @@ class RofoController extends Controller
         DB::connection('sqlsrv')->beginTransaction();
         try {
             // Check if paper code is already used
-            $paper = DB::connection('sqlsrv')->table('st_rofo_security_paper_codes')
+            $paper = DB::connection('sqlsrv')->table('global_security_paper_codes')
                 ->where('paper_code', $request->security_paper_code)
                 ->first();
 
@@ -45,7 +45,7 @@ class RofoController extends Controller
 
             // If RoFO already has a paper code, mark the old one as unused
             if ($rofo->security_paper_code) {
-                DB::connection('sqlsrv')->table('st_rofo_security_paper_codes')
+                DB::connection('sqlsrv')->table('global_security_paper_codes')
                     ->where('paper_code', $rofo->security_paper_code)
                     ->update([
                         'is_used' => false,
@@ -58,11 +58,11 @@ class RofoController extends Controller
 
             // Assign new paper code to rofo
             DB::connection('sqlsrv')->table('rofo')
-                ->where('id', $id)
+                ->where('sub_application_id', $id)
                 ->update(['security_paper_code' => $request->security_paper_code]);
 
-            // Mark as used in pool
-            DB::connection('sqlsrv')->table('st_rofo_security_paper_codes')
+            // Mark as used in global pool
+            DB::connection('sqlsrv')->table('global_security_paper_codes')
                 ->where('paper_code', $request->security_paper_code)
                 ->update([
                     'is_used' => true,

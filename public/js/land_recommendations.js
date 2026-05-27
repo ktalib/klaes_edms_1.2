@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const stateHidden = document.querySelector('input[type="hidden"][name="state"]');
         const state    = ((stateHidden?.value || stateInput?.value || '')).trim();
 
-        const prefix = plotNo ? 'Plot ' + plotNo : (houseNo ? 'No. ' + houseNo : '');
+        const prefix = plotNo ? plotNo : (houseNo ? 'No. ' + houseNo : '');
         const parts = [prefix, street, district, lga, state].filter(Boolean);
         if (locationInput) locationInput.value = parts.join(' ');
     }
@@ -165,13 +165,20 @@ document.addEventListener('DOMContentLoaded', function () {
                             });
 
                             // Auto-detect term based on Land Use name
-                            const termInput = document.querySelector('input[name="term"]');
+                            const termInput     = document.getElementById('term_input');
+                            const baseTermInput = document.getElementById('base_term');
                             if (termInput && (record.land_use || record.LandUse)) {
                                 const lu = (record.land_use || record.LandUse).toUpperCase().trim();
+                                let base = null;
                                 if (lu.includes('RESIDENTIAL') || lu.includes('AGRICULTURAL') || lu.includes('AGRICULTURE')) {
-                                    termInput.value = '99';
+                                    base = '99';
                                 } else if (lu.includes('COMMERCIAL') || lu.includes('INDUSTRIAL')) {
-                                    termInput.value = '40';
+                                    base = '40';
+                                }
+                                if (base !== null) {
+                                    if (baseTermInput) baseTermInput.value = base;
+                                    if (window._calcResidualTerm) window._calcResidualTerm();
+                                    else termInput.value = base;
                                 }
                             }
 
@@ -251,13 +258,20 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             // Auto-detect term
-            const termInput = document.querySelector('input[name="term"]');
+            const termInput    = document.getElementById('term_input');
+            const baseTermInput = document.getElementById('base_term');
             if (termInput && landUseName) {
                 const lu = landUseName.toUpperCase().trim();
+                let base = null;
                 if (lu.includes('RESIDENTIAL') || lu.includes('AGRICULTURAL') || lu.includes('AGRICULTURE')) {
-                    termInput.value = '99';
+                    base = '99';
                 } else if (lu.includes('COMMERCIAL') || lu.includes('INDUSTRIAL')) {
-                    termInput.value = '40';
+                    base = '40';
+                }
+                if (base !== null) {
+                    if (baseTermInput) baseTermInput.value = base;
+                    if (window._calcResidualTerm) window._calcResidualTerm();
+                    else termInput.value = base;
                 }
             }
 
@@ -313,6 +327,33 @@ document.addEventListener('DOMContentLoaded', function () {
     if (landUseSelect && landUseSelect.value) {
         landUseSelect.dispatchEvent(new Event('change'));
     }
+
+    // Edit mode: file number already populated — apply type lock immediately
+    if (fileNoInput && fileNoInput.value) {
+        autoDetectRecommendationType(fileNoInput.value);
+    }
+
+    // Residual Term: shown inside the Term (Years) field when CoFO year is entered
+    const cofoYearInput = document.getElementById('cofo_year');
+    const THIS_YEAR     = new Date().getFullYear();
+
+    function calcResidualTerm() {
+        const termEl     = document.getElementById('term_input');
+        const baseTermEl = document.getElementById('base_term');
+        if (!cofoYearInput || !termEl) return;
+        const year     = parseInt(cofoYearInput.value) || 0;
+        const baseTerm = parseInt(baseTermEl ? baseTermEl.value : termEl.value) || 0;
+        if (year >= 1900 && year <= THIS_YEAR && baseTerm > 0) {
+            const residual = baseTerm - (THIS_YEAR - year);
+            termEl.value = residual > 0 ? residual : 0;
+        } else {
+            termEl.value = baseTerm || '';
+        }
+    }
+    window._calcResidualTerm = calcResidualTerm;
+
+    if (cofoYearInput) cofoYearInput.addEventListener('input', calcResidualTerm);
+    calcResidualTerm();
 
     if (window.lucide) {
         window.lucide.createIcons();

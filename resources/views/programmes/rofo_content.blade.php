@@ -577,7 +577,7 @@
                     <div style="display: inline-block; border: 2px solid #000; border-radius: 8px; padding: 3px; background: #fff;">
                         <div data-rofo-badge style="background: #1a3a5c; padding: 8px 16px; border-radius: 5px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
                             <p style="font-weight: bold; color: #fff; text-transform: uppercase; font-size: 15px; margin: 0; letter-spacing: 0.5px;">KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</p>
-                            <p style="font-size: 10px; color: #fff; margin: 3px 0 0 0; letter-spacing: 0.3px;">No. 2 Dr Bala Mohammed Road, Kano State, Nigeria</p>
+                            <p style="font-size: 15px; color: #fff; margin: 3px 0 0 0; letter-spacing: 0.3px;">No. 2 Dr Bala Mohammed Road, Kano State, Nigeria</p>
                         </div>
                     </div>
                 </div>
@@ -740,7 +740,7 @@
                     <div style="margin-top: auto; display: flex; justify-content: space-between; padding: 0 30px 10px 30px; text-align: center; font-weight: bold; align-items: flex-end;">
                         <div style="display: flex; flex-direction: column; align-items: center;">
                             <div style="position: relative; width: 280px; height: 40px; margin-bottom: 1px; overflow: hidden; background: transparent;">
-                                <span style="position: absolute; bottom: 0; left: 0; width: 100%; font-size: 3px; font-weight: 900; letter-spacing: -0.65px; word-spacing: -3.2px; color: #000; white-space: nowrap; overflow: hidden; text-transform: uppercase; pointer-events: none; z-index: 2; font-family: 'Arial Narrow', 'Helvetica Condensed', 'Courier New', monospace; text-align: center; line-height: 1; text-shadow: 0 0.5px 0 #666;">KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</span>
+                                <span style="position: absolute; bottom: 0; left: 0; width: 100%; font-size: 3.5px; font-weight: 900; letter-spacing: -0.65px; word-spacing: -3.2px; color: #000; white-space: nowrap; overflow: hidden; text-transform: uppercase; pointer-events: none; z-index: 2; font-family: 'Arial Narrow', 'Helvetica Condensed', 'Courier New', monospace; text-align: center; line-height: 1; text-shadow: 0 0.5px 0 #666;">KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</span>
                             </div>
                             <div style="font-size: 12px;">HONOURABLE COMMISSIONER</div>
                         </div>
@@ -1062,7 +1062,7 @@
     </script>
 
     <!-- Color Scheme Switcher (hidden in print) -->
-    <div id="scheme-toolbar" style="position: fixed; top: 20px; left: 20px; z-index: 9999; display: flex; gap: 8px; background: #fff; padding: 10px 14px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); font-family: Arial, sans-serif; font-size: 13px; align-items: center;">
+    <div id="scheme-toolbar" style="position: fixed; top: 20px; left: 20px; z-index: 9999; display: flex; gap: 8px; background: #fff; padding: 10px 14px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); font-family: Arial, sans-serif; font-size: 13px; align-items: center; display: none;">
         <span style="font-weight: bold; margin-right: 4px;">Scheme:</span>
         <button onclick="applyScheme('A')" class="scheme-btn" data-scheme="A" style="padding: 6px 14px; border: 2px solid #1a3a5c; border-radius: 5px; cursor: pointer; font-weight: bold; background: #1a3a5c; color: #fff;">A</button>
         <button onclick="applyScheme('B')" class="scheme-btn" data-scheme="B" style="padding: 6px 14px; border: 2px solid #1a3a5c; border-radius: 5px; cursor: pointer; font-weight: bold; background: #fff; color: #1a3a5c;">B</button>

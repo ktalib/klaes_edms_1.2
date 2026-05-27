@@ -294,7 +294,7 @@
 
     {{-- Create Modal --}}
     <div id="create-modal" class="fixed inset-0 z-[9999] hidden flex items-center justify-center p-4">
-        <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onclick="closeModal()"></div>
+        <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"></div>
         <div class="relative bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
             <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
                 <div>
@@ -352,7 +352,7 @@
                         </div>
                         <div class="total-box">
                             <label class="text-sm font-semibold text-slate-700">Total Subdivision Area:</label>
-                            <input type="text" id="totalSize" class="readonly w-32 text-right border-none bg-transparent text-orange-700 font-bold" value="0.00 Sqm" readonly>
+                            <input type="text" id="totalSize" class="readonly w-32 text-right border-none bg-transparent text-orange-700 font-bold" value="0.00 Ha" readonly>
                         </div>
                     </div>
 
@@ -426,12 +426,12 @@
                     </div>
 
                     <div class="md:col-span-3">
-                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Upload Site Plan</label>
+                        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Application Plan (Site Plan)</label>
                         <div class="flex flex-col gap-4">
-                            <input type="file" name="site_plan" id="site_plan_input" accept=".pdf,.png,.jpg,.jpeg" 
+                            <input type="file" name="site_plan" id="site_plan_input" accept=".pdf,.png,.jpg,.jpeg"
                                 class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm bg-white"
                                 onchange="previewSitePlan(this)">
-                            
+
                             <div id="site_plan_preview_container" class="hidden relative w-full aspect-video rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center group">
                                 <img id="site_plan_preview_img" src="#" alt="Site Plan Preview" class="max-h-full max-w-full object-contain">
                                 <div id="pdf_preview_placeholder" class="hidden flex-col items-center gap-2 text-slate-400">
@@ -442,8 +442,67 @@
                                     <i data-lucide="x" class="w-4 h-4"></i>
                                 </button>
                             </div>
-                            
+
                             <p class="text-[10px] text-slate-400 mt-1 italic uppercase tracking-wider font-semibold">Accepted formats: PDF, PNG, JPG</p>
+                        </div>
+                    </div>
+
+                    {{-- Supporting Documents --}}
+                    <div class="md:col-span-3 section-box mt-2">
+                        <span class="section-label">Supporting Documents</span>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Proof of Ownership <span class="text-slate-400 normal-case font-normal">(C of O / R of O)</span></label>
+                                <div class="flex items-center gap-2">
+                                    <input type="file" name="ownership_document" id="sub_ownership_doc" accept=".pdf,.png,.jpg,.jpeg"
+                                        class="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm bg-white"
+                                        onchange="docFileChanged(this,'sub_btn_ownership','Proof of Ownership')">
+                                    <button type="button" id="sub_btn_ownership" onclick="openDocPreview('sub_ownership_doc','Proof of Ownership')"
+                                        class="hidden shrink-0 flex items-center gap-1 px-3 py-2.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 text-xs font-bold hover:bg-blue-100 transition">
+                                        <i data-lucide="eye" class="w-3.5 h-3.5"></i> Preview
+                                    </button>
+                                </div>
+                                <p class="text-[10px] text-slate-400 mt-1 italic">PDF, PNG, JPG · max 5 MB</p>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Application Letter</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="file" name="application_letter" id="sub_app_letter" accept=".pdf,.png,.jpg,.jpeg"
+                                        class="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm bg-white"
+                                        onchange="docFileChanged(this,'sub_btn_app_letter','Application Letter')">
+                                    <button type="button" id="sub_btn_app_letter" onclick="openDocPreview('sub_app_letter','Application Letter')"
+                                        class="hidden shrink-0 flex items-center gap-1 px-3 py-2.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 text-xs font-bold hover:bg-blue-100 transition">
+                                        <i data-lucide="eye" class="w-3.5 h-3.5"></i> Preview
+                                    </button>
+                                </div>
+                                <p class="text-[10px] text-slate-400 mt-1 italic">PDF, PNG, JPG · max 5 MB</p>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Means of Identification <span class="text-slate-400 normal-case font-normal">(NIN / Passport / Driver's Licence)</span></label>
+                                <div class="flex items-center gap-2">
+                                    <input type="file" name="means_of_id" id="sub_means_id" accept=".pdf,.png,.jpg,.jpeg"
+                                        class="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm bg-white"
+                                        onchange="docFileChanged(this,'sub_btn_means_id','Means of Identification')">
+                                    <button type="button" id="sub_btn_means_id" onclick="openDocPreview('sub_means_id','Means of Identification')"
+                                        class="hidden shrink-0 flex items-center gap-1 px-3 py-2.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 text-xs font-bold hover:bg-blue-100 transition">
+                                        <i data-lucide="eye" class="w-3.5 h-3.5"></i> Preview
+                                    </button>
+                                </div>
+                                <p class="text-[10px] text-slate-400 mt-1 italic">PDF, PNG, JPG · max 5 MB</p>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Tax Clearance Certificate</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="file" name="tax_clearance" id="sub_tax_clearance" accept=".pdf,.png,.jpg,.jpeg"
+                                        class="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm bg-white"
+                                        onchange="docFileChanged(this,'sub_btn_tax_clearance','Tax Clearance Certificate')">
+                                    <button type="button" id="sub_btn_tax_clearance" onclick="openDocPreview('sub_tax_clearance','Tax Clearance Certificate')"
+                                        class="hidden shrink-0 flex items-center gap-1 px-3 py-2.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 text-xs font-bold hover:bg-blue-100 transition">
+                                        <i data-lucide="eye" class="w-3.5 h-3.5"></i> Preview
+                                    </button>
+                                </div>
+                                <p class="text-[10px] text-slate-400 mt-1 italic">PDF, PNG, JPG · max 5 MB</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -452,6 +511,23 @@
             <div class="px-8 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
                 <button type="button" onclick="closeModal()" class="px-6 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-100 transition">Cancel</button>
                 <button type="button" onclick="submitForm()" class="px-6 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition">Submit</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- Document Preview Modal --}}
+    <div id="doc-preview-modal" class="fixed inset-0 z-[10001] hidden flex items-center justify-center p-4">
+        <div class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm" onclick="closeDocPreview()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden" style="max-height:90vh">
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
+                <h4 class="text-sm font-bold text-slate-800" id="doc-preview-title">Document Preview</h4>
+                <button type="button" onclick="closeDocPreview()" class="text-slate-400 hover:text-slate-600 transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-auto p-4 flex items-center justify-center bg-slate-50" style="min-height:60vh">
+                <img id="doc-preview-img" src="#" alt="Preview" class="hidden max-w-full max-h-full object-contain rounded-xl shadow">
+                <iframe id="doc-preview-iframe" src="" class="hidden w-full border-0 rounded-xl" style="height:70vh"></iframe>
             </div>
         </div>
     </div>
@@ -483,7 +559,7 @@
     function openCreateModal() {
         document.getElementById('create-form').reset();
         document.getElementById('fragmentsContainer').innerHTML = '<p class="col-span-full text-slate-400 text-xs italic">Enter "No. of Plots" above to define fragment sizes.</p>';
-        document.getElementById('totalSize').value = "0.00 Sqm";
+        document.getElementById('totalSize').value = "0.00 Ha";
         
         // Reset location navigation
         currentLocationStep = 1;
@@ -567,7 +643,7 @@
             }
         } else {
             sizeContainer.innerHTML = '<p class="col-span-full text-slate-400 text-xs italic">Enter "No. of Plots" above to define fragment sizes.</p>';
-            document.getElementById('totalSize').value = "0.00 Sqm";
+            document.getElementById('totalSize').value = "0.00 Ha";
         }
     }
 
@@ -578,7 +654,7 @@
             const val = parseFloat(input.value);
             if (!isNaN(val)) total += val;
         });
-        document.getElementById('totalSize').value = total.toFixed(2) + " Sqm";
+        document.getElementById('totalSize').value = parseFloat(total.toFixed(10)) + " Ha";
     }
 
     function openFileSelector() {
@@ -637,7 +713,7 @@
 
             const result = await response.json();
             if (result.success) {
-                Swal.fire({ icon: 'success', title: 'Success', text: result.message, timer: 1500, showConfirmButton: false });
+                await Swal.fire({ icon: 'success', title: 'Success', text: result.message, timer: 1500, showConfirmButton: false });
                 location.reload();
             } else {
                 Swal.fire({ icon: 'error', title: 'Error', text: result.message || 'Something went wrong' });
@@ -1056,5 +1132,38 @@
     document.addEventListener('DOMContentLoaded', function() {
         if (window.GlobalFileNoModal) GlobalFileNoModal.init();
     });
+
+    function docFileChanged(input, btnId) {
+        const btn = document.getElementById(btnId);
+        if (btn) btn.classList.toggle('hidden', !(input.files && input.files.length > 0));
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    function openDocPreview(inputId, label) {
+        const input = document.getElementById(inputId);
+        if (!input || !input.files || !input.files[0]) return;
+        const file = input.files[0];
+        const url = URL.createObjectURL(file);
+        document.getElementById('doc-preview-title').textContent = label;
+        const img = document.getElementById('doc-preview-img');
+        const iframe = document.getElementById('doc-preview-iframe');
+        if (file.type === 'application/pdf') {
+            img.classList.add('hidden');
+            iframe.src = url;
+            iframe.classList.remove('hidden');
+        } else {
+            iframe.classList.add('hidden');
+            img.src = url;
+            img.classList.remove('hidden');
+        }
+        document.getElementById('doc-preview-modal').classList.remove('hidden');
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    function closeDocPreview() {
+        const iframe = document.getElementById('doc-preview-iframe');
+        if (iframe) iframe.src = '';
+        document.getElementById('doc-preview-modal').classList.add('hidden');
+    }
 </script>
 @endsection

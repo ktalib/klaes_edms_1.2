@@ -208,11 +208,11 @@
                                     </span>
                                     <span class="leading-relaxed">Unlimited files per batch while the ST filter is active.</span>
                                 @else
-                                    <span class="inline-flex items-center gap-2 rounded-full border border-orange-100 bg-orange-50 px-3 py-1 font-medium text-orange-700">
+                                    <span class="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 font-medium text-blue-700">
                                         <i data-lucide="gauge" class="h-3.5 w-3.5"></i>
-                                        100 labels per shelf
+                                        Freestyle Capacity
                                     </span>
-                                    <span class="leading-relaxed">Each shelf holds 100 labels. The counter tracks remaining slots and overflow automatically rolls to the next shelf.</span>
+                                    <span class="leading-relaxed">Each shelf has unlimited capacity. The counter tracks how many files are currently occupying this label.</span>
                                 @endif
                             </div>
                         </div>
@@ -456,7 +456,7 @@
 
                                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                         <div class="text-xs text-slate-500 sm:text-left">
-                                            Each shelf tracks 100 slots. The counter shows the remaining capacity and new labels automatically roll over to the next shelf (A2, A3, ...).
+                                            Each shelf has unlimited capacity. The counter tracks how many files are currently on this label.
                                         </div>
                                         <button
                                             id="generateBatchBtn"
