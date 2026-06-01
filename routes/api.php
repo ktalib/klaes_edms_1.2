@@ -128,6 +128,7 @@ Route::post('/instruments/generate-particulars', [InstrumentController::class, '
 Route::get('/instruments/check-duplicate', [InstrumentController::class, 'checkDuplicate']);
 Route::get('/instruments/capture/{id}', [InstrumentController::class, 'getCaptureRecord']);
 Route::get('/instruments/op-serial-lookup', [InstrumentController::class, 'lookupByOpSerialNumber']);
+Route::get('/instruments/op-candidates-check', [InstrumentController::class, 'checkOpCandidates']);
 
 // Consent Applications API
 Route::get('/consent-applications/check', [ConsentApplicationController::class, 'checkForInstrument']);

@@ -88,7 +88,7 @@
                         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div>
                                 <h3 class="text-lg font-semibold">Select ST Files for Labels</h3>
-                                <p class="text-sm text-gray-600">Select a sub prefix to load files from ST Registry index</p>
+                                <p class="text-sm text-gray-600">Select an ST application type to load files from the ST file index</p>
                             </div>
                             <div class="flex flex-col md:flex-row gap-3 items-center w-full md:w-auto">
                                 <div class="relative w-full md:w-64">
@@ -126,14 +126,17 @@
                                     <span class="mt-1 text-xs text-slate-500">Fixed ST prefix.</span>
                                 </div>
                                 <div class="flex flex-col">
-                                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Sub Prefix</span>
+                                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">ST Application Type</span>
                                     <select
-                                        id="stSubPrefixSelect"
-                                        class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 select2"
+                                        id="stApplicationTypeSelect"
+                                        class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                                     >
-                                        <option value="">Select Sub Prefix</option>
+                                        <option value=""></option>
+                                        <option value="primary">Primary Application</option>
+                                        <option value="pua">PUA (Parented Units Application)</option>
+                                        <option value="sua">SUA (Standalone Unit Application)</option>
                                     </select>
-                                    <span class="mt-1 text-xs text-slate-500">Distinct <code>sub_prefix</code> from ST index.</span>
+                                    <span class="mt-1 text-xs text-slate-500">Files are filtered from <code>file_indexings.st_application_type</code>.</span>
                                 </div>
                                 <div class="flex flex-col">
                                     <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Rack</span>
@@ -215,7 +218,7 @@
 
                             <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div class="text-xs text-slate-500 sm:text-left">
-                                    Select a sub prefix, then click <strong>Load Records</strong> to fetch files from ST index.
+                                    Select an application type, then click <strong>Load Records</strong> to fetch files from the ST index.
                                 </div>
                                 <button
                                     id="generateBatchBtn"
@@ -248,7 +251,7 @@
                                         <i data-lucide="file-text" class="h-8 w-8 mx-auto text-gray-400"></i>
                                     </div>
                                     <p>No files loaded yet.</p>
-                                    <p class="text-xs text-gray-400 mt-1">Select a sub prefix and click Load Records.</p>
+                                    <p class="text-xs text-gray-400 mt-1">Select an application type and click Load Records.</p>
                                 </div>
                             </div>
                         </div>
@@ -328,8 +331,9 @@
 
                         <div id="batchList" class="rounded-md border">
                             <div class="p-3 bg-gray-50">
-                                <div class="grid grid-cols-7 gap-4 text-sm font-medium">
+                                <div class="grid grid-cols-8 gap-4 text-sm font-medium">
                                     <div>Batch Number</div>
+                                    <div>Application Type</div>
                                     <div>Created Date</div>
                                     <div>Files Count</div>
                                     <div>Format</div>

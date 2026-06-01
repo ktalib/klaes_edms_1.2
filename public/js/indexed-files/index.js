@@ -423,6 +423,35 @@ function buildActionsMenu(row, viewUrl) {
   const isKangisVariant = (config.tableVariant || '') === 'kangis';
   const trackingLabel = isKangisVariant ? 'Print Tracking Sheet' : 'View Tracking Sheet';
 
+  const isMatchedRow = !!(row.corresponding_fileno && String(row.corresponding_fileno).trim() !== '' && String(row.corresponding_fileno).trim() !== '-');
+  const commissionSheetButton = (config.enableCommissioningSheet && isMatchedRow)
+    ? `<button type="button" class="print-commissioning-sheet-btn block w-full text-left px-4 py-2.5 text-sm text-orange-700 hover:bg-orange-50 transition-colors" data-file-id="${id}">
+          <i data-lucide="file-text" class="h-4 w-4 mr-2.5 inline text-orange-600"></i>
+          Cadastral Correspondence File Matching Slip
+        </button>`
+    : '';
+
+  if (config.enableCommissioningSheet) {
+    if (!isMatchedRow) {
+      return '';
+    }
+    return `
+      <div class="relative inline-block text-left" data-action-menu>
+        <button type="button" class="actions-dropdown-btn inline-flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 bg-white text-slate-400 hover:text-blue-600 hover:border-blue-200 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm" data-file-id="${id}">
+          <i data-lucide="more-horizontal" class="h-5 w-5"></i>
+        </button>
+        <div class="actions-dropdown-menu hidden absolute right-0 z-30 mt-2 w-64 origin-top-right rounded-2xl border border-slate-100 bg-white shadow-xl ring-1 ring-black/5 focus:outline-none overflow-hidden" data-menu-for="${id}">
+          <div class="py-1.5">
+            <div class="px-4 py-2 border-b border-slate-50 mb-1">
+               <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">File Actions</p>
+            </div>
+            ${commissionSheetButton}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   const trackingButton = trackingUrl
     ? `<button type="button" class="print-tracking-btn block w-full text-left px-4 py-2.5 text-sm ${trackingClass} transition-colors" data-file-id="${id}" data-tracking-url="${escapeHtml(trackingUrl)}" ${trackingDisabledAttr}>
           <i data-lucide="printer" class="h-4 w-4 mr-2.5 inline ${allowTracking ? 'text-emerald-500' : 'text-gray-300'}"></i>
@@ -491,6 +520,7 @@ function buildActionsMenu(row, viewUrl) {
           ${editButton}
           ${viewButton}
           ${trackingButton}
+          ${commissionSheetButton}
           ${duplicateButton}
           ${tempFileButton}
           ${updatePlaceholderButton}
@@ -633,6 +663,14 @@ function handleTableBodyClick(event) {
     event.preventDefault();
     event.stopPropagation();
     handleTracking(trackingButton);
+    return;
+  }
+
+  const commissionSheetBtn = event.target.closest('.print-commissioning-sheet-btn');
+  if (commissionSheetBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    handlePrintCommissioningSheet(commissionSheetBtn);
     return;
   }
 
@@ -1142,6 +1180,257 @@ function handleTracking(button) {
     alert('Tracking sheet route is not configured for this record.');
   }
   closeAllActionMenus();
+}
+
+async function fetchImageAsBase64(url) {
+  if (!url) return null;
+  try {
+    const response = await fetch(url, { mode: 'cors', headers: { 'Accept': 'image/*' } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.warn(`Image fetch failed: ${url}`, err);
+    return null;
+  }
+}
+
+function formatTimeAMPM(value) {
+  if (!value) return '';
+  try {
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    }
+  } catch (e) {}
+  return String(value);
+}
+
+function formatDateOnly(value) {
+  if (!value) return '';
+  try {
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+  } catch (e) {}
+  return String(value);
+}
+
+function handlePrintCommissioningSheet(button) {
+  const fileId = button.getAttribute('data-file-id');
+  const row = rowCache.get(String(fileId));
+  closeAllActionMenus();
+  if (!row) {
+    alert('Unable to load file details for the commissioning sheet.');
+    return;
+  }
+  generateMatchedFileCommissioningSheetPDF(row).catch((err) => {
+    console.error('Commissioning sheet error:', err);
+    alert('Failed to generate commissioning sheet: ' + (err && err.message ? err.message : err));
+  });
+}
+
+async function fetchMatchedFileDetails(fileNumber) {
+  if (!fileNumber) return null;
+  try {
+    const url = `/mls-file-no-matching/get-file-details?file_number=${encodeURIComponent(fileNumber)}`;
+    const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
+    if (!response.ok) return null;
+    const json = await response.json();
+    return (json && json.success && json.data) ? json.data : null;
+  } catch (err) {
+    console.warn('Matched file lookup failed', err);
+    return null;
+  }
+}
+
+async function generateMatchedFileCommissioningSheetPDF(row, watermarkText = 'ORIGINAL') {
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    alert('jsPDF library is not loaded.');
+    return;
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  const mainFileNo = row.file_number || '';
+  const matchedFileNo = row.corresponding_fileno || '';
+  const isTemporaryFile = String(mainFileNo).endsWith('(T)') || String(matchedFileNo).endsWith('(T)');
+
+  const [logo1Base64, logo2Base64, leftFooterLogoBase64, footerLogoBase64, matchedDetails] = await Promise.all([
+    fetchImageAsBase64('/assets/logo/logo1.png')
+      .then(r => r || fetchImageAsBase64('/assets/logo/logo1.jpg'))
+      .then(r => r || fetchImageAsBase64('/assets/logo/logo1.jpeg')),
+    fetchImageAsBase64('/assets/logo/logo3.jpeg')
+      .then(r => r || fetchImageAsBase64('/assets/logo/las.jpeg'))
+      .then(r => r || fetchImageAsBase64('/assets/logo/logo3.jpg')),
+    fetchImageAsBase64('/assets/logo/1.jpeg'),
+    fetchImageAsBase64('/assets/logo/las.png').then(r => r || fetchImageAsBase64('/assets/logo/las.jpg')),
+    fetchMatchedFileDetails(matchedFileNo)
+  ]);
+
+  if (logo1Base64) doc.addImage(logo1Base64, 'JPEG', 12, 10, 18, 18);
+  if (logo2Base64) doc.addImage(logo2Base64, 'JPEG', 180, 10, 18, 18);
+
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.text('MINISTRY OF LAND & PHYSICAL PLANNING', 105, 16, { align: 'center' });
+  doc.setFontSize(11);
+  doc.text('DEPARTMENT OF LAND', 105, 23, { align: 'center' });
+  doc.setFontSize(10.5);
+  doc.text(isTemporaryFile ? 'TEMPORARY CADASTRAL CORRESPONDENCE FILE MATCHING SLIP' : 'CADASTRAL CORRESPONDENCE FILE MATCHING SLIP', 105, 30, { align: 'center' });
+
+  doc.setTextColor(255, 0, 0);
+  doc.setGState(doc.GState({ opacity: 0.18 }));
+  doc.setFontSize(45);
+  doc.text(watermarkText, 105, 150, { align: 'center', angle: 45, baseline: 'middle' });
+  doc.setGState(doc.GState({ opacity: 1.0 }));
+  doc.setTextColor(0, 0, 0);
+
+  const qrPayload = row.tracking_id || mainFileNo || matchedFileNo;
+  if (qrPayload) {
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrPayload)}`;
+    const qrBase64 = await fetchImageAsBase64(qrUrl);
+    if (qrBase64) {
+      try { doc.addImage(qrBase64, 'PNG', 92.5, 34, 22, 22); } catch (e) { console.warn('QR add failed', e); }
+    }
+  }
+
+  const colTopY = 62;
+  const colBottomY = 200;
+  const leftColX = 12;
+  const rightColX = 110;
+  const colWidth = 88;
+
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 64, 175);
+  doc.text('LAND INFORMATION', leftColX + colWidth / 2, colTopY + 6, { align: 'center' });
+  doc.setTextColor(180, 83, 9);
+  doc.text('CADASTRAL INFORMATION', rightColX + colWidth / 2, colTopY + 6, { align: 'center' });
+  doc.setTextColor(0, 0, 0);
+
+  doc.setDrawColor(200);
+  doc.line(leftColX, colTopY + 9, leftColX + colWidth, colTopY + 9);
+  doc.line(rightColX, colTopY + 9, rightColX + colWidth, colTopY + 9);
+  doc.setDrawColor(120);
+
+  const mainLocationParts = [row.plot_number, row.district, row.lga].filter(v => v && String(v).trim() !== '' && String(v).trim() !== '-');
+  const mainLocation = (row.location && row.location !== '-') ? row.location : mainLocationParts.join(', ');
+
+  const matchedLocationParts = [];
+  if (matchedDetails) {
+    if (matchedDetails.plot_no) matchedLocationParts.push(matchedDetails.plot_no);
+    if (matchedDetails.district_name) matchedLocationParts.push(matchedDetails.district_name);
+    if (matchedDetails.lga_name || matchedDetails.lga) matchedLocationParts.push(matchedDetails.lga_name || matchedDetails.lga);
+  }
+  const matchedLocation = (matchedDetails && matchedDetails.location) ? matchedDetails.location : matchedLocationParts.join(', ');
+
+  const mainFields = [
+    ['File No:', mainFileNo],
+    ['File Title:', row.file_title || ''],
+    ['Plot No:', row.plot_number || ''],
+    ['TP No:', row.tp_no || ''],
+    ['LPKN No:', row.lpkn_no || ''],
+    ['District:', row.district || ''],
+    ['LGA:', row.lga || ''],
+    ['Location:', mainLocation],
+  ];
+
+  const matchedFields = [
+    ['File No:', matchedFileNo],
+    ['File Title:', matchedDetails ? (matchedDetails.title || '') : ''],
+    ['Plot No:', matchedDetails ? (matchedDetails.plot_no || '') : ''],
+    ['TP No:', matchedDetails ? (matchedDetails.tp_no || '') : ''],
+    ['LPKN No:', matchedDetails ? (matchedDetails.lpkn_no || '') : ''],
+    ['District:', matchedDetails ? (matchedDetails.district_name || '') : ''],
+    ['LGA:', matchedDetails ? (matchedDetails.lga_name || matchedDetails.lga || '') : ''],
+    ['Location:', matchedLocation],
+  ];
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+
+  const fieldRowGap = 11;
+  const fieldsStartY = colTopY + 18;
+  const labelOffsetMain = 0;
+  const valueOffsetMain = 24;
+  const lineEndMain = leftColX + colWidth - 1;
+
+  const wrappedLineHeight = 4;
+  const drawColumn = (xOrigin, fields, options = {}) => {
+    const showLabels = options.showLabels !== false;
+    const valueOffset = showLabels ? valueOffsetMain : 0;
+    let y = fieldsStartY;
+    let lastUnderlineY = fieldsStartY;
+    fields.forEach(([label, value]) => {
+      if (showLabels) {
+        doc.setFont('helvetica', 'bold');
+        doc.text(label, xOrigin + labelOffsetMain, y);
+      }
+      doc.setFont('helvetica', 'normal');
+      const valueStr = String(value || '');
+      const maxWidth = colWidth - valueOffset - 1;
+      const lines = doc.splitTextToSize(valueStr, maxWidth);
+      doc.text(lines, xOrigin + valueOffset, y);
+      const lastLineY = y + (lines.length - 1) * wrappedLineHeight;
+      const lineY = lastLineY + 2;
+      lastUnderlineY = lineY;
+      doc.setDrawColor(160);
+      const underlineStart = xOrigin + Math.max(0, valueOffset - 1);
+      doc.line(underlineStart, lineY, xOrigin + colWidth - 1, lineY);
+      y += fieldRowGap + (lines.length - 1) * wrappedLineHeight;
+    });
+    return lastUnderlineY;
+  };
+
+  const leftEndY  = drawColumn(leftColX,  mainFields);
+  const rightEndY = drawColumn(rightColX, matchedFields, { showLabels: false });
+
+  // Center divider ends exactly at the last field underline
+  doc.setDrawColor(120);
+  doc.setLineWidth(0.3);
+  doc.line(105, colTopY, 105, Math.max(leftEndY, rightEndY) + 1);
+
+  const matchedAt = row.created_at || row.indexed_at;
+  const matchedBy = String(row.created_by || row.indexed_by || '').trim();
+  const timeStr = formatTimeAMPM(matchedAt);
+  const dateStr = formatDateOnly(matchedAt);
+  const sentence = `Matched on ${dateStr || '____________'} at ${timeStr || '________'} by ${matchedBy || '____________'}.`;
+
+  // Signatures
+  let commonY = colBottomY + 14;
+  doc.setFont('helvetica', 'normal');
+  doc.text('Created by Signature', 50, commonY, { align: 'center' });
+  doc.text('Approved by Signature', 150, commonY, { align: 'center' });
+  doc.setDrawColor(120);
+  doc.line(20, commonY + 10, 80, commonY + 10);
+  doc.line(120, commonY + 10, 180, commonY + 10);
+
+  // Footer logos
+  if (leftFooterLogoBase64) doc.addImage(leftFooterLogoBase64, 'JPEG', 15, 272, 18, 18);
+  if (footerLogoBase64) doc.addImage(footerLogoBase64, 'JPEG', 165, 272, 28, 12);
+
+  // "Matched on…" sentence sits between the two footer logos
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(sentence, 105, 280, { align: 'center' });
+
+  const safeName = String(mainFileNo || matchedFileNo || 'matching').replace(/[^a-zA-Z0-9_-]+/g, '_');
+  const blobUrl = doc.output('bloburl');
+  const printWin = window.open(blobUrl, '_blank');
+  if (printWin) {
+    printWin.addEventListener('load', () => {
+      try { printWin.focus(); printWin.print(); } catch (e) {}
+    });
+  } else {
+    doc.save(`cadastral-matching-slip-${safeName}.pdf`);
+  }
 }
 
 function handleDelete(button) {

@@ -1,0 +1,203 @@
+@extends('layouts.app')
+@section('page-title'){{ $PageTitle ?? 'Special Assignment – Certificate' }}@endsection
+
+@section('content')
+<div class="flex-1 overflow-auto">
+    @include('admin.header')
+    <div class="p-6">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800">Certificate of Change of Purpose</h1>
+                <p class="text-sm text-gray-500 mt-1">{{ $PageDescription ?? '' }}</p>
+            </div>
+            <button id="btn-issue-cert"
+                class="inline-flex items-center gap-2 px-4 py-2 bg-[rgb(186,191,12)] hover:opacity-90 text-white text-sm font-medium rounded-lg">
+                <i data-lucide="file-badge" class="h-4 w-4"></i> Issue Certificate
+            </button>
+        </div>
+
+        {{-- Stats --}}
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
+                <div class="p-3 rounded-full" style="background:rgba(186,191,12,.12)"><i data-lucide="file-badge" class="h-5 w-5 text-[rgb(186,191,12)]"></i></div>
+                <div><p class="text-xs text-gray-500">Total</p><p class="text-xl font-bold text-gray-800">{{ $stats['total'] }}</p></div>
+            </div>
+            <div class="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
+                <div class="p-3 rounded-full bg-green-50"><i data-lucide="check-circle" class="h-5 w-5 text-green-600"></i></div>
+                <div><p class="text-xs text-gray-500">Issued</p><p class="text-xl font-bold text-gray-800">{{ $stats['issued'] }}</p></div>
+            </div>
+            <div class="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
+                <div class="p-3 rounded-full bg-blue-50"><i data-lucide="inbox" class="h-5 w-5 text-blue-500"></i></div>
+                <div><p class="text-xs text-gray-500">Collected</p><p class="text-xl font-bold text-gray-800">{{ $stats['collected'] }}</p></div>
+            </div>
+            <div class="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
+                <div class="p-3 rounded-full bg-red-50"><i data-lucide="x-circle" class="h-5 w-5 text-red-500"></i></div>
+                <div><p class="text-xs text-gray-500">Revoked</p><p class="text-xl font-bold text-gray-800">{{ $stats['revoked'] }}</p></div>
+            </div>
+        </div>
+
+        {{-- DataTable --}}
+        <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-100"><h2 class="text-sm font-semibold text-gray-700">Certificate Registry</h2></div>
+            <div class="p-4">
+                <table id="certificate-table" class="w-full text-sm" style="width:100%">
+                    <thead>
+                        <tr class="text-left text-xs text-gray-500 uppercase">
+                            <th class="px-3 py-2">#</th>
+                            <th class="px-3 py-2">Cert No</th>
+                            <th class="px-3 py-2">File No</th>
+                            <th class="px-3 py-2">Holder Name</th>
+                            <th class="px-3 py-2">From Use</th>
+                            <th class="px-3 py-2">To Use</th>
+                            <th class="px-3 py-2">Issue Date</th>
+                            <th class="px-3 py-2">Status</th>
+                            <th class="px-3 py-2">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- Issue Certificate Modal --}}
+<div id="modal-issue-cert" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+            <h3 class="text-base font-semibold text-gray-800">Issue Certificate of Change of Purpose</h3>
+            <button class="modal-close text-gray-400 hover:text-gray-600"><i data-lucide="x" class="h-5 w-5"></i></button>
+        </div>
+        <form id="form-issue-cert" class="p-6 space-y-4">
+            @csrf
+            <div class="p-3 bg-amber-50 rounded-lg text-xs text-amber-700 border border-amber-200">
+                <i data-lucide="info" class="h-3.5 w-3.5 inline mr-1"></i>
+                Certificate can only be issued for applications with an approved Commissioner memo.
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="sm:col-span-2">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Application <span class="text-red-500">*</span></label>
+                    <select name="spa_application_id" id="cert-app-select" required
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                        <option value="">Select approved application…</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Holder Name <span class="text-red-500">*</span></label>
+                    <input type="text" name="holder_name" id="cert-holder" required
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Issue Date <span class="text-red-500">*</span></label>
+                    <input type="date" name="issue_date" required
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">From Use (Approved) <span class="text-red-500">*</span></label>
+                    <input type="text" name="from_use" id="cert-from-use" required
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">To Use (New Purpose) <span class="text-red-500">*</span></label>
+                    <input type="text" name="to_use" required
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Expiry Date (optional)</label>
+                    <input type="date" name="expiry_date"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" class="modal-close px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+                <button type="submit" class="px-5 py-2 text-sm text-white bg-[rgb(186,191,12)] rounded-lg hover:opacity-90">Issue Certificate</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    table.dataTable thead th { background:#f9fafb; font-weight:600; }
+    .dataTables_wrapper .dataTables_filter input { border:1px solid #e5e7eb; border-radius:.5rem; padding:.35rem .75rem; font-size:.85rem; }
+    .dataTables_wrapper .dataTables_length select { border:1px solid #e5e7eb; border-radius:.5rem; padding:.25rem .5rem; }
+</style>
+
+<script>
+const CSRF      = '{{ csrf_token() }}';
+const STORE_CERT= '{{ route("special-assignment.certificate.issue") }}';
+const APP_AJAX  = '{{ route("special-assignment.land-records") }}';
+const PRINT_BASE= '{{ url("special-assignment/certificate") }}';
+
+const STATUS_COLORS = {
+    draft    : 'bg-gray-100 text-gray-600',
+    issued   : 'bg-green-100 text-green-700',
+    collected: 'bg-blue-100 text-blue-700',
+    revoked  : 'bg-red-100 text-red-700',
+};
+
+$(document).ready(function () {
+    const table = $('#certificate-table').DataTable({
+        processing: true, serverSide: true,
+        ajax: { url: window.location.href, data: d => ({ ...d, ajax:1 }) },
+        columns: [
+            { data:'DT_RowIndex', orderable:false, searchable:false },
+            { data:'cert_number' },
+            { data:'file_number' },
+            { data:'holder_name' },
+            { data:'from_use' },
+            { data:'to_use' },
+            { data:'issue_date' },
+            { data:'status', render: d => `<span class="px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[d]||'bg-gray-100 text-gray-600'}">${d||'—'}</span>` },
+            { data:'action', orderable:false, searchable:false },
+        ],
+    });
+
+    // Print button (delegated)
+    $('#certificate-table').on('click', '.btn-print-cert', function () {
+        window.open(`${PRINT_BASE}/${$(this).data('id')}/print`, '_blank');
+    });
+
+    // Modal
+    const modal = document.getElementById('modal-issue-cert');
+    document.getElementById('btn-issue-cert').addEventListener('click', () => { modal.classList.remove('hidden'); modal.classList.add('flex'); });
+    document.querySelectorAll('.modal-close').forEach(b => b.addEventListener('click', () => { modal.classList.add('hidden'); modal.classList.remove('flex'); }));
+
+    // Load approved applications into select
+    fetch(APP_AJAX + '?ajax=1&length=500&start=0&status=approved').then(r=>r.json()).then(d=>{
+        const sel = document.getElementById('cert-app-select');
+        (d.data||[]).forEach(a => {
+            const opt = document.createElement('option');
+            opt.value = a.id;
+            opt.dataset.owner = a.owner_name;
+            opt.dataset.landUse = a.land_use_type || '';
+            opt.dataset.existingUse = a.existing_use || '';
+            opt.textContent = `${a.file_number} – ${a.owner_name}`;
+            sel.appendChild(opt);
+        });
+        sel.addEventListener('change', function() {
+            const opt = this.options[this.selectedIndex];
+            document.getElementById('cert-holder').value   = opt.dataset.owner || '';
+            document.getElementById('cert-from-use').value = opt.dataset.landUse || '';
+        });
+    }).catch(()=>{});
+
+    // Form submit
+    document.getElementById('form-issue-cert').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const btn = this.querySelector('[type=submit]');
+        btn.disabled = true; btn.textContent = 'Issuing…';
+        const res  = await fetch(STORE_CERT, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json'}, body: JSON.stringify(Object.fromEntries(new FormData(this))) });
+        const data = await res.json();
+        if (data.success) {
+            modal.classList.add('hidden'); modal.classList.remove('flex');
+            this.reset();
+            table.ajax.reload();
+            Swal.fire({ icon:'success', title:'Certificate Issued', text:`${data.cert_number} has been issued.`, timer:3000, showConfirmButton:false });
+        } else {
+            Swal.fire({ icon:'error', title:'Error', text:data.message||'Could not issue certificate.' });
+        }
+        btn.disabled=false; btn.textContent='Issue Certificate';
+    });
+});
+</script>
+@endsection

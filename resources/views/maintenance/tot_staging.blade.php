@@ -8,7 +8,7 @@
 <div class="flex-1 overflow-auto bg-slate-50/60">
     @include('admin.header', [
         'PageTitle' => 'ToT Dashboard',
-        'PageDescription' => 'Automated detection of owner name discrepancies between OP and R of O'
+        'PageDescription' => 'Records qualified for automatic Transfer of Title generation'
     ])
 
     <div class="p-6 space-y-8 max-w-7xl mx-auto">
@@ -16,7 +16,7 @@
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
                 <h1 class="text-3xl font-bold text-slate-900"></h1>
-                <p class="text-slate-500 mt-1">Staged mismatches identified by the system for processing</p>
+                <p class="text-slate-500 mt-1">Records ready for Transfer of Title generation</p>
             </div>
             <div class="flex gap-3">
                 <button id="btnIgnore" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold shadow-sm hover:bg-slate-50 transition">
@@ -37,7 +37,7 @@
                     <i data-lucide="alert-circle" class="h-6 w-6"></i>
                 </div>
                 <div>
-                    <p class="text-sm text-slate-500 font-medium uppercase tracking-wider">Pending Mismatches</p>
+                    <p class="text-sm text-slate-500 font-medium uppercase tracking-wider">Ready for ToT</p>
                     <h3 class="text-2xl font-bold text-slate-800">{{ number_format(count($records)) }}</h3>
                 </div>
             </div>
@@ -66,7 +66,7 @@
         <!-- Data Table Section -->
         <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
             <div class="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                <h2 class="text-lg font-semibold text-slate-800">Staged Records for Review</h2>
+                <h2 class="text-lg font-semibold text-slate-800">Records Ready for ToT Generation</h2>
                 <div class="flex items-center gap-3">
                     <div class="flex items-center gap-2">
                         <input class="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" type="checkbox" id="selectAll">
@@ -75,64 +75,63 @@
                 </div>
             </div>
             <div class="p-6">
-                <table id="totStagingTable" class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="text-slate-500 text-sm uppercase tracking-wider">
-                            <th class="pb-4 font-semibold w-10"></th>
-                            <th class="pb-4 font-semibold">MLS File No</th>
-                            <th class="pb-4 font-semibold">OP Owner (Current)</th>
-                            <th class="pb-4 font-semibold text-center">Inconsistency</th>
-                            <th class="pb-4 font-semibold text-right">R of O Owner (Staged)</th>
-                            <th class="pb-4 font-semibold text-right">Property ID</th>
-                        </tr>
-                    </thead>
-                    <tbody class="text-slate-600 text-sm">
-                        @forelse($records as $record)
-                        <tr class="hover:bg-slate-50 transition-colors border-b border-slate-100 group">
-                            <td class="py-4">
-                                <input class="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 row-checkbox" type="checkbox" value="{{ $record->id }}">
-                            </td>
-                            <td class="py-4">
-                                <div class="flex flex-col">
-                                    <span class="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full inline-block w-max mb-1">{{ $record->mlsFNo }}</span>
-                                    
-                                </div>
-                            </td>
-                            <td class="py-4">
-                                <div class="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100/50">
-                                    <span class="font-bold text-indigo-900 block truncate max-w-[200px]" title="{{ $record->op_name }}">{{ $record->op_name }}</span>
-                                </div>
-                            </td>
-                            <td class="py-4 text-center">
-                                <div class="flex flex-col items-center gap-1">
-                                    <span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-600 text-[10px] font-black uppercase">Mismatch</span>
-                                    <i data-lucide="move-right" class="h-4 w-4 text-slate-300"></i>
-                                </div>
-                            </td>
-                            <td class="py-4">
-                                <div class="p-3 bg-amber-50/50 rounded-xl border border-amber-100/50 text-right">
-                                    <span class="font-bold text-amber-900 block truncate max-w-[200px]" title="{{ $record->ro_name }}">{{ $record->ro_name }}</span>
-                                </div>
-                            </td>
-                            <td class="py-4 text-right">
-                                <span class="font-mono text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">{{ $record->prop_id }}</span>
-                            </td>
-                        </tr>
-                        @empty
-                        <tr>
-                            <td colspan="6" class="py-20 text-center">
-                                <div class="flex flex-col items-center gap-3">
-                                    <div class="h-16 w-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center">
-                                        <i data-lucide="check-check" class="h-8 w-8"></i>
+                <div class="overflow-x-auto -mx-6 px-6">
+                    <table id="totStagingTable" class="w-full text-left border-collapse" style="min-width: 960px;">
+                        <thead>
+                            <tr class="text-slate-500 text-sm uppercase tracking-wider">
+                                <th class="pb-4 font-semibold w-10 whitespace-nowrap"></th>
+                                <th class="pb-4 font-semibold whitespace-nowrap">MLS File No</th>
+                                <th class="pb-4 font-semibold whitespace-nowrap">OP Owner (Current)</th>
+                                <th class="pb-4 font-semibold text-center whitespace-nowrap">Status</th>
+                                <th class="pb-4 font-semibold whitespace-nowrap">R of O Owner (Staged)</th>
+                                <th class="pb-4 font-semibold text-right whitespace-nowrap">Property ID</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-slate-600 text-sm">
+                            @forelse($records as $record)
+                            <tr class="hover:bg-slate-50 transition-colors border-b border-slate-100 group">
+                                <td class="py-4 align-middle">
+                                    <input class="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 row-checkbox" type="checkbox" value="{{ $record->id }}">
+                                </td>
+                                <td class="py-4 align-middle">
+                                    <span class="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full inline-block whitespace-nowrap">{{ $record->mlsFNo }}</span>
+                                </td>
+                                <td class="py-4 align-middle">
+                                    <div class="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100/50 min-w-[180px]">
+                                        <span class="font-bold text-indigo-900 block truncate max-w-[240px]" title="{{ $record->op_name }}">{{ $record->op_name }}</span>
                                     </div>
-                                    <h3 class="text-xl font-bold text-slate-800">Database Synchronized</h3>
-                                    <p class="text-slate-500">No discrepancies found requiring Transfer of Title generation.</p>
-                                </div>
-                            </td>
-                        </tr>
-                        @endforelse
-                    </tbody>
-                </table>
+                                </td>
+                                <td class="py-4 text-center align-middle">
+                                    <div class="inline-flex flex-col items-center gap-1">
+                                        <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase whitespace-nowrap">Ready for ToT</span>
+                                        <i data-lucide="move-right" class="h-4 w-4 text-slate-300"></i>
+                                    </div>
+                                </td>
+                                <td class="py-4 align-middle">
+                                    <div class="p-3 bg-amber-50/50 rounded-xl border border-amber-100/50 min-w-[180px]">
+                                        <span class="font-bold text-amber-900 block truncate max-w-[240px]" title="{{ $record->ro_name }}">{{ $record->ro_name }}</span>
+                                    </div>
+                                </td>
+                                <td class="py-4 text-right align-middle">
+                                    <span class="font-mono text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg whitespace-nowrap">{{ $record->prop_id }}</span>
+                                </td>
+                            </tr>
+                            @empty
+                            <tr>
+                                <td colspan="6" class="py-20 text-center">
+                                    <div class="flex flex-col items-center gap-3">
+                                        <div class="h-16 w-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center">
+                                            <i data-lucide="check-check" class="h-8 w-8"></i>
+                                        </div>
+                                        <h3 class="text-xl font-bold text-slate-800">All Caught Up</h3>
+                                        <p class="text-slate-500">No records currently qualify for Transfer of Title generation.</p>
+                                    </div>
+                                </td>
+                            </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -220,7 +219,7 @@ $(document).ready(function() {
         const msg = action === 'generate' ? `Execute ToT generation for ${ids.length} records?` : `Archive ${ids.length} records?`;
         
         const confirmResult = await Swal.fire({
-            title: 'System Intelligence',
+            title: 'Confirm Action',
             text: msg,
             icon: 'question',
             showCancelButton: true,
@@ -251,7 +250,7 @@ $(document).ready(function() {
             if (result.success) {
                 Swal.fire({
                     icon: 'success',
-                    title: 'Intelligence Synchronized',
+                    title: 'Done',
                     text: result.message,
                     timer: 2000,
                     showConfirmButton: false
@@ -263,7 +262,7 @@ $(document).ready(function() {
             }
         } catch (error) {
             console.error('Error:', error);
-            Swal.fire('System Error', 'Failed to communicate with intelligence engine.', 'error');
+            Swal.fire('System Error', 'Failed to process the request. Please try again.', 'error');
             btn.disabled = false;
             btn.innerHTML = originalHtml;
         }
@@ -274,7 +273,7 @@ $(document).ready(function() {
         table.rows().nodes().to$().find('input.row-checkbox:checked').each(function() {
             ids.push($(this).val());
         });
-        if (!ids.length) return Swal.fire('Selection Required', 'Choose records to process.', 'info');
+        if (!ids.length) return Swal.fire('No Selection', 'Please select at least one record to generate.', 'info');
         executeAction('generate', ids);
     });
 
@@ -283,7 +282,7 @@ $(document).ready(function() {
         table.rows().nodes().to$().find('input.row-checkbox:checked').each(function() {
             ids.push($(this).val());
         });
-        if (!ids.length) return Swal.fire('Selection Required', 'Choose records to archive.', 'info');
+        if (!ids.length) return Swal.fire('No Selection', 'Please select at least one record to archive.', 'info');
         executeAction('ignore', ids);
     });
 });

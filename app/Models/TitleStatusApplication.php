@@ -18,6 +18,7 @@ class TitleStatusApplication extends Model
     public const TYPE_REVOKE       = 'Revoke (CofO)';
     public const TYPE_LITIGATION   = 'Litigation';
     public const TYPE_AMENDMENT    = 'Amendment/Reconsideration (Application/RofO/CofO)';
+    public const TYPE_SURRENDER    = 'Surrender';
 
     public const AUTHORITY_OPTIONS = [
         "Governor's Directive",
@@ -26,6 +27,23 @@ class TitleStatusApplication extends Model
         "Administrative Decision",
         "Regulatory Notice",
         "Other",
+    ];
+
+    public const INITIATED_BY_OPTIONS = [
+        'Ministry',
+        'Allottee',
+        'Applicant',
+        'Court Order',
+    ];
+
+    /** Per-type options for the Initiated By dropdown. Single-option types lock the value. */
+    public const INITIATED_BY_BY_TYPE = [
+        self::TYPE_WITHDRAWAL   => ['Applicant'],
+        self::TYPE_CANCELLATION => ['Ministry', 'Allottee'],
+        self::TYPE_REVOKE       => ['Court Order'],
+        self::TYPE_LITIGATION   => ['Ministry', 'Allottee'],
+        self::TYPE_AMENDMENT    => ['Ministry', 'Allottee'],
+        self::TYPE_SURRENDER    => ['Applicant'],
     ];
 
     protected $fillable = [
@@ -49,6 +67,8 @@ class TitleStatusApplication extends Model
         'date_of_expiry',
         'authority',
         'authority_reference',
+        'initiated_by',
+        'reason',
         'remark',
         'status',
         'captured_by',

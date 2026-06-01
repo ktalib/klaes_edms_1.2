@@ -126,14 +126,14 @@
                                     <span>Generate New  File Number</span>
                                 </button>
 
-                                <button 
+                                <button
                                     onclick="openBatchPrintModal()"
                                     class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors">
                                     <i data-lucide="printer" class="w-4 h-4"></i>
                                     <span>Print Batch Commissioning Sheet</span>
                                 </button>
 
-                                 <!-- <button 
+                                 <!-- <button
                                     onclick="openMigrationModal()"
                                     class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors">
                                     <i data-lucide="upload" class="w-4 h-4"></i>
@@ -203,6 +203,31 @@
                             </div>
                         </div>
 
+                        @if(Auth::user() && Auth::user()->assign_role === 'Supper Admin')
+                        <!-- Bulk Actions Bar (visible only when rows are selected) -->
+                        <div id="mlsfBulkActionsBar"
+                             class="hidden items-center justify-between bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-3 shadow-sm">
+                            <div class="flex items-center space-x-2 text-sm text-red-800">
+                                <i data-lucide="check-square" class="w-4 h-4"></i>
+                                <span><strong id="mlsfSelectedCount">0</strong> record(s) selected</span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button type="button"
+                                        onclick="clearMlsfSelection()"
+                                        class="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-md hover:bg-white transition-colors">
+                                    Clear
+                                </button>
+                                <button id="mlsfBulkDeleteBtn"
+                                        type="button"
+                                        onclick="bulkDeleteSelectedRecords()"
+                                        class="inline-flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded-md text-sm font-semibold transition-colors shadow-sm">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                    <span>Delete Selected</span>
+                                </button>
+                            </div>
+                        </div>
+                        @endif
+
                         <!-- DataTable -->
                         <div class="bg-white rounded-lg shadow-sm border border-gray-200">
                             <div class="p-6">
@@ -210,6 +235,12 @@
                                     <table id="mlsfTable" class="w-full table-auto">
                                         <thead>
                                             <tr class="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
+                                                @if(Auth::user() && Auth::user()->assign_role === 'Supper Admin')
+                                                <th class="px-3 py-3 text-center whitespace-nowrap" style="width:36px">
+                                                    <input type="checkbox" id="mlsfSelectAll" title="Select all on this page"
+                                                           class="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500 cursor-pointer">
+                                                </th>
+                                                @endif
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">S/N</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Customer Type</th>
 

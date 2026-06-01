@@ -15,13 +15,13 @@ document.addEventListener('DOMContentLoaded', function() {
         previewInFlight: false, previewPromise: null, labelStatistics: null, rackLabelStatus: null,
         excludeAssignedFromBatch: false, reprintMode: false, batchSearchQuery: '',
         batchPagination: { current_page:1, last_page:1, per_page:20, total:0 },
-        stPrefix: ST_PREFIX, stSubPrefix: '',
+        stPrefix: ST_PREFIX, stApplicationType: '',
     };
 
     const PRINT_TEMPLATE_URL = '/st-printlabel/print-template';
     const API = {
         prefixes:        '/st-printlabel/api/prefixes',
-        subPrefixes:     '/st-printlabel/api/sub-prefixes',
+        applicationTypes:'/st-printlabel/api/application-types',
         prefixNextRange: '/st-printlabel/api/prefix-next-range',
         files:           '/st-printlabel/api/files',
         rackStatus:      '/st-printlabel/api/rack-label/status',
@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if(!Array.isArray(vals))return'';for(var i=0;i<vals.length;i++){var c=vals[i];if(c===undefined||c===null)continue;var n=c.toString().trim();if(n!=='')return n;}return'';
     }
     function getFileNumberSortKey(p) {
-        if(!p||typeof p!=='object')return'';return pickFirstNonEmpty([p.primaryFileNumber,p.primary_number,p.fileNumber,p.file_number,p.originalFileNumber]).toUpperCase();
+        if(!p||typeof p!=='object')return'';return pickFirstNonEmpty([p.primaryFileNumber,p.primary_number,p.np_file_number,p.fileNumber,p.file_number,p.originalFileNumber]).toUpperCase();
     }
     function sortByFileNumber(list) {
         if(!Array.isArray(list)||list.length<2)return list?list.slice():[];
@@ -109,12 +109,23 @@ document.addEventListener('DOMContentLoaded', function() {
         if(!c.length)return'';return c[0].replace(/^Shelf\/?Rack[-:\s]*/i,'').trim()||'';
     }
     function deriveFileNumbers(file) {
-        var fn=(file&&file.file_number)?String(file.file_number).trim():'';return{primaryNumber:fn||null,secondaryNumber:null,isSTContext:true};
+        if(!file||typeof file!=='object')return{primaryNumber:null,secondaryNumber:null,isSTContext:true};
+        var idxFn=(file.file_number!=null)?String(file.file_number).trim():'';
+        var np=(file.np_file_number!=null)?String(file.np_file_number).trim():'';
+        var appFn=(file.application_file_number!=null)?String(file.application_file_number).trim():'';
+        // Top line: new primary file number (np_fileno) when present; fall back to file_indexings file_number.
+        var primary=np||idxFn||appFn||null;
+        // Bottom line: application table's fileno (mother/sub) when different from the primary.
+        // Fall back to file_indexings.file_number if no application linkage was found.
+        var secondaryCandidate=appFn||idxFn||'';
+        var secondary=null;
+        if(primary&&secondaryCandidate&&primary.toUpperCase()!==secondaryCandidate.toUpperCase())secondary=secondaryCandidate;
+        return{primaryNumber:primary,secondaryNumber:secondary,isSTContext:true};
     }
 
     function computePreparationSignature() {
         var ids=state.selectedFiles.map(function(v){return v!=null?v.toString():'';}).filter(Boolean).sort();
-        return JSON.stringify({selectedIds:ids,fullLabel:state.fullLabel,selectedTemplate:state.selectedTemplate,orientation:state.orientation,stPrefix:state.stPrefix,stSubPrefix:state.stSubPrefix});
+        return JSON.stringify({selectedIds:ids,fullLabel:state.fullLabel,selectedTemplate:state.selectedTemplate,orientation:state.orientation,stPrefix:state.stPrefix,stApplicationType:state.stApplicationType});
     }
 
     function buildPreparedEntriesFromItems(items) {
@@ -139,7 +150,7 @@ document.addEventListener('DOMContentLoaded', function() {
         var baseEntries=records.map(function(rec){
             var d=deriveFileNumbers(rec);var tid=coalesce(rec.tracking_id,rec.qr_value,rec.file_number).toString();
             return{id:rec.id,fileNumber:d.primaryNumber||rec.file_number||null,primaryFileNumber:d.primaryNumber||rec.file_number||null,
-                secondaryFileNumber:null,originalFileNumber:rec.file_number||null,isSTFile:true,
+                secondaryFileNumber:d.secondaryNumber||null,originalFileNumber:rec.file_number||null,isSTFile:true,
                 shelfLabel:rec.shelf_label||'Shelf/Rack-N/A',shelfValue:rec.shelf_value||'N/A',
                 trackingId:tid,fileTitle:rec.file_title||'',qrValue:rec.qr_value||tid||rec.file_number||''};
         });
@@ -174,12 +185,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // ---- ST file loading ----
+    function applicationTypeLabel(type){
+        switch((type||'').toLowerCase()){
+            case 'primary': return 'Primary Application';
+            case 'pua':     return 'PUA';
+            case 'sua':     return 'SUA';
+            default:        return type||'';
+        }
+    }
     async function loadStFiles() {
-        var subPrefix=state.stSubPrefix;
-        if(!subPrefix){showError('Please select a sub prefix.');return;}
+        var appType=state.stApplicationType;
+        if(!appType){showError('Please select an ST application type.');return;}
+        var label=applicationTypeLabel(appType);
         showLoading('Loading ST files...');
         try{
-            var params=new URLSearchParams({prefix:ST_PREFIX,sub_prefix:subPrefix,search:state.searchTerm||''});
+            var params=new URLSearchParams({prefix:ST_PREFIX,application_type:appType,search:state.searchTerm||''});
             if(state.excludeAssignedFromBatch)params.append('exclude_assigned','true');
             var r=await fetch(API.files+'?'+params);
             if(!r.ok){var t=await r.text();throw new Error('Server responded with '+r.status+'. '+t.substring(0,120));}
@@ -189,8 +209,8 @@ document.addEventListener('DOMContentLoaded', function() {
             state.availableFiles=files;state.selectedFiles=files.map(function(f){return f.id;});
             renderFileList();updateCounts();updateSelectAllCheckbox();
             hideLoading();
-            if(files.length===0)showError('No indexed records found for ST sub prefix '+subPrefix+'.');
-            else showSuccess('Loaded '+files.length+' file'+(files.length===1?'':'s')+' for sub prefix '+subPrefix+'.');
+            if(files.length===0)showError('No indexed ST files found for application type '+label+'.');
+            else showSuccess('Loaded '+files.length+' file'+(files.length===1?'':'s')+' for application type '+label+'.');
             if(state.activeTab==='preview')refreshPreview(true);
         }catch(err){hideLoading();showError('Failed to load files: '+(err.message||err));}
     }
@@ -199,7 +219,7 @@ document.addEventListener('DOMContentLoaded', function() {
     async function persistBatchForPrinting() {
         if(state.reprintMode&&state.currentBatchId&&state.preparedBatchResponse)return Promise.resolve(state.preparedBatchResponse);
         var sel=getSelectedFilesData();if(!sel.length)throw new Error('Please select at least one file before printing.');
-        var payload={prefix:ST_PREFIX,sub_prefix:state.stSubPrefix,file_ids:sel.map(function(r){return Number(r.id);}),
+        var payload={prefix:ST_PREFIX,application_type:state.stApplicationType,file_ids:sel.map(function(r){return Number(r.id);}),
             full_label:state.fullLabel||updateFullLabelDisplay(),rack_primary:state.rackPrimary,
             rack_secondary:state.rackSecondary||null,shelf_number:parseInt(state.shelfNumber,10),
             label_format:state.selectedTemplate,orientation:state.orientation};
@@ -224,13 +244,13 @@ document.addEventListener('DOMContentLoaded', function() {
             var tid=coalesce(file.tracking_id,'').toString();if(!tid)tid=file.id?('IDX-'+file.id):('IDX-'+Math.random().toString(36).slice(2,8));
             var d=deriveFileNumbers(file);
             entries.push({id:file.id,fileNumber:d.primaryNumber||file.file_number||'',primaryFileNumber:d.primaryNumber||file.file_number||null,
-                secondaryFileNumber:null,originalFileNumber:file.file_number,isSTFile:true,shelfLabel:sL,shelfValue:sV,trackingId:tid,fileTitle:file.file_title||'',qrValue:tid});
+                secondaryFileNumber:d.secondaryNumber||null,originalFileNumber:file.file_number,isSTFile:true,shelfLabel:sL,shelfValue:sV,trackingId:tid,fileTitle:file.file_title||'',qrValue:tid});
         });
         return sortByFileNumber(entries);
     }
     function buildLabelPayload() {
         var base=collectBaseLabelEntries(),copies=Math.max(1,parseInt(state.copies||1,10)),labels=[];
-        base.forEach(function(e){for(var c=0;c<copies;c++){labels.push({file_number:e.fileNumber,primary_number:e.primaryFileNumber||e.fileNumber,secondary_number:null,is_st:true,shelf_label:e.shelfLabel,shelf_value:e.shelfValue,file_title:e.fileTitle,tracking_id:e.trackingId,qr_value:e.qrValue,copy_number:c+1,copy_total:copies});}});
+        base.forEach(function(e){for(var c=0;c<copies;c++){labels.push({file_number:e.fileNumber,primary_number:e.primaryFileNumber||e.fileNumber,secondary_number:e.secondaryFileNumber||null,is_st:true,shelf_label:e.shelfLabel,shelf_value:e.shelfValue,file_title:e.fileTitle,tracking_id:e.trackingId,qr_value:e.qrValue,copy_number:c+1,copy_total:copies});}});
         var tS=document.getElementById('labelTemplate'),sS=document.getElementById('labelSize');
         var tT=tS?tS.selectedOptions[0].text.split(' - ')[0]:state.selectedTemplate;
         var sT=sS?sS.selectedOptions[0].text:state.labelSize;
@@ -262,6 +282,15 @@ document.addEventListener('DOMContentLoaded', function() {
             var qw=document.createElement('div');qw.className='label-preview-qr';var canvas=document.createElement('canvas');canvas.width=180;canvas.height=180;qw.appendChild(canvas);
             var meta=document.createElement('div');meta.className='label-preview-meta';
             var fn=document.createElement('div');fn.className='label-preview-file';fn.textContent=entry.primaryFileNumber||entry.fileNumber||'\u2014';meta.appendChild(fn);
+            if(entry.secondaryFileNumber){
+                var fnSec=document.createElement('div');
+                fnSec.className='label-preview-file label-preview-file--secondary';
+                fnSec.style.fontSize='0.78em';
+                fnSec.style.fontWeight='500';
+                fnSec.style.color='#475569';
+                fnSec.textContent=entry.secondaryFileNumber;
+                meta.appendChild(fnSec);
+            }
             var sd=buildShelfDisplayLabel(entry.shelfLabel,entry.shelfValue);
             var sh=document.createElement('div');sh.className='label-preview-location';sh.textContent=sd?'Shelf/Rack: '+sd:'Shelf/Rack: N/A';meta.appendChild(sh);
             card.appendChild(qw);card.appendChild(meta);grid.appendChild(card);
@@ -294,7 +323,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function renderFileList() {
         var el=document.getElementById('fileListContent');
         if(state.availableFiles.length===0){
-            el.innerHTML='<div class="p-8 text-center text-gray-500"><div class="mb-2"><i data-lucide="file-text" class="h-8 w-8 mx-auto text-gray-400"></i></div><p>No files loaded yet.</p><p class="text-xs text-gray-400 mt-1">Select a sub prefix and click Load Records.</p></div>';
+            el.innerHTML='<div class="p-8 text-center text-gray-500"><div class="mb-2"><i data-lucide="file-text" class="h-8 w-8 mx-auto text-gray-400"></i></div><p>No files loaded yet.</p><p class="text-xs text-gray-400 mt-1">Select an application type and click Load Records.</p></div>';
             lucide.createIcons();return;
         }
         var filtered=filterFiles();
@@ -305,7 +334,10 @@ document.addEventListener('DOMContentLoaded', function() {
             var det=[tb,bb].filter(Boolean).join(' ');
             var sd=file.shelf_location?buildShelfDisplayLabel(file.shelf_location):'';
             var sb=sd?'<span class="text-xs text-gray-500">Shelf: '+sd+'</span>':'';
-            return'<div class="flex items-center p-4"><input type="checkbox" id="'+file.id+'" class="file-checkbox mr-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" '+(state.selectedFiles.includes(file.id)?'checked':'')+'><div class="flex flex-1 items-center gap-3"><i data-lucide="file-text" class="h-8 w-8 text-blue-500"></i><div class="flex-1"><div class="flex items-center gap-2"><p class="font-medium text-blue-600">'+(file.file_number||'No file number')+'</p>'+lb+'</div><div class="flex flex-wrap items-center gap-2 mt-1">'+det+' '+sb+'</div></div></div></div>';
+            var d=deriveFileNumbers(file);
+            var primary=d.primaryNumber||file.file_number||'No file number';
+            var secondaryLine=d.secondaryNumber?'<p class="text-xs text-slate-500 mt-0.5">'+d.secondaryNumber+'</p>':'';
+            return'<div class="flex items-center p-4"><input type="checkbox" id="'+file.id+'" class="file-checkbox mr-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" '+(state.selectedFiles.includes(file.id)?'checked':'')+'><div class="flex flex-1 items-center gap-3"><i data-lucide="file-text" class="h-8 w-8 text-blue-500"></i><div class="flex-1"><div class="flex items-center gap-2"><p class="font-medium text-blue-600">'+primary+'</p>'+lb+'</div>'+secondaryLine+'<div class="flex flex-wrap items-center gap-2 mt-1">'+det+' '+sb+'</div></div></div></div>';
         }).join('');
         lucide.createIcons();
         document.querySelectorAll('.file-checkbox').forEach(function(cb){
@@ -355,11 +387,16 @@ document.addEventListener('DOMContentLoaded', function() {
         var el=document.getElementById('batchListContent');
         if(!state.generatedBatches.length){el.innerHTML='<div class="p-8 text-center text-gray-500"><div class="mb-2"><i data-lucide="package" class="h-8 w-8 mx-auto text-gray-400"></i></div><p>No batches generated yet</p><p class="text-sm">Create your first batch in the "Select Files" tab</p></div>';lucide.createIcons();return;}
         var colors={pending:'bg-yellow-100 text-yellow-800',generated:'bg-blue-100 text-blue-800',printed:'bg-green-100 text-green-800',completed:'bg-gray-100 text-gray-800'};
+        var appTypeColors={primary:'bg-emerald-100 text-emerald-800',pua:'bg-sky-100 text-sky-800',sua:'bg-amber-100 text-amber-800'};
         var html='';
         state.generatedBatches.forEach(function(b){
             var sc=colors[b.status]||'bg-gray-100 text-gray-800';var dt=new Date(b.created_at).toLocaleDateString();var cn=b.creator?b.creator.name:'Unknown';
             var fc=b.batch_items_count||(b.batch_items?b.batch_items.length:0)||b.generated_count||0;
-            html+='<div class="p-3 grid grid-cols-7 gap-4 hover:bg-gray-50"><div class="font-medium">'+b.batch_number+'</div><div class="text-sm">'+dt+'</div><div class="text-sm">'+fc+'</div><div class="text-sm">QR Code</div><div><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium '+sc+'">'+(b.status.charAt(0).toUpperCase()+b.status.slice(1))+'</span></div><div class="text-sm">'+cn+'</div><div class="flex gap-1"><button onclick="viewBatchDetails('+b.id+')" class="p-1 text-blue-600 hover:text-blue-800" title="View"><i data-lucide="eye" class="h-4 w-4"></i></button>';
+            var at=(b.application_type||'').toLowerCase();
+            var atLabel=at?applicationTypeLabel(at):'—';
+            var atCls=appTypeColors[at]||'bg-gray-100 text-gray-700';
+            var atCell=at?'<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium '+atCls+'">'+atLabel+'</span>':'<span class="text-xs text-gray-400">—</span>';
+            html+='<div class="p-3 grid grid-cols-8 gap-4 hover:bg-gray-50"><div class="font-medium">'+b.batch_number+'</div><div>'+atCell+'</div><div class="text-sm">'+dt+'</div><div class="text-sm">'+fc+'</div><div class="text-sm">QR Code</div><div><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium '+sc+'">'+(b.status.charAt(0).toUpperCase()+b.status.slice(1))+'</span></div><div class="text-sm">'+cn+'</div><div class="flex gap-1"><button onclick="viewBatchDetails('+b.id+')" class="p-1 text-blue-600 hover:text-blue-800" title="View"><i data-lucide="eye" class="h-4 w-4"></i></button>';
             if(b.status==='generated')html+='<button onclick="printBatchLabels('+b.id+')" class="p-1 text-green-600 hover:text-green-800" title="Print"><i data-lucide="printer" class="h-4 w-4"></i></button>';
             if(b.status!=='printed'&&b.status!=='completed')html+='<button onclick="deleteBatch('+b.id+')" class="p-1 text-red-600 hover:text-red-800" title="Delete"><i data-lucide="trash-2" class="h-4 w-4"></i></button>';
             html+='</div></div>';
@@ -378,6 +415,7 @@ document.addEventListener('DOMContentLoaded', function() {
             +'<div><p class="text-sm font-medium text-gray-500">Batch Number</p><p class="text-sm text-gray-900">'+batch.batch_number+'</p></div>'
             +'<div><p class="text-sm font-medium text-gray-500">Status</p><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">'+(batch.status.charAt(0).toUpperCase()+batch.status.slice(1))+'</span></div>'
             +'<div><p class="text-sm font-medium text-gray-500">Prefix</p><p class="text-sm text-gray-900">'+(batch.prefix||'\u2014')+'</p></div>'
+            +'<div><p class="text-sm font-medium text-gray-500">Application Type</p><p class="text-sm text-gray-900">'+(batch.application_type?applicationTypeLabel(batch.application_type):'\u2014')+'</p></div>'
             +'<div><p class="text-sm font-medium text-gray-500">Created</p><p class="text-sm text-gray-900">'+new Date(batch.created_at).toLocaleDateString()+'</p></div>'
             +'<div><p class="text-sm font-medium text-gray-500">Files Count</p><p class="text-sm text-gray-900">'+files.length+'</p></div>'
             +'<div><p class="text-sm font-medium text-gray-500">Shelf Label</p><p class="text-sm text-gray-900">'+(batch.full_label||'\u2014')+'</p></div>'
@@ -493,37 +531,33 @@ document.addEventListener('DOMContentLoaded', function() {
         resetPreparedState();renderFileList();updateCounts();
     });
 
-    // Load sub-prefixes and initialize Select2
-    function initSubPrefixSelector() {
-        fetch(API.subPrefixes).then(function(r){return r.json();}).then(function(d){
-            if(d.success&&Array.isArray(d.data)){
-                var sel=document.getElementById('stSubPrefixSelect');
-                if(!sel)return;
-                d.data.forEach(function(p){
-                    var opt=document.createElement('option');
-                    opt.value=p; opt.textContent=p;
-                    sel.appendChild(opt);
-                });
-                
-                // Initialize Select2 if available
-                if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
-                    jQuery(sel).select2({
-                        placeholder: 'Search and Select Sub Prefix',
-                        allowClear: true,
-                        width: '100%'
-                    }).on('change', function() {
-                        state.stSubPrefix = this.value;
-                    });
-                } else {
-                    sel.addEventListener('change', function() {
-                        state.stSubPrefix = this.value;
-                    });
-                }
-            }
-        }).catch(function(e){console.warn('Sub-prefix load error:',e);});
+    // ST application type selector (Primary | PUA | SUA)
+    function initApplicationTypeSelector() {
+        var sel=document.getElementById('stApplicationTypeSelect');
+        if(!sel)return;
+        sel.addEventListener('change', function(){
+            state.stApplicationType = this.value;
+            state.availableFiles=[]; state.selectedFiles=[];
+            resetPreparedState();
+            renderFileList(); updateCounts(); updateSelectAllCheckbox();
+        });
+
+        // Optionally pull live counts and decorate option labels.
+        fetch(API.applicationTypes).then(function(r){return r.json();}).then(function(d){
+            if(!d||!d.success||!Array.isArray(d.data))return;
+            var counts={};
+            d.data.forEach(function(row){counts[row.type]=row.count;});
+            Array.prototype.forEach.call(sel.options, function(opt){
+                if(!opt.value)return;
+                var c=counts[opt.value];
+                if(typeof c==='number') opt.textContent = opt.dataset.baseLabel ? opt.dataset.baseLabel : opt.textContent;
+                opt.dataset.baseLabel = opt.dataset.baseLabel || opt.textContent;
+                if(typeof c==='number') opt.textContent = opt.dataset.baseLabel + ' (' + c + ')';
+            });
+        }).catch(function(e){console.warn('Application-type counts load error:',e);});
     }
 
-    initSubPrefixSelector();
+    initApplicationTypeSelector();
     var excludeToggle=document.getElementById('excludeAssignedToggle');
     if(excludeToggle){excludeToggle.addEventListener('change',function(){state.excludeAssignedFromBatch=this.checked;});}
     var rackSelect=document.getElementById('rackPrimarySelect');
@@ -538,18 +572,13 @@ document.addEventListener('DOMContentLoaded', function() {
         loadStFiles().finally(function(){btn.disabled=false;btn.classList.remove('opacity-50','cursor-not-allowed');});
     });
     document.getElementById('resetBtn').addEventListener('click',function(){
-        resetPreparedState();state.selectedFiles=[];state.copies=1;state.stSubPrefix='';
+        resetPreparedState();state.selectedFiles=[];state.copies=1;state.stApplicationType='';
         state.rackPrimary='A';state.shelfNumber='1';state.fullLabel='A1';state.availableFiles=[];
         state.excludeAssignedFromBatch=false;state.rackLabelStatus=null;state.loadedFromBatch=false;
         document.getElementById('copies').value=1;
-        
-        var subSel = document.getElementById('stSubPrefixSelect');
-        if (subSel) {
-            subSel.value = '';
-            if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
-                jQuery(subSel).trigger('change');
-            }
-        }
+
+        var appSel = document.getElementById('stApplicationTypeSelect');
+        if (appSel) { appSel.value = ''; }
         if(rackSelect)rackSelect.value='A';if(shelfSelect)shelfSelect.value='1';
         if(excludeToggle)excludeToggle.checked=false;
         updateFullLabelDisplay();updateRackLabelStatusDisplay();fetchRackLabelStatus(state.fullLabel);

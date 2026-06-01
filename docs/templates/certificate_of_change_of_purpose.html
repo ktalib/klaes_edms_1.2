@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Certificate of Change of Purpose</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    @page { size: A4 portrait; margin: 0; }
+    body {
+        font-family: 'Times New Roman', Times, serif;
+        background: #fff;
+        color: #1a1a1a;
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0 auto;
+    }
+
+    .page {
+        width: 210mm;
+        min-height: 297mm;
+        padding: 12mm 16mm 10mm;
+        position: relative;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    /* Watermark */
+    .page::before {
+        content: '';
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: 280px; height: 280px;
+        background-image: url('https://upload.wikimedia.org/wikipedia/commons/b/bc/Coat_of_arms_of_Nigeria.svg');
+        background-repeat: no-repeat;
+        background-size: contain;
+        background-position: center;
+        opacity: 0.07;
+        pointer-events: none;
+        z-index: 0;
+    }
+    .page > * { position: relative; z-index: 1; }
+
+    /* ── Header ── */
+    .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 12px;
+        border-bottom: 3px double #8b7536;
+        margin-bottom: 14px;
+    }
+    .header-logo {
+        height: 72px; width: auto; object-fit: contain; flex-shrink: 0;
+    }
+    .header-center { flex: 1; text-align: center; }
+    .header-center .state {
+        font-size: 15px; font-weight: bold; text-transform: uppercase;
+        letter-spacing: .07em; color: #1a1a1a; margin-bottom: 3px;
+    }
+    .header-center .ministry {
+        font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
+        color: #6b5b1e; margin-bottom: 2px;
+    }
+    .header-center .dept {
+        font-size: 10px; color: #8b7536;
+    }
+
+    /* ── Certificate Title ── */
+    .cert-title {
+        text-align: center;
+        margin: 14px 0 18px;
+    }
+    .cert-title h1 {
+        font-size: 19px; font-weight: bold; text-transform: uppercase;
+        letter-spacing: .1em; color: #1a1a1a;
+        border-bottom: 2px solid #c9a84c;
+        display: inline-block; padding-bottom: 5px;
+    }
+
+    /* ── Body text ── */
+    .body-text {
+        font-size: 11.5px; line-height: 1.9;
+        text-align: justify;
+        margin-bottom: 14px;
+    }
+
+    /* ── Details table ── */
+    .details-box {
+        border: 1.5px solid #c9a84c;
+        border-radius: 4px;
+        padding: 10px 14px;
+        margin: 14px 0;
+        background: #fffdf5;
+    }
+    .details-box table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .details-box td { padding: 5px 8px; vertical-align: top; }
+    .details-box td:first-child {
+        font-weight: bold; color: #6b5b1e; text-transform: uppercase;
+        font-size: 9.5px; letter-spacing: .04em; width: 35%;
+        white-space: nowrap;
+    }
+    .details-box td:last-child {
+        border-bottom: 1px solid #e0d5a0;
+        font-size: 12px; font-weight: bold; color: #1a1a1a;
+    }
+
+    /* ── Change of Purpose ── */
+    .cop-row {
+        display: flex; gap: 12px; align-items: center;
+        margin: 12px 0 20px;
+    }
+    .cop-box {
+        flex: 1; border: 1.5px solid #c9a84c; border-radius: 4px;
+        padding: 12px; background: #fffdf5; text-align: center;
+        min-height: 60px;
+    }
+    .cop-box label {
+        display: block; font-size: 9px; font-weight: bold; text-transform: uppercase;
+        letter-spacing: .06em; color: #8b7536; margin-bottom: 8px;
+    }
+    .cop-box .value { font-size: 14px; font-weight: bold; color: #1a1a1a; }
+    .cop-arrow { font-size: 26px; color: #c9a84c; flex-shrink: 0; }
+
+    /* ── Signatures ── */
+    .sig-section {
+        display: grid; grid-template-columns: 1fr 1fr;
+        gap: 24px; margin-top: 30px;
+    }
+    .sig-block { text-align: center; }
+    .sig-block .sig-line {
+        border-bottom: 1px solid #1a1a1a;
+        height: 55px; margin-bottom: 6px;
+    }
+    .sig-block .sig-label {
+        font-size: 10px; font-weight: bold; text-transform: uppercase;
+        letter-spacing: .04em; color: #1a1a1a;
+    }
+    .sig-block .sig-title {
+        font-size: 9.5px; color: #6b5b1e; margin-top: 2px;
+    }
+
+    /* ── Footer ── */
+    .footer {
+        margin-top: 22px;
+        border-top: 2px solid #c9a84c;
+        padding-top: 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+    }
+    .footer-logo {
+        height: 40px;
+        width: auto;
+        object-fit: contain;
+    }
+    .footer-logo.las {
+        height: 30px;
+        width: auto;
+        object-fit: contain;
+    }
+
+    @media print {
+        body { margin: 0; }
+        .no-print { display: none; }
+    }
+</style>
+</head>
+<body>
+
+<!-- Print button -->
+<div class="no-print" style="text-align:center;padding:12px;background:#f9f9f9;border-bottom:1px solid #ddd;">
+    <button onclick="window.print()" style="padding:8px 24px;background:#8b7536;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;">
+        🖨 Print / Save as PDF
+    </button>
+</div>
+
+<div class="page">
+
+    <!-- Header — logos + text -->
+    <div class="header">
+        <img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Ministry Logo" class="header-logo">
+        <div class="header-center">
+            <div class="state">Kano State Government</div>
+            <div class="ministry">Ministry of Lands and Physical Planning</div>
+            <div class="dept">Special Assignment</div>
+        </div>
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=70x70&data=SPA-COP%2F2024%2F5678&margin=2" alt="QR Code" style="height:70px;width:70px;flex-shrink:0;">
+        <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Kano State Logo" class="header-logo">
+    </div>
+
+    <!-- Certificate Title -->
+    <div class="cert-title">
+        <h1>Certificate of Change of Purpose</h1>
+    </div>
+
+    <!-- Opening text -->
+    <div class="body-text">
+        This is to certify that the application for Change of Purpose of Land Use in respect of the
+        property described herein has been duly considered and <strong>APPROVED</strong> by the
+        Kano State Ministry of Lands and Physical Planning in accordance with the Land Use Act
+        Cap. L5, Laws of the Federation of Nigeria 2004, and the Kano State Urban and Regional
+        Planning Law.
+    </div>
+
+    <!-- Property Details (dummy data) -->
+    <div class="details-box">
+        <table>
+            <tr>
+                <td>File Number</td>
+                <td>RES-2024-5678</td>
+            </tr>
+            <tr>
+                <td>Property Owner / Title Holder</td>
+                <td>Alhaji Musa Ibrahim Gaya</td>
+            </tr>
+            <tr>
+                <td>Address / Location</td>
+                <td>Plot 215, Sharada Phase 2, Kano Municipal</td>
+            </tr>
+            <tr>
+                <td>Plot Number</td>
+                <td>215</td>
+            </tr>
+            <tr>
+                <td>District / L.G.A.</td>
+                <td>Kano Municipal</td>
+            </tr>
+            <tr>
+                <td>Certificate Issue Date</td>
+                <td>1st June 2026</td>
+            </tr>
+            <tr>
+                <td>Expiry Date</td>
+                <td>31st May 2031</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Change of Purpose (dummy data) -->
+    <div class="body-text" style="margin-bottom:6px;">
+        The purpose of land use for the above-mentioned property is hereby changed as follows:
+    </div>
+    <div class="cop-row">
+        <div class="cop-box">
+            <label>From (Previous Land Use)</label>
+            <div class="value">Residential</div>
+        </div>
+        <div class="cop-arrow">&#8594;</div>
+        <div class="cop-box">
+            <label>To (New Approved Land Use)</label>
+            <div class="value">Commercial</div>
+        </div>
+    </div>
+
+    <!-- Signatures -->
+    <div class="sig-section">
+        <div class="sig-block">
+            <div class="sig-line"></div>
+            <div class="sig-label">Director Land</div>
+            <div class="sig-title"></div>
+        </div>
+        <div class="sig-block">
+            <div class="sig-line"></div>
+            <div class="sig-label">Honourable Commissioner</div>
+            <div class="sig-title"></div>
+        </div>
+    </div>
+<br><br><br><br><br><br><br><br><br><br><br><br><br><br>
+    <!-- Footer — KLAES + LAS -->
+    <div class="footer">
+        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES Logo" class="footer-logo">
+        <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="LAS Logo" class="footer-logo las">
+    </div>
+
+</div>
+</body>
+</html>

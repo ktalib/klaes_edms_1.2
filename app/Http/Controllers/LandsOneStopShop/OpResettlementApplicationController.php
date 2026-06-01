@@ -266,10 +266,27 @@ class OpResettlementApplicationController extends Controller
             })
             ->orderByRaw('COALESCE(mfn.con_commissioned_at, p.created_at) DESC');
 
+        // Filter by mls_file_no presence via EXISTS rather than touching mfn.full_file_number
+        // directly: the mfn LEFT JOIN uses a per-row correlated MAX(id) subquery, and
+        // adding a WHERE on its column forces SQL Server to materialize that MAX for every
+        // candidate row of p — turning a ~1s query into a minutes-long one. The EXISTS
+        // form is a plain indexed seek on mls_file_no.full_file_number.
         if ($recordType === 'fc') {
-            $query->whereNotNull('mfn.full_file_number');
+            $query->whereExists(function ($q) {
+                $q->select(DB::raw(1))
+                    ->from('mls_file_no as mfn_flt')
+                    ->whereRaw("mfn_flt.full_file_number = COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)")
+                    ->whereNotNull('mfn_flt.full_file_number')
+                    ->where('mfn_flt.full_file_number', '!=', '');
+            });
         } elseif ($recordType === 'fefr') {
-            $query->whereNull('mfn.full_file_number');
+            $query->whereNotExists(function ($q) {
+                $q->select(DB::raw(1))
+                    ->from('mls_file_no as mfn_flt')
+                    ->whereRaw("mfn_flt.full_file_number = COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)")
+                    ->whereNotNull('mfn_flt.full_file_number')
+                    ->where('mfn_flt.full_file_number', '!=', '');
+            });
         }
 
         if ($search = trim((string) $request->input('search'))) {

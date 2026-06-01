@@ -41,7 +41,13 @@ class ToTStagingController extends Controller
 
             // Prepare ToT record
             $totData = (array) $opRecord;
-            unset($totData['id']);
+            // Drop PK and SQL Server computed/managed columns that can't be inserted
+            unset(
+                $totData['id'],
+                $totData['resolved_fileno'],
+                $totData['updated_at'],
+                $totData['deleted_at']
+            );
 
             $totData['transaction_type'] = 'Transfer Of Title (OP)';
             $totData['Grantor'] = $staging->op_name;

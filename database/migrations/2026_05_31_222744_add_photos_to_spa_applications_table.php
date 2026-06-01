@@ -1,0 +1,27 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     *
+     * @return void
+     */
+    public function up()
+    {
+        Schema::connection('sqlsrv')->table('spa_applications', function (Blueprint $table) {
+            $table->text('photos')->nullable()->after('existing_use');
+        });
+    }
+
+    public function down()
+    {
+        Schema::connection('sqlsrv')->table('spa_applications', function (Blueprint $table) {
+            $table->dropColumn('photos');
+        });
+    }
+};

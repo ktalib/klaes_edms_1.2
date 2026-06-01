@@ -161,21 +161,31 @@ class PraRecordController extends Controller
 
         $validated = $validator->validated();
 
-        // ── OP dedup guard ───────────────────────────────────────────────
-        // When the incoming payload is an Occupancy Permit, check whether the
-        // OP already lives in instrument_capture or deed_registrations.  If it
-        // does, link/update the source record instead of creating a duplicate
-        // PRA row.  Transfer-of-Title records are NOT blocked — they carry
-        // instrument_type 'Transfer of Title (OP)' even though their source
-        // field may still say 'Occupancy Permit (OP)'.
+        // ── OP dedup guard (opt-in) ──────────────────────────────────────
+        // Disabled by default since 2026-05-30: the guard's last-resort match
+        // by op_serial_number alone (PraRecordService::findExistingOpInSource
+        // step 2) silently hijacked fresh OP captures and linked them to an
+        // unrelated existing IC row sharing the same serial — causing the
+        // captured OP data to be lost and the TOT to inherit the wrong
+        // parent prop_id. The OP serial lookup UI was removed for the same
+        // reason; this guard was the backend twin of that behavior.
+        //
+        // Callers that genuinely want the link-existing-or-create-new
+        // behavior must now opt in by passing `link_existing_op: true`
+        // in the payload. Direct callers of the service method (e.g.
+        // MlsFileNoController, ApplicationController) are unaffected.
         $incomingSource = trim($validated['source'] ?? '');
         $incomingType   = trim($validated['instrument_type'] ?? '');
         $isTransfer     = stripos($incomingType, 'Transfer of Title') !== false;
         $isOpRecord     = !$isTransfer
                        && (stripos($incomingSource, 'Occupancy Permit') !== false
                            || stripos($incomingType, 'Occupancy Permit') !== false);
+        $linkExistingOp = filter_var(
+            $request->input('link_existing_op', false),
+            FILTER_VALIDATE_BOOLEAN
+        );
 
-        if ($isOpRecord) {
+        if ($isOpRecord && $linkExistingOp) {
             $identifiers = [
                 'op_serial_number' => $validated['op_serial_number'] ?? null,
                 'mlsFNo'           => $validated['mlsFNo'] ?? null,

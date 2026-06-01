@@ -3,20 +3,37 @@
     const csrfToken = '{{ csrf_token() }}';
 
     // ── Tracking-ID display helper ─────────────────────────────────────────────
-    // Shows a base64-encoded (encrypted-looking) string in the visible field
+    // Shows a token-style encrypted string in the visible field (e.g. Q7yh%9775FGgtgW0l)
     // while the real value is stored in the hidden #tracking-id-real input.
+    function _encryptTrackingId(str) {
+        // Characters: uppercase, lowercase, digits, a few specials — weighted toward alphanumeric
+        const alpha   = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz0123456789';
+        const special = '%$#@';
+        const charset = alpha + special; // 60 alphanum + 4 special = 64 chars
+        // Seed via djb2 hash
+        let seed = 5381;
+        for (let i = 0; i < str.length; i++) {
+            seed = (((seed << 5) + seed) ^ str.charCodeAt(i)) >>> 0;
+        }
+        // Token length: 14–19 chars (driven by seed so it's deterministic)
+        const len = 14 + (seed % 6);
+        let state = seed;
+        let out   = '';
+        for (let i = 0; i < len; i++) {
+            // LCG step + XOR with original char
+            state = ((state * 1664525) + 1013904223) >>> 0;
+            const mixed = (state ^ (str.charCodeAt(i % str.length) * (i + 1))) >>> 0;
+            out += charset[mixed % charset.length];
+        }
+        return out;
+    }
+
     function setTrackingDisplay(realValue) {
         const displayEl = document.getElementById('tracking-id');
         const realEl    = document.getElementById('tracking-id-real');
         if (realEl) realEl.value = realValue || '';
         if (!displayEl) return;
-        if (realValue) {
-            // btoa() produces a base64 string that looks like an encrypted key
-            try { displayEl.value = btoa(realValue).replace(/=/g, ''); }
-            catch (_) { displayEl.value = realValue; } // fallback for non-Latin chars
-        } else {
-            displayEl.value = '';
-        }
+        displayEl.value = realValue ? _encryptTrackingId(realValue) : '';
     }
 
     // Digital Request module flag — set once from Blade so JS never has to parse strings
@@ -3361,6 +3378,8 @@
             originRegistry: tracker.origin_registry ?? tracker.originRegistry ?? null,
             receivingOfficerName: receivingOfficerName || null,
             rackShelfLocation,
+            // Module origin (e.g. 'digital_request', 'kangis', etc.)
+            module: tracker.module ?? tracker.module_origin ?? null,
             // Workflow fields
             workflowType: tracker.workflow_type ?? tracker.workflowType ?? null,
             workflowStep: tracker.workflow_step ?? tracker.workflowStep ?? null,
@@ -3649,13 +3668,18 @@
             return;
         }
 
-        const _isDigitalRequest = {{ in_array(strtolower($module ?? ''), ['digital_request','digital-request']) ? 'true' : 'false' }};
+        // _isDigitalRequest: true when the module is digital_request AND the user has selected Digital type
+        const _moduleIsDfr      = {{ in_array(strtolower($module ?? ''), ['digital_request','digital-request']) ? 'true' : 'false' }};
+        const _selectedDfrType  = document.getElementById('dfr-request-type')?.value || 'Physical';
+        const _isDigitalRequest = _moduleIsDfr && (_selectedDfrType === 'Digital');
+
         if (!workflowSubmissionMode && !_crossModuleRequestMode && !_isDigitalRequest && !effectiveReceivingOfficeCode) {
             Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Please select a Receiving Office.' }); return;
             return;
         }
 
-        if (!originOfficeId) {
+        // Registry (Origin) is not required for Digital Access requests
+        if (!_isDigitalRequest && !originOfficeId) {
             Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Select the registry (origin) that dispatched this file.' }); return;
             return;
         }
@@ -4026,7 +4050,7 @@
         if (sigVerifyBtn) {
             sigVerifyBtn.disabled = false;
             sigVerifyBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
-            sigVerifyBtn.classList.add('bg-violet-600', 'hover:bg-violet-700');
+            sigVerifyBtn.classList.add('bg-green-600', 'hover:bg-green-700');
         }
         // Disable save button until verified
         if (saveBtn) {
@@ -4156,7 +4180,7 @@
                         if (sigVerifiedH) sigVerifiedH.value = '1';
                         if (data.signature_url && sigImg) { sigImg.src = data.signature_url; }
                         if (sigImgWrap) sigImgWrap.classList.remove('hidden');
-                        sigVerifyBtn.classList.remove('bg-violet-600', 'hover:bg-violet-700');
+                        sigVerifyBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
                         sigVerifyBtn.classList.add('bg-green-600', 'hover:bg-green-700');
                         if (sigVerifyText) sigVerifyText.textContent = 'Verified ✓';
                         if (sigFeedback)  { sigFeedback.textContent = 'Signature verified.'; sigFeedback.className = 'text-xs font-medium text-green-600'; }
@@ -4323,6 +4347,77 @@
             apiData.final_destination_name = currentTracker.finalDestinationName || office.name || currentTracker.currentOffice || '';
         }
 
+        // ── Digital Access: route to DFR store endpoint instead of file tracker API ──
+        const _moduleIsDfr2     = {{ in_array(strtolower($module ?? ''), ['digital_request','digital-request']) ? 'true' : 'false' }};
+        const _selectedDfrType2 = document.getElementById('dfr-request-type')?.value || 'Physical';
+        const _isDfrDigital     = _moduleIsDfr2 && (_selectedDfrType2 === 'Digital');
+
+        if (_isDfrDigital) {
+            const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            const dfrPayload = {
+                file_no:                 currentTracker.fileNo,
+                file_title:              currentTracker.fileName,
+                request_type:            'Digital',
+                destination_office_id:   null,
+                destination_office_name: null,
+                receiving_officer:       null,
+                remarks:                 currentTracker.notes || '',
+            };
+
+            fetch('/digital-request/store', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept':       'application/json',
+                    'X-CSRF-TOKEN': CSRF,
+                },
+                body: JSON.stringify(dfrPayload),
+            })
+            .then(r => r.json())
+            .then(function (data) {
+                saveButton.innerHTML = originalText;
+                saveButton.disabled  = false;
+                lucide.createIcons();
+
+                if (data.success) {
+                    document.getElementById('preview-dialog').classList.remove('show');
+                    resetForm();
+                    currentTracker = null;
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Digital Access Request Submitted!',
+                        html: `<div class="text-center space-y-2">
+                                   <p class="text-gray-600 text-sm">Your request for digital file access has been submitted.</p>
+                                   <div class="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-full px-4 py-1.5 mt-2">
+                                       <span class="w-2 h-2 rounded-full bg-blue-400 animate-pulse inline-block"></span>
+                                       <span class="text-blue-700 text-sm font-semibold">Pending Approval</span>
+                                   </div>
+                                   <p class="text-xs text-gray-400 mt-2">Request No: <strong>${data.request_no ?? '—'}</strong></p>
+                                   <p class="text-xs text-gray-400">Once approved, the file will appear in <strong>My Digital Files</strong>.</p>
+                               </div>`,
+                        confirmButtonText: 'View My Files',
+                        showCancelButton: true,
+                        cancelButtonText: 'OK',
+                        confirmButtonColor: '#2563eb',
+                    }).then(function (result) {
+                        if (result.isConfirmed) {
+                            window.location.href = '/digital-request/my-files';
+                        }
+                    });
+                } else {
+                    Swal.fire({ icon: 'error', title: 'Submission Failed', text: data.message || 'Could not submit digital access request.' });
+                }
+            })
+            .catch(function (err) {
+                saveButton.innerHTML = originalText;
+                saveButton.disabled  = false;
+                lucide.createIcons();
+                Swal.fire({ icon: 'error', title: 'Error', text: 'Network error submitting digital access request.' });
+            });
+
+            return; // Don't continue to the file tracker API call below
+        }
+
         // Send to API
         $.ajax({
             url: '/api/file-trackers',
@@ -4344,7 +4439,7 @@
                     currentTracker = null;
 
                     if (wasDigitalRequest) {
-                        // Digital Request: rich SweetAlert on success
+                        // Physical-type digital request: rich SweetAlert on success
                         Swal.fire({
                             icon: 'success',
                             title: 'Request Sent Successfully!',
@@ -4933,6 +5028,18 @@
                                 <div class="flex items-center gap-2 mb-1">
                                     <h3 class="font-semibold text-lg text-gray-900">${sanitize(tracker.fileName || 'Unnamed File')}</h3>
                                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge}">${statusLabel}</span>
+                                    ${(tracker.module === 'digital_request' || (window.isDigitalRequestModule && !tracker.module)) ? (() => {
+                                        const isDigitalAccess = window._dfrDigitalFileNos?.has(tracker.fileNo);
+                                        return isDigitalAccess
+                                            ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 border border-blue-200">
+                                                   <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                                                   Digital Access
+                                               </span>`
+                                            : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-700 border border-green-200">
+                                                   <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
+                                                   Physical DFR
+                                               </span>`;
+                                    })() : ''}
                                 </div>
                                 <div class="flex flex-wrap items-center gap-3 mt-1">
                                     <p class="text-sm text-gray-600">File No: ${sanitize(tracker.fileNo || '—')}</p>
@@ -4948,7 +5055,7 @@
                             <div class="flex items-center gap-2 flex-wrap">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${priorityBadge}">${priorityLabel}</span>
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">${sanitize(currentOfficeCode)}</span>
-                                ${showAssignmentActions ? `
+                                ${(showAssignmentActions && !window.isDigitalRequestModule) ? `
                                     <button type="button" class="tracker-card-action-accept inline-flex items-center px-3 py-1.5 border border-green-300 rounded-md text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 transition-colors" data-assignment-action="accept" data-tracking-id="${tracker.id || ''}">
                                         <i data-lucide="check" class="h-4 w-4 mr-2"></i>
                                         Accept File
@@ -6340,7 +6447,7 @@
                 <head>
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>File Request Sheet - ${tracker.trackingId}</title>
+                    <title>${(urlView && ['digital_request','digital-request'].includes(urlView.toLowerCase())) ? 'File Request Sheet' : 'File Tracking Sheet'} - ${tracker.trackingId}</title>
                     <style>
                         * { margin: 0; padding: 0; box-sizing: border-box; }
                         @page { size: A4; margin: 0.3in; }
@@ -6394,16 +6501,16 @@
                         <div class="header">
                             <img class="logo" src="/assets/logo/logo.png" alt="Organization Logo">
                             ${urlView === 'st'
-                                ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF SECTIONAL TITLING</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
+                                ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF SECTIONAL TITLING</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
                                 : (urlView === 'dciv'
-                                    ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF COMPLAINT INVESTIGATION AND VERIFICATION</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
+                                    ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF COMPLAINT INVESTIGATION AND VERIFICATION</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
                                     : (urlView === 'sltr'
-                                        ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">SYSTEMATIC LAND TITLING AND REGISTRATION</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
+                                        ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">SYSTEMATIC LAND TITLING AND REGISTRATION</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
                                         : (urlView && urlView.toLowerCase() === 'cadastral'
-                                            ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">CADASTRAL DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
+                                            ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">CADASTRAL DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
                                             : (urlView && ['digital_request','digital-request'].includes(urlView.toLowerCase())
                                                 ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">LAND DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet <span style="color:#7c3aed;">(Digital Request)</span></h2>'
-                                                : '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">LAND DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet</h2>'
+                                                : '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">LAND DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
                                             )
                                         )
                                     )
@@ -6532,7 +6639,7 @@
 
                         <div class="footer">
                             <div class="signatories">
-                                <div class="signatory"><div class="line">Director Deeds</div></div>
+                                <div class="signatory"><div class="line">${(window.currentModule || '').toLowerCase() === 'st' ? 'Director Sectional Titling' : 'Director Deeds'}</div></div>
                                 <div class="signatory"><div class="line">Permanent Secretary</div></div>
                                 <div class="signatory"><div class="line">Honorable Commissioner</div></div>
                             </div>
@@ -6608,7 +6715,7 @@
                 <html>
                 <head>
                     <meta charset="UTF-8">
-                    <title>File Request Sheet - ${tracker.trackingId}</title>
+                    <title>File Tracking Sheet - ${tracker.trackingId}</title>
                     <style>
                         * { margin: 0; padding: 0; box-sizing: border-box; }
                         @page { size: A4 landscape; margin: 0; }
@@ -6682,7 +6789,7 @@
                             <div class="header-center">
                                 <h1>Kano State Geographic Information Service</h1>
                                 <h2>KANGIS Registry</h2>
-                                <h3>File Request Sheet</h3>
+                                <h3>File Tracking Sheet</h3>
                             </div>
                             <div class="header-right">
                                 <div class="qr-wrap">
@@ -8846,6 +8953,21 @@
     initDepartmentCascade();
     lucide.createIcons();
 
+    // ── Load digital access file list for DFR badge rendering ────────────────
+    window._dfrDigitalFileNos = new Set();
+    if (window.isDigitalRequestModule) {
+        fetch('/digital-request/active-file-nos', {
+            headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]')?.content || '') }
+        })
+        .then(r => r.ok ? r.json() : { file_nos: [] })
+        .then(function (data) {
+            if (Array.isArray(data.file_nos)) {
+                data.file_nos.forEach(fn => window._dfrDigitalFileNos.add(fn));
+            }
+        })
+        .catch(function () {}); // non-fatal
+    }
+
     // KANGIS / DGIS / DG — auto-open the Cross-Registry Request modal when ?action=request-land
     (function autoOpenRequestLand() {
         const mod = (window.currentModule || '').toLowerCase();
@@ -9156,5 +9278,169 @@
                 }
             });
     });
+
+    // ── Digital File Request — Physical / Digital type toggle ─────────────────
+    window.dfrSetType = function (type) {
+        const physBtn   = document.getElementById('dfr-btn-physical');
+        const digBtn    = document.getElementById('dfr-btn-digital');
+        const typeInput = document.getElementById('dfr-request-type');
+        const digPill   = document.getElementById('dfr-digital-pill');
+
+        if (!physBtn || !digBtn) return; // not on digital_request module
+
+        const isDigital = type === 'Digital';
+        if (typeInput) typeInput.value = type;
+
+        // ── Toggle buttons ────────────────────────────────────────────────────
+        const activePhys   = 'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all border-green-500 bg-green-600 text-white shadow-sm';
+        const inactivePhys = 'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all border-gray-200 bg-white text-gray-500 hover:border-green-300 hover:text-green-600';
+        const activeDig    = 'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all border-blue-500 bg-blue-600 text-white shadow-sm';
+        const inactiveDig  = 'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all border-gray-200 bg-white text-gray-500 hover:border-blue-300 hover:text-blue-600';
+
+        physBtn.className = isDigital ? inactivePhys : activePhys;
+        digBtn.className  = isDigital ? activeDig    : inactiveDig;
+
+        // ── Info pill ─────────────────────────────────────────────────────────
+        if (digPill) digPill.classList.toggle('hidden', !isDigital);
+
+        // ── Illustration card — border & background ───────────────────────────
+        const card = document.getElementById('dfr-illustration-card');
+        if (card) {
+            card.className = isDigital
+                ? 'rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 via-sky-50 to-white shadow-sm overflow-hidden transition-all duration-300'
+                : 'rounded-xl border border-green-200 bg-gradient-to-br from-green-50 via-emerald-50 to-white shadow-sm overflow-hidden transition-all duration-300';
+        }
+
+        // ── Accent bar ────────────────────────────────────────────────────────
+        const accentBar = document.getElementById('dfr-accent-bar');
+        if (accentBar) {
+            accentBar.className = isDigital
+                ? 'h-1 w-full bg-gradient-to-r from-blue-600 via-sky-500 to-blue-400 transition-all duration-300'
+                : 'h-1 w-full bg-gradient-to-r from-green-600 via-emerald-500 to-green-400 transition-all duration-300';
+        }
+
+        // ── Header icon + colour ──────────────────────────────────────────────
+        const iconWrap = document.getElementById('dfr-header-icon-wrap');
+        const iconEl   = document.getElementById('dfr-header-icon');
+        if (iconWrap) {
+            iconWrap.className = isDigital
+                ? 'flex-shrink-0 w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow transition-all duration-300'
+                : 'flex-shrink-0 w-10 h-10 rounded-full bg-green-600 flex items-center justify-center shadow transition-all duration-300';
+        }
+        if (iconEl) {
+            iconEl.setAttribute('data-lucide', isDigital ? 'monitor' : 'send');
+        }
+
+        // ── Title & subtitle ──────────────────────────────────────────────────
+        const cardTitle    = document.getElementById('dfr-card-title');
+        const cardSubtitle = document.getElementById('dfr-card-subtitle');
+        if (cardTitle) {
+            cardTitle.textContent = isDigital ? 'Digital File Access Request' : 'Digital File Request';
+            cardTitle.className   = isDigital
+                ? 'text-base font-bold text-blue-900 leading-tight transition-colors duration-300'
+                : 'text-base font-bold text-green-900 leading-tight transition-colors duration-300';
+        }
+        if (cardSubtitle) {
+            cardSubtitle.textContent = isDigital
+                ? 'A temporary digital copy will be granted from the archive'
+                : 'Request a physical file to be sent to your office';
+            cardSubtitle.className = isDigital
+                ? 'text-xs text-blue-600 transition-colors duration-300'
+                : 'text-xs text-green-600 transition-colors duration-300';
+        }
+
+        // ── Connector line ────────────────────────────────────────────────────
+        const connector = document.getElementById('dfr-connector');
+        if (connector) {
+            connector.className = isDigital
+                ? 'absolute top-5 left-[calc(10%+20px)] right-[calc(10%+20px)] h-0.5 bg-blue-200 z-0 transition-colors duration-300'
+                : 'absolute top-5 left-[calc(10%+20px)] right-[calc(10%+20px)] h-0.5 bg-green-200 z-0 transition-colors duration-300';
+        }
+
+        // ── Step 5: "File Dispatched" → "Copy Digital File" ──────────────────
+        const stepsRow = document.getElementById('dfr-steps-row');
+        if (stepsRow) {
+            const step5 = stepsRow.querySelector('[data-step="5"]');
+            if (step5) {
+                const labelEl = step5.querySelector('.dfr-step-label-text');
+                const descEl  = step5.querySelector('.dfr-step-desc');
+                const circle  = step5.querySelector('.dfr-step-circle');
+
+                if (isDigital) {
+                    if (labelEl) labelEl.textContent = 'Copy Digital File';
+                    if (descEl)  descEl.textContent  = 'Temp copy ready in My Files';
+                    if (circle) {
+                        // Highlight step 5 circle in blue for digital
+                        circle.className = 'dfr-step-circle w-10 h-10 rounded-full bg-blue-400 ring-4 ring-blue-100 flex items-center justify-center shadow-sm transition-all';
+                    }
+                } else {
+                    if (labelEl) labelEl.textContent = 'File Dispatched';
+                    if (descEl)  descEl.textContent  = 'File is sent to your office';
+                    if (circle) {
+                        circle.className = 'dfr-step-circle w-10 h-10 rounded-full bg-gray-300 ring-4 ring-gray-100 flex items-center justify-center shadow-sm transition-all';
+                    }
+                }
+            }
+
+            // Also recolour the "done" (steps 1-2) and "current" (step 3) circles
+            stepsRow.querySelectorAll('[data-step="1"], [data-step="2"]').forEach(function (s) {
+                const c = s.querySelector('.dfr-step-circle');
+                if (c) c.className = isDigital
+                    ? 'dfr-step-circle w-10 h-10 rounded-full bg-blue-500 ring-4 ring-blue-200 flex items-center justify-center shadow-sm transition-all'
+                    : 'dfr-step-circle w-10 h-10 rounded-full bg-green-500 ring-4 ring-green-200 flex items-center justify-center shadow-sm transition-all';
+                const lbl = s.querySelector('.dfr-step-label');
+                if (lbl) lbl.className = (isDigital ? 'dfr-step-label text-xs font-semibold text-blue-700 leading-tight' : 'dfr-step-label text-xs font-semibold text-green-700 leading-tight');
+            });
+
+            const step3 = stepsRow.querySelector('[data-step="3"]');
+            if (step3) {
+                const c   = step3.querySelector('.dfr-step-circle');
+                const lbl = step3.querySelector('.dfr-step-label');
+                const dot = step3.querySelector('.dfr-pulse');
+                if (c) c.className = isDigital
+                    ? 'dfr-step-circle w-10 h-10 rounded-full bg-blue-600 ring-4 ring-blue-400 flex items-center justify-center shadow-md scale-110 transition-all'
+                    : 'dfr-step-circle w-10 h-10 rounded-full bg-green-600 ring-4 ring-green-400 flex items-center justify-center shadow-md scale-110 transition-all';
+                if (lbl) lbl.className = isDigital ? 'dfr-step-label text-xs font-semibold text-blue-800 leading-tight font-bold' : 'dfr-step-label text-xs font-semibold text-green-800 leading-tight font-bold';
+                if (dot) dot.className = isDigital ? 'dfr-pulse ml-1 inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse align-middle' : 'dfr-pulse ml-1 inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse align-middle';
+            }
+        }
+
+        // ── Info footer ───────────────────────────────────────────────────────
+        const footer     = document.getElementById('dfr-info-footer');
+        const noticeWrap = document.getElementById('dfr-footer-notice');
+        const noticeText = document.getElementById('dfr-footer-notice-text');
+        const noticeIcon = document.getElementById('dfr-footer-notice-icon');
+        if (footer) {
+            footer.className = isDigital
+                ? 'bg-blue-50 border-t border-blue-100 px-6 py-2.5 flex items-center gap-4 flex-wrap transition-all duration-300'
+                : 'bg-green-50 border-t border-green-100 px-6 py-2.5 flex items-center gap-4 flex-wrap transition-all duration-300';
+        }
+        if (noticeWrap) {
+            noticeWrap.className = isDigital
+                ? 'flex items-center gap-1.5 text-xs text-blue-700 ml-auto transition-all duration-300'
+                : 'flex items-center gap-1.5 text-xs text-amber-700 ml-auto transition-all duration-300';
+        }
+        if (noticeIcon) {
+            noticeIcon.setAttribute('data-lucide', isDigital ? 'shield' : 'info');
+            noticeIcon.className = isDigital ? 'h-3.5 w-3.5 text-blue-500 shrink-0' : 'h-3.5 w-3.5 text-amber-500 shrink-0';
+        }
+        if (noticeText) {
+            noticeText.textContent = isDigital
+                ? 'A temporary copy will be created. Access expires after 5 working days.'
+                : 'The receiver will be notified and must approve before the file is dispatched.';
+        }
+
+        // Office Details card stays visible for both Physical and Digital —
+        // only the Registry (Origin) field is not required for Digital (handled in validation).
+
+        // ── Submit button label ───────────────────────────────────────────────
+        const submitBtn = document.getElementById('send-request-btn');
+        if (submitBtn) {
+            submitBtn.dataset.dfrOriginalLabel = submitBtn.dataset.dfrOriginalLabel || submitBtn.textContent.trim();
+            submitBtn.textContent = isDigital ? 'Request Digital Access' : (submitBtn.dataset.dfrOriginalLabel || 'Send Request');
+        }
+
+        if (window.lucide) window.lucide.createIcons();
+    };
 
 </script>

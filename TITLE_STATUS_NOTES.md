@@ -2,11 +2,11 @@
 
 ## Overview
 
-Title Status is a flagging/archiving workflow for land files that have undergone one of five legal/administrative actions. It is **not** a file commissioning flow. Files are **never deleted** — they are flagged in place, copied to archive tables, and permanently marked.
+Title Status is a flagging/archiving workflow for land files that have undergone one of six legal/administrative actions. It is **not** a file commissioning flow. Files are **never deleted** — they are flagged in place, copied to archive tables, and permanently marked.
 
 ---
 
-## The 5 Title Status Types
+## The 6 Title Status Types
 
 | # | Type | Applies To | Decommissions? |
 |---|------|-----------|----------------|
@@ -15,8 +15,9 @@ Title Status is a flagging/archiving workflow for land files that have undergone
 | 3 | Revoke (CofO) | Existing Files | Yes |
 | 4 | Litigation | Existing or New Files | Yes |
 | 5 | Amendment/Reconsideration (Application/RofO/CofO) | Any | Yes |
+| 6 | Surrender | Any (voluntary relinquishment) | Yes |
 
-> **Plot Separation is separate** — it goes through File Commissioning. These five types do NOT.
+> **Plot Separation is separate** — it goes through File Commissioning. These six types do NOT.
 
 ---
 
@@ -120,22 +121,56 @@ The current table is not properly structured. Proper fields:
 
 ---
 
-## Authority Dropdown Options
+## Initiated By (replaces Authority in the form)
 
-To be confirmed — suggested list:
-- Governor's Directive
-- Court Order
-- Ministerial Directive
-- Administrative Decision
-- Legal Notice
-- Other
+The Create/Edit form now captures **Initiated By** instead of Authority. The available options depend on the title status type — single-option types lock the dropdown:
+
+| Type | Initiated By options | Locked? |
+|---|---|---|
+| Withdrawal (Application) | Applicant | locked |
+| Cancellation (RofO) | Ministry, Allottee | no |
+| Revoke (CofO) | Court Order | locked |
+| Litigation | Ministry, Allottee | no |
+| Amendment/Reconsideration | Ministry, Allottee | no |
+| Surrender | Applicant | locked |
+
+When **Applicant** or **Allottee** is selected, the remark substitutes the actual file holder's name (`applicant_name` → `file_title` fallback). **Ministry** and **Court Order** render literally.
+
+The per-type map lives in [`TitleStatusApplication::INITIATED_BY_BY_TYPE`](app/Models/TitleStatusApplication.php) and is exposed to JS via the `TS_INITIATED_BY_BY_TYPE` global, consumed by `tsApplyInitiatedByOptions()` in [public/js/title_status.js](public/js/title_status.js).
+
+> The `authority` and `authority_reference` columns remain on `title_status_applications` for legacy records but are no longer captured from the UI. New entries populate `initiated_by` and `reason`.
 
 ---
 
-## Auto-Comment Templates (per type)
+## Unified Auto-Comment Template
 
-- **Withdrawal:** *"File [file_no] — [file_title] has been Withdrawn on [date]. Authority: [authority]. [reference]."*
-- **Cancellation:** *"File [file_no] — [file_title] RofO has been Cancelled on [date]. Authority: [authority]. [reference]."*
-- **Revoke:** *"File [file_no] — [file_title] C of O has been Revoked on [date]. Authority: [authority]. [reference]."*
-- **Litigation:** *"File [file_no] — [file_title] is under Litigation as of [date]. Authority: [authority]. [reference]."*
-- **Amendment:** *"File [file_no] — [file_title] Application/RofO/CofO has been Amended/Reconsidered on [date]. Authority: [authority]. [reference]."*
+All 6 types share the same remark template:
+
+> `[Status type] was initiated by [Ministry/Allottee] on [Time/Date] due to [Reason]`
+
+Status type verbs used:
+
+| Type constant | Verb in remark |
+|---|---|
+| Withdrawal (Application) | Withdrawal |
+| Cancellation (RofO) | Cancellation |
+| Revoke (CofO) | Revocation |
+| Litigation | Litigation |
+| Amendment/Reconsideration (Application/RofO/CofO) | Amendment/Reconsideration |
+| Surrender | Surrender |
+
+Examples:
+- `Surrender was initiated by Stacy Moore on 01/06/2026 14:32 due to relocation to another state` (Applicant → name substituted)
+- `Cancellation was initiated by Ministry on 01/06/2026 09:15 due to incomplete documentation`
+- `Revocation was initiated by Court Order on 01/06/2026 11:00 due to suit no. KN/HC/CV/123/2025`
+
+---
+
+## Schema Additions (2026-05-30)
+
+Migration `2026_05_30_140000_add_initiated_by_reason_to_title_status_applications.php` adds:
+
+| Column | Type | Notes |
+|---|---|---|
+| `initiated_by` | varchar(50) | Ministry / Allottee |
+| `reason` | text | Free text reason |

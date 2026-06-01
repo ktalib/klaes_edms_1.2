@@ -1624,6 +1624,12 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'digital-request'], f
     Route::get('/pending-count',        [App\Http\Controllers\DigitalFileRequestController::class, 'pendingCount'])->name('digital-request.pending-count');
     Route::post('/send-otp',            [App\Http\Controllers\DigitalFileRequestController::class, 'sendOtp'])->name('digital-request.send-otp');
     Route::post('/verify-signature',    [App\Http\Controllers\DigitalFileRequestController::class, 'verifySignature'])->name('digital-request.verify-signature');
+
+    // ── Digital file access (temporary copies) ──────────────────────────────
+    Route::get('/my-files',                             [App\Http\Controllers\DigitalFileRequestController::class, 'myFiles'])->name('digital-request.my-files');
+    Route::get('/active-file-nos',                      [App\Http\Controllers\DigitalFileRequestController::class, 'activeFileNos'])->name('digital-request.active-file-nos');
+    Route::get('/file-access/{access}/view/{filename}', [App\Http\Controllers\DigitalFileRequestController::class, 'viewFile'])->name('digital-request.view-file')->where('filename', '[^/]+');
+    Route::post('/file-access/{access}/revoke',         [App\Http\Controllers\DigitalFileRequestController::class, 'revokeAccess'])->name('digital-request.revoke-access');
 });
 
 // File Tracker API Routes for AJAX calls (Web session auth OR Sanctum Bearer token)

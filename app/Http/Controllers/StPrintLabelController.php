@@ -19,6 +19,15 @@ class StPrintLabelController extends Controller
 
     const PREFIX = 'ST';
 
+    // Allowed ST application types stored in file_indexings.st_application_type
+    const APPLICATION_TYPES = ['primary', 'pua', 'sua'];
+
+    private const APPLICATION_TYPE_LABELS = [
+        'primary' => 'Primary',
+        'pua'     => 'PUA (Parented Units Application)',
+        'sua'     => 'SUA (Standalone Unit Application)',
+    ];
+
     // -------------------------------------------------------------------------
     // Public endpoints
     // -------------------------------------------------------------------------
@@ -43,7 +52,7 @@ class StPrintLabelController extends Controller
         try {
             $count = DB::connection('sqlsrv')
                 ->table('file_indexings')
-                ->where('registry', 'like', '%ST%')
+                ->whereIn('st_application_type', self::APPLICATION_TYPES)
                 ->count();
 
             $result = [
@@ -62,24 +71,31 @@ class StPrintLabelController extends Controller
     }
 
     /**
-     * Return distinct sub_prefix values from file_indexings for ST registry.
+     * Return the ST application types (primary, pua, sua) with a live count
+     * of indexed files available for label generation.
      */
-    public function getSubPrefixes()
+    public function getApplicationTypes()
     {
         try {
-            $prefixes = DB::connection('sqlsrv')
+            $counts = DB::connection('sqlsrv')
                 ->table('file_indexings')
-                ->where('registry', 'like', '%ST%')
-                ->whereNotNull('sub_prefix')
-                ->where('sub_prefix', '!=', '')
-                ->distinct()
-                ->orderBy('sub_prefix')
-                ->pluck('sub_prefix');
+                ->whereIn('st_application_type', self::APPLICATION_TYPES)
+                ->selectRaw('st_application_type, COUNT(*) as total')
+                ->groupBy('st_application_type')
+                ->pluck('total', 'st_application_type');
 
-            // If empty, return a default list or look in sltr_fileno_subprefix or just return empty
-            return response()->json(['success' => true, 'data' => $prefixes]);
+            $data = [];
+            foreach (self::APPLICATION_TYPES as $type) {
+                $data[] = [
+                    'type'  => $type,
+                    'label' => self::APPLICATION_TYPE_LABELS[$type] ?? strtoupper($type),
+                    'count' => (int) ($counts[$type] ?? 0),
+                ];
+            }
+
+            return response()->json(['success' => true, 'data' => $data]);
         } catch (\Throwable $e) {
-            Log::error('st-printlabel.getSubPrefixes', ['error' => $e->getMessage()]);
+            Log::error('st-printlabel.getApplicationTypes', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
@@ -116,36 +132,44 @@ class StPrintLabelController extends Controller
     }
 
     /**
-     * Fetch available file_indexings records for a given sub_prefix.
+     * Fetch available file_indexings records for a given ST application type.
      */
     public function getAvailableFiles(Request $request)
     {
         try {
-            $subPrefix = trim((string) $request->input('sub_prefix', ''));
-            $search    = trim((string) $request->input('search', ''));
+            $applicationType = strtolower(trim((string) $request->input('application_type', '')));
+            $search          = trim((string) $request->input('search', ''));
 
-            if ($subPrefix === '') {
-                return response()->json(['success' => false, 'message' => 'Please select a sub prefix.'], 422);
+            if ($applicationType === '' || !in_array($applicationType, self::APPLICATION_TYPES, true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Please select a valid ST application type (primary, pua, sua).',
+                ], 422);
             }
 
-            // Look up from file_indexings
-            $query = FileIndexing::on('sqlsrv')
-                ->where('registry', 'like', '%ST%')
-                ->where('file_number', 'like', 'ST-' . $subPrefix . '%')
+            $query = DB::connection('sqlsrv')
+                ->table('file_indexings as fi')
+                ->leftJoin('mother_applications as ma', 'ma.id', '=', 'fi.main_application_id')
+                ->leftJoin('subapplications as sa', 'sa.id', '=', 'fi.subapplication_id')
+                ->where('fi.st_application_type', $applicationType)
                 ->select([
-                    'id',
-                    'file_number',
-                    'tracking_id',
-                    'land_use_type',
-                    'shelf_location',
-                    'sub_prefix',
-                    'suffix',
+                    'fi.id',
+                    'fi.file_number',
+                    'fi.tracking_id',
+                    'fi.land_use_type',
+                    'fi.shelf_location',
+                    'fi.st_application_type',
+                    DB::raw('COALESCE(sa.np_fileno, ma.np_fileno) AS np_file_number'),
+                    DB::raw('COALESCE(sa.fileno, ma.fileno) AS application_file_number'),
                 ]);
 
             if ($search !== '') {
-                $query->where(function ($q) use ($search) {
-                    $q->where('file_number', 'like', '%' . $search . '%')
-                      ->orWhere('tracking_id', 'like', '%' . $search . '%');
+                $like = '%' . $search . '%';
+                $query->where(function ($q) use ($like) {
+                    $q->where('fi.file_number', 'like', $like)
+                      ->orWhere('fi.tracking_id', 'like', $like)
+                      ->orWhere('ma.np_fileno', 'like', $like)
+                      ->orWhere('sa.np_fileno', 'like', $like);
                 });
             }
 
@@ -153,50 +177,51 @@ class StPrintLabelController extends Controller
             $query->whereNotExists(function ($q) {
                 $q->select(DB::raw(1))
                     ->from('st_print_label_batch_items')
-                    ->whereColumn('st_print_label_batch_items.file_number', 'file_indexings.file_number');
+                    ->whereColumn('st_print_label_batch_items.file_number', 'fi.file_number');
             });
 
             // Handle exclude_assigned parameter (Skip Assigned Shelves)
             if ($request->boolean('exclude_assigned')) {
                 $query->where(function ($q) {
-                    $q->whereNull('shelf_location')
-                      ->orWhere('shelf_location', '')
-                      ->orWhere('shelf_location', 'like', '%N/A%');
+                    $q->whereNull('fi.shelf_location')
+                      ->orWhere('fi.shelf_location', '')
+                      ->orWhere('fi.shelf_location', 'like', '%N/A%');
                 });
             }
 
-            $rows = $query->orderBy('file_number')->get();
+            $rows = $query->orderBy('fi.file_number')->get();
 
             if ($rows->isEmpty()) {
                 return response()->json([
                     'success' => true,
                     'data' => [
-                        'files'      => [],
-                        'missing'    => [],
-                        'total'      => 0,
-                        'prefix'     => self::PREFIX,
-                        'sub_prefix' => $subPrefix,
-                        'message'    => 'No indexed records found for this sub prefix.',
+                        'files'            => [],
+                        'missing'          => [],
+                        'total'            => 0,
+                        'prefix'           => self::PREFIX,
+                        'application_type' => $applicationType,
+                        'message'          => 'No indexed ST files found for application type "' . strtoupper($applicationType) . '".',
                     ],
                 ]);
             }
 
-            $batchAlreadyUsed = false;
-
             $mapped = $rows->map(function ($r) {
+                $np    = isset($r->np_file_number) ? trim((string) $r->np_file_number) : '';
+                $appNo = isset($r->application_file_number) ? trim((string) $r->application_file_number) : '';
                 return [
-                    'id'              => $r->id,
-                    'file_number'     => $r->file_number,
-                    'file_title'      => null,
-                    'plot_number'     => null,
-                    'district'        => null,
-                    'lga'             => null,
-                    'land_use_type'   => $r->land_use_type,
-                    'shelf_location'  => $r->shelf_location,
-                    'tracking_id'     => $r->tracking_id,
-                    'sub_prefix'      => $r->sub_prefix,
-                    'suffix'          => $r->suffix,
-                    'already_batched' => false,
+                    'id'                      => $r->id,
+                    'file_number'             => $r->file_number,
+                    'np_file_number'          => $np !== '' ? $np : null,
+                    'application_file_number' => $appNo !== '' ? $appNo : null,
+                    'file_title'              => null,
+                    'plot_number'             => null,
+                    'district'                => null,
+                    'lga'                     => null,
+                    'land_use_type'           => $r->land_use_type,
+                    'shelf_location'          => $r->shelf_location,
+                    'tracking_id'             => $r->tracking_id,
+                    'st_application_type'     => $r->st_application_type,
+                    'already_batched'         => false,
                 ];
             });
 
@@ -207,9 +232,9 @@ class StPrintLabelController extends Controller
                     'missing'            => [],
                     'total'              => $mapped->count(),
                     'prefix'             => self::PREFIX,
-                    'sub_prefix'         => $subPrefix,
+                    'application_type'   => $applicationType,
                     'indexed_count'      => $rows->count(),
-                    'batch_already_used' => $batchAlreadyUsed,
+                    'batch_already_used' => false,
                 ],
             ]);
         } catch (\Throwable $e) {
@@ -276,49 +301,72 @@ class StPrintLabelController extends Controller
     {
         try {
             $validated = $request->validate([
-                'prefix'       => 'required|string|in:' . self::PREFIX,
-                'sub_prefix'   => 'nullable|string',
-                'file_ids'     => 'required|array|min:1|max:' . self::MAX_BATCH_SELECTION,
-                'file_ids.*'   => 'integer|min:1',
-                'full_label'   => 'required|string|max:20',
-                'rack_primary' => 'required|string|max:5',
-                'shelf_number' => 'required|integer|min:1|max:9999',
-                'rack_secondary' => 'nullable|string|max:5',
+                'prefix'           => 'required|string|in:' . self::PREFIX,
+                'application_type' => 'nullable|string|in:' . implode(',', self::APPLICATION_TYPES),
+                'file_ids'         => 'required|array|min:1|max:' . self::MAX_BATCH_SELECTION,
+                'file_ids.*'       => 'integer|min:1',
+                'full_label'       => 'required|string|max:20',
+                'rack_primary'     => 'required|string|max:5',
+                'shelf_number'     => 'required|integer|min:1|max:9999',
+                'rack_secondary'   => 'nullable|string|max:5',
             ]);
 
-            $prefix       = self::PREFIX;
-            $subPrefix    = $validated['sub_prefix'] ?? null;
-            $fileIds      = array_unique(array_map('intval', $validated['file_ids']));
+            $prefix          = self::PREFIX;
+            $applicationType = isset($validated['application_type']) ? strtolower($validated['application_type']) : null;
+            $fileIds         = array_unique(array_map('intval', $validated['file_ids']));
             $fullLabel    = strtoupper(trim($validated['full_label']));
             $rackPrimary  = strtoupper(trim($validated['rack_primary']));
             $rackSecondary = isset($validated['rack_secondary']) ? strtoupper(trim($validated['rack_secondary'])) : null;
             $shelfNumber  = (int) $validated['shelf_number'];
 
             $result = DB::connection('sqlsrv')->transaction(function () use (
-                $prefix, $subPrefix, $fileIds, $fullLabel, $rackPrimary, $rackSecondary, $shelfNumber
+                $prefix, $applicationType, $fileIds, $fullLabel, $rackPrimary, $rackSecondary, $shelfNumber
             ) {
                 $now = Carbon::now();
 
-                $batchNumber = 'ST-' . $now->format('YmdHis');
+                // Reserve the next (prefix, sys_batch_no) pair — there's a unique constraint on that pair.
+                $sysBatchNo = (int) DB::connection('sqlsrv')
+                    ->table('st_print_label_batches')
+                    ->where('prefix', $prefix)
+                    ->max('sys_batch_no');
+                $sysBatchNo = $sysBatchNo > 0 ? $sysBatchNo + 1 : 1;
+
+                $batchNumber = 'ST-' . $now->format('YmdHis') . '-' . $sysBatchNo;
 
                 $batch = StPrintLabelBatch::create([
-                    'batch_number'  => $batchNumber,
-                    'prefix'        => $prefix,
-                    'sys_batch_no'  => 0,
-                    'status'        => StPrintLabelBatch::STATUS_PENDING,
-                    'full_label'    => $fullLabel,
-                    'rack_primary'  => $rackPrimary,
-                    'rack_secondary'=> $rackSecondary,
-                    'shelf_number'  => $shelfNumber,
-                    'created_by'    => auth()->id(),
-                    'updated_by'    => auth()->id(),
-                    'created_at'    => $now,
-                    'updated_at'    => $now,
+                    'batch_number'    => $batchNumber,
+                    'prefix'          => $prefix,
+                    'application_type'=> $applicationType,
+                    'sys_batch_no'    => $sysBatchNo,
+                    'status'          => StPrintLabelBatch::STATUS_PENDING,
+                    'full_label'      => $fullLabel,
+                    'rack_primary'    => $rackPrimary,
+                    'rack_secondary'  => $rackSecondary,
+                    'shelf_number'    => $shelfNumber,
+                    'created_by'      => auth()->id(),
+                    'updated_by'      => auth()->id(),
+                    'created_at'      => $now,
+                    'updated_at'      => $now,
                 ]);
 
-                // Fetch files from file_indexings
-                $files = FileIndexing::on('sqlsrv')
-                    ->whereIn('id', $fileIds)
+                // Fetch files from file_indexings, joined to mother/sub applications for np_fileno
+                $files = DB::connection('sqlsrv')
+                    ->table('file_indexings as fi')
+                    ->leftJoin('mother_applications as ma', 'ma.id', '=', 'fi.main_application_id')
+                    ->leftJoin('subapplications as sa', 'sa.id', '=', 'fi.subapplication_id')
+                    ->whereIn('fi.id', $fileIds)
+                    ->select([
+                        'fi.id',
+                        'fi.file_number',
+                        'fi.tracking_id',
+                        'fi.land_use_type',
+                        'fi.shelf_location',
+                        'fi.location',
+                        'fi.file_title',
+                        'fi.plot_number',
+                        DB::raw('COALESCE(sa.np_fileno, ma.np_fileno) AS np_file_number'),
+                        DB::raw('COALESCE(sa.fileno, ma.fileno) AS application_file_number'),
+                    ])
                     ->get();
 
                 if ($files->isEmpty()) {
@@ -329,13 +377,19 @@ class StPrintLabelController extends Controller
                 $shelfLabelRecord = $this->resolveRackLabelRecord($fullLabel, $rackPrimary, $rackSecondary, $shelfNumber, false, true);
 
                 $items = $files->values()->map(function ($file, $index) use ($batch, $fullLabel, $prefix, $now) {
-                    $fileNumber = $file->file_number;
+                    $fileNumber   = $file->file_number;
+                    $npFileNumber = isset($file->np_file_number) ? trim((string) $file->np_file_number) : '';
+                    $npFileNumber = $npFileNumber !== '' ? $npFileNumber : null;
+                    $appFileNumber = isset($file->application_file_number) ? trim((string) $file->application_file_number) : '';
+                    $appFileNumber = $appFileNumber !== '' ? $appFileNumber : null;
                     $qrPayload = [
-                        'file_number'  => $fileNumber,
-                        'tracking_id'  => $file->tracking_id ?? $fileNumber,
-                        'prefix'       => $prefix,
-                        'shelf_label'  => $fullLabel,
-                        'generated_at' => $now->toIso8601String(),
+                        'file_number'             => $fileNumber,
+                        'np_file_number'          => $npFileNumber,
+                        'application_file_number' => $appFileNumber,
+                        'tracking_id'             => $file->tracking_id ?? $fileNumber,
+                        'prefix'                  => $prefix,
+                        'shelf_label'             => $fullLabel,
+                        'generated_at'            => $now->toIso8601String(),
                     ];
 
                     return [
@@ -351,7 +405,7 @@ class StPrintLabelController extends Controller
                         'shelf_location'  => $fullLabel,
                         'label_position'  => $index + 1,
                         'qr_code_data'    => json_encode($qrPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                        'barcode_data'    => $fileNumber,
+                        'barcode_data'    => $npFileNumber ?: $fileNumber,
                         'is_printed'      => false,
                         'created_at'      => $now,
                         'updated_at'      => $now,
@@ -392,22 +446,28 @@ class StPrintLabelController extends Controller
 
                 // Return label items for immediate print preview
                 $labelItems = $files->values()->map(function ($file, $index) use ($fullLabel, $prefix) {
-                    $fileNumber = $file->file_number;
+                    $fileNumber   = $file->file_number;
+                    $npFileNumber = isset($file->np_file_number) ? trim((string) $file->np_file_number) : '';
+                    $npFileNumber = $npFileNumber !== '' ? $npFileNumber : null;
+                    $appFileNumber = isset($file->application_file_number) ? trim((string) $file->application_file_number) : '';
+                    $appFileNumber = $appFileNumber !== '' ? $appFileNumber : null;
                     return [
-                        'file_indexing_id' => $file->id,
-                        'file_number'      => $fileNumber,
-                        'file_title'       => $file->file_title,
-                        'plot_number'      => $file->plot_number,
-                        'district'         => $file->location,
-                        'lga'              => null,
-                        'land_use_type'    => $file->land_use_type,
-                        'shelf_location'   => $fullLabel,
-                        'shelf_value'      => $fullLabel,
-                        'shelf_label'      => $fullLabel,
-                        'tracking_id'      => $file->tracking_id ?? $fileNumber,
-                        'qr_value'         => $file->tracking_id ?? $fileNumber,
-                        'label_position'   => $index + 1,
-                        'prefix'           => $prefix,
+                        'file_indexing_id'        => $file->id,
+                        'file_number'             => $fileNumber,
+                        'np_file_number'          => $npFileNumber,
+                        'application_file_number' => $appFileNumber,
+                        'file_title'              => $file->file_title ?? null,
+                        'plot_number'             => $file->plot_number ?? null,
+                        'district'                => $file->location ?? null,
+                        'lga'                     => null,
+                        'land_use_type'           => $file->land_use_type,
+                        'shelf_location'          => $fullLabel,
+                        'shelf_value'             => $fullLabel,
+                        'shelf_label'             => $fullLabel,
+                        'tracking_id'             => $file->tracking_id ?? $fileNumber,
+                        'qr_value'                => $file->tracking_id ?? $fileNumber,
+                        'label_position'          => $index + 1,
+                        'prefix'                  => $prefix,
                     ];
                 })->values()->toArray();
 
@@ -490,8 +550,18 @@ class StPrintLabelController extends Controller
 
             $indexingDetails = collect();
             if ($fileIndexingIds->isNotEmpty()) {
-                $indexingDetails = FileIndexing::on('sqlsrv')
-                    ->whereIn('id', $fileIndexingIds)
+                $indexingDetails = DB::connection('sqlsrv')
+                    ->table('file_indexings as fi')
+                    ->leftJoin('mother_applications as ma', 'ma.id', '=', 'fi.main_application_id')
+                    ->leftJoin('subapplications as sa', 'sa.id', '=', 'fi.subapplication_id')
+                    ->whereIn('fi.id', $fileIndexingIds)
+                    ->select([
+                        'fi.id',
+                        'fi.tracking_id',
+                        'fi.shelf_location',
+                        DB::raw('COALESCE(sa.np_fileno, ma.np_fileno) AS np_file_number'),
+                        DB::raw('COALESCE(sa.fileno, ma.fileno) AS application_file_number'),
+                    ])
                     ->get()
                     ->keyBy('id');
             }
@@ -507,25 +577,31 @@ class StPrintLabelController extends Controller
                     }
                 }
 
-                $trackingId = $qrData['tracking_id'] ?? optional($details)->tracking_id ?? $item->file_number;
-                $shelfValue = $item->shelf_location ?? optional($details)->shelf_location ?? null;
+                $trackingId    = $qrData['tracking_id'] ?? optional($details)->tracking_id ?? $item->file_number;
+                $shelfValue    = $item->shelf_location ?? optional($details)->shelf_location ?? null;
+                $npFileNumber  = $qrData['np_file_number'] ?? optional($details)->np_file_number ?? null;
+                $appFileNumber = $qrData['application_file_number'] ?? optional($details)->application_file_number ?? null;
+                $npFileNumber  = is_string($npFileNumber) && trim($npFileNumber) !== '' ? trim($npFileNumber) : null;
+                $appFileNumber = is_string($appFileNumber) && trim($appFileNumber) !== '' ? trim($appFileNumber) : null;
 
                 return [
-                    'id'               => $item->file_indexing_id,
-                    'batch_item_id'    => $item->id,
-                    'file_number'      => $item->file_number,
-                    'file_title'       => $item->file_title,
-                    'plot_number'      => $item->plot_number,
-                    'district'         => $item->district,
-                    'lga'              => $item->lga,
-                    'land_use_type'    => $item->land_use_type,
-                    'shelf_location'   => $shelfValue,
-                    'shelf_value'      => $shelfValue,
-                    'shelf_label'      => $shelfValue,
-                    'tracking_id'      => $trackingId,
-                    'qr_code_data'     => $qrData,
-                    'qr_value'         => $trackingId,
-                    'label_position'   => $item->label_position,
+                    'id'                      => $item->file_indexing_id,
+                    'batch_item_id'           => $item->id,
+                    'file_number'             => $item->file_number,
+                    'np_file_number'          => $npFileNumber,
+                    'application_file_number' => $appFileNumber,
+                    'file_title'              => $item->file_title,
+                    'plot_number'             => $item->plot_number,
+                    'district'                => $item->district,
+                    'lga'                     => $item->lga,
+                    'land_use_type'           => $item->land_use_type,
+                    'shelf_location'          => $shelfValue,
+                    'shelf_value'             => $shelfValue,
+                    'shelf_label'             => $shelfValue,
+                    'tracking_id'             => $trackingId,
+                    'qr_code_data'            => $qrData,
+                    'qr_value'                => $trackingId,
+                    'label_position'          => $item->label_position,
                 ];
             });
 

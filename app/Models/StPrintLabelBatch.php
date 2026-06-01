@@ -14,6 +14,7 @@ class StPrintLabelBatch extends Model
     protected $fillable = [
         'batch_number',
         'prefix',
+        'application_type',
         'sys_batch_no',
         'batch_size',
         'generated_count',

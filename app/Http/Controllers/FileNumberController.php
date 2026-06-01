@@ -1525,139 +1525,27 @@ class FileNumberController extends Controller
      */
     public function destroy($id)
     {
+        if (!Auth::user() || Auth::user()->assign_role !== 'Supper Admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized action. Only Supper Admin can execute a Master Delete.'
+            ], 403);
+        }
+
+        $fileRecord = DB::connection('sqlsrv')->table('fileNumber')->where('id', $id)->first();
+        if (!$fileRecord) {
+            return response()->json([
+                'success' => false,
+                'message' => 'File number record not found.'
+            ], 404);
+        }
+
+        DB::connection('sqlsrv')->beginTransaction();
         try {
-            // Security gate: only Supper Admin can execute master delete
-            if (!Auth::user() || Auth::user()->assign_role !== 'Supper Admin') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized action. Only Supper Admin can execute a Master Delete.'
-                ], 403);
-            }
+            $result = $this->cascadeDeleteFileRecord($id, $fileRecord);
 
-            $fileRecord = DB::connection('sqlsrv')->table('fileNumber')->where('id', $id)->first();
-            if (!$fileRecord) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'File number record not found.'
-                ], 404);
-            }
-
-            $mlsfNo = trim($fileRecord->mlsfNo ?? '');
-            $trackingId = trim($fileRecord->tracking_id ?? '');
-            $kangisFileNo = trim($fileRecord->kangisFileNo ?? '');
-            $newKangisFileNo = trim($fileRecord->NewKANGISFileNo ?? '');
-            $stFileNo = trim($fileRecord->st_file_no ?? '');
-
-            DB::connection('sqlsrv')->beginTransaction();
-
-            // 1. Delete from mls_file_no
-            $deletedMlsFileNo = 0;
-            if ($mlsfNo !== '') {
-                $deletedMlsFileNo += DB::connection('sqlsrv')->table('mls_file_no')
-                    ->where('full_file_number', $mlsfNo)
-                    ->delete();
-            }
-            if ($trackingId !== '') {
-                $deletedMlsFileNo += DB::connection('sqlsrv')->table('mls_file_no')
-                    ->where('tracking_id', $trackingId)
-                    ->delete();
-            }
-
-            // 2. Delete from entities_staging
-            $deletedEntities = 0;
-            $fileNumbersForStaging = array_unique(array_filter([$mlsfNo, $kangisFileNo, $newKangisFileNo, $stFileNo]));
-            if (!empty($fileNumbersForStaging)) {
-                $deletedEntities += DB::connection('sqlsrv')->table('entities_staging')
-                    ->whereIn('file_number', $fileNumbersForStaging)
-                    ->delete();
-            }
-
-            // 3. Delete from customers_staging
-            $deletedCustomers = 0;
-            if (!empty($fileNumbersForStaging)) {
-                $deletedCustomers += DB::connection('sqlsrv')->table('customers_staging')
-                    ->whereIn('file_number', $fileNumbersForStaging)
-                    ->delete();
-            }
-
-            // 4. Delete from file_indexings (and its children to avoid constraint errors)
-            $deletedIndexings = 0;
-            $fileIndexingIds = [];
-            if (!empty($fileNumbersForStaging)) {
-                $fileIndexingIds = DB::connection('sqlsrv')->table('file_indexings')
-                    ->whereIn('file_number', $fileNumbersForStaging)
-                    ->pluck('id')
-                    ->toArray();
-            }
-            if ($trackingId !== '') {
-                $moreIds = DB::connection('sqlsrv')->table('file_indexings')
-                    ->where('tracking_id', $trackingId)
-                    ->pluck('id')
-                    ->toArray();
-                $fileIndexingIds = array_unique(array_merge($fileIndexingIds, $moreIds));
-            }
-
-            if (!empty($fileIndexingIds)) {
-                // Delete child scannings
-                DB::connection('sqlsrv')->table('scannings')
-                    ->whereIn('file_indexing_id', $fileIndexingIds)
-                    ->delete();
-
-                // Delete child pagetypings
-                DB::connection('sqlsrv')->table('pagetypings')
-                    ->whereIn('file_indexing_id', $fileIndexingIds)
-                    ->delete();
-
-                // Delete child print_label_batch_items
-                DB::connection('sqlsrv')->table('print_label_batch_items')
-                    ->whereIn('file_indexing_id', $fileIndexingIds)
-                    ->delete();
-
-                // Delete child file_indexings
-                $deletedIndexings = DB::connection('sqlsrv')->table('file_indexings')
-                    ->whereIn('id', $fileIndexingIds)
-                    ->delete();
-            }
-
-            // 5. Delete from fileNumber
-            $deletedFileNumbers = DB::connection('sqlsrv')->table('fileNumber')
-                ->where('id', $id)
-                ->delete();
-
-            if ($mlsfNo !== '') {
-                $deletedFileNumbers += DB::connection('sqlsrv')->table('fileNumber')
-                    ->where('mlsfNo', $mlsfNo)
-                    ->delete();
-            }
-
-            // Clear statistics and other cache keys
-            Cache::forget('mls_fileno_page_stats');
-            Cache::forget('file_numbers_total_v2_New');
-            Cache::forget('file_numbers_total_v2_All');
-            Cache::forget('file_numbers_total_v2_Captured');
-
-            // Log action in AuditLog via AuditService
-            try {
-                $auditService = app(\App\Services\AuditService::class);
-                $auditService->logAction(
-                    'DELETED',
-                    'mls_file_record',
-                    $id,
-                    [
-                        'id' => $id,
-                        'mlsfNo' => $mlsfNo,
-                        'tracking_id' => $trackingId,
-                        'kangisFileNo' => $kangisFileNo,
-                        'NewKANGISFileNo' => $newKangisFileNo,
-                        'st_file_no' => $stFileNo,
-                        'FileName' => $fileRecord->FileName ?? null,
-                    ],
-                    null,
-                    "Master Delete executed for MLS File Record ID {$id}. Affected tables: fileNumber ({$deletedFileNumbers} rows), mls_file_no ({$deletedMlsFileNo} rows), entities_staging ({$deletedEntities} rows), customers_staging ({$deletedCustomers} rows), file_indexings ({$deletedIndexings} rows)."
-                );
-            } catch (\Exception $auditEx) {
-                \Log::warning("AuditLog failed during MLS master delete: " . $auditEx->getMessage());
-            }
+            $this->forgetFileNumberCaches();
+            $this->writeMasterDeleteAudit($id, $result);
 
             DB::connection('sqlsrv')->commit();
 
@@ -1665,14 +1553,13 @@ class FileNumberController extends Controller
                 'success' => true,
                 'message' => 'MLS record and all associated staging/indexing records deleted successfully from all 5 systems.',
                 'details' => [
-                    'fileNumber_deleted' => $deletedFileNumbers,
-                    'mls_file_no_deleted' => $deletedMlsFileNo,
-                    'entities_staging_deleted' => $deletedEntities,
-                    'customers_staging_deleted' => $deletedCustomers,
-                    'file_indexings_deleted' => $deletedIndexings
+                    'fileNumber_deleted' => $result['counts']['fileNumber'],
+                    'mls_file_no_deleted' => $result['counts']['mls_file_no'],
+                    'entities_staging_deleted' => $result['counts']['entities_staging'],
+                    'customers_staging_deleted' => $result['counts']['customers_staging'],
+                    'file_indexings_deleted' => $result['counts']['file_indexings'],
                 ]
             ]);
-
         } catch (\Exception $e) {
             DB::connection('sqlsrv')->rollBack();
             \Log::error('Error executing master delete for MLS file ID ' . $id . ': ' . $e->getMessage(), [
@@ -1683,6 +1570,204 @@ class FileNumberController extends Controller
                 'success' => false,
                 'message' => 'Error deleting records: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Bulk master delete for multiple MLS file records.
+     * All deletes execute inside ONE transaction — any failure rolls back every record.
+     */
+    public function bulkDestroy(Request $request)
+    {
+        if (!Auth::user() || Auth::user()->assign_role !== 'Supper Admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized action. Only Supper Admin can execute a Master Delete.'
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'ids'   => 'required|array|min:1|max:200',
+            'ids.*' => 'required|integer|min:1',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid request: ' . $validator->errors()->first(),
+            ], 422);
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $request->input('ids'))));
+
+        $records = DB::connection('sqlsrv')->table('fileNumber')->whereIn('id', $ids)->get()->keyBy('id');
+        $missingIds = array_values(array_diff($ids, $records->keys()->all()));
+
+        if ($records->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No matching file records found for the provided IDs.',
+                'missing_ids' => $missingIds,
+            ], 404);
+        }
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            $totals = [
+                'fileNumber' => 0, 'mls_file_no' => 0, 'entities_staging' => 0,
+                'customers_staging' => 0, 'file_indexings' => 0,
+            ];
+            $perRecord = [];
+
+            foreach ($records as $id => $fileRecord) {
+                $result = $this->cascadeDeleteFileRecord($id, $fileRecord);
+                foreach ($totals as $k => $_) {
+                    $totals[$k] += $result['counts'][$k];
+                }
+                $this->writeMasterDeleteAudit($id, $result, true);
+                $perRecord[] = [
+                    'id' => $id,
+                    'mlsfNo' => $result['snapshot']['mlsfNo'],
+                ];
+            }
+
+            $this->forgetFileNumberCaches();
+            DB::connection('sqlsrv')->commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => count($records) . ' MLS record(s) deleted successfully across all 5 systems.',
+                'deleted_count' => count($records),
+                'missing_ids' => $missingIds,
+                'records' => $perRecord,
+                'totals' => $totals,
+            ]);
+        } catch (\Exception $e) {
+            DB::connection('sqlsrv')->rollBack();
+            \Log::error('Error executing bulk master delete for MLS file IDs: ' . $e->getMessage(), [
+                'ids' => $ids,
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Bulk delete failed and was rolled back: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Execute the 5-table cascade delete for a single fileNumber row.
+     * Caller is responsible for transaction management.
+     */
+    private function cascadeDeleteFileRecord($id, $fileRecord): array
+    {
+        $mlsfNo          = trim($fileRecord->mlsfNo ?? '');
+        $trackingId      = trim($fileRecord->tracking_id ?? '');
+        $kangisFileNo    = trim($fileRecord->kangisFileNo ?? '');
+        $newKangisFileNo = trim($fileRecord->NewKANGISFileNo ?? '');
+        $stFileNo        = trim($fileRecord->st_file_no ?? '');
+
+        // 1. Delete from mls_file_no
+        $deletedMlsFileNo = 0;
+        if ($mlsfNo !== '') {
+            $deletedMlsFileNo += DB::connection('sqlsrv')->table('mls_file_no')
+                ->where('full_file_number', $mlsfNo)->delete();
+        }
+        if ($trackingId !== '') {
+            $deletedMlsFileNo += DB::connection('sqlsrv')->table('mls_file_no')
+                ->where('tracking_id', $trackingId)->delete();
+        }
+
+        $fileNumbersForStaging = array_unique(array_filter([$mlsfNo, $kangisFileNo, $newKangisFileNo, $stFileNo]));
+
+        // 2. entities_staging
+        $deletedEntities = 0;
+        if (!empty($fileNumbersForStaging)) {
+            $deletedEntities = DB::connection('sqlsrv')->table('entities_staging')
+                ->whereIn('file_number', $fileNumbersForStaging)->delete();
+        }
+
+        // 3. customers_staging
+        $deletedCustomers = 0;
+        if (!empty($fileNumbersForStaging)) {
+            $deletedCustomers = DB::connection('sqlsrv')->table('customers_staging')
+                ->whereIn('file_number', $fileNumbersForStaging)->delete();
+        }
+
+        // 4. file_indexings (+ children)
+        $deletedIndexings = 0;
+        $fileIndexingIds = [];
+        if (!empty($fileNumbersForStaging)) {
+            $fileIndexingIds = DB::connection('sqlsrv')->table('file_indexings')
+                ->whereIn('file_number', $fileNumbersForStaging)->pluck('id')->toArray();
+        }
+        if ($trackingId !== '') {
+            $moreIds = DB::connection('sqlsrv')->table('file_indexings')
+                ->where('tracking_id', $trackingId)->pluck('id')->toArray();
+            $fileIndexingIds = array_unique(array_merge($fileIndexingIds, $moreIds));
+        }
+        if (!empty($fileIndexingIds)) {
+            DB::connection('sqlsrv')->table('scannings')
+                ->whereIn('file_indexing_id', $fileIndexingIds)->delete();
+            DB::connection('sqlsrv')->table('pagetypings')
+                ->whereIn('file_indexing_id', $fileIndexingIds)->delete();
+            DB::connection('sqlsrv')->table('print_label_batch_items')
+                ->whereIn('file_indexing_id', $fileIndexingIds)->delete();
+            $deletedIndexings = DB::connection('sqlsrv')->table('file_indexings')
+                ->whereIn('id', $fileIndexingIds)->delete();
+        }
+
+        // 5. fileNumber
+        $deletedFileNumbers = DB::connection('sqlsrv')->table('fileNumber')
+            ->where('id', $id)->delete();
+        if ($mlsfNo !== '') {
+            $deletedFileNumbers += DB::connection('sqlsrv')->table('fileNumber')
+                ->where('mlsfNo', $mlsfNo)->delete();
+        }
+
+        return [
+            'snapshot' => [
+                'id' => $id,
+                'mlsfNo' => $mlsfNo,
+                'tracking_id' => $trackingId,
+                'kangisFileNo' => $kangisFileNo,
+                'NewKANGISFileNo' => $newKangisFileNo,
+                'st_file_no' => $stFileNo,
+                'FileName' => $fileRecord->FileName ?? null,
+            ],
+            'counts' => [
+                'fileNumber' => $deletedFileNumbers,
+                'mls_file_no' => $deletedMlsFileNo,
+                'entities_staging' => $deletedEntities,
+                'customers_staging' => $deletedCustomers,
+                'file_indexings' => $deletedIndexings,
+            ],
+        ];
+    }
+
+    private function forgetFileNumberCaches(): void
+    {
+        Cache::forget('mls_fileno_page_stats');
+        Cache::forget('file_numbers_total_v2_New');
+        Cache::forget('file_numbers_total_v2_All');
+        Cache::forget('file_numbers_total_v2_Captured');
+    }
+
+    private function writeMasterDeleteAudit($id, array $result, bool $isBulk = false): void
+    {
+        try {
+            $c = $result['counts'];
+            $prefix = $isBulk ? 'Bulk Master Delete' : 'Master Delete';
+            app(\App\Services\AuditService::class)->logAction(
+                'DELETED',
+                'mls_file_record',
+                $id,
+                $result['snapshot'],
+                null,
+                "{$prefix} executed for MLS File Record ID {$id}. Affected tables: fileNumber ({$c['fileNumber']} rows), mls_file_no ({$c['mls_file_no']} rows), entities_staging ({$c['entities_staging']} rows), customers_staging ({$c['customers_staging']} rows), file_indexings ({$c['file_indexings']} rows)."
+            );
+        } catch (\Exception $auditEx) {
+            \Log::warning("AuditLog failed during MLS master delete: " . $auditEx->getMessage());
         }
     }
 

@@ -143,7 +143,8 @@
                     'corresponding_fileno' => 'Corresponding FileNo',
                     'related_fileno_action'=> 'Related FileNo',
                 ],
-                'hideActions' => true,
+                'hideActions' => false,
+                'enableCommissioningSheet' => true,
             ]])
 
             <!-- Generation Modal -->

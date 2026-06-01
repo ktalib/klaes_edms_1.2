@@ -83,11 +83,23 @@
                                     </a>
 
                                     @if($unit->rofo_generated ?? false)
-                                        <button type="button" class="dd-item"
-                                            onclick="closeAllDD(); openSecurityPaperModal('{{ $unit->id }}', '{{ $unit->fileno }}', '{{ $unit->security_paper_code }}')">
-                                            <i data-lucide="shield" class="w-4 h-4 text-emerald-400"></i>
-                                            <span>Security Code</span>
-                                        </button>
+                                        @if($unit->security_paper_code)
+                                            <span class="dd-item disabled" title="Security code already assigned">
+                                                <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+                                                <span>Code Assigned: {{ $unit->security_paper_code }}</span>
+                                            </span>
+                                        @elseif(($unit->print_counter ?? 0) < 1)
+                                            <span class="dd-item disabled" title="Print the RoFO before entering a security code">
+                                                <i data-lucide="shield" class="w-4 h-4 text-slate-400"></i>
+                                                <span>Security Code (print first)</span>
+                                            </span>
+                                        @else
+                                            <button type="button" class="dd-item"
+                                                onclick="closeAllDD(); openSecurityPaperModal('{{ $unit->id }}', '{{ $unit->fileno }}', '{{ $unit->security_paper_code }}')">
+                                                <i data-lucide="shield" class="w-4 h-4 text-emerald-400"></i>
+                                                <span>Security Code</span>
+                                            </button>
+                                        @endif
 
                                         <!-- <a href="{{ route('programmes.generate_cofo', $unit->id) }}" class="dd-item" onclick="closeAllDD()">
                                             <i data-lucide="file-plus" class="w-4 h-4 text-emerald-500"></i>

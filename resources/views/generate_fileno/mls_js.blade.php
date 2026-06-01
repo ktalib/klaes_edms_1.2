@@ -680,9 +680,29 @@
         document.body.style.overflow = '';
     }
 
+    // Server-side role flag, exposed once for JS-side conditional logic
+    window.MLSF_IS_ADMIN = {{ (Auth::user() && Auth::user()->assign_role === 'Supper Admin') ? 'true' : 'false' }};
+
     $(document).ready(function () {
         resetTrackingIdDisplay('--');
         setActionButtonsDisabled(true);
+
+        // Conditionally-prepended checkbox column (Supper Admin only)
+        const mlsfCheckboxColumn = {
+            data: 'id',
+            name: 'select',
+            title: '',
+            orderable: false,
+            searchable: false,
+            className: 'text-center mlsf-select-cell',
+            width: '32px',
+            render: function (data, type, row) {
+                if (type !== 'display') return data;
+                const checked = window.mlsfSelectedIds && window.mlsfSelectedIds.has(String(data)) ? 'checked' : '';
+                return '<input type="checkbox" class="mlsf-row-check w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500 cursor-pointer" value="' + data + '" ' + checked + '>';
+            }
+        };
+
         // Initialize DataTable with performance optimizations
         // Initialize DataTable
         table = $('#mlsfTable').DataTable({
@@ -740,7 +760,7 @@
             },
             // Optimize DOM structure for better performance
             dom: '<"top"flp>rt<"bottom"ip><"clear">',
-            columns: [
+            columns: (function () { const cols = [
                 {
                     data: null,
                     title: 'S/N',
@@ -1025,8 +1045,8 @@
                         `;
                     }
                 }
-            ],
-            order: [[11, 'desc']],
+            ]; if (window.MLSF_IS_ADMIN) cols.unshift(mlsfCheckboxColumn); return cols; })(),
+            order: [[window.MLSF_IS_ADMIN ? 12 : 11, 'desc']],
             pageLength: 20,
             lengthMenu: [[10, 20, 25, 50, 100], [10, 20, 25, 50, 100]],
             responsive: true,
@@ -1056,6 +1076,9 @@
                 requestAnimationFrame(function () {
                     lucide.createIcons();
                 });
+                if (window.MLSF_IS_ADMIN && typeof refreshSelectAllState === 'function') {
+                    refreshSelectAllState();
+                }
             },
             initComplete: function (settings, json) {
                 console.log('DataTable initialized:', {
@@ -3207,6 +3230,152 @@
                         confirmButtonColor: '#ef4444'
                     });
                 }
+            }
+        });
+    }
+
+    // ============================================================
+    // BULK DELETE — Supper Admin only (no-op when MLSF_IS_ADMIN is false)
+    // ============================================================
+    window.mlsfSelectedIds = new Set();
+
+    function updateBulkDeleteUI() {
+        const bar = document.getElementById('mlsfBulkActionsBar');
+        const countEl = document.getElementById('mlsfSelectedCount');
+        const count = window.mlsfSelectedIds.size;
+        if (countEl) countEl.textContent = count;
+        if (bar) {
+            if (count > 0) {
+                bar.classList.remove('hidden');
+                bar.classList.add('flex');
+            } else {
+                bar.classList.add('hidden');
+                bar.classList.remove('flex');
+            }
+        }
+    }
+
+    function clearMlsfSelection() {
+        window.mlsfSelectedIds.clear();
+        document.querySelectorAll('#mlsfTable tbody .mlsf-row-check').forEach(cb => { cb.checked = false; });
+        const selectAll = document.getElementById('mlsfSelectAll');
+        if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+        updateBulkDeleteUI();
+    }
+
+    function refreshSelectAllState() {
+        const rowChecks = document.querySelectorAll('#mlsfTable tbody .mlsf-row-check');
+        const selectAll = document.getElementById('mlsfSelectAll');
+        if (!selectAll) return;
+        if (rowChecks.length === 0) {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+            return;
+        }
+        let checkedOnPage = 0;
+        rowChecks.forEach(cb => { if (cb.checked) checkedOnPage++; });
+        selectAll.checked = checkedOnPage === rowChecks.length;
+        selectAll.indeterminate = checkedOnPage > 0 && checkedOnPage < rowChecks.length;
+    }
+
+    // Delegated handler — works for rows rendered on any page draw
+    $(document).on('change', '#mlsfTable tbody .mlsf-row-check', function () {
+        const id = String(this.value);
+        if (this.checked) {
+            window.mlsfSelectedIds.add(id);
+        } else {
+            window.mlsfSelectedIds.delete(id);
+        }
+        updateBulkDeleteUI();
+        refreshSelectAllState();
+    });
+
+    // Select-all (current page)
+    $(document).on('change', '#mlsfSelectAll', function () {
+        const checked = this.checked;
+        document.querySelectorAll('#mlsfTable tbody .mlsf-row-check').forEach(cb => {
+            cb.checked = checked;
+            const id = String(cb.value);
+            if (checked) {
+                window.mlsfSelectedIds.add(id);
+            } else {
+                window.mlsfSelectedIds.delete(id);
+            }
+        });
+        updateBulkDeleteUI();
+    });
+
+    function bulkDeleteSelectedRecords() {
+        const ids = Array.from(window.mlsfSelectedIds);
+        if (ids.length === 0) {
+            Swal.fire({ icon: 'info', title: 'No records selected', text: 'Tick the rows you want to delete first.' });
+            return;
+        }
+        if (ids.length > 200) {
+            Swal.fire({ icon: 'warning', title: 'Too many records', text: 'Please select 200 or fewer records per batch.' });
+            return;
+        }
+
+        Swal.fire({
+            title: `Delete ${ids.length} record(s)?`,
+            html: `
+                <div class="text-center">
+                    <p class="mb-3 text-slate-600 text-sm">This will execute a <strong>Master Cascade Delete</strong> for <strong>${ids.length}</strong> selected record(s), purging them from <strong>5 tables</strong>:</p>
+                    <div class="inline-block text-left bg-slate-50 p-3 rounded-lg border border-slate-200 w-full max-w-md mx-auto shadow-inner">
+                        <ul class="space-y-1 text-slate-700 font-semibold text-xs list-decimal list-inside">
+                            <li><span class="font-mono text-indigo-600">MlsfileNo</span></li>
+                            <li><span class="font-mono text-indigo-600">fileNumber</span></li>
+                            <li><span class="font-mono text-indigo-600">Entity Table</span></li>
+                            <li><span class="font-mono text-indigo-600">Customers</span></li>
+                            <li><span class="font-mono text-indigo-600">File Indexings</span></li>
+                        </ul>
+                    </div>
+                    <p class="mt-3 text-xs text-red-600 font-semibold">All deletes run in one transaction — any failure rolls back every record.</p>
+                </div>
+            `,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: `Yes, delete ${ids.length}!`,
+            showLoaderOnConfirm: true,
+            preConfirm: () => {
+                return fetch(`{{ route('file-numbers.bulk-destroy') }}`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ ids: ids })
+                })
+                .then(response => response.json().then(json => ({ ok: response.ok, json })))
+                .catch(err => {
+                    Swal.showValidationMessage(`Request failed: ${err}`);
+                });
+            },
+            allowOutsideClick: () => !Swal.isLoading()
+        }).then(result => {
+            if (!result.isConfirmed || !result.value) return;
+            const { ok, json } = result.value;
+            if (ok && json && json.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Deleted!',
+                    html: `${json.message || ''}<br><small class="text-gray-500">Cascade totals — fileNumber: ${json.totals?.fileNumber ?? 0}, mls_file_no: ${json.totals?.mls_file_no ?? 0}, entities: ${json.totals?.entities_staging ?? 0}, customers: ${json.totals?.customers_staging ?? 0}, indexings: ${json.totals?.file_indexings ?? 0}</small>`,
+                    confirmButtonColor: '#10b981'
+                });
+                window.mlsfSelectedIds.clear();
+                updateBulkDeleteUI();
+                table.ajax.reload(null, false);
+                updateStats();
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error!',
+                    text: (json && json.message) || 'Bulk delete failed.',
+                    confirmButtonColor: '#ef4444'
+                });
             }
         });
     }

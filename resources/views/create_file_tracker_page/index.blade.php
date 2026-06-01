@@ -87,14 +87,14 @@
             </div>
         </div>
         @elseif(in_array(strtolower($module ?? ''), ['digital_request', 'digital-request']))
-        <div class="bg-gradient-to-r from-violet-700 via-purple-600 to-violet-800 px-6 py-3 flex items-center gap-3 shadow-sm">
+        <div class="bg-gradient-to-r from-[#450a0a] via-[#6b1010] to-[#450a0a] px-6 py-3 flex items-center gap-3 shadow-sm">
             <i data-lucide="send" class="h-5 w-5 text-white shrink-0"></i>
             <div class="flex items-center gap-2">
                 <span class="text-white font-bold text-sm uppercase tracking-widest">Digital File Request</span>
-                <span class="text-violet-200 text-sm">·</span>
+                <span class="text-red-200 text-sm">·</span>
                 <span class="text-white text-sm font-medium">e-Registry</span>
-                <span class="text-violet-200 text-sm">·</span>
-                <span class="text-violet-200 text-sm">Request a Physical File</span>
+                <span class="text-red-200 text-sm">·</span>
+                <span class="text-red-200 text-sm">Request a Physical File</span>
             </div>
         </div>
         @else
@@ -123,6 +123,34 @@
 
                     <!-- Page Header  for dg and dg gis -->
 
+                {{-- ── Mode Switcher Card (only on base create-file-tracker + digital_request) ── --}}
+                @php $isDfr = (($module ?? '') === 'digital_request'); @endphp
+                @if(in_array(($module ?? ''), ['', 'digital_request']))
+                <div class="bg-white border border-gray-200 rounded-xl px-5 py-3 flex items-center gap-3 shadow-sm">
+                    <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Request Mode</span>
+                    <div class="w-px h-5 bg-gray-200"></div>
+                    <div class="inline-flex items-center rounded-xl border border-gray-200 bg-gray-100 p-0.5 gap-0.5">
+                        <a href="{{ route('create-file-tracker.index') }}"
+                           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs font-semibold transition-all
+                                  {{ !$isDfr
+                                      ? 'bg-white text-gray-800 shadow-sm border border-gray-200'
+                                      : 'text-gray-400 hover:text-gray-600 hover:bg-white/60' }}"
+                           title="Manual Request">
+                            <i data-lucide="file-text" class="h-3.5 w-3.5"></i>
+                            Manual Request
+                        </a>
+                        <a href="{{ route('create-file-tracker.index', ['url' => 'digital_request']) }}"
+                           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs font-semibold transition-all
+                                  {{ $isDfr
+                                      ? 'bg-[#450a0a] text-white shadow-sm'
+                                      : 'text-gray-400 hover:text-gray-600 hover:bg-white/60' }}"
+                           title="Digital File Request">
+                            <i data-lucide="monitor" class="h-3.5 w-3.5"></i>
+                            Digital Request
+                        </a>
+                    </div>
+                </div>
+                @endif
 
                 <header class="bg-white border-b border-gray-200 px-6 py-4">
                     @php
@@ -198,8 +226,6 @@
                                     <i data-lucide="eye" class="h-4 w-4 mr-2"></i>
                                     Preview
                                 </button>
-
-                                <span class="hidden sm:inline-block w-px h-6 bg-gray-200 mx-1"></span>
 
                                 @if($isEligible)
                                 <a href="{{ route('create-file-tracker.index', ['url' => 'dgis']) }}"
@@ -367,55 +393,79 @@
 
                                 {{-- ===== DIGITAL REQUEST: Steps Illustration ===== --}}
                                 @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
+
+                                {{-- ── Physical / Digital toggle ──────────────────────────────── --}}
+                                <div class="flex items-center gap-2 mb-4" id="dfr-type-toggle">
+                                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide mr-1">Request Type</span>
+                                    <button type="button" id="dfr-btn-physical"
+                                        onclick="dfrSetType('Physical')"
+                                        class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all
+                                               border-green-500 bg-green-600 text-white shadow-sm">
+                                        <i data-lucide="package" class="h-4 w-4"></i> Physical File
+                                    </button>
+                                    <button type="button" id="dfr-btn-digital"
+                                        onclick="dfrSetType('Digital')"
+                                        class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all
+                                               border-gray-200 bg-white text-gray-500 hover:border-blue-300 hover:text-blue-600">
+                                        <i data-lucide="monitor" class="h-4 w-4"></i> Digital Access
+                                    </button>
+                                    <input type="hidden" id="dfr-request-type" name="dfr_request_type" value="Physical">
+                                    {{-- Digital info pill --}}
+                                    <span id="dfr-digital-pill" class="hidden ml-2 inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full">
+                                        <i data-lucide="info" class="h-3 w-3 text-blue-500"></i>
+                                        Temporary copy · view-only · 5 working days
+                                    </span>
+                                </div>
+
                                 <div class="mb-6">
 
                                     {{-- Header card --}}
-                                    <div class="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 via-purple-50 to-white shadow-sm overflow-hidden">
+                                    <div id="dfr-illustration-card" class="rounded-xl border border-green-200 bg-gradient-to-br from-green-50 via-emerald-50 to-white shadow-sm overflow-hidden transition-all duration-300">
 
                                         {{-- Top accent bar --}}
-                                        <div class="h-1 w-full bg-gradient-to-r from-violet-600 via-purple-500 to-violet-400"></div>
+                                        <div id="dfr-accent-bar" class="h-1 w-full bg-gradient-to-r from-green-600 via-emerald-500 to-green-400 transition-all duration-300"></div>
 
                                         <div class="px-6 pt-5 pb-4">
                                             {{-- Title row --}}
                                             <div class="flex items-center justify-between flex-wrap gap-3 mb-5">
                                                 <div class="flex items-center gap-3">
-                                                    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-violet-600 flex items-center justify-center shadow">
-                                                        <i data-lucide="send" class="h-5 w-5 text-white"></i>
+                                                    <div id="dfr-header-icon-wrap" class="flex-shrink-0 w-10 h-10 rounded-full bg-green-600 flex items-center justify-center shadow transition-all duration-300">
+                                                        <i id="dfr-header-icon" data-lucide="send" class="h-5 w-5 text-white"></i>
                                                     </div>
                                                     <div>
-                                                        <h2 class="text-base font-bold text-violet-900 leading-tight">Digital File Request</h2>
-                                                        <p class="text-xs text-violet-500">Request a physical file to be sent to your office</p>
+                                                        <h2 id="dfr-card-title" class="text-base font-bold text-green-900 leading-tight transition-colors duration-300">Digital File Request</h2>
+                                                        <p id="dfr-card-subtitle" class="text-xs text-green-600 transition-colors duration-300">Request a physical file to be sent to your office</p>
                                                     </div>
                                                 </div>
                                                 <a href="/digital-request"
-                                                    class="inline-flex items-center gap-1.5 text-xs font-medium text-violet-700 bg-violet-100 hover:bg-violet-200 border border-violet-200 px-3 py-1.5 rounded-full transition">
+                                                    class="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 border border-green-200 px-3 py-1.5 rounded-full transition">
                                                     <i data-lucide="layout-list" class="h-3.5 w-3.5"></i>
                                                     View All Requests
                                                 </a>
                                             </div>
 
                                             {{-- Steps row --}}
-                                            <div class="relative flex items-start gap-0">
+                                            <div id="dfr-steps-row" class="relative flex items-start gap-0">
 
                                                 {{-- Connector line (behind steps) --}}
-                                                <div class="absolute top-5 left-[calc(10%+20px)] right-[calc(10%+20px)] h-0.5 bg-violet-200 z-0"></div>
+                                                <div id="dfr-connector" class="absolute top-5 left-[calc(10%+20px)] right-[calc(10%+20px)] h-0.5 bg-green-200 z-0 transition-colors duration-300"></div>
 
                                                 @php
                                                     $drSteps = [
-                                                        ['n'=>1,'icon'=>'search','label'=>'Search File','desc'=>'Enter file number to look up','color'=>'bg-violet-500','ring'=>'ring-violet-200','text'=>'text-violet-700','state'=>'done'],
-                                                        ['n'=>2,'icon'=>'file-check','label'=>'Details Auto-filled','desc'=>'Title, your office & officer pre-loaded','color'=>'bg-violet-500','ring'=>'ring-violet-200','text'=>'text-violet-700','state'=>'done'],
-                                                        ['n'=>3,'icon'=>'send','label'=>'Send Request','desc'=>'Click "Send Request" to submit','color'=>'bg-violet-600','ring'=>'ring-violet-400','text'=>'text-violet-800','state'=>'current'],
-                                                        ['n'=>4,'icon'=>'bell','label'=>'Await Approval','desc'=>'Receiver approves via notification','color'=>'bg-gray-300','ring'=>'ring-gray-100','text'=>'text-gray-500','state'=>'upcoming'],
-                                                        ['n'=>5,'icon'=>'archive','label'=>'File Dispatched','desc'=>'File is sent to your office','color'=>'bg-gray-300','ring'=>'ring-gray-100','text'=>'text-gray-500','state'=>'upcoming'],
+                                                        ['n'=>1,'icon'=>'search',  'label'=>'Search File',       'desc'=>'Enter file number to look up',             'color'=>'bg-green-500','ring'=>'ring-green-200','text'=>'text-green-700','state'=>'done'],
+                                                        ['n'=>2,'icon'=>'file-check','label'=>'Details Auto-filled','desc'=>'Title, your office & officer pre-loaded', 'color'=>'bg-green-500','ring'=>'ring-green-200','text'=>'text-green-700','state'=>'done'],
+                                                        ['n'=>3,'icon'=>'send',    'label'=>'Send Request',       'desc'=>'Click "Send Request" to submit',            'color'=>'bg-green-600','ring'=>'ring-green-400','text'=>'text-green-800','state'=>'current'],
+                                                        ['n'=>4,'icon'=>'bell',    'label'=>'Await Approval',     'desc'=>'Receiver approves via notification',        'color'=>'bg-gray-300', 'ring'=>'ring-gray-100', 'text'=>'text-gray-500','state'=>'upcoming'],
+                                                        ['n'=>5,'icon'=>'archive', 'label'=>'File Dispatched',    'desc'=>'File is sent to your office',               'color'=>'bg-gray-300', 'ring'=>'ring-gray-100', 'text'=>'text-gray-500','state'=>'upcoming'],
                                                     ];
                                                 @endphp
 
                                                 @foreach($drSteps as $step)
-                                                <div class="relative z-10 flex flex-col items-center flex-1 px-1">
+                                                <div class="relative z-10 flex flex-col items-center flex-1 px-1" data-step="{{ $step['n'] }}">
 
                                                     {{-- Step circle --}}
-                                                    <div class="w-10 h-10 rounded-full {{ $step['color'] }} ring-4 {{ $step['ring'] }} flex items-center justify-center shadow-sm transition-all
-                                                        @if($step['state']==='current') ring-violet-300 shadow-violet-200 shadow-md scale-110 @endif">
+                                                    <div class="dfr-step-circle w-10 h-10 rounded-full {{ $step['color'] }} ring-4 {{ $step['ring'] }} flex items-center justify-center shadow-sm transition-all
+                                                        @if($step['state']==='current') ring-green-300 shadow-green-200 shadow-md scale-110 @endif">
                                                         @if($step['state'] === 'done')
                                                             <i data-lucide="check" class="h-4 w-4 text-white"></i>
                                                         @elseif($step['state'] === 'current')
@@ -427,14 +477,14 @@
 
                                                     {{-- Labels --}}
                                                     <div class="mt-2 text-center">
-                                                        <p class="text-xs font-semibold {{ $step['text'] }} leading-tight
+                                                        <p class="dfr-step-label text-xs font-semibold {{ $step['text'] }} leading-tight
                                                             @if($step['state']==='current') font-bold @endif">
-                                                            {{ $step['label'] }}
+                                                            <span class="dfr-step-label-text">{{ $step['label'] }}</span>
                                                             @if($step['state']==='current')
-                                                                <span class="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse align-middle"></span>
+                                                                <span class="dfr-pulse ml-1 inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse align-middle"></span>
                                                             @endif
                                                         </p>
-                                                        <p class="text-[10px] text-gray-400 leading-snug mt-0.5 hidden sm:block">{{ $step['desc'] }}</p>
+                                                        <p class="dfr-step-desc text-[10px] text-gray-400 leading-snug mt-0.5 hidden sm:block">{{ $step['desc'] }}</p>
                                                     </div>
                                                 </div>
                                                 @endforeach
@@ -443,18 +493,18 @@
                                         </div>
 
                                         {{-- Info footer strip --}}
-                                        <div class="bg-violet-50 border-t border-violet-100 px-6 py-2.5 flex items-center gap-4 flex-wrap">
-                                            <div class="flex items-center gap-1.5 text-xs text-violet-700">
-                                                <i data-lucide="user-check" class="h-3.5 w-3.5 text-violet-500 shrink-0"></i>
+                                        <div id="dfr-info-footer" class="bg-green-50 border-t border-green-100 px-6 py-2.5 flex items-center gap-4 flex-wrap transition-all duration-300">
+                                            <div class="flex items-center gap-1.5 text-xs text-green-700">
+                                                <i data-lucide="user-check" class="h-3.5 w-3.5 text-green-500 shrink-0"></i>
                                                 <span><strong>Requester:</strong> {{ auth()->user()->first_name }} {{ auth()->user()->last_name }}</span>
                                             </div>
-                                            <div class="flex items-center gap-1.5 text-xs text-violet-700">
-                                                <i data-lucide="building-2" class="h-3.5 w-3.5 text-violet-500 shrink-0"></i>
+                                            <div class="flex items-center gap-1.5 text-xs text-green-700">
+                                                <i data-lucide="building-2" class="h-3.5 w-3.5 text-green-500 shrink-0"></i>
                                                 <span><strong>Your Department:</strong> {{ $userDepartmentName ?? 'Not assigned' }}</span>
                                             </div>
-                                            <div class="flex items-center gap-1.5 text-xs text-amber-700 ml-auto">
-                                                <i data-lucide="info" class="h-3.5 w-3.5 text-amber-500 shrink-0"></i>
-                                                <span>The receiver will be notified and must approve before the file is dispatched.</span>
+                                            <div id="dfr-footer-notice" class="flex items-center gap-1.5 text-xs text-amber-700 ml-auto transition-all duration-300">
+                                                <i id="dfr-footer-notice-icon" data-lucide="info" class="h-3.5 w-3.5 text-amber-500 shrink-0"></i>
+                                                <span id="dfr-footer-notice-text">The receiver will be notified and must approve before the file is dispatched.</span>
                                             </div>
                                         </div>
 
@@ -558,7 +608,7 @@
                                                     </label>
                                                     <textarea id="office-notes" name="remarks" rows="3" required
                                                         placeholder="State the reason for requesting this file…"
-                                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500"></textarea>
+                                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"></textarea>
                                                     <p class="text-xs text-gray-500">This reason will be visible to the approving officer.</p>
                                                     @else
                                                     <label for="office-notes"
@@ -705,7 +755,7 @@
                                                 </div>
                                                 @endif
                                                 <!-- Row 1: Registry + Destination + Recommendation (3-col for kangis, 2-col otherwise) -->
-                                                <div class="grid @if(($module ?? '') === 'kangis') grid-cols-3 @else grid-cols-2 @endif gap-4 @if(($module ?? '') === 'new_kangis') hidden @endif" @if(($module ?? '') === 'new_kangis') aria-hidden="true" @endif>
+                                                <div id="dfr-dest-office-row" class="grid @if(($module ?? '') === 'kangis') grid-cols-3 @else grid-cols-2 @endif gap-4 @if(($module ?? '') === 'new_kangis') hidden @endif" @if(($module ?? '') === 'new_kangis') aria-hidden="true" @endif>
                                                     <div class="space-y-2">
                                                         <label for="origin-office" class="block text-sm font-medium text-gray-700">Registry (Origin)</label>
                                                         <select id="origin-office"
@@ -743,7 +793,7 @@
                                                             $isDigitalRequestModule = in_array(strtolower($module ?? ''), ['digital_request','digital-request']);
                                                         @endphp
                                                         <select id="current-office" name="receiving_office_name"
-                                                            class="block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none {{ $isDigitalRequestModule ? 'border-violet-300 bg-violet-50 text-violet-900 pointer-events-none cursor-default' : 'border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500' }}">
+                                                            class="block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none {{ $isDigitalRequestModule ? 'border-green-300 bg-green-50 text-green-900 pointer-events-none cursor-default' : 'border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500' }}">
                                                             <option value="">Select destination</option>
                                                             @foreach ($departments as $dept)
                                                                 <option value="{{ $dept->department }}"
@@ -753,7 +803,7 @@
                                                             @endforeach
                                                         </select>
                                                         @if($isDigitalRequestModule)
-                                                            <p class="text-xs text-violet-600">Auto-set to your department</p>
+                                                            <p class="text-xs text-green-600">Auto-set to your department</p>
                                                         @else
                                                             <p class="text-xs text-gray-500">Select the destination department/office</p>
                                                         @endif
@@ -931,7 +981,7 @@
                                                                 </select>
                                                             @else
                                                                 <select id="receiving-office" name="receiving_office_code"
-                                                                    class="block w-full px-3 py-2 border border-violet-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500 bg-white">
+                                                                    class="block w-full px-3 py-2 border border-green-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white">
                                                                     <option value="">— Select your office —</option>
                                                                     @foreach($userDepartmentOffices as $deptOffice)
                                                                         <option value="{{ $deptOffice->office_code }}"
@@ -942,7 +992,7 @@
                                                                         </option>
                                                                     @endforeach
                                                                 </select>
-                                                                <p class="text-xs text-violet-600">Offices under your department: <strong>{{ $userDepartmentName }}</strong></p>
+                                                                <p class="text-xs text-green-600">Offices under your department: <strong>{{ $userDepartmentName }}</strong></p>
                                                             @endif
                                                         @else
                                                             <select id="receiving-office" name="receiving_office_code"
@@ -1677,10 +1727,10 @@
 
                                 @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
                                 {{-- ── Digital Signature Verification Panel (Digital Request only) ── --}}
-                                <div id="dr-sig-panel" class="border-t border-violet-100 pt-4 mt-1">
+                                <div id="dr-sig-panel" class="border-t border-green-100 pt-4 mt-1">
                                     <div class="flex items-center gap-2 mb-3">
-                                        <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100 shrink-0">
-                                            <i data-lucide="shield-check" class="h-4 w-4 text-violet-600"></i>
+                                        <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-green-100 shrink-0">
+                                            <i data-lucide="shield-check" class="h-4 w-4 text-green-600"></i>
                                         </div>
                                         <div>
                                             <h4 class="text-sm font-bold text-slate-800">Digital Signature Verification</h4>
@@ -1688,7 +1738,7 @@
                                         </div>
                                     </div>
 
-                                    <div class="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/80 to-white p-4 space-y-3">
+                                    <div class="rounded-xl border border-green-100 bg-gradient-to-br from-green-50/80 to-white p-4 space-y-3">
                                         <input type="hidden" id="dr-sig-verified" value="0">
 
                                         <div class="grid gap-3 sm:grid-cols-3">
@@ -1696,7 +1746,7 @@
                                             <div class="space-y-1">
                                                 <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wide">Verification Method</label>
                                                 <select id="dr-sig-method"
-                                                    class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-violet-500 focus:ring-2 focus:ring-violet-100">
+                                                    class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:ring-2 focus:ring-green-100">
                                                     <option value="">Select Method</option>
                                                     <option value="email">Email OTP</option>
                                                     <option value="sms">SMS OTP</option>
@@ -1709,7 +1759,7 @@
                                                 <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wide">OTP Code</label>
                                                 <div class="flex gap-2">
                                                     <input type="text" id="dr-sig-otp-code" maxlength="6" placeholder="Enter OTP"
-                                                        class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100">
+                                                        class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-green-500 focus:ring-2 focus:ring-green-100">
                                                     <button type="button" id="dr-sig-send-otp"
                                                         class="inline-flex items-center justify-center rounded-lg bg-indigo-600 hover:bg-indigo-700 px-3 py-2 text-xs font-bold text-white whitespace-nowrap shadow-sm">
                                                         Send OTP
@@ -1721,13 +1771,13 @@
                                             <div class="space-y-1" id="dr-sig-pwd-wrapper" style="display:none">
                                                 <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wide">Confirm Password</label>
                                                 <input type="password" id="dr-sig-password" placeholder="Your account password"
-                                                    class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100">
+                                                    class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-green-500 focus:ring-2 focus:ring-green-100">
                                             </div>
                                         </div>
 
                                         <div class="flex items-center gap-3 flex-wrap">
                                             <button type="button" id="dr-sig-verify-btn"
-                                                class="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 px-4 py-2 text-xs font-bold text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                                                class="inline-flex items-center gap-1.5 rounded-lg bg-green-600 hover:bg-green-700 px-4 py-2 text-xs font-bold text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
                                                 <i data-lucide="shield-check" class="h-3.5 w-3.5"></i>
                                                 <span id="dr-sig-verify-text">Verify</span>
                                             </button>
@@ -1735,8 +1785,8 @@
 
                                             <div id="dr-sig-img-wrap" class="hidden ml-auto flex items-center gap-2">
                                                 <img id="dr-sig-img" src="" alt="Your Signature"
-                                                    class="h-9 object-contain border border-violet-300 rounded bg-white px-2 py-1">
-                                                <span class="inline-flex items-center gap-1 text-[10px] font-black text-violet-700 uppercase tracking-wide">
+                                                    class="h-9 object-contain border border-green-300 rounded bg-white px-2 py-1">
+                                                <span class="inline-flex items-center gap-1 text-[10px] font-black text-green-700 uppercase tracking-wide">
                                                     <i data-lucide="check-circle" class="h-3 w-3"></i> Verified
                                                 </span>
                                             </div>
@@ -1756,7 +1806,7 @@
                                     </button>
                                     @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
                                     <button id="save-tracker-btn" disabled
-                                        class="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-md text-sm font-medium text-white bg-violet-600 hover:bg-violet-700 transition-colors opacity-50 cursor-not-allowed">
+                                        class="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-md text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition-colors opacity-50 cursor-not-allowed">
                                         <i data-lucide="send" class="h-4 w-4 mr-2"></i>
                                         Send Request
                                     </button>

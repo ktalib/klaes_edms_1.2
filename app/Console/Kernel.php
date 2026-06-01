@@ -2,6 +2,7 @@
 
 namespace App\Console;
 
+use App\Console\Commands\CleanupExpiredDigitalAccess;
 use App\Console\Commands\CleanupStaleDrafts;
 use App\Console\Commands\RebuildPropIds;
 use Illuminate\Console\Scheduling\Schedule;
@@ -24,6 +25,8 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\ProcessAutoLogout::class,
         \App\Console\Commands\VerifyCommissioningMirror::class,
         \App\Console\Commands\BackfillPropIdMaster::class,
+        CleanupExpiredDigitalAccess::class,
+        \App\Console\Commands\SpaTriggerSecondService::class,
     ];
 
     /**
@@ -50,6 +53,12 @@ class Kernel extends ConsoleKernel
 
         // Keep PropID_Master synced with legacy tables to prevent collisions
         $schedule->command('propid:backfill')->dailyAt('01:00')->withoutOverlapping();
+
+        // Clean up expired Digital File Request temp copies daily at 03:00
+        $schedule->command('dfr:cleanup-expired')->dailyAt('03:00')->withoutOverlapping();
+
+        // Auto-trigger second serve notices for SPA first-serve records 14+ days old
+        $schedule->command('spa:trigger-second-service')->dailyAt('08:00')->withoutOverlapping();
      }
 
 

@@ -32,6 +32,21 @@ const TS_TYPE_THEMES = {
         icon:     'file-edit',
         label:    'Amendment / Reconsideration',
     },
+    'Surrender': {
+        gradient: 'linear-gradient(135deg,#0c4a6e 0%,#0284c7 60%,#38bdf8 100%)',
+        icon:     'flag',
+        label:    'Surrender · Voluntary Relinquishment',
+    },
+};
+
+/* ── Verbs used in the unified remark template ── */
+const TS_TYPE_VERB = {
+    'Withdrawal (Application)':                            'Withdrawal',
+    'Cancellation (RofO)':                                 'Cancellation',
+    'Revoke (CofO)':                                       'Revocation',
+    'Litigation':                                          'Litigation',
+    'Amendment/Reconsideration (Application/RofO/CofO)':   'Amendment/Reconsideration',
+    'Surrender':                                           'Surrender',
 };
 
 /* ────────────────────────────── Init ────────────────────────────── */
@@ -72,9 +87,48 @@ function tsSelectType(type) {
     tsClearForm();
     tsSelectedType = type;
     tsApplyTheme(type);
+    tsApplyInitiatedByOptions(type);
     tsRefreshRemark();
     document.getElementById('ts-modal').classList.remove('hidden');
     if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+/* Rebuild the Initiated By <select> based on the type's allowed options.
+   Single-option types (Withdrawal/Revoke/Surrender) lock the value and gray it out. */
+function tsApplyInitiatedByOptions(type, preselect) {
+    const select = document.getElementById('ts-initiated_by');
+    if (!select) return;
+
+    const options = (TS_INITIATED_BY_BY_TYPE && TS_INITIATED_BY_BY_TYPE[type]) || ['Ministry', 'Allottee'];
+
+    select.innerHTML = '';
+
+    if (options.length > 1) {
+        const blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = '— Select —';
+        select.appendChild(blank);
+    }
+
+    options.forEach(opt => {
+        const o = document.createElement('option');
+        o.value = opt;
+        o.textContent = opt;
+        select.appendChild(o);
+    });
+
+    const isLocked = options.length === 1;
+    if (isLocked) {
+        select.value = options[0];
+        select.disabled = true;
+        select.classList.add('bg-slate-100', 'text-slate-500', 'cursor-not-allowed');
+    } else {
+        select.disabled = false;
+        select.classList.remove('bg-slate-100', 'text-slate-500', 'cursor-not-allowed');
+        if (preselect && options.includes(preselect)) {
+            select.value = preselect;
+        }
+    }
 }
 
 function tsApplyTheme(type) {
@@ -170,34 +224,35 @@ function tsClearFileSelection(event) {
     document.getElementById('ts-remark').value = '';
 }
 
-/* ────────────────── Auto Remark ────────────────── */
+/* ────────────────── Auto Remark ──────────────────
+   Template: "[Status type] was initiated by [Ministry | Allottee name] on [Time/Date] due to [Reason]"
+   When "Allottee" is selected, the actual holder name (applicant_name / file_title) is used.
+*/
 function tsRefreshRemark() {
-    const fileNo    = (document.getElementById('ts-file_no')?.value    || '').trim();
-    const fileTitle = (document.getElementById('ts-file_title')?.value || '').trim();
-    const authority = (document.getElementById('ts-authority')?.value  || '').trim();
-    const date      = new Date().toLocaleDateString('en-GB');
+    const initiatedBy   = (document.getElementById('ts-initiated_by')?.value   || '').trim();
+    const reason        = (document.getElementById('ts-reason')?.value         || '').trim();
+    const applicantName = (document.getElementById('ts-applicant_name')?.value || '').trim();
+    const fileTitle     = (document.getElementById('ts-file_title')?.value     || '').trim();
 
-    const fn   = fileNo    || '[File No]';
-    const ft   = fileTitle || '[File Title]';
-    const auth = authority || '[Authority]';
+    const verb = TS_TYPE_VERB[tsSelectedType] || tsSelectedType || '[Status type]';
 
-    const templates = {
-        'Withdrawal (Application)':
-            `File ${fn} — ${ft} has been Withdrawn on ${date}. Authority: ${auth}.`,
-        'Cancellation (RofO)':
-            `File ${fn} — ${ft} RofO has been Cancelled on ${date}. Authority: ${auth}.`,
-        'Revoke (CofO)':
-            `File ${fn} — ${ft} has been Revoked on ${date}. Authority: ${auth}.`,
-        'Litigation':
-            `File ${fn} — ${ft} is under Litigation as of ${date}. Authority: ${auth}.`,
-        'Amendment/Reconsideration (Application/RofO/CofO)':
-            `File ${fn} — ${ft} Application/RofO/CofO has been Amended/Reconsidered on ${date}. Authority: ${auth}.`,
-    };
+    let initiator;
+    if (initiatedBy === 'Allottee' || initiatedBy === 'Applicant') {
+        initiator = applicantName || fileTitle || initiatedBy;
+    } else if (initiatedBy) {
+        initiator = initiatedBy;
+    } else {
+        initiator = '[Ministry/Allottee]';
+    }
 
-    const remark = templates[tsSelectedType]
-        || `File ${fn} status updated on ${date}. Authority: ${auth}.`;
+    const reasonText = reason || '[Reason]';
 
-    document.getElementById('ts-remark').value = remark;
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const datetime = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+    document.getElementById('ts-remark').value =
+        `${verb} was initiated by ${initiator} on ${datetime} due to ${reasonText}`;
 }
 
 /* ────────────────── Edit ────────────────── */
@@ -207,6 +262,7 @@ function tsOpenEdit(btn) {
     tsSelectedType = record.title_type ?? '';
 
     tsApplyTheme(tsSelectedType);
+    tsApplyInitiatedByOptions(tsSelectedType, record.initiated_by);
 
     // File card
     document.getElementById('ts-file_no').value          = record.file_no ?? '';
@@ -227,8 +283,8 @@ function tsOpenEdit(btn) {
     setVal('ts-land_use',            record.land_use);
     setVal('ts-date_of_issue',       record.date_of_issue);
     setVal('ts-date_of_expiry',      record.date_of_expiry);
-    setVal('ts-authority',           record.authority);
-    setVal('ts-authority_reference', record.authority_reference);
+    setVal('ts-initiated_by',        record.initiated_by);
+    setVal('ts-reason',              record.reason);
     setVal('ts-remark',              record.remark);
 
     document.getElementById('ts-modal').classList.remove('hidden');
@@ -257,8 +313,8 @@ function tsView(btn) {
         row('Land Use',          record.land_use),
         row('Date of Issue',     record.date_of_issue),
         row('Date of Expiry',    record.date_of_expiry),
-        row('Authority',         record.authority),
-        row('Reference',         record.authority_reference),
+        row('Initiated By',      record.initiated_by),
+        row('Reason',            record.reason),
         row('Remark',            record.remark),
         row('Status',            record.status),
     ].join('');
@@ -284,6 +340,18 @@ function tsSubmit() {
 
     const g = id => (document.getElementById(id)?.value || '').trim();
 
+    const initiatedBy = g('ts-initiated_by');
+    const reason      = g('ts-reason');
+
+    if (!initiatedBy) {
+        Swal.fire({ icon: 'warning', title: 'Initiated By Required', text: 'Please select who initiated this action (Ministry or Allottee).' });
+        return;
+    }
+    if (!reason) {
+        Swal.fire({ icon: 'warning', title: 'Reason Required', text: 'Please enter a reason for this action.' });
+        return;
+    }
+
     const payload = {
         url:             TS_URL,
         title_type:      tsSelectedType,
@@ -297,7 +365,8 @@ function tsSubmit() {
         land_use:        g('ts-land_use'),
         district:        g('ts-district'),
         lga:             g('ts-lga'),
-        authority:       g('ts-authority'),
+        initiated_by:    initiatedBy,
+        reason:          reason,
         remark:          g('ts-remark'),
     };
 
@@ -394,7 +463,7 @@ function tsCloseModal() {
 function tsClearForm() {
     ['ts-file_no','ts-file_title','ts-applicant_name','ts-plot_no','ts-location',
      'ts-land_use','ts-district','ts-lga','ts-source_table','ts-source_id',
-     'ts-authority','ts-remark']
+     'ts-initiated_by','ts-reason','ts-remark']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
     document.getElementById('ts-file-placeholder').classList.remove('hidden');

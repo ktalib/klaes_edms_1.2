@@ -138,11 +138,23 @@
                                 <i data-lucide="printer" class="w-4 h-4 text-indigo-600"></i>
                                 <span>Print Manager</span>
                             </button>
-                            <button type="button" class="dd-item"
-                                onclick="openSecurityPaperModal('{{ $unitApplication->id }}', '{{ $unitApplication->fileno }}', '{{ $unitApplication->security_paper_code }}')">
-                                <i data-lucide="shield" class="w-4 h-4 text-emerald-600"></i>
-                                <span>Enter Security Code</span>
-                            </button>
+                            @if($unitApplication->security_paper_code)
+                                <span class="dd-item disabled" title="Security code already assigned">
+                                    <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
+                                    <span>Code Assigned: {{ $unitApplication->security_paper_code }}</span>
+                                </span>
+                            @elseif($printCounter < 1)
+                                <span class="dd-item disabled" title="Print the RoFO before entering a security code">
+                                    <i data-lucide="shield" class="w-4 h-4 text-slate-400"></i>
+                                    <span>Enter Security Code (print first)</span>
+                                </span>
+                            @else
+                                <button type="button" class="dd-item"
+                                    onclick="openSecurityPaperModal('{{ $unitApplication->id }}', '{{ $unitApplication->fileno }}', '{{ $unitApplication->security_paper_code }}')">
+                                    <i data-lucide="shield" class="w-4 h-4 text-emerald-600"></i>
+                                    <span>Enter Security Code</span>
+                                </button>
+                            @endif
                         </div>
                     </div>
                 </td>

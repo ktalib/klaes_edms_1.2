@@ -42,10 +42,12 @@ class TitleStatusController extends Controller
             ->orderByDesc('created_at')
             ->paginate($limit);
 
-        $urlLabel        = $this->titleStatusService->urlLabel($url);
-        $authorityOptions = TitleStatusApplication::AUTHORITY_OPTIONS;
+        $urlLabel             = $this->titleStatusService->urlLabel($url);
+        $authorityOptions     = TitleStatusApplication::AUTHORITY_OPTIONS;
+        $initiatedByOptions   = TitleStatusApplication::INITIATED_BY_OPTIONS;
+        $initiatedByByType    = TitleStatusApplication::INITIATED_BY_BY_TYPE;
 
-        return view('title_status.index', compact('records', 'limit', 'url', 'urlLabel', 'authorityOptions'));
+        return view('title_status.index', compact('records', 'limit', 'url', 'urlLabel', 'authorityOptions', 'initiatedByOptions', 'initiatedByByType'));
     }
 
     public function show(int $id): JsonResponse
@@ -227,13 +229,12 @@ class TitleStatusController extends Controller
 
     public function generateRemark(Request $request): JsonResponse
     {
-        $titleType = $request->input('title_type', '');
-        $fileNo    = $request->input('file_no', '');
-        $fileTitle = $request->input('file_title', '');
-        $authority = $request->input('authority', '');
-        $reference = $request->input('authority_reference', '');
+        $titleType     = (string) $request->input('title_type', '');
+        $initiatedBy   = (string) $request->input('initiated_by', '');
+        $reason        = (string) $request->input('reason', '');
+        $applicantName = (string) $request->input('applicant_name', '');
 
-        $remark = $this->titleStatusService->generateRemark($titleType, $fileNo, $fileTitle, $authority, $reference);
+        $remark = $this->titleStatusService->generateRemark($titleType, $initiatedBy, $reason, $applicantName);
 
         return response()->json(['success' => true, 'remark' => $remark]);
     }
@@ -260,6 +261,8 @@ class TitleStatusController extends Controller
             'date_of_expiry'      => 'nullable|date',
             'authority'           => 'nullable|string|max:255',
             'authority_reference' => 'nullable|string|max:500',
+            'initiated_by'        => 'nullable|string|max:50',
+            'reason'              => 'nullable|string',
             'remark'              => 'nullable|string',
         ];
     }

@@ -391,6 +391,39 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [RecertificationController::class, 'index'])->name('recertification.index');
     });
 
+    // Special Assignment Routes
+    Route::prefix('special-assignment')->name('special-assignment.')->group(function () {
+        // Pages (GET)
+        Route::get('/land-records',      [\App\Http\Controllers\SpecialAssignmentController::class, 'landRecords'])->name('land-records');
+        Route::get('/field-data',        [\App\Http\Controllers\SpecialAssignmentController::class, 'fieldData'])->name('field-data');
+        Route::get('/notice',            [\App\Http\Controllers\SpecialAssignmentController::class, 'notice'])->name('notice');
+        Route::get('/other-departments', [\App\Http\Controllers\SpecialAssignmentController::class, 'otherDepartments'])->name('other-departments');
+        Route::get('/certificate',       [\App\Http\Controllers\SpecialAssignmentController::class, 'certificate'])->name('certificate');
+        Route::get('/memo',              [\App\Http\Controllers\SpecialAssignmentController::class, 'memo'])->name('memo');
+        Route::get('/report',            [\App\Http\Controllers\SpecialAssignmentController::class, 'report'])->name('report');
+        // AJAX / actions
+        Route::get ('/check-file',               [\App\Http\Controllers\SpecialAssignmentController::class, 'checkFileIndexed'])->name('check-file');
+        Route::post  ('/land-records/store',         [\App\Http\Controllers\SpecialAssignmentController::class, 'storeLandRecord'])->name('land-records.store');
+        Route::post  ('/land-records/{id}/update',   [\App\Http\Controllers\SpecialAssignmentController::class, 'updateLandRecord'])->name('land-records.update');
+        Route::post  ('/land-records/{id}/delete',   [\App\Http\Controllers\SpecialAssignmentController::class, 'deleteLandRecord'])->name('land-records.delete');
+        Route::post  ('/field-data/store',        [\App\Http\Controllers\SpecialAssignmentController::class, 'storeFieldData'])->name('field-data.store');
+        Route::delete('/field-data/{id}',         [\App\Http\Controllers\SpecialAssignmentController::class, 'deleteFieldData'])->name('field-data.delete');
+        Route::post('/notice/store',             [\App\Http\Controllers\SpecialAssignmentController::class, 'storeNotice'])->name('notice.store');
+        Route::post('/notice/{id}/second',       [\App\Http\Controllers\SpecialAssignmentController::class, 'triggerSecondNotice'])->name('notice.second');
+        Route::post('/other-departments/store',          [\App\Http\Controllers\SpecialAssignmentController::class, 'storeDepartmentReferral'])->name('departments.store');
+        Route::post('/other-departments/{id}/response',  [\App\Http\Controllers\SpecialAssignmentController::class, 'recordDepartmentResponse'])->name('departments.response');
+        Route::post('/other-departments/{id}/delete',    [\App\Http\Controllers\SpecialAssignmentController::class, 'deleteDepartmentReferral'])->name('departments.delete');
+        Route::post('/memo/generate',               [\App\Http\Controllers\SpecialAssignmentController::class, 'generateMemo'])->name('memo.generate');
+        Route::post('/memo/{id}/decision',          [\App\Http\Controllers\SpecialAssignmentController::class, 'commissionerDecision'])->name('memo.decision');
+        Route::post('/certificate/issue',           [\App\Http\Controllers\SpecialAssignmentController::class, 'issueCertificate'])->name('certificate.issue');
+        Route::get ('/certificate/{id}/print',      [\App\Http\Controllers\SpecialAssignmentController::class, 'printCertificate'])->name('certificate.print');
+        Route::get ('/report/data',                 [\App\Http\Controllers\SpecialAssignmentController::class, 'reportData'])->name('report.data');
+        Route::get ('/mobile',                      [\App\Http\Controllers\SpecialAssignmentController::class, 'mobile'])->name('mobile');
+        Route::get ('/report/export-csv',           [\App\Http\Controllers\SpecialAssignmentController::class, 'exportCsv'])->name('report.export-csv');
+        Route::post('/bills/store',                 [\App\Http\Controllers\SpecialAssignmentController::class, 'storeBill'])->name('bills.store');
+        Route::post('/bills/pay',                   [\App\Http\Controllers\SpecialAssignmentController::class, 'recordBillPayment'])->name('bills.pay');
+    });
+
 });
 // Additional attribution routes
 Route::get('/attribution/edit/{id}', [App\Http\Controllers\AttributionController::class, 'edit'])->name('attribution.edit');

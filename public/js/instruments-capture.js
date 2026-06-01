@@ -287,31 +287,32 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (elements.regSerialInput) {
         elements.regSerialInput.addEventListener('input', updateRegistrationParticulars);
+        elements.regSerialInput.addEventListener('input', _scheduleOpCandidateCheck);
+        elements.regSerialInput.addEventListener('blur', _scheduleOpCandidateCheck);
     }
     if (elements.regVolumeInput) {
         elements.regVolumeInput.addEventListener('input', updateRegistrationParticulars);
+        elements.regVolumeInput.addEventListener('input', _scheduleOpCandidateCheck);
+        elements.regVolumeInput.addEventListener('blur', _scheduleOpCandidateCheck);
     }
+    if (elements.regPageInput) {
+        elements.regPageInput.addEventListener('input', _scheduleOpCandidateCheck);
+        elements.regPageInput.addEventListener('blur', _scheduleOpCandidateCheck);
+    }
+    // Plot number and Allottee help disambiguate when serial+page+vol collide.
+    ['plotNumber', 'secondPartyName', 'tp_no'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', _scheduleOpCandidateCheck);
+            el.addEventListener('blur', _scheduleOpCandidateCheck);
+        }
+    });
 
     if (elements.opSerialNumberInput) {
-        let opLookupDebounceTimer = null;
-
+        // OP serial lookup disabled — only blur/change reset the system file number.
+        // Input/keydown listeners removed to avoid burning a fresh TEMP- on every keystroke.
         elements.opSerialNumberInput.addEventListener('blur', lookupOpSerialNumberAndAutofill);
         elements.opSerialNumberInput.addEventListener('change', lookupOpSerialNumberAndAutofill);
-
-        elements.opSerialNumberInput.addEventListener('input', function () {
-            clearTimeout(opLookupDebounceTimer);
-            opLookupDebounceTimer = setTimeout(() => {
-                lookupOpSerialNumberAndAutofill();
-            }, 450);
-        });
-
-        elements.opSerialNumberInput.addEventListener('keydown', function (event) {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                clearTimeout(opLookupDebounceTimer);
-                lookupOpSerialNumberAndAutofill();
-            }
-        });
     }
 
     // NEW: Attach listener to file number input for manual entry trigger
@@ -4527,81 +4528,155 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     async function lookupOpSerialNumberAndAutofill() {
+        // OP serial lookup disabled: serial numbers are not unique enough to disambiguate
+        // candidate OPs, and auto-selection caused wrong OP→TOT lineage (source_op_id
+        // pointing at the wrong OP). Every OP is now captured fresh; the TOT inherits
+        // the just-captured OP's prop_id + temp_fileno through the normal commissioning flow.
+        // Disambiguation now happens via checkForExistingOpByFields once Reg
+        // Particulars (serial+page+vol) are filled — multi-field match, user-confirmed.
+        if (currentInstrumentType !== 'occupancy-permit') return;
+
+        if (suppressNextOpSerialLookup) {
+            setTimeout(() => { suppressNextOpSerialLookup = false; }, 100);
+            return;
+        }
+
+        resetOpLookupSelectionAndSystemFile({ requestFreshTemp: true });
+        setOpSerialLookupFeedback('neutral', '');
+    }
+
+    // Tracks the set of supplied values the user has already dismissed via
+    // "No, create new" so we don't re-prompt for the same input. Cleared when
+    // the user picks a candidate or resets the form.
+    let _opCandidateDismissedKey = null;
+    let _opCandidateCheckTimer = null;
+    let _opCandidateCheckInFlight = false;
+
+    function _buildOpCandidateKey(fields) {
+        return [
+            fields.op_serial_number, fields.serial_no, fields.page_no,
+            fields.volume_no, fields.party_2_name
+        ].map(v => String(v || '').trim().toUpperCase()).join('|');
+    }
+
+    function _readOpCandidateFields() {
+        const get = (id) => (document.getElementById(id)?.value || '').toString().trim();
+        return {
+            op_serial_number: get('op_serial_number'),
+            serial_no:        get('serial_no'),
+            page_no:          get('reg_page_no') || get('reg_page_no_display'),
+            volume_no:        get('volume_no'),
+            party_2_name:     get('secondPartyName'),
+        };
+    }
+
+    async function checkForExistingOpByFields() {
+        if (currentInstrumentType !== 'occupancy-permit') return;
+        if (opLookupMatchedRecord) return;
+        if (_opCandidateCheckInFlight) return;
+
+        const fields = _readOpCandidateFields();
+
+        // Gate: only fire when ALL 5 disambiguation fields are filled.
+        // Exact-match on the full set is what gives a single unambiguous hit.
+        if (!fields.op_serial_number || !fields.serial_no || !fields.page_no
+            || !fields.volume_no || !fields.party_2_name) return;
+
+        const key = _buildOpCandidateKey(fields);
+        if (key === _opCandidateDismissedKey) return;
+
+        const params = new URLSearchParams();
+        Object.entries(fields).forEach(([k, v]) => params.append(k, v));
+
+        _opCandidateCheckInFlight = true;
         try {
-            if (currentInstrumentType !== 'occupancy-permit') return;
-
-            if (suppressNextOpSerialLookup) {
-                // Delay reset so both blur AND change events are suppressed on the same focus-loss
-                setTimeout(() => { suppressNextOpSerialLookup = false; }, 100);
-                return;
-            }
-
-            const serial = (elements.opSerialNumberInput?.value || '').trim().toUpperCase();
-            if (!serial) {
-                resetOpLookupSelectionAndSystemFile({ requestFreshTemp: true });
-                setOpSerialLookupFeedback('neutral', '');
-                return;
-            }
-
-            setOpSerialLookupFeedback('neutral', `Checking OP SerialNo ${serial}...`);
-
-            const url = `/api/instruments/op-serial-lookup?op_serial_number=${encodeURIComponent(serial)}`;
-            const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
-            const payload = await response.json();
-
-            if (!response.ok || !payload?.success) {
-                resetOpLookupSelectionAndSystemFile({ requestFreshTemp: true });
-                setOpSerialLookupFeedback('error', 'Lookup failed. Please try again.');
-                return;
-            }
-
-            if (!payload?.found || !payload?.data) {
-                resetOpLookupSelectionAndSystemFile({
-                    requestFreshTemp: true,
-                    infoMessage: 'No OP serial match found. Fresh system file number generated.'
-                });
-                setOpSerialLookupFeedback('success', `OP Serial No <strong>${serial}</strong> is available — no existing records found.`);
-                return;
-            }
-
-            const matches = Array.isArray(payload.records) && payload.records.length > 0
-                ? payload.records
-                : [payload.data];
-
-            // Always show result cards - user must click to select
-            resetOpLookupSelectionAndSystemFile({ requestFreshTemp: true });
-            renderOpLookupResultsCards(matches);
-
-            // Count records per source
-            const sourceCounts = {};
-            matches.forEach(r => {
-                const src = r.source_table === 'pra' ? 'PRA' : 'Deeds Registration';
-                sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+            const resp = await fetch(`/api/instruments/op-candidates-check?${params.toString()}`, {
+                headers: { 'Accept': 'application/json' }
             });
-            const sourceBadgeStyles = {
-                'Deeds Registration': 'background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;',
-                'PRA': 'background:#d1fae5;color:#047857;border:1px solid #6ee7b7;'
-            };
-            const sourceBreakdown = Object.entries(sourceCounts)
-                .map(([src, count]) => `
-                    <span style="${sourceBadgeStyles[src] || 'background:#f3f4f6;color:#374151;border:1px solid #d1d5db;'}display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:9999px;font-size:12px;font-weight:700;line-height:1.2;">
-                        <span>${src}</span>
-                        <span style="background:rgba(255,255,255,0.75);padding:1px 6px;border-radius:9999px;">${count}</span>
-                    </span>
-                `)
-                .join(' ');
+            const payload = await resp.json();
+            if (!resp.ok || !payload?.success) return;
 
-            // Check if any match comes from instrument_capture (already captured)
-            const capturedCount = matches.filter(r => r.source_table === 'instrument_capture').length;
-            const praOnlyCount = matches.filter(r => r.source_table === 'pra').length;
-            const usedCount = matches.filter(r => r.already_used).length;
-            const availableCount = matches.length - usedCount;
+            if (!payload.count || !Array.isArray(payload.candidates) || payload.candidates.length === 0) {
+                // No existing OP matches these 5 fields exactly — confirm to the
+                // user that a fresh OP will be created. One-shot per field combo
+                // (dismissal key suppresses re-prompts while still editing).
+                await Swal.fire({
+                    icon: 'info',
+                    title: 'OP Does Not Exist',
+                    html: `<p style="font-size:13px;color:#475569;">The system will create a <strong>new OP</strong> based on the details you provide when you submit.</p>`,
+                    confirmButtonText: 'OK',
+                    confirmButtonColor: '#2563eb',
+                });
+                _opCandidateDismissedKey = key;
+                return;
+            }
 
-            // No feedback message displayed for OP serial lookup results
-        } catch (error) {
-            console.error('OP Serial lookup failed:', error);
-            resetOpLookupSelectionAndSystemFile({ requestFreshTemp: true });
-            setOpSerialLookupFeedback('error', 'Lookup failed due to network/server error.');
+            // Exact 5-field match should yield 1 result; if multiple, take the
+            // top-ranked one (prop_id-bearing, most recent — already sorted by
+            // the service).
+            await showOpCandidateConfirmation(payload.candidates[0], key);
+        } catch (err) {
+            console.warn('OP candidate check failed:', err);
+        } finally {
+            _opCandidateCheckInFlight = false;
+        }
+    }
+
+    function _scheduleOpCandidateCheck() {
+        clearTimeout(_opCandidateCheckTimer);
+        _opCandidateCheckTimer = setTimeout(checkForExistingOpByFields, 600);
+    }
+
+    async function showOpCandidateConfirmation(candidate, dismissalKey) {
+        const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+
+        const sourceLabel = candidate.source_table === 'pra' ? 'PRA'
+            : candidate.source_table === 'deed_registrations' ? 'Deeds Reg'
+            : 'Instr. Capture';
+        const regParts = [candidate.serial_no, candidate.page_no, candidate.volume_no].filter(Boolean).join('/');
+
+        const result = await Swal.fire({
+            icon: 'question',
+            title: 'Existing OP Found',
+            html: `
+                <p style="font-size:13px;color:#475569;margin-bottom:12px;">
+                    An OP in the system exactly matches the OP Serial, Reg Particulars, and Allottee you entered. Is this the same OP?
+                </p>
+                <div style="border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#f8fafc;text-align:left;">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                        <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:9999px;background:#dbeafe;color:#1d4ed8;">${sourceLabel}</span>
+                        ${candidate.prop_id ? `<span style="font-size:10px;color:#64748b;margin-left:auto;">prop_id ${esc(candidate.prop_id)}</span>` : ''}
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px;">
+                        <div><span style="color:#94a3b8;">Allottee:</span><br><strong>${esc(candidate.party_2_name || candidate.party_2 || '—')}</strong></div>
+                        <div><span style="color:#94a3b8;">OP Serial:</span><br><strong>${esc(candidate.op_serial_number || '—')}</strong></div>
+                        <div><span style="color:#94a3b8;">Reg Particulars:</span><br><strong>${esc(regParts || candidate.registration_number || '—')}</strong></div>
+                        <div><span style="color:#94a3b8;">Plot:</span><br><strong>${esc(candidate.plot_number || candidate.plot_no || '—')}</strong></div>
+                        <div style="grid-column:1/-1;"><span style="color:#94a3b8;">Property:</span><br><strong>${esc(candidate.property_description || candidate.property_location || '—')}</strong></div>
+                    </div>
+                </div>
+            `,
+            width: 560,
+            showCancelButton: true,
+            confirmButtonText: 'Yes, use this OP',
+            cancelButtonText: 'No, create new',
+            confirmButtonColor: '#2563eb',
+            cancelButtonColor: '#64748b',
+            reverseButtons: true,
+        });
+
+        if (result.isConfirmed) {
+            await applyLookupRecordToForm(candidate);
+            // Switch submit button to indicate link-to-existing mode. buildPraPayload
+            // will pass link_existing_op:true so backend links instead of creating dup.
+            window.ossOpSubmitLabel = 'Continue with Existing OP';
+            applySubmitButtonLabel();
+        } else {
+            // "No, create new" → remember dismissal so we don't re-prompt
+            // for this exact combination unless the user changes something.
+            _opCandidateDismissedKey = dismissalKey;
         }
     }
 
@@ -6328,7 +6403,11 @@ document.addEventListener('DOMContentLoaded', function () {
             Grantor: getVal('firstPartyName') || null,
             Grantee: getVal('secondPartyName') || null,
             source_op_id: matchedSourceId,
-            source_op_table: matchedSourceTable
+            source_op_table: matchedSourceTable,
+            // Opt-in flag for the backend dedup guard at PraRecordController::store.
+            // Only set when the user explicitly accepted a candidate from the
+            // existing-OP confirmation modal — never on fresh captures.
+            link_existing_op: !!matchedSourceId
         };
 
         return payload;

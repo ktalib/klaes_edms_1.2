@@ -417,6 +417,7 @@ class PraRecordService
             'system_source',
             'deeds_date',
             'deeds_time',
+            'rofo_number',
         ];
 
         foreach ($fields as $field) {
@@ -616,6 +617,185 @@ class PraRecordService
         }
 
         return $value === '' ? null : $value;
+    }
+
+    /**
+     * Find OP records that EXACTLY match all supplied identifying fields across
+     * PRA, instrument_capture, and deed_registrations.
+     *
+     * Used by the disambiguation prompt in the OP capture modal: the user
+     * fills in OP details (op_serial_number + serial_no + page_no + volume_no +
+     * party_2_name) and the frontend asks "is this the same OP?" before
+     * committing to a fresh capture. Returns rows where every supplied key
+     * field matches exactly (case-insensitive, whitespace-trimmed). DR has no
+     * op_serial_number column — DR rows match only if the caller did not
+     * supply op_serial_number.
+     *
+     * Column names differ per table:
+     *   IC : party_2_name, plot_number, op_serial_number, serial_no, page_no, volume_no, registration_number
+     *   DR : grantee,      plot_number,        (no OPSN), serial_no, page_no, volume_no, registration_number
+     *   PRA: party_2,      plot_no,     op_serial_number,  serialNo,  pageNo,  volumeNo, regNo
+     *
+     * Returns at most $limit rows. Expected callers gate the trigger on all
+     * five key fields being supplied, so 0 or 1 result is typical.
+     */
+    public function findCandidateOpsByFields(array $fields, int $limit = 5): array
+    {
+        $norm = fn ($v) => strtoupper(trim((string) ($v ?? '')));
+
+        // Canonical "logical" keys the caller passes in.
+        $supplied = array_filter([
+            'op_serial_number'    => $norm($fields['op_serial_number'] ?? null),
+            'serial_no'           => $norm($fields['serial_no']        ?? null),
+            'page_no'             => $norm($fields['page_no']          ?? null),
+            'volume_no'           => $norm($fields['volume_no']        ?? null),
+            'plot_no'             => $norm($fields['plot_no']          ?? null),
+            'tp_no'               => $norm($fields['tp_no']            ?? null),
+            'party_2_name'        => $norm($fields['party_2_name']     ?? $fields['party_2'] ?? null),
+            'registration_number' => $norm($fields['registration_number'] ?? $fields['regNo'] ?? null),
+        ], fn ($v) => $v !== '');
+
+        if (empty($supplied)) {
+            return [];
+        }
+
+        $conn = DB::connection('sqlsrv');
+        $candidates = [];
+
+        // Map logical key → actual column per table. null entry means the
+        // table has no equivalent column, so any caller-supplied value for
+        // that logical key makes the table unmatchable (we skip that table).
+        $columnMaps = [
+            'instrument_capture' => [
+                'op_serial_number'    => 'op_serial_number',
+                'serial_no'           => 'serial_no',
+                'page_no'             => 'page_no',
+                'volume_no'           => 'volume_no',
+                'plot_no'             => 'plot_number',
+                'tp_no'               => null,
+                'party_2_name'        => 'party_2_name',
+                'registration_number' => 'registration_number',
+            ],
+            'deed_registrations' => [
+                'op_serial_number'    => null,
+                'serial_no'           => 'serial_no',
+                'page_no'             => 'page_no',
+                'volume_no'           => 'volume_no',
+                'plot_no'             => 'plot_number',
+                'tp_no'               => null,
+                'party_2_name'        => 'grantee',
+                'registration_number' => 'registration_number',
+            ],
+            'pra' => [
+                'op_serial_number'    => 'op_serial_number',
+                'serial_no'           => 'serialNo',
+                'page_no'             => 'pageNo',
+                'volume_no'           => 'volumeNo',
+                'plot_no'             => 'plot_no',
+                'tp_no'               => 'tp_no',
+                'party_2_name'        => 'party_2',
+                'registration_number' => 'regNo',
+            ],
+        ];
+
+        $instrumentTypeFilters = [
+            'instrument_capture'  => "instrument_type = 'Occupancy Permit (OP)'",
+            'deed_registrations'  => "instrument_type = 'Occupancy Permit (OP)'",
+            'pra'                 => "(UPPER(ISNULL(instrument_type,'')) LIKE '%OCCUPANCY PERMIT%' OR UPPER(ISNULL(transaction_type,'')) LIKE '%OCCUPANCY PERMIT%')",
+        ];
+
+        $softDeleteFilters = [
+            'instrument_capture' => '(is_deleted IS NULL OR is_deleted = 0)',
+            'deed_registrations' => null,
+            'pra'                => null,
+        ];
+
+        foreach ($columnMaps as $table => $cols) {
+            // Skip table if any supplied key has no column equivalent here.
+            // (e.g. op_serial_number supplied but DR has no such column → skip DR.)
+            $skip = false;
+            foreach ($supplied as $key => $_) {
+                if (!array_key_exists($key, $cols) || $cols[$key] === null) {
+                    $skip = true;
+                    break;
+                }
+            }
+            if ($skip) continue;
+
+            $query = $conn->table($table)->whereRaw($instrumentTypeFilters[$table]);
+            if ($softDeleteFilters[$table]) {
+                $query->whereRaw($softDeleteFilters[$table]);
+            }
+
+            // EXACT MATCH on every supplied field — AND, not OR.
+            foreach ($supplied as $key => $val) {
+                $col = $cols[$key];
+                $query->whereRaw(
+                    "UPPER(LTRIM(RTRIM(ISNULL(CAST($col AS NVARCHAR(200)), '')))) = ?",
+                    [$val]
+                );
+            }
+
+            try {
+                $rows = $query->limit($limit)->get();
+            } catch (\Throwable $e) {
+                Log::warning('findCandidateOpsByFields: query failed', [
+                    'table' => $table,
+                    'error' => $e->getMessage(),
+                ]);
+                continue;
+            }
+
+            foreach ($rows as $row) {
+                $arr = (array) $row;
+                $party2 = $arr['party_2_name'] ?? $arr['party_2'] ?? $arr['grantee'] ?? null;
+                $plot   = $arr['plot_number']  ?? $arr['plot_no'] ?? null;
+                $serial = $arr['serial_no']    ?? $arr['serialNo'] ?? null;
+                $page   = $arr['page_no']      ?? $arr['pageNo']   ?? null;
+                $vol    = $arr['volume_no']    ?? $arr['volumeNo'] ?? null;
+                $reg    = $arr['registration_number'] ?? $arr['regNo'] ?? null;
+
+                $candidates[] = [
+                    'source_table'        => $table,
+                    'id'                  => $arr['id'] ?? null,
+                    'prop_id'             => $arr['prop_id'] ?? null,
+                    'op_serial_number'    => $arr['op_serial_number'] ?? null,
+                    'op_type'             => $arr['op_type'] ?? null,
+                    'serial_no'           => $serial,
+                    'page_no'             => $page,
+                    'volume_no'           => $vol,
+                    'registration_number' => $reg,
+                    'plot_no'             => $plot,
+                    'plot_number'         => $plot,
+                    'tp_no'               => $arr['tp_no'] ?? null,
+                    'party_1'             => $arr['party_1'] ?? $arr['party_1_name'] ?? $arr['grantor'] ?? null,
+                    'party_2'             => $party2,
+                    'party_2_name'        => $party2,
+                    'land_use'            => $arr['land_use'] ?? null,
+                    'property_description' => $arr['property_description'] ?? $arr['location'] ?? null,
+                    'property_location'   => $arr['location'] ?? $arr['property_location'] ?? null,
+                    'temp_fileno'         => $arr['temp_fileno'] ?? null,
+                    'fileno'              => $arr['fileno'] ?? null,
+                    'mlsFNo'              => $arr['mlsFNo'] ?? null,
+                    'transaction_date'    => $arr['transaction_date'] ?? null,
+                    'reg_date'            => $arr['reg_date'] ?? $arr['deeds_date'] ?? null,
+                    'reg_time'            => $arr['reg_time'] ?? $arr['deeds_time'] ?? null,
+                    'created_at'          => $arr['created_at'] ?? null,
+                ];
+            }
+        }
+
+        // Prefer rows with a prop_id (linkable), then most recent.
+        usort($candidates, function ($a, $b) {
+            $aHasProp = !empty($a['prop_id']) ? 1 : 0;
+            $bHasProp = !empty($b['prop_id']) ? 1 : 0;
+            if ($aHasProp !== $bHasProp) {
+                return $bHasProp - $aHasProp;
+            }
+            return strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? ''));
+        });
+
+        return array_slice($candidates, 0, $limit);
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Models\LandRecommendation;
 use App\Models\LandsOneStopShopApplication;
 use App\Models\StreetName;
 use App\Services\Pra\PraRecordService;
+use App\Services\Pra\RofoPraSyncer;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
@@ -1394,6 +1395,8 @@ class ApplicationController extends Controller
                 'updated_by' => Auth::id(),
             ]);
         });
+
+        app(RofoPraSyncer::class)->syncLand($recommendation);
 
         return response()->json([
             'success' => true,

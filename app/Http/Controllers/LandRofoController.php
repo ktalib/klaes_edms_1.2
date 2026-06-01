@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\LandRecommendation;
+use App\Services\Pra\RofoPraSyncer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -207,6 +208,8 @@ class LandRofoController extends Controller
             'rofo_date_generated'=> $mergedDate,
             'rofo_time_generated'=> $mergedTime,
         ]));
+
+        app(RofoPraSyncer::class)->syncLand($recommendation->fresh());
 
         return response()->json(['success' => true]);
     }

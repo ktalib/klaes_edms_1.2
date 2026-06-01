@@ -19,8 +19,13 @@ class DigitalFileRequest extends Model
     const STATUS_COMPLETED  = 'Completed';
     const STATUS_CANCELED   = 'Canceled';
 
+    // ── Request type constants ────────────────────────────────────────────────
+    const TYPE_PHYSICAL = 'Physical';
+    const TYPE_DIGITAL  = 'Digital';
+
     protected $fillable = [
         'request_no',
+        'request_type',
         'file_no',
         'file_title',
         'requester_user_id',
@@ -77,6 +82,11 @@ class DigitalFileRequest extends Model
     public function destinationOffice(): BelongsTo
     {
         return $this->belongsTo(Office::class, 'destination_office_id');
+    }
+
+    public function digitalAccess()
+    {
+        return $this->hasOne(DigitalFileAccess::class, 'digital_request_id');
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

@@ -298,8 +298,8 @@
               <span>Files</span>
             </a>
             {{-- 2. Print File Label --}}
-            <a href="{{ route('printlabel.index', ['url' => 'st']) }}"
-              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('printlabel.index') && request('url') === 'st' ? 'active' : '' }}">
+            <a href="{{ route('st-printlabel.index') }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('st-printlabel.index') ? 'active' : '' }}">
               <i data-lucide="printer" class="h-3.5 w-3.5 text-blue-500"></i>
               <span>Print File Label</span>
             </a>

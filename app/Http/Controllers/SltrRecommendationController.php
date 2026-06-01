@@ -6,6 +6,7 @@ use App\Models\LandUse;
 use App\Models\Purpose;
 use App\Models\SltrRecommendation;
 use App\Models\StreetName;
+use App\Services\Pra\RofoPraSyncer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -163,6 +164,8 @@ class SltrRecommendationController extends Controller
             'rofo_generated_at'=> now(),
             'updated_by'       => Auth::id(),
         ]);
+
+        app(RofoPraSyncer::class)->syncSltr($rec->fresh());
 
         return response()->json(['success' => true, 'message' => 'Recommendation approved.']);
     }

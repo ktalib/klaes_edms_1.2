@@ -1002,7 +1002,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/print-template', function () {
             return view('st_printlabel.print-file-lab'); })->name('print-template');
         Route::get('/api/prefixes', [StPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
-        Route::get('/api/sub-prefixes', [StPrintLabelController::class, 'getSubPrefixes'])->name('api.sub-prefixes');
+        Route::get('/api/application-types', [StPrintLabelController::class, 'getApplicationTypes'])->name('api.application-types');
         Route::get('/api/prefix-next-range', [StPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
         Route::get('/api/files', [StPrintLabelController::class, 'getAvailableFiles'])->name('api.files');
         Route::get('/api/rack-label/status', [StPrintLabelController::class, 'getRackLabelStatus'])->name('api.rack-label.status');

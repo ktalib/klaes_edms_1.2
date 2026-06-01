@@ -456,6 +456,45 @@ class InstrumentController extends Controller
     }
 
     /**
+     * API: Find OP records that EXACTLY match all supplied identifying fields
+     * (op_serial_number + serial_no + page_no + volume_no + party_2_name).
+     * Used by the OP capture modal to prompt the user before creating a fresh
+     * record when an existing OP exactly matches their entry. Returns 0 or 1
+     * candidates in typical use (rare to exceed 1 since the 5-field combo is
+     * effectively unique).
+     */
+    public function checkOpCandidates(Request $request)
+    {
+        $fields = [
+            'op_serial_number' => $request->query('op_serial_number'),
+            'serial_no'        => $request->query('serial_no'),
+            'page_no'          => $request->query('page_no'),
+            'volume_no'        => $request->query('volume_no'),
+            'party_2_name'     => $request->query('party_2_name'),
+        ];
+
+        try {
+            $service    = app(\App\Services\Pra\PraRecordService::class);
+            $candidates = $service->findCandidateOpsByFields($fields);
+        } catch (\Throwable $e) {
+            Log::error('OP candidate check failed', [
+                'error'  => $e->getMessage(),
+                'fields' => $fields,
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Candidate check failed due to server error.',
+            ], 500);
+        }
+
+        return response()->json([
+            'success'    => true,
+            'count'      => count($candidates),
+            'candidates' => $candidates,
+        ]);
+    }
+
+    /**
      * API: Lookup occupancy permit capture by OP SerialNo.
      */
     public function lookupByOpSerialNumber(Request $request)

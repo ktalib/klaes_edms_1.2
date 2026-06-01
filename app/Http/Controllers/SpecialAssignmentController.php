@@ -1,0 +1,1046 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\LandUseType;
+use App\Models\SpaApplication;
+use App\Models\SpaFieldData;
+use App\Models\SpaNotice;
+use App\Models\SpaDepartmentReferral;
+use App\Models\SpaMemo;
+use App\Models\SpaCertificate;
+use App\Services\EBulkSmsService;
+use App\Services\UserNotificationService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+
+class SpecialAssignmentController extends Controller
+{
+    // ─── PAGE METHODS ──────────────────────────────────────────────────────────
+
+    public function landRecords(Request $request)
+    {
+        if ($request->ajax()) {
+            $query = SpaApplication::query()->orderByDesc('created_at');
+
+            if ($request->boolean('exclude_inspected')) {
+                $usedIds = SpaFieldData::pluck('spa_application_id')->unique();
+                $query->whereNotIn('id', $usedIds);
+            }
+
+            $total = $query->count();
+            $data  = $query->skip($request->input('start', 0))
+                           ->take($request->input('length', 10))
+                           ->get()
+                           ->map(function ($a, $i) use ($request) {
+                               return [
+                                   'DT_RowIndex' => $request->input('start', 0) + $i + 1,
+                                   'id'          => $a->id,
+                                   'file_number' => $a->file_number ?? '—',
+                                   'owner_name'  => $a->owner_name ?? '—',
+                                   'phone'       => $a->phone ?? '—',
+                                   'location'    => $a->location ?? '—',
+                                   'land_use_type' => $a->land_use_type ?? '',
+                                   'proposed_use'  => $a->proposed_use  ?? '',
+                                   'existing_use'  => $a->existing_use  ?? '',
+                                   'status'        => $a->status,
+                                   'created_at'  => $a->created_at?->format('d/m/Y') ?? '—',
+                                   'action'      => '<div class="relative inline-block">'
+                                       . '<button class="btn-lr-toggle p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent hover:border-gray-200 transition-colors">'
+                                       . '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>'
+                                       . '</button>'
+                                       . '<div class="lr-dropdown hidden absolute right-0 top-full z-50 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">'
+                                       . '<button class="btn-lr-view w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2" data-id="'.$a->id.'"><svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>View</button>'
+                                       . '<button class="btn-lr-edit w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2" data-id="'.$a->id.'" data-record=\''.e(json_encode(['file_number'=>$a->file_number,'owner_name'=>$a->owner_name,'phone'=>$a->phone,'location'=>$a->location,'land_use_type'=>$a->land_use_type,'proposed_use'=>$a->proposed_use,'existing_use'=>$a->existing_use,'status'=>$a->status])).'\'><svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Edit</button>'
+                                       . '<button class="btn-lr-template w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2" data-tpl=\''.e(json_encode(['file_number'=>$a->file_number,'owner_name'=>$a->owner_name,'location'=>$a->location,'land_use_type'=>$a->land_use_type,'proposed_use'=>$a->proposed_use,'existing_use'=>$a->existing_use])).'\'><svg class="w-3.5 h-3.5 text-[rgb(186,191,12)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Field Template</button>'
+                                       . '<button class="btn-lr-delete w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2" data-id="'.$a->id.'" data-file="'.e($a->file_number ?? '').'"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>Delete</button>'
+                                       . '</div></div>',
+                               ];
+                           });
+
+            return response()->json([
+                'draw'            => intval($request->input('draw')),
+                'recordsTotal'    => $total,
+                'recordsFiltered' => $total,
+                'data'            => $data,
+            ]);
+        }
+
+        $PageTitle       = 'Special Assignment – Land Records';
+        $PageDescription = 'Manage and browse land records under special assignment.';
+        $stats = [
+            'total'       => SpaApplication::count(),
+            'open'        => SpaApplication::where('status', 'open')->count(),
+            'in_progress' => SpaApplication::where('status', 'in_progress')->count(),
+        ];
+
+        $landUseTypes = LandUseType::where('is_active', 1)->orderBy('name')->pluck('name');
+
+        return view('special_assignment.land_records.index', compact('PageTitle', 'PageDescription', 'stats', 'landUseTypes'));
+    }
+
+    public function fieldData(Request $request)
+    {
+        if ($request->ajax()) {
+            $query = SpaApplication::with('fieldData')->orderByDesc('created_at');
+            $total = $query->count();
+            $data  = $query->skip($request->input('start', 0))
+                           ->take($request->input('length', 10))
+                           ->get()
+                           ->map(function ($a, $i) use ($request) {
+                               $inspection = $a->fieldData->first();
+                               $hasInspection = $inspection !== null;
+
+                               // Property photos from land record
+                               $appPhotos = $a->photos ? array_map(fn($p) => asset('storage/'.$p), (array)$a->photos) : [];
+
+                               // Contravening flag
+                               $applied    = strtoupper(trim($a->land_use_type ?? ''));
+                               $prevailing = strtoupper(trim($a->existing_use ?? ''));
+                               $contravening = $applied && $prevailing && $applied !== $prevailing;
+
+                               // Build action dropdown
+                               $appData = e(json_encode([
+                                   'id'            => $a->id,
+                                   'file_number'   => $a->file_number,
+                                   'owner_name'    => $a->owner_name,
+                                   'location'      => $a->location,
+                                   'land_use_type' => $a->land_use_type,
+                                   'existing_use'  => $a->existing_use,
+                                   'photos'        => $appPhotos,
+                               ]));
+
+                               $action = '<div class="relative inline-block">'
+                                   . '<button class="btn-action-toggle p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent hover:border-gray-200 transition-colors">'
+                                   . '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>'
+                                   . '</button>'
+                                   . '<div class="action-dropdown hidden absolute right-0 top-full z-50 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">';
+
+                               if (!$hasInspection) {
+                                   $action .= '<button class="btn-log-inspection w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"'
+                                       . ' data-app=\''.$appData.'\''
+                                       . '><svg class="w-3.5 h-3.5 text-[rgb(186,191,12)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Log Inspection</button>';
+                               } else {
+                                   $inspector = optional($inspection->surveyor)->name ?? '—';
+                                   $inspPhotos = $inspection->photos ? array_map(fn($p) => asset('storage/'.$p), $inspection->photos) : [];
+                                   $viewData = e(json_encode([
+                                       'file'      => $a->file_number,
+                                       'date'      => $inspection->inspection_date?->format('d/m/Y'),
+                                       'inspector' => $inspector,
+                                       'findings'  => $inspection->findings,
+                                       'photos'    => $inspPhotos,
+                                   ]));
+                                   $action .= '<button class="btn-view-field w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"'
+                                       . ' data-info=\''.$viewData.'\''
+                                       . '><svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>View</button>'
+                                       . '<button class="btn-delete-field w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2" data-id="'.$inspection->id.'">'
+                                       . '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>Delete</button>';
+                               }
+                               $action .= '</div></div>';
+
+                               return [
+                                   'DT_RowIndex'         => $request->input('start', 0) + $i + 1,
+                                   'id'                  => $a->id,
+                                   'file_number'         => $a->file_number ?? '—',
+                                   'owner_name'          => $a->owner_name ?? '—',
+                                   'location'            => $a->location ?? '—',
+                                   'land_use_type'       => $a->land_use_type ?? '',
+                                   'existing_use'        => $a->existing_use ?? '',
+                                   'contravening'        => $contravening,
+                                   'inspection_status'   => $hasInspection ? 'inspected' : 'pending',
+                                   'inspection_date'     => $hasInspection ? ($inspection->inspection_date?->format('d/m/Y') ?? '—') : '—',
+                                   'findings'            => $hasInspection ? \Str::limit($inspection->findings ?? '', 50) : '—',
+                                   'action'       => $action,
+                               ];
+                           });
+
+            return response()->json([
+                'draw'            => intval($request->input('draw')),
+                'recordsTotal'    => $total,
+                'recordsFiltered' => $total,
+                'data'            => $data,
+            ]);
+        }
+
+        $PageTitle       = 'Special Assignment – Field Data';
+        $PageDescription = 'Field maps and collected field records for special assignment.';
+
+        $mapPoints = SpaFieldData::with('application')
+            ->whereNotNull('coordinates')
+            ->orderByDesc('created_at')
+            ->take(500)
+            ->get()
+            ->map(function ($f) {
+                $app        = $f->application;
+                $approved   = strtoupper(trim(optional($app)->proposed_use  ?? ''));
+                $prevailing = strtoupper(trim(optional($app)->existing_use  ?? ''));
+                $appPhotos  = optional($app)->photos
+                    ? array_map(fn($p) => asset('storage/'.$p), (array) optional($app)->photos)
+                    : [];
+                return [
+                    'id'           => $f->id,
+                    'file_number'  => $f->file_number ?? '—',
+                    'coords'       => is_array($f->coordinates) ? $f->coordinates : json_decode($f->coordinates, true),
+                    'date'         => $f->inspection_date?->format('d/m/Y') ?? '—',
+                    'applied_use'  => optional($app)->land_use_type ?? '',
+                    'approved_use' => optional($app)->proposed_use  ?? '',
+                    'prevailing'   => optional($app)->existing_use  ?? '',
+                    'owner'        => optional($app)->owner_name    ?? '—',
+                    'location'     => optional($app)->location      ?? '—',
+                    'contravening' => $approved && $prevailing && $approved !== $prevailing,
+                    'photo'        => $appPhotos[0] ?? null,
+                ];
+            });
+
+        return view('special_assignment.field_data.index', compact('PageTitle', 'PageDescription', 'mapPoints'));
+    }
+
+    public function notice(Request $request)
+    {
+        if ($request->ajax()) {
+            $type  = $request->input('type', 'first');
+            $query = SpaNotice::where('notice_type', $type)->orderByDesc('created_at');
+            $total = $query->count();
+            $data  = $query->skip($request->input('start', 0))
+                           ->take($request->input('length', 10))
+                           ->get()
+                           ->map(function ($n, $i) use ($request) {
+                               $daysAgo  = $n->served_date ? now()->diffInDays($n->served_date) : null;
+                               $hasSecond = ($n->notice_type === 'first')
+                                   ? SpaNotice::where('spa_application_id', $n->spa_application_id)
+                                              ->where('notice_type', 'second')->exists()
+                                   : null;
+
+                               return [
+                                   'DT_RowIndex'   => $request->input('start', 0) + $i + 1,
+                                   'notice_type'   => ucfirst($n->notice_type),
+                                   'file_number'   => $n->file_number ?? '—',
+                                   'recipient'     => $n->recipient_name ?? '—',
+                                   'phone'         => $n->phone ?? '—',
+                                   'served_date'   => $n->served_date?->format('d/m/Y') ?? '—',
+                                   'sms_sent'      => $n->sms_sent ? '<span class="text-green-600 text-xs">✓ Sent</span>' : '<span class="text-gray-400 text-xs">—</span>',
+                                   'status'        => $n->status,
+                                   'days_ago'      => $daysAgo,
+                                   'has_second'    => $hasSecond,
+                                   'action'        => $n->notice_type === 'first'
+                                       ? ($hasSecond
+                                           ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Served</span>'
+                                           : '<button data-id="'.$n->id.'" data-app="'.$n->spa_application_id.'" class="btn-trigger-second inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Not Served</button>')
+                                       : '<span class="text-xs text-gray-400">—</span>',
+                               ];
+                           });
+
+            return response()->json([
+                'draw'            => intval($request->input('draw')),
+                'recordsTotal'    => $total,
+                'recordsFiltered' => $total,
+                'data'            => $data,
+            ]);
+        }
+
+        $PageTitle       = 'Special Assignment – Notice';
+        $PageDescription = 'Manage first and second serve notices for special assignment.';
+        $stats = [
+            'first_total'  => SpaNotice::where('notice_type', 'first')->count(),
+            'second_total' => SpaNotice::where('notice_type', 'second')->count(),
+            'pending'      => SpaNotice::where('status', 'pending')->count(),
+        ];
+
+        return view('special_assignment.notice.index', compact('PageTitle', 'PageDescription', 'stats'));
+    }
+
+    public function otherDepartments(Request $request)
+    {
+        if ($request->ajax() || $request->input('ajax')) {
+            $dept  = $request->input('department', 'cadastral');
+            $query = SpaDepartmentReferral::with(['referredBy','application'])->where('department', $dept)->orderByDesc('created_at');
+            $total = $query->count();
+            $data  = $query->skip($request->input('start', 0))
+                           ->take($request->input('length', 10))
+                           ->get()
+                           ->map(function ($r, $i) use ($request) {
+                               $canRespond = in_array($r->status, ['pending','responded']);
+                               $action = '<div class="relative inline-block">'
+                                   . '<button class="btn-dep-toggle p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent hover:border-gray-200 transition-colors">'
+                                   . '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>'
+                                   . '</button>'
+                                   . '<div class="dep-dropdown hidden absolute right-0 top-full z-50 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">'
+                                   . ($canRespond
+                                       ? '<button class="btn-record-response w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2" data-id="'.$r->id.'"><svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Record Response</button>'
+                                       : '')
+                                   . '<button class="btn-dep-delete w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2" data-id="'.$r->id.'" data-file="'.e($r->file_number ?? '').'"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>Delete</button>'
+                                   . '</div></div>';
+                               return [
+                                   'DT_RowIndex'   => $request->input('start', 0) + $i + 1,
+                                   'file_number'   => $r->file_number ?? '—',
+                                   'owner_name'    => optional($r->application)->owner_name ?? '—',
+                                   'referred_by'   => optional($r->referredBy)->name ?? '—',
+                                   'referral_date' => $r->referral_date?->format('d/m/Y') ?? '—',
+                                   'response_date' => $r->response_date?->format('d/m/Y') ?? '—',
+                                   'notes'         => \Str::limit($r->notes ?? '', 60),
+                                   'status'        => $r->status,
+                                   'action'        => $action,
+                               ];
+                           });
+
+            return response()->json([
+                'draw'            => intval($request->input('draw')),
+                'recordsTotal'    => $total,
+                'recordsFiltered' => $total,
+                'data'            => $data,
+            ]);
+        }
+
+        $PageTitle       = 'Special Assignment – Other Departments';
+        $PageDescription = 'Cadastral, Physical Planning/KNUPDA, and Survey department records.';
+        $stats = [
+            'total'     => SpaDepartmentReferral::count(),
+            'pending'   => SpaDepartmentReferral::where('status', 'pending')->count(),
+            'responded' => SpaDepartmentReferral::where('status', 'responded')->count(),
+            'approved'  => SpaDepartmentReferral::where('status', 'approved')->count(),
+        ];
+
+        return view('special_assignment.other_departments.index', compact('PageTitle', 'PageDescription', 'stats'));
+    }
+
+    public function recordDepartmentResponse(Request $request, int $id)
+    {
+        $request->validate([
+            'response_date'  => 'required|date',
+            'status'         => 'required|in:responded,approved,rejected',
+            'response_notes' => 'nullable|string',
+        ]);
+
+        $referral = SpaDepartmentReferral::findOrFail($id);
+        $referral->update([
+            'response_date'  => $request->response_date,
+            'response_notes' => $request->response_notes,
+            'status'         => $request->status,
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'Response recorded for ' . ucwords(str_replace('_', ' ', $referral->department)) . '.']);
+    }
+
+    public function deleteDepartmentReferral(int $id)
+    {
+        SpaDepartmentReferral::findOrFail($id)->delete();
+        return response()->json(['success' => true, 'message' => 'Referral deleted.']);
+    }
+
+    public function certificate(Request $request)
+    {
+        if ($request->ajax()) {
+            $query = SpaCertificate::orderByDesc('created_at');
+            $total = $query->count();
+            $data  = $query->skip($request->input('start', 0))
+                           ->take($request->input('length', 10))
+                           ->get()
+                           ->map(function ($c, $i) use ($request) {
+                               return [
+                                   'DT_RowIndex' => $request->input('start', 0) + $i + 1,
+                                   'cert_number' => $c->cert_number ?? '—',
+                                   'file_number' => $c->file_number ?? '—',
+                                   'holder_name' => $c->holder_name ?? '—',
+                                   'from_use'    => $c->from_use ?? '—',
+                                   'to_use'      => $c->to_use ?? '—',
+                                   'issue_date'  => $c->issue_date?->format('d/m/Y') ?? '—',
+                                   'status'      => $c->status,
+                                   'action'      => '<button data-id="'.$c->id.'" class="btn-print-cert text-xs px-3 py-1 rounded bg-[rgb(186,191,12)] text-white">Print</button>',
+                               ];
+                           });
+
+            return response()->json([
+                'draw'            => intval($request->input('draw')),
+                'recordsTotal'    => $total,
+                'recordsFiltered' => $total,
+                'data'            => $data,
+            ]);
+        }
+
+        $PageTitle       = 'Special Assignment – Certificate';
+        $PageDescription = 'Issue and track Certificates of Change of Purpose.';
+        $stats = [
+            'total'     => SpaCertificate::count(),
+            'issued'    => SpaCertificate::where('status', 'issued')->count(),
+            'collected' => SpaCertificate::where('status', 'collected')->count(),
+            'revoked'   => SpaCertificate::where('status', 'revoked')->count(),
+        ];
+
+        return view('special_assignment.certificate.index', compact('PageTitle', 'PageDescription', 'stats'));
+    }
+
+    public function memo(Request $request)
+    {
+        if ($request->ajax()) {
+            $query = SpaMemo::with('application')->orderByDesc('created_at');
+            $total = $query->count();
+            $data  = $query->skip($request->input('start', 0))
+                           ->take($request->input('length', 10))
+                           ->get()
+                           ->map(function ($m, $i) use ($request) {
+                               return [
+                                   'DT_RowIndex'   => $request->input('start', 0) + $i + 1,
+                                   'memo_no'       => $m->memo_no ?? '—',
+                                   'file_number'   => optional($m->application)->file_number ?? '—',
+                                   'forwarded_to'  => $m->forwarded_to ?? '—',
+                                   'forwarded_at'  => $m->forwarded_at?->format('d/m/Y') ?? '—',
+                                   'decision'      => $m->commissioner_decision,
+                                   'decided_at'    => $m->decided_at?->format('d/m/Y') ?? '—',
+                                   'action'        => $m->commissioner_decision === 'pending'
+                                       ? '<button data-id="'.$m->id.'" data-memo="'.e($m->memo_no).'" class="btn-decide text-xs px-3 py-1 rounded bg-[rgb(186,191,12)] text-white">Decide</button>'
+                                       : '<span class="text-xs text-gray-400">'.ucfirst($m->commissioner_decision).'</span>',
+                               ];
+                           });
+
+            return response()->json([
+                'draw'            => intval($request->input('draw')),
+                'recordsTotal'    => $total,
+                'recordsFiltered' => $total,
+                'data'            => $data,
+            ]);
+        }
+
+        $PageTitle       = 'Special Assignment – Memo';
+        $PageDescription = 'Commissioner approval memos for Special Assignment cases.';
+        $stats = [
+            'total'    => SpaMemo::count(),
+            'pending'  => SpaMemo::where('commissioner_decision', 'pending')->count(),
+            'approved' => SpaMemo::where('commissioner_decision', 'approved')->count(),
+            'rejected' => SpaMemo::where('commissioner_decision', 'rejected')->count(),
+        ];
+        $applications = SpaApplication::whereDoesntHave('memos')->select('id', 'file_number', 'owner_name')->get();
+
+        return view('special_assignment.memo.index', compact('PageTitle', 'PageDescription', 'stats', 'applications'));
+    }
+
+    public function mobile(Request $request)
+    {
+        $mapPoints = SpaFieldData::with('application')
+            ->whereNotNull('coordinates')
+            ->orderByDesc('created_at')
+            ->take(500)
+            ->get()
+            ->map(function ($f) {
+                $app        = $f->application;
+                $approved   = strtoupper(trim(optional($app)->proposed_use ?? ''));
+                $prevailing = strtoupper(trim(optional($app)->existing_use ?? ''));
+                $appPhotos  = optional($app)->photos
+                    ? array_map(fn($p) => asset('storage/'.$p), (array) optional($app)->photos)
+                    : [];
+                return [
+                    'id'           => $f->id,
+                    'file_number'  => $f->file_number ?? '—',
+                    'coords'       => is_array($f->coordinates) ? $f->coordinates : json_decode($f->coordinates, true),
+                    'date'         => $f->inspection_date?->format('d/m/Y') ?? '—',
+                    'land_use'     => optional($app)->land_use_type ?? '',
+                    'approved_use' => optional($app)->proposed_use  ?? '',
+                    'prevailing'   => optional($app)->existing_use  ?? '',
+                    'owner'        => optional($app)->owner_name    ?? '—',
+                    'location'     => optional($app)->location      ?? '—',
+                    'contravening' => $approved && $prevailing && $approved !== $prevailing,
+                    'photo'        => $appPhotos[0] ?? null,
+                ];
+            });
+
+        $landUseTypes = LandUseType::where('is_active', 1)->orderBy('name')->pluck('name');
+
+        return view('special_assignment.mobile', compact('mapPoints', 'landUseTypes'));
+    }
+
+    public function report(Request $request)
+    {
+        $PageTitle       = 'Special Assignment – Report';
+        $PageDescription = 'Summary reports and analytics for special assignment.';
+
+        return view('special_assignment.report.index', compact('PageTitle', 'PageDescription'));
+    }
+
+    // ─── API / ACTION METHODS ──────────────────────────────────────────────────
+
+    public function checkFileIndexed(Request $request)
+    {
+        $fileNo = trim($request->input('file_number', ''));
+        if (!$fileNo) {
+            return response()->json(['found' => false]);
+        }
+
+        // Fast path: direct match on file_indexings.file_number (indexed column)
+        $record = DB::connection('sqlsrv')
+            ->table('file_indexings as fi')
+            ->leftJoin('fileNumber as fn', 'fn.tracking_id', '=', 'fi.tracking_id')
+            ->where('fi.file_number', $fileNo)
+            ->select(
+                'fi.id as file_indexing_id', 'fi.tracking_id',
+                'fi.file_number', 'fi.land_use_type',
+                'fi.location', 'fi.district', 'fi.lga',
+                'fi.phone', 'fn.FileName as file_title'
+            )
+            ->orderByDesc('fi.created_at')
+            ->first();
+
+        // Slow-path fallback: search fileNumber columns if fast path missed
+        if (!$record) {
+            $record = DB::connection('sqlsrv')
+                ->table('file_indexings as fi')
+                ->join('fileNumber as fn', 'fn.tracking_id', '=', 'fi.tracking_id')
+                ->where(function ($q) use ($fileNo) {
+                    $q->where('fn.st_file_no', $fileNo)
+                      ->orWhere('fn.mlsfNo', $fileNo)
+                      ->orWhere('fn.kangisFileNo', $fileNo)
+                      ->orWhere('fn.NewKANGISFileNo', $fileNo);
+                })
+                ->select(
+                    'fi.id as file_indexing_id', 'fi.tracking_id',
+                    'fi.file_number', 'fi.land_use_type',
+                    'fi.location', 'fi.district', 'fi.lga',
+                    'fi.phone', 'fn.FileName as file_title'
+                )
+                ->orderByDesc('fi.created_at')
+                ->first();
+        }
+
+        if (!$record) {
+            return response()->json(['found' => false]);
+        }
+
+        // Try to get owner name from current_holder JSON
+        $holder = DB::connection('sqlsrv')
+            ->table('file_indexings')
+            ->where('id', $record->file_indexing_id)
+            ->value('current_holder');
+
+        $holderArr = $holder ? json_decode($holder, true) : null;
+        $ownerName = '';
+        if (is_array($holderArr) && !empty($holderArr)) {
+            $first = $holderArr[0] ?? $holderArr;
+            $ownerName = trim(($first['title'] ?? '') . ' ' . ($first['first_name'] ?? '') . ' ' . ($first['surname'] ?? ''));
+            if (empty(trim($ownerName))) {
+                $ownerName = $first['corporate_name'] ?? '';
+            }
+        }
+
+        return response()->json([
+            'found'           => true,
+            'file_indexing_id'=> $record->file_indexing_id,
+            'tracking_id'     => $record->tracking_id,
+            'file_number'     => $record->file_number,
+            'land_use_type'   => $record->land_use_type,
+            'location'        => $record->location,
+            'district'        => $record->district,
+            'lga'             => $record->lga,
+            'phone'           => $record->phone,
+            'owner_name'      => $ownerName,
+            'file_title'      => $record->file_title ?? '',
+        ]);
+    }
+
+    public function storeLandRecord(Request $request)
+    {
+        $request->validate([
+            'file_number'  => 'required|string|max:255',
+            'owner_name'   => 'required|string|max:255',
+            'phone'        => 'nullable|string|max:20',
+            'proposed_use' => 'required|string|max:255',
+            'existing_use' => 'required|string|max:255',
+            'photos.*'     => 'nullable|image|max:5120',
+        ]);
+
+        $photos = [];
+        if ($request->hasFile('photos')) {
+            foreach ($request->file('photos') as $photo) {
+                $photos[] = $photo->store('spa/land-records', 'public');
+            }
+        }
+
+        $app = SpaApplication::create([
+            'file_number'     => $request->file_number,
+            'tracking_id'     => $request->tracking_id,
+            'file_indexing_id'=> $request->file_indexing_id ?: null,
+            'is_indexed'      => (bool) $request->is_indexed,
+            'owner_name'      => $request->owner_name,
+            'phone'           => $request->phone,
+            'location'        => $request->location,
+            'district'        => $request->district,
+            'lga'             => $request->lga,
+            'land_use_type'   => $request->land_use_type,
+            'proposed_use'    => $request->proposed_use,
+            'existing_use'    => $request->existing_use,
+            'photos'          => $photos ?: null,
+            'status'          => 'open',
+            'created_by'      => auth()->user()->name ?? auth()->id(),
+        ]);
+
+        return response()->json(['success' => true, 'id' => $app->id, 'message' => 'Land record saved.']);
+    }
+
+    public function updateLandRecord(Request $request, int $id)
+    {
+        $app = SpaApplication::findOrFail($id);
+        $request->validate([
+            'owner_name'   => 'required|string|max:255',
+            'phone'        => 'nullable|string|max:20',
+            'proposed_use' => 'required|string|max:255',
+            'existing_use' => 'required|string|max:255',
+            'status'       => 'required|in:open,in_progress,approved,certificate_issued,closed',
+        ]);
+        $app->update([
+            'owner_name'   => $request->owner_name,
+            'phone'        => $request->phone,
+            'location'     => $request->location,
+            'land_use_type'=> $request->land_use_type,
+            'proposed_use' => $request->proposed_use,
+            'existing_use' => $request->existing_use,
+            'status'       => $request->status,
+        ]);
+        return response()->json(['success' => true, 'message' => 'Record updated.']);
+    }
+
+    public function deleteLandRecord(int $id)
+    {
+        $app = SpaApplication::findOrFail($id);
+        $app->delete();
+        return response()->json(['success' => true, 'message' => 'Record deleted.']);
+    }
+
+    public function storeFieldData(Request $request)
+    {
+        $request->validate([
+            'spa_application_id' => 'required|exists:sqlsrv.spa_applications,id',
+            'inspection_date'    => 'required|date',
+            'findings'           => 'required|string',
+        ]);
+
+        // Reject duplicate file numbers
+        if ($request->file_number) {
+            $duplicate = SpaFieldData::where('file_number', $request->file_number)->exists();
+            if ($duplicate) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "A field inspection record already exists for file number {$request->file_number}.",
+                ], 422);
+            }
+        }
+
+        $photos = [];
+        if ($request->hasFile('photos')) {
+            foreach ($request->file('photos') as $file) {
+                $path = $file->store('spa/field-data', 'public');
+                $photos[] = $path;
+            }
+        }
+
+        $coordinates = $request->coordinates ? json_decode($request->coordinates, true) : null;
+
+        $data = SpaFieldData::create([
+            'spa_application_id' => $request->spa_application_id,
+            'file_number'        => $request->file_number,
+            'surveyor_id'        => auth()->id(),
+            'inspection_date'    => $request->inspection_date,
+            'coordinates'        => $coordinates,
+            'findings'           => $request->findings,
+            'photos'             => $photos ?: null,
+            'status'             => 'active',
+            'created_by'         => auth()->user()->name ?? auth()->id(),
+        ]);
+
+        // Advance application status
+        SpaApplication::where('id', $request->spa_application_id)
+            ->where('status', 'open')
+            ->update(['status' => 'in_progress']);
+
+        // Build map point for live map update
+        $app      = SpaApplication::find($request->spa_application_id);
+        $mapPoint = null;
+        if ($coordinates) {
+            $approved   = strtoupper(trim($app?->proposed_use ?? ''));
+            $prevailing = strtoupper(trim($app?->existing_use ?? ''));
+            $appPhotos  = $app?->photos ? array_map(fn($p) => asset('storage/'.$p), (array)$app->photos) : [];
+            $mapPoint = [
+                'id'           => $data->id,
+                'file_number'  => $data->file_number ?? '—',
+                'coords'       => $coordinates,
+                'date'         => $data->inspection_date?->format('d/m/Y') ?? now()->format('d/m/Y'),
+                'applied_use'  => $app?->land_use_type ?? '',
+                'approved_use' => $app?->proposed_use  ?? '',
+                'prevailing'   => $app?->existing_use  ?? '',
+                'owner'        => $app?->owner_name    ?? '—',
+                'location'     => $app?->location      ?? '—',
+                'contravening' => $approved && $prevailing && $approved !== $prevailing,
+                'photo'        => $appPhotos[0] ?? null,
+            ];
+        }
+
+        return response()->json(['success' => true, 'id' => $data->id, 'message' => 'Field data saved.', 'mapPoint' => $mapPoint]);
+    }
+
+    public function deleteFieldData(int $id)
+    {
+        $record = SpaFieldData::findOrFail($id);
+        if ($record->photos) {
+            foreach ($record->photos as $path) {
+                Storage::disk('public')->delete($path);
+            }
+        }
+        $record->delete();
+        return response()->json(['success' => true, 'message' => 'Field record deleted.']);
+    }
+
+    public function storeNotice(Request $request)
+    {
+        $request->validate([
+            'spa_application_id' => 'required|exists:sqlsrv.spa_applications,id',
+            'recipient_name'     => 'required|string|max:255',
+            'phone'              => 'required|string|max:20',
+            'served_date'        => 'required|date',
+        ]);
+
+        $notice = SpaNotice::create([
+            'spa_application_id' => $request->spa_application_id,
+            'file_number'        => $request->file_number,
+            'notice_type'        => 'first',
+            'recipient_name'     => $request->recipient_name,
+            'phone'              => $request->phone,
+            'served_by'          => auth()->id(),
+            'served_date'        => $request->served_date,
+            'scheduled_date'     => now()->addDays(14)->toDateString(),
+            'status'             => 'served',
+            'created_by'         => auth()->user()->name ?? auth()->id(),
+        ]);
+
+        $smsSent = $this->sendNoticeSms($request->phone, $request->recipient_name, 'first', $request->file_number);
+
+        $notice->update(['sms_sent' => $smsSent, 'sms_sent_at' => $smsSent ? now() : null]);
+
+        return response()->json(['success' => true, 'id' => $notice->id, 'sms_sent' => $smsSent, 'message' => 'First serve notice issued.']);
+    }
+
+    public function triggerSecondNotice(Request $request, int $id)
+    {
+        $first = SpaNotice::findOrFail($id);
+
+        $alreadyExists = SpaNotice::where('spa_application_id', $first->spa_application_id)
+            ->where('notice_type', 'second')
+            ->exists();
+
+        if ($alreadyExists) {
+            return response()->json(['success' => false, 'message' => 'Second serve already issued for this application.'], 422);
+        }
+
+        $second = SpaNotice::create([
+            'spa_application_id' => $first->spa_application_id,
+            'file_number'        => $first->file_number,
+            'notice_type'        => 'second',
+            'recipient_name'     => $first->recipient_name,
+            'phone'              => $first->phone,
+            'served_by'          => auth()->id(),
+            'served_date'        => now()->toDateString(),
+            'status'             => 'served',
+            'created_by'         => auth()->user()->name ?? auth()->id(),
+        ]);
+
+        $smsSent = $this->sendNoticeSms($first->phone, $first->recipient_name, 'second', $first->file_number);
+        $second->update(['sms_sent' => $smsSent, 'sms_sent_at' => $smsSent ? now() : null]);
+
+        return response()->json(['success' => true, 'id' => $second->id, 'sms_sent' => $smsSent, 'message' => 'Second serve notice issued.']);
+    }
+
+    public function storeDepartmentReferral(Request $request)
+    {
+        $request->validate([
+            'spa_application_id' => 'required|exists:sqlsrv.spa_applications,id',
+            'department'         => 'required|in:cadastral,physical_planning,survey',
+            'notes'              => 'nullable|string',
+        ]);
+
+        $referral = SpaDepartmentReferral::create([
+            'spa_application_id' => $request->spa_application_id,
+            'file_number'        => $request->file_number,
+            'department'         => $request->department,
+            'referred_by'        => auth()->id(),
+            'referral_date'      => $request->referral_date ?: now()->toDateString(),
+            'notes'              => $request->notes,
+            'status'             => 'pending',
+            'created_by'         => auth()->user()->name ?? auth()->id(),
+        ]);
+
+        return response()->json(['success' => true, 'id' => $referral->id, 'message' => 'Referral sent to ' . ucwords(str_replace('_', ' ', $request->department)) . '.']);
+    }
+
+    public function generateMemo(Request $request)
+    {
+        $request->validate([
+            'spa_application_id' => 'required|exists:sqlsrv.spa_applications,id',
+            'forwarded_to'       => 'required|string|max:255',
+        ]);
+
+        $memoNo = SpaMemo::generateMemoNumber();
+
+        $memo = SpaMemo::create([
+            'spa_application_id'    => $request->spa_application_id,
+            'memo_no'               => $memoNo,
+            'prepared_by'           => auth()->id(),
+            'forwarded_to'          => $request->forwarded_to,
+            'forwarded_at'          => now(),
+            'commissioner_decision' => 'pending',
+            'created_by'            => auth()->user()->name ?? auth()->id(),
+        ]);
+
+        SpaApplication::where('id', $request->spa_application_id)
+            ->update(['status' => 'memo_stage']);
+
+        return response()->json(['success' => true, 'id' => $memo->id, 'memo_no' => $memoNo, 'message' => "Memo {$memoNo} generated and forwarded."]);
+    }
+
+    public function commissionerDecision(Request $request, int $id)
+    {
+        $request->validate([
+            'decision' => 'required|in:approved,rejected',
+            'notes'    => 'nullable|string',
+        ]);
+
+        $memo = SpaMemo::findOrFail($id);
+        $memo->update([
+            'commissioner_decision' => $request->decision,
+            'commissioner_notes'    => $request->notes,
+            'decided_at'            => now(),
+        ]);
+
+        if ($request->decision === 'approved') {
+            SpaApplication::where('id', $memo->spa_application_id)->update(['status' => 'approved']);
+        }
+
+        // Notify the memo preparer
+        try {
+            $notifier = app(UserNotificationService::class);
+            $title    = "Memo {$memo->memo_no} — Commissioner Decision";
+            $body     = "The Commissioner has " . $request->decision . " memo {$memo->memo_no}.";
+            if ($memo->prepared_by) {
+                $notifier->create($memo->prepared_by, 'info', $title, $body, [], ['module' => 'special_assignment']);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('SPA: notification failed', ['error' => $e->getMessage()]);
+        }
+
+        return response()->json(['success' => true, 'message' => "Decision recorded: " . ucfirst($request->decision)]);
+    }
+
+    public function issueCertificate(Request $request)
+    {
+        $request->validate([
+            'spa_application_id' => 'required|exists:sqlsrv.spa_applications,id',
+            'holder_name'        => 'required|string|max:255',
+            'from_use'           => 'required|string|max:255',
+            'to_use'             => 'required|string|max:255',
+            'issue_date'         => 'required|date',
+        ]);
+
+        // Require approved memo
+        $approved = SpaMemo::where('spa_application_id', $request->spa_application_id)
+            ->where('commissioner_decision', 'approved')
+            ->exists();
+
+        if (!$approved) {
+            return response()->json(['success' => false, 'message' => 'Cannot issue certificate without an approved Commissioner memo.'], 422);
+        }
+
+        $app = SpaApplication::findOrFail($request->spa_application_id);
+
+        $cert = SpaCertificate::create([
+            'spa_application_id' => $request->spa_application_id,
+            'cert_number'        => SpaCertificate::generateCertNumber(),
+            'file_number'        => $app->file_number,
+            'holder_name'        => $request->holder_name,
+            'from_use'           => $request->from_use,
+            'to_use'             => $request->to_use,
+            'issue_date'         => $request->issue_date,
+            'expiry_date'        => $request->expiry_date ?: null,
+            'issued_by'          => auth()->id(),
+            'status'             => 'issued',
+            'created_by'         => auth()->user()->name ?? auth()->id(),
+        ]);
+
+        $app->update(['status' => 'certificate_issued']);
+
+        return response()->json(['success' => true, 'cert_number' => $cert->cert_number, 'message' => "Certificate {$cert->cert_number} issued."]);
+    }
+
+    public function printCertificate(int $id)
+    {
+        $cert = SpaCertificate::with('issuedBy')->findOrFail($id);
+        return view('special_assignment.certificate.print', compact('cert'));
+    }
+
+    public function reportData(Request $request)
+    {
+        $year = $request->input('year', now()->year);
+
+        // Server-side DataTable for activity log
+        if ($request->input('table')) {
+            $from = $request->input('from');
+            $to   = $request->input('to');
+
+            $query = DB::connection('sqlsrv')
+                ->table('spa_notices')
+                ->select('file_number', 'notice_type as section', 'recipient_name as description', 'status', 'created_at')
+                ->when($from, fn($q) => $q->whereDate('created_at', '>=', $from))
+                ->when($to,   fn($q) => $q->whereDate('created_at', '<=', $to))
+                ->orderByDesc('created_at');
+
+            $total = $query->count();
+            $rows  = $query->skip($request->input('start', 0))
+                           ->take($request->input('length', 10))
+                           ->get()
+                           ->map(function ($r, $i) use ($request) {
+                               return [
+                                   'DT_RowIndex' => $request->input('start', 0) + $i + 1,
+                                   'section'     => 'Notice (' . ucfirst($r->section) . ' Serve)',
+                                   'file_number' => $r->file_number ?? '—',
+                                   'description' => 'Served to: ' . ($r->description ?? '—'),
+                                   'officer'     => '—',
+                                   'date'        => $r->created_at ? \Carbon\Carbon::parse($r->created_at)->format('d/m/Y') : '—',
+                                   'status'      => $r->status,
+                               ];
+                           });
+
+            return response()->json([
+                'draw'            => intval($request->input('draw')),
+                'recordsTotal'    => $total,
+                'recordsFiltered' => $total,
+                'data'            => $rows,
+            ]);
+        }
+
+        // Monthly activity (notices issued)
+        $monthly = DB::connection('sqlsrv')
+            ->table('spa_notices')
+            ->selectRaw('MONTH(created_at) as month, COUNT(*) as total')
+            ->whereYear('created_at', $year)
+            ->groupByRaw('MONTH(created_at)')
+            ->pluck('total', 'month')
+            ->toArray();
+
+        $monthlyData = array_map(fn($m) => $monthly[$m] ?? 0, range(1, 12));
+
+        return response()->json([
+            'summary' => [
+                'land_records'   => SpaApplication::count(),
+                'notices_served' => SpaNotice::where('status', 'served')->count(),
+                'certificates'   => SpaCertificate::where('status', 'issued')->count(),
+                'pending'        => SpaApplication::whereIn('status', ['open', 'in_progress'])->count(),
+            ],
+            'monthly'       => $monthlyData,
+            'status_counts' => [
+                SpaApplication::where('status', 'open')->count(),
+                SpaApplication::where('status', 'in_progress')->count(),
+                SpaApplication::where('status', 'approved')->count(),
+                SpaApplication::where('status', 'certificate_issued')->count(),
+            ],
+        ]);
+    }
+
+    public function exportCsv(Request $request)
+    {
+        $from = $request->input('from');
+        $to   = $request->input('to');
+
+        $rows = DB::connection('sqlsrv')
+            ->table('spa_applications as a')
+            ->select('a.file_number', 'a.owner_name', 'a.phone', 'a.location', 'a.land_use_type', 'a.existing_use', 'a.scenario', 'a.status', 'a.created_at')
+            ->when($from, fn($q) => $q->whereDate('a.created_at', '>=', $from))
+            ->when($to,   fn($q) => $q->whereDate('a.created_at', '<=', $to))
+            ->orderByDesc('a.created_at')
+            ->get();
+
+        $filename = 'spa-report-' . now()->format('Y-m-d') . '.csv';
+
+        $headers = ['Content-Type' => 'text/csv', 'Content-Disposition' => "attachment; filename=\"{$filename}\""];
+
+        $callback = function () use ($rows) {
+            $fh = fopen('php://output', 'w');
+            fputcsv($fh, ['File No', 'Owner Name', 'Phone', 'Location', 'Approved Use', 'Existing Use', 'Scenario', 'Status', 'Date']);
+            foreach ($rows as $r) {
+                fputcsv($fh, [$r->file_number, $r->owner_name, $r->phone, $r->location, $r->land_use_type, $r->existing_use, $r->scenario, $r->status, $r->created_at]);
+            }
+            fclose($fh);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    public function storeBill(Request $request)
+    {
+        $request->validate([
+            'spa_application_id' => 'required|exists:sqlsrv.spa_applications,id',
+            'bill_type'          => 'required|string|max:100',
+            'amount'             => 'required|numeric|min:0',
+        ]);
+
+        // Auto-generate reference ID: SPA-BILL-YYYY-###
+        $year    = now()->year;
+        $prefix  = 'SPA-BILL-' . $year . '-';
+        $last    = \App\Models\SpaBill::where('reference_id', 'like', $prefix . '%')
+                        ->orderByDesc('id')->value('reference_id');
+        $seq     = $last ? ((int) substr($last, strlen($prefix))) + 1 : 1;
+        $refId   = $prefix . str_pad($seq, 3, '0', STR_PAD_LEFT);
+
+        $bill = \App\Models\SpaBill::create([
+            'spa_application_id' => $request->spa_application_id,
+            'reference_id'       => $refId,
+            'bill_type'          => $request->bill_type,
+            'description'        => $request->description,
+            'amount'             => $request->amount,
+            'due_date'           => $request->due_date ?: null,
+            'status'             => 'unpaid',
+            'created_by'         => auth()->user()->name ?? auth()->id(),
+        ]);
+
+        return response()->json(['success' => true, 'id' => $bill->id, 'reference_id' => $refId, 'message' => "Bill {$refId} saved."]);
+    }
+
+    public function recordBillPayment(Request $request)
+    {
+        $request->validate([
+            'spa_bill_id'  => 'required|exists:sqlsrv.spa_bills,id',
+            'amount_paid'  => 'required|numeric|min:0.01',
+            'payment_date' => 'required|date',
+        ]);
+
+        $bill = \App\Models\SpaBill::findOrFail($request->spa_bill_id);
+
+        $payment = \App\Models\SpaPayment::create([
+            'spa_bill_id'        => $bill->id,
+            'spa_application_id' => $bill->spa_application_id,
+            'amount_paid'        => $request->amount_paid,
+            'receipt_number'     => $request->receipt_number,
+            'payment_date'       => $request->payment_date,
+            'payment_method'     => $request->payment_method ?? 'cash',
+            'recorded_by'        => auth()->user()->name ?? auth()->id(),
+        ]);
+
+        // Update bill status
+        $totalPaid = \App\Models\SpaPayment::where('spa_bill_id', $bill->id)->sum('amount_paid');
+        $newStatus = $totalPaid >= $bill->amount ? 'paid' : 'partial';
+        $bill->update(['status' => $newStatus]);
+
+        return response()->json(['success' => true, 'id' => $payment->id, 'message' => 'Payment recorded. Bill status: ' . $newStatus . '.']);
+    }
+
+    // ─── PRIVATE HELPERS ──────────────────────────────────────────────────────
+
+    private function sendNoticeSms(string $phone, string $name, string $type, ?string $fileNo): bool
+    {
+        $ordinal  = $type === 'first' ? 'First' : 'Second';
+        $fileRef  = $fileNo ? " (File No: {$fileNo})" : '';
+        $message  = "Dear {$name}, this is a {$ordinal} Serve Notice from Kano State Ministry of Lands regarding your property{$fileRef}. Please visit the office within 14 days. KANGIS.";
+
+        try {
+            $sms = app(EBulkSmsService::class);
+            return $sms->send($phone, $message);
+        } catch (\Throwable $e) {
+            Log::warning('SPA: SMS send failed', ['phone' => $phone, 'error' => $e->getMessage()]);
+            return false;
+        }
+    }
+}

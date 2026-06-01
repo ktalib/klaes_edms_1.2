@@ -180,8 +180,13 @@ class ProgrammesController extends Controller
             return $this->conversionBills($request);
         }
 
-        // Check if URL parameter is 'physical_planning' to filter only primary files
+        // ── Special Assignment Bills (?url=spa) ──────────────────────────
         $urlParam = $request->get('url');
+        if ($urlParam === 'spa') {
+            return $this->spaBills($request);
+        }
+
+        // Check if URL parameter is 'physical_planning' to filter only primary files
         $showOnlyPrimary = ($urlParam === 'physical_planning');
 
         // Get all file numbers for Select2 dropdown
@@ -823,6 +828,11 @@ class ProgrammesController extends Controller
 
     public function Payments(Request $request)
     {
+        // ── Special Assignment Payments (?url=spa) ───────────────────────
+        if ($request->get('url') === 'spa') {
+            return $this->spaPayments($request);
+        }
+
         // ── Conversion Applications (source=pp_conversion) ──────────────
         $sourceParam = $request->get('source');
         $isConversion = ($sourceParam === 'pp_conversion');
@@ -3197,5 +3207,125 @@ class ProgrammesController extends Controller
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
+    }
+
+    // ─── Special Assignment Bills & Payments ──────────────────────────────────
+
+    private function spaBills(Request $request)
+    {
+        $csrf = csrf_token();
+
+        if ($request->ajax()) {
+            $query = \App\Models\SpaBill::with('application')->orderByDesc('created_at');
+            $total = $query->count();
+            $data  = $query->skip($request->input('start', 0))
+                           ->take($request->input('length', 10))
+                           ->get()
+                           ->map(function ($b, $i) use ($request) {
+                               return [
+                                   'DT_RowIndex'  => $request->input('start', 0) + $i + 1,
+                                   'reference_id' => $b->reference_id ?? '—',
+                                   'file_number'  => optional($b->application)->file_number ?? '—',
+                                   'owner_name'   => optional($b->application)->owner_name  ?? '—',
+                                   'bill_type'    => $b->bill_type ?? '—',
+                                   'description'  => $b->description ?? '—',
+                                   'amount'       => number_format($b->amount, 2),
+                                   'due_date'     => $b->due_date?->format('d/m/Y') ?? '—',
+                                   'status'       => $b->status,
+                                   'action'       => '<button data-id="'.$b->id.'" class="btn-pay text-xs px-3 py-1 rounded bg-[rgb(186,191,12)] text-white">Pay</button>',
+                               ];
+                           });
+
+            return response()->json([
+                'draw'            => intval($request->input('draw')),
+                'recordsTotal'    => $total,
+                'recordsFiltered' => $total,
+                'data'            => $data,
+            ]);
+        }
+
+        // Load applications for the "Add Bill" modal select
+        $applications = \App\Models\SpaApplication::select('id', 'file_number', 'owner_name')->orderBy('file_number')->get();
+
+        $stats = [
+            'total'   => \App\Models\SpaBill::count(),
+            'unpaid'  => \App\Models\SpaBill::where('status', 'unpaid')->count(),
+            'paid'    => \App\Models\SpaBill::where('status', 'paid')->count(),
+            'partial' => \App\Models\SpaBill::where('status', 'partial')->count(),
+        ];
+
+        $PageTitle       = 'Special Assignment – Bills';
+        $PageDescription = 'Manage billing for Special Assignment cases.';
+
+        return view('programmes.spa_bills', compact('PageTitle', 'PageDescription', 'stats', 'applications'));
+    }
+
+    private function spaPayments(Request $request)
+    {
+        if ($request->ajax()) {
+            $dotIcon = '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>';
+
+            $query = \App\Models\SpaBill::with(['application', 'payments'])->orderByDesc('created_at');
+            $total = $query->count();
+            $data  = $query->skip($request->input('start', 0))
+                           ->take($request->input('length', 10))
+                           ->get()
+                           ->map(function ($b, $i) use ($request, $dotIcon) {
+                               $totalPaid = $b->payments->sum('amount_paid');
+                               $balance   = max(0, (float) $b->amount - $totalPaid);
+
+                               $actionItems = '';
+                               if ($b->status !== 'paid') {
+                                   $actionItems .= '<button class="btn-record-payment w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"'
+                                       . ' data-id="'.$b->id.'"'
+                                       . ' data-file="'.e(optional($b->application)->file_number ?? '').'"'
+                                       . ' data-type="'.e($b->bill_type ?? '').'"'
+                                       . ' data-amount="'.e(number_format($b->amount, 2)).'"'
+                                       . ' data-balance="'.e(number_format($balance, 2)).'"'
+                                       . '>Record Payment</button>';
+                               }
+
+                               $action = '<div class="relative inline-block">'
+                                   . '<button class="btn-action-toggle p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 border border-transparent hover:border-gray-200 transition-colors">'
+                                   . $dotIcon . '</button>'
+                                   . '<div class="action-dropdown hidden absolute right-0 top-full z-50 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">'
+                                   . $actionItems
+                                   . '<button class="btn-view-bill w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50" data-id="'.$b->id.'">View Payments</button>'
+                                   . '</div></div>';
+
+                               return [
+                                   'DT_RowIndex' => $request->input('start', 0) + $i + 1,
+                                   'file_number' => optional($b->application)->file_number ?? '—',
+                                   'owner_name'  => optional($b->application)->owner_name  ?? '—',
+                                   'bill_type'   => $b->bill_type ?? '—',
+                                   'bill_amount' => number_format((float) $b->amount, 2),
+                                   'amount_paid' => number_format($totalPaid, 2),
+                                   'balance'     => number_format($balance, 2),
+                                   'status'      => $b->status,
+                                   'action'      => $action,
+                               ];
+                           });
+
+            return response()->json([
+                'draw'            => intval($request->input('draw')),
+                'recordsTotal'    => $total,
+                'recordsFiltered' => $total,
+                'data'            => $data,
+            ]);
+        }
+
+        $stats = [
+            'total_payments' => \App\Models\SpaPayment::count(),
+            'total_amount'   => number_format(\App\Models\SpaPayment::sum('amount_paid'), 2),
+            'bills_paid'     => \App\Models\SpaBill::where('status', 'paid')->count(),
+            'bills_partial'  => \App\Models\SpaBill::where('status', 'partial')->count(),
+        ];
+
+        $isReport = $request->get('sub') === 'report';
+
+        $PageTitle       = $isReport ? 'Special Assignment – Payment Reports' : 'Special Assignment – Payments';
+        $PageDescription = $isReport ? 'Summary of SPA payment records.' : 'Record and manage payments for Special Assignment bills.';
+
+        return view('programmes.spa_payments', compact('PageTitle', 'PageDescription', 'stats', 'isReport'));
     }
 }

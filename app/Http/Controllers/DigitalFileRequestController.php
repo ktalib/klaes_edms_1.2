@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Department;
+use App\Models\DigitalFileAccess;
 use App\Models\DigitalFileRequest;
 use App\Models\FileTracker;
 use App\Models\Office;
 use App\Models\User;
+use App\Services\DigitalFileAccessService;
 use App\Services\UserNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,7 +21,8 @@ use Illuminate\Support\Facades\Storage;
 class DigitalFileRequestController extends Controller
 {
     public function __construct(
-        protected UserNotificationService $notifications
+        protected UserNotificationService    $notifications,
+        protected DigitalFileAccessService   $digitalAccess
     ) {}
 
     // ── Page ──────────────────────────────────────────────────────────────────
@@ -158,14 +161,17 @@ class DigitalFileRequestController extends Controller
         $validated = $request->validate([
             'file_no'                 => 'required|string|max:100',
             'file_title'              => 'nullable|string|max:255',
-            'destination_office_id'   => 'required|integer',
-            'destination_office_name' => 'required|string|max:255',
+            'request_type'            => 'nullable|string|in:Physical,Digital',
+            'destination_office_id'   => 'nullable|integer',
+            'destination_office_name' => 'nullable|string|max:255',
             'receiving_officer'       => 'nullable|string|max:255',
             'remarks'                 => 'nullable|string|max:1000',
             'is_redirected'           => 'boolean',
             'current_file_location'   => 'nullable|string|max:255',
             'current_file_holder'     => 'nullable|string|max:255',
         ]);
+
+        $requestType = $validated['request_type'] ?? DigitalFileRequest::TYPE_PHYSICAL;
 
         $user = Auth::user();
 
@@ -175,6 +181,7 @@ class DigitalFileRequestController extends Controller
         try {
             $req = DigitalFileRequest::create([
                 'request_no'             => DigitalFileRequest::generateRequestNo(),
+                'request_type'           => $requestType,
                 'file_no'                => $validated['file_no'],
                 'file_title'             => $validated['file_title'] ?? null,
                 'requester_user_id'      => $user->id,
@@ -182,8 +189,8 @@ class DigitalFileRequestController extends Controller
                 'receiving_officer'      => $validated['receiving_officer'] ?? null,
                 'source_office_id'       => $sourceOffice?->id,
                 'source_office_name'     => $sourceOffice?->office_name,
-                'destination_office_id'  => $validated['destination_office_id'],
-                'destination_office_name'=> $validated['destination_office_name'],
+                'destination_office_id'  => $validated['destination_office_id'] ?? null,
+                'destination_office_name'=> $validated['destination_office_name'] ?? ($requestType === DigitalFileRequest::TYPE_DIGITAL ? 'Digital Access' : null),
                 'current_file_location'  => $validated['current_file_location'] ?? null,
                 'current_file_holder'    => $validated['current_file_holder'] ?? null,
                 'is_redirected'          => $request->boolean('is_redirected'),
@@ -195,11 +202,16 @@ class DigitalFileRequestController extends Controller
             // ── Notifications ─────────────────────────────────────────────
             $this->notifyRequestCreated($req, $user);
 
+            $typeLabel = $req->request_type === DigitalFileRequest::TYPE_DIGITAL
+                ? 'Digital access request'
+                : 'Request';
+
             return response()->json([
-                'success'    => true,
-                'message'    => 'Request ' . $req->request_no . ' submitted successfully.',
-                'request_no' => $req->request_no,
-                'id'         => $req->id,
+                'success'      => true,
+                'message'      => "{$typeLabel} {$req->request_no} submitted successfully.",
+                'request_no'   => $req->request_no,
+                'request_type' => $req->request_type,
+                'id'           => $req->id,
             ]);
 
         } catch (\Throwable $e) {
@@ -375,9 +387,30 @@ class DigitalFileRequestController extends Controller
             }
         }
 
+        // ── Digital file: copy to temporary folder ────────────────────────────
+        $digitalNote = '';
+        if ($req->request_type === DigitalFileRequest::TYPE_DIGITAL) {
+            try {
+                $access      = $this->digitalAccess->grantAccess($req);
+                $days        = config('dfr.access_days', 5);
+                $digitalNote = " Digital copy granted — access expires in {$days} working days.";
+            } catch (\Throwable $e) {
+                Log::error('DFR digital copy failed after approval', [
+                    'request_id' => $req->id,
+                    'error'      => $e->getMessage(),
+                ]);
+                // Don't block the approval; inform the response so UI can surface the warning
+                $digitalNote = ' (Warning: digital file copy could not be created — ' . $e->getMessage() . ')';
+            }
+        }
+
         $this->notifyRequestApproved($req, $user);
 
-        return response()->json(['success' => true, 'message' => 'Request approved successfully.']);
+        $successMsg = $req->request_type === DigitalFileRequest::TYPE_DIGITAL
+            ? 'Digital access request approved.' . $digitalNote
+            : 'Request approved successfully.';
+
+        return response()->json(['success' => true, 'message' => $successMsg]);
     }
 
     // ── Reject ─────────────────────────────────────────────────────────────
@@ -446,6 +479,114 @@ class DigitalFileRequestController extends Controller
             'requester_signature_url'=> $resolveSignatureUrl($req->requester),
             'approver_signature_url' => $resolveSignatureUrl($req->approver),
         ]);
+    }
+
+    // ── My Digital Files (user's temp copies) ────────────────────────────────
+
+    public function myFiles(Request $request)
+    {
+        $userId = Auth::id();
+
+        $active  = DigitalFileAccess::where('requester_user_id', $userId)
+            ->active()
+            ->with('request')
+            ->orderByDesc('granted_at')
+            ->get();
+
+        $history = DigitalFileAccess::where('requester_user_id', $userId)
+            ->where('access_status', '!=', DigitalFileAccess::STATUS_ACTIVE)
+            ->with('request')
+            ->orderByDesc('updated_at')
+            ->take(20)
+            ->get();
+
+        return view('digital_request.my_files', compact('active', 'history'));
+    }
+
+    // ── Active file nos with digital access (for badge rendering) ───────────
+
+    public function activeFileNos()
+    {
+        $fileNos = DigitalFileAccess::where('requester_user_id', Auth::id())
+            ->active()
+            ->pluck('file_no')
+            ->unique()
+            ->values();
+
+        return response()->json(['file_nos' => $fileNos]);
+    }
+
+    // ── View a single digital file inline (no download) ─────────────────────
+
+    public function viewFile(DigitalFileAccess $access, string $filename)
+    {
+        // Ownership check
+        if ((int) $access->requester_user_id !== (int) Auth::id()) {
+            abort(403, 'You do not have permission to view this file.');
+        }
+
+        // Expiry check
+        if ($access->isExpired()) {
+            abort(410, 'This digital file access has expired.');
+        }
+
+        // Filename allowlist check (prevent path traversal)
+        $allowedFiles = (array) ($access->files_copied ?? []);
+        if (! in_array($filename, $allowedFiles, true)) {
+            abort(404, 'File not found in this access grant.');
+        }
+
+        $absolutePath = $access->absoluteTempPath() . DIRECTORY_SEPARATOR . $filename;
+
+        if (! is_file($absolutePath)) {
+            abort(404, 'The requested file no longer exists on the server.');
+        }
+
+        // Extension-based MIME map (reliable on Windows where mime_content_type can fail)
+        $ext      = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        $mimeMap  = [
+            'pdf'  => 'application/pdf',
+            'jpg'  => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png'  => 'image/png',
+            'gif'  => 'image/gif',
+            'webp' => 'image/webp',
+            'bmp'  => 'image/bmp',
+            'tiff' => 'image/tiff',
+            'tif'  => 'image/tiff',
+        ];
+        $mimeType = $mimeMap[$ext]
+            ?? (function_exists('mime_content_type') ? (mime_content_type($absolutePath) ?: 'application/octet-stream') : 'application/octet-stream');
+
+        // ── Flush all output buffers before streaming binary content ──────────
+        // A rogue space/byte is being output somewhere in the middleware chain
+        // which corrupts the binary file. Clean ALL ob levels before streaming.
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
+        // Stream directly via PHP to ensure no buffered garbage precedes the binary
+        header('Content-Type: ' . $mimeType);
+        header('Content-Length: ' . filesize($absolutePath));
+        header('Content-Disposition: inline; filename="' . addslashes($filename) . '"');
+        header('Cache-Control: no-store, no-cache, must-revalidate');
+        header('X-Frame-Options: SAMEORIGIN');
+        header('Access-Control-Allow-Origin: *');
+        readfile($absolutePath);
+        exit();
+    }
+
+    // ── Revoke an access (admin / approver) ───────────────────────────────────
+
+    public function revokeAccess(DigitalFileAccess $access)
+    {
+        try {
+            $this->digitalAccess->revokeAccess($access);
+            return response()->json(['success' => true, 'message' => 'Digital access revoked and temporary files removed.']);
+        } catch (\Throwable $e) {
+            Log::error('DFR revoke failed', ['access_id' => $access->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Could not revoke access: ' . $e->getMessage()], 500);
+        }
     }
 
     // ── Pending count (for live polling) ───────────────────────────────────

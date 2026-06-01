@@ -396,29 +396,7 @@ System') }}
             color: #dc2626;
         }
 
-        /* ── Stats Carousel ─────────────────────────────── */
-        #stats-carousel {
-            /* reserve space equal to the taller slide so page doesn't jump */
-            min-height: 112px;
-        }
-
-        .stats-slide {
-            width: 100%;
-        }
-
-        /* dot indicators */
-        .cdot {
-            display: inline-block;
-            width: 8px; height: 8px;
-            border-radius: 50%;
-            background: rgba(255,255,255,.4);
-            cursor: pointer;
-            transition: background .3s, transform .3s;
-        }
-        .cdot-active {
-            background: rgba(255,255,255,.95);
-            transform: scale(1.3);
-        }
+        /* Carousel CSS removed – stats are now two static rows */
     </style>
 @include('sectionaltitling.partials.assets.css')
 @section('content')
@@ -475,143 +453,166 @@ System') }}
             </div>
         </div>
 
-        <!-- ══ Stats Carousel ══ both groups share the same row height, cycling with fade ══ -->
-        <div id="stats-carousel" style="position:relative; min-height:120px;">
+        <!-- ══ Stats – 15 cards · 3 rows × 5 columns (all equal) ══ -->
+        <div class="grid gap-3 md:grid-cols-3 lg:grid-cols-5" style="grid-auto-rows:1fr;">
 
-            <!-- Dot indicators -->
-            <div style="position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:10;" id="carousel-dots">
-                <span class="cdot cdot-active" data-slide="0"></span>
-                <span class="cdot" data-slide="1"></span>
+            {{-- ── Row 1 ─────────────────────────────────────────── --}}
+
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#3b0764;--gradient-end:#5b21b6;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total Number of File Numbers</h3>
+                    <i data-lucide="hash" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-total-filenumbers"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">All departments combined</p>
             </div>
 
-            <!-- ── Slide 0 (shows FIRST): Registry Records (PRA, IC, FH, MLS, ST Primary) ── -->
-            <div class="stats-slide" id="stats-slide-0" style="position:relative;opacity:1;transition:opacity .6s ease;">
-                <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-
-                    <div class="gradient-card hover-scale rounded-lg p-6 shadow-enhanced" style="--gradient-start:hsl(160,60%,35%);--gradient-end:hsl(200,70%,45%);">
-                        <div class="decorative-circle"></div>
-                        <div class="flex items-center justify-between mb-2 relative z-10">
-                            <h3 class="text-sm font-medium text-white">PRA Records</h3>
-                            <i data-lucide="database" class="h-4 w-4 text-white/80"></i>
-                        </div>
-                        <div class="text-2xl font-bold text-white relative z-10" id="pra-count"><span class="loading-shimmer">Loading…</span></div>
-                        <p class="text-xs text-white/80 mt-1 relative z-10">Property Records Archive</p>
-                    </div>
-
-                    <div class="gradient-card hover-scale rounded-lg p-6 shadow-enhanced" style="--gradient-start:hsl(280,60%,45%);--gradient-end:hsl(320,70%,50%);">
-                        <div class="decorative-circle"></div>
-                        <div class="flex items-center justify-between mb-2 relative z-10">
-                            <h3 class="text-sm font-medium text-white">IC Records</h3>
-                            <i data-lucide="book-open" class="h-4 w-4 text-white/80"></i>
-                        </div>
-                        <div class="text-2xl font-bold text-white relative z-10" id="ic-count"><span class="loading-shimmer">Loading…</span></div>
-                        <p class="text-xs text-white/80 mt-1 relative z-10">Instrument Captures</p>
-                    </div>
-
-                    <div class="gradient-card hover-scale rounded-lg p-6 shadow-enhanced" style="--gradient-start:hsl(20,80%,45%);--gradient-end:hsl(40,90%,55%);">
-                        <div class="decorative-circle"></div>
-                        <div class="flex items-center justify-between mb-2 relative z-10">
-                            <h3 class="text-sm font-medium text-white">FH Records</h3>
-                            <i data-lucide="history" class="h-4 w-4 text-white/80"></i>
-                        </div>
-                        <div class="text-2xl font-bold text-white relative z-10" id="fh-count"><span class="loading-shimmer">Loading…</span></div>
-                        <p class="text-xs text-white/80 mt-1 relative z-10">File History Staging</p>
-                    </div>
-
-                    <div class="gradient-card hover-scale rounded-lg p-6 shadow-enhanced" style="--gradient-start:hsl(195,75%,35%);--gradient-end:hsl(215,80%,50%);">
-                        <div class="decorative-circle"></div>
-                        <div class="flex items-center justify-between mb-2 relative z-10">
-                            <h3 class="text-sm font-medium text-white">MLS Commissioned</h3>
-                            <i data-lucide="badge-check" class="h-4 w-4 text-white/80"></i>
-                        </div>
-                        <div class="text-2xl font-bold text-white relative z-10" id="mls-count"><span class="loading-shimmer">Loading…</span></div>
-                        <p class="text-xs text-white/80 mt-1 relative z-10">Total MLS Files Commissioned</p>
-                    </div>
-
-                    <div class="gradient-card hover-scale rounded-lg p-6 shadow-enhanced" style="--gradient-start:hsl(243,75%,45%);--gradient-end:hsl(280,70%,55%);">
-                        <div class="decorative-circle"></div>
-                        <div class="flex items-center justify-between mb-2 relative z-10">
-                            <h3 class="text-sm font-medium text-white">ST Primary Applications</h3>
-                            <i data-lucide="building-2" class="h-4 w-4 text-white/80"></i>
-                        </div>
-                        <div class="text-2xl font-bold text-white relative z-10" id="st-primary-apps-count"><span class="loading-shimmer">Loading…</span></div>
-                        <p class="text-xs text-white/80 mt-1 relative z-10">Total ST Primary Applications</p>
-                    </div>
-
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#7f1d1d;--gradient-end:#991b1b;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total Indexed Land Files</h3>
+                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
                 </div>
-            </div><!-- /slide-0 -->
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-land-indexed"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">Indexed land files</p>
+            </div>
 
-            <!-- ── Slide 1 (shows SECOND): Digital Archive (Indexed, Blind, Scan, Apps, Pending) ── -->
-            <div class="stats-slide" id="stats-slide-1" style="position:absolute;top:0;left:0;right:0;opacity:0;pointer-events:none;transition:opacity .6s ease;">
-                <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-
-                    <div class="gradient-card hover-scale rounded-lg p-6 shadow-enhanced" style="--gradient-start:hsl(142.1,76.2%,36.3%);--gradient-end:hsl(198,93%,60%);">
-                        <div class="decorative-circle"></div>
-                        <div class="flex items-center justify-between mb-2 relative z-10">
-                            <h3 class="text-sm font-medium text-white">Number of Indexed Files</h3>
-                            <i data-lucide="file-archive" class="h-4 w-4 text-white/80"></i>
-                        </div>
-                        <div class="text-2xl font-bold text-white relative z-10" id="indexed-files-count"><span class="loading-shimmer">Loading…</span></div>
-                        <p class="text-xs text-white/80 flex items-center mt-1 relative z-10">
-                            <span id="indexed-files-trend-wrap" class="flex items-center mr-1"></span>from last month
-                        </p>
-                    </div>
-
-                    <div class="gradient-card hover-scale rounded-lg p-6 shadow-enhanced" style="--gradient-start:hsl(262,83.3%,57.8%);--gradient-end:hsl(339.6,82.2%,51.6%);">
-                        <div class="decorative-circle"></div>
-                        <div class="flex items-center justify-between mb-2 relative z-10">
-                            <h3 class="text-sm font-medium text-white">Number of Blind Scan</h3>
-                            <i data-lucide="scan" class="h-4 w-4 text-white/80"></i>
-                        </div>
-                        <div class="text-2xl font-bold text-white relative z-10" id="blind-scan-count"><span class="loading-shimmer">Loading…</span></div>
-                        <p class="text-xs text-white/80 flex items-center mt-1 relative z-10">
-                            <span id="blind-scan-trend-wrap" class="flex items-center mr-1"></span>from last month
-                        </p>
-                    </div>
-
-                    <div class="gradient-card hover-scale rounded-lg p-6 shadow-enhanced" style="--gradient-start:hsl(339.6,82.2%,51.6%);--gradient-end:hsl(198,93%,60%);">
-                        <div class="decorative-circle"></div>
-                        <div class="flex items-center justify-between mb-2 relative z-10">
-                            <h3 class="text-sm font-medium text-white">Number of Scan Upload</h3>
-                            <i data-lucide="upload" class="h-4 w-4 text-white/80"></i>
-                        </div>
-                        <div class="text-2xl font-bold text-white relative z-10" id="scan-upload-count"><span class="loading-shimmer">Loading…</span></div>
-                        <p class="text-xs text-white/80 flex items-center mt-1 relative z-10">
-                            <span id="scan-upload-trend-wrap" class="flex items-center mr-1"></span>from last month
-                        </p>
-                    </div>
-
-                    <div class="gradient-card hover-scale rounded-lg p-6 shadow-enhanced" style="--gradient-start:hsl(221.2,83.2%,53.3%);--gradient-end:hsl(262,83.3%,57.8%);">
-                        <div class="decorative-circle"></div>
-                        <div class="flex items-center justify-between mb-2 relative z-10">
-                            <h3 class="text-sm font-medium text-white">Total Applications</h3>
-                            <i data-lucide="file-text" class="h-4 w-4 text-white/80"></i>
-                        </div>
-                        <div class="text-2xl font-bold text-white relative z-10" id="total-applications-count"><span class="loading-shimmer">Loading…</span></div>
-                        <p class="text-xs text-white/80 flex items-center mt-1 relative z-10">
-                            <span id="applications-trend-wrap" class="flex items-center mr-1"></span>from last month
-                        </p>
-                    </div>
-
-                    <div class="gradient-card hover-scale rounded-lg p-6 shadow-enhanced" style="--gradient-start:hsl(158,64%,35%);--gradient-end:hsl(243,75%,50%);">
-                        <div class="decorative-circle"></div>
-                        <div class="flex items-center justify-between mb-2 relative z-10">
-                            <h3 class="text-sm font-medium text-white">Total ST PuAs</h3>
-                            <i data-lucide="layers" class="h-4 w-4 text-white/80"></i>
-                        </div>
-                        <div class="text-2xl font-bold text-white relative z-10" id="st-puas-count"><span class="loading-shimmer">Loading…</span></div>
-                        <p class="text-xs text-white/80 flex items-center mt-1 relative z-10">
-                            <span id="st-puas-trend-wrap" class="flex items-center mr-1"></span>ST Sub-Unit Applications
-                        </p>
-                    </div>
-
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#991b1b;--gradient-end:#b91c1c;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total Land Files Commissioned</h3>
+                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
                 </div>
-            </div><!-- /slide-1 -->
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-land-commissioned"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">MLS commissioned</p>
+            </div>
 
-        </div><!-- /stats-carousel -->
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#c2410c;--gradient-end:#ea580c;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total KANGIS Files Indexed</h3>
+                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-kangis-indexed"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">KANGIS registry</p>
+            </div>
 
-        <!-- spacing for dot indicators -->
-        <div style="height:28px;"></div>
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#ea580c;--gradient-end:#f97316;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total KANGIS Files Commissioned</h3>
+                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-kangis-commissioned"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">KANGIS commissioned</p>
+            </div>
+
+            {{-- ── Row 2 ─────────────────────────────────────────── --}}
+
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#5c1a08;--gradient-end:#7c2d12;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total Cadastral Files Indexed</h3>
+                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-cadastral-indexed"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">Cadastral correspondence</p>
+            </div>
+
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#7c2d12;--gradient-end:#92400e;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total Cadastral Files Commissioned</h3>
+                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-cadastral-commissioned"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">Cadastral commissioned</p>
+            </div>
+
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#1e3a8a;--gradient-end:#1d4ed8;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total ST Files Indexed</h3>
+                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-st-indexed"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">Sectional titling</p>
+            </div>
+
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#1d4ed8;--gradient-end:#2563eb;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total ST Files Commissioned</h3>
+                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-st-commissioned"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">ST commissioned</p>
+            </div>
+
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#011711;--gradient-end:#022c22;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total DCIV Files Indexed</h3>
+                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-dciv-indexed"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">DCIV registry</p>
+            </div>
+
+            {{-- ── Row 3 ─────────────────────────────────────────── --}}
+
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#022c22;--gradient-end:#064e3b;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total DCIV Files Commissioned</h3>
+                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-dciv-commissioned"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">DCIV commissioned</p>
+            </div>
+
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#3f6212;--gradient-end:#65a30d;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total SLTR Files Indexed</h3>
+                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-sltr-indexed"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">SLTR registry</p>
+            </div>
+
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#65a30d;--gradient-end:#84cc16;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total SLTR Files Commissioned</h3>
+                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-sltr-commissioned"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">SLTR commissioned</p>
+            </div>
+
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#831843;--gradient-end:#9d174d;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total GKN Files Indexed</h3>
+                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-gkn-indexed"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">GKN / Survey registry</p>
+            </div>
+
+            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#9d174d;--gradient-end:#be185d;">
+                <div class="decorative-circle"></div>
+                <div class="flex items-center justify-between relative z-10">
+                    <h3 class="text-xs font-semibold text-white leading-tight">Total GKN Files Commissioned</h3>
+                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                </div>
+                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-gkn-commissioned"><span class="loading-shimmer">…</span></div>
+                <p class="text-[10px] text-white/70 mt-1 relative z-10">GKN commissioned</p>
+            </div>
+
+        </div><!-- /stats -->
 
         <!-- Real-time Notifications -->
         <div id="notification-banner" class="hidden bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
@@ -2280,101 +2281,7 @@ System') }}
             }
         }
 
-        /* ══════════════════════════════════════════════════════════════
-         | STATS CAROUSEL  – fades between slide-0 (PRA/IC/FH/MLS)
-         |                   and slide-1 (Archive / Applications)
-         ══════════════════════════════════════════════════════════════ */
-        (function initCarousel() {
-            const slides     = Array.from(document.querySelectorAll('.stats-slide'));
-            const dots       = Array.from(document.querySelectorAll('.cdot'));
-            const INTERVAL   = 5000;   // ms each slide is visible
-            const FADE_MS    = 600;    // must match CSS transition duration
-            let   current    = 0;
-            let   timer      = null;
-            let   animating  = false;
-
-            function goTo(next) {
-                if (animating || next === current) return;
-                animating = true;
-
-                const outSlide = slides[current];
-                const inSlide  = slides[next];
-
-                // Keep wrapper height = outgoing slide height during transition
-                const carousel = document.getElementById('stats-carousel');
-                carousel.style.minHeight = outSlide.offsetHeight + 'px';
-
-                // Fade out current
-                outSlide.style.opacity = '0';
-                outSlide.style.pointerEvents = 'none';
-
-                // Position incoming behind, then fade it in
-                inSlide.style.position = 'absolute';
-                inSlide.style.top      = '0';
-                inSlide.style.left     = '0';
-                inSlide.style.right    = '0';
-                inSlide.style.opacity  = '0';
-                inSlide.style.pointerEvents = 'none';
-
-                // Small tick so the starting opacity=0 is painted before transition kicks in
-                requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                        inSlide.style.opacity = '1';
-                        inSlide.style.pointerEvents = '';
-                    });
-                });
-
-                setTimeout(() => {
-                    // Promote incoming to normal flow, push outgoing to absolute
-                    outSlide.style.position = 'absolute';
-                    outSlide.style.top      = '0';
-                    outSlide.style.left     = '0';
-                    outSlide.style.right    = '0';
-
-                    inSlide.style.position  = 'relative';
-                    inSlide.style.top       = '';
-                    inSlide.style.left      = '';
-                    inSlide.style.right     = '';
-
-                    carousel.style.minHeight = '';
-
-                    // Update dots
-                    dots[current]?.classList.remove('cdot-active');
-                    dots[next]?.classList.add('cdot-active');
-
-                    current   = next;
-                    animating = false;
-                }, FADE_MS + 50);
-            }
-
-            function advance() {
-                goTo((current + 1) % slides.length);
-            }
-
-            function startTimer() {
-                clearInterval(timer);
-                timer = setInterval(advance, INTERVAL);
-            }
-
-            // Dot click → jump to that slide
-            dots.forEach((dot, i) => {
-                dot.addEventListener('click', () => {
-                    goTo(i);
-                    startTimer(); // reset auto-advance
-                });
-            });
-
-            // Pause on hover
-            const carousel = document.getElementById('stats-carousel');
-            carousel.addEventListener('mouseenter', () => clearInterval(timer));
-            carousel.addEventListener('mouseleave', startTimer);
-
-            startTimer();
-        })();
-
-        /* ══════════════════════════════════════════════════════════════
-         | END CAROUSEL
-         ══════════════════════════════════════════════════════════════ */
+        /* Carousel removed – stats now displayed in two static rows */
 
         // Enhanced Dashboard JavaScript
         // System status simulation and management
@@ -2661,26 +2568,30 @@ System') }}
                 if (!json.success || !json.data) throw new Error(json.message || 'Failed');
 
                 const d = json.data;
+                const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val ?? '—'; };
 
-                /* ── Slide 1 stat cards (Digital Archive) ────────────── */
-                document.getElementById('indexed-files-count').textContent      = d.indexed_files?.count    ?? '—';
-                document.getElementById('blind-scan-count').textContent         = d.blind_scans?.count      ?? '—';
-                document.getElementById('scan-upload-count').textContent        = d.scan_uploads?.count     ?? '—';
-                document.getElementById('total-applications-count').textContent = d.total_applications?.count ?? '—';
-                document.getElementById('st-puas-count').textContent            = d.st_puas?.count ?? '—';
+                /* ── Slide 0: Headline file stats ────────────────────────── */
+                if (d.file_stats) {
+                    const fs = d.file_stats;
+                    /* ── Row 1 ─── */
+                    setText('fs-total-filenumbers', fs.total_file_numbers?.count);
+                    setText('fs-land-indexed',      fs.land_indexed?.count);
+                    setText('fs-land-commissioned', fs.land_commissioned?.count);
 
-                renderTrend('indexed-files-trend-wrap',   d.indexed_files?.trend);
-                renderTrend('blind-scan-trend-wrap',      d.blind_scans?.trend);
-                renderTrend('scan-upload-trend-wrap',     d.scan_uploads?.trend);
-                renderTrend('applications-trend-wrap',    d.total_applications?.trend);
-                renderTrend('st-puas-trend-wrap',         d.st_puas?.trend);
-
-                /* ── Slide 0 stat cards (Registry Records) ───────────── */
-                document.getElementById('pra-count').textContent              = d.pra_records?.count    ?? '—';
-                document.getElementById('ic-count').textContent               = d.ic_records?.count     ?? '—';
-                document.getElementById('fh-count').textContent               = d.fh_records?.count     ?? '—';
-                document.getElementById('mls-count').textContent              = d.mls_commissioned?.count ?? '—';
-                document.getElementById('st-primary-apps-count').textContent  = d.st_primary_apps?.count  ?? '—';
+                    /* ── Row 2: Registry split stats ─── */
+                    setText('fs-st-indexed',             fs.st?.indexed);
+                    setText('fs-st-commissioned',        fs.st?.commissioned);
+                    setText('fs-dciv-indexed',           fs.dciv?.indexed);
+                    setText('fs-dciv-commissioned',      fs.dciv?.commissioned);
+                    setText('fs-sltr-indexed',           fs.sltr?.indexed);
+                    setText('fs-sltr-commissioned',      fs.sltr?.commissioned);
+                    setText('fs-gkn-indexed',            fs.gkn?.indexed);
+                    setText('fs-gkn-commissioned',       fs.gkn?.commissioned);
+                    setText('fs-kangis-indexed',         fs.kangis?.indexed);
+                    setText('fs-kangis-commissioned',    fs.kangis?.commissioned);
+                    setText('fs-cadastral-indexed',      fs.cadastral?.indexed);
+                    setText('fs-cadastral-commissioned', fs.cadastral?.commissioned);
+                }
 
                 /* ── Quick Stats ──────────────────────────────────────── */
                 const appEl = document.getElementById('qs-approved');
@@ -2709,33 +2620,40 @@ System') }}
                 /* ── Recent Applications panel (Overview tab sidebar) ─── */
                 const recentPanel = document.getElementById('recent-apps-panel');
                 if (recentPanel && d.recent_apps && d.recent_apps.length) {
-                    const statusIconMap = {
-                        approved    : { icon: 'check-circle-2', bg: 'from-green-100 to-green-50', color: 'text-green-600' },
-                        rejected    : { icon: 'x-circle',       bg: 'from-red-100 to-red-50',   color: 'text-red-600'   },
-                        pending     : { icon: 'clock',          bg: 'from-yellow-100 to-yellow-50', color: 'text-yellow-600' },
-                        'in progress': { icon: 'loader-2',      bg: 'from-blue-100 to-blue-50', color: 'text-blue-600'  },
-                        'in_progress': { icon: 'loader-2',      bg: 'from-blue-100 to-blue-50', color: 'text-blue-600'  },
+                    // Source → visual config
+                    const sourceMap = {
+                        oss       : { label: 'OSS',      bg: 'from-blue-100 to-blue-50',    color: 'text-blue-600',   badge: 'bg-blue-100 text-blue-700 border-blue-200',   icon: 'file-text' },
+                        st_mother : { label: 'ST Primary', bg: 'from-indigo-100 to-indigo-50', color: 'text-indigo-600', badge: 'bg-indigo-100 text-indigo-700 border-indigo-200', icon: 'building-2' },
+                        st_pua    : { label: 'ST PuA',   bg: 'from-violet-100 to-violet-50', color: 'text-violet-600', badge: 'bg-violet-100 text-violet-700 border-violet-200', icon: 'layers' },
+                        st_sua    : { label: 'ST SUA',   bg: 'from-cyan-100 to-cyan-50',    color: 'text-cyan-600',   badge: 'bg-cyan-100 text-cyan-700 border-cyan-200',     icon: 'square-stack' },
                     };
+                    const statusCls = {
+                        approved    : 'status-badge-approved',
+                        rejected    : 'status-badge-rejected',
+                        pending     : 'status-badge-pending',
+                        'in progress': 'status-badge-in-progress',
+                        'in_progress': 'status-badge-in-progress',
+                    };
+
                     recentPanel.innerHTML = d.recent_apps.map(app => {
-                        const s     = (app.status || 'pending').toLowerCase();
-                        const meta  = statusIconMap[s] || statusIconMap['pending'];
-                        const badge = statusBadge(app.status);
-                        const appType = app.type && app.type !== '—' ? app.type : 'Application';
+                        const src  = sourceMap[app.source] || sourceMap['oss'];
+                        const s    = (app.status || 'pending').toLowerCase();
+                        const sCls = statusCls[s] || 'status-badge-pending';
+                        const sLbl = app.status ? app.status.charAt(0).toUpperCase() + app.status.slice(1).toLowerCase() : 'Pending';
                         return `
                         <div class="flex items-start gap-3 rounded-lg border p-3 hover:bg-gray-50 transition-all duration-200 hover:shadow-sm">
-                            <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border bg-gradient-to-br ${meta.bg}">
-                                <i data-lucide="${meta.icon}" class="h-4 w-4 ${meta.color}"></i>
+                            <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border bg-gradient-to-br ${src.bg}">
+                                <i data-lucide="${src.icon}" class="h-4 w-4 ${src.color}"></i>
                             </div>
                             <div class="flex-1 min-w-0">
                                 <div class="flex items-start justify-between gap-2">
                                     <p class="text-sm font-medium text-gray-800 truncate">${app.applicant}</p>
-                                    ${badge}
+                                    <span class="${sCls} px-2 py-0.5 text-xs rounded-full whitespace-nowrap">${sLbl}</span>
                                 </div>
-                                <div class="flex items-center gap-3 mt-1">
-                                    <span class="text-xs text-gray-500 flex items-center">
-                                        <i data-lucide="file-text" class="h-3 w-3 mr-1"></i>${app.app_id}
-                                    </span>
-                                    <span class="text-xs text-gray-400 truncate">${appType}</span>
+                                <div class="flex items-center gap-2 mt-1 flex-wrap">
+                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium border ${src.badge}">${src.label}</span>
+                                    <span class="text-xs text-gray-500 font-mono">${app.app_id}</span>
+                                    <span class="text-xs text-gray-400 truncate max-w-[100px]">${app.file_number}</span>
                                 </div>
                                 <div class="text-xs text-gray-400 flex items-center mt-0.5">
                                     <i data-lucide="calendar" class="h-3 w-3 mr-1"></i>${app.date}
@@ -2752,6 +2670,8 @@ System') }}
                         </div>`;
                     lucide.createIcons();
                 }
+
+                /* ── file_registry block removed (replaced by file_stats above) ── */
 
                 /* ── Information Products tab ────────────────────────── */
                 if (d.info_products) {

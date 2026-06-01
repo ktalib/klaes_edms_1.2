@@ -8,14 +8,14 @@
     @include('admin.header')
 
     {{-- ── Module Banner ───────────────────────────────────────────────────── --}}
-    <div class="bg-gradient-to-r from-violet-700 via-purple-600 to-violet-800 px-6 py-3 flex items-center gap-3 shadow-sm">
+    <div class="bg-gradient-to-r from-[#450a0a] via-[#6b1010] to-[#450a0a] px-6 py-3 flex items-center gap-3 shadow-sm">
         <i data-lucide="send" class="h-5 w-5 text-white shrink-0"></i>
         <div class="flex items-center gap-2">
             <span class="text-white font-bold text-sm uppercase tracking-widest">Digital File Request</span>
-            <span class="text-violet-200 text-sm">·</span>
+            <span class="text-red-200 text-sm">·</span>
             <span class="text-white text-sm font-medium">e-Registry</span>
-            <span class="text-violet-200 text-sm">·</span>
-            <span class="text-violet-200 text-sm">Request a Physical File</span>
+            <span class="text-red-200 text-sm">·</span>
+            <span class="text-red-200 text-sm">Request a Physical File</span>
         </div>
     </div>
 
@@ -25,7 +25,7 @@
             {{-- ── Stats cards ─────────────────────────────────────────────── --}}
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex items-center gap-3">
-                    <div class="p-2 bg-violet-100 rounded-lg"><i data-lucide="inbox" class="h-5 w-5 text-violet-600"></i></div>
+                    <div class="p-2 bg-red-50 rounded-lg"><i data-lucide="inbox" class="h-5 w-5 text-[#450a0a]"></i></div>
                     <div><p class="text-xs text-gray-500">Total Requests</p><p class="text-xl font-bold text-gray-800">{{ number_format($stats['total']) }}</p></div>
                 </div>
                 <div id="dr-pending-card" class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex items-center gap-3 relative {{ $stats['pending'] > 0 ? 'border-yellow-300 ring-2 ring-yellow-200' : '' }}">
@@ -48,7 +48,7 @@
                     @endif
                 </div>
                 <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex items-center gap-3">
-                    <div class="p-2 bg-green-100 rounded-lg"><i data-lucide="check-circle" class="h-5 w-5 text-green-600"></i></div>
+                    <div class="p-2 bg-red-50 rounded-lg"><i data-lucide="check-circle" class="h-5 w-5 text-[#450a0a]"></i></div>
                     <div><p class="text-xs text-gray-500">Approved</p><p class="text-xl font-bold text-gray-800">{{ number_format($stats['approved']) }}</p></div>
                 </div>
                 <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex items-center gap-3">
@@ -79,7 +79,7 @@
                 {{-- Toolbar --}}
                 <div class="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
                     <h2 class="text-base font-semibold text-gray-800 flex items-center gap-2">
-                        <i data-lucide="list" class="h-4 w-4 text-violet-600"></i>
+                        <i data-lucide="list" class="h-4 w-4 text-[#450a0a]"></i>
                         File Requests
                         <span id="dr-pending-badge" class="hidden inline-flex items-center justify-center ml-1 min-w-[1.2rem] h-5 px-1.5 rounded-full bg-yellow-500 text-white text-[10px] font-black"></span>
                     </h2>
@@ -87,17 +87,17 @@
                         {{-- Live-refresh indicator --}}
                         <span id="dr-live-indicator" class="inline-flex items-center gap-1 text-xs text-gray-400" title="Auto-refreshes every 30s">
                             <span class="flex h-1.5 w-1.5 relative">
-                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-400"></span>
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#450a0a] opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#450a0a]"></span>
                             </span>
                             Live
                         </span>
                         {{-- Search --}}
                         <input type="text" id="dr-search" placeholder="Search file no, officer…"
-                            class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 w-52">
+                            class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#450a0a] w-52">
 
                         {{-- Status filter --}}
-                        <select id="dr-status-filter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+                        <select id="dr-status-filter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#450a0a]">
                             <option value="">All Statuses</option>
                             <option value="Pending">Pending</option>
                             <option value="Approved">Approved</option>
@@ -109,14 +109,15 @@
                         </select>
 
                         {{-- Date range --}}
-                        <input type="date" id="dr-date-from" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
-                        <input type="date" id="dr-date-to"   class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+                        <input type="date" id="dr-date-from" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#450a0a]">
+                        <input type="date" id="dr-date-to"   class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#450a0a]">
 
-                        {{-- New Request → uses existing create-file-tracker form with url=digital_request --}}
-                        {{-- <a href="{{ url('/create-file-tracker?url=digital_request') }}"
-                            class="inline-flex items-center px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors">
-                            <i data-lucide="plus" class="h-4 w-4 mr-1.5"></i>Create File Request
-                        </a> --}}
+                        {{-- My Digital Files link --}}
+                        <a href="{{ route('digital-request.my-files') }}"
+                            class="inline-flex items-center gap-1.5 px-3 py-2 border border-red-200 text-[#450a0a] bg-red-50 hover:bg-red-100 text-sm font-medium rounded-lg transition-colors">
+                            <i data-lucide="folder-open" class="h-4 w-4"></i>
+                            My Digital Files
+                        </a>
                     </div>
                 </div>
 
@@ -166,21 +167,45 @@
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <h3 class="text-base font-semibold text-gray-800 flex items-center gap-2">
-                <i data-lucide="send" class="h-4 w-4 text-violet-600"></i>New Digital File Request
+                <i data-lucide="send" class="h-4 w-4 text-[#450a0a]"></i>New Digital File Request
             </h3>
             <button class="modal-close text-gray-400 hover:text-gray-600"><i data-lucide="x" class="h-5 w-5"></i></button>
         </div>
         <form id="form-create-request" class="px-6 py-5 space-y-4">
             @csrf
 
+            {{-- ── Request Type Toggle ─────────────────────────────────── --}}
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-2">Request Type</label>
+                <div class="flex gap-2">
+                    <button type="button" data-type="Physical" id="cr-type-physical"
+                        class="cr-type-btn flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all
+                               border-[#450a0a] bg-[#450a0a] text-white shadow-sm">
+                        <i data-lucide="package" class="h-4 w-4"></i> Physical File
+                    </button>
+                    <button type="button" data-type="Digital" id="cr-type-digital"
+                        class="cr-type-btn flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all
+                               border-gray-200 bg-white text-gray-500 hover:border-blue-300 hover:text-blue-600">
+                        <i data-lucide="monitor" class="h-4 w-4"></i> Digital Access
+                    </button>
+                </div>
+                <input type="hidden" id="cr-request-type" name="request_type" value="Physical">
+
+                {{-- Digital-mode info banner --}}
+                <div id="cr-digital-banner" class="hidden mt-2 flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                    <i data-lucide="info" class="h-3.5 w-3.5 text-blue-500 shrink-0 mt-0.5"></i>
+                    <span>A temporary digital copy will be made from the scanned archive. Access lasts <strong>5 working days</strong> and is view-only — no downloads.</span>
+                </div>
+            </div>
+
             {{-- File Number + lookup --}}
             <div>
                 <label class="block text-xs font-medium text-gray-700 mb-1">File Number <span class="text-red-500">*</span></label>
                 <div class="flex gap-2">
                     <input type="text" id="cr-file-no" name="file_no" placeholder="e.g. RES-2026-1234"
-                        class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+                        class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#450a0a]">
                     <button type="button" id="btn-check-availability"
-                        class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded-lg font-medium transition-colors">
+                        class="px-4 py-2 bg-[#450a0a] hover:bg-[#5c0c0c] text-white text-sm rounded-lg font-medium transition-colors">
                         Check
                     </button>
                 </div>
@@ -204,45 +229,47 @@
                 <input type="hidden" id="cr-is-redirected"         name="is_redirected" value="0">
             </div>
 
-            {{-- Destination Office --}}
-            <div>
-                <label class="block text-xs font-medium text-gray-700 mb-1">Destination Office <span class="text-red-500">*</span></label>
-                <select id="cr-destination-office" name="destination_office_id"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
-                    <option value="">— Select Destination Office —</option>
-                    @foreach($offices as $office)
-                        <option value="{{ $office->id }}" data-name="{{ $office->office_name }}">
-                            {{ $office->office_name }} ({{ $office->department }})
-                        </option>
-                    @endforeach
-                </select>
-                <input type="hidden" id="cr-destination-office-name" name="destination_office_name">
-                <p class="text-xs text-gray-400 mt-1">Your department's offices are listed first.</p>
-            </div>
+            {{-- Destination Office (hidden for Digital type) --}}
+            <div id="cr-physical-fields">
+                <div class="mb-4">
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Destination Office <span class="text-red-500">*</span></label>
+                    <select id="cr-destination-office" name="destination_office_id"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#450a0a]">
+                        <option value="">— Select Destination Office —</option>
+                        @foreach($offices as $office)
+                            <option value="{{ $office->id }}" data-name="{{ $office->office_name }}">
+                                {{ $office->office_name }} ({{ $office->department }})
+                            </option>
+                        @endforeach
+                    </select>
+                    <input type="hidden" id="cr-destination-office-name" name="destination_office_name">
+                    <p class="text-xs text-gray-400 mt-1">Your department's offices are listed first.</p>
+                </div>
 
-            {{-- Receiving Officer --}}
-            <div>
-                <label class="block text-xs font-medium text-gray-700 mb-1">Receiving Officer</label>
-                <select id="cr-receiving-officer" name="receiving_officer"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
-                    <option value="">— Select Officer —</option>
-                    @foreach($officers as $officer)
-                        <option value="{{ $officer->first_name }} {{ $officer->last_name }}">
-                            {{ $officer->first_name }} {{ $officer->last_name }}
-                        </option>
-                    @endforeach
-                </select>
+                {{-- Receiving Officer --}}
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Receiving Officer</label>
+                    <select id="cr-receiving-officer" name="receiving_officer"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#450a0a]">
+                        <option value="">— Select Officer —</option>
+                        @foreach($officers as $officer)
+                            <option value="{{ $officer->first_name }} {{ $officer->last_name }}">
+                                {{ $officer->first_name }} {{ $officer->last_name }}
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
             </div>
 
             {{-- Remarks --}}
             <div>
                 <label class="block text-xs font-medium text-gray-700 mb-1">Remarks / Purpose</label>
                 <textarea id="cr-remarks" name="remarks" rows="3" placeholder="Reason for requesting this file…"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 resize-none"></textarea>
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#450a0a] resize-none"></textarea>
             </div>
 
             {{-- Requester info (read-only display) --}}
-            <div class="bg-violet-50 border border-violet-100 rounded-lg px-4 py-3 text-xs text-violet-700">
+            <div class="bg-red-50 border border-red-100 rounded-lg px-4 py-3 text-xs text-[#450a0a]">
                 <p><span class="font-semibold">Requesting Officer:</span> {{ trim(auth()->user()->first_name . ' ' . auth()->user()->last_name) }}</p>
                 <p class="mt-0.5"><span class="font-semibold">Department:</span> {{ auth()->user()->department?->name ?? '—' }}</p>
             </div>
@@ -250,8 +277,8 @@
             <div class="flex justify-end gap-3 pt-2">
                 <button type="button" class="modal-close px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
                 <button type="submit" id="btn-submit-request"
-                    class="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors">
-                    Submit Request
+                    class="px-5 py-2 bg-[#450a0a] hover:bg-[#5c0c0c] text-white text-sm font-medium rounded-lg transition-colors">
+                    <span id="btn-submit-label">Submit Request</span>
                 </button>
             </div>
         </form>
@@ -263,15 +290,15 @@
     {{-- Outer wrapper: fixed height, flex column so header sticks and body scrolls --}}
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:90vh">
         {{-- Sticky header --}}
-        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-violet-50 to-white rounded-t-2xl shrink-0">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-red-50 to-white rounded-t-2xl shrink-0">
             <div class="flex items-center gap-3">
-                <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 shrink-0">
-                    <i data-lucide="clipboard-list" class="h-4 w-4 text-violet-600"></i>
+                <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-red-100 shrink-0">
+                    <i data-lucide="clipboard-list" class="h-4 w-4 text-[#450a0a]"></i>
                 </div>
                 <div>
-                    <p class="text-[10px] font-semibold text-violet-500 uppercase tracking-widest">Request Summary</p>
+                    <p class="text-[10px] font-semibold text-[#450a0a] uppercase tracking-widest">Request Summary</p>
                     <h3 class="text-sm font-bold text-gray-800 leading-snug">
-                        <span class="font-mono text-violet-700" id="vd-file-no"></span>
+                        <span class="font-mono text-[#450a0a]" id="vd-file-no"></span>
                         <span id="vd-file-title-sep" class="mx-1 text-gray-300">·</span>
                         <span id="vd-file-title" class="text-gray-600 font-normal"></span>
                     </h3>
@@ -295,24 +322,24 @@
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <h3 class="text-base font-semibold text-gray-800 flex items-center gap-2">
-                <i data-lucide="check-circle" class="h-4 w-4 text-green-600"></i>Approve Request
+                <i data-lucide="check-circle" class="h-4 w-4 text-[#450a0a]"></i>Approve Request
             </h3>
             <button class="modal-close text-gray-400 hover:text-gray-600"><i data-lucide="x" class="h-5 w-5"></i></button>
         </div>
         <form id="form-approve" class="px-6 py-5 space-y-4">
             <input type="hidden" id="approve-id">
-            <p class="text-sm text-gray-600">Approving request <strong id="approve-req-no" class="text-green-700"></strong>. The file tracker will be updated and the requester will be notified.</p>
+            <p class="text-sm text-gray-600">Approving request <strong id="approve-req-no" class="text-[#450a0a]"></strong>. The file tracker will be updated and the requester will be notified.</p>
 
             <div>
                 <label class="block text-xs font-medium text-gray-700 mb-1">Remarks (optional)</label>
-                <textarea name="remarks" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"></textarea>
+                <textarea name="remarks" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#450a0a] resize-none"></textarea>
             </div>
 
             {{-- ── Digital Signature Verification ── --}}
-            <div class="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/60 to-white p-4 space-y-3">
+            <div class="rounded-xl border border-red-100 bg-gradient-to-br from-red-50/60 to-white p-4 space-y-3">
                 <div class="flex items-center gap-2 mb-1">
-                    <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100 shrink-0">
-                        <i data-lucide="shield-check" class="h-3.5 w-3.5 text-violet-600"></i>
+                    <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 shrink-0">
+                        <i data-lucide="shield-check" class="h-3.5 w-3.5 text-[#450a0a]"></i>
                     </div>
                     <div>
                         <p class="text-xs font-bold text-slate-800">Digital Signature Required</p>
@@ -327,7 +354,7 @@
                     <div class="space-y-1">
                         <label class="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Verification Method</label>
                         <select id="approve-sig-method"
-                            class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-violet-500 focus:ring-2 focus:ring-violet-100">
+                            class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#450a0a] focus:ring-2 focus:ring-red-100">
                             <option value="">Select Method</option>
                             <option value="email">Email OTP</option>
                             <option value="sms">SMS OTP</option>
@@ -340,7 +367,7 @@
                         <label class="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide">OTP Code</label>
                         <div class="flex gap-2">
                             <input type="text" id="approve-sig-otp-code" maxlength="6" placeholder="Enter OTP"
-                                class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100">
+                                class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#450a0a] focus:ring-2 focus:ring-red-100">
                             <button type="button" id="approve-sig-send-otp"
                                 class="inline-flex items-center justify-center rounded-lg bg-indigo-600 hover:bg-indigo-700 px-3 py-2 text-xs font-bold text-white whitespace-nowrap">
                                 Send OTP
@@ -352,13 +379,13 @@
                     <div class="space-y-1" id="approve-sig-pwd-wrapper" style="display:none">
                         <label class="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Confirm Password</label>
                         <input type="password" id="approve-sig-password" placeholder="Your account password"
-                            class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100">
+                            class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#450a0a] focus:ring-2 focus:ring-red-100">
                     </div>
                 </div>
 
                 <div class="flex items-center gap-3 flex-wrap">
                     <button type="button" id="approve-sig-verify-btn"
-                        class="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 px-4 py-2 text-xs font-bold text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                        class="inline-flex items-center gap-1.5 rounded-lg bg-[#450a0a] hover:bg-[#5c0c0c] px-4 py-2 text-xs font-bold text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
                         <i data-lucide="shield-check" class="h-3.5 w-3.5"></i>
                         <span id="approve-sig-verify-text">Verify</span>
                     </button>
@@ -366,8 +393,8 @@
 
                     <div id="approve-sig-img-wrap" class="hidden flex items-center gap-2 ml-auto">
                         <img id="approve-sig-img" src="" alt="Your Signature"
-                            class="h-8 object-contain border border-violet-300 rounded bg-white px-2 py-0.5">
-                        <span class="inline-flex items-center gap-1 text-[10px] font-black text-violet-700 uppercase tracking-wide">
+                            class="h-8 object-contain border border-red-200 rounded bg-white px-2 py-0.5">
+                        <span class="inline-flex items-center gap-1 text-[10px] font-black text-[#450a0a] uppercase tracking-wide">
                             <i data-lucide="check-circle" class="h-3 w-3"></i> Verified
                         </span>
                     </div>
@@ -381,7 +408,7 @@
             <div class="flex justify-end gap-3 pt-1">
                 <button type="button" class="modal-close px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
                 <button type="submit" id="approve-submit-btn" disabled
-                    class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors opacity-50 cursor-not-allowed">
+                    class="px-5 py-2 bg-[#450a0a] hover:bg-[#5c0c0c] text-white text-sm font-medium rounded-lg transition-colors opacity-50 cursor-not-allowed">
                     Confirm Approve
                 </button>
             </div>
@@ -504,7 +531,7 @@
                 <td class="px-4 py-3 text-xs text-gray-600 max-w-[160px] truncate" title="${escHtml(r.file_title ?? '')}">${r.file_title ?? '—'}</td>
                 <td class="px-4 py-3 text-xs text-gray-700">${r.sending_officer}</td>
                 <td class="px-4 py-3 text-xs text-gray-600">${r.destination_office_name ?? '—'}${r.is_redirected ? ' <span class="ml-1 text-orange-500 text-[10px] font-semibold">[REDIRECTED]</span>' : ''}</td>
-                <td class="px-4 py-3 text-xs text-gray-600">${r.approved_by_name ? `<span class="font-medium text-green-700">${r.approved_by_name}</span>` : '<span class="text-gray-300">—</span>'}</td>
+                <td class="px-4 py-3 text-xs text-gray-600">${r.approved_by_name ? `<span class="font-medium text-[#450a0a]">${r.approved_by_name}</span>` : '<span class="text-gray-300">—</span>'}</td>
                 <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">${r.requested_at ?? '—'}</td>
                 <td class="px-4 py-3">
                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${r.status_badge_class}">${r.request_status}</span>
@@ -536,12 +563,12 @@
     _dropdown.className = 'hidden fixed z-[9999] min-w-[170px] rounded-xl border border-gray-200 bg-white shadow-xl py-1 text-sm';
     _dropdown.innerHTML = `
         <button data-action="view"
-            class="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-gray-700 hover:bg-violet-50 hover:text-violet-700 transition-colors">
+            class="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-gray-700 hover:bg-red-50 hover:text-[#450a0a] transition-colors">
             <i data-lucide="eye" class="h-3.5 w-3.5 shrink-0"></i> View Details
         </button>
         <div id="dr-dd-divider" class="my-1 border-t border-gray-100"></div>
         <button data-action="approve" id="dr-dd-approve"
-            class="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-green-700 hover:bg-green-50 transition-colors">
+            class="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-[#450a0a] hover:bg-red-50 transition-colors">
             <i data-lucide="check-circle" class="h-3.5 w-3.5 shrink-0"></i> Approve
         </button>
         <button data-action="reject" id="dr-dd-reject"
@@ -657,9 +684,9 @@
 
         const section = (icon, title) => `
             <div class="flex items-center gap-2 mb-3">
-                <i data-lucide="${icon}" class="h-3.5 w-3.5 text-violet-500"></i>
-                <span class="text-[10px] font-black text-violet-600 uppercase tracking-widest">${title}</span>
-                <div class="flex-1 border-t border-violet-100"></div>
+                <i data-lucide="${icon}" class="h-3.5 w-3.5 text-[#450a0a]"></i>
+                <span class="text-[10px] font-black text-[#450a0a] uppercase tracking-widest">${title}</span>
+                <div class="flex-1 border-t border-red-100"></div>
             </div>`;
 
         const statusIcon = {
@@ -675,7 +702,7 @@
             <div>
                 ${section('file-text', 'File Information')}
                 <div class="grid grid-cols-2 gap-3">
-                    ${irow('hash',          'File Number',  `<span class="font-mono font-bold text-violet-700">${escHtml(d.file_no ?? '—')}</span>`)}
+                    ${irow('hash',          'File Number',  `<span class="font-mono font-bold text-[#450a0a]">${escHtml(d.file_no ?? '—')}</span>`)}
                     ${irow('file-text',     'File Title',   escHtml(d.file_title ?? '—'))}
                     ${irow(statusIcon,      'Status',       `<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${d.status_badge_class}">${d.request_status}</span>`)}
                     ${d.is_redirected ? irow('corner-right-down', 'Note', '<span class="text-orange-600">Redirected to current file holder</span>') : ''}
@@ -700,7 +727,7 @@
                 ${section('clock', 'Timeline & Remarks')}
                 <div class="grid grid-cols-2 gap-3">
                     ${irow('calendar',      'Requested At',   escHtml(d.requested_at ?? '—'))}
-                    ${d.approved_at ? irow('check-circle', 'Approved At', escHtml(d.approved_at) + (d.approved_by_name ? `<br><span class="text-green-600">by ${escHtml(d.approved_by_name)}</span>` : '')) : ''}
+                    ${d.approved_at ? irow('check-circle', 'Approved At', escHtml(d.approved_at) + (d.approved_by_name ? `<br><span class="text-[#450a0a]">by ${escHtml(d.approved_by_name)}</span>` : '')) : ''}
                     ${d.rejected_at ? irow('x-circle',     'Rejected At', escHtml(d.rejected_at) + (d.rejected_by_name ? `<br><span class="text-red-600">by ${escHtml(d.rejected_by_name)}</span>` : '')) : ''}
                 </div>
                 ${d.remarks ? `
@@ -783,8 +810,8 @@
         const verifyTxt = $('#approve-sig-verify-text');
         if (verifyBtn) {
             verifyBtn.disabled = false;
-            verifyBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
-            verifyBtn.classList.add('bg-violet-600', 'hover:bg-violet-700');
+            verifyBtn.classList.remove('bg-[#450a0a]', 'hover:bg-[#5c0c0c]');
+            verifyBtn.classList.add('bg-[#450a0a]', 'hover:bg-[#5c0c0c]');
         }
         if (verifyTxt) verifyTxt.textContent = 'Verify';
         const submitBtn = $('#approve-submit-btn');
@@ -834,8 +861,8 @@
             if (verifyTxt)   verifyTxt.textContent = 'Verify';
             if (verifyBtn)   {
                 verifyBtn.disabled = false;
-                verifyBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
-                verifyBtn.classList.add('bg-violet-600', 'hover:bg-violet-700');
+                verifyBtn.classList.remove('bg-[#450a0a]', 'hover:bg-[#5c0c0c]');
+                verifyBtn.classList.add('bg-[#450a0a]', 'hover:bg-[#5c0c0c]');
             }
             if (submitBtn) {
                 submitBtn.disabled = true;
@@ -902,10 +929,10 @@
                         if (sigVerifiedH) sigVerifiedH.value = '1';
                         if (data.signature_url && sigImg) sigImg.src = data.signature_url;
                         if (sigImgWrap) sigImgWrap.classList.remove('hidden');
-                        verifyBtn.classList.remove('bg-violet-600', 'hover:bg-violet-700');
-                        verifyBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+                        verifyBtn.classList.remove('bg-[#450a0a]', 'hover:bg-[#5c0c0c]');
+                        verifyBtn.classList.add('bg-[#450a0a]', 'hover:bg-[#5c0c0c]');
                         if (verifyTxt) verifyTxt.textContent = 'Verified ✓';
-                        if (feedback) { feedback.textContent = 'Signature verified.'; feedback.className = 'text-xs font-medium text-green-600'; }
+                        if (feedback) { feedback.textContent = 'Signature verified.'; feedback.className = 'text-xs font-medium text-[#450a0a]'; }
                         if (submitBtn) {
                             submitBtn.disabled = false;
                             submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
@@ -999,7 +1026,7 @@
         }
 
         if (json.available) {
-            msg.className = 'mt-2 text-sm rounded-lg px-3 py-2 bg-green-50 text-green-700';
+            msg.className = 'mt-2 text-sm rounded-lg px-3 py-2 bg-red-50 text-[#450a0a]';
             msg.textContent = '✓ File is available in the Registry.';
             $('#cr-is-redirected').value = '0';
             $('#cr-current-location-wrapper').classList.add('hidden');
@@ -1068,39 +1095,98 @@
         } catch (e) { /* non-fatal */ }
     }
 
+    // ── Request Type Toggle ────────────────────────────────────────────────────
+    (function () {
+        const physBtn     = document.getElementById('cr-type-physical');
+        const digBtn      = document.getElementById('cr-type-digital');
+        const typeInput   = document.getElementById('cr-request-type');
+        const physFields  = document.getElementById('cr-physical-fields');
+        const digBanner   = document.getElementById('cr-digital-banner');
+        const submitLabel = document.getElementById('btn-submit-label');
+
+        function setType(type) {
+            typeInput.value = type;
+            const isDigital = type === 'Digital';
+
+            // Physical button style
+            physBtn.className = 'cr-type-btn flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ' +
+                (!isDigital
+                    ? 'border-[#450a0a] bg-[#450a0a] text-white shadow-sm'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-red-300 hover:text-[#450a0a]');
+
+            // Digital button style
+            digBtn.className = 'cr-type-btn flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ' +
+                (isDigital
+                    ? 'border-blue-500 bg-blue-600 text-white shadow-sm'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-blue-300 hover:text-blue-600');
+
+            // Show/hide physical-only fields
+            if (physFields) physFields.classList.toggle('hidden', isDigital);
+            if (digBanner)  digBanner.classList.toggle('hidden', !isDigital);
+            if (submitLabel) submitLabel.textContent = isDigital ? 'Request Digital Access' : 'Submit Request';
+        }
+
+        if (physBtn) physBtn.addEventListener('click', () => setType('Physical'));
+        if (digBtn)  digBtn.addEventListener('click',  () => setType('Digital'));
+    })();
+
     // ── Create form submit ─────────────────────────────────────────────────────
     $('#form-create-request').addEventListener('submit', async function (e) {
         e.preventDefault();
-        const btn = $('#btn-submit-request');
+        const btn       = $('#btn-submit-request');
+        const labelEl   = document.getElementById('btn-submit-label');
+        const reqType   = document.getElementById('cr-request-type')?.value || 'Physical';
+        const isDigital = reqType === 'Digital';
+
         btn.disabled = true;
-        btn.textContent = 'Submitting…';
+        if (labelEl) labelEl.textContent = 'Submitting…';
 
         const body = {
             file_no:                 $('#cr-file-no').value.trim(),
             file_title:              $('#cr-file-title').value.trim(),
-            destination_office_id:   $('#cr-destination-office').value,
-            destination_office_name: $('#cr-destination-office-name').value,
-            receiving_officer:       $('#cr-receiving-officer').value,
+            request_type:            reqType,
+            destination_office_id:   isDigital ? null : ($('#cr-destination-office')?.value || null),
+            destination_office_name: isDigital ? null : ($('#cr-destination-office-name')?.value || null),
+            receiving_officer:       isDigital ? null : ($('#cr-receiving-officer')?.value || null),
             remarks:                 $('#cr-remarks').value.trim(),
-            is_redirected:           $('#cr-is-redirected').value === '1',
-            current_file_location:   $('#cr-current-file-location').value,
-            current_file_holder:     $('#cr-current-file-holder').value,
+            is_redirected:           !isDigital && ($('#cr-is-redirected')?.value === '1'),
+            current_file_location:   $('#cr-current-file-location')?.value || null,
+            current_file_holder:     $('#cr-current-file-holder')?.value || null,
         };
 
-        if (!body.file_no || !body.destination_office_id) {
-            toast('warning', 'File number and destination office are required.');
-            btn.disabled = false; btn.textContent = 'Submit Request';
+        if (!body.file_no) {
+            toast('warning', 'File number is required.');
+            btn.disabled = false;
+            if (labelEl) labelEl.textContent = isDigital ? 'Request Digital Access' : 'Submit Request';
+            return;
+        }
+        if (!isDigital && !body.destination_office_id) {
+            toast('warning', 'Destination office is required for physical file requests.');
+            btn.disabled = false;
+            if (labelEl) labelEl.textContent = 'Submit Request';
             return;
         }
 
         const res  = await apiFetch('/digital-request/store', { method: 'POST', body: JSON.stringify(body) });
         const json = await res.json();
 
-        btn.disabled = false; btn.textContent = 'Submit Request';
+        btn.disabled = false;
+        if (labelEl) labelEl.textContent = isDigital ? 'Request Digital Access' : 'Submit Request';
 
         if (json.success) {
             hideModal('modal-create');
             this.reset();
+            // Reset toggle back to Physical
+            document.getElementById('cr-request-type').value = 'Physical';
+            document.getElementById('cr-physical-fields')?.classList.remove('hidden');
+            document.getElementById('cr-digital-banner')?.classList.add('hidden');
+            if (labelEl) labelEl.textContent = 'Submit Request';
+            // Reset type buttons
+            const pb = document.getElementById('cr-type-physical');
+            const db = document.getElementById('cr-type-digital');
+            if (pb) pb.className = 'cr-type-btn flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all border-[#450a0a] bg-[#450a0a] text-white shadow-sm';
+            if (db) db.className = 'cr-type-btn flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all border-gray-200 bg-white text-gray-500 hover:border-blue-300 hover:text-blue-600';
+
             $('#cr-availability-msg').classList.add('hidden');
             $('#cr-current-location-wrapper').classList.add('hidden');
             $('#cr-file-title').value = '';

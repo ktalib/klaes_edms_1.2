@@ -10,6 +10,7 @@ use Illuminate\Support\Str;
 use Carbon\Carbon;
 
 use Illuminate\Support\Facades\Auth;
+use App\Services\Pra\RofoPraSyncer;
 
 class RofoController extends Controller
 {
@@ -1242,6 +1243,8 @@ class RofoController extends Controller
             $createdCount = $summary['created'] ?? 0;
             $updatedCount = $summary['updated'] ?? 0;
             $totalProcessed = $summary['total_units'] ?? $unitApplications->count();
+
+            app(RofoPraSyncer::class)->syncStUnits($summary['affected_sub_application_ids'] ?? []);
 
             if ($isModal) {
                 $message = 'RoFO details saved successfully';

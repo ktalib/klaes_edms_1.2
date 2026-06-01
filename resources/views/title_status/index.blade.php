@@ -80,7 +80,7 @@
                                 <th class="px-4 py-3 text-left">File No</th>
                                 <th class="px-4 py-3 text-left">Applicant Name</th>
                                 <th class="px-4 py-3 text-left">Type</th>
-                                <th class="px-4 py-3 text-left">Authority</th>
+                                <th class="px-4 py-3 text-left">Initiated By</th>
                                 <th class="px-4 py-3 text-left">Plot No</th>
                                 <th class="px-4 py-3 text-left">Date</th>
                                 <th class="px-4 py-3 text-center">Status</th>
@@ -94,7 +94,7 @@
                                 <td class="px-4 py-3 font-semibold text-slate-800">{{ $record->file_no }}</td>
                                 <td class="px-4 py-3 text-slate-700">{{ $record->applicant_name ?? '—' }}</td>
                                 <td class="px-4 py-3 text-slate-600 text-xs">{{ $record->title_type }}</td>
-                                <td class="px-4 py-3 text-slate-600 text-xs">{{ $record->authority ?? '—' }}</td>
+                                <td class="px-4 py-3 text-slate-600 text-xs">{{ $record->initiated_by ?? $record->authority ?? '—' }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ $record->plot_no ?? '—' }}</td>
                                 <td class="px-4 py-3 text-slate-600 text-xs">{{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('d/m/Y') : '—' }}</td>
                                 <td class="px-4 py-3 text-center">
@@ -215,13 +215,23 @@
                         </div>
                     </button>
                     <button type="button" onclick="tsSelectType('Amendment/Reconsideration (Application/RofO/CofO)')"
-                        class="ts-type-card text-left flex items-start gap-4 p-4 rounded-xl border-2 border-slate-100 hover:border-emerald-400 hover:bg-emerald-50/40 transition group sm:col-span-2">
+                        class="ts-type-card text-left flex items-start gap-4 p-4 rounded-xl border-2 border-slate-100 hover:border-emerald-400 hover:bg-emerald-50/40 transition group">
                         <div class="w-11 h-11 shrink-0 rounded-xl bg-emerald-100 flex items-center justify-center group-hover:bg-emerald-200 transition">
                             <i data-lucide="file-edit" class="w-5 h-5 text-emerald-600"></i>
                         </div>
                         <div>
                             <p class="font-semibold text-slate-800 text-sm">Amendment / Reconsideration</p>
                             <p class="text-xs text-slate-500 mt-0.5">Application / RofO / CofO</p>
+                        </div>
+                    </button>
+                    <button type="button" onclick="tsSelectType('Surrender')"
+                        class="ts-type-card text-left flex items-start gap-4 p-4 rounded-xl border-2 border-slate-100 hover:border-sky-400 hover:bg-sky-50/40 transition group">
+                        <div class="w-11 h-11 shrink-0 rounded-xl bg-sky-100 flex items-center justify-center group-hover:bg-sky-200 transition">
+                            <i data-lucide="flag" class="w-5 h-5 text-sky-600"></i>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-slate-800 text-sm">Surrender</p>
+                            <p class="text-xs text-slate-500 mt-0.5">Voluntary relinquishment</p>
                         </div>
                     </button>
                 </div>
@@ -310,16 +320,24 @@
                     </div>
                 </div>
 
-                {{-- Authority --}}
+                {{-- Initiated By --}}
                 <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">Authority <span class="text-red-500">*</span></label>
-                    <select id="ts-authority" name="authority" onchange="tsRefreshRemark()"
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Initiated By <span class="text-red-500">*</span></label>
+                    <select id="ts-initiated_by" name="initiated_by" onchange="tsRefreshRemark()"
                         class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                        <option value="">— Select Authority —</option>
-                        @foreach($authorityOptions as $opt)
+                        <option value="">— Select —</option>
+                        @foreach($initiatedByOptions as $opt)
                             <option value="{{ $opt }}">{{ $opt }}</option>
                         @endforeach
                     </select>
+                </div>
+
+                {{-- Reason --}}
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Reason <span class="text-red-500">*</span></label>
+                    <textarea id="ts-reason" name="reason" rows="2" oninput="tsRefreshRemark()"
+                        placeholder="Reason for this title status action..."
+                        class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"></textarea>
                 </div>
 
                 {{-- Auto-generated Remark --}}
@@ -372,6 +390,7 @@
     const TS_REMARK_URL      = '{{ route('title-status.generate-remark') }}';
     const TS_FILE_INFO_URL   = '{{ route('title-status.file-info') }}';
     const TS_CSRF            = '{{ csrf_token() }}';
+    const TS_INITIATED_BY_BY_TYPE = @json($initiatedByByType);
 </script>
 <script src="{{ asset('js/title_status.js') }}?v={{ filemtime(public_path('js/title_status.js')) }}"></script>
 @endpush

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\SltrRecommendation;
+use App\Services\Pra\RofoPraSyncer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -65,6 +66,8 @@ class SltrRofoController extends Controller
             'rofo_date_generated'=> $request->rofo_date_generated ?? now()->toDateString(),
             'updated_by'        => Auth::id(),
         ]));
+
+        app(RofoPraSyncer::class)->syncSltr($rec->fresh());
 
         return response()->json(['success' => true, 'message' => 'SLTR RofO generated successfully.']);
     }

@@ -23,6 +23,16 @@ class TitleStatusService
         TitleStatusApplication::TYPE_REVOKE        => 'revoked',
         TitleStatusApplication::TYPE_LITIGATION    => 'litigation',
         TitleStatusApplication::TYPE_AMENDMENT     => 'amendment',
+        TitleStatusApplication::TYPE_SURRENDER     => 'surrendered',
+    ];
+
+    private const TYPE_VERB = [
+        TitleStatusApplication::TYPE_WITHDRAWAL   => 'Withdrawal',
+        TitleStatusApplication::TYPE_CANCELLATION => 'Cancellation',
+        TitleStatusApplication::TYPE_REVOKE        => 'Revocation',
+        TitleStatusApplication::TYPE_LITIGATION    => 'Litigation',
+        TitleStatusApplication::TYPE_AMENDMENT     => 'Amendment/Reconsideration',
+        TitleStatusApplication::TYPE_SURRENDER     => 'Surrender',
     ];
 
     private const SOURCE_TABLES = [
@@ -48,25 +58,25 @@ class TitleStatusService
         return self::TYPE_SLUG[$titleType] ?? 'flagged';
     }
 
-    public function generateRemark(string $titleType, string $fileNo, string $fileTitle, string $authority, string $reference): string
+    /**
+     * Template: "[Status type] was initiated by [Ministry | Allottee name] on [Time/Date] due to [Reason]"
+     * When initiatedBy === 'Allottee', the actual holder name is substituted.
+     */
+    public function generateRemark(string $titleType, string $initiatedBy, string $reason, string $applicantName = ''): string
     {
-        $date = now()->format('d/m/Y');
-        $ref  = $reference ? " Reference: {$reference}." : '';
+        $statusType = self::TYPE_VERB[$titleType] ?? $titleType;
+        $datetime   = now()->format('d/m/Y H:i');
+        $reasonText = $reason !== '' ? $reason : '[Reason]';
 
-        return match ($titleType) {
-            TitleStatusApplication::TYPE_WITHDRAWAL   =>
-                "File {$fileNo} — {$fileTitle} has been Withdrawn on {$date}. Authority: {$authority}.{$ref}",
-            TitleStatusApplication::TYPE_CANCELLATION =>
-                "File {$fileNo} — {$fileTitle} RofO has been Cancelled on {$date}. Authority: {$authority}.{$ref}",
-            TitleStatusApplication::TYPE_REVOKE        =>
-                "File {$fileNo} — {$fileTitle} has been Revoked on {$date}. Authority: {$authority}.{$ref}",
-            TitleStatusApplication::TYPE_LITIGATION    =>
-                "File {$fileNo} — {$fileTitle} is under Litigation as of {$date}. Authority: {$authority}.{$ref}",
-            TitleStatusApplication::TYPE_AMENDMENT     =>
-                "File {$fileNo} — {$fileTitle} Application/RofO/CofO has been Amended/Reconsidered on {$date}. Authority: {$authority}.{$ref}",
-            default =>
-                "File {$fileNo} — {$fileTitle} status updated on {$date}. Authority: {$authority}.{$ref}",
-        };
+        if ($initiatedBy === 'Allottee' || $initiatedBy === 'Applicant') {
+            $initiator = $applicantName !== '' ? $applicantName : $initiatedBy;
+        } elseif ($initiatedBy !== '') {
+            $initiator = $initiatedBy;
+        } else {
+            $initiator = '[Ministry/Allottee]';
+        }
+
+        return "{$statusType} was initiated by {$initiator} on {$datetime} due to {$reasonText}";
     }
 
     /**

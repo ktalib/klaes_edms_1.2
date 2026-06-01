@@ -164,6 +164,81 @@ class DashboardController extends Controller
                     'trend' => $trend($stPuasCurr, $stPuasPrev),
                 ];
 
+                /* ── File Stats – redesigned ─────────────────────────────── */
+                $fiBase = fn($registry) => $db->table('file_indexings')
+                    ->where('registry', $registry)
+                    ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); });
+
+                // 1. Total File Numbers (from fileNumber table)
+                $totalFileNumbers = $db->table('fileNumber')->count();
+
+                // 2. Total Indexed Land Files (file_indexings excluding specialist registries)
+                $landIndexedTotal = $db->table('file_indexings')
+                    ->whereNotIn('registry', ['SLTR','DCIV','KANGIS','ST Registry','CADESTRAL','Registry 1 - Cadastral'])
+                    ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+                    ->count();
+
+                // 3. Land Files Commissioned (mls_file_no with commissioning date)
+                // Already computed as $mlsCommissioned
+
+                // 4. KANGIS Indexed + Commissioned
+                $cadastralTotal = (clone $fiBase('KANGIS'))->count(); // kept for backward compat
+
+                $kangisIndexed      = (clone $fiBase('KANGIS'))
+                    ->orWhere('registry', 'KANGIS Registry')->count();
+                $kangisCommissioned = $db->table('file_indexings')
+                    ->whereIn('registry', ['KANGIS', 'KANGIS Registry'])
+                    ->whereNotNull('kangis_fileno_resolved')
+                    ->where('kangis_fileno_resolved', '<>', '')
+                    ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+                    ->count();
+
+                // 4b. Cadastral Indexed + Commissioned (from mls-file-no-matching)
+                $cadastralIndexed      = $db->table('file_indexings')
+                    ->where('is_corresponding_file', 1)
+                    ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+                    ->count();
+                $cadastralCommissioned = $db->table('file_indexings')
+                    ->whereNotNull('corresponding_fileno')
+                    ->where('corresponding_fileno', '<>', '')
+                    ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+                    ->count();
+
+                // 5. ST Files
+                $stIndexed      = $db->table('st_file_numbers')->count();
+                $stCommissioned = $db->table('st_file_numbers')->whereNotNull('date_commissioned')->count();
+
+                // 6. DCIV Files
+                $dcivIndexed      = (clone $fiBase('DCIV'))->count();
+                $dcivCommissioned = $db->table('dciv_file_no')->whereNotNull('commissioning_date')->count();
+
+                // 7. SLTR Files
+                $sltrIndexed      = (clone $fiBase('SLTR'))->count();
+                $sltrCommissioned = $db->table('sltr_recommendations')->whereNotNull('rofo_generated_at')->count();
+
+                // 8. GKN Files (indexed = file_indexings where registry = 'Survey')
+                $gknIndexed      = $db->table('file_indexings')
+                    ->where('registry', 'Survey')
+                    ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+                    ->count();
+                $gknCommissioned = 0;
+
+                $fileStats = [
+                    'total_file_numbers'   => ['count' => number_format($totalFileNumbers),  'raw' => $totalFileNumbers],
+                    'land_indexed'         => ['count' => number_format($landIndexedTotal),  'raw' => $landIndexedTotal],
+                    'land_commissioned'    => $mlsCommissioned,
+                    'cadastral_total'      => ['count' => number_format($cadastralTotal),    'raw' => $cadastralTotal],
+                    'kangis' => ['indexed' => number_format($kangisIndexed), 'commissioned' => number_format($kangisCommissioned)],
+                    'cadastral' => ['indexed' => number_format($cadastralIndexed), 'commissioned' => number_format($cadastralCommissioned)],
+                    'st'  => ['indexed' => number_format($stIndexed),   'commissioned' => number_format($stCommissioned)],
+                    'dciv'=> ['indexed' => number_format($dcivIndexed), 'commissioned' => number_format($dcivCommissioned)],
+                    'sltr'=> ['indexed' => number_format($sltrIndexed), 'commissioned' => number_format($sltrCommissioned)],
+                    'gkn' => ['indexed' => number_format($gknIndexed),  'commissioned' => number_format($gknCommissioned)],
+                ];
+
+                // Keep $fileRegistry as alias for backward compat with old JS references
+                $fileRegistry = $fileStats;
+
                 /* ── Information Products ────────────────────────────────── */
                 // CofO – from CofO_staging (all historical + new records)
                 $cofOTotal = $db->table('CofO_staging')
@@ -211,47 +286,101 @@ class DashboardController extends Controller
                     ->whereIn('application_status', ['rejected', 'Rejected', 'REJECTED'])->count();
                 $rejectedTotal = $rejectedMother + $rejectedSub;
 
-                /* ── Recent applications (latest 5 from mother_applications) ── */
-                $recentApps = $db->table('mother_applications')
-                    ->select([
-                        'id', 'applicationID',
-                        'first_name', 'surname', 'corporate_name', 'applicant_type',
-                        'application_type', 'application_status',
-                        'created_at', 'fileno', 'applied_file_number',
-                    ])
+                /* ── Recent applications: OSS (5) + ST Mother (2) + PuA (2) + SUA (2) ── */
+
+                // Helper: resolve applicant name from first_name/surname/corporate_name
+                $resolveName = function ($first, $surname, $corporate) {
+                    $full = trim(($first ?? '') . ' ' . ($surname ?? ''));
+                    if (empty($full) && !empty($corporate)) {
+                        return $corporate;
+                    }
+                    return $full ?: '—';
+                };
+
+                // 5 latest OSS applications
+                $ossRows = $db->table('oss_applications')
+                    ->where(function ($q) { $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })
                     ->orderBy('created_at', 'desc')
                     ->limit(5)
+                    ->get(['id', 'applicant_name', 'application_type', 'status', 'file_no', 'created_at'])
+                    ->map(fn($r) => [
+                        'id'          => $r->id,
+                        'app_id'      => 'OSS-' . $r->id,
+                        'applicant'   => $r->applicant_name ?: '—',
+                        'type'        => 'OSS Application',
+                        'status'      => $r->status ?? 'pending',
+                        'file_number' => $r->file_no ?? '—',
+                        'date'        => $r->created_at ? Carbon::parse($r->created_at)->format('Y-m-d') : '—',
+                        'source'      => 'oss',
+                    ]);
+
+                // 2 latest ST Mother applications (those with a Sectional_Title_File_Numbers entry)
+                $stMotherRows = $db->table('mother_applications')
+                    ->join('Sectional_Title_File_Numbers', 'Sectional_Title_File_Numbers.application_id', '=', 'mother_applications.id')
+                    ->select([
+                        'mother_applications.id', 'mother_applications.applicationID',
+                        'mother_applications.first_name', 'mother_applications.surname',
+                        'mother_applications.corporate_name', 'mother_applications.application_status',
+                        'mother_applications.created_at', 'mother_applications.applied_file_number',
+                        'mother_applications.fileno',
+                        'Sectional_Title_File_Numbers.file_number as st_file_number',
+                    ])
+                    ->orderBy('mother_applications.created_at', 'desc')
+                    ->limit(2)
                     ->get()
-                    ->map(function ($row) {
-                        // Resolve applicant display name
-                        $applicant = trim(($row->first_name ?? '') . ' ' . ($row->surname ?? ''));
-                        if (empty(trim($applicant)) && !empty($row->corporate_name)) {
-                            $applicant = $row->corporate_name;
-                        }
-                        if (empty(trim($applicant))) {
-                            $applicant = '—';
-                        }
+                    ->map(fn($r) => [
+                        'id'          => $r->id,
+                        'app_id'      => $r->applicationID ?: 'ST-' . $r->id,
+                        'applicant'   => $resolveName($r->first_name, $r->surname, $r->corporate_name),
+                        'type'        => 'ST Primary',
+                        'status'      => $r->application_status ?? 'pending',
+                        'file_number' => $r->st_file_number ?? $r->applied_file_number ?? $r->fileno ?? '—',
+                        'date'        => $r->created_at ? Carbon::parse($r->created_at)->format('Y-m-d') : '—',
+                        'source'      => 'st_mother',
+                    ]);
 
-                        // Resolve file number
-                        $fileNo = $row->applied_file_number ?? $row->fileno ?? '—';
+                // 2 latest ST PuAs (subapplications where is_sua_unit = 0)
+                $puaRows = $db->table('subapplications')
+                    ->where('is_sua_unit', 0)
+                    ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+                    ->orderBy('created_at', 'desc')
+                    ->limit(2)
+                    ->get(['id', 'fileno', 'first_name', 'surname', 'corporate_name', 'application_status', 'created_at'])
+                    ->map(fn($r) => [
+                        'id'          => $r->id,
+                        'app_id'      => 'PuA-' . $r->id,
+                        'applicant'   => $resolveName($r->first_name, $r->surname, $r->corporate_name),
+                        'type'        => 'ST PuA',
+                        'status'      => $r->application_status ?? 'pending',
+                        'file_number' => $r->fileno ?? '—',
+                        'date'        => $r->created_at ? Carbon::parse($r->created_at)->format('Y-m-d') : '—',
+                        'source'      => 'st_pua',
+                    ]);
 
-                        // Resolve display application ID
-                        $appId = $row->applicationID
-                            ? $row->applicationID
-                            : 'APP-' . str_pad($row->id ?? 0, 6, '0', STR_PAD_LEFT);
+                // 2 latest ST SUAs (subapplications where is_sua_unit = 1)
+                $suaRows = $db->table('subapplications')
+                    ->where('is_sua_unit', 1)
+                    ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+                    ->orderBy('created_at', 'desc')
+                    ->limit(2)
+                    ->get(['id', 'fileno', 'first_name', 'surname', 'corporate_name', 'application_status', 'created_at'])
+                    ->map(fn($r) => [
+                        'id'          => $r->id,
+                        'app_id'      => 'SUA-' . $r->id,
+                        'applicant'   => $resolveName($r->first_name, $r->surname, $r->corporate_name),
+                        'type'        => 'ST SUA',
+                        'status'      => $r->application_status ?? 'pending',
+                        'file_number' => $r->fileno ?? '—',
+                        'date'        => $r->created_at ? Carbon::parse($r->created_at)->format('Y-m-d') : '—',
+                        'source'      => 'st_sua',
+                    ]);
 
-                        return [
-                            'id'          => $row->id ?? null,
-                            'app_id'      => $appId,
-                            'applicant'   => $applicant,
-                            'type'        => $row->application_type ?? '—',
-                            'status'      => $row->application_status ?? 'pending',
-                            'file_number' => $fileNo,
-                            'date'        => $row->created_at
-                                ? Carbon::parse($row->created_at)->format('Y-m-d')
-                                : '—',
-                        ];
-                    });
+                // Merge all sources: OSS first, then ST Mother, PuA, SUA
+                $recentApps = $ossRows
+                    ->concat($stMotherRows)
+                    ->concat($puaRows)
+                    ->concat($suaRows)
+                    ->values();
 
                 /* ── Weekly application trend (last 7 days) ──────────── */
                 $weeklyData = [];
@@ -290,6 +419,8 @@ class DashboardController extends Controller
                     'mls_commissioned'   => $mlsCommissioned,
                     'st_primary_apps'    => $stPrimaryApps,
                     'st_puas'            => $stPuas,
+                    'file_registry'      => $fileRegistry,
+                    'file_stats'         => $fileStats,
                     'info_products'      => $infoProducts,
                     'approved_apps'      => $approvedTotal,
                     'rejected_apps'      => $rejectedTotal,

@@ -113,7 +113,7 @@
         }
 
         #first-page {
-            /* background-image: url('{{ asset('images/rofo_first_page_bg.jpg') }}'); */
+             /* background-image: url('{{ asset('images/rofo_first_page_bg.jpg') }}'); */
             background-size: 100% 100%;
             background-repeat: no-repeat;
             background-position: center;
@@ -130,7 +130,7 @@
         .st-rofo-green-frame {
             position: relative;
             flex: 1;
-            margin: 6mm 8mm 0 8mm;
+            margin: 6mm 8mm 10mm 8mm;
             padding: 0 12mm 3mm 12mm;
         }
 
@@ -138,11 +138,11 @@
             content: '';
             position: absolute;
             inset: 0;
-            border: 30px solid transparent;
+            border: 20px solid transparent;
             border-image-source: url("http://app.klaes.ng/storage/template_frames/st.png");
             border-image-slice: 160;
             border-image-repeat: round;
-            border-image-width: 30px;
+            border-image-width: 20px;
             pointer-events: none;
             z-index: 0;
             box-sizing: border-box;
@@ -269,7 +269,7 @@
                 color: #000000 !important;
                 display: flex !important;
                 flex-direction: column !important;
-                /* background-image: url('{{ asset('images/rofo_first_page_bg.jpg') }}') !important; */
+                  /* background-image: url('{{ asset('images/rofo_first_page_bg.jpg') }}') !important;   */
                 background-size: cover !important;
                 background-repeat: no-repeat !important;
                 background-position: center !important;
@@ -291,7 +291,7 @@
             .st-rofo-green-frame {
                 position: relative !important;
                 flex: 1 !important;
-                margin: 6mm 8mm 0 8mm !important;
+                margin: 6mm 8mm 10mm 8mm !important;
                 padding: 0 12mm 3mm 12mm !important;
             }
 
@@ -299,11 +299,11 @@
                 content: '' !important;
                 position: absolute !important;
                 inset: 0 !important;
-                border: 30px solid transparent !important;
+                border: 20px solid transparent !important;
                 border-image-source: url("http://app.klaes.ng/storage/template_frames/st.png") !important;
                 border-image-slice: 160 !important;
                 border-image-repeat: round !important;
-                border-image-width: 30px !important;
+                border-image-width: 20px !important;
                 pointer-events: none !important;
                 z-index: 0 !important;
                 box-sizing: border-box !important;
