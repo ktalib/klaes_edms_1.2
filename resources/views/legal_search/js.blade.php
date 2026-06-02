@@ -1237,11 +1237,17 @@ const executeSearchAjax = (filters, searchData) => {
     const rawVal = getMappedValue(item, fieldType);
     const itemFileNo = String(rawVal || '').trim();
     const searchedFileNo = (window.__lsLastSearchedFileNumber || '').trim();
-    
+
+    // Related-Fileno (recertification) rows always render in orange, irrespective of search match
+    if (item && item.source_table === 'Related Fileno') {
+      const parentFn = item.parent_file_number ? ` (under ${item.parent_file_number})` : '';
+      return `<span class="px-2 py-0.5 rounded text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200" title="Recertification linkage${parentFn}">${itemFileNo}</span>`;
+    }
+
     const normalizeFN = (str) => {
       return str.toUpperCase().replace(/[\s\-_=\/]+/g, '');
     };
-    
+
     if (searchedFileNo && itemFileNo && itemFileNo !== '-') {
       const normSearch = normalizeFN(searchedFileNo);
       const normItem = normalizeFN(itemFileNo);
@@ -2544,12 +2550,12 @@ const executeSearchAjax = (filters, searchData) => {
   };
 
   const sourceBadgeClass = (label) => {
-    const map = { 'PRA': 'source-badge-pra', 'File History': 'source-badge-fh', 'Deed Registration': 'source-badge-deed', 'CofO': 'source-badge-cofo' };
+    const map = { 'PRA': 'source-badge-pra', 'File History': 'source-badge-fh', 'Deed Registration': 'source-badge-deed', 'CofO': 'source-badge-cofo', 'Related Fileno': 'source-badge-related' };
     return map[label] || '';
   };
 
   const sourceRowTintClass = (label) => {
-    const map = { 'PRA': 'row-tint-pra', 'File History': 'row-tint-fh', 'Deed Registration': 'row-tint-deed', 'CofO': 'row-tint-cofo' };
+    const map = { 'PRA': 'row-tint-pra', 'File History': 'row-tint-fh', 'Deed Registration': 'row-tint-deed', 'CofO': 'row-tint-cofo', 'Related Fileno': 'row-tint-related' };
     return map[label] || '';
   };
 

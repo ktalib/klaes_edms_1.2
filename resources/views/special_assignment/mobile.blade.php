@@ -458,14 +458,11 @@
 
             <div class="field">
                 <label>Linked Application <span class="req">*</span></label>
-                <select name="spa_application_id" id="m-app-select" required class="inp">
-                    <option value="">Loading…</option>
+                <input type="search" id="m-app-search" class="inp" placeholder="Type file no or owner to search…" style="text-transform:none;margin-bottom:6px;" autocomplete="off">
+                <select name="spa_application_id" id="m-app-select" required class="inp" size="1">
+                    <option value="">Select application…</option>
                 </select>
-            </div>
-
-            <div class="field">
-                <label>File Number</label>
-                <input type="text" name="file_number" id="m-insp-fileno" class="inp inp-ro" readonly placeholder="Auto-filled">
+                <input type="hidden" name="file_number" id="m-insp-fileno">
             </div>
 
             <div class="field">
@@ -600,7 +597,12 @@ document.getElementById('btn-secondary').addEventListener('click', () => {
 });
 document.getElementById('btn-primary').addEventListener('click', () => {
     if (currentTab === 'records') openSheet('sheet-add-record');
-    else if (currentTab === 'verify') openSheet('sheet-log-inspect');
+    else if (currentTab === 'verify') {
+        // Reset search and reload apps when opening
+        document.getElementById('m-app-search').value = '';
+        renderAppOptions('');
+        openSheet('sheet-log-inspect');
+    }
     else if (currentTab === 'map') toggleMapFilterBar();
 });
 
@@ -672,44 +674,94 @@ async function loadInspections() {
     } catch(e) { showError('verify-list', 'Failed to load inspections.'); }
 }
 
+function luColor(val) {
+    const c = {RESIDENTIAL:'#0e7490',COMMERCIAL:'#ea580c',INDUSTRIAL:'#7c3aed',AGRICULTURAL:'#92400e'};
+    return c[(val||'').toUpperCase().split(' ')[0]] || '#4b5563';
+}
+
 function renderInspections(data) {
     const list = document.getElementById('verify-list');
-    if (!data.length) { list.innerHTML = `<div class="empty-state"><i data-lucide="search-x"></i><p>No inspections logged yet.</p></div>`; lucide.createIcons(); return; }
-    list.innerHTML = data.map((f, i) => `
+    if (!data.length) { list.innerHTML = `<div class="empty-state"><i data-lucide="search-x"></i><p>No records found.</p></div>`; lucide.createIcons(); return; }
+    list.innerHTML = data.map((f, i) => {
+        const inspected = f.inspection_status === 'inspected';
+        const contravening = f.contravening;
+        const statusBadge = inspected
+            ? `<span style="padding:2px 8px;border-radius:99px;background:rgba(16,185,129,.15);color:#10b981;font-size:10px;font-weight:700;">✓ Inspected</span>`
+            : `<span style="padding:2px 8px;border-radius:99px;background:rgba(245,158,11,.15);color:#f59e0b;font-size:10px;font-weight:700;">Pending</span>`;
+        const contravBadge = contravening
+            ? `<span style="padding:2px 8px;border-radius:99px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#ef4444;font-size:10px;font-weight:800;letter-spacing:.04em;">⚠ CONTRAVENTION</span>`
+            : '';
+        const appliedColor = luColor(f.land_use_type);
+        const prevailingColor = luColor(f.existing_use);
+        return `
         <div class="insp-card" style="animation-delay:${i * .04}s">
             <div class="insp-card-head">
                 <span class="insp-fileno">${f.file_number||'—'}</span>
-                <span class="insp-date">${f.date_created||'—'}</span>
+                <div style="display:flex;align-items:center;gap:6px;">${statusBadge}</div>
             </div>
             <div class="insp-card-body">
-                <div class="insp-findings">${f.findings||'—'}</div>
-                <div class="insp-inspector">Inspector: ${f.inspector||'—'}</div>
+                <div class="rec-row"><span class="rec-lbl">Owner</span><span class="rec-val">${f.owner_name||'—'}</span></div>
+                <div class="rec-row"><span class="rec-lbl">Location</span><span class="rec-val">${f.location||'—'}</span></div>
+                <div class="rec-row">
+                    <span class="rec-lbl">Applied</span>
+                    <span style="padding:1px 7px;border-radius:99px;background:${appliedColor};color:#fff;font-size:10px;">${f.land_use_type||'—'}</span>
+                </div>
+                <div class="rec-row">
+                    <span class="rec-lbl">Prevailing</span>
+                    <span style="padding:1px 7px;border-radius:99px;background:${prevailingColor};color:#fff;font-size:10px;">${f.existing_use||'—'}</span>
+                </div>
+                ${contravBadge ? `<div style="margin-top:6px;">${contravBadge}</div>` : ''}
+                ${inspected ? `<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">📅 ${f.inspection_date||'—'} &nbsp;|&nbsp; ${f.findings && f.findings!=='—' ? f.findings.slice(0,60)+'…' : 'No findings recorded'}</div>` : ''}
             </div>
-        </div>`).join('');
+        </div>`;
+    }).join('');
     lucide.createIcons();
 }
 
 document.getElementById('search-verify').addEventListener('input', function() {
     const q = this.value.toLowerCase();
-    renderInspections(allInspects.filter(f => (f.file_number+f.inspector+f.findings).toLowerCase().includes(q)));
+    renderInspections(allInspects.filter(f =>
+        (f.file_number + ' ' + f.owner_name + ' ' + f.location).toLowerCase().includes(q)
+    ));
 });
 
-// ── load apps for inspect select ─────────────────────────────────────────────
+// ── load apps for inspect select (limited + searchable) ──────────────────────
+let allAppsCache = [];
+
 async function loadAppsForSelect() {
     try {
         const r = await fetch(URLS.records + '?ajax=1&length=500&start=0&exclude_inspected=1', { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
         const d = await r.json();
-        const sel = document.getElementById('m-app-select');
         appMap = {};
-        sel.innerHTML = '<option value="">Select application…</option>';
-        (d.data||[]).forEach(a => {
-            appMap[a.id] = a;
-            const label = [a.file_number, a.owner_name].filter(v => v && v !== '—').join(' – ');
-            sel.innerHTML += `<option value="${a.id}">${label}</option>`;
-        });
-        if (!d.data?.length) sel.innerHTML = '<option value="">No uninspected applications</option>';
+        allAppsCache = d.data || [];
+        allAppsCache.forEach(a => { appMap[a.id] = a; });
+        renderAppOptions('');
     } catch(e) {}
 }
+
+function renderAppOptions(query) {
+    const sel = document.getElementById('m-app-select');
+    const q   = (query || '').toLowerCase();
+    const filtered = q
+        ? allAppsCache.filter(a => (a.file_number + ' ' + a.owner_name).toLowerCase().includes(q))
+        : allAppsCache;
+    const shown = filtered.slice(0, 20);
+    sel.innerHTML = `<option value="">Select application… (${filtered.length} found)</option>`;
+    shown.forEach(a => {
+        const label = [a.file_number, a.owner_name].filter(v => v && v !== '—').join(' – ');
+        sel.innerHTML += `<option value="${a.id}">${label}</option>`;
+    });
+    if (filtered.length > 20) {
+        sel.innerHTML += `<option disabled>… ${filtered.length - 20} more — refine your search</option>`;
+    }
+    if (!allAppsCache.length) sel.innerHTML = '<option value="">No uninspected applications</option>';
+}
+
+document.getElementById('m-app-search').addEventListener('input', function() {
+    renderAppOptions(this.value);
+    document.getElementById('m-app-select').value = '';
+    document.getElementById('m-insp-fileno').value = '';
+});
 
 document.getElementById('m-app-select').addEventListener('change', function() {
     const app = appMap[this.value];

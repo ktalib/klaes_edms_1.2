@@ -121,6 +121,13 @@ class LegalSearchService
         // Merge all and sort chronologically
         $all = array_merge($fileHistoryRecords, $cofoRecords, $praRecords, $deedRecords);
 
+        // Fetch matching related_file_number entries (orange Recertification rows)
+        // and append them as synthetic timeline rows.
+        $relatedRecertRows = $this->fetchRelatedRecertificationRows($conn, $fileNo, $all);
+        if (!empty($relatedRecertRows)) {
+            $all = array_merge($all, $relatedRecertRows);
+        }
+
         // If searched by a subdivided unit (standard or Sectional Titling), only keep its own records and the mother's records,
         // and explicitly exclude other unit records.
         $motherFileNo = null;
@@ -233,6 +240,104 @@ class LegalSearchService
             'deed_count' => count($deedRecords),
             'total_count' => count($all),
         ];
+    }
+
+    /**
+     * Pull rows from related_file_number that match the searched file_number
+     * OR any prop_id that's already in the result set, and turn each into a
+     * synthetic timeline entry tagged as 'Related Fileno' / Recertification.
+     */
+    private function fetchRelatedRecertificationRows($conn, string $fileNo, array $existingRows): array
+    {
+        if (!Schema::connection($conn->getName())->hasTable('related_file_number')) {
+            return [];
+        }
+
+        // Collect prop_ids already in the result set
+        $propIds = [];
+        foreach ($existingRows as $r) {
+            $pid = trim((string) ($r['prop_id'] ?? ''));
+            if ($pid !== '') {
+                $propIds[$pid] = true;
+            }
+        }
+        $propIds = array_keys($propIds);
+
+        if ($fileNo === '' && empty($propIds)) {
+            return [];
+        }
+
+        $query = $conn->table('related_file_number')->where(function ($q) use ($fileNo, $propIds) {
+            if ($fileNo !== '') {
+                $q->orWhere('file_number', $fileNo)
+                  ->orWhere('related_fileno', $fileNo);
+            }
+            if (!empty($propIds)) {
+                $q->orWhereIn('prop_id', $propIds);
+            }
+        });
+
+        $rows = $query->orderBy('id')->get();
+
+        $out = [];
+        foreach ($rows as $row) {
+            $createdAt = $row->created_at ?? null;
+            $sortDate = null;
+            $displayDate = '-';
+            if ($createdAt) {
+                try {
+                    $c = Carbon::parse($createdAt);
+                    $sortDate = $c->toDateString();
+                    $displayDate = $c->format('M j, Y');
+                } catch (\Exception $e) { /* ignore */ }
+            }
+
+            $out[] = [
+                'id'                => $row->id,
+                'file_number'       => $row->related_fileno, // orange-highlighted column
+                'mlsFNo'            => $row->related_fileno,
+                'fileno'            => $row->related_fileno,
+                'kangisFileNo'      => null,
+                'NewKANGISFileno'   => null,
+                'transaction_type'  => 'Recertification',
+                'transaction_date'  => $displayDate,
+                'sort_date'         => $sortDate,
+                'party_1'           => '-',
+                'party_2'           => $row->party_2 ?: '-',
+                'party_3'           => '-',
+                'party_4'           => '-',
+                'land_use'          => '-',
+                'location'          => $row->location ?: '-',
+                'lgsaOrCity'        => '-',
+                'districtName'      => '-',
+                'registration'      => '-',
+                'regNo'             => '-',
+                'serial_no'         => '-',
+                'page_no'           => '-',
+                'volume_no'         => '-',
+                'size'              => '-',
+                'caveat'            => '-',
+                'caveat_id'         => null,
+                'caveated_comment'  => null,
+                'is_caveated'       => 0,
+                'plot_no'           => '-',
+                'comments'          => $row->comment ?: '-',
+                'cofo_comment'      => null,
+                'prop_id'           => $row->prop_id,
+                'parent_prop_id'    => null,
+                'deeds_date'        => null,
+                'deeds_time'        => null,
+                'reg_date'          => null,
+                'reg_time'          => null,
+                'tp_no'             => null,
+                'source_table'      => 'Related Fileno',
+                // Carry through the parent file_number for context (the file
+                // that LISTED this related fileno).
+                'parent_file_number' => $row->file_number,
+            ];
+        }
+
+        return $out;
     }
 
     private function emptyResult(): array

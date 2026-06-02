@@ -227,6 +227,14 @@
                                     Preview
                                 </button>
 
+                                @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']) && auth()->user()->hasDfrPermission('view_requests'))
+                                <a href="{{ route('digital-request.index') }}"
+                                    class="inline-flex items-center px-4 py-2 border border-[#450a0a] rounded-md shadow-sm text-sm font-medium text-[#450a0a] bg-white hover:bg-red-50 transition-colors">
+                                    <i data-lucide="list" class="h-4 w-4 mr-2"></i>
+                                    View Requests
+                                </a>
+                                @endif
+
                                 @if($isEligible)
                                 <a href="{{ route('create-file-tracker.index', ['url' => 'dgis']) }}"
                                     class="{{ $navClass('dgis') }}"

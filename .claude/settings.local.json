@@ -75,7 +75,15 @@
       "Bash(php -r 'require '\\\\''vendor/autoload.php'\\\\''; $app = require_once '\\\\''bootstrap/app.php'\\\\''; $app->make\\(Illuminate\\\\Contracts\\\\Console\\\\Kernel::class\\)->bootstrap\\(\\); $cols = \\\\Illuminate\\\\Support\\\\Facades\\\\Schema::connection\\('\\\\''sqlsrv'\\\\''\\)->getColumnListing\\('\\\\''pra'\\\\''\\); echo implode\\('\\\\'', '\\\\'', array_filter\\($cols, fn\\($c\\) => preg_match\\('\\\\''/party|plot|allot|serial|page|vol|reg|grant/i'\\\\'', $c\\)\\)\\);')",
       "Bash(findstr /R \"instruments-capture PraRecordController PraRecordService InstrumentController api.php probe_temp46133\")",
       "Bash(not exist *)",
-      "PowerShell(New-Item -ItemType Directory -Force -Path \"C:\\\\wamp64\\\\www\\\\klaes\\\\docs\\\\templates\")"
+      "PowerShell(New-Item -ItemType Directory -Force -Path \"C:\\\\wamp64\\\\www\\\\klaes\\\\docs\\\\templates\")",
+      "Bash(php scratch_rfn3.php)",
+      "Bash(php scratch_seed.php)",
+      "Bash(php -l app/Services/LegalSearchService.php)",
+      "Bash(php scratch_verify.php)",
+      "Bash(php scratch_verify2.php)",
+      "Bash(php scratch_v3.php)",
+      "Bash(php scratch_v4.php)",
+      "Bash(php scratch_v5.php)"
     ],
     "additionalDirectories": [
       "C:\\wamp64\\www\\klaes\\resources\\views\\special_assignment"

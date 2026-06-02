@@ -33,6 +33,16 @@ Route::get('/custom-public', function () {
     return 'This is a public custom route';
 });
 
+// Special Assignment Mobile - Public routes (login, forgot password, etc.)
+Route::prefix('special-assignment/mobile')->name('special-assignment.mobile.')->group(function () {
+    Route::get('/login',                    [\App\Http\Controllers\SpecialAssignmentController::class, 'showMobileLogin'])->name('login');
+    Route::post('/login',                   [\App\Http\Controllers\SpecialAssignmentController::class, 'submitMobileLogin'])->name('login.submit');
+    Route::get('/forgot-password',          [\App\Http\Controllers\SpecialAssignmentController::class, 'showForgotPassword'])->name('forgot-password');
+    Route::post('/forgot-password',         [\App\Http\Controllers\SpecialAssignmentController::class, 'submitForgotPassword'])->name('forgot-password.submit');
+    Route::get('/reset-password/{token}',   [\App\Http\Controllers\SpecialAssignmentController::class, 'showResetPassword'])->name('reset-password');
+    Route::post('/reset-password',          [\App\Http\Controllers\SpecialAssignmentController::class, 'submitResetPassword'])->name('reset-password.submit');
+});
+
 // Authenticated routes
 Route::middleware(['auth'])->group(function () {
     // GIS related routes

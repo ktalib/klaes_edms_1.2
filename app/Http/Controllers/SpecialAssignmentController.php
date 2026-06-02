@@ -1029,6 +1029,81 @@ class SpecialAssignmentController extends Controller
 
     // ─── PRIVATE HELPERS ──────────────────────────────────────────────────────
 
+    // ─── MOBILE LOGIN METHODS ──────────────────────────────────────────────────
+
+    public function showMobileLogin()
+    {
+        if (auth()->check()) {
+            return redirect()->route('special-assignment.mobile');
+        }
+        return view('special_assignment.mobile.login');
+    }
+
+    public function submitMobileLogin(Request $request)
+    {
+        $credentials = $request->validate([
+            'identifier' => 'required|string',
+            'password'   => 'required|string|min:6',
+        ]);
+
+        $fieldType = filter_var($credentials['identifier'], FILTER_VALIDATE_EMAIL) ? 'email' : 'name';
+
+        if (auth()->attempt([$fieldType => $credentials['identifier'], 'password' => $credentials['password']], $request->boolean('remember'))) {
+            $request->session()->regenerate();
+            return redirect()->intended(route('special-assignment.mobile'))->with('success', 'Welcome back!');
+        }
+
+        return back()->withInput($request->only('identifier'))->withErrors(['error' => 'Invalid credentials.']);
+    }
+
+    public function showForgotPassword()
+    {
+        return view('special_assignment.mobile.forgot-password');
+    }
+
+    public function submitForgotPassword(Request $request)
+    {
+        $request->validate(['email' => 'required|email|exists:users,email']);
+
+        $user = \App\Models\User::where('email', $request->email)->first();
+        if (!$user) {
+            return back()->withErrors(['email' => 'Email not found.']);
+        }
+
+        $token = \Illuminate\Support\Str::random(60);
+        \Illuminate\Support\Facades\DB::table('password_resets')->updateOrInsert(
+            ['email' => $request->email],
+            ['token' => bcrypt($token), 'created_at' => now()]
+        );
+
+        // TODO: Send reset email with token
+        return back()->with('success', 'Password reset link sent to your email.');
+    }
+
+    public function showResetPassword($token)
+    {
+        return view('special_assignment.mobile.reset-password', compact('token'));
+    }
+
+    public function submitResetPassword(Request $request)
+    {
+        $request->validate([
+            'email'    => 'required|email|exists:users,email',
+            'password' => 'required|string|min:8|confirmed',
+            'token'    => 'required|string',
+        ]);
+
+        $user = \App\Models\User::where('email', $request->email)->first();
+        if (!$user) {
+            return back()->withErrors(['email' => 'Email not found.']);
+        }
+
+        $user->update(['password' => bcrypt($request->password)]);
+        \Illuminate\Support\Facades\DB::table('password_resets')->where('email', $request->email)->delete();
+
+        return redirect()->route('special-assignment.mobile.login')->with('success', 'Password reset successfully. Please log in.');
+    }
+
     private function sendNoticeSms(string $phone, string $name, string $type, ?string $fileNo): bool
     {
         $ordinal  = $type === 'first' ? 'First' : 'Second';

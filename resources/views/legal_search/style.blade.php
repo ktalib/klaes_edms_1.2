@@ -519,16 +519,19 @@
     .source-badge-fh { background: #d1fae5; color: #065f46; }
     .source-badge-deed { background: #fef3c7; color: #92400e; }
     .source-badge-cofo { background: #ede9fe; color: #5b21b6; }
+    .source-badge-related { background: #ffedd5; color: #9a3412; }
 
     /* Timeline row tints — match badge source colors */
     #timeline-table tr.row-tint-pra  { background-color: #eff6ff; }
     #timeline-table tr.row-tint-fh   { background-color: #f0fdf4; }
     #timeline-table tr.row-tint-deed { background-color: #fffbeb; }
     #timeline-table tr.row-tint-cofo { background-color: #f5f3ff; }
+    #timeline-table tr.row-tint-related { background-color: #fff7ed; }
     #timeline-table tr.row-tint-pra:hover  { background-color: #dbeafe; }
     #timeline-table tr.row-tint-fh:hover   { background-color: #d1fae5; }
     #timeline-table tr.row-tint-deed:hover { background-color: #fef3c7; }
     #timeline-table tr.row-tint-cofo:hover { background-color: #ede9fe; }
+    #timeline-table tr.row-tint-related:hover { background-color: #ffedd5; }
 
     /* Timeline & detail tables – prevent cramped columns */
     #timeline-table-wrapper,

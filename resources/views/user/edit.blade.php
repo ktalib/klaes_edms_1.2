@@ -646,15 +646,16 @@
                                     </div>
                                     <div class="grid grid-cols-3 gap-3" id="roles_grid">
                                         @foreach ($userRoles as $role)
-                                            <div class="flex items-start role-item" 
+                                            <div class="flex items-start role-item"
                                                 x-show="shouldShowRole('{{ $role->user_type ?? '' }}', '{{ $role->level ?? '' }}', {{ json_encode($role->name) }}, '{{ $role->department_id ?? 'null' }}')"
                                                 data-dept-id="{{ $role->department_id ?? 'null' }}"
                                                 data-user-type="{{ $role->user_type ?? '' }}"
                                                 data-level="{{ $role->level ?? '' }}">
                                                 <div class="flex items-center h-5">
-                                                    <input type="checkbox" name="user_role[]" value="{{ $role->name }}" 
+                                                    <input type="checkbox" name="user_role[]" value="{{ $role->name }}"
                                                         {{ in_array($role->name, $userAssignedRoles ?? []) ? 'checked' : '' }}
-                                                        class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                                        class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 role-checkbox"
+                                                        @if($role->name === 'Log a File') id="role_log_a_file_edit" @endif>
                                                 </div>
                                                 <div class="ml-3 text-sm">
                                                     <label class="font-medium text-gray-700">{{ $role->name }}</label>
@@ -664,6 +665,117 @@
                                         @endforeach
                                     </div>
                                 </div>
+
+                                {{-- DFR sub-permissions modal (triggered when Log a File is checked) --}}
+                                @php
+                                    $dfrPerms    = !empty($user->dfr_permissions)
+                                        ? array_map('trim', explode(',', $user->dfr_permissions))
+                                        : [];
+                                    $hasLogAFile = in_array('Log a File', $userAssignedRoles ?? []);
+                                @endphp
+                                <div id="dfr-modal-edit" class="hidden fixed inset-0 z-[9999] flex items-center justify-center p-4">
+                                    {{-- Backdrop --}}
+                                    <div id="dfr-modal-backdrop-edit" class="absolute inset-0 bg-black/50"></div>
+                                    {{-- Dialog --}}
+                                    <div class="relative w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
+                                        {{-- Header --}}
+                                        <div class="bg-gradient-to-r from-[#450a0a] via-[#6b1010] to-[#450a0a] px-5 py-4 flex items-center gap-3">
+                                            <div class="flex h-9 w-9 items-center justify-center rounded-full bg-white/20">
+                                                <i class="fas fa-file-alt text-white text-sm"></i>
+                                            </div>
+                                            <div>
+                                                <p class="text-sm font-bold text-white">Digital File Request Permissions</p>
+                                                <p class="text-xs text-red-200">Select what this user can do on /digital-request</p>
+                                            </div>
+                                            <button type="button" id="dfr-modal-close-edit" class="ml-auto text-red-200 hover:text-white transition">
+                                                <i class="fas fa-times text-base"></i>
+                                            </button>
+                                        </div>
+                                        {{-- Body --}}
+                                        <div class="p-5 space-y-3">
+                                            <label class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 bg-gray-50 hover:border-red-300 hover:bg-red-50 cursor-pointer transition">
+                                                <input type="checkbox" name="dfr_permissions[]" value="view_requests" id="dfr_view_requests_edit"
+                                                    {{ in_array('view_requests', $dfrPerms) ? 'checked' : '' }}
+                                                    class="h-4 w-4 rounded border-gray-300 text-[#450a0a] focus:ring-red-400">
+                                                <div>
+                                                    <span class="text-sm font-semibold text-gray-800">View Request Page</span>
+                                                    <span class="block text-xs text-gray-500">Can access /digital-request and see all requests</span>
+                                                </div>
+                                            </label>
+                                            <label class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 bg-gray-50 hover:border-red-300 hover:bg-red-50 cursor-pointer transition">
+                                                <input type="checkbox" name="dfr_permissions[]" value="approve_request" id="dfr_approve_request_edit"
+                                                    {{ in_array('approve_request', $dfrPerms) ? 'checked' : '' }}
+                                                    class="h-4 w-4 rounded border-gray-300 text-[#450a0a] focus:ring-red-400">
+                                                <div>
+                                                    <span class="text-sm font-semibold text-gray-800">Approve Request</span>
+                                                    <span class="block text-xs text-gray-500">Can approve or reject file requests</span>
+                                                </div>
+                                            </label>
+                                        </div>
+                                        {{-- Footer --}}
+                                        <div class="px-5 py-3 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
+                                            <button type="button" id="dfr-modal-cancel-edit"
+                                                class="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition">
+                                                Cancel
+                                            </button>
+                                            <button type="button" id="dfr-modal-done-edit"
+                                                class="px-4 py-2 text-sm font-medium text-white bg-[#450a0a] hover:bg-[#5c0c0c] rounded-lg transition">
+                                                Done
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <script>
+                                (function () {
+                                    function initDfrModalEdit() {
+                                        var cb       = document.getElementById('role_log_a_file_edit');
+                                        var modal    = document.getElementById('dfr-modal-edit');
+                                        var backdrop = document.getElementById('dfr-modal-backdrop-edit');
+                                        var btnDone  = document.getElementById('dfr-modal-done-edit');
+                                        var btnCancel= document.getElementById('dfr-modal-cancel-edit');
+                                        var btnClose = document.getElementById('dfr-modal-close-edit');
+                                        if (!cb || !modal) return;
+
+                                        function openModal()  { modal.classList.remove('hidden'); }
+                                        function closeModal() { modal.classList.add('hidden'); }
+                                        function cancelModal() {
+                                            closeModal();
+                                        }
+
+                                        // On edit page: if user already has Log a File + dfr_permissions, don't auto-open
+                                        cb.addEventListener('change', function() {
+                                            if (cb.checked) openModal(); else cancelModal();
+                                        });
+                                        // Re-open modal when clicking the role label to edit permissions
+                                        var editBtn = document.getElementById('dfr-edit-perms-btn');
+                                        if (editBtn) editBtn.addEventListener('click', openModal);
+
+                                        btnDone.addEventListener('click', closeModal);
+                                        btnCancel.addEventListener('click', cancelModal);
+                                        btnClose.addEventListener('click', closeModal);
+                                        backdrop.addEventListener('click', closeModal);
+                                    }
+                                    if (document.readyState === 'loading') {
+                                        document.addEventListener('DOMContentLoaded', initDfrModalEdit);
+                                    } else {
+                                        initDfrModalEdit();
+                                    }
+                                })();
+                                </script>
+                                {{-- Edit permissions link (shown when Log a File is already assigned) --}}
+                                @if($hasLogAFile)
+                                <div class="mt-2 flex items-center gap-2">
+                                    <span class="text-xs text-gray-500">DFR permissions:
+                                        @if(count($dfrPerms))
+                                            <strong class="text-[#450a0a]">{{ implode(', ', $dfrPerms) }}</strong>
+                                        @else
+                                            <span class="text-amber-600">none set</span>
+                                        @endif
+                                    </span>
+                                    <button type="button" id="dfr-edit-perms-btn"
+                                        class="text-xs text-[#450a0a] underline hover:text-red-800">Edit permissions</button>
+                                </div>
+                                @endif
                                 
                                 <!-- Role Management Helper Buttons -->
                                 <div class="mt-3 text-right">

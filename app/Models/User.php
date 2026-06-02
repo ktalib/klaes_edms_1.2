@@ -57,6 +57,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'rank',
         'signature',
         'user_actions',
+        'dfr_permissions',
     ];
 
     public function sendEmailVerificationNotification()
@@ -368,6 +369,23 @@ class User extends Authenticatable implements MustVerifyEmail
         }
 
         return false;
+    }
+
+    /**
+     * Check a Digital File Request sub-permission.
+     * Valid keys: view_requests | make_request | approve_request
+     */
+    public function hasDfrPermission(string $key): bool
+    {
+        $type = strtolower((string) $this->type);
+        if ($type === 'super admin' || $type === 'supper admin') {
+            return true;
+        }
+        if (empty($this->dfr_permissions)) {
+            return false;
+        }
+        $perms = array_map('trim', explode(',', $this->dfr_permissions));
+        return in_array($key, $perms, true);
     }
 
     /**

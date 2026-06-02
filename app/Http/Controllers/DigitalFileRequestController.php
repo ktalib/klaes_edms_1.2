@@ -31,6 +31,10 @@ class DigitalFileRequestController extends Controller
     {
         $user = Auth::user();
 
+        if (!$user->hasDfrPermission('view_requests')) {
+            abort(403, 'You do not have permission to access the Digital File Request page. Ask your administrator to grant you the "View Request Page" permission.');
+        }
+
         // Stats for header cards
         $base  = DigitalFileRequest::query();
         $stats = [
@@ -485,6 +489,10 @@ class DigitalFileRequestController extends Controller
 
     public function myFiles(Request $request)
     {
+        if (!Auth::user()->hasDfrPermission('view_requests')) {
+            abort(403, 'You do not have permission to access My Digital Files.');
+        }
+
         $userId = Auth::id();
 
         $active  = DigitalFileAccess::where('requester_user_id', $userId)
