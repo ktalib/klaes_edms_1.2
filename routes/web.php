@@ -1788,6 +1788,33 @@ Route::prefix('printlabel')->middleware('auth')->group(function () {
     })->name('printlabel.print-template');
 });
 
+// Cadastral Print Label Routes (clone of /printlabel for cadastral files)
+Route::prefix('cadastral_printlabel')->middleware('auth')->group(function () {
+    // Main page
+    Route::get('/', [App\Http\Controllers\CadastralPrintLabelController::class, 'index'])->name('cadastral_printlabel.index');
+
+    // API routes
+    Route::prefix('api')->group(function () {
+        Route::get('/files', [App\Http\Controllers\CadastralPrintLabelController::class, 'getAvailableFiles'])->name('cadastral_printlabel.api.files');
+        Route::post('/batch', [App\Http\Controllers\CadastralPrintLabelController::class, 'createBatch'])->name('cadastral_printlabel.api.create-batch');
+        Route::get('/batches', [App\Http\Controllers\CadastralPrintLabelController::class, 'getBatches'])->name('cadastral_printlabel.api.batches');
+        Route::get('/batch/{id}', [App\Http\Controllers\CadastralPrintLabelController::class, 'getBatchDetails'])->name('cadastral_printlabel.api.batch-details');
+        Route::get('/batch/{id}/print', [App\Http\Controllers\CadastralPrintLabelController::class, 'getBatchForPrinting'])->name('cadastral_printlabel.api.batch-for-printing');
+        Route::patch('/batch/{id}/print', [App\Http\Controllers\CadastralPrintLabelController::class, 'markBatchAsPrinted'])->name('cadastral_printlabel.api.mark-printed');
+        Route::delete('/batch/{id}', [App\Http\Controllers\CadastralPrintLabelController::class, 'deleteBatch'])->name('cadastral_printlabel.api.delete-batch');
+        Route::get('/statistics', [App\Http\Controllers\CadastralPrintLabelController::class, 'getStatistics'])->name('cadastral_printlabel.api.statistics');
+        Route::get('/grouping/preview', [App\Http\Controllers\CadastralPrintLabelController::class, 'previewGroupingBatch'])->name('cadastral_printlabel.api.grouping-preview');
+        Route::get('/registry-batches', [App\Http\Controllers\CadastralPrintLabelController::class, 'searchRegistryBatches'])->name('cadastral_printlabel.api.registry-batches');
+        Route::get('/rack-label/status', [App\Http\Controllers\CadastralPrintLabelController::class, 'getRackLabelStatus'])->name('cadastral_printlabel.api.rack-label-status');
+        Route::post('/override/lookup', [App\Http\Controllers\CadastralPrintLabelController::class, 'lookupFileNumbers'])->name('cadastral_printlabel.api.override-lookup');
+    });
+
+    // Print template route
+    Route::get('/print-template', function () {
+        return view('cadastral_printlabel.print-file-lab');
+    })->name('cadastral_printlabel.print-template');
+});
+
 // Simple test route for file number API
 Route::get('/test-file-api', function () {
     return response()->json([

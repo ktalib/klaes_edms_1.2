@@ -83,7 +83,8 @@
       "Bash(php scratch_verify2.php)",
       "Bash(php scratch_v3.php)",
       "Bash(php scratch_v4.php)",
-      "Bash(php scratch_v5.php)"
+      "Bash(php scratch_v5.php)",
+      "PowerShell(Get-ChildItem 'C:\\\\wamp64\\\\bin\\\\php' -Directory | ForEach-Object { $_.Name })"
     ],
     "additionalDirectories": [
       "C:\\wamp64\\www\\klaes\\resources\\views\\special_assignment"

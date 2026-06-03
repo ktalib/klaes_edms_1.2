@@ -277,6 +277,11 @@ class FileIndexing extends Model
         return $this->hasMany(PrintLabelBatchItem::class, 'file_indexing_id');
     }
 
+    public function cadastralPrintLabelBatchItems()
+    {
+        return $this->hasMany(\App\Models\CadastralPrintLabelBatchItem::class, 'file_indexing_id');
+    }
+
     public function getTrackingStatusAttribute()
     {
         $tracking = $this->fileTracking;
