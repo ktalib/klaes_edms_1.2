@@ -41,6 +41,7 @@ Route::prefix('special-assignment/mobile')->name('special-assignment.mobile.')->
     Route::post('/forgot-password',         [\App\Http\Controllers\SpecialAssignmentController::class, 'submitForgotPassword'])->name('forgot-password.submit');
     Route::get('/reset-password/{token}',   [\App\Http\Controllers\SpecialAssignmentController::class, 'showResetPassword'])->name('reset-password');
     Route::post('/reset-password',          [\App\Http\Controllers\SpecialAssignmentController::class, 'submitResetPassword'])->name('reset-password.submit');
+    Route::post('/logout',                  [\App\Http\Controllers\SpecialAssignmentController::class, 'mobileLogout'])->name('logout');
 });
 
 // Authenticated routes
@@ -413,6 +414,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/report',            [\App\Http\Controllers\SpecialAssignmentController::class, 'report'])->name('report');
         // AJAX / actions
         Route::get ('/check-file',               [\App\Http\Controllers\SpecialAssignmentController::class, 'checkFileIndexed'])->name('check-file');
+        Route::get ('/search-files',             [\App\Http\Controllers\SpecialAssignmentController::class, 'searchFileIndexings'])->name('search-files');
         Route::post  ('/land-records/store',         [\App\Http\Controllers\SpecialAssignmentController::class, 'storeLandRecord'])->name('land-records.store');
         Route::post  ('/land-records/{id}/update',   [\App\Http\Controllers\SpecialAssignmentController::class, 'updateLandRecord'])->name('land-records.update');
         Route::post  ('/land-records/{id}/delete',   [\App\Http\Controllers\SpecialAssignmentController::class, 'deleteLandRecord'])->name('land-records.delete');

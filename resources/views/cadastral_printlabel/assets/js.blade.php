@@ -1799,12 +1799,18 @@
                     const trackingId = (trackingIdSource || fallbackTrackingId || '').toString();
 
                     let qrValue = trackingId;
-                    if (file.qr_code_data) {
+                    if (file.qr_value) {
+                        qrValue = String(file.qr_value);
+                    } else if (file.qr_code_data) {
                         if (typeof file.qr_code_data === 'string') {
                             qrValue = file.qr_code_data;
                         } else {
                             try {
-                                qrValue = String(file.qr_code_data.tracking_id || trackingId);
+                                qrValue = String(
+                                    file.qr_code_data.cadastral_tracking_id
+                                    || file.qr_code_data.tracking_id
+                                    || trackingId
+                                );
                             } catch (error) {
                                 qrValue = trackingId;
                             }

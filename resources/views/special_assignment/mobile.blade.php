@@ -120,10 +120,11 @@
         .rec-status.in_progress { background: rgba(245,158,11,.15); color: var(--warning); }
         .rec-status.approved    { background: rgba(16,185,129,.15); color: var(--success); }
         .rec-status.closed      { background: rgba(71,85,105,.3); color: var(--text-dim); }
+        .rec-status.not_added   { background: rgba(71,85,105,.2); color: #64748b; }
         .rec-card-body { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 5px; }
         .rec-row { display: flex; align-items: baseline; gap: 8px; }
-        .rec-lbl  { font-size: 10px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; min-width: 60px; }
-        .rec-val  { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+        .rec-lbl  { font-size: 10px; font-weight: 700; color: #cbd5e1; text-transform: uppercase; letter-spacing: .04em; min-width: 60px; }
+        .rec-val  { font-size: 12px; font-weight: 600; color: #e2e8f0; }
 
         .insp-card {
             background: var(--surface); border: 1px solid var(--border);
@@ -132,10 +133,10 @@
         }
         .insp-card-head { padding: 12px 14px 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
         .insp-fileno { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #60a5fa; }
-        .insp-date { font-size: 10px; color: var(--text-dim); font-weight: 600; }
+        .insp-date { font-size: 10px; color: #94a3b8; font-weight: 600; }
         .insp-card-body { padding: 10px 14px 12px; }
-        .insp-findings { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
-        .insp-inspector { margin-top: 6px; font-size: 10px; color: var(--text-dim); font-weight: 700; text-transform: uppercase; }
+        .insp-findings { font-size: 12px; color: #cbd5e1; line-height: 1.5; }
+        .insp-inspector { margin-top: 6px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; }
 
         /* ── EMPTY STATE ── */
         .empty-state { padding: 50px 20px; text-align: center; }
@@ -190,7 +191,7 @@
 
         /* ── FORM ELEMENTS ── */
         .field { display: flex; flex-direction: column; gap: 5px; }
-        .field label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); }
+        .field label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #e2e8f0; }
         .field label .req { color: var(--danger); }
         .inp {
             width: 100%; background: var(--surface2); border: 1.5px solid var(--border);
@@ -208,6 +209,16 @@
         .lookup-msg { font-size: 11px; font-weight: 600; margin-top: 3px; }
         .lookup-msg.ok  { color: var(--success); }
         .lookup-msg.err { color: var(--warning); }
+        .fileno-item {
+            padding: 10px 14px; font-size: 12px; cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            display: flex; flex-direction: column; gap: 2px;
+            transition: background .15s;
+        }
+        .fileno-item:last-child { border-bottom: none; }
+        .fileno-item:active { background: var(--accent-dim); }
+        .fileno-item .fi-num { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--accent); }
+        .fileno-item .fi-title { font-size: 11px; color: var(--text-muted); }
 
         .info-badge {
             display: flex; align-items: flex-start; gap: 8px;
@@ -289,9 +300,15 @@
             <p>Special Assignment</p>
         </div>
     </div>
-    <a href="{{ route('special-assignment.land-records') }}" style="background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--text-muted);padding:7px 12px;border-radius:9px;font-size:11px;font-weight:700;text-decoration:none;display:flex;align-items:center;gap:6px;">
-        <i data-lucide="monitor" style="width:13px;"></i> Desktop
-    </a>
+    <div style="display:flex;align-items:center;gap:8px;">
+       
+        <form method="POST" action="{{ route('special-assignment.mobile.logout') }}" style="margin:0;">
+            @csrf
+            <button type="submit" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#ef4444;padding:7px 12px;border-radius:9px;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;">
+                <i data-lucide="log-out" style="width:13px;"></i> Logout
+            </button>
+        </form>
+    </div>
 </header>
 
 <!-- NAV STRIP -->
@@ -371,13 +388,17 @@
             <input type="hidden" name="location"         id="h-location">
             <input type="hidden" name="lga"              id="h-lga">
 
-            <div class="field" style="margin-bottom:2px;">
+            <div class="field" style="margin-bottom:2px;position:relative;">
                 <label>File Number <span class="req">*</span></label>
-                <div class="inp-row">
-                    <input type="text" id="m-file-no-input" class="inp" placeholder="TYPE FILE NUMBER…" style="text-transform:uppercase;">
-                    <button type="button" id="btn-lookup" class="btn-geo" style="height:46px;padding:0 14px;background:var(--accent-dim);border-color:var(--accent);color:var(--accent);">
-                        <i data-lucide="search" style="width:14px;"></i> LOOKUP
-                    </button>
+                <div style="position:relative;">
+                    <input type="search" id="m-file-no-input" class="inp" placeholder="Type to search file number…"
+                        style="text-transform:uppercase;padding-right:38px;" autocomplete="off">
+                    <span id="fileno-spinner" style="display:none;position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--accent);font-size:11px;">…</span>
+                </div>
+                <!-- Dropdown list -->
+                <div id="fileno-dropdown" style="display:none;position:absolute;left:0;right:0;z-index:999;
+                    background:var(--surface2);border:1.5px solid var(--accent);border-radius:var(--radius-sm);
+                    max-height:220px;overflow-y:auto;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,.5);">
                 </div>
                 <p id="lookup-msg" class="lookup-msg" style="display:none;"></p>
             </div>
@@ -522,11 +543,12 @@
 const CSRF  = '{{ csrf_token() }}';
 const MPTS  = @json($mapPoints);
 const URLS  = {
-    records:    '{{ route("special-assignment.land-records") }}',
-    fieldData:  '{{ route("special-assignment.field-data") }}',
-    checkFile:  '{{ route("special-assignment.check-file") }}',
-    storeRec:   '{{ route("special-assignment.land-records.store") }}',
-    storeField: '{{ route("special-assignment.field-data.store") }}',
+    records:     '{{ route("special-assignment.land-records") }}',
+    fieldData:   '{{ route("special-assignment.field-data") }}',
+    checkFile:   '{{ route("special-assignment.check-file") }}',
+    searchFiles: '{{ route("special-assignment.search-files") }}',
+    storeRec:    '{{ route("special-assignment.land-records.store") }}',
+    storeField:  '{{ route("special-assignment.field-data.store") }}',
 };
 
 // ── state ────────────────────────────────────────────────────────────────────
@@ -632,8 +654,8 @@ async function loadRecords() {
         renderRecords(allRecords);
         // stats
         const total  = allRecords.length;
-        const open   = allRecords.filter(x => x.status === 'open').length;
-        const inprog = allRecords.filter(x => x.status === 'in_progress').length;
+        const open   = allRecords.filter(x => x.status_raw === 'open').length;
+        const inprog = allRecords.filter(x => x.status_raw === 'in_progress').length;
         document.getElementById('stat-total').textContent  = d.recordsTotal ?? total;
         document.getElementById('stat-open').textContent   = open;
         document.getElementById('stat-inprog').textContent = inprog;
@@ -643,18 +665,22 @@ async function loadRecords() {
 function renderRecords(data) {
     const list = document.getElementById('records-list');
     if (!data.length) { list.innerHTML = `<div class="empty-state"><i data-lucide="inbox"></i><p>No land records yet.</p></div>`; lucide.createIcons(); return; }
-    list.innerHTML = data.map((r, i) => `
+    const statusLabel = { open:'Open', in_progress:'In Progress', approved:'Approved', certificate_issued:'Cert. Issued', closed:'Closed', not_added:'Not Added' };
+    list.innerHTML = data.map((r, i) => {
+        const s = r.status_raw || 'not_added';
+        return `
         <div class="rec-card" style="animation-delay:${i * .04}s">
             <div class="rec-card-head">
                 <span class="rec-fileno">${r.file_number || '—'}</span>
-                <span class="rec-status ${(r.status||'').replace(' ','_')}">${(r.status||'').toUpperCase()}</span>
+                <span class="rec-status ${s}">${statusLabel[s] || s.toUpperCase()}</span>
             </div>
             <div class="rec-card-body">
                 <div class="rec-row"><span class="rec-lbl">Owner</span><span class="rec-val">${r.owner_name||'—'}</span></div>
                 <div class="rec-row"><span class="rec-lbl">Location</span><span class="rec-val">${r.location||'—'}</span></div>
                 <div class="rec-row"><span class="rec-lbl">Land Use</span><span class="rec-val">${r.land_use_type||'—'}</span></div>
             </div>
-        </div>`).join('');
+        </div>`;
+    }).join('');
     lucide.createIcons();
 }
 
@@ -769,37 +795,83 @@ document.getElementById('m-app-select').addEventListener('change', function() {
 });
 
 // ── file number lookup ────────────────────────────────────────────────────────
-document.getElementById('btn-lookup').addEventListener('click', async function() {
-    const fileNo = document.getElementById('m-file-no-input').value.trim();
-    if (!fileNo) return;
-    const msg = document.getElementById('lookup-msg');
-    msg.style.display = 'block'; msg.className = 'lookup-msg'; msg.textContent = 'Looking up…';
-    try {
-        const r = await fetch(`${URLS.checkFile}?file_number=${encodeURIComponent(fileNo)}`);
-        const d = await r.json();
-        if (d.found) {
-            document.getElementById('h-file_number').value       = d.file_number || fileNo;
-            document.getElementById('h-file_indexing_id').value  = d.file_indexing_id || '';
-            document.getElementById('h-tracking_id').value       = d.tracking_id || '';
-            document.getElementById('h-is_indexed').value        = '1';
-            document.getElementById('h-location').value          = d.location || '';
-            document.getElementById('h-lga').value               = d.lga || '';
-            document.getElementById('m-owner').value             = (d.file_title || d.owner_name || '').trim();
-            document.getElementById('m-phone').value             = d.phone || '';
-            document.getElementById('m-land-use').value          = d.land_use_type || '';
-            const loc = [d.location, d.district, d.lga].filter(Boolean).join(', ');
-            const badge = document.getElementById('m-location-badge');
-            if (loc) { document.getElementById('m-location-text').textContent = loc; badge.style.display = 'flex'; }
-            else badge.style.display = 'none';
-            msg.className = 'lookup-msg ok'; msg.textContent = '✓ File found — details pre-filled.';
-        } else {
-            document.getElementById('h-file_number').value  = fileNo;
-            document.getElementById('h-is_indexed').value   = '0';
-            document.getElementById('m-location-badge').style.display = 'none';
-            msg.className = 'lookup-msg err'; msg.textContent = 'File not indexed — fill in details manually.';
-        }
-    } catch(e) { msg.className = 'lookup-msg err'; msg.textContent = 'Lookup failed. Try again.'; }
-});
+// ── File number searchable dropdown ───────────────────────────────────────────
+(function() {
+    const inp      = document.getElementById('m-file-no-input');
+    const dropdown = document.getElementById('fileno-dropdown');
+    const spinner  = document.getElementById('fileno-spinner');
+    const msg      = document.getElementById('lookup-msg');
+    let debounceTimer;
+
+    function fillRecord(fileNo) {
+        msg.style.display = 'block'; msg.className = 'lookup-msg'; msg.textContent = 'Loading details…';
+        fetch(`${URLS.checkFile}?file_number=${encodeURIComponent(fileNo)}`)
+            .then(r => r.json())
+            .then(d => {
+                if (d.found) {
+                    document.getElementById('h-file_number').value      = d.file_number || fileNo;
+                    document.getElementById('h-file_indexing_id').value = d.file_indexing_id || '';
+                    document.getElementById('h-tracking_id').value      = d.tracking_id || '';
+                    document.getElementById('h-is_indexed').value       = '1';
+                    document.getElementById('h-location').value         = d.location || '';
+                    document.getElementById('h-lga').value              = d.lga || '';
+                    document.getElementById('m-owner').value            = (d.file_title || d.owner_name || '').trim();
+                    document.getElementById('m-phone').value            = d.phone || '';
+                    document.getElementById('m-land-use').value         = d.land_use_type || '';
+                    const loc = [d.location, d.district, d.lga].filter(Boolean).join(', ');
+                    const badge = document.getElementById('m-location-badge');
+                    if (loc) { document.getElementById('m-location-text').textContent = loc; badge.style.display = 'flex'; }
+                    else badge.style.display = 'none';
+                    msg.className = 'lookup-msg ok'; msg.textContent = '✓ File found — details pre-filled.';
+                } else {
+                    document.getElementById('h-file_number').value = fileNo;
+                    document.getElementById('h-is_indexed').value  = '0';
+                    document.getElementById('m-location-badge').style.display = 'none';
+                    msg.className = 'lookup-msg err'; msg.textContent = 'File not in index — fill details manually.';
+                }
+            })
+            .catch(() => { msg.className = 'lookup-msg err'; msg.textContent = 'Lookup failed.'; });
+    }
+
+    inp.addEventListener('input', function() {
+        const q = this.value.trim();
+        dropdown.style.display = 'none';
+        dropdown.innerHTML = '';
+        clearTimeout(debounceTimer);
+        if (q.length < 2) return;
+        spinner.style.display = 'block';
+        debounceTimer = setTimeout(async () => {
+            try {
+                const r = await fetch(`${URLS.searchFiles}?q=${encodeURIComponent(q)}`);
+                const results = await r.json();
+                spinner.style.display = 'none';
+                if (!results.length) {
+                    dropdown.innerHTML = `<div class="fileno-item"><span class="fi-title">No results for "${q}"</span></div>`;
+                } else {
+                    dropdown.innerHTML = results.map(f => `
+                        <div class="fileno-item" data-fileno="${f.file_number}">
+                            <span class="fi-num">${f.file_number}</span>
+                            <span class="fi-title">${f.file_title || f.land_use_type || ''}</span>
+                        </div>`).join('');
+                    dropdown.querySelectorAll('.fileno-item[data-fileno]').forEach(item => {
+                        item.addEventListener('click', function() {
+                            const fn = this.dataset.fileno;
+                            inp.value = fn;
+                            dropdown.style.display = 'none';
+                            fillRecord(fn);
+                        });
+                    });
+                }
+                dropdown.style.display = 'block';
+            } catch(e) { spinner.style.display = 'none'; }
+        }, 350);
+    });
+
+    // Close dropdown on outside tap
+    document.addEventListener('click', e => {
+        if (!inp.contains(e.target) && !dropdown.contains(e.target)) dropdown.style.display = 'none';
+    });
+})();
 
 // ── GPS ───────────────────────────────────────────────────────────────────────
 document.getElementById('btn-gps').addEventListener('click', function() {
@@ -831,7 +903,7 @@ function setCoords(lat, lng) {
 // ── mini map (inspect sheet) ──────────────────────────────────────────────────
 function initMiniMap() {
     miniMap = L.map('mini-map', { zoomControl: false }).setView([12.0, 8.52], 11);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OSM' }).addTo(miniMap);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution:'© Esri', maxZoom:19 }).addTo(miniMap);
     miniMap.on('click', e => setCoords(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6)));
 }
 

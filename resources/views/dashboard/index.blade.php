@@ -453,166 +453,159 @@ System') }}
             </div>
         </div>
 
-        <!-- ══ Stats – 15 cards · 3 rows × 5 columns (all equal) ══ -->
-        <div class="grid gap-3 md:grid-cols-3 lg:grid-cols-5" style="grid-auto-rows:1fr;">
+        <!-- ══ Stats – Row 1: 3 headline cards ══ -->
+        <div class="grid gap-4 md:grid-cols-3 lg:grid-cols-3">
 
-            {{-- ── Row 1 ─────────────────────────────────────────── --}}
-
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#3b0764;--gradient-end:#5b21b6;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total Number of File Numbers</h3>
-                    <i data-lucide="hash" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                <div class="gradient-card hover-scale rounded-lg p-5 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#3b0764;--gradient-end:#5b21b6;">
+                    <div class="decorative-circle"></div>
+                    <div class="flex items-center justify-between mb-2 relative z-10">
+                        <h3 class="text-sm font-medium text-white">Total Number of File Numbers</h3>
+                        <i data-lucide="hash" class="h-4 w-4 text-white/80"></i>
+                    </div>
+                    <div class="text-3xl font-bold text-white relative z-10 mt-2" id="fs-total-filenumbers"><span class="loading-shimmer">Loading…</span></div>
+                    <p class="text-xs text-white/80 mt-2 relative z-10">All departments combined</p>
                 </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-total-filenumbers"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">All departments combined</p>
-            </div>
 
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#7f1d1d;--gradient-end:#991b1b;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total Indexed Land Files</h3>
-                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                <div class="gradient-card hover-scale rounded-lg p-5 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#991b1b;--gradient-end:#b91c1c;">
+                    <div class="decorative-circle"></div>
+                    <div class="flex items-center justify-between mb-2 relative z-10">
+                        <h3 class="text-sm font-medium text-white">Total Indexed Land Files</h3>
+                        <i data-lucide="file-search" class="h-4 w-4 text-white/80"></i>
+                    </div>
+                    <div class="text-3xl font-bold text-white relative z-10 mt-2" id="fs-land-indexed"><span class="loading-shimmer">Loading…</span></div>
+                    <p class="text-xs text-white/80 mt-2 relative z-10">Properly indexed land files</p>
                 </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-land-indexed"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">Indexed land files</p>
-            </div>
 
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#991b1b;--gradient-end:#b91c1c;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total Land Files Commissioned</h3>
-                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                <div class="gradient-card hover-scale rounded-lg p-5 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#991b1b;--gradient-end:#b91c1c;">
+                    <div class="decorative-circle"></div>
+                    <div class="flex items-center justify-between mb-2 relative z-10">
+                        <h3 class="text-sm font-medium text-white">Total Land Files Commissioned</h3>
+                        <i data-lucide="badge-check" class="h-4 w-4 text-white/80"></i>
+                    </div>
+                    <div class="text-3xl font-bold text-white relative z-10 mt-2" id="fs-land-commissioned"><span class="loading-shimmer">Loading…</span></div>
+                    <p class="text-xs text-white/80 mt-2 relative z-10">MLS files with commission date</p>
                 </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-land-commissioned"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">MLS commissioned</p>
-            </div>
 
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#c2410c;--gradient-end:#ea580c;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total KANGIS Files Indexed</h3>
-                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+        </div><!-- /row-1 -->
+
+        <!-- ══ Stats – Row 2: 6 split cards in one row ══ -->
+        <div class="grid gap-3 md:grid-cols-3 lg:grid-cols-6 mt-4">
+
+                <!-- KANGIS Files -->
+                <div class="gradient-card hover-scale rounded-lg p-3 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#ea580c;--gradient-end:#f97316;">
+                    <div class="decorative-circle"></div>
+                    <div class="flex items-center justify-between mb-2 relative z-10">
+                        <h3 class="text-xs font-semibold text-white">Total KANGIS Files</h3>
+                        <i data-lucide="map-pin" class="h-3.5 w-3.5 text-white/80"></i>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1.5 relative z-10">
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-kangis-indexed"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Indexed</div>
+                        </div>
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-kangis-commissioned"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Commissioned</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-kangis-indexed"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">KANGIS registry</p>
-            </div>
 
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#ea580c;--gradient-end:#f97316;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total KANGIS Files Commissioned</h3>
-                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                <!-- Cadastral Files -->
+                <div class="gradient-card hover-scale rounded-lg p-3 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#7c2d12;--gradient-end:#92400e;">
+                    <div class="decorative-circle"></div>
+                    <div class="flex items-center justify-between mb-2 relative z-10">
+                        <h3 class="text-xs font-semibold text-white">Total Cadastral Files</h3>
+                        <i data-lucide="layers" class="h-3.5 w-3.5 text-white/80"></i>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1.5 relative z-10">
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-cadastral-indexed"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Indexed</div>
+                        </div>
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-cadastral-commissioned"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Commissioned</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-kangis-commissioned"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">KANGIS commissioned</p>
-            </div>
 
-            {{-- ── Row 2 ─────────────────────────────────────────── --}}
-
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#5c1a08;--gradient-end:#7c2d12;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total Cadastral Files Indexed</h3>
-                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                <!-- ST Files -->
+                <div class="gradient-card hover-scale rounded-lg p-3 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#1e3a8a;--gradient-end:#1d4ed8;">
+                    <div class="decorative-circle"></div>
+                    <div class="flex items-center justify-between mb-2 relative z-10">
+                        <h3 class="text-xs font-semibold text-white">Total ST Files</h3>
+                        <i data-lucide="building-2" class="h-3.5 w-3.5 text-white/80"></i>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1.5 relative z-10">
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-st-indexed"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Indexed</div>
+                        </div>
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-st-commissioned"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Commissioned</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-cadastral-indexed"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">Cadastral correspondence</p>
-            </div>
 
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#7c2d12;--gradient-end:#92400e;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total Cadastral Files Commissioned</h3>
-                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                <!-- DCIV Files -->
+                <div class="gradient-card hover-scale rounded-lg p-3 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#011711;--gradient-end:#022c22;">
+                    <div class="decorative-circle"></div>
+                    <div class="flex items-center justify-between mb-2 relative z-10">
+                        <h3 class="text-xs font-semibold text-white">Total DCIV Files</h3>
+                        <i data-lucide="folder-open" class="h-3.5 w-3.5 text-white/80"></i>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1.5 relative z-10">
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-dciv-indexed"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Indexed</div>
+                        </div>
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-dciv-commissioned"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Commissioned</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-cadastral-commissioned"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">Cadastral commissioned</p>
-            </div>
 
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#1e3a8a;--gradient-end:#1d4ed8;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total ST Files Indexed</h3>
-                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                <!-- SLTR Files -->
+                <div class="gradient-card hover-scale rounded-lg p-3 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#3f6212;--gradient-end:#65a30d;">
+                    <div class="decorative-circle"></div>
+                    <div class="flex items-center justify-between mb-2 relative z-10">
+                        <h3 class="text-xs font-semibold text-white">Total SLTR Files</h3>
+                        <i data-lucide="folder-open" class="h-3.5 w-3.5 text-white/80"></i>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1.5 relative z-10">
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-sltr-indexed"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Indexed</div>
+                        </div>
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-sltr-commissioned"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Commissioned</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-st-indexed"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">Sectional titling</p>
-            </div>
 
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#1d4ed8;--gradient-end:#2563eb;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total ST Files Commissioned</h3>
-                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
+                <!-- GKN Files -->
+                <div class="gradient-card hover-scale rounded-lg p-3 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#831843;--gradient-end:#9d174d;">
+                    <div class="decorative-circle"></div>
+                    <div class="flex items-center justify-between mb-2 relative z-10">
+                        <h3 class="text-xs font-semibold text-white">Total GKN Files</h3>
+                        <i data-lucide="folder-open" class="h-3.5 w-3.5 text-white/80"></i>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1.5 relative z-10">
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-gkn-indexed"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Indexed</div>
+                        </div>
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-gkn-commissioned"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Commissioned</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-st-commissioned"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">ST commissioned</p>
-            </div>
 
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#011711;--gradient-end:#022c22;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total DCIV Files Indexed</h3>
-                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
-                </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-dciv-indexed"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">DCIV registry</p>
-            </div>
-
-            {{-- ── Row 3 ─────────────────────────────────────────── --}}
-
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#022c22;--gradient-end:#064e3b;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total DCIV Files Commissioned</h3>
-                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
-                </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-dciv-commissioned"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">DCIV commissioned</p>
-            </div>
-
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#3f6212;--gradient-end:#65a30d;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total SLTR Files Indexed</h3>
-                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
-                </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-sltr-indexed"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">SLTR registry</p>
-            </div>
-
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#65a30d;--gradient-end:#84cc16;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total SLTR Files Commissioned</h3>
-                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
-                </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-sltr-commissioned"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">SLTR commissioned</p>
-            </div>
-
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#831843;--gradient-end:#9d174d;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total GKN Files Indexed</h3>
-                    <i data-lucide="file-search" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
-                </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-gkn-indexed"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">GKN / Survey registry</p>
-            </div>
-
-            <div class="gradient-card hover-scale rounded-lg p-4 shadow-enhanced h-full flex flex-col justify-between" style="--gradient-start:#9d174d;--gradient-end:#be185d;">
-                <div class="decorative-circle"></div>
-                <div class="flex items-center justify-between relative z-10">
-                    <h3 class="text-xs font-semibold text-white leading-tight">Total GKN Files Commissioned</h3>
-                    <i data-lucide="badge-check" class="h-4 w-4 text-white/70 flex-shrink-0 ml-1"></i>
-                </div>
-                <div class="text-2xl font-bold text-white relative z-10 mt-3" id="fs-gkn-commissioned"><span class="loading-shimmer">…</span></div>
-                <p class="text-[10px] text-white/70 mt-1 relative z-10">GKN commissioned</p>
-            </div>
-
-        </div><!-- /stats -->
+        </div><!-- /row-2 -->
 
         <!-- Real-time Notifications -->
         <div id="notification-banner" class="hidden bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">

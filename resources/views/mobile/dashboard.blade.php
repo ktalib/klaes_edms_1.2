@@ -199,10 +199,12 @@
       <div class="glass-card stat-card"><div class="stat-icon" style="background:#10b98120;"><i class="fas fa-check-circle"></i></div><div class="stat-value">—</div><div class="stat-label">Completed</div></div>
     </div>
     <div class="quick-actions-grid">
-      <div class="quick-action-btn" onclick="setActiveTab('create')"><i class="fas fa-plus-circle"></i><span>Create</span></div>
-      <div class="quick-action-btn" onclick="setActiveTab('files')"><i class="fas fa-search"></i><span>Search</span></div>
-      <div class="quick-action-btn" onclick="setActiveTab('scanner')"><i class="fas fa-qrcode"></i><span>Scan</span></div>
-      <div class="quick-action-btn" onclick="alert('Reports coming soon')"><i class="fas fa-chart-line"></i><span>Reports</span></div>
+      <div class="quick-action-btn" onclick="setActiveTab('scanner')"><i class="fas fa-qrcode"></i><span>Scan QR</span></div>
+      <div class="quick-action-btn" onclick="window.location='{{ route('mobile.digital-request') }}'"
+           style="border-color:#fca5a5;">
+        <i class="fas fa-paper-plane" style="color:#450a0a;"></i>
+        <span style="color:#450a0a; font-weight:600; line-height:1.2;">Digital<br>File Request</span>
+      </div>
     </div>
     <div class="chart-container">
       <div class="glass-card chart-card">
@@ -216,186 +218,32 @@
         <div id="priorityDistribution"></div>
       </div>
     </div>
-    <div class="glass-card chart-card">
-      <div class="chart-title"><i class="fas fa-clock"></i> Recent Activity</div>
-      <div id="recentActivityList" class="activity-list"></div>
-    </div>
   </div>
 
   <!-- ═══ FILES SCREEN ═══ -->
+
+  <!-- ═══ FILES SCREEN ═══ -->
   <div id="files-screen" class="screen">
-    <div class="page-header"><h1>Files</h1></div>
-    <div class="control-panel">
-      <div class="control-header">
-        <h3><i class="fas fa-sliders-h"></i> Control Panel</h3>
-        <div class="control-buttons">
-          <button id="refreshBtn" class="icon-btn"><i class="fas fa-sync-alt"></i> Refresh</button>
-        </div>
+    <div class="page-header" style="margin-bottom:16px;"><h1>File Search</h1></div>
+
+    <div class="form-section">
+      <div class="section-header">
+        <span class="section-icon"><i class="fas fa-search"></i></span>
+        <div><h2>Search File</h2><p>Enter a file number or tracking ID</p></div>
       </div>
-      <div class="filters-wrapper">
-        <div class="filters-grid">
-          <div class="filter-card">
-            <h4><i class="fas fa-user-check"></i> File Status</h4>
-            <select id="statusFilter" class="status-select">
-              <option value="all">All Files</option>
-              <option value="my-files">My Files</option>
-              <option value="awaiting">Awaiting Acceptance</option>
-              <option value="completed">Completed</option>
-            </select>
-          </div>
-          <div class="filter-card">
-            <h4><i class="fas fa-filter"></i> Priority</h4>
-            <div class="priority-btns" id="priorityFilterGroup">
-              <button data-priority="all" class="priority-filter-btn active">All</button>
-              <button data-priority="LOW" class="priority-filter-btn">Low</button>
-              <button data-priority="MEDIUM" class="priority-filter-btn">Medium</button>
-              <button data-priority="HIGH" class="priority-filter-btn">High</button>
-            </div>
-          </div>
-          <div class="filter-card">
-            <h4><i class="fas fa-search"></i> Search</h4>
-            <input type="text" id="searchInput" class="search-input" placeholder="Search by name or number...">
-          </div>
+      <div class="field-wrap" style="position:relative;">
+        <label>File No / Tracking ID</label>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="fileSearchInput" placeholder="e.g. RES-2015-4859"
+            style="flex:1;" autocomplete="off">
+          <button id="fileSearchBtn" class="btn" style="width:auto;padding:0 16px;flex-shrink:0;">
+            <i class="fas fa-search"></i>
+          </button>
         </div>
       </div>
     </div>
-    <div class="table-header-bar">
-      <h3><i class="fas fa-file-alt"></i> File Log Table</h3>
-      <div class="status-badges">
-        <span class="stat-badge blue" id="myFilesCount">0 Mine</span>
-        <span class="stat-badge green" id="awaitingCount">0 Awaiting</span>
-        <span class="stat-badge red" id="othersCount">0 Others</span>
-        <span class="stat-badge gray" id="completedCount">0 Done</span>
-      </div>
-    </div>
-    <div id="fileListContainer">
-      <div class="glass-card-solid" style="padding:40px;text-align:center;color:#9ca3af;">
-        <i class="fas fa-folder-open fa-2x"></i><p style="margin-top:12px;">Loading files…</p>
-      </div>
-    </div>
-  </div>
 
-  <!-- ═══ CREATE SCREEN ═══ -->
-  <div id="create-screen" class="screen">
-    <div class="page-header" style="margin-bottom:16px;"><h1>Create File</h1></div>
-
-    {{-- File Details --}}
-    <div class="form-section">
-      <div class="section-header">
-        <span class="section-icon"><i class="fas fa-file-alt"></i></span>
-        <div><h2>File Details</h2><p>Enter basic information</p></div>
-      </div>
-      <div class="field-wrap">
-        <label>File No</label>
-        <input type="text" id="createFileNumber" placeholder="e.g. RES-2015-4859">
-      </div>
-      <div class="field-wrap">
-        <label>Tracking ID <small style="color:#9ca3af;">(auto-generated)</small></label>
-        <input type="text" id="trackingIdField" readonly>
-      </div>
-      <div class="field-wrap">
-        <label>File Title <span style="color:#ef4444;">*</span></label>
-        <input type="text" id="createFileName" placeholder="e.g. Alhaji Ibrahim Dantata">
-      </div>
-      <div class="field-wrap">
-        <label>Priority</label>
-        <div class="priority-selector">
-          <div class="prio-chip" data-prio="LOW">🟢 Low</div>
-          <div class="prio-chip active" data-prio="MEDIUM">🟡 Medium</div>
-          <div class="prio-chip" data-prio="HIGH">🔴 High</div>
-        </div>
-      </div>
-      <div class="field-wrap">
-        <label>Status Update</label>
-        <select id="fileStatus">
-          <option value="Log-out" selected>Log-out (File leaving this office)</option>
-          <option value="Log-in">Log-in (File arriving at this office)</option>
-          <option value="Canceled">Canceled</option>
-        </select>
-      </div>
-      <div class="field-wrap">
-        <label>Notes / Remarks</label>
-        <textarea id="createNotes" rows="3" placeholder="Reason why the file is in this office..."></textarea>
-      </div>
-    </div>
-
-    {{-- Office Details --}}
-    <div class="form-section">
-      <div class="section-header">
-        <span class="section-icon"><i class="fas fa-building"></i></span>
-        <div><h2>Office Details</h2><p>Select office locations</p></div>
-      </div>
-      <div class="field-wrap">
-        <label>Department <span style="color:#ef4444;">*</span></label>
-        <select id="department">
-          <option value="">Select department</option>
-          @foreach($offices->pluck('department')->filter()->unique()->sort() as $dept)
-            <option value="{{ $dept }}">{{ $dept }}</option>
-          @endforeach
-        </select>
-      </div>
-      <div class="field-wrap">
-        <label>Origin Office <span style="color:#ef4444;">*</span></label>
-        <select id="originOffice">
-          <option value="">Select origin office</option>
-          @foreach($offices as $office)
-            <option value="{{ $office->office_code }}" data-name="{{ $office->office_name }}">
-              {{ $office->office_name }}{{ $office->office_abbreviation ? ' ('.$office->office_abbreviation.')' : '' }}
-            </option>
-          @endforeach
-        </select>
-      </div>
-      <div class="field-wrap">
-        <label>Receiving Office <span style="color:#ef4444;">*</span></label>
-        <select id="receivingOffice">
-          <option value="">Select receiving office</option>
-          @foreach($offices as $office)
-            <option value="{{ $office->office_code }}" data-name="{{ $office->office_name }}">
-              {{ $office->office_name }}{{ $office->office_abbreviation ? ' ('.$office->office_abbreviation.')' : '' }}
-            </option>
-          @endforeach
-        </select>
-      </div>
-      <div class="field-wrap">
-        <label>Receiving Officer <span style="color:#ef4444;">*</span></label>
-        <select id="receivingOfficer">
-          <option value="">Select receiving officer</option>
-          @foreach($officers as $officer)
-            <option value="{{ $officer->id }}" data-name="{{ trim($officer->first_name.' '.$officer->last_name) }}">
-              {{ trim($officer->first_name.' '.$officer->last_name) }}
-              {{ $officer->username ? '('.$officer->username.')' : '' }}
-            </option>
-          @endforeach
-        </select>
-      </div>
-      <div class="field-wrap">
-        <label>Sending Officer</label>
-        <input type="text" id="sendingOfficer" value="{{ trim(auth()->user()->first_name.' '.auth()->user()->last_name) }}" readonly>
-      </div>
-    </div>
-
-    {{-- Log Session --}}
-    <div class="form-section">
-      <div class="section-header">
-        <span class="section-icon"><i class="fas fa-history"></i></span>
-        <div><h2>File Log Session</h2><p>Auto-populated log entry</p></div>
-      </div>
-      <div class="grid-2">
-        <div class="field-wrap"><label>Log ID</label><input type="text" id="logIdField" readonly></div>
-        <div class="field-wrap"><label>Log In Time</label><input type="time" id="logInTime"></div>
-        <div class="field-wrap"><label>Log In Date</label><input type="date" id="logInDate"></div>
-        <div class="field-wrap"><label>Log Out Time</label><input type="time" id="logOutTime"></div>
-      </div>
-      <div class="field-wrap">
-        <label>Log Out Date</label>
-        <input type="date" id="logOutDate">
-      </div>
-    </div>
-
-    <button id="submitCreateBtn" class="btn">
-      <i class="fas fa-file-circle-plus"></i> Log a File
-    </button>
-    <div id="createResult" style="margin-top:12px;"></div>
+    <div id="fileSearchResult" style="margin-top:4px;"></div>
   </div>
 
   <!-- ═══ SCANNER SCREEN ═══ -->
@@ -463,8 +311,8 @@
   <div class="tab-bar">
     <button class="tab-item" data-tab="dashboard"><i class="fas fa-home"></i><span>Home</span></button>
     <button class="tab-item" data-tab="files"><i class="fas fa-folder-open"></i><span>Files</span></button>
-    <button class="tab-item" data-tab="create"><i class="fas fa-plus-circle"></i><span>Create</span></button>
     <button class="tab-item" data-tab="scanner"><i class="fas fa-camera"></i><span>Scan</span></button>
+    <button class="tab-item" data-tab="dfr" onclick="window.location='{{ route('mobile.digital-request') }}'"><i class="fas fa-paper-plane"></i><span>File Request</span></button>
     <button class="tab-item" data-tab="profile"><i class="fas fa-user"></i><span>Profile</span></button>
   </div>
 </div>
@@ -870,25 +718,80 @@ function setActiveTab(tabId) {
   document.querySelectorAll('.tab-item').forEach(t=>t.classList.remove('active'));
   document.querySelector(`.tab-item[data-tab="${tabId}"]`)?.classList.add('active');
   if (tabId==='dashboard') renderDashboard();
-  if (tabId==='files')     loadFiles();
-  if (tabId==='create')    { fillDateTime(); document.getElementById('logIdField').value=genLogId(); document.getElementById('trackingIdField').value=genTrackingId(); }
+  if (tabId==='files')     document.getElementById('fileSearchInput')?.focus();
   if (tabId==='scanner')   updateScanStatus('Click Start to begin scanning','info');
 }
 
 // ─── Event listeners ──────────────────────────────────────────────────────
-document.getElementById('refreshBtn')?.addEventListener('click', ()=>loadFiles());
-document.getElementById('statusFilter')?.addEventListener('change', ()=>loadFiles());
-document.getElementById('searchInput')?.addEventListener('input', ()=>renderFileList());
-document.querySelectorAll('.priority-filter-btn').forEach(btn=>{
-  btn.addEventListener('click', function() {
-    document.querySelectorAll('.priority-filter-btn').forEach(b=>b.classList.remove('active'));
-    this.classList.add('active'); loadFiles();
-  });
-});
-document.querySelectorAll('.prio-chip').forEach(chip=>{
-  chip.addEventListener('click', function() { document.querySelectorAll('.prio-chip').forEach(c=>c.classList.remove('active')); this.classList.add('active'); });
-});
-document.getElementById('submitCreateBtn')?.addEventListener('click', createNewFile);
+// ─── File Search ──────────────────────────────────────────────────────────
+async function searchFile() {
+  const input  = document.getElementById('fileSearchInput');
+  const result = document.getElementById('fileSearchResult');
+  const val    = input.value.trim();
+  if (!val) { result.innerHTML = '<p style="color:#ef4444;font-size:12px;margin-top:4px;">Please enter a file number or tracking ID.</p>'; return; }
+
+  const btn = document.getElementById('fileSearchBtn');
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+  result.innerHTML = '';
+
+  try {
+    const res = await api(`${API_BASE}/track/${encodeURIComponent(val)}`);
+    if (res && res.success && res.data) {
+      const t   = res.data;
+      const logs = (t.log_entries || t.logs || []);
+      const logsHtml = logs.length
+        ? `<div style="margin-top:12px;">
+            <div style="font-size:12px;font-weight:700;color:#78350f;margin-bottom:8px;"><i class="fas fa-history" style="margin-right:5px;"></i>Movement History</div>
+            <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+              <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:500px;">
+                <thead>
+                  <tr style="background:#fef3c7;">
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid #e5e7eb;">Date &amp; Time</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid #e5e7eb;">Office</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid #e5e7eb;">Officer</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid #e5e7eb;">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${logs.map(l=>`<tr style="border-bottom:1px solid #f3f4f6;">
+                    <td style="padding:8px;">${esc(l.created_at||l.log_date||'—')}</td>
+                    <td style="padding:8px;">${esc(l.office_name||l.officeName||'—')}</td>
+                    <td style="padding:8px;">${esc(l.receiving_officer_name||l.receivingOfficerName||'—')}</td>
+                    <td style="padding:8px;"><span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:30px;font-weight:600;">${esc(l.status||'—')}</span></td>
+                  </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+           </div>`
+        : '<p style="font-size:11px;color:#9ca3af;margin-top:8px;">No movement history found.</p>';
+
+      result.innerHTML = `
+        <div style="background:white;border-radius:20px;border:1px solid #f3f4f6;box-shadow:0 2px 8px rgba(0,0,0,0.04);overflow:hidden;margin-top:4px;">
+          <div style="background:#fefce8;padding:14px 16px;border-bottom:1px solid #f3f4f6;">
+            <div style="font-size:15px;font-weight:800;color:#1f2937;">${esc(t.file_title||'—')}</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:4px;display:flex;flex-wrap:wrap;gap:10px;">
+              <span><i class="fas fa-hashtag" style="color:#a16207;margin-right:3px;"></i>${esc(t.file_number||val)}</span>
+              <span><i class="fas fa-map-marker-alt" style="color:#a16207;margin-right:3px;"></i>${esc(t.current_office_name||t.receiving_office_name||'—')}</span>
+              <span><i class="fas fa-flag" style="color:#a16207;margin-right:3px;"></i>${esc(t.priority||'—')}</span>
+            </div>
+          </div>
+          <div style="padding:14px 16px;">
+            ${logsHtml}
+          </div>
+        </div>`;
+    } else {
+      result.innerHTML = `<p style="color:#ef4444;font-size:12px;margin-top:6px;"><i class="fas fa-times-circle"></i> No file found for "<strong>${esc(val)}</strong>".</p>`;
+    }
+  } catch(e) {
+    result.innerHTML = `<p style="color:#ef4444;font-size:12px;margin-top:6px;">Error: ${esc(e.message)}</p>`;
+  }
+
+  btn.disabled = false; btn.innerHTML = '<i class="fas fa-search"></i>';
+}
+
+document.getElementById('fileSearchBtn')?.addEventListener('click', searchFile);
+document.getElementById('fileSearchInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') searchFile(); });
+
 document.getElementById('startCameraBtn')?.addEventListener('click', startScanner);
 document.getElementById('stopCameraBtn')?.addEventListener('click', stopScanner);
 document.getElementById('flashToggleBtn')?.addEventListener('click', toggleFlash);
@@ -903,8 +806,9 @@ document.getElementById('markAllRead')?.addEventListener('click', async function
   await api(`${MOB_BASE}/notifications/mark-all-read`, { method:'POST' });
   notifications.forEach(n=>n.is_read=true); renderNotifications(); updateNotificationBadge();
 });
-document.querySelectorAll('.tab-item').forEach(tab=>{
-  tab.addEventListener('click', ()=>setActiveTab(tab.getAttribute('data-tab')));
+document.querySelectorAll('.tab-item[data-tab]').forEach(tab=>{
+  const t = tab.getAttribute('data-tab');
+  if (t && t !== 'dfr') tab.addEventListener('click', ()=>setActiveTab(t));
 });
 
 // ─── Boot ─────────────────────────────────────────────────────────────────

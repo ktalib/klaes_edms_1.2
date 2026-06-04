@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Pra\PraRecordController;
 use App\Http\Controllers\TrackFileArchiveController;
 use App\Http\Controllers\PageTypeManagementController;
 use App\Http\Controllers\FileSearchController;
+use App\Http\Controllers\RelatedFileNumberController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\Payroll\PayrollDataController;
 use App\Http\Controllers\Payroll\PayrollPeriodController;
@@ -701,6 +702,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/{deedsApplication}/edit', [DeedsApplicationController::class, 'edit'])->name('edit');
         Route::put('/{deedsApplication}', [DeedsApplicationController::class, 'update'])->name('update');
         Route::delete('/{deedsApplication}', [DeedsApplicationController::class, 'destroy'])->name('destroy');
+    });
+
+    Route::prefix('related-file-number')->name('related-file-number.')->group(function () {
+        Route::get('/', [RelatedFileNumberController::class, 'index'])->name('index');
+        Route::get('/records', [RelatedFileNumberController::class, 'apiList'])->name('records');
     });
 
     Route::prefix('file-search-db')->name('file-search-db.')->group(function () {

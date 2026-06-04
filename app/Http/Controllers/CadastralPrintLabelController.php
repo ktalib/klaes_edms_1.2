@@ -796,6 +796,8 @@ SQL;
                         'sys_batch_no' => $row->sys_batch_no,
                         'land_use_type' => $row->landuse,
                         'tracking_id' => $row->tracking_id,
+                        'cadastral_tracking_id' => $row->cadastral_tracking_id ?? $row->tracking_id,
+                        'qr_value' => $row->cadastral_tracking_id ?? $row->tracking_id,
                         'awaiting_fileno' => $row->awaiting_fileno,
                         'indexing_mls_fileno' => $row->mls_fileno,
                         'shelf_label' => $localGroupingHasShelfRack ? ($row->shelf_rack ?? null) : null,
@@ -1075,6 +1077,8 @@ SQL;
                 'records.*.file_number' => 'nullable|string|max:255',
                 'records.*.file_title' => 'nullable|string|max:255',
                 'records.*.tracking_id' => 'nullable|string|max:255',
+                'records.*.cadastral_tracking_id' => 'nullable|string|max:255',
+                'records.*.qr_value' => 'nullable|string|max:255',
                 'records.*.awaiting_fileno' => 'nullable|string|max:255',
                 'records.*.indexing_mls_fileno' => 'nullable|string|max:255',
                 'records.*.land_use_type' => 'nullable|string|max:255',
@@ -1160,6 +1164,43 @@ SQL;
 
                     $groupingWorkStart = microtime(true);
                     $records = $groupingPreparation['records'];
+
+                    // Resolve grouping.cadastral_tracking_id for every selected row so the QR
+                    // encodes the cadastral tracking id (tracking_id + -0001, -0002, ...).
+                    $cadastralTrackingMap = [];
+                    try {
+                        $groupingIdsForTracking = $records->pluck('id')
+                            ->filter()
+                            ->map(function ($v) { return (int) $v; })
+                            ->unique()
+                            ->values()
+                            ->all();
+
+                        if (!empty($groupingIdsForTracking)) {
+                            $cadastralTrackingMap = DB::connection('sqlsrv')
+                                ->table('grouping')
+                                ->whereIn('id', $groupingIdsForTracking)
+                                ->pluck('cadastral_tracking_id', 'id')
+                                ->toArray();
+                        }
+                    } catch (\Throwable $cadastralTrackingException) {
+                        Log::warning('cadastral_printlabel.cadastral_tracking_lookup_failed', [
+                            'error' => $cadastralTrackingException->getMessage(),
+                        ]);
+                    }
+
+                    $resolveCadastralTracking = function (array $record) use ($cadastralTrackingMap) {
+                        $gid = isset($record['id']) ? (int) $record['id'] : null;
+                        $fromDb = ($gid !== null && !empty($cadastralTrackingMap[$gid]))
+                            ? $cadastralTrackingMap[$gid]
+                            : null;
+
+                        return $fromDb
+                            ?? ($record['cadastral_tracking_id'] ?? null)
+                            ?? ($record['qr_value'] ?? null)
+                            ?? ($record['tracking_id'] ?? null);
+                    };
+
                     $manualOverride = !empty($validated['manual_override']);
                     $now = now();
                     $resolvedItems = [];
@@ -1305,6 +1346,7 @@ SQL;
                                     'qr_code_data' => json_encode([
                                         'file_number' => $fileNumber,
                                         'tracking_id' => $record['tracking_id'] ?? $indexing->tracking_id,
+                                        'cadastral_tracking_id' => $resolveCadastralTracking($record) ?? $record['tracking_id'] ?? $indexing->tracking_id,
                                         'awaiting_fileno' => $record['awaiting_fileno'] ?? null,
                                         'indexing_mls_fileno' => $record['indexing_mls_fileno'] ?? null,
                                         'land_use_type' => $record['land_use_type'] ?? $indexing->land_use_type,
@@ -1339,6 +1381,7 @@ SQL;
                                     'qr_code_data' => json_encode([
                                         'file_number' => $fileNumber,
                                         'tracking_id' => $record['tracking_id'] ?? null,
+                                        'cadastral_tracking_id' => $resolveCadastralTracking($record),
                                         'awaiting_fileno' => $record['awaiting_fileno'] ?? null,
                                         'indexing_mls_fileno' => $record['indexing_mls_fileno'] ?? null,
                                         'shelf_location' => $labelDisplay,
@@ -1642,7 +1685,7 @@ SQL;
                     'awaiting_fileno' => $qrData['awaiting_fileno'] ?? null,
                     'indexing_mls_fileno' => $qrData['indexing_mls_fileno'] ?? null,
                     'qr_code_data' => $qrData,
-                    'qr_value' => $qrData['tracking_id'] ?? $item->file_number,
+                    'qr_value' => $qrData['cadastral_tracking_id'] ?? $qrData['tracking_id'] ?? $item->file_number,
                     'label_position' => $item->label_position,
                 ];
             })->values()->toArray();
@@ -2459,7 +2502,7 @@ SQL;
                     'shelf_label' => $shelfValue,
                     'tracking_id' => $trackingId,
                     'qr_code_data' => $qrData,
-                    'qr_value' => $qrData['tracking_id'] ?? $item->file_number,
+                    'qr_value' => $qrData['cadastral_tracking_id'] ?? $qrData['tracking_id'] ?? $item->file_number,
                     'batch_no' => $item->file_number,
                     'main_application_id' => optional($details)->main_application_id,
                     'subapplication_id' => optional($details)->subapplication_id,
@@ -2810,6 +2853,7 @@ SQL;
             'registry_batch_no',
             'sys_batch_no',
             'tracking_id',
+            'cadastral_tracking_id',
             'registry',
             'awaiting_fileno',
             'mls_fileno',

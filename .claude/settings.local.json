@@ -84,7 +84,10 @@
       "Bash(php scratch_v3.php)",
       "Bash(php scratch_v4.php)",
       "Bash(php scratch_v5.php)",
-      "PowerShell(Get-ChildItem 'C:\\\\wamp64\\\\bin\\\\php' -Directory | ForEach-Object { $_.Name })"
+      "PowerShell(Get-ChildItem 'C:\\\\wamp64\\\\bin\\\\php' -Directory | ForEach-Object { $_.Name })",
+      "Bash(grep -rn 'landUseTypes\\\\|$landUseTypes' c:/wamp64/www/klaes/resources/views/special_assignment)",
+      "Bash(echo \"Exit: $?\")",
+      "PowerShell(Get-PSDrive C | Select-Object Used, Free | ForEach-Object { \"Used: {0:N2} GB  Free: {1:N2} GB\" -f \\($_.Used/1GB\\), \\($_.Free/1GB\\) })"
     ],
     "additionalDirectories": [
       "C:\\wamp64\\www\\klaes\\resources\\views\\special_assignment"

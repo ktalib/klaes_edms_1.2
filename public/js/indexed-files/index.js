@@ -427,7 +427,7 @@ function buildActionsMenu(row, viewUrl) {
   const commissionSheetButton = (config.enableCommissioningSheet && isMatchedRow)
     ? `<button type="button" class="print-commissioning-sheet-btn block w-full text-left px-4 py-2.5 text-sm text-orange-700 hover:bg-orange-50 transition-colors" data-file-id="${id}">
           <i data-lucide="file-text" class="h-4 w-4 mr-2.5 inline text-orange-600"></i>
-          Cadastral Correspondence File Matching Slip
+          Matching Slip
         </button>`
     : '';
 
@@ -440,11 +440,8 @@ function buildActionsMenu(row, viewUrl) {
         <button type="button" class="actions-dropdown-btn inline-flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 bg-white text-slate-400 hover:text-blue-600 hover:border-blue-200 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm" data-file-id="${id}">
           <i data-lucide="more-horizontal" class="h-5 w-5"></i>
         </button>
-        <div class="actions-dropdown-menu hidden absolute right-0 z-30 mt-2 w-64 origin-top-right rounded-2xl border border-slate-100 bg-white shadow-xl ring-1 ring-black/5 focus:outline-none overflow-hidden" data-menu-for="${id}">
+        <div class="actions-dropdown-menu hidden absolute right-0 z-30 mt-2 w-48 origin-top-right rounded-2xl border border-slate-100 bg-white shadow-xl ring-1 ring-black/5 focus:outline-none overflow-hidden" data-menu-for="${id}">
           <div class="py-1.5">
-            <div class="px-4 py-2 border-b border-slate-50 mb-1">
-               <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">File Actions</p>
-            </div>
             ${commissionSheetButton}
           </div>
         </div>
@@ -1230,10 +1227,40 @@ function handlePrintCommissioningSheet(button) {
     alert('Unable to load file details for the commissioning sheet.');
     return;
   }
-  generateMatchedFileCommissioningSheetPDF(row).catch((err) => {
+
+  const mainNo = row.file_number || '—';
+  const matchedNo = row.corresponding_fileno || '—';
+  const run = () => generateMatchedFileCommissioningSheetPDF(row).catch((err) => {
     console.error('Commissioning sheet error:', err);
-    alert('Failed to generate commissioning sheet: ' + (err && err.message ? err.message : err));
+    if (window.Swal) {
+      window.Swal.fire({ icon: 'error', title: 'Failed to generate slip', text: (err && err.message) ? err.message : String(err) });
+    } else {
+      alert('Failed to generate commissioning sheet: ' + (err && err.message ? err.message : err));
+    }
   });
+
+  if (window.Swal) {
+    window.Swal.fire({
+      icon: 'question',
+      title: 'Generate Matching Slip?',
+      html: `<div class="text-sm text-left">
+               <div><span class="font-semibold text-slate-700">Land:</span> ${escapeHtml(mainNo)}</div>
+               <div><span class="font-semibold text-slate-700">Cadastral:</span> ${escapeHtml(matchedNo)}</div>
+             </div>`,
+      showCancelButton: true,
+      confirmButtonText: 'Generate',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#ea580c',
+      reverseButtons: true,
+      focusCancel: true,
+    }).then((result) => {
+      if (result.isConfirmed) run();
+    });
+  } else {
+    if (window.confirm(`Generate Cadastral Correspondence File Matching Slip for ${mainNo} ↔ ${matchedNo}?`)) {
+      run();
+    }
+  }
 }
 
 async function fetchMatchedFileDetails(fileNumber) {

@@ -31,10 +31,6 @@ class DigitalFileRequestController extends Controller
     {
         $user = Auth::user();
 
-        if (!$user->hasDfrPermission('view_requests')) {
-            abort(403, 'You do not have permission to access the Digital File Request page. Ask your administrator to grant you the "View Request Page" permission.');
-        }
-
         // Stats for header cards
         $base  = DigitalFileRequest::query();
         $stats = [
@@ -489,10 +485,6 @@ class DigitalFileRequestController extends Controller
 
     public function myFiles(Request $request)
     {
-        if (!Auth::user()->hasDfrPermission('view_requests')) {
-            abort(403, 'You do not have permission to access My Digital Files.');
-        }
-
         $userId = Auth::id();
 
         $active  = DigitalFileAccess::where('requester_user_id', $userId)
@@ -620,7 +612,13 @@ class DigitalFileRequestController extends Controller
 
     public function listJson(Request $request)
     {
+        try {
         $query = DigitalFileRequest::query()->orderByDesc('created_at');
+
+        // Mobile: only return the current user's own requests
+        if ($request->boolean('mine')) {
+            $query->where('requester_user_id', Auth::id());
+        }
 
         if ($status = $request->input('status')) {
             $query->where('request_status', $status);
@@ -654,8 +652,10 @@ class DigitalFileRequestController extends Controller
         $data = $rows->map(fn ($r) => [
             'id'                      => $r->id,
             'request_no'              => $r->request_no,
+            'request_type'            => $r->request_type,
             'file_no'                 => $r->file_no,
             'file_title'              => $r->file_title,
+            'remarks'                 => $r->remarks,
             'sending_officer'         => $r->sending_officer,
             'receiving_officer'       => $r->receiving_officer,
             'destination_office_name' => $r->destination_office_name,
@@ -665,7 +665,7 @@ class DigitalFileRequestController extends Controller
             'request_status'          => $r->request_status,
             'status_badge_class'      => $r->status_badge_class,
             'is_redirected'           => $r->is_redirected,
-            'requested_at'            => $r->requested_at?->format('d M Y H:i') ?? $r->created_at?->format('d M Y H:i'),
+            'requested_at'            => $r->requested_at?->format('Y-m-d') ?? $r->created_at?->format('Y-m-d'),
         ]);
 
         return response()->json([
@@ -675,6 +675,11 @@ class DigitalFileRequestController extends Controller
             'current_page' => $page,
             'last_page'    => (int) ceil($total / $perPage),
         ]);
+
+        } catch (\Throwable $e) {
+            \Log::error('DFR listJson error: ' . $e->getMessage());
+            return response()->json(['error' => $e->getMessage(), 'data' => []], 500);
+        }
     }
 
     // ── Private helpers ────────────────────────────────────────────────────

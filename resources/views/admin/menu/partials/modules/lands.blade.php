@@ -220,13 +220,33 @@
         </div>
       @endif
 
-      <!-- d. File History View -->
+      <!-- d. File History (parent menu: History View + Related Files) -->
       @if($hasRole('File History View'))
-        <a href="{{ route('file-index-view.index', ['url' => 'land']) }}"
-          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-index-view.index') && request()->query('url') === 'land' ? 'active' : '' }}">
-          <i data-lucide="eye" class="h-4 w-4 text-orange-500"></i>
-          <span>File History View</span>
-        </a>
+        <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+          data-section="fileHistory-lands">
+          <div class="flex items-center gap-2">
+            <i data-lucide="history" class="h-4 w-4 text-orange-500"></i>
+            <span>File History</span>
+          </div>
+          <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200"
+            data-chevron="fileHistory-lands"></i>
+        </div>
+
+        <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="fileHistory-lands">
+          <!-- i. History View -->
+          <a href="{{ route('file-index-view.index', ['url' => 'land']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-index-view.index') && request()->query('url') === 'land' ? 'active' : '' }}">
+            <i data-lucide="eye" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>History View</span>
+          </a>
+
+          <!-- ii. Related Files -->
+          <a href="{{ route('related-file-number.index') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('related-file-number.*') ? 'active' : '' }}">
+            <i data-lucide="link" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>Related Files</span>
+          </a>
+        </div>
       @endif
 
       <!-- e. File Search -->

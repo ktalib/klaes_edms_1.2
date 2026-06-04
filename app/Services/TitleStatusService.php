@@ -69,7 +69,9 @@ class TitleStatusService
         $reasonText = $reason !== '' ? $reason : '[Reason]';
 
         if ($initiatedBy === 'Allottee' || $initiatedBy === 'Applicant') {
-            $initiator = $applicantName !== '' ? $applicantName : $initiatedBy;
+            $initiator = $applicantName !== ''
+                ? "{$applicantName} ({$initiatedBy})"
+                : $initiatedBy;
         } elseif ($initiatedBy !== '') {
             $initiator = $initiatedBy;
         } else {

@@ -75,6 +75,16 @@ class MobileController extends Controller
     }
 
     /**
+     * Render the Digital File Request mobile page.
+     */
+    public function digitalRequest()
+    {
+        $user = Auth::user();
+
+        return view('mobile.digital_request', compact('user'));
+    }
+
+    /**
      * Log the user out and return to the mobile login page.
      */
     public function logout(Request $request)

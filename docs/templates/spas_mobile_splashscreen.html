@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPAS Mobile – Splash Screen</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+        width: 100%;
+        height: 100%;
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        background: #0b0e14;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100svh;
+    }
+
+    /* ── Background glow orbs ── */
+    .bg {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        z-index: 0;
+    }
+    .orb {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(clamp(60px, 12vw, 140px));
+        opacity: 0.2;
+    }
+    .orb-1 {
+        width: 70vw; height: 70vw;
+        max-width: 900px; max-height: 900px;
+        background: radial-gradient(circle, #babf0c, transparent 70%);
+        top: -15vw; left: -15vw;
+    }
+    .orb-2 {
+        width: 55vw; height: 55vw;
+        max-width: 700px; max-height: 700px;
+        background: radial-gradient(circle, #4a4e02, transparent 70%);
+        bottom: 5vw; right: -10vw;
+    }
+    .orb-3 {
+        width: 40vw; height: 40vw;
+        max-width: 500px; max-height: 500px;
+        background: radial-gradient(circle, #babf0c, transparent 70%);
+        top: 50%; left: 15%;
+        opacity: 0.07;
+    }
+
+    /* ── Grid texture ── */
+    .grid-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        background-image:
+            linear-gradient(rgba(186,191,12,0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(186,191,12,0.04) 1px, transparent 1px);
+        background-size: clamp(30px, 5vw, 60px) clamp(30px, 5vw, 60px);
+    }
+
+    /* ── Center content ── */
+    .center {
+        position: relative;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 5vw 6vw 22vw;
+        width: 100%;
+    }
+
+    /* ── Logo ── */
+    .logo-wrap {
+        position: relative;
+        margin-bottom: clamp(24px, 5vw, 60px);
+    }
+    .logo-ring {
+        width: clamp(120px, 22vw, 240px);
+        height: clamp(120px, 22vw, 240px);
+        border-radius: clamp(24px, 5vw, 56px);
+        background: linear-gradient(145deg, #1a2030, #0f1318);
+        border: 2px solid rgba(186,191,12,0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        box-shadow:
+            0 0 clamp(30px, 6vw, 90px) rgba(186,191,12,0.25),
+            0 0 clamp(60px, 12vw, 180px) rgba(186,191,12,0.08),
+            inset 0 1px 0 rgba(255,255,255,0.07);
+    }
+    .logo-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .logo-badge {
+        position: absolute;
+        bottom: clamp(-6px, -1.2vw, -12px);
+        right: clamp(-6px, -1.2vw, -12px);
+        width: clamp(28px, 5vw, 52px);
+        height: clamp(28px, 5vw, 52px);
+        border-radius: 50%;
+        background: #babf0c;
+        border: clamp(2px, 0.4vw, 4px) solid #0b0e14;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 clamp(10px, 2vw, 24px) rgba(186,191,12,0.7);
+    }
+    .logo-badge svg {
+        width: clamp(12px, 2.2vw, 22px);
+        height: clamp(12px, 2.2vw, 22px);
+    }
+
+    /* ── App name ── */
+    .app-name {
+        font-size: clamp(52px, 16vw, 120px);
+        font-weight: 900;
+        letter-spacing: -0.02em;
+        color: #f1f5f9;
+        line-height: 1;
+        margin-bottom: clamp(8px, 1.5vw, 20px);
+    }
+    .app-name span { color: #babf0c; }
+
+    /* ── Tagline ── */
+    .tagline {
+        font-size: clamp(14px, 3.5vw, 38px);
+        font-weight: 500;
+        color: #64748b;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: clamp(32px, 7vw, 90px);
+    }
+
+    /* ── Divider ── */
+    .divider {
+        width: clamp(60px, 15vw, 140px);
+        height: clamp(3px, 0.5vw, 5px);
+        background: linear-gradient(90deg, transparent, #babf0c, transparent);
+        border-radius: 2px;
+        margin-bottom: clamp(32px, 7vw, 90px);
+    }
+
+    /* ── Sub-label ── */
+    .sub-label {
+        font-size: clamp(11px, 2.4vw, 28px);
+        font-weight: 600;
+        color: #2d3748;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+    }
+
+    /* ── Loading bar (bottom) ── */
+    .loader-wrap {
+        position: fixed;
+        bottom: clamp(40px, 8vw, 130px);
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: clamp(10px, 2vw, 24px);
+        width: 100%;
+        padding: 0 8vw;
+    }
+    .loader-bar-bg {
+        width: 100%;
+        max-width: clamp(200px, 50vw, 380px);
+        height: clamp(3px, 0.5vw, 5px);
+        background: rgba(255,255,255,0.07);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    .loader-bar {
+        width: 60%;
+        height: 100%;
+        background: linear-gradient(90deg, #7a7d08, #babf0c, #e6eb0e);
+        border-radius: 3px;
+        box-shadow: 0 0 clamp(6px, 1.5vw, 14px) rgba(186,191,12,0.6);
+    }
+    .loader-text {
+        font-size: clamp(10px, 2vw, 22px);
+        color: #2d3748;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        font-weight: 500;
+    }
+
+    /* ── Version ── */
+    .version {
+        position: fixed;
+        bottom: clamp(16px, 3vw, 56px);
+        right: clamp(20px, 4vw, 80px);
+        font-size: clamp(10px, 1.8vw, 20px);
+        color: #1e2530;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        z-index: 10;
+    }
+</style>
+</head>
+<body>
+
+<div class="bg">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+</div>
+<div class="grid-overlay"></div>
+
+<div class="center">
+
+    <div class="logo-wrap">
+        <div class="logo-ring">
+            <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="SPAS" class="logo-img">
+        </div>
+        <div class="logo-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0b0e14" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+            </svg>
+        </div>
+    </div>
+
+    <div class="app-name">SP<span>A</span>S</div>
+    <div class="tagline">Special Assignment</div>
+    <div class="divider"></div>
+    <div class="sub-label">Kano State Ministry of Lands</div>
+
+</div>
+
+<div class="loader-wrap">
+    <div class="loader-text">Loading…</div>
+    <div class="loader-bar-bg">
+        <div class="loader-bar"></div>
+    </div>
+</div>
+
+<div class="version">v1.0</div>
+
+</body>
+</html>

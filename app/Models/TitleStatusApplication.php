@@ -41,7 +41,7 @@ class TitleStatusApplication extends Model
         self::TYPE_WITHDRAWAL   => ['Applicant'],
         self::TYPE_CANCELLATION => ['Ministry', 'Allottee'],
         self::TYPE_REVOKE       => ['Court Order'],
-        self::TYPE_LITIGATION   => ['Ministry', 'Allottee'],
+        self::TYPE_LITIGATION   => ['Court Order'],
         self::TYPE_AMENDMENT    => ['Ministry', 'Allottee'],
         self::TYPE_SURRENDER    => ['Applicant'],
     ];

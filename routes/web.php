@@ -67,8 +67,9 @@ Route::prefix('mobile')->name('mobile.')->group(function () {
     Route::post('/login', [MobileController::class, 'login'])->name('login.submit');
 
     Route::middleware(['auth', 'XSS'])->group(function () {
-        Route::get('/dashboard', [MobileController::class, 'dashboard'])->name('dashboard');
-        Route::post('/logout',   [MobileController::class, 'logout'])->name('logout');
+        Route::get('/dashboard',        [MobileController::class, 'dashboard'])->name('dashboard');
+        Route::get('/digital-request',  [MobileController::class, 'digitalRequest'])->name('digital-request');
+        Route::post('/logout',          [MobileController::class, 'logout'])->name('logout');
     });
 });
 // ─────────────────────────────────────────────────────────────────────────

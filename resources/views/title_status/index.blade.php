@@ -62,11 +62,13 @@
                             <option value="{{ $option }}" @selected($limit == $option)>{{ $option }} rows</option>
                         @endforeach
                     </select>
+                    @if($url === 'land')
                     <button type="button" onclick="tsOpenTypeSelect()"
                         class="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-blue-700 transition">
                         <i data-lucide="plus" class="w-4 h-4"></i>
                         Create Title Status
                     </button>
+                    @endif
                 </div>
             </div>
 
@@ -107,29 +109,35 @@
                                     @endif
                                 </td>
                                 <td class="px-4 py-3 text-center">
-                                    <div class="flex items-center justify-center gap-2">
-                                        <button type="button" onclick="tsView(this)"
-                                            class="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition" title="View">
-                                            <i data-lucide="eye" class="w-4 h-4"></i>
+                                    <div class="ts-actions relative inline-block text-left">
+                                        <button type="button" onclick="tsToggleMenu(this, event)"
+                                            class="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 transition" title="Actions">
+                                            <i data-lucide="more-vertical" class="w-4 h-4"></i>
                                         </button>
-                                        @if($record->status === 'pending')
-                                        <button type="button" onclick="tsOpenEdit(this)"
-                                            class="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 transition" title="Edit">
-                                            <i data-lucide="pencil" class="w-4 h-4"></i>
-                                        </button>
-                                        <button type="button" onclick="tsApprove({{ $record->id }})"
-                                            class="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition" title="Approve">
-                                            <i data-lucide="check-circle" class="w-4 h-4"></i>
-                                        </button>
-                                        <button type="button" onclick="tsReject({{ $record->id }})"
-                                            class="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition" title="Reject">
-                                            <i data-lucide="x-circle" class="w-4 h-4"></i>
-                                        </button>
-                                        <button type="button" onclick="tsDelete({{ $record->id }})"
-                                            class="p-1.5 rounded-lg text-red-400 hover:bg-red-50 transition" title="Delete">
-                                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                        </button>
-                                        @endif
+                                        <div class="ts-actions-menu hidden absolute right-0 z-50 mt-1 w-44 origin-top-right rounded-xl bg-white border border-slate-200 shadow-lg ring-1 ring-black/5 overflow-hidden">
+                                            <button type="button" onclick="tsView(this); tsCloseAllMenus();"
+                                                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition">
+                                                <i data-lucide="eye" class="w-4 h-4 text-blue-600"></i> View
+                                            </button>
+                                            @if($record->status === 'pending')
+                                            <button type="button" onclick="tsOpenEdit(this); tsCloseAllMenus();"
+                                                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition">
+                                                <i data-lucide="pencil" class="w-4 h-4 text-slate-600"></i> Edit
+                                            </button>
+                                            <button type="button" onclick="tsApprove({{ $record->id }}); tsCloseAllMenus();"
+                                                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition">
+                                                <i data-lucide="check-circle" class="w-4 h-4 text-emerald-600"></i> Approve
+                                            </button>
+                                            <button type="button" onclick="tsReject({{ $record->id }}); tsCloseAllMenus();"
+                                                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition">
+                                                <i data-lucide="x-circle" class="w-4 h-4 text-red-500"></i> Reject
+                                            </button>
+                                            <button type="button" onclick="tsDelete({{ $record->id }}); tsCloseAllMenus();"
+                                                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition border-t border-slate-100">
+                                                <i data-lucide="trash-2" class="w-4 h-4 text-red-500"></i> Delete
+                                            </button>
+                                            @endif
+                                        </div>
                                     </div>
                                 </td>
                             </tr>

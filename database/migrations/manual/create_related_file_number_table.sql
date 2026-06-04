@@ -1,7 +1,8 @@
 -- ============================================================================
 -- create_related_file_number_table.sql
 -- ----------------------------------------------------------------------------
--- Drops and recreates [related_file_number] and back-fills from six sources.
+-- Drops and recreates [related_file_number] and back-fills from five sources.
+-- (fileNumber is intentionally excluded — see Step 4.)
 --
 -- Adds in this revision:
 --   * comment column          -- "KANGIS RECERTIFICATION <New KANGIS FileNo>"
@@ -17,10 +18,10 @@
 --   source_table          related_fileno col   prop_id     file_title     party_2        location               new_kangis (for comment)
 --   file_indexings        related_fileno       prop_id     file_title     current_holder location               new_kangis_file_no
 --   deprecated_records    related_fileno       prop_id     file_title     current_holder location               (none)
---   fileNumber            related_fileno       NULL        FileName       NULL           location               NewKANGISFileNo
 --   dciv_file_no          related_fileno       NULL        file_name      NULL           location               (none)
 --   pra                   related_file_number  prop_id     NULL           party_2        COALESCE(prop_desc,loc)NewKANGISFileno
 --   pic                   related_file_number  prop_id     NULL           party_2        COALESCE(prop_desc,loc)NewKANGISFileno
+--   fileNumber            (excluded)
 --
 -- Comment rules (applied per output row, in this order):
 --   1. Parent has a non-empty New KANGIS FileNo
@@ -158,44 +159,12 @@ PRINT CONCAT('deprecated_records: inserted ', @@ROWCOUNT);
 GO
 
 -- ---------------------------------------------------------------------------
--- 4) fileNumber
+-- 4) fileNumber  -- INTENTIONALLY EXCLUDED
+--    The fileNumber rows contributed ~2.4k entries with low signal
+--    (0 prop_id, 22/2440 comments) and a high false-positive rate on the
+--    KANGIS branch because parent identifiers are inconsistent. Leaving it
+--    out for now; re-add if/when fileNumber data is cleaner.
 -- ---------------------------------------------------------------------------
-INSERT INTO [dbo].[related_file_number]
-    (related_fileno, prop_id, source_table, source_id, file_number, file_title, party_2, location, comment, created_at, updated_at)
-SELECT
-    LTRIM(RTRIM(j.[value])),
-    NULL,
-    'fileNumber',
-    s.id,
-    COALESCE(s.NewKANGISFileNo, s.kangisFileNo, s.mlsfNo),
-    s.FileName,
-    NULL,
-    s.location,
-    CASE
-        WHEN s.NewKANGISFileNo IS NOT NULL AND LTRIM(RTRIM(s.NewKANGISFileNo)) <> ''
-            THEN CONCAT('KANGIS RECERTIFICATION ', s.NewKANGISFileNo)
-        WHEN COALESCE(s.NewKANGISFileNo, s.kangisFileNo, s.mlsfNo) LIKE '%-RC-%' AND
-             (   UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
-              OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'MLKN%'
-              OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNGP%')
-            THEN CONCAT('KANGIS RECERTIFICATION ', COALESCE(s.NewKANGISFileNo, s.kangisFileNo, s.mlsfNo))
-        WHEN COALESCE(s.NewKANGISFileNo, s.kangisFileNo, s.mlsfNo) LIKE '%-RC-%'
-            THEN CONCAT('MINISTRY OF LAND AND PHYSICAL PLANNING RECERTIFICATION ', COALESCE(s.NewKANGISFileNo, s.kangisFileNo, s.mlsfNo))
-        ELSE NULL
-    END,
-    SYSUTCDATETIME(), SYSUTCDATETIME()
-FROM [dbo].[fileNumber] s WITH (NOLOCK)
-CROSS APPLY OPENJSON(
-    CASE WHEN ISJSON(s.related_fileno) = 1
-         THEN s.related_fileno
-         ELSE CONCAT('["', REPLACE(REPLACE(s.related_fileno, '\', '\\'), '"', '\"'), '"]')
-    END
-) j
-WHERE s.related_fileno IS NOT NULL
-  AND LEN(LTRIM(RTRIM(CAST(s.related_fileno AS NVARCHAR(500))))) > 0
-  AND LTRIM(RTRIM(j.[value])) <> '';
-PRINT CONCAT('fileNumber: inserted ', @@ROWCOUNT);
-GO
 
 -- ---------------------------------------------------------------------------
 -- 5) dciv_file_no

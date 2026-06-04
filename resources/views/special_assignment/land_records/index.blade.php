@@ -17,10 +17,6 @@
                     class="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg transition-colors">
                     <i data-lucide="download" class="h-4 w-4"></i> Field Template
                 </button>
-                <button id="btn-add-record"
-                    class="inline-flex items-center gap-2 px-4 py-2 bg-[rgb(186,191,12)] hover:opacity-90 text-white text-sm font-medium rounded-lg transition-opacity">
-                    <i data-lucide="plus" class="h-4 w-4"></i> Add Record
-                </button>
             </div>
         </div>
 
@@ -60,6 +56,7 @@
                             <th class="px-3 py-2">Approved Land Use</th>
                             <th class="px-3 py-2">Prevailing Land Use</th>
                             <th class="px-3 py-2">Contravention</th>
+                            <th class="px-3 py-2">SPA Status</th>
                             <th class="px-3 py-2">Date</th>
                             <th class="px-3 py-2">Action</th>
                         </tr>
@@ -240,6 +237,7 @@ $(document).ready(function () {
                     ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200"><svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Yes</span>`
                     : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-200"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>No</span>`;
             }},
+            { data: 'status', orderable: false },
             { data: 'created_at'   },
             { data: 'action', orderable: false, searchable: false },
         ],
@@ -248,10 +246,11 @@ $(document).ready(function () {
     // ── SPA modal open / close ─────────────────────────────────────────────
     const spaModal = document.getElementById('modal-add-record');
 
-    document.getElementById('btn-add-record').addEventListener('click', () => {
+    function openSpaModal() {
         spaModal.classList.remove('hidden');
         spaModal.classList.add('flex');
-    });
+        lucide.createIcons();
+    }
 
     ['btn-close-modal', 'btn-cancel-modal'].forEach(id => {
         document.getElementById(id).addEventListener('click', closeSpaModal);
@@ -261,7 +260,76 @@ $(document).ready(function () {
         spaModal.classList.add('hidden');
         spaModal.classList.remove('flex');
         document.getElementById('contravention-badge').classList.add('hidden');
+        document.getElementById('contravention-badge').style.display = 'none';
     }
+
+    // ── "Add to SPA" per-row button ────────────────────────────────────────
+    $(document).on('click', '.btn-lr-add-spa', async function () {
+        $('.lr-dropdown').addClass('hidden');
+        const p = JSON.parse($(this).attr('data-prefill'));
+
+        // Reset form first
+        document.getElementById('form-add-record').reset();
+        document.getElementById('photo-preview').innerHTML = '';
+        document.getElementById('lookup-msg').classList.add('hidden');
+        document.getElementById('location-badge-wrap').classList.add('hidden');
+
+        // Set file number immediately and open modal
+        document.getElementById('display-file-number').value = p.file_number;
+        document.getElementById('h-file_number').value       = p.file_number;
+        document.getElementById('h-file_indexing_id').value  = p.file_indexing_id || '';
+        document.getElementById('h-tracking_id').value       = p.tracking_id || '';
+        document.getElementById('h-is_indexed').value        = '1';
+
+        const msg = document.getElementById('lookup-msg');
+        msg.className = 'text-xs mt-1 text-gray-400';
+        msg.textContent = 'Loading file details…';
+        msg.classList.remove('hidden');
+        openSpaModal();
+
+        // Full lookup via checkFile — gets properly parsed owner name
+        try {
+            const ctrl = new AbortController();
+            const t    = setTimeout(() => ctrl.abort(), 8000);
+            const res  = await fetch(`${LOOKUP}?file_number=${encodeURIComponent(p.file_number)}`, { signal: ctrl.signal });
+            clearTimeout(t);
+            const d = await res.json();
+            if (d.found) {
+                const owner = (d.file_title || d.owner_name || '').trim();
+                document.getElementById('f-owner_name').value    = owner;
+                document.getElementById('f-phone').value         = d.phone || '';
+                document.getElementById('f-land_use_type').value = d.land_use_type || '';
+                document.getElementById('h-location').value      = d.location || '';
+                document.getElementById('h-lga').value           = d.lga || '';
+                document.getElementById('h-file_indexing_id').value = d.file_indexing_id || p.file_indexing_id || '';
+                document.getElementById('h-tracking_id').value      = d.tracking_id || p.tracking_id || '';
+                const loc = [d.location, d.district, d.lga].filter(Boolean).join(', ');
+                if (loc) {
+                    document.getElementById('location-badge-text').textContent = loc;
+                    document.getElementById('location-badge-wrap').classList.remove('hidden');
+                }
+                msg.className = 'text-xs mt-1 text-green-600';
+                msg.textContent = '✓ Pre-filled from file indexing.';
+            } else {
+                // Fallback to prefill data
+                document.getElementById('f-owner_name').value    = (p.owner_name && p.owner_name !== '—') ? p.owner_name : '';
+                document.getElementById('f-land_use_type').value = p.land_use_type || '';
+                document.getElementById('h-location').value      = p.location || '';
+                if (p.location) {
+                    document.getElementById('location-badge-text').textContent = p.location;
+                    document.getElementById('location-badge-wrap').classList.remove('hidden');
+                }
+                msg.className = 'text-xs mt-1 text-amber-600';
+                msg.textContent = 'File not in index — fill in details manually.';
+            }
+        } catch(err) {
+            // Fallback silently
+            document.getElementById('f-owner_name').value    = (p.owner_name && p.owner_name !== '—') ? p.owner_name : '';
+            document.getElementById('f-land_use_type').value = p.land_use_type || '';
+            msg.className = 'text-xs mt-1 text-red-500';
+            msg.textContent = err.name === 'AbortError' ? 'Lookup timed out.' : 'Could not load details.';
+        }
+    });
 
     // ── Contravention check (Approved vs Prevailing) ──────────────────────
     function checkContravention() {

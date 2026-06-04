@@ -238,7 +238,8 @@ function tsRefreshRemark() {
 
     let initiator;
     if (initiatedBy === 'Allottee' || initiatedBy === 'Applicant') {
-        initiator = applicantName || fileTitle || initiatedBy;
+        const name = applicantName || fileTitle;
+        initiator  = name ? `${name} (${initiatedBy})` : initiatedBy;
     } else if (initiatedBy) {
         initiator = initiatedBy;
     } else {
@@ -453,6 +454,44 @@ function tsDelete(id) {
         });
     });
 }
+
+/* ────────────────── Action Menu ────────────────── */
+function tsToggleMenu(btn, event) {
+    if (event) event.stopPropagation();
+    const wrapper = btn.closest('.ts-actions');
+    if (!wrapper) return;
+    const menu = wrapper.querySelector('.ts-actions-menu');
+    if (!menu) return;
+
+    const isOpen = !menu.classList.contains('hidden');
+    tsCloseAllMenus();
+    if (isOpen) return;
+
+    // Fixed-position so the table's overflow doesn't clip it
+    const rect      = btn.getBoundingClientRect();
+    const menuWidth = 176; // matches w-44
+    menu.style.position = 'fixed';
+    menu.style.top      = (rect.bottom + 4) + 'px';
+    menu.style.left     = Math.max(8, rect.right - menuWidth) + 'px';
+    menu.style.right    = 'auto';
+    menu.classList.remove('hidden');
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function tsCloseAllMenus() {
+    document.querySelectorAll('.ts-actions-menu').forEach(m => {
+        m.classList.add('hidden');
+        m.style.position = '';
+        m.style.top = m.style.left = m.style.right = '';
+    });
+}
+
+document.addEventListener('click', function (e) {
+    if (!e.target.closest('.ts-actions')) tsCloseAllMenus();
+});
+document.addEventListener('scroll', tsCloseAllMenus, true);
+window.addEventListener('resize', tsCloseAllMenus);
 
 /* ────────────────── Helpers ────────────────── */
 function tsCloseModal() {
