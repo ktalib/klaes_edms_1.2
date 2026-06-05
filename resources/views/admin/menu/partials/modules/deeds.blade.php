@@ -243,12 +243,7 @@
               
 
 
-                <a href="{{ route('admin.manual-linkage.index') }}"
-          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('admin.manual-linkage.*') ? 'active' : '' }}">
-          <i data-lucide="link" class="h-4 w-4 text-teal-400"></i>
-          <span>Parcel Update</span>
-        </a>
-
+        
         
 
 
@@ -258,15 +253,24 @@
               <i data-lucide="split-square-vertical" class="h-3.5 w-3.5 text-teal-400"></i>
               <span>Plot Separation</span>
             </a>
-          </div>
-        </div>
+
+                    <a href="{{ route('admin.manual-linkage.index') }}"
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('admin.manual-linkage.*') ? 'active' : '' }}">
+          <i data-lucide="link" class="h-4 w-4 text-teal-400"></i>
+          <span>Parcel Update-Legacy</span>
+        </a>
+
 
         <!-- iii. Title Status -->
         <a href="{{ route('title-status.index') }}?url=deeds"
           class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('title-status.index') && request('url') === 'deeds' ? 'active' : '' }}">
           <i data-lucide="file-check" class="h-3.5 w-3.5 text-teal-400"></i>
-          <span>Title Status</span>
+          <span>Title Status Update</span>
         </a>
+
+          </div>
+        </div>
+
        @endif
 
       @if($hasRole('Activity Monitoring') || $hasRole('Supper Admin'))

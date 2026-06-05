@@ -1,33 +1,34 @@
 -- ============================================================================
--- create_related_file_number_table.sql
+-- create_related_file_number_table.sql                              (PRODUCTION)
 -- ----------------------------------------------------------------------------
--- Drops and recreates [related_file_number] and back-fills from five sources.
--- (fileNumber is intentionally excluded — see Step 4.)
+-- DROPS [related_file_number] if it exists and rebuilds it from five sources.
+-- Safe to re-run — every execution starts from an empty table.
 --
--- Adds in this revision:
---   * comment column          -- "KANGIS RECERTIFICATION <New KANGIS FileNo>"
---                             -- or "MINISTRY OF LAND AND PHYSICAL PLANNING
---                             --     RECERTIFICATION <RC FileNo>"
---   * JSON splitting          -- related_fileno values stored as JSON arrays
---                                are exploded into one row per element via
---                                OPENJSON, so each old KN reference gets its
---                                own row instead of being stacked.
+-- Five sources contributing rows:
+--   source_table          related_fileno col   prop_id     file_title     party_2        location                       new_kangis (for comment)
+--   file_indexings        related_fileno       prop_id     file_title     current_holder location                       new_kangis_file_no
+--   deprecated_records    related_fileno       prop_id     file_title     current_holder location                       (none)
+--   dciv_file_no          related_fileno       NULL        file_name      NULL           location                       (none)
+--   pra                   related_file_number  prop_id     NULL           party_2        COALESCE(prop_description,loc) NewKANGISFileno
+--   pic                   related_file_number  prop_id     NULL           party_2        COALESCE(prop_description,loc) NewKANGISFileno
+--   fileNumber            (intentionally excluded — see Step 4)
 --
--- Source -> column mapping:
+-- Each source row's related_fileno is split into one output row per value:
+--   * JSON arrays  e.g. ["A","B","C"]       -> 3 rows
+--   * Comma lists  e.g. "A, B, C"           -> 3 rows
+--   * Plain value  e.g. "KN 36"             -> 1 row
+-- Splitting is done via STRING_SPLIT after stripping JSON brackets/quotes,
+-- which works uniformly for both stored formats.
 --
---   source_table          related_fileno col   prop_id     file_title     party_2        location               new_kangis (for comment)
---   file_indexings        related_fileno       prop_id     file_title     current_holder location               new_kangis_file_no
---   deprecated_records    related_fileno       prop_id     file_title     current_holder location               (none)
---   dciv_file_no          related_fileno       NULL        file_name      NULL           location               (none)
---   pra                   related_file_number  prop_id     NULL           party_2        COALESCE(prop_desc,loc)NewKANGISFileno
---   pic                   related_file_number  prop_id     NULL           party_2        COALESCE(prop_desc,loc)NewKANGISFileno
---   fileNumber            (excluded)
+-- Separator normalization: each split value has '_' and '/' replaced with '-'
+-- so "RES_RC_1983_1147" / "CON/COM/95/12" come out canonical (RES-RC-1983-1147
+-- / CON-COM-95-12).
 --
--- Comment rules (applied per output row, in this order):
---   1. Parent has a non-empty New KANGIS FileNo
+-- Comment rules (evaluated top-down, first match wins):
+--   1. Parent row has a non-empty New KANGIS FileNo
 --      -> "KANGIS RECERTIFICATION <NewKANGIS>"
---   2. Parent file_number contains "-RC-" AND the split related_fileno
---      matches the KANGIS legacy prefixes (KNML, MLKN, KNGP)
+--   2. The split related_fileno starts with KANGIS legacy prefix (KNML, MLKN, KNGP)
+--      regardless of parent file_number format
 --      -> "KANGIS RECERTIFICATION <parent file_number>"
 --   3. Parent file_number contains "-RC-" (any other related_fileno)
 --      -> "MINISTRY OF LAND AND PHYSICAL PLANNING RECERTIFICATION <file_number>"
@@ -35,11 +36,13 @@
 --
 -- KANGIS legacy prefixes (from resources/views/components/global-fileno-modal.blade.php):
 --   KNML, MLKN, KNGP
--- Notable: "KN <n>" (Old MLS), "GKN/MISC KN/LPKN" (Survey Registry) are NOT
--- treated as KANGIS — they fall through to the MLPP comment when parent has -RC-.
+-- "KN <n>" (Old MLS), "GKN/MISC KN/LPKN" (Survey Registry) are NOT treated as
+-- KANGIS — they fall through to the MLPP comment when parent has -RC-.
 --
--- Target: SQL Server 2016+ (OPENJSON, ISJSON).
--- Idempotent: drops the table on each run.
+-- Concurrency: WITH (NOLOCK) on every source scan + READ UNCOMMITTED isolation
+-- to avoid deadlocking against active writers.
+--
+-- Target: SQL Server 2016+ (STRING_SPLIT, ISJSON).
 -- ============================================================================
 
 SET NOCOUNT ON;
@@ -47,10 +50,13 @@ SET XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
 -- ---------------------------------------------------------------------------
--- 1) Drop and recreate
+-- 1) Drop existing table (if any) and create a fresh empty one
 -- ---------------------------------------------------------------------------
 IF OBJECT_ID('dbo.related_file_number', 'U') IS NOT NULL
+BEGIN
     DROP TABLE [dbo].[related_file_number];
+    PRINT 'Existing [related_file_number] dropped.';
+END
 
 CREATE TABLE [dbo].[related_file_number] (
     [id]             BIGINT          IDENTITY(1,1) NOT NULL,
@@ -77,7 +83,7 @@ CREATE NONCLUSTERED INDEX [IX_related_file_number_prop_id]
 CREATE NONCLUSTERED INDEX [IX_related_file_number_source]
     ON [dbo].[related_file_number] ([source_table], [source_id]);
 
-PRINT 'Created [related_file_number] with comment + JSON-split.';
+PRINT 'Created fresh [related_file_number].';
 GO
 
 -- ---------------------------------------------------------------------------
@@ -86,7 +92,7 @@ GO
 INSERT INTO [dbo].[related_file_number]
     (related_fileno, prop_id, source_table, source_id, file_number, file_title, party_2, location, comment, created_at, updated_at)
 SELECT
-    LTRIM(RTRIM(j.[value])),
+    LTRIM(RTRIM(REPLACE(REPLACE(j.[value], '_', '-'), '/', '-'))),
     CAST(s.prop_id AS NVARCHAR(100)),
     'file_indexings',
     s.id,
@@ -97,10 +103,9 @@ SELECT
     CASE
         WHEN s.new_kangis_file_no IS NOT NULL AND LTRIM(RTRIM(s.new_kangis_file_no)) <> ''
             THEN CONCAT('KANGIS RECERTIFICATION ', s.new_kangis_file_no)
-        WHEN s.file_number LIKE '%-RC-%' AND
-             (   UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
-              OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'MLKN%'
-              OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNGP%')
+        WHEN UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
+          OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'MLKN%'
+          OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNGP%'
             THEN CONCAT('KANGIS RECERTIFICATION ', s.file_number)
         WHEN s.file_number LIKE '%-RC-%'
             THEN CONCAT('MINISTRY OF LAND AND PHYSICAL PLANNING RECERTIFICATION ', s.file_number)
@@ -108,12 +113,11 @@ SELECT
     END,
     SYSUTCDATETIME(), SYSUTCDATETIME()
 FROM [dbo].[file_indexings] s WITH (NOLOCK)
-CROSS APPLY OPENJSON(
+CROSS APPLY STRING_SPLIT(
     CASE WHEN ISJSON(s.related_fileno) = 1
-         THEN s.related_fileno
-         ELSE CONCAT('["', REPLACE(REPLACE(s.related_fileno, '\', '\\'), '"', '\"'), '"]')
-    END
-) j
+         THEN REPLACE(REPLACE(REPLACE(CAST(s.related_fileno AS NVARCHAR(MAX)), '[', ''), ']', ''), '"', '')
+         ELSE CAST(s.related_fileno AS NVARCHAR(MAX))
+    END, ',') j
 WHERE s.related_fileno IS NOT NULL
   AND LEN(LTRIM(RTRIM(CAST(s.related_fileno AS NVARCHAR(500))))) > 0
   AND LTRIM(RTRIM(j.[value])) <> '';
@@ -126,7 +130,7 @@ GO
 INSERT INTO [dbo].[related_file_number]
     (related_fileno, prop_id, source_table, source_id, file_number, file_title, party_2, location, comment, created_at, updated_at)
 SELECT
-    LTRIM(RTRIM(j.[value])),
+    LTRIM(RTRIM(REPLACE(REPLACE(j.[value], '_', '-'), '/', '-'))),
     CAST(s.prop_id AS NVARCHAR(100)),
     'deprecated_records',
     s.id,
@@ -135,10 +139,9 @@ SELECT
     s.current_holder,
     s.location,
     CASE
-        WHEN s.file_number LIKE '%-RC-%' AND
-             (   UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
-              OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'MLKN%'
-              OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNGP%')
+        WHEN UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
+          OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'MLKN%'
+          OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNGP%'
             THEN CONCAT('KANGIS RECERTIFICATION ', s.file_number)
         WHEN s.file_number LIKE '%-RC-%'
             THEN CONCAT('MINISTRY OF LAND AND PHYSICAL PLANNING RECERTIFICATION ', s.file_number)
@@ -146,12 +149,11 @@ SELECT
     END,
     SYSUTCDATETIME(), SYSUTCDATETIME()
 FROM [dbo].[deprecated_records] s WITH (NOLOCK)
-CROSS APPLY OPENJSON(
+CROSS APPLY STRING_SPLIT(
     CASE WHEN ISJSON(s.related_fileno) = 1
-         THEN s.related_fileno
-         ELSE CONCAT('["', REPLACE(REPLACE(s.related_fileno, '\', '\\'), '"', '\"'), '"]')
-    END
-) j
+         THEN REPLACE(REPLACE(REPLACE(CAST(s.related_fileno AS NVARCHAR(MAX)), '[', ''), ']', ''), '"', '')
+         ELSE CAST(s.related_fileno AS NVARCHAR(MAX))
+    END, ',') j
 WHERE s.related_fileno IS NOT NULL
   AND LEN(LTRIM(RTRIM(CAST(s.related_fileno AS NVARCHAR(500))))) > 0
   AND LTRIM(RTRIM(j.[value])) <> '';
@@ -172,7 +174,7 @@ GO
 INSERT INTO [dbo].[related_file_number]
     (related_fileno, prop_id, source_table, source_id, file_number, file_title, party_2, location, comment, created_at, updated_at)
 SELECT
-    LTRIM(RTRIM(j.[value])),
+    LTRIM(RTRIM(REPLACE(REPLACE(j.[value], '_', '-'), '/', '-'))),
     NULL,
     'dciv_file_no',
     s.id,
@@ -181,10 +183,9 @@ SELECT
     NULL,
     s.location,
     CASE
-        WHEN s.full_file_number LIKE '%-RC-%' AND
-             (   UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
-              OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'MLKN%'
-              OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNGP%')
+        WHEN UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
+          OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'MLKN%'
+          OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNGP%'
             THEN CONCAT('KANGIS RECERTIFICATION ', s.full_file_number)
         WHEN s.full_file_number LIKE '%-RC-%'
             THEN CONCAT('MINISTRY OF LAND AND PHYSICAL PLANNING RECERTIFICATION ', s.full_file_number)
@@ -192,12 +193,11 @@ SELECT
     END,
     SYSUTCDATETIME(), SYSUTCDATETIME()
 FROM [dbo].[dciv_file_no] s WITH (NOLOCK)
-CROSS APPLY OPENJSON(
+CROSS APPLY STRING_SPLIT(
     CASE WHEN ISJSON(s.related_fileno) = 1
-         THEN s.related_fileno
-         ELSE CONCAT('["', REPLACE(REPLACE(s.related_fileno, '\', '\\'), '"', '\"'), '"]')
-    END
-) j
+         THEN REPLACE(REPLACE(REPLACE(CAST(s.related_fileno AS NVARCHAR(MAX)), '[', ''), ']', ''), '"', '')
+         ELSE CAST(s.related_fileno AS NVARCHAR(MAX))
+    END, ',') j
 WHERE s.related_fileno IS NOT NULL
   AND LEN(LTRIM(RTRIM(CAST(s.related_fileno AS NVARCHAR(500))))) > 0
   AND LTRIM(RTRIM(j.[value])) <> '';
@@ -210,7 +210,7 @@ GO
 INSERT INTO [dbo].[related_file_number]
     (related_fileno, prop_id, source_table, source_id, file_number, file_title, party_2, location, comment, created_at, updated_at)
 SELECT
-    LTRIM(RTRIM(j.[value])),
+    LTRIM(RTRIM(REPLACE(REPLACE(j.[value], '_', '-'), '/', '-'))),
     CAST(s.prop_id AS NVARCHAR(100)),
     'pra',
     s.id,
@@ -221,10 +221,9 @@ SELECT
     CASE
         WHEN s.NewKANGISFileno IS NOT NULL AND LTRIM(RTRIM(s.NewKANGISFileno)) <> ''
             THEN CONCAT('KANGIS RECERTIFICATION ', s.NewKANGISFileno)
-        WHEN s.mlsFNo LIKE '%-RC-%' AND
-             (   UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
-              OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'MLKN%'
-              OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNGP%')
+        WHEN UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
+          OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'MLKN%'
+          OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNGP%'
             THEN CONCAT('KANGIS RECERTIFICATION ', s.mlsFNo)
         WHEN s.mlsFNo LIKE '%-RC-%'
             THEN CONCAT('MINISTRY OF LAND AND PHYSICAL PLANNING RECERTIFICATION ', s.mlsFNo)
@@ -232,12 +231,11 @@ SELECT
     END,
     SYSUTCDATETIME(), SYSUTCDATETIME()
 FROM [dbo].[pra] s WITH (NOLOCK)
-CROSS APPLY OPENJSON(
+CROSS APPLY STRING_SPLIT(
     CASE WHEN ISJSON(s.related_file_number) = 1
-         THEN s.related_file_number
-         ELSE CONCAT('["', REPLACE(REPLACE(s.related_file_number, '\', '\\'), '"', '\"'), '"]')
-    END
-) j
+         THEN REPLACE(REPLACE(REPLACE(CAST(s.related_file_number AS NVARCHAR(MAX)), '[', ''), ']', ''), '"', '')
+         ELSE CAST(s.related_file_number AS NVARCHAR(MAX))
+    END, ',') j
 WHERE s.related_file_number IS NOT NULL
   AND LEN(LTRIM(RTRIM(CAST(s.related_file_number AS NVARCHAR(500))))) > 0
   AND LTRIM(RTRIM(j.[value])) <> '';
@@ -250,7 +248,7 @@ GO
 INSERT INTO [dbo].[related_file_number]
     (related_fileno, prop_id, source_table, source_id, file_number, file_title, party_2, location, comment, created_at, updated_at)
 SELECT
-    LTRIM(RTRIM(j.[value])),
+    LTRIM(RTRIM(REPLACE(REPLACE(j.[value], '_', '-'), '/', '-'))),
     CAST(s.prop_id AS NVARCHAR(100)),
     'pic',
     s.id,
@@ -261,10 +259,9 @@ SELECT
     CASE
         WHEN s.NewKANGISFileno IS NOT NULL AND LTRIM(RTRIM(s.NewKANGISFileno)) <> ''
             THEN CONCAT('KANGIS RECERTIFICATION ', s.NewKANGISFileno)
-        WHEN s.mlsFNo LIKE '%-RC-%' AND
-             (   UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
-              OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'MLKN%'
-              OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNGP%')
+        WHEN UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
+          OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'MLKN%'
+          OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNGP%'
             THEN CONCAT('KANGIS RECERTIFICATION ', s.mlsFNo)
         WHEN s.mlsFNo LIKE '%-RC-%'
             THEN CONCAT('MINISTRY OF LAND AND PHYSICAL PLANNING RECERTIFICATION ', s.mlsFNo)
@@ -272,12 +269,11 @@ SELECT
     END,
     SYSUTCDATETIME(), SYSUTCDATETIME()
 FROM [dbo].[pic] s WITH (NOLOCK)
-CROSS APPLY OPENJSON(
+CROSS APPLY STRING_SPLIT(
     CASE WHEN ISJSON(s.related_file_number) = 1
-         THEN s.related_file_number
-         ELSE CONCAT('["', REPLACE(REPLACE(s.related_file_number, '\', '\\'), '"', '\"'), '"]')
-    END
-) j
+         THEN REPLACE(REPLACE(REPLACE(CAST(s.related_file_number AS NVARCHAR(MAX)), '[', ''), ']', ''), '"', '')
+         ELSE CAST(s.related_file_number AS NVARCHAR(MAX))
+    END, ',') j
 WHERE s.related_file_number IS NOT NULL
   AND LEN(LTRIM(RTRIM(CAST(s.related_file_number AS NVARCHAR(500))))) > 0
   AND LTRIM(RTRIM(j.[value])) <> '';

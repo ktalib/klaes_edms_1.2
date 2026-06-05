@@ -143,6 +143,13 @@
               <div class="w-1.5 h-1.5 rounded-full bg-orange-400"></div>
               <span>Fetch Existing File Record (FEFR)</span>
             </a>
+
+            <!-- 3. Transfer of Title (ToT) -->
+            <a href="{{ url('/maintenance/tot') }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->is('maintenance/tot') ? 'active' : '' }}">
+              <div class="w-1.5 h-1.5 rounded-full bg-green-400"></div>
+              <span>Transfer of Title (ToT)</span>
+            </a>
           </div>
 
           <!-- ii. New Applications (Existing OP Change of Name) -->
@@ -220,8 +227,8 @@
         </div>
       @endif
 
-      <!-- d. File History (parent menu: History View + Related Files) -->
-      @if($hasRole('File History View'))
+      <!-- d. File History (parent menu: History View + Related Files + File Search) -->
+      @if($hasRole('File History View') || $hasRole('File Search'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="fileHistory-lands">
           <div class="flex items-center gap-2">
@@ -246,35 +253,35 @@
             <i data-lucide="link" class="h-3.5 w-3.5 text-orange-400"></i>
             <span>Related Files</span>
           </a>
-        </div>
-      @endif
 
-      <!-- e. File Search -->
-      @if($hasRole('File Search'))
-        <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
-          data-section="fileSearch-lands">
-          <div class="flex items-center gap-2">
-            <i data-lucide="search" class="h-4 w-4 text-orange-500"></i>
-            <span>File Search</span>
-          </div>
-          <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200"
-            data-chevron="fileSearch-lands"></i>
-        </div>
+          <!-- iii. File Search -->
+          @if($hasRole('File Search'))
+            <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+              data-section="fileSearch-lands">
+              <div class="flex items-center gap-2">
+                <i data-lucide="search" class="h-3.5 w-3.5 text-orange-400"></i>
+                <span>File Search</span>
+              </div>
+              <i data-lucide="chevron-right" class="h-3.5 w-3.5 transition-transform duration-200"
+                data-chevron="fileSearch-lands"></i>
+            </div>
 
-        <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="fileSearch-lands">
-          <!-- i. Scans -->
-          <a href="{{ route('file-search.scans') }}"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-search.scans') ? 'active' : '' }}">
-            <i data-lucide="image" class="h-3.5 w-3.5 text-orange-400"></i>
-            <span>Scans</span>
-          </a>
+            <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="fileSearch-lands">
+              <!-- 1. Scans -->
+              <a href="{{ route('file-search.scans') }}"
+                class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-search.scans') ? 'active' : '' }}">
+                <i data-lucide="image" class="h-3.5 w-3.5 text-orange-400"></i>
+                <span>Scans</span>
+              </a>
 
-          <!-- ii. Table -->
-          <a href="{{ route('file-search-db.index') }}"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-search-db.index') ? 'active' : '' }}">
-            <i data-lucide="table" class="h-3.5 w-3.5 text-orange-400"></i>
-            <span>Table</span>
-          </a>
+              <!-- 2. Table -->
+              <a href="{{ route('file-search-db.index') }}"
+                class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-search-db.index') ? 'active' : '' }}">
+                <i data-lucide="table" class="h-3.5 w-3.5 text-orange-400"></i>
+                <span>Table</span>
+              </a>
+            </div>
+          @endif
         </div>
       @endif
 

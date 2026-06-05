@@ -53,7 +53,6 @@
                             <th class="px-3 py-2">Phone</th>
                             <th class="px-3 py-2">Location</th>
                             <th class="px-3 py-2">Applied Land Use</th>
-                            <th class="px-3 py-2">Approved Land Use</th>
                             <th class="px-3 py-2">Prevailing Land Use</th>
                             <th class="px-3 py-2">Contravention</th>
                             <th class="px-3 py-2">SPA Status</th>
@@ -132,17 +131,6 @@
                         class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
                 </div>
 
-                {{-- Approved + Prevailing Land Use – same row --}}
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Approved Land Use <span class="text-red-500">*</span></label>
-                    <select name="proposed_use" id="f-approved_use" required
-                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
-                        <option value="">Select…</option>
-                        @foreach($landUseTypes as $lut)
-                            <option value="{{ $lut }}">{{ $lut }}</option>
-                        @endforeach
-                    </select>
-                </div>
 
                 <div>
                     <label class="block text-xs font-medium text-gray-600 mb-1">Prevailing Land Use <span class="text-red-500">*</span></label>
@@ -155,11 +143,11 @@
                     </select>
                 </div>
 
-                {{-- Contravention badge – full width, centred below both dropdowns --}}
-                <div class="sm:col-span-2 flex justify-center">
+                {{-- Contravention badge – same row as Prevailing Land Use --}}
+                <div class="flex items-end justify-center">
                     <div id="contravention-badge" class="hidden items-center gap-2 px-6 py-2 rounded-lg bg-red-100 text-red-700 border-2 border-red-400" style="font-size:15px;font-weight:900;letter-spacing:.07em;animation:contraventionPulse 1.2s ease-in-out infinite;">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-                        ⚠ CONTRAVENTION
+                         CONTRAVENTION
                     </div>
                 </div>
 
@@ -227,10 +215,9 @@ $(document).ready(function () {
             { data: 'phone'        },
             { data: 'location'     },
             { data: 'land_use_type', render: d => luBadge(d) },
-            { data: 'proposed_use',  render: d => luBadge(d) },
             { data: 'existing_use',  render: d => luBadge(d) },
             { data: null, orderable: false, searchable: false, render: (d, t, row) => {
-                const approved   = (row.proposed_use || '').trim().toUpperCase();
+                const approved   = (row.land_use_type || '').trim().toUpperCase();
                 const prevailing = (row.existing_use  || '').trim().toUpperCase();
                 if (!approved || !prevailing) return '<span class="text-gray-400 text-xs">—</span>';
                 return approved !== prevailing
@@ -333,8 +320,8 @@ $(document).ready(function () {
 
     // ── Contravention check (Approved vs Prevailing) ──────────────────────
     function checkContravention() {
-        const approved   = (document.getElementById('f-approved_use').value || '').trim().toUpperCase();
-        const prevailing = (document.getElementById('f-existing_use').value  || '').trim().toUpperCase();
+        const approved   = (document.getElementById('f-land_use_type').value || '').trim().toUpperCase();
+        const prevailing = (document.getElementById('f-existing_use').value   || '').trim().toUpperCase();
         const badge      = document.getElementById('contravention-badge');
         if (approved && prevailing && approved !== prevailing) {
             badge.classList.remove('hidden');
@@ -344,7 +331,6 @@ $(document).ready(function () {
             badge.style.display = 'none';
         }
     }
-    document.getElementById('f-approved_use').addEventListener('change', checkContravention);
     document.getElementById('f-existing_use').addEventListener('change', checkContravention);
 
     // ── Photo preview ──────────────────────────────────────────────────────
@@ -496,7 +482,6 @@ $(document).ready(function () {
         document.getElementById('edit-location').value      = rec.location     || '';
         document.getElementById('edit-land_use_type').value = rec.land_use_type|| '';
         document.getElementById('edit-existing_use').value  = rec.existing_use || '';
-        document.getElementById('edit-proposed_use').value  = rec.proposed_use || '';
         document.getElementById('edit-status').value        = rec.status       || 'open';
         editModal.classList.remove('hidden'); editModal.classList.add('flex');
     });
@@ -515,7 +500,6 @@ $(document).ready(function () {
             location:      document.getElementById('edit-location').value,
             land_use_type: document.getElementById('edit-land_use_type').value,
             existing_use:  document.getElementById('edit-existing_use').value,
-            proposed_use:  document.getElementById('edit-proposed_use').value,
             status:        document.getElementById('edit-status').value,
         };
         const res  = await fetch(UPDATE_URL(id), { method:'POST', headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json'}, body:JSON.stringify(payload) });
@@ -579,15 +563,6 @@ $(document).ready(function () {
                 <div>
                     <label class="block text-xs font-medium text-gray-600 mb-1">Applied Land Use</label>
                     <input type="text" id="edit-land_use_type" readonly class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 outline-none">
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Approved Land Use <span class="text-red-500">*</span></label>
-                    <select id="edit-proposed_use" required class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
-                        <option value="">Select…</option>
-                        @foreach($landUseTypes as $lut)
-                            <option value="{{ $lut }}">{{ $lut }}</option>
-                        @endforeach
-                    </select>
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-600 mb-1">Prevailing Land Use <span class="text-red-500">*</span></label>

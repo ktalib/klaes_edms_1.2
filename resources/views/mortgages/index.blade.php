@@ -104,6 +104,7 @@
                                 <th class="px-4 py-4 rounded-tl-xl">S/N</th>
                                 <th class="px-4 py-4">File Number</th>
                                 <th class="px-4 py-4">Registration Particulars</th>
+                                <th class="px-4 py-4">Associated S&amp;R</th>
                                 <th class="px-4 py-4">Instrument Type</th>
                                 <th class="px-4 py-4">Party 1 </th>
                                 <th class="px-4 py-4">Party 2 </th>
@@ -652,6 +653,33 @@
     </div>
 </div>
 
+{{-- S&R Details Modal --}}
+<div id="sr_details_modal" class="fixed inset-0 z-50 hidden overflow-y-auto" role="dialog" aria-modal="true">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" aria-hidden="true" onclick="closeSrDetailsModal()"></div>
+        <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+        <div class="inline-block align-bottom bg-white rounded-3xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-xl sm:w-full border border-slate-100">
+            <div class="bg-gradient-to-r from-orange-500 to-amber-600 px-6 py-5 flex items-center justify-between">
+                <h3 class="text-lg font-black text-white flex items-center gap-2" id="sr-modal-title">
+                    <i class="fas fa-file-contract text-xl"></i>
+                    Associated Surrender &amp; Release
+                </h3>
+                <button type="button" class="text-white/80 hover:text-white transition cursor-pointer" onclick="closeSrDetailsModal()">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            <div class="px-6 py-6 space-y-4 max-h-[70vh] overflow-y-auto bg-slate-50" id="sr_details_modal_body">
+                {{-- Dynamically populated --}}
+            </div>
+            <div class="bg-white px-6 py-4 border-t border-slate-100 flex justify-end">
+                <button type="button" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-sm transition shadow-md hover:shadow-lg cursor-pointer" onclick="closeSrDetailsModal()">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {{-- DUMMY: keep old id so nothing else breaks --}}
 <div id="mortgage-edit-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" id="mortgage-modal-backdrop"></div>
@@ -1056,7 +1084,24 @@ $(function() {
                 }
             },
             { data: 'registration_particulars', name: 'registration_particulars', defaultContent: '0/0/0' },
-            { 
+            {
+                data: 'associated_surrenders',
+                name: 'associated_surrenders',
+                orderable: false,
+                searchable: false,
+                render: function(data) {
+                    const records = data || [];
+                    if (records.length === 0) {
+                        return `<span class="text-slate-400 text-xs italic">None</span>`;
+                    }
+                    return `<div class="py-1">
+                                <button type="button" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-orange-50 hover:bg-orange-100 text-orange-800 border border-orange-200 transition duration-150 uppercase tracking-wide cursor-pointer sr-trigger shadow-sm hover:shadow" title="View Surrender &amp; Release Details">
+                                    <i class="fas fa-file-contract text-[11px] text-orange-600"></i> S&amp;R (${records.length})
+                                </button>
+                            </div>`;
+                }
+            },
+            {
                 data: 'instrument_type', 
                 name: 'instrument_type',
                 render: function(data) {
@@ -1073,11 +1118,19 @@ $(function() {
                 name: 'transaction_date',
                 render: function(data) {
                     return data && data !== '—'
-                        ? `<span class="font-mono text-slate-600 text-xs">${data}</span>`
+                        ? `<span class="font-mono text-slate-700 text-xs font-bold">${data}</span>`
                         : '<span class="text-slate-300">—</span>';
                 }
             },
-            { data: 'date_captured', name: 'date_captured' },
+            {
+                data: 'date_captured',
+                name: 'date_captured',
+                render: function(data) {
+                    return data && data !== '—'
+                        ? `<span class="font-mono text-slate-700 text-xs font-bold">${data}</span>`
+                        : '<span class="text-slate-300">—</span>';
+                }
+            },
             {
                 data: 'source_table',
                 name: 'source_table',
@@ -1106,7 +1159,7 @@ $(function() {
             }
         ],
         pageLength: 25,
-        order: [[9, 'desc']],
+        order: [[10, 'desc']],
         language: {
             search: "",
             searchPlaceholder: "Search records...",
@@ -1487,7 +1540,63 @@ $(function() {
     // ── Close handlers (backdrop, X button, Cancel, Escape) ──
     $(document).on('click', '.mort-backdrop, .mort-close, .mort-cancel', closeAllMortgageModals);
     $(document).on('keydown', function(e) { if (e.key === 'Escape') closeAllMortgageModals(); });
+
+    // ── Associated S&R click handler ──
+    $('#mortgage_table').on('click', '.sr-trigger', function() {
+        const tr = $(this).closest('tr');
+        const rowData = table.row(tr).data();
+        if (rowData && rowData.associated_surrenders) {
+            openSrDetailsModal(rowData.associated_surrenders, rowData.file_number || '—');
+        }
+    });
 });
 
+function openSrDetailsModal(records, fileNo) {
+    const body = $('#sr_details_modal_body');
+    body.empty();
+    $('#sr-modal-title').html(`<i class="fas fa-file-contract text-xl"></i> S&amp;R for ${fileNo}`);
+
+    records.forEach(function(r) {
+        const reg  = r.registration_particulars && r.registration_particulars.trim() ? r.registration_particulars : 'Unregistered';
+        const p1   = r.party_1 || '—';
+        const p2   = r.party_2 || '—';
+        const p3Html = r.party_3 && r.party_3.trim()
+            ? `<div class="pt-2"><p class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Party 3</p><p class="text-sm font-bold text-slate-800 mt-0.5">${r.party_3}</p></div>`
+            : '';
+        let dateVal = '—';
+        if (r.date_captured) {
+            try { dateVal = r.date_captured.substring(0, 16).replace('T', ' '); } catch(e) { dateVal = r.date_captured; }
+        }
+        body.append(`
+        <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4 hover:border-orange-300 transition-all duration-300">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-orange-50 text-orange-800 border border-orange-200 uppercase tracking-wide">
+                    <i class="fas fa-file-contract text-orange-600 text-[10px]"></i> ${r.instrument_type || 'Deed of Surrender'}
+                </span>
+                <span class="px-2.5 py-1 text-xs font-mono font-bold bg-slate-100 text-slate-700 rounded-lg border border-slate-200">${reg}</span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><p class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Surrenderor (Party 1)</p><p class="text-sm font-bold text-slate-800 mt-0.5">${p1}</p></div>
+                <div><p class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Surrenderee (Party 2)</p><p class="text-sm font-bold text-slate-800 mt-0.5">${p2}</p></div>
+            </div>
+            ${p3Html}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-100 text-xs text-slate-500">
+                <div class="flex items-center gap-1.5"><i class="fas fa-database text-slate-400 text-[10px]"></i><span>Source: <strong class="text-slate-700">${r.source || '—'}</strong></span></div>
+                <div class="flex items-center gap-1.5 md:justify-end"><i class="fas fa-calendar-alt text-slate-400 text-[10px]"></i><span>Captured: <strong class="text-slate-700">${dateVal}</strong></span></div>
+            </div>
+        </div>`);
+    });
+
+    $('#sr_details_modal').removeClass('hidden');
+    $('body').addClass('overflow-hidden');
+}
+
+function closeSrDetailsModal() {
+    $('#sr_details_modal').addClass('hidden');
+    $('body').removeClass('overflow-hidden');
+}
+
+window.openSrDetailsModal  = openSrDetailsModal;
+window.closeSrDetailsModal = closeSrDetailsModal;
 </script>
 @endpush

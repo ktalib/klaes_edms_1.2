@@ -9,12 +9,53 @@ use Carbon\Carbon;
 
 class ToTStagingController extends Controller
 {
+    private function isGovernmentEntity($name)
+    {
+        if (!$name) return false;
+        $name = strtoupper(trim($name));
+        $patterns = [
+            'GOVERNMENT',
+            'JUDICIARY',
+            'STATE',
+            'FEDERAL',
+            'MINISTRY',
+            'DEPARTMENT',
+            'AGENCY',
+            'COMMISSION',
+            'AUTHORITY'
+        ];
+        foreach ($patterns as $pattern) {
+            if (strpos($name, $pattern) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public function index(Request $request)
     {
         $records = DB::connection('sqlsrv')->table('pra_tot_staging')
             ->where('status', 'pending')
+            ->whereNotNull('op_name')
+            ->where('op_name', '<>', '')
+            ->whereNotNull('ro_name')
+            ->where('ro_name', '<>', '')
+            ->whereNotIn('ro_name', function ($query) {
+                $query->select(DB::raw("DISTINCT ro_name"))
+                    ->from('pra_tot_staging')
+                    ->where(function ($q) {
+                        $q->whereRaw("ro_name LIKE '%GOVERNMENT%'")
+                          ->orWhereRaw("ro_name LIKE '%JUDICIARY%'")
+                          ->orWhereRaw("ro_name LIKE '%FEDERAL%'")
+                          ->orWhereRaw("ro_name LIKE '%MINISTRY%'")
+                          ->orWhereRaw("ro_name LIKE '%DEPARTMENT%'")
+                          ->orWhereRaw("ro_name LIKE '%AGENCY%'")
+                          ->orWhereRaw("ro_name LIKE '%COMMISSION%'")
+                          ->orWhereRaw("ro_name LIKE '%AUTHORITY%'");
+                    });
+            })
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->paginate(25);
 
         return view('maintenance.tot_staging', compact('records'));
     }
@@ -28,11 +69,17 @@ class ToTStagingController extends Controller
 
         $results = [];
         $processedCount = 0;
+        $skippedCount = 0;
 
         foreach ($ids as $id) {
             $staging = DB::connection('sqlsrv')->table('pra_tot_staging')->where('id', $id)->first();
             if (!$staging || $staging->is_processed)
                 continue;
+
+            if ($this->isGovernmentEntity($staging->ro_name)) {
+                $skippedCount++;
+                continue;
+            }
 
             // Fetch OP record for full data
             $opRecord = DB::connection('sqlsrv')->table('pra')->where('id', $staging->op_id)->first();
@@ -72,9 +119,14 @@ class ToTStagingController extends Controller
             $processedCount++;
         }
 
+        $msg = "Successfully generated {$processedCount} ToT records.";
+        if ($skippedCount > 0) {
+            $msg .= " ({$skippedCount} government/judiciary records skipped)";
+        }
+
         return response()->json([
             'success' => true,
-            'message' => "Successfully generated {$processedCount} ToT records."
+            'message' => $msg
         ]);
     }
 

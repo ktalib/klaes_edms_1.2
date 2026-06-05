@@ -222,7 +222,7 @@
                                         onclick="bulkDeleteSelectedRecords()"
                                         class="inline-flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded-md text-sm font-semibold transition-colors shadow-sm">
                                     <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                    <span>Delete Selected</span>
+                                    <span>Global Delete</span>
                                 </button>
                             </div>
                         </div>

@@ -72,7 +72,7 @@
         .nav-pill svg { width: 11px; height: 11px; }
 
         /* ── PAGES ── */
-        .page { display: none; position: fixed; top: 112px; left: 0; right: 0; bottom: 72px; overflow-y: auto; scrollbar-width: none; }
+        .page { display: none; position: fixed; top: 112px; left: 0; right: 0; bottom: 0; overflow-y: auto; scrollbar-width: none; }
         .page.active { display: block; }
         #page-map { overflow: hidden; }
 
@@ -103,7 +103,7 @@
         .search-inp:focus { border-color: var(--accent); }
 
         /* ── CARDS LIST ── */
-        .card-list { padding: 8px 18px 12px; display: flex; flex-direction: column; gap: 10px; }
+        .card-list { padding: 8px 18px 24px; display: flex; flex-direction: column; gap: 10px; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
 
         .rec-card {
             background: var(--surface); border: 1px solid var(--border);
@@ -137,6 +137,19 @@
         .insp-card-body { padding: 10px 14px 12px; }
         .insp-findings { font-size: 12px; color: #cbd5e1; line-height: 1.5; }
         .insp-inspector { margin-top: 6px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; }
+
+        /* ── ACTION CARD ── */
+        .action-card {
+            background: var(--accent-dim);
+            border: 2px dashed var(--accent) !important;
+            transition: all .2s;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .action-card:active {
+            transform: scale(0.98);
+            background: var(--accent-glow);
+        }
 
         /* ── EMPTY STATE ── */
         .empty-state { padding: 50px 20px; text-align: center; }
@@ -253,13 +266,8 @@
 
         /* ── BOTTOM NAV ── */
         .bottom-nav {
-            position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
-            background: rgba(11,14,20,.95); backdrop-filter: blur(20px);
-            border-top: 1px solid var(--border);
-            padding: 10px 18px; padding-bottom: max(10px, env(safe-area-inset-bottom));
-            display: flex; gap: 10px; height: 72px; align-items: center;
+            display: none !important;
         }
-        body.keyboard-visible .bottom-nav { display: none !important; }
         .btn-nav { flex: 1; height: 46px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; font-weight: 700; border: none; cursor: pointer; transition: all .2s; }
         .btn-nav:active { transform: scale(.97); }
         .btn-ghost   { background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); }
@@ -317,7 +325,7 @@
         <i data-lucide="file-text"></i> RECORDS
     </div>
     <div class="nav-pill" data-page="verify">
-        <i data-lucide="search"></i> VERIFY
+        <i data-lucide="search"></i>FIELD RECORDS
     </div>
     <div class="nav-pill" data-page="map">
         <i data-lucide="map"></i> FIELD MAP
@@ -664,15 +672,31 @@ async function loadRecords() {
 
 function renderRecords(data) {
     const list = document.getElementById('records-list');
-    if (!data.length) { list.innerHTML = `<div class="empty-state"><i data-lucide="inbox"></i><p>No land records yet.</p></div>`; lucide.createIcons(); return; }
+    if (!data.length) {
+        list.innerHTML = `
+        <div class="empty-state"><i data-lucide="inbox"></i><p>No land records yet.</p></div>
+        <div class="rec-card action-card">
+            <div style="padding:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+                <i data-lucide="plus" style="width:28px;height:28px;color:var(--accent);"></i>
+                <span style="font-weight:700;color:var(--accent);font-size:14px;">Add Land Record</span>
+            </div>
+        </div>`;
+        lucide.createIcons();
+        list.querySelector('.action-card').addEventListener('click', () => openSheet('sheet-add-record'));
+        return;
+    }
     const statusLabel = { open:'Open', in_progress:'In Progress', approved:'Approved', certificate_issued:'Cert. Issued', closed:'Closed', not_added:'Not Added' };
-    list.innerHTML = data.map((r, i) => {
+    let html = data.map((r, i) => {
         const s = r.status_raw || 'not_added';
+        const addBtn = s === 'not_added' ? `<button class="add-record-btn" data-fileno="${r.file_number}" style="background:none;border:none;padding:4px 8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--accent);transition:all .2s;"><i data-lucide="plus-circle" style="width:18px;height:18px;"></i></button>` : '';
         return `
         <div class="rec-card" style="animation-delay:${i * .04}s">
             <div class="rec-card-head">
                 <span class="rec-fileno">${r.file_number || '—'}</span>
-                <span class="rec-status ${s}">${statusLabel[s] || s.toUpperCase()}</span>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    ${addBtn}
+                    <span class="rec-status ${s}">${statusLabel[s] || s.toUpperCase()}</span>
+                </div>
             </div>
             <div class="rec-card-body">
                 <div class="rec-row"><span class="rec-lbl">Owner</span><span class="rec-val">${r.owner_name||'—'}</span></div>
@@ -681,7 +705,50 @@ function renderRecords(data) {
             </div>
         </div>`;
     }).join('');
+    html += `
+    <div class="rec-card action-card">
+        <div style="padding:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+            <i data-lucide="plus" style="width:28px;height:28px;color:var(--accent);"></i>
+            <span style="font-weight:700;color:var(--accent);font-size:14px;">Add Land Record</span>
+        </div>
+    </div>`;
+    list.innerHTML = html;
     lucide.createIcons();
+
+    // Action card click
+    list.querySelector('.action-card').addEventListener('click', () => openSheet('sheet-add-record'));
+
+    // Add buttons on Not Added cards
+    list.querySelectorAll('.add-record-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const fileNo = this.dataset.fileno;
+            const card = this.closest('.rec-card');
+
+            // Extract data from card
+            const owner = card.querySelector('.rec-card-body .rec-row:first-child .rec-val')?.textContent?.trim() || '';
+            const location = card.querySelector('.rec-card-body .rec-row:nth-child(2) .rec-val')?.textContent?.trim() || '';
+            const landUse = card.querySelector('.rec-card-body .rec-row:nth-child(3) .rec-val')?.textContent?.trim() || '';
+
+            // Pre-fill the form
+            document.getElementById('m-file-no-input').value = fileNo;
+            document.getElementById('m-owner').value = owner && owner !== '—' ? owner : '';
+            document.getElementById('m-land-use').value = landUse && landUse !== '—' ? landUse : '';
+            document.getElementById('h-file_number').value = fileNo;
+            document.getElementById('h-is_indexed').value = '1';
+
+            // Show location badge if available
+            if (location && location !== '—') {
+                document.getElementById('m-location-text').textContent = location;
+                document.getElementById('m-location-badge').style.display = 'flex';
+            }
+
+            // Clear lookup message
+            document.getElementById('lookup-msg').style.display = 'none';
+
+            openSheet('sheet-add-record');
+        });
+    });
 }
 
 document.getElementById('search-records').addEventListener('input', function() {
@@ -707,8 +774,24 @@ function luColor(val) {
 
 function renderInspections(data) {
     const list = document.getElementById('verify-list');
-    if (!data.length) { list.innerHTML = `<div class="empty-state"><i data-lucide="search-x"></i><p>No records found.</p></div>`; lucide.createIcons(); return; }
-    list.innerHTML = data.map((f, i) => {
+    if (!data.length) {
+        list.innerHTML = `
+        <div class="empty-state"><i data-lucide="search-x"></i><p>No records found.</p></div>
+        <div class="rec-card action-card">
+            <div style="padding:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+                <i data-lucide="plus" style="width:28px;height:28px;color:var(--accent);"></i>
+                <span style="font-weight:700;color:var(--accent);font-size:14px;">Log Field Inspection</span>
+            </div>
+        </div>`;
+        lucide.createIcons();
+        list.querySelector('.action-card').addEventListener('click', () => {
+            document.getElementById('m-app-search').value = '';
+            renderAppOptions('');
+            openSheet('sheet-log-inspect');
+        });
+        return;
+    }
+    let html = data.map((f, i) => {
         const inspected = f.inspection_status === 'inspected';
         const contravening = f.contravening;
         const statusBadge = inspected
@@ -741,7 +824,20 @@ function renderInspections(data) {
             </div>
         </div>`;
     }).join('');
+    html += `
+    <div class="rec-card action-card">
+        <div style="padding:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+            <i data-lucide="plus" style="width:28px;height:28px;color:var(--accent);"></i>
+            <span style="font-weight:700;color:var(--accent);font-size:14px;">Log Field Inspection</span>
+        </div>
+    </div>`;
+    list.innerHTML = html;
     lucide.createIcons();
+    list.querySelector('.action-card').addEventListener('click', () => {
+        document.getElementById('m-app-search').value = '';
+        renderAppOptions('');
+        openSheet('sheet-log-inspect');
+    });
 }
 
 document.getElementById('search-verify').addEventListener('input', function() {

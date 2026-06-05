@@ -913,11 +913,19 @@ $(function() {
                 name: 'transaction_date',
                 render: function(data) {
                     return data && data !== '—'
-                        ? `<span class="font-mono text-slate-600 text-xs">${data}</span>`
+                        ? `<span class="font-mono text-slate-700 text-xs font-bold">${data}</span>`
                         : '<span class="text-slate-300">—</span>';
                 }
             },
-            { data: 'date_captured', name: 'date_captured' },
+            {
+                data: 'date_captured',
+                name: 'date_captured',
+                render: function(data) {
+                    return data && data !== '—'
+                        ? `<span class="font-mono text-slate-700 text-xs font-bold">${data}</span>`
+                        : '<span class="text-slate-300">—</span>';
+                }
+            },
             {
                 data: 'source_table',
                 name: 'source_table',

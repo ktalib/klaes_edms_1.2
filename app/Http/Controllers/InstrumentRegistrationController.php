@@ -1814,11 +1814,18 @@ class InstrumentRegistrationController extends Controller
             $stGroups = $this->buildSTGroups($approvedSubapplications, $approvedMotherApplications);
 
             // Sort by captured_date descending THEN reg_date descending
+            // For ST Deeds, prioritize registered instruments first
             $allInstrumentsSorted = $allInstruments->sortByDesc(function ($item) {
-                return [
-                    $item->captured_date ?? '',
-                    $item->reg_date ?? ''
-                ];
+                return $isStDeeds
+                    ? [
+                        $item->status === 'registered' ? 1 : 0,
+                        $item->captured_date ?? '',
+                        $item->reg_date ?? ''
+                    ]
+                    : [
+                        $item->captured_date ?? '',
+                        $item->reg_date ?? ''
+                    ];
             });
 
             // Limit initial view load to prevent DOM overload, but keep full data for JS

@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\LandUseType;
+// LandUseType replaced by klas.dbo.land_uses direct query
 use App\Models\SpaApplication;
 use App\Models\SpaFieldData;
 use App\Models\SpaNotice;
@@ -22,43 +22,111 @@ class SpecialAssignmentController extends Controller
 
     public function landRecords(Request $request)
     {
-        if ($request->ajax()) {
-            $query = SpaApplication::query()->orderByDesc('created_at');
+        if ($request->ajax() || $request->input('ajax')) {
+            $search = $request->input('search.value', $request->input('search', ''));
+            $start  = (int) $request->input('start', 0);
+            $length = (int) $request->input('length', 10);
 
-            if ($request->boolean('exclude_inspected')) {
-                $usedIds = SpaFieldData::pluck('spa_application_id')->unique();
-                $query->whereNotIn('id', $usedIds);
+            $base = DB::connection('sqlsrv')
+                ->table('file_indexings as fi')
+                ->leftJoin('fileNumber as fn', 'fn.tracking_id', '=', 'fi.tracking_id')
+                ->leftJoin('spa_applications as spa', 'spa.file_number', '=', 'fi.file_number')
+                ->whereNotNull('fi.file_number')
+                ->where('fi.file_number', 'not like', 'DCIV%')
+                ->where('fi.file_number', 'not like', 'DC/%')
+                ->select(
+                    'fi.id as file_indexing_id', 'fi.file_number', 'fi.land_use_type',
+                    'fi.location', 'fi.district', 'fi.lga', 'fi.phone', 'fi.tracking_id',
+                    'fi.current_holder', 'fn.FileName as file_title',
+                    'spa.id as spa_id', 'spa.owner_name as spa_owner', 'spa.status as spa_status',
+                    'spa.existing_use', 'spa.created_at as spa_created_at'
+                );
+
+            if ($search) {
+                $base->where(function($q) use ($search) {
+                    $q->where('fi.file_number', 'like', '%'.$search.'%')
+                      ->orWhere('fn.FileName', 'like', '%'.$search.'%')
+                      ->orWhere('fi.location', 'like', '%'.$search.'%');
+                });
             }
 
-            $total = $query->count();
-            $data  = $query->skip($request->input('start', 0))
-                           ->take($request->input('length', 10))
-                           ->get()
-                           ->map(function ($a, $i) use ($request) {
-                               return [
-                                   'DT_RowIndex' => $request->input('start', 0) + $i + 1,
-                                   'id'          => $a->id,
-                                   'file_number' => $a->file_number ?? '—',
-                                   'owner_name'  => $a->owner_name ?? '—',
-                                   'phone'       => $a->phone ?? '—',
-                                   'location'    => $a->location ?? '—',
-                                   'land_use_type' => $a->land_use_type ?? '',
-                                   'proposed_use'  => $a->proposed_use  ?? '',
-                                   'existing_use'  => $a->existing_use  ?? '',
-                                   'status'        => $a->status,
-                                   'created_at'  => $a->created_at?->format('d/m/Y') ?? '—',
-                                   'action'      => '<div class="relative inline-block">'
-                                       . '<button class="btn-lr-toggle p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent hover:border-gray-200 transition-colors">'
-                                       . '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>'
-                                       . '</button>'
-                                       . '<div class="lr-dropdown hidden absolute right-0 top-full z-50 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">'
-                                       . '<button class="btn-lr-view w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2" data-id="'.$a->id.'"><svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>View</button>'
-                                       . '<button class="btn-lr-edit w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2" data-id="'.$a->id.'" data-record=\''.e(json_encode(['file_number'=>$a->file_number,'owner_name'=>$a->owner_name,'phone'=>$a->phone,'location'=>$a->location,'land_use_type'=>$a->land_use_type,'proposed_use'=>$a->proposed_use,'existing_use'=>$a->existing_use,'status'=>$a->status])).'\'><svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Edit</button>'
-                                       . '<button class="btn-lr-template w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2" data-tpl=\''.e(json_encode(['file_number'=>$a->file_number,'owner_name'=>$a->owner_name,'location'=>$a->location,'land_use_type'=>$a->land_use_type,'proposed_use'=>$a->proposed_use,'existing_use'=>$a->existing_use])).'\'><svg class="w-3.5 h-3.5 text-[rgb(186,191,12)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Field Template</button>'
-                                       . '<button class="btn-lr-delete w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2" data-id="'.$a->id.'" data-file="'.e($a->file_number ?? '').'"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>Delete</button>'
-                                       . '</div></div>',
-                               ];
-                           });
+            if ($request->boolean('exclude_inspected')) {
+                $usedFileNos = SpaApplication::whereIn('id', SpaFieldData::pluck('spa_application_id'))->pluck('file_number');
+                $base->whereNotIn('fi.file_number', $usedFileNos);
+            }
+
+            $total = $base->count();
+            $rows  = $base->orderByDesc('fi.created_at')->skip($start)->take($length)->get();
+
+            $data = $rows->map(function ($r, $i) use ($start) {
+                $hasSpa = !is_null($r->spa_id);
+
+                // Resolve owner name
+                $ownerName = $r->spa_owner ?? null;
+                if (!$ownerName && $r->file_title)    $ownerName = $r->file_title;
+                if (!$ownerName && $r->current_holder) {
+                    $h = json_decode($r->current_holder, true);
+                    if (is_array($h)) {
+                        $f = $h[0] ?? $h;
+                        $n = trim(($f['title']??'').' '.($f['first_name']??'').' '.($f['surname']??''));
+                        if (!$n) $n = $f['corporate_name'] ?? '';
+                        $ownerName = $n ?: null;
+                    }
+                }
+                $ownerName = $ownerName ?: '—';
+
+                // Contravention: Applied vs Prevailing
+                $applied    = strtoupper(trim($r->land_use_type ?? ''));
+                $prevailing = strtoupper(trim($r->existing_use  ?? ''));
+                $contravening = $applied && $prevailing && $applied !== $prevailing;
+
+                // Contravention badge
+                $contravBadge = ($contravening)
+                    ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200">⚠ Yes</span>'
+                    : ($applied && $prevailing ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-200">✓ No</span>' : '<span class="text-gray-400 text-xs">—</span>');
+
+                $prefill = e(json_encode([
+                    'file_number'      => $r->file_number,
+                    'owner_name'       => $ownerName,
+                    'phone'            => $r->phone ?? '',
+                    'location'         => $r->location ?? '',
+                    'land_use_type'    => $r->land_use_type ?? '',
+                    'file_indexing_id' => $r->file_indexing_id,
+                    'tracking_id'      => $r->tracking_id ?? '',
+                ]));
+
+                if ($hasSpa) {
+                    $sm = ['open'=>'bg-blue-100 text-blue-700','in_progress'=>'bg-amber-100 text-amber-700','approved'=>'bg-green-100 text-green-700','certificate_issued'=>'bg-purple-100 text-purple-700','closed'=>'bg-gray-100 text-gray-500'];
+                    $sb = '<span class="px-2 py-0.5 rounded-full text-xs font-medium '.($sm[$r->spa_status??'']??'bg-gray-100 text-gray-500').'">'.($r->spa_status??'—').'</span>';
+                    $action = '<div class="relative inline-block">'
+                        .'<button class="btn-lr-toggle p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent hover:border-gray-200 transition-colors"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>'
+                        .'<div class="lr-dropdown hidden absolute right-0 top-full z-50 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">'
+                        .'<button class="btn-lr-edit w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2" data-id="'.$r->spa_id.'" data-record=\''.e(json_encode(['file_number'=>$r->file_number,'owner_name'=>$ownerName,'phone'=>$r->phone??'','location'=>$r->location??'','land_use_type'=>$r->land_use_type??'','existing_use'=>$r->existing_use??'','status'=>$r->spa_status??'open'])).'\'><svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Edit SPA</button>'
+                        .'<button class="btn-lr-template w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2" data-tpl=\''.e(json_encode(['file_number'=>$r->file_number,'owner_name'=>$ownerName,'location'=>$r->location??'','land_use_type'=>$r->land_use_type??'','existing_use'=>$r->existing_use??''])).'\'><svg class="w-3.5 h-3.5 text-[rgb(186,191,12)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Field Template</button>'
+                        .'<button class="btn-lr-delete w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2" data-id="'.$r->spa_id.'" data-file="'.e($r->file_number??'').'"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>Remove SPA</button>'
+                        .'</div></div>';
+                } else {
+                    $sb = '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400">Not added</span>';
+                    $action = '<button class="btn-lr-add-spa inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white rounded-lg hover:opacity-90" style="background:rgb(186,191,12);white-space:nowrap;" data-prefill=\''.$prefill.'\'>'
+                        .'<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add to SPA</button>';
+                }
+
+                return [
+                    'DT_RowIndex'   => $start + $i + 1,
+                    'id'            => $r->spa_id,
+                    'file_number'   => $r->file_number ?? '—',
+                    'owner_name'    => $ownerName,
+                    'phone'         => $r->phone ?? '—',
+                    'location'      => $r->location ?? '—',
+                    'land_use_type' => $r->land_use_type ?? '',
+                    'existing_use'  => $r->existing_use  ?? '',
+                    'contravention' => $contravBadge,
+                    'status'        => $sb,
+                    'status_raw'    => $hasSpa ? ($r->spa_status ?? 'open') : 'not_added',
+                    'created_at'    => $hasSpa ? (\Carbon\Carbon::parse($r->spa_created_at)->format('d/m/Y')) : '—',
+                    'action'        => $action,
+                ];
+            });
 
             return response()->json([
                 'draw'            => intval($request->input('draw')),
@@ -71,14 +139,28 @@ class SpecialAssignmentController extends Controller
         $PageTitle       = 'Special Assignment – Land Records';
         $PageDescription = 'Manage and browse land records under special assignment.';
         $stats = [
-            'total'       => SpaApplication::count(),
+            'total'       => DB::connection('sqlsrv')->table('file_indexings')->whereNotNull('file_number')->where('file_number','not like','DCIV%')->where('file_number','not like','DC/%')->count(),
             'open'        => SpaApplication::where('status', 'open')->count(),
             'in_progress' => SpaApplication::where('status', 'in_progress')->count(),
         ];
 
-        $landUseTypes = LandUseType::where('is_active', 1)->orderBy('name')->pluck('name');
+        $landUseTypes = DB::connection('sqlsrv')->table('klas.dbo.land_uses')->orderBy('landuse')->pluck('landuse');
 
         return view('special_assignment.land_records.index', compact('PageTitle', 'PageDescription', 'stats', 'landUseTypes'));
+    }
+
+    public function searchFileIndexings(Request $request)
+    {
+        $q = trim($request->input('q', ''));
+        if (strlen($q) < 2) return response()->json([]);
+        $results = DB::connection('sqlsrv')
+            ->table('file_indexings as fi')
+            ->leftJoin('fileNumber as fn', 'fn.tracking_id', '=', 'fi.tracking_id')
+            ->where('fi.file_number', 'like', '%'.$q.'%')
+            ->select('fi.file_number', 'fi.land_use_type', 'fi.location', 'fn.FileName as file_title')
+            ->orderBy('fi.file_number')->limit(20)->get()
+            ->map(fn($r) => ['file_number'=>$r->file_number,'file_title'=>$r->file_title??'','land_use_type'=>$r->land_use_type??'','location'=>$r->location??'']);
+        return response()->json($results);
     }
 
     public function fieldData(Request $request)
@@ -444,7 +526,7 @@ class SpecialAssignmentController extends Controller
                 ];
             });
 
-        $landUseTypes = LandUseType::where('is_active', 1)->orderBy('name')->pluck('name');
+        $landUseTypes = DB::connection('sqlsrv')->table('klas.dbo.land_uses')->orderBy('landuse')->pluck('landuse');
 
         return view('special_assignment.mobile', compact('mapPoints', 'landUseTypes'));
     }
@@ -1046,7 +1128,7 @@ class SpecialAssignmentController extends Controller
             'password'   => 'required|string|min:6',
         ]);
 
-        $fieldType = filter_var($credentials['identifier'], FILTER_VALIDATE_EMAIL) ? 'email' : 'name';
+        $fieldType = filter_var($credentials['identifier'], FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
 
         if (auth()->attempt([$fieldType => $credentials['identifier'], 'password' => $credentials['password']], $request->boolean('remember'))) {
             $request->session()->regenerate();
@@ -1054,6 +1136,14 @@ class SpecialAssignmentController extends Controller
         }
 
         return back()->withInput($request->only('identifier'))->withErrors(['error' => 'Invalid credentials.']);
+    }
+
+    public function mobileLogout(Request $request)
+    {
+        auth()->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        return redirect()->route('special-assignment.mobile.login');
     }
 
     public function showForgotPassword()

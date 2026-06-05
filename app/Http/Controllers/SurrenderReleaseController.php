@@ -94,7 +94,7 @@ class SurrenderReleaseController extends Controller
                 'party_4_name as party_4',
                 'property_location as location',
                 'created_at as date_captured',
-                DB::raw("TRY_CONVERT(DATE, reg_date) as transaction_date"),
+                DB::raw("TRY_CONVERT(DATETIME, reg_date) as transaction_date"),
                 DB::raw("'Instrument Capture' as source_table")
             ])
             ->where($baseWhere)
@@ -113,7 +113,7 @@ class SurrenderReleaseController extends Controller
                 DB::raw("NULL as party_4"),
                 'location',
                 'created_at as date_captured',
-                DB::raw("TRY_CONVERT(DATE, deeds_date) as transaction_date"),
+                DB::raw("TRY_CONVERT(DATETIME, deeds_date) as transaction_date"),
                 DB::raw("'Property Records' as source_table")
             ])
             ->where($baseWhere)
@@ -132,7 +132,7 @@ class SurrenderReleaseController extends Controller
                 'party_4',
                 'location',
                 'created_at as date_captured',
-                DB::raw("TRY_CONVERT(DATE, deeds_date) as transaction_date"),
+                DB::raw("TRY_CONVERT(DATETIME, deeds_date) as transaction_date"),
                 DB::raw("'File History Staging' as source_table")
             ])
             ->where($baseWhere)
@@ -177,7 +177,7 @@ class SurrenderReleaseController extends Controller
             })
             ->editColumn('transaction_date', function ($row) {
                 try {
-                    return $row->transaction_date ? Carbon::parse($row->transaction_date)->format('Y-m-d') : '—';
+                    return $row->transaction_date ? Carbon::parse($row->transaction_date)->format('Y-m-d H:i') : '—';
                 } catch (\Exception $e) {
                     return $row->transaction_date ?? '—';
                 }

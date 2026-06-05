@@ -68,6 +68,7 @@
             <div class="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                 <h2 class="text-lg font-semibold text-slate-800">Records Ready for ToT Generation</h2>
                 <div class="flex items-center gap-3">
+                    <span class="text-sm text-slate-600">Showing {{ $records->count() }} of {{ $records->total() }} records</span>
                     <div class="flex items-center gap-2">
                         <input class="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" type="checkbox" id="selectAll">
                         <label class="text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer" for="selectAll">Select All</label>
@@ -84,11 +85,11 @@
                                 <th class="pb-4 font-semibold whitespace-nowrap">OP Owner (Current)</th>
                                 <th class="pb-4 font-semibold text-center whitespace-nowrap">Status</th>
                                 <th class="pb-4 font-semibold whitespace-nowrap">R of O Owner (Staged)</th>
-                                <th class="pb-4 font-semibold text-right whitespace-nowrap">Property ID</th>
+                                
                             </tr>
                         </thead>
                         <tbody class="text-slate-600 text-sm">
-                            @forelse($records as $record)
+                            @forelse($records->items() as $record)
                             <tr class="hover:bg-slate-50 transition-colors border-b border-slate-100 group">
                                 <td class="py-4 align-middle">
                                     <input class="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 row-checkbox" type="checkbox" value="{{ $record->id }}">
@@ -112,9 +113,7 @@
                                         <span class="font-bold text-amber-900 block truncate max-w-[240px]" title="{{ $record->ro_name }}">{{ $record->ro_name }}</span>
                                     </div>
                                 </td>
-                                <td class="py-4 text-right align-middle">
-                                    <span class="font-mono text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg whitespace-nowrap">{{ $record->prop_id }}</span>
-                                </td>
+                              
                             </tr>
                             @empty
                             <tr>
@@ -134,82 +133,26 @@
                 </div>
             </div>
         </div>
-    </div>
-</div>
+
+        <!-- Pagination -->
+        <div class="flex justify-between items-center mt-6">
+            <p class="text-sm text-slate-600">Total: {{ $records->total() }} records</p>
+            <div>
+                {{ $records->links() }}
+            </div>
+        </div>
 
 @push('scripts')
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
-
-<style>
-    /* DataTables Overrides to match SLTR theme */
-    .dataTables_wrapper .dataTables_length select {
-        background-color: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 0.5rem;
-        padding: 0.25rem 2rem 0.25rem 0.75rem;
-        font-size: 0.875rem;
-    }
-    .dataTables_wrapper .dataTables_filter input {
-        background-color: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 0.75rem;
-        padding: 0.5rem 1rem;
-        font-size: 0.875rem;
-        margin-left: 0.5rem;
-        min-width: 300px;
-    }
-    .dataTables_wrapper .dataTables_info {
-        color: #64748b;
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-top: 1rem;
-    }
-    .dataTables_wrapper .dataTables_paginate {
-        margin-top: 1rem;
-    }
-    .dataTables_wrapper .paginate_button {
-        padding: 0.25rem 0.75rem !important;
-        border-radius: 0.5rem !important;
-        border: 1px solid #f1f5f9 !important;
-        background: white !important;
-        font-size: 0.75rem !important;
-        font-weight: 700 !important;
-        margin: 0 0.25rem !important;
-    }
-    .dataTables_wrapper .paginate_button.current {
-        background: #2563eb !important;
-        color: white !important;
-        border-color: #2563eb !important;
-    }
-</style>
-
 <script>
 $(document).ready(function() {
-    // Initialize DataTables
-    const table = $('#totStagingTable').DataTable({
-        pageLength: 25,
-        dom: '<"flex justify-between items-center mb-4"lf>rt<"flex justify-between items-center mt-4"ip>',
-        language: {
-            search: "",
-            searchPlaceholder: "Search Intelligence Data...",
-            lengthMenu: "Show _MENU_ records",
-        },
-        columnDefs: [
-            { orderable: false, targets: [0, 3] }
-        ]
-    });
-
     const selectAll = document.getElementById('selectAll');
     const btnGenerate = document.getElementById('btnGenerate');
     const btnIgnore = document.getElementById('btnIgnore');
 
-    // Select All (DataTables aware)
+    // Select All
     if (selectAll) {
         selectAll.addEventListener('change', function() {
-            const rows = table.rows({ search: 'applied' }).nodes();
-            $('input.row-checkbox', rows).prop('checked', this.checked);
+            $('input.row-checkbox').prop('checked', this.checked);
         });
     }
 
@@ -217,7 +160,7 @@ $(document).ready(function() {
     const executeAction = async (action, ids) => {
         const route = action === 'generate' ? '{{ route("maintenance.tot.generate") }}' : '{{ route("maintenance.tot.ignore") }}';
         const msg = action === 'generate' ? `Execute ToT generation for ${ids.length} records?` : `Archive ${ids.length} records?`;
-        
+
         const confirmResult = await Swal.fire({
             title: 'Confirm Action',
             text: msg,
@@ -246,7 +189,7 @@ $(document).ready(function() {
                 body: JSON.stringify({ ids: ids })
             });
             const result = await response.json();
-            
+
             if (result.success) {
                 Swal.fire({
                     icon: 'success',
@@ -270,7 +213,7 @@ $(document).ready(function() {
 
     btnGenerate.addEventListener('click', () => {
         const ids = [];
-        table.rows().nodes().to$().find('input.row-checkbox:checked').each(function() {
+        $('input.row-checkbox:checked').each(function() {
             ids.push($(this).val());
         });
         if (!ids.length) return Swal.fire('No Selection', 'Please select at least one record to generate.', 'info');
@@ -279,7 +222,7 @@ $(document).ready(function() {
 
     btnIgnore.addEventListener('click', () => {
         const ids = [];
-        table.rows().nodes().to$().find('input.row-checkbox:checked').each(function() {
+        $('input.row-checkbox:checked').each(function() {
             ids.push($(this).val());
         });
         if (!ids.length) return Swal.fire('No Selection', 'Please select at least one record to archive.', 'info');

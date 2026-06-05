@@ -465,19 +465,19 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Application Page No.</label>
-                            <input type="number" id="f-page_application" value="1" min="1"
+                            <input type="number" id="f-page_application"  min="1"
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition focus:bg-white text-sm font-medium"
                                 placeholder="e.g. 1">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Survey Report Page No.</label>
-                            <input type="number" id="f-page_survey" value="9" min="1"
+                            <input type="number" id="f-page_survey"  min="1"
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition focus:bg-white text-sm font-medium"
                                 placeholder="e.g. 9">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Planning Page No.</label>
-                            <input type="number" id="f-page_planning" value="17" min="1"
+                            <input type="number" id="f-page_planning"  min="1"
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition focus:bg-white text-sm font-medium"
                                 placeholder="e.g. 17">
                         </div>

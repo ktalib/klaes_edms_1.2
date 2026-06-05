@@ -524,7 +524,7 @@ System') }}
                         </div>
                         <div class="bg-white/10 rounded-lg p-2 text-center">
                             <div class="text-base font-bold text-white" id="fs-cadastral-commissioned"><span class="loading-shimmer">…</span></div>
-                            <div class="text-[10px] text-white/70 mt-0.5">Commissioned</div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Matched</div>
                         </div>
                     </div>
                 </div>
@@ -538,12 +538,12 @@ System') }}
                     </div>
                     <div class="grid grid-cols-2 gap-1.5 relative z-10">
                         <div class="bg-white/10 rounded-lg p-2 text-center">
-                            <div class="text-base font-bold text-white" id="fs-st-indexed"><span class="loading-shimmer">…</span></div>
-                            <div class="text-[10px] text-white/70 mt-0.5">Indexed</div>
-                        </div>
-                        <div class="bg-white/10 rounded-lg p-2 text-center">
                             <div class="text-base font-bold text-white" id="fs-st-commissioned"><span class="loading-shimmer">…</span></div>
                             <div class="text-[10px] text-white/70 mt-0.5">Commissioned</div>
+                        </div>
+                        <div class="bg-white/10 rounded-lg p-2 text-center">
+                            <div class="text-base font-bold text-white" id="fs-st-indexed"><span class="loading-shimmer">…</span></div>
+                            <div class="text-[10px] text-white/70 mt-0.5">Indexed</div>
                         </div>
                     </div>
                 </div>

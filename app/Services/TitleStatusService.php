@@ -59,10 +59,10 @@ class TitleStatusService
     }
 
     /**
-     * Template: "[Status type] was initiated by [Ministry | Allottee name] on [Time/Date] due to [Reason]"
-     * When initiatedBy === 'Allottee', the actual holder name is substituted.
+     * Template: "[Status type] was initiated by [initiator] for File [file_no] on [Time/Date] due to [Reason]"
+     * Applicant/Allottee get the holder name with role suffix; Ministry/Court Order render literally.
      */
-    public function generateRemark(string $titleType, string $initiatedBy, string $reason, string $applicantName = ''): string
+    public function generateRemark(string $titleType, string $initiatedBy, string $reason, string $applicantName = '', string $fileNo = ''): string
     {
         $statusType = self::TYPE_VERB[$titleType] ?? $titleType;
         $datetime   = now()->format('d/m/Y H:i');
@@ -78,7 +78,9 @@ class TitleStatusService
             $initiator = '[Ministry/Allottee]';
         }
 
-        return "{$statusType} was initiated by {$initiator} on {$datetime} due to {$reasonText}";
+        $fileRef = $fileNo !== '' ? " FileNo {$fileNo}" : '';
+
+        return "{$statusType}{$fileRef} was initiated by {$initiator} on {$datetime} due to {$reasonText}";
     }
 
     /**

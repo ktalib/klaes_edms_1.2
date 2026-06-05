@@ -186,35 +186,33 @@ class DashboardController extends Controller
 
                 $kangisIndexed      = (clone $fiBase('KANGIS'))
                     ->orWhere('registry', 'KANGIS Registry')->count();
-                $kangisCommissioned = $db->table('file_indexings')
-                    ->whereIn('registry', ['KANGIS', 'KANGIS Registry'])
-                    ->whereNotNull('kangis_fileno_resolved')
-                    ->where('kangis_fileno_resolved', '<>', '')
-                    ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
-                    ->count();
+                $kangisCommissioned = 0; // KANGIS commissioning not yet started
 
-                // 4b. Cadastral Indexed + Commissioned (from mls-file-no-matching)
+                // 4b. Cadastral Indexed + Commissioned
                 $cadastralIndexed      = $db->table('file_indexings')
                     ->where('is_corresponding_file', 1)
                     ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
                     ->count();
-                $cadastralCommissioned = $db->table('file_indexings')
-                    ->whereNotNull('corresponding_fileno')
-                    ->where('corresponding_fileno', '<>', '')
-                    ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+                $cadastralCommissioned = $db->table('fileNumber')
+                    ->where('cad_lands_matching', 1)
                     ->count();
 
                 // 5. ST Files
-                $stIndexed      = $db->table('st_file_numbers')->count();
-                $stCommissioned = $db->table('st_file_numbers')->whereNotNull('date_commissioned')->count();
+                $stIndexed      = $db->table('file_indexings')
+                    ->where('registry', 'like', 'st%')
+                    ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
+                    ->count();
+                $stCommissioned = $db->table('st_file_numbers')->count();
 
                 // 6. DCIV Files
                 $dcivIndexed      = (clone $fiBase('DCIV'))->count();
-                $dcivCommissioned = $db->table('dciv_file_no')->whereNotNull('commissioning_date')->count();
+                $dcivCommissioned = $db->table('dciv_file_no')
+                    ->where('year', '2026')
+                    ->count();
 
                 // 7. SLTR Files
                 $sltrIndexed      = (clone $fiBase('SLTR'))->count();
-                $sltrCommissioned = $db->table('sltr_recommendations')->whereNotNull('rofo_generated_at')->count();
+                $sltrCommissioned = 0; // SLTR commissioning not yet started
 
                 // 8. GKN Files (indexed = file_indexings where registry = 'Survey')
                 $gknIndexed      = $db->table('file_indexings')

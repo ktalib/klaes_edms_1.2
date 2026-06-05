@@ -233,6 +233,7 @@ function tsRefreshRemark() {
     const reason        = (document.getElementById('ts-reason')?.value         || '').trim();
     const applicantName = (document.getElementById('ts-applicant_name')?.value || '').trim();
     const fileTitle     = (document.getElementById('ts-file_title')?.value     || '').trim();
+    const fileNo        = (document.getElementById('ts-file_no')?.value        || '').trim();
 
     const verb = TS_TYPE_VERB[tsSelectedType] || tsSelectedType || '[Status type]';
 
@@ -246,6 +247,7 @@ function tsRefreshRemark() {
         initiator = '[Ministry/Allottee]';
     }
 
+    const fileRef    = fileNo ? ` FileNo ${fileNo}` : '';
     const reasonText = reason || '[Reason]';
 
     const now = new Date();
@@ -253,7 +255,7 @@ function tsRefreshRemark() {
     const datetime = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
     document.getElementById('ts-remark').value =
-        `${verb} was initiated by ${initiator} on ${datetime} due to ${reasonText}`;
+        `${verb}${fileRef} was initiated by ${initiator} on ${datetime} due to ${reasonText}`;
 }
 
 /* ────────────────── Edit ────────────────── */

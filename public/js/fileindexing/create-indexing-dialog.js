@@ -360,6 +360,10 @@
         fileNumber: null,
     };
 
+    // Guards against duplicate submissions (double-click, Enter + click,
+    // or a click landing while a previous request is still in flight).
+    let isSubmittingFileIndex = false;
+
     const editModeBannerState = {
         container: null,
         body: null,
@@ -4964,6 +4968,19 @@
             });
         }
 
+        // Always intercept native form submission. Without this, pressing Enter
+        // in any field triggers a synchronous POST to the page URL, which both
+        // bypasses the AJAX flow and leaves the browser on the POST request —
+        // refreshing then shows the "Confirm Form Resubmission" prompt and can
+        // insert a duplicate record. Routing every submit through the AJAX
+        // handler (which is itself re-entrancy guarded) prevents that entirely.
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                submitFileIndexingForm();
+            });
+        }
+
         const awaitingField = document.getElementById('awaiting-file-no');
         if (awaitingField) {
             awaitingField.addEventListener('input', function () {
@@ -5041,6 +5058,10 @@
     async function submitFileIndexingForm() {
         const form = document.getElementById('new-file-form');
         if (!form) return;
+
+        // Block re-entry while a save is already in progress so a second
+        // click / Enter press cannot fire a duplicate request.
+        if (isSubmittingFileIndex) return;
 
         // File Title required validation (covers file_title[] inputs and legacy #file-title)
         {
@@ -5652,6 +5673,8 @@
 
         const loadingIndicator = document.getElementById('grouping-loading-indicator');
 
+        isSubmittingFileIndex = true;
+
         fetch(endpoint, {
             method: httpMethod,
             headers: {
@@ -5826,6 +5849,7 @@
                 }
             })
             .finally(() => {
+                isSubmittingFileIndex = false;
                 if (createBtn) {
                     if (loadingIndicator) {
                         loadingIndicator.classList.add('hidden');

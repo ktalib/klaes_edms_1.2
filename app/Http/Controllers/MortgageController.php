@@ -63,7 +63,7 @@ class MortgageController extends Controller
                 'party_4_name as party_4',
                 'property_location as location',
                 'created_at as date_captured',
-                DB::raw("TRY_CONVERT(DATE, reg_date) as transaction_date"),
+                DB::raw("TRY_CONVERT(DATETIME, reg_date) as transaction_date"),
                 DB::raw("'Instrument Capture' as source_table")
             ])
             ->whereIn('instrument_type', ['Deed of Mortgage', 'Tripartite Mortgage'])
@@ -82,7 +82,7 @@ class MortgageController extends Controller
                 DB::raw("NULL as party_4"),
                 'location',
                 'created_at as date_captured',
-                DB::raw("TRY_CONVERT(DATE, deeds_date) as transaction_date"),
+                DB::raw("TRY_CONVERT(DATETIME, deeds_date) as transaction_date"),
                 DB::raw("'Property Records' as source_table")
             ])
             ->whereIn('instrument_type', ['Deed of Mortgage', 'Tripartite Mortgage'])
@@ -101,7 +101,7 @@ class MortgageController extends Controller
                 'party_4',
                 'location',
                 'created_at as date_captured',
-                DB::raw("TRY_CONVERT(DATE, deeds_date) as transaction_date"),
+                DB::raw("TRY_CONVERT(DATETIME, deeds_date) as transaction_date"),
                 DB::raw("'File History Staging' as source_table")
             ])
             ->whereIn('instrument_type', ['Deed of Mortgage', 'Tripartite Mortgage'])
@@ -123,6 +123,11 @@ class MortgageController extends Controller
             ->filterColumn('registration_particulars', function($q, $kw) {
                 $q->where('registration_particulars', 'like', "%$kw%");
             })
+            ->addColumn('associated_surrenders', function ($row) {
+                $propId = trim((string) ($row->prop_id ?? ''));
+                $fileNo = $row->file_number ?? '';
+                return $this->getAssociatedSurrenderReleases($fileNo, $propId);
+            })
             ->addColumn('timeline_count', function ($row) {
                 $propId = trim((string) ($row->prop_id ?? ''));
                 $fileNo = $row->file_number ?? '';
@@ -141,7 +146,7 @@ class MortgageController extends Controller
             })
             ->editColumn('transaction_date', function ($row) {
                 try {
-                    return $row->transaction_date ? Carbon::parse($row->transaction_date)->format('Y-m-d') : '—';
+                    return $row->transaction_date ? Carbon::parse($row->transaction_date)->format('Y-m-d H:i') : '—';
                 } catch (\Exception $e) {
                     return $row->transaction_date ?? '—';
                 }
@@ -311,6 +316,102 @@ class MortgageController extends Controller
         DB::connection('sqlsrv')->table($table)->where('id', $realId)->update($data);
 
         return response()->json(['success' => true, 'message' => 'Record updated successfully.']);
+    }
+
+    // -------------------------------------------------------------------------
+
+    protected function getAssociatedSurrenderReleases(?string $fileNumber, ?string $propId): array
+    {
+        if (empty($fileNumber) && empty($propId)) {
+            return [];
+        }
+
+        $connection = DB::connection('sqlsrv');
+        $srTypes = [
+            'Deed of Surrender and Release',
+            'Deed of Surrender & Release',
+            'Deed of Surrender, and Release',
+            'Surrender and Release',
+            'Surrender & Release',
+        ];
+
+        $srFilter = function($q) use ($srTypes) {
+            $q->whereIn('instrument_type', $srTypes)
+              ->orWhereRaw("LOWER(REPLACE(REPLACE(instrument_type, '&', 'and'), '  ', ' ')) IN (?, ?, ?)", [
+                  'deed of surrender and release',
+                  'deed of surrender & release',
+                  'deed of surrender, and release',
+              ]);
+        };
+        $notDeleted = function($q) { $q->whereNull('is_deleted')->orWhere('is_deleted', 0); };
+
+        $icQuery = $connection->table('instrument_capture')
+            ->select([
+                'id', 'prop_id',
+                DB::raw("COALESCE(mlsFNo, kangisFileNo, NewKANGISFileno, temp_fileno) as file_number"),
+                'registration_number as registration_particulars',
+                'instrument_type',
+                'party_1_name as party_1',
+                'party_2_name as party_2',
+                'party_3_name as party_3',
+                'property_location as location',
+                'created_at as date_captured',
+                DB::raw("'Instrument Capture' as source"),
+            ])
+            ->where($srFilter)->where($notDeleted);
+
+        $praQuery = $connection->table('pra')
+            ->select([
+                'id', 'prop_id',
+                DB::raw("COALESCE(mlsFNo, kangisFileNo, NewKANGISFileno, fileno) as file_number"),
+                DB::raw("CAST(ISNULL(regNo, '') AS NVARCHAR(MAX)) as registration_particulars"),
+                'instrument_type',
+                DB::raw("COALESCE(Surrenderor, Grantor) as party_1"),
+                DB::raw("COALESCE(Surrenderee, Grantee) as party_2"),
+                DB::raw("NULL as party_3"),
+                'location',
+                'created_at as date_captured',
+                DB::raw("'Property Records' as source"),
+            ])
+            ->where($srFilter)->where($notDeleted);
+
+        $fhsQuery = $connection->table('file_history_staging')
+            ->select([
+                'id', 'prop_id',
+                DB::raw("COALESCE(mlsFNo, kangisFileNo, NewKANGISFileno, fileno, temp_fileno) as file_number"),
+                DB::raw("CAST(ISNULL(regNo, '') AS NVARCHAR(MAX)) as registration_particulars"),
+                'instrument_type',
+                DB::raw("COALESCE(Surrenderor, Grantor) as party_1"),
+                DB::raw("COALESCE(Surrenderee, Grantee) as party_2"),
+                'party_3',
+                'location',
+                'created_at as date_captured',
+                DB::raw("'File History Staging' as source"),
+            ])
+            ->where($srFilter)->where($notDeleted);
+
+        // Apply file/prop filters per table
+        foreach ([
+            [$icQuery,  ['mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'temp_fileno']],
+            [$praQuery, ['mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'fileno']],
+            [$fhsQuery, ['mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'fileno', 'temp_fileno']],
+        ] as [$q, $fileColumns]) {
+            $q->where(function($sub) use ($fileNumber, $propId, $fileColumns) {
+                if (!empty($propId)) {
+                    $sub->where('prop_id', $propId);
+                }
+                if (!empty($fileNumber) && $fileNumber !== '—') {
+                    $method = empty($propId) ? 'where' : 'orWhere';
+                    $sub->{$method}(function($inner) use ($fileNumber, $fileColumns) {
+                        foreach ($fileColumns as $i => $col) {
+                            $i === 0 ? $inner->where($col, $fileNumber) : $inner->orWhere($col, $fileNumber);
+                        }
+                    });
+                }
+            });
+        }
+
+        return $icQuery->unionAll($praQuery)->unionAll($fhsQuery)->get()->toArray();
     }
 
     // -------------------------------------------------------------------------
