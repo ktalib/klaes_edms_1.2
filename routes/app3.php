@@ -528,6 +528,14 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/institutions/{id}/tokens', [PhsAdminController::class, 'allocateTokens'])->name('institutions.tokens');
         Route::post('/institutions/{id}/suspend', [PhsAdminController::class, 'suspend'])->name('institutions.suspend');
         Route::post('/institutions/{id}/activate', [PhsAdminController::class, 'activate'])->name('institutions.activate');
+
+        // Onboarding requests
+        Route::prefix('requests')->name('requests.')->group(function () {
+            Route::get('/', [PhsAdminController::class, 'onboardingRequests'])->name('index');
+            Route::get('{id}', [PhsAdminController::class, 'showRequest'])->name('show');
+            Route::post('{id}/approve', [PhsAdminController::class, 'approveRequest'])->name('approve');
+            Route::post('{id}/reject', [PhsAdminController::class, 'rejectRequest'])->name('reject');
+        });
     });
 
     // Activity Log Routes

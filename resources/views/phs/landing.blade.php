@@ -17,8 +17,8 @@
                     <a href="{{ route('phs.login') }}" class="inline-flex items-center justify-center rounded-md border border-gray-300 bg-transparent px-4 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50">
                         Sign In
                     </a>
-                    <a href="{{ route('phs.register') }}" class="inline-flex items-center justify-center rounded-md border-0 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-blue-700">
-                        Register
+                    <a href="{{ route('phs.request.form') }}" class="inline-flex items-center justify-center rounded-md border-0 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-blue-700">
+                        Request Access
                     </a>
                 </div>
                 
@@ -34,8 +34,8 @@
                     <a href="{{ route('phs.login') }}" class="block rounded-md border border-gray-300 bg-transparent px-4 py-2 text-center text-sm font-medium text-gray-700 transition-all hover:bg-gray-50">
                         Sign In
                     </a>
-                    <a href="{{ route('phs.register') }}" class="block rounded-md border-0 bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-blue-700">
-                        Register
+                    <a href="{{ route('phs.request.form') }}" class="block rounded-md border-0 bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-blue-700">
+                        Request Access
                     </a>
                 </div>
             </div>
@@ -188,7 +188,7 @@
             <h2 class="mb-4 text-2xl font-bold text-white sm:text-3xl md:text-4xl">
                 Ready to Transform Your Legal Search Process?
             </h2>
-            <a href="{{ route('phs.register') }}" class="inline-flex items-center rounded-lg bg-white px-6 font-semibold text-blue-600 transition hover:shadow-xl sm:px-8 sm:py-4 py-3 text-sm sm:text-base">
+            <a href="{{ route('phs.request.form') }}" class="inline-flex items-center rounded-lg bg-white px-6 font-semibold text-blue-600 transition hover:shadow-xl sm:px-8 sm:py-4 py-3 text-sm sm:text-base">
                 Start Your Journey
                 <i data-lucide="arrow-right" class="ml-2 h-5 w-5"></i>
             </a>
@@ -278,12 +278,12 @@ document.getElementById('mobile-menu-btn')?.addEventListener('click', function()
     restart();
 })();
 
-// Handle package button clicks to redirect to registration
+// Handle package button clicks to redirect to onboarding request
 document.querySelectorAll('.landing-package-btn').forEach(btn => {
     btn.addEventListener('click', function(e) {
         e.preventDefault();
         const name = this.dataset.name;
-        window.location.href = "{{ route('phs.register') }}?package=" + encodeURIComponent(name);
+        window.location.href = "{{ route('phs.request.form') }}?package=" + encodeURIComponent(name);
     });
 });
 </script>

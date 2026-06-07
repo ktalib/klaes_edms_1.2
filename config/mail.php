@@ -96,6 +96,9 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    /* Admin email address for onboarding notifications */
+    'admin_email' => env('MAIL_ADMIN_EMAIL', env('MAIL_FROM_ADDRESS')),
+
     /*
     |--------------------------------------------------------------------------
     | Markdown Mail Settings

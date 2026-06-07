@@ -3,11 +3,15 @@
 namespace App\Http\Controllers\Phs;
 
 use App\Http\Controllers\Controller;
+use App\Mail\PhsRequestApproved;
+use App\Mail\PhsRequestRejected;
 use App\Models\Phs\PhsInstitution;
+use App\Models\Phs\PhsOnboardingRequest;
 use App\Models\Phs\PhsTokenTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 
 /**
  * KLAES staff-facing administration of the PHS programme.
@@ -152,4 +156,79 @@ class PhsAdminController extends Controller
 
         return view('system-admin.phs.usage', compact('PageTitle', 'revenue', 'tokensSold', 'searchesRun', 'recentSearches'));
     }
+
+    public function onboardingRequests(Request $request)
+    {
+        $PageTitle = 'PHS — Onboarding Requests';
+        $statusFilter = $request->query('status');
+
+        $query = PhsOnboardingRequest::orderByDesc('created_at');
+
+        if ($statusFilter) {
+            $query->where('status', $statusFilter);
+        }
+
+        $requests = $query->get();
+
+        $statsByStatus = [
+            'pending' => PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_PENDING)->count(),
+            'payment_received' => PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_PAYMENT_RECEIVED)->count(),
+            'approved' => PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_APPROVED)->count(),
+            'activated' => PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_ACTIVATED)->count(),
+            'rejected' => PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_REJECTED)->count(),
+        ];
+
+        return view('system-admin.phs.onboarding-requests', compact('PageTitle', 'requests', 'statusFilter', 'statsByStatus'));
+    }
+
+    public function showRequest($id)
+    {
+        $request = PhsOnboardingRequest::findOrFail($id);
+        $PageTitle = 'Onboarding Request — ' . $request->organization_name;
+
+        return view('system-admin.phs.onboarding-request-show', compact('PageTitle', 'request'));
+    }
+
+    public function approveRequest(Request $request, $id)
+    {
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+
+        if ($onboardingRequest->status !== PhsOnboardingRequest::STATUS_PENDING &&
+            $onboardingRequest->status !== PhsOnboardingRequest::STATUS_PAYMENT_RECEIVED) {
+            return back()->with('error', 'Request cannot be approved in its current status.');
+        }
+
+        $onboardingRequest->generateActivationToken();
+
+        $onboardingRequest->update([
+            'status' => PhsOnboardingRequest::STATUS_APPROVED,
+            'approved_at' => now(),
+            'approved_by' => Auth::id(),
+        ]);
+
+        Mail::to($onboardingRequest->contact_email)
+            ->send(new PhsRequestApproved($onboardingRequest));
+
+        return back()->with('success', 'Request approved. Activation email sent to organization.');
+    }
+
+    public function rejectRequest(Request $request, $id)
+    {
+        $data = $request->validate([
+            'rejection_reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+
+        $onboardingRequest->update([
+            'status' => PhsOnboardingRequest::STATUS_REJECTED,
+            'rejection_reason' => $data['rejection_reason'],
+        ]);
+
+        Mail::to($onboardingRequest->contact_email)
+            ->send(new PhsRequestRejected($onboardingRequest));
+
+        return back()->with('success', 'Request rejected. Notification email sent to organization.');
+    }
 }
+

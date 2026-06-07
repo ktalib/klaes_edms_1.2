@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Phs;
 
 use App\Http\Controllers\Controller;
+use App\Mail\PhsRequestApproved;
 use App\Models\Phs\PhsInstitution;
 use App\Models\Phs\PhsMember;
+use App\Models\Phs\PhsOnboardingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -60,40 +62,77 @@ class PhsAuthController extends Controller
         if (Auth::guard('phs')->check()) {
             return redirect()->route('phs.dashboard');
         }
-        return view('phs.auth.register');
+        return redirect()->route('phs.request.form')
+            ->with('info', 'Please submit an onboarding request to get started.');
     }
 
     public function register(Request $request)
     {
-        $data = $request->validate([
-            'institution_name' => ['required', 'string', 'max:255'],
-            'institution_type' => ['required', 'in:bank,law_firm,corporate'],
-            'email' => ['required', 'email', 'max:255', 'unique:sqlsrv.phs_institutions,email', 'unique:sqlsrv.phs_members,email'],
-            'phone' => ['nullable', 'string', 'max:50'],
+        return redirect()->route('phs.request.form')
+            ->with('info', 'Please submit an onboarding request to get started.');
+    }
+
+    public function showRegisterWithToken($token)
+    {
+        if (Auth::guard('phs')->check()) {
+            return redirect()->route('phs.dashboard');
+        }
+
+        $onboardingRequest = PhsOnboardingRequest::where('activation_token', $token)
+            ->where('status', PhsOnboardingRequest::STATUS_APPROVED)
+            ->first();
+
+        if (!$onboardingRequest || !$onboardingRequest->canRegister()) {
+            return redirect()->route('phs.landing')
+                ->withErrors(['token' => 'Invalid or expired registration link. Please submit a new onboarding request.']);
+        }
+
+        return view('phs.auth.register-with-token', [
+            'onboardingRequest' => $onboardingRequest,
+            'token' => $token,
+        ]);
+    }
+
+    public function registerWithToken($token, Request $request)
+    {
+        $onboardingRequest = PhsOnboardingRequest::where('activation_token', $token)
+            ->where('status', PhsOnboardingRequest::STATUS_APPROVED)
+            ->first();
+
+        if (!$onboardingRequest || !$onboardingRequest->canRegister()) {
+            return redirect()->route('phs.landing')
+                ->withErrors(['token' => 'Invalid or expired registration link.']);
+        }
+
+        $validated = $request->validate([
             'password' => ['required', 'string', 'min:6', 'confirmed'],
         ]);
 
-        $member = DB::connection('sqlsrv')->transaction(function () use ($data) {
+        $member = DB::connection('sqlsrv')->transaction(function () use ($onboardingRequest, $validated) {
             $institution = PhsInstitution::create([
-                'name' => $data['institution_name'],
-                'type' => $data['institution_type'],
-                'email' => $data['email'],
-                'phone' => $data['phone'] ?? null,
+                'name' => $onboardingRequest->organization_name,
+                'type' => $onboardingRequest->organization_type,
+                'email' => $onboardingRequest->contact_email,
+                'phone' => $onboardingRequest->phone,
                 'token_balance' => 0,
                 'status' => 'active',
             ]);
 
             $member = $institution->members()->create([
-                'name' => $data['institution_name'] . ' Administrator',
-                'email' => $data['email'],
-                'password' => Hash::make($data['password']),
-                'job_title' => 'Administrator',
+                'name' => $onboardingRequest->contact_name,
+                'email' => $onboardingRequest->contact_email,
+                'password' => Hash::make($validated['password']),
+                'job_title' => $onboardingRequest->job_title ?? 'Administrator',
                 'user_type' => 'super_admin',
                 'access_role' => 'search_only',
                 'status' => 'active',
             ]);
 
-            // No signup bonus — the institution must purchase tokens before searching.
+            $onboardingRequest->update([
+                'status' => PhsOnboardingRequest::STATUS_ACTIVATED,
+                'created_phs_institution_id' => $institution->id,
+            ]);
+
             return $member;
         });
 
@@ -102,7 +141,7 @@ class PhsAuthController extends Controller
         $request->session()->regenerate();
 
         return redirect()->route('phs.dashboard')
-            ->with('status', 'Registration successful! Please purchase tokens to begin searching.');
+            ->with('status', 'Welcome! Your organization is now registered. Please purchase tokens to begin searching.');
     }
 
     public function logout(Request $request)

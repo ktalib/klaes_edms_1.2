@@ -7,6 +7,7 @@ use App\Http\Controllers\Phs\PhsDashboardController;
 use App\Http\Controllers\Phs\PhsSlipController;
 use App\Http\Controllers\Phs\PhsTokenController;
 use App\Http\Controllers\Phs\PhsOrganizationController;
+use App\Http\Controllers\Phs\PhsOnboardingController;
 
 /*
 |--------------------------------------------------------------------------
@@ -26,6 +27,14 @@ Route::prefix('phs')->name('phs.')->group(function () {
     Route::post('login', [PhsAuthController::class, 'login'])->name('login.submit');
     Route::get('register', [PhsAuthController::class, 'showRegister'])->name('register');
     Route::post('register', [PhsAuthController::class, 'register'])->name('register.submit');
+
+    // Onboarding request flow
+    Route::get('request', [PhsOnboardingController::class, 'showForm'])->name('request.form');
+    Route::post('request', [PhsOnboardingController::class, 'confirmPayment'])->name('request.confirm');
+    Route::post('request/submit', [PhsOnboardingController::class, 'submitRequest'])->name('request.submit');
+    Route::get('request/{id}/pending', [PhsOnboardingController::class, 'showPending'])->name('request.pending');
+    Route::get('register/{token}', [PhsAuthController::class, 'showRegisterWithToken'])->name('register.token');
+    Route::post('register/{token}', [PhsAuthController::class, 'registerWithToken'])->name('register.token.submit');
 
     // ---- Authenticated PHS members ----
     Route::middleware('auth:phs')->group(function () {

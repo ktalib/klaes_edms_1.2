@@ -19,6 +19,10 @@
                     </div>
                 </div>
                 <div class="flex flex-wrap gap-2">
+                    <a href="{{ route('system-admin.phs.requests.index') }}" class="inline-flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-bold text-sky-800 hover:bg-sky-100">
+                        <i data-lucide="user-plus" class="h-4 w-4"></i>
+                        Onboarding requests
+                    </a>
                     <a href="{{ route('system-admin.phs.invoices') }}" class="inline-flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-bold text-amber-800 hover:bg-amber-100">
                         <i data-lucide="receipt" class="h-4 w-4"></i>
                         Pending invoices
