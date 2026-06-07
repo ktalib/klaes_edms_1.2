@@ -62,7 +62,8 @@
                             <option value="{{ $option }}" @selected($limit == $option)>{{ $option }} rows</option>
                         @endforeach
                     </select>
-                    @if($url === 'land')
+                    {{-- land or dciv --}}
+                    @if($url === 'land' || $url === 'dciv')
                     <button type="button" onclick="tsOpenTypeSelect()"
                         class="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-blue-700 transition">
                         <i data-lucide="plus" class="w-4 h-4"></i>
@@ -208,7 +209,7 @@
                             <i data-lucide="shield-off" class="w-5 h-5 text-red-600"></i>
                         </div>
                         <div>
-                            <p class="font-semibold text-slate-800 text-sm">Revoke (CofO)</p>
+                            <p class="font-semibold text-slate-800 text-sm">Revocation (CofO)</p>
                             <p class="text-xs text-slate-500 mt-0.5">Existing Files</p>
                         </div>
                     </button>

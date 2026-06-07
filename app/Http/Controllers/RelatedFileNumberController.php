@@ -12,11 +12,34 @@ class RelatedFileNumberController extends Controller
     private const PER_PAGE_DEFAULT = 50;
     private const PER_PAGE_MAX = 200;
 
+    /**
+     * Noise patterns in related_fileno that indicate the value is not a clean
+     * single file number — annotations like "NOW WITHDRAW", ampersand-joined
+     * lists ("X & Y"), or free-form commentary. These rows stay in the staging
+     * table but are hidden from the UI listing.
+     */
+    private const NOISE_PATTERNS = [
+        '%WITHDRAW%',
+        '% & %',
+        '% NOW %',
+        '% AND %',
+        '% NEW %',
+        '%REGISTERED%',
+        '%REGISERED%',
+        '% TO %',
+        '%PLOT%',
+        '%18TH JUNE 2007%',
+        '%REVOKED%',
+        '%REA-%',
+        '158%',
+        '%RES-19-%',
+        '%RES-RC-86-21-KNML03649%',
+    ];
+
     public function index(): View
     {
         $totals = DB::connection('sqlsrv')->selectOne(
-            "SELECT COUNT(*) AS total_rows FROM related_file_number
-             WHERE related_fileno NOT LIKE 'TEMP-%' AND related_fileno NOT LIKE 'TEMP%'"
+            $this->buildTotalsCountSql()
         );
 
         return view('related_file_number.index', [
@@ -35,7 +58,13 @@ class RelatedFileNumberController extends Controller
 
         $q = DB::connection('sqlsrv')->table('related_file_number')
             ->where('related_fileno', 'not like', 'TEMP-%')
-            ->where('related_fileno', 'not like', 'TEMP%');
+            ->where('related_fileno', 'not like', 'TEMP%')
+            ->whereNotIn('source_table', ['pic', 'dciv_file_no']);
+
+        // Hide rows where related_fileno carries noise / annotations
+        foreach (self::NOISE_PATTERNS as $pattern) {
+            $q->where('related_fileno', 'not like', $pattern);
+        }
 
         if ($search !== '') {
             $q->where(function ($w) use ($search) {
@@ -49,13 +78,22 @@ class RelatedFileNumberController extends Controller
 
         switch ($commentType) {
             case 'kangis':
-                $q->where('comment', 'like', 'KANGIS%');
+                $q->where('transaction_type', 'KANGIS Recertification');
                 break;
             case 'mlpp':
-                $q->where('comment', 'like', 'MINISTRY%');
+                $q->where('transaction_type', 'Land & Physical Planning Recertification');
+                break;
+            case 'merger':
+                $q->where('transaction_type', 'Merger');
+                break;
+            case 'subdivision':
+                $q->where('transaction_type', 'Subdivision');
+                break;
+            case 'change_of_purpose':
+                $q->where('transaction_type', 'Change of Purpose');
                 break;
             case 'none':
-                $q->whereNull('comment');
+                $q->whereNull('transaction_type');
                 break;
             // 'any' or '' = no filter
         }
@@ -66,8 +104,63 @@ class RelatedFileNumberController extends Controller
             ->forPage($page, $perPage)
             ->get([
                 'id', 'related_fileno', 'prop_id', 'source_table', 'source_id',
-                'file_number', 'file_title', 'party_2', 'location', 'comment', 'created_at',
+                'file_number', 'file_title', 'party_2', 'location', 'comment',
+                'transaction_type', 'created_at',
             ]);
+
+        // Look up the title for each related_fileno (by matching it against
+        // file_indexings.file_number, falling back to fileNumber tables).
+        // One batched query for the entire page.
+        $relatedFilenos = $rows->pluck('related_fileno')
+            ->map(fn ($v) => trim((string) $v))
+            ->filter()
+            ->unique()
+            ->values()
+            ->toArray();
+
+        $relatedTitleMap = [];
+        if (!empty($relatedFilenos)) {
+            $conn = DB::connection('sqlsrv');
+
+            // file_indexings: file_number -> file_title
+            $fi = $conn->table('file_indexings')
+                ->whereIn('file_number', $relatedFilenos)
+                ->whereNull('deleted_at')
+                ->whereNotNull('file_title')
+                ->select('file_number', 'file_title')
+                ->get();
+            foreach ($fi as $r) {
+                $relatedTitleMap[trim((string) $r->file_number)] = $r->file_title;
+            }
+
+            // Fallback: fileNumber -> FileName (only for rfns not yet matched)
+            $unmatched = array_values(array_diff($relatedFilenos, array_keys($relatedTitleMap)));
+            if (!empty($unmatched)) {
+                $fn = $conn->table('fileNumber')
+                    ->where(function ($q) use ($unmatched) {
+                        $q->whereIn('mlsfNo', $unmatched)
+                          ->orWhereIn('kangisFileNo', $unmatched)
+                          ->orWhereIn('NewKANGISFileNo', $unmatched);
+                    })
+                    ->whereNotNull('FileName')
+                    ->select('mlsfNo', 'kangisFileNo', 'NewKANGISFileNo', 'FileName')
+                    ->get();
+                foreach ($fn as $r) {
+                    foreach (['mlsfNo', 'kangisFileNo', 'NewKANGISFileNo'] as $col) {
+                        $val = trim((string) ($r->{$col} ?? ''));
+                        if ($val !== '' && in_array($val, $unmatched, true) && ! isset($relatedTitleMap[$val])) {
+                            $relatedTitleMap[$val] = $r->FileName;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Attach related_file_title to each row
+        foreach ($rows as $row) {
+            $key = trim((string) ($row->related_fileno ?? ''));
+            $row->related_file_title = $relatedTitleMap[$key] ?? null;
+        }
 
         return response()->json([
             'data' => $rows,
@@ -78,5 +171,18 @@ class RelatedFileNumberController extends Controller
                 'last_page' => max(1, (int) ceil($total / $perPage)),
             ],
         ]);
+    }
+
+    /**
+     * Build the SQL for the index header's Total Rows tile — must match the
+     * same exclusion set the API uses, so the count and the list agree.
+     */
+    private function buildTotalsCountSql(): string
+    {
+        $where = "related_fileno NOT LIKE 'TEMP-%' AND related_fileno NOT LIKE 'TEMP%' AND source_table NOT IN ('pic','dciv_file_no')";
+        foreach (self::NOISE_PATTERNS as $pattern) {
+            $where .= " AND related_fileno NOT LIKE " . "'" . str_replace("'", "''", $pattern) . "'";
+        }
+        return "SELECT COUNT(*) AS total_rows FROM related_file_number WHERE {$where}";
     }
 }

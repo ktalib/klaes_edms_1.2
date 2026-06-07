@@ -40,6 +40,12 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // PHS Portal (institutional SaaS) — authenticates PhsMember, separate from staff.
+        'phs' => [
+            'driver' => 'session',
+            'provider' => 'phs_members',
+        ],
     ],
 
     /*
@@ -63,6 +69,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => App\Models\User::class,
+        ],
+
+        'phs_members' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\Phs\PhsMember::class,
         ],
 
         // 'users' => [

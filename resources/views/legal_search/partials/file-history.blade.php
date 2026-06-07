@@ -392,7 +392,7 @@
                       <th style="min-width:140px;white-space:nowrap;">File No</th>
                       <th style="width:36px;">RW</th>
                       <th style="width:36px;">TW</th>
-                      <th style="text-align:left;">Instrument Type</th>
+                      <th style="text-align:left;">Instrument/Transaction Type</th>
                       <th style="text-align:left;">Party 1</th>
                       <th style="min-width:110px;">Party 2</th>
                       <th style="min-width:100px;">Party 3</th>
@@ -422,7 +422,7 @@
                       <th style="min-width:140px;white-space:nowrap;">File No</th>
                       <th style="width:36px;">RW</th>
                       <th style="width:36px;">TW</th>
-                      <th style="text-align:left;">Instrument Type</th>
+                      <th style="text-align:left;">Instrument/Transaction Type</th>
                       <th style="text-align:left;">Party 1</th>
                       <th style="min-width:110px;">Party 2</th>
                       <th style="min-width:100px;">Party 3</th>
@@ -452,7 +452,7 @@
                       <th style="min-width:140px;white-space:nowrap;">File No</th>
                       <th style="width:36px;">RW</th>
                       <th style="width:36px;">TW</th>
-                      <th style="text-align:left;">Instrument Type</th>
+                      <th style="text-align:left;">Instrument/Transaction Type</th>
                       <th style="text-align:left;">Party 1</th>
                       <th style="min-width:110px;">Party 2</th>
                       <th style="min-width:100px;">Party 3</th>
@@ -583,7 +583,7 @@
                   <th style="min-width:140px;white-space:nowrap;">File No</th>
                   <th style="min-width:60px;">Source</th>
                   <th style="min-width:70px;">Weight</th>
-                  <th style="min-width:120px;">Instrument Type</th>
+                  <th style="min-width:120px;">Instrument/Transaction Type</th>
                   <th style="min-width:110px;">Party 1</th>
                   <th style="min-width:110px;">Party 2</th>
                   <th style="min-width:100px;">Party 3</th>
@@ -632,7 +632,7 @@
                     <th style="min-width:70px;">Weight</th>
                     <th style="min-width:110px;">Party 1</th>
                     <th style="min-width:110px;">Party 2</th>
-                    <th style="min-width:120px;">Instrument Type</th>
+                    <th style="min-width:120px;">Instrument/Transaction Type</th>
                     <th style="min-width:80px;">Reg Particulars</th>
                     <th style="min-width:100px;">Transaction Date</th>
                     <th style="min-width:120px;max-width:200px;">Comments</th>
@@ -919,7 +919,7 @@
                 </select>
               </div>
               <div>
-                <label class="block text-xs font-medium text-gray-700 mb-1">Instrument Type</label>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Instrument/Transaction Type</label>
                 <select name="instrument_type_id" id="ls-caveat-instrument-type" class="form-select text-sm w-full">
                   <option value="">Loading…</option>
                 </select>

@@ -30,12 +30,15 @@
                         placeholder="related_fileno, file_number, title, party, comment" />
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-slate-600 mb-1">Comment</label>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Transaction Type</label>
                     <select id="rfn-comment-type" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300">
                         <option value="">All</option>
                         <option value="kangis">KANGIS Recertification</option>
-                        <option value="mlpp">MLPP Recertification</option>
-                        <option value="none">No comment</option>
+                        <option value="mlpp">Land &amp; Physical Planning Recertification</option>
+                        <option value="merger">Merger</option>
+                        <option value="subdivision">Subdivision</option>
+                        <option value="change_of_purpose">Change of Purpose</option>
+                        <option value="none">Untyped</option>
                     </select>
                 </div>
             </div>
@@ -45,11 +48,15 @@
                 <table class="w-full text-sm" id="rfn-table">
                     <thead class="bg-slate-50 text-slate-700 text-xs uppercase tracking-wide">
                         <tr>
-                            <th class="px-3 py-2 text-left">ID</th>
+                            <th class="px-3 py-2 text-left">S/N</th>
+                            <th class="px-3 py-2 text-left">Prop ID</th>
                             <th class="px-3 py-2 text-left whitespace-nowrap">Related File No</th>
+                            <th class="px-3 py-2 text-left">Related Title</th>
                             <th class="px-3 py-2 text-left whitespace-nowrap">Parent File</th>
-                            <th class="px-3 py-2 text-left">File Title</th>
+                            <th class="px-3 py-2 text-left">Parent Title</th>
+                            <th class="px-3 py-2 text-left whitespace-nowrap">Transaction Type</th>
                             <th class="px-3 py-2 text-left">Location</th>
+                            <th class="px-3 py-2 text-left">Source</th>
                             <th class="px-3 py-2 text-left">Comment</th>
                         </tr>
                     </thead>
@@ -111,25 +118,45 @@
         return v;
     };
 
-    const render = (rows) => {
+    const typeBadge = (t) => {
+        if (!t) return '<span class="text-slate-400 text-xs">-</span>';
+        const map = {
+            'KANGIS Recertification':                    'bg-orange-50 text-orange-700 border-orange-200',
+            'Land & Physical Planning Recertification': 'bg-amber-50 text-amber-700 border-amber-200',
+            'Merger':                                    'bg-purple-50 text-purple-700 border-purple-200',
+            'Subdivision':                               'bg-yellow-50 text-yellow-700 border-yellow-200',
+            'Change of Purpose':                         'bg-blue-50 text-blue-700 border-blue-200',
+        };
+        const cls = map[t] || 'bg-slate-50 text-slate-700 border-slate-200';
+        return `<span class="px-2 py-0.5 rounded-full text-[0.65rem] uppercase tracking-wide border ${cls}">${e(t)}</span>`;
+    };
+
+    const render = (rows, meta) => {
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-400">No results.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-8 text-center text-slate-400">No results.</td></tr>';
             return;
         }
-        tbody.innerHTML = rows.map(r => `
+        const startSn = ((meta.page || 1) - 1) * (meta.per_page || 1);
+        tbody.innerHTML = rows.map((r, idx) => `
             <tr class="hover:bg-orange-50/40">
-                <td class="px-3 py-2 text-xs text-slate-400 align-top">${r.id}</td>
+                <td class="px-3 py-2 text-xs text-slate-400 align-top">${startSn + idx + 1}</td>
+                <td class="px-3 py-2 align-top text-slate-500 font-mono text-xs">${e(r.prop_id || '-')}</td>
                 <td class="px-3 py-2 align-top whitespace-nowrap">${fileNumberCell(r.related_fileno)}</td>
+                <td class="px-3 py-2 align-top text-slate-700">${e(r.related_file_title || r.file_title || r.party_2 || '-')}</td>
                 <td class="px-3 py-2 align-top text-slate-700 whitespace-nowrap">${e(r.file_number || '-')}</td>
                 <td class="px-3 py-2 align-top text-slate-700">${e(r.file_title || r.party_2 || '-')}</td>
+                <td class="px-3 py-2 align-top whitespace-nowrap">${typeBadge(r.transaction_type)}</td>
                 <td class="px-3 py-2 align-top text-slate-500 max-w-xs truncate" title="${e(r.location || '')}">${e(r.location || '-')}</td>
+                <td class="px-3 py-2 align-top whitespace-nowrap">
+                    <span class="text-[0.65rem] uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${e(r.source_table || '-')}</span>
+                </td>
                 <td class="px-3 py-2 align-top ${commentClass(r.comment)}">${e(r.comment || '-')}</td>
             </tr>
         `).join('');
     };
 
     const load = async () => {
-        tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-400">Loading…</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-8 text-center text-slate-400">Loading…</td></tr>';
         const url = new URL(endpoint, window.location.origin);
         url.searchParams.set('page', page);
         url.searchParams.set('per_page', perSel.value);
@@ -139,8 +166,8 @@
         try {
             const res = await fetch(url, { headers: { Accept: 'application/json' } });
             const json = await res.json();
-            render(json.data || []);
             const meta = json.meta || {};
+            render(json.data || [], meta);
             lastPage = meta.last_page || 1;
             pageLbl.textContent = `${meta.page || 1} / ${lastPage}`;
             const from = ((meta.page - 1) * meta.per_page) + 1;
@@ -149,7 +176,7 @@
             prevBtn.disabled = (meta.page || 1) <= 1;
             nextBtn.disabled = (meta.page || 1) >= lastPage;
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-8 text-center text-red-500">Failed to load results.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-8 text-center text-red-500">Failed to load results.</td></tr>';
         }
     };
 

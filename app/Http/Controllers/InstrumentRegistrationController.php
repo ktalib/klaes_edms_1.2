@@ -1815,18 +1815,24 @@ class InstrumentRegistrationController extends Controller
 
             // Sort by captured_date descending THEN reg_date descending
             // For ST Deeds, prioritize registered instruments first
-            $allInstrumentsSorted = $allInstruments->sortByDesc(function ($item) {
-                return $isStDeeds
-                    ? [
-                        $item->status === 'registered' ? 1 : 0,
-                        $item->captured_date ?? '',
-                        $item->reg_date ?? ''
-                    ]
-                    : [
-                        $item->captured_date ?? '',
-                        $item->reg_date ?? ''
-                    ];
-            });
+            if ($isStDeeds) {
+                $allInstrumentsSorted = $allInstruments
+                    ->sortBy(function ($item) {
+                        return $item->status === 'registered' ? 0 : 1;
+                    })
+                    ->sortByDesc(function ($item) {
+                        return $item->captured_date ?? '';
+                    })
+                    ->sortByDesc(function ($item) {
+                        return $item->reg_date ?? '';
+                    });
+            } else {
+                $allInstrumentsSorted = $allInstruments->sortByDesc(function ($item) {
+                    return $item->captured_date ?? '';
+                })->sortByDesc(function ($item) {
+                    return $item->reg_date ?? '';
+                });
+            }
 
             // Limit initial view load to prevent DOM overload, but keep full data for JS
             $approvedApplications = $allInstrumentsSorted->take(50);

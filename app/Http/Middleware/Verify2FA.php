@@ -16,6 +16,10 @@ class Verify2FA
      */
     public function handle(Request $request, Closure $next)
     {
+        if ($request->is('phs*')) {
+            return $next($request);
+        }
+
         // Not authenticated => no need to check
         if (!Auth::check()) {
             return $next($request);

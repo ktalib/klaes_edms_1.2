@@ -445,7 +445,7 @@
         "S/N": i + 1,
         "Assignor": row.assignor,
         "Assignee": row.assignee,
-        "Instrument Type": row.instrumentType,
+        "Instrument/Transaction Type": row.instrumentType,
         "Date": formattedDate,
         "Reg. No.": `${i + 1}/${i + 1}/1`,
         "Size": row.size,
@@ -466,7 +466,7 @@
             <th class="col-sn">S/N</th>
             <th class="col-grantor">Assignor</th>
             <th class="col-grantee">Assignee</th>
-            <th class="col-instrument">Instrument Type</th>
+            <th class="col-instrument">Instrument/Transaction Type</th>
             <th class="col-date">Date</th>
             <th class="col-reg">Reg. No.</th>
             <th class="col-size">Size</th>
@@ -484,7 +484,7 @@
           <td>${row["S/N"]}</td>
           <td>${row["Assignor"]}</td>
           <td>${row["Assignee"]}</td>
-          <td>${row["Instrument Type"]}</td>
+          <td>${row["Instrument/Transaction Type"]}</td>
           <td>${row["Date"]}</td>
           <td>${row["Reg. No."]}</td>
           <td>${row["Size"]}</td>

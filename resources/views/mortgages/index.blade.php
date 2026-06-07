@@ -112,6 +112,7 @@
                                 <th class="px-4 py-4">Party 4</th>
                                 <th class="px-4 py-4">Location</th>
                                 <th class="px-4 py-4">Registration Date</th>
+                                <th class="px-4 py-4">Created By</th>
                                 <th class="px-4 py-4">Date Captured</th>
                                 <th class="px-4 py-4 text-center">Source</th>
                                 <th class="px-4 py-4 text-center rounded-tr-xl">Actions</th>
@@ -1120,6 +1121,13 @@ $(function() {
                     return data && data !== '—'
                         ? `<span class="font-mono text-slate-700 text-xs font-bold">${data}</span>`
                         : '<span class="text-slate-300">—</span>';
+                }
+            },
+            {
+                data: 'created_by',
+                name: 'created_by',
+                render: function(data) {
+                    return data ? `<span class="text-slate-600 text-xs">${data}</span>` : '<span class="text-slate-300">—</span>';
                 }
             },
             {

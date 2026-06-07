@@ -864,15 +864,15 @@ System') }}
                     </div>
 
                     <!-- Recent Applications Panel (live from API) -->
-                    <div class="lg:col-span-3 bg-white rounded-lg border-0 shadow-enhanced p-6">
-                        <div class="flex items-center justify-between mb-4">
+                    <div class="lg:col-span-3 bg-white rounded-lg border-0 shadow-enhanced p-6 flex flex-col">
+                        <div class="flex items-center justify-between mb-4 flex-shrink-0">
                             <div>
                                 <h3 class="text-xl font-semibold">Recent Applications</h3>
                                 <p class="text-gray-600">Latest applications in the system</p>
                             </div>
                             <button onclick="document.querySelector('[data-tab=applications]')?.click()" class="text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2 py-1 rounded">View All</button>
                         </div>
-                        <div class="space-y-3 max-h-[320px] overflow-y-auto" id="recent-apps-panel">
+                        <div class="space-y-3 flex-1 overflow-y-auto" id="recent-apps-panel" style="min-height:200px;">
                             <!-- Loading state -->
                             <div class="flex items-center justify-center py-8 text-gray-400" id="recent-apps-loading">
                                 <i data-lucide="loader-2" class="h-5 w-5 animate-spin mr-2"></i>
@@ -2641,7 +2641,6 @@ System') }}
                             <div class="flex-1 min-w-0">
                                 <div class="flex items-start justify-between gap-2">
                                     <p class="text-sm font-medium text-gray-800 truncate">${app.applicant}</p>
-                                    <span class="${sCls} px-2 py-0.5 text-xs rounded-full whitespace-nowrap">${sLbl}</span>
                                 </div>
                                 <div class="flex items-center gap-2 mt-1 flex-wrap">
                                     <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium border ${src.badge}">${src.label}</span>

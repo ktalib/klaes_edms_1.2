@@ -97,7 +97,7 @@
                           <th class="border border-gray-300 px-3 py-2 text-left font-bold bg-gray-200">Party 2</th>
                           <th class="border border-gray-300 px-3 py-2 text-left font-bold bg-gray-200">Party 3</th>
                           <th class="border border-gray-300 px-3 py-2 text-left font-bold bg-gray-200">Party 4</th>
-                          <th class="border border-gray-300 px-3 py-2 text-left font-bold bg-gray-200">Instrument Type</th>
+                          <th class="border border-gray-300 px-3 py-2 text-left font-bold bg-gray-200">Instrument/Transaction Type</th>
                           <th class="border border-gray-300 px-3 py-2 text-left font-bold bg-gray-200">Date/Time</th>
                           <th class="border border-gray-300 px-3 py-2 text-left font-bold bg-gray-200">Reg Particulars</th>
                           <th class="border border-gray-300 px-3 py-2 text-left font-bold bg-gray-200">Size</th>

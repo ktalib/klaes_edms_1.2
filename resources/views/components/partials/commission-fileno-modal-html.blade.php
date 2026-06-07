@@ -665,15 +665,43 @@
                                        :readonly="isInherited"
                                        placeholder="Enter plot number">
                             </div>
-                            <div>
-                                <label for="tpNo" class="block text-xs font-medium text-gray-600 mb-1">TP Number</label>
-                                <input type="text" id="tpNo" name="tp_no" 
-                                       :value="batchMode ? locationEntries[currentEntryIndex]?.tpNo : tpNo"
-                                       @input="batchMode ? updateLocationEntry('tpNo', $event.target.value) : tpNo = $event.target.value"
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                       :class="{ 'bg-gray-100 opacity-75': isInherited }"
-                                       :readonly="isInherited"
-                                       placeholder="Enter TP number">
+                            <!-- TP Number: custom search -->
+                            <div class="relative">
+                                <label class="block text-xs font-medium text-gray-600 mb-1">TP Number</label>
+                                <div class="relative">
+                                    <input type="text"
+                                           id="tp_search_input"
+                                           :value="tpSearchQuery"
+                                           @input="tpSearchQuery = $event.target.value; debounceTpSearch()"
+                                           @keydown.escape="tpSearchOpen = false"
+                                           @keydown.arrow-down.prevent="tpFocusNext()"
+                                           @keydown.arrow-up.prevent="tpFocusPrev()"
+                                           @keydown.enter.prevent="tpSelectFocused()"
+                                           @blur="setTimeout(() => tpSearchOpen = false, 150)"
+                                           autocomplete="off"
+                                           placeholder="Type to search TP no..."
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-7"
+                                           :class="{ 'bg-gray-100 opacity-75': isInherited }"
+                                           :disabled="isInherited">
+                                    <button type="button" x-show="tpNo"
+                                            @click="clearTpNo()"
+                                            class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none">&#215;</button>
+                                </div>
+                                <input type="hidden" name="tp_no" id="generator_tp_no_val" :value="tpNo">
+                                <!-- Dropdown results -->
+                                <div x-show="tpSearchOpen"
+                                     x-cloak
+                                     class="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                                    <div x-show="tpSearchLoading" class="px-3 py-2 text-xs text-gray-500">Searching...</div>
+                                    <div x-show="!tpSearchLoading && tpSearchResults.length === 0" class="px-3 py-2 text-xs text-gray-400">No results</div>
+                                    <template x-for="(result, index) in tpSearchResults" :key="result.id">
+                                        <div @mousedown.prevent="selectTpResult(result)"
+                                             :class="tpFocusIndex === index ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'"
+                                             class="px-3 py-2 text-sm cursor-pointer"
+                                             x-text="result.text">
+                                        </div>
+                                    </template>
+                                </div>
                             </div>
                             <div>
                                 <label for="location" class="block text-xs font-medium text-gray-600 mb-1">Location</label>

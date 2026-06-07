@@ -91,7 +91,18 @@
       "Bash(node --check \"c:/wamp64/www/klaes/public/js/fileindexing/create-indexing-dialog.js\")",
       "Bash(php scratch_kangis.php)",
       "Bash(php scratch_split.php)",
-      "Bash(php scratch_final.php)"
+      "Bash(php scratch_final.php)",
+      "Bash(php -l app/Http/Controllers/RelatedFileNumberController.php)",
+      "Bash(php scratch_inv.php)",
+      "Bash(php -l app/Http/Controllers/Phs/PhsAuthController.php)",
+      "Bash(cd /c/wamp64/www/klaes)",
+      "Bash(grep -rnE 'data-lucide=\"shield\"' resources/views/phs/ public/js/phs/)",
+      "Bash(grep -rn \"partials.nav\\\\|partials/nav\" resources/views/phs/)",
+      "Bash(sed -n '258,270p' resources/views/phs/dashboard/index.blade.php)",
+      "Bash(sed -i \"s#src=\\\\\"logo_klaes.png\\\\\"#src=\\\\\"http://app.klaes.ng/storage/upload/logo/logo.png\\\\\"#g\" resources/views/phs/dashboard/index.blade.php)",
+      "Bash(node -c public/js/phs/portal.js)",
+      "Bash(php -r 'echo '\\\\''slip blade compiles: '\\\\''; $c=file_get_contents\\('\\\\''resources/views/phs/print/slip.blade.php'\\\\''\\); echo \\(substr_count\\($c,'\\\\''@forelse'\\\\''\\)===substr_count\\($c,'\\\\''@empty'\\\\''\\)?'\\\\''forelse balanced'\\\\'':'\\\\''MISMATCH'\\\\''\\), PHP_EOL;')",
+      "Bash(php scratch_tx.php)"
     ],
     "additionalDirectories": [
       "C:\\wamp64\\www\\klaes\\resources\\views\\special_assignment"

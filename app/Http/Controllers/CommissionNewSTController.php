@@ -362,7 +362,7 @@ class CommissionNewSTController extends Controller
 
             $creatorName = Auth::user()->name ?? Auth::user()->email ?? 'System';
             $commissionedAt = !empty($validated['commissioned_date'])
-                ? Carbon::parse($validated['commissioned_date'])->startOfSecond()
+                ? Carbon::parse($validated['commissioned_date'])->setTimeFrom(now())
                 : now();
 
             $transactionResult = DB::connection('sqlsrv')->transaction(function () use ($validated, $landUseFullName, $landUseCode, $year, $serialNo, $creatorName, $commissionedAt) {
@@ -517,7 +517,7 @@ class CommissionNewSTController extends Controller
             $landUseCode = $this->getLandUseCode($validated['land_use']);
             $creatorName = Auth::user()->name ?? Auth::user()->email ?? 'System';
             $commissionedAt = !empty($validated['commissioned_date'])
-                ? Carbon::parse($validated['commissioned_date'])->startOfSecond()
+                ? Carbon::parse($validated['commissioned_date'])->setTimeFrom(now())
                 : now();
 
             $transactionResult = DB::connection('sqlsrv')->transaction(function () use ($validated, $landUseCode, $year, $creatorName, $commissionedAt) {
@@ -735,7 +735,7 @@ class CommissionNewSTController extends Controller
             $landUseFullName = $landUseMapping[$landUseCode] ?? 'COMMERCIAL';
             $creatorName = Auth::user()->name ?? Auth::user()->email ?? 'System';
             $commissionedAt = !empty($validated['commissioned_date'])
-                ? Carbon::parse($validated['commissioned_date'])->startOfSecond()
+                ? Carbon::parse($validated['commissioned_date'])->setTimeFrom(now())
                 : now();
 
             $transactionResult = DB::connection('sqlsrv')->transaction(function () use ($validated, $landUseFullName, $landUseCode, $parentSerial, $nextUnitSequence, $unitFileNo, $year, $parentFile, $creatorName, $commissionedAt) {

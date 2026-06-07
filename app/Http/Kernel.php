@@ -67,5 +67,6 @@ class Kernel extends HttpKernel
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
         'XSS' => \App\Http\Middleware\XSS::class,
         'track.activity' => \App\Http\Middleware\TrackActivityLog::class,
+        'phs.admin' => \App\Http\Middleware\EnsurePhsSuperAdmin::class,
     ];
 }

@@ -204,7 +204,7 @@
                     <th>LGA</th>
                     <th>Location</th>
                     <th>Plot No</th>
-                    <th>Instrument Type</th>
+                    <th>Instrument/Transaction Type</th>
                     <th>Size</th>
                     <th>Caveat</th>
                     <th>Actions</th>

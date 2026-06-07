@@ -54,6 +54,9 @@ class RouteServiceProvider extends ServiceProvider
                 ->group(base_path('routes/app3.php'));
 
             Route::middleware('web')
+                ->group(base_path('routes/phs.php'));
+
+            Route::middleware('web')
                 ->group(base_path('routes/bills_api.php'));
 
             // PageTyping routes removed — file no longer present

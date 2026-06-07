@@ -1,5 +1,5 @@
 <!-- 16. System Admin -->
-@if($hasRole('User Account') || $hasRole('Departments') || $hasRole('User Roles') || $hasRole('Land Officers') || $hasRole('Digital Signature Control') || $hasRole('System Settings'))
+@if($hasRole('User Account') || $hasRole('Departments') || $hasRole('User Roles') || $hasRole('Land Officers') || $hasRole('Digital Signature Control') || $hasRole('System Settings') || $hasRole('Supper Admin'))
   <div class="py-1 px-3 mb-0.5 border-t border-slate-100">
     <div
       class="sidebar-module-header flex items-center justify-between py-2 px-3 mb-0.5 cursor-pointer hover:bg-slate-50 rounded-md"
@@ -47,6 +47,12 @@
           class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('admin.manual-linkage.*') ? 'active' : '' }}">
           <i data-lucide="link" class="h-4 w-4 text-slate-500"></i>
           <span>Manual Linkages</span>
+        </a>
+
+        <a href="{{ route('system-admin.phs.index') }}"
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('system-admin.phs.*') ? 'active' : '' }}">
+          <i data-lucide="building-2" class="h-4 w-4 text-slate-500"></i>
+          <span>PHS Administration</span>
         </a>
       @endif
 

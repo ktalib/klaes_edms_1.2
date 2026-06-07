@@ -94,7 +94,9 @@ class SurrenderReleaseController extends Controller
                 'party_4_name as party_4',
                 'property_location as location',
                 'created_at as date_captured',
-                DB::raw("TRY_CONVERT(DATETIME, reg_date) as transaction_date"),
+                DB::raw("TRY_CONVERT(DATETIME, deeds_date) as transaction_date"),
+                'deeds_time',
+                DB::raw("CAST(created_by AS NVARCHAR(100)) as created_by"),
                 DB::raw("'Instrument Capture' as source_table")
             ])
             ->where($baseWhere)
@@ -114,6 +116,8 @@ class SurrenderReleaseController extends Controller
                 'location',
                 'created_at as date_captured',
                 DB::raw("TRY_CONVERT(DATETIME, deeds_date) as transaction_date"),
+                'deeds_time',
+                DB::raw("CAST(created_by AS NVARCHAR(100)) as created_by"),
                 DB::raw("'Property Records' as source_table")
             ])
             ->where($baseWhere)
@@ -133,6 +137,8 @@ class SurrenderReleaseController extends Controller
                 'location',
                 'created_at as date_captured',
                 DB::raw("TRY_CONVERT(DATETIME, deeds_date) as transaction_date"),
+                'deeds_time',
+                DB::raw("CAST(created_by AS NVARCHAR(100)) as created_by"),
                 DB::raw("'File History Staging' as source_table")
             ])
             ->where($baseWhere)
@@ -147,12 +153,21 @@ class SurrenderReleaseController extends Controller
             ->setBindings($unionBindings)
             ->select('*');
 
+        $userMap = DB::table('users')->select('id', 'first_name', 'last_name')->get()->keyBy('id');
+
         return DataTables::of($query)
             ->filterColumn('file_number', function($q, $kw) {
                 $q->where('file_number', 'like', "%$kw%");
             })
             ->filterColumn('registration_particulars', function($q, $kw) {
                 $q->where('registration_particulars', 'like', "%$kw%");
+            })
+            ->editColumn('created_by', function ($row) use ($userMap) {
+                $id = $row->created_by;
+                if (!$id) return '—';
+                $user = $userMap->get((int) $id);
+                if (!$user) return '—';
+                return trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: '—';
             })
             ->addColumn('associated_mortgages', function ($row) {
                 $propId = trim((string) ($row->prop_id ?? ''));
@@ -177,7 +192,15 @@ class SurrenderReleaseController extends Controller
             })
             ->editColumn('transaction_date', function ($row) {
                 try {
-                    return $row->transaction_date ? Carbon::parse($row->transaction_date)->format('Y-m-d H:i') : '—';
+                    if (!$row->transaction_date) return '—';
+                    $date    = Carbon::parse($row->transaction_date)->format('Y-m-d');
+                    $timeStr = trim((string) ($row->deeds_time ?? ''));
+                    if ($timeStr !== '') {
+                        try {
+                            return $date . ' ' . Carbon::parse($timeStr)->format('h:i A');
+                        } catch (\Exception $e) {}
+                    }
+                    return $date;
                 } catch (\Exception $e) {
                     return $row->transaction_date ?? '—';
                 }

@@ -1,5 +1,5 @@
 <div class="p-6 border-t border-gray-200 flex justify-between items-center text-sm text-gray-500 mt-auto">
-  <div>© {{ date('Y') }} LAnd ADmin  Enterprise System. All rights reserved.</div>
+  <div>&copy; {{ date('Y') }} LAnd ADmin Enterprise System. All rights reserved.</div>
   @php
     $footerDefaultLogo = asset('assets/logo/las.jpg');
     $footerLogo = $footerDefaultLogo;
@@ -12,6 +12,6 @@
     }
   @endphp
   <div class="flex items-center">
-    <img src="{{ $footerLogo }}" alt="Logo"  style="width: 200px; height: auto;">
+    <img src="{{ $footerLogo }}" alt="Logo" style="width: 200px; height: auto;">
   </div>
 </div>

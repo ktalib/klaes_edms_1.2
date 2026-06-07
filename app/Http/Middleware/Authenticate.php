@@ -25,6 +25,11 @@ class Authenticate extends Middleware
                 return route('mobile.login');
             }
 
+            // PHS Portal (institutional SaaS) — send to its own login, not staff login.
+            if ($request->is('phs*') && ! $request->is('phs/login') && ! $request->is('phs/register') && ! $request->is('phs')) {
+                return route('phs.login');
+            }
+
             return route('login');
         }
     }

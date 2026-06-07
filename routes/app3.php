@@ -63,6 +63,7 @@ use App\Http\Controllers\LegalSearchTokenController;
 use App\Http\Controllers\MortgageController;
 use App\Http\Controllers\SurrenderReleaseController;
 use App\Http\Controllers\ManualFileLinkageController;
+use App\Http\Controllers\Phs\PhsAdminController;
 
 /*
 |--------------------------------------------------------------------------
@@ -515,6 +516,18 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/check', [LegalSearchTokenController::class, 'checkAvailableToken'])->name('check');
         Route::post('/use', [LegalSearchTokenController::class, 'useToken'])->name('use');
         Route::delete('/{id}', [LegalSearchTokenController::class, 'destroy'])->name('destroy');
+    });
+
+    // PHS staff administration
+    Route::prefix('system-admin/phs')->name('system-admin.phs.')->group(function () {
+        Route::get('/', [PhsAdminController::class, 'index'])->name('index');
+        Route::get('/invoices', [PhsAdminController::class, 'invoices'])->name('invoices');
+        Route::post('/invoices/{txnId}/approve', [PhsAdminController::class, 'approveInvoice'])->name('invoices.approve');
+        Route::get('/usage', [PhsAdminController::class, 'usage'])->name('usage');
+        Route::get('/institutions/{id}', [PhsAdminController::class, 'show'])->name('institutions.show');
+        Route::post('/institutions/{id}/tokens', [PhsAdminController::class, 'allocateTokens'])->name('institutions.tokens');
+        Route::post('/institutions/{id}/suspend', [PhsAdminController::class, 'suspend'])->name('institutions.suspend');
+        Route::post('/institutions/{id}/activate', [PhsAdminController::class, 'activate'])->name('institutions.activate');
     });
 
     // Activity Log Routes
