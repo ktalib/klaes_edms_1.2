@@ -92,10 +92,20 @@
                     </div>
                 </fieldset>
 
+                <div class="flex items-start gap-3">
+                    <div class="flex h-5 items-center">
+                        <input id="agree_terms" name="agree_terms" type="checkbox" value="1" required
+                            class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                    </div>
+                    <label for="agree_terms" class="text-sm text-gray-700">
+                        I agree to the <a href="#" class="font-semibold text-blue-600 hover:text-blue-700">Terms of Service</a> and <a href="#" class="font-semibold text-blue-600 hover:text-blue-700">Privacy Policy</a>
+                    </label>
+                </div>
+
                 <div class="flex justify-between items-center pt-6 border-t">
                     <a href="{{ route('phs.landing') }}" class="text-blue-600 hover:text-blue-800">Back to Home</a>
                     <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium">
-                        Complete Registration
+                       Register your Organization
                     </button>
                 </div>
             </form>

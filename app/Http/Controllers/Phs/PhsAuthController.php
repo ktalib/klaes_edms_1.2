@@ -106,6 +106,7 @@ class PhsAuthController extends Controller
 
         $validated = $request->validate([
             'password' => ['required', 'string', 'min:6', 'confirmed'],
+            'agree_terms' => ['accepted'],
         ]);
 
         $member = DB::connection('sqlsrv')->transaction(function () use ($onboardingRequest, $validated) {
@@ -127,6 +128,22 @@ class PhsAuthController extends Controller
                 'access_role' => 'search_only',
                 'status' => 'active',
             ]);
+
+            // Credit the token package the institution selected during onboarding.
+            // This writes a completed 'invoice' transaction, which surfaces the
+            // subscription on the staff PHS Subscriptions table and funds the wallet.
+            $package = PhsTokenController::packages()[strtolower((string) $onboardingRequest->initial_token_package)] ?? null;
+            if ($package) {
+                $institution->addTokens($package['tokens'], 'purchase', [
+                    'package_name'   => $package['name'],
+                    'amount'         => $onboardingRequest->payment_amount ?? $package['price'],
+                    'payment_method' => 'invoice',
+                    'reference_no'   => $onboardingRequest->payment_reference,
+                    'approved_at'    => now(),
+                    'expires_at'     => now()->addYear(),
+                    'notes'          => 'Initial token package from onboarding',
+                ], $member->id);
+            }
 
             $onboardingRequest->update([
                 'status' => PhsOnboardingRequest::STATUS_ACTIVATED,

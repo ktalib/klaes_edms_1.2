@@ -10,7 +10,7 @@
             <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES" class="mx-auto mb-4 h-14 w-auto object-contain">
 
             <h1 class="text-2xl font-bold text-gray-900">PHS Portal</h1>
-            <p class="mt-2 text-sm text-gray-600">Sign in to your institution account</p>
+            <p class="mt-2 text-sm text-gray-600">Sign in to your Organization account</p>
         </div>
 
         <!-- Login Form -->
@@ -85,7 +85,7 @@
             <p class="text-center text-sm text-gray-600">
                 Don't have an account?
                 <a href="{{ route('phs.register') }}" class="font-semibold text-blue-600 hover:text-blue-700">
-                    Register your institution
+                   Register your Organization
                 </a>
             </p>
         </div>

@@ -1,6 +1,6 @@
 @extends('phs.layouts.app')
 
-@section('title', 'Register Your Institution - PHS Portal')
+@section('title', 'Register your Organization - PHS Portal')
 
 @section('content')
 <div class="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-green-50 px-4 py-12 sm:px-6 lg:px-8">
@@ -9,7 +9,7 @@
         <div class="mb-8 text-center">
             <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES" class="mx-auto mb-4 h-14 w-auto object-contain">
 
-            <h1 class="text-2xl font-bold text-gray-900">Register Your Institution</h1>
+            <h1 class="text-2xl font-bold text-gray-900">Register your Organization</h1>
             <p class="mt-2 text-sm text-gray-600">Create a PHS Portal account. New institutions receive 100 signup tokens!</p>
         </div>
 
@@ -133,7 +133,7 @@
                     class="mt-6 w-full rounded-lg bg-blue-600 py-2 font-semibold text-white transition hover:bg-blue-700 sm:py-3"
                 >
                     <i data-lucide="building-2" class="mr-2 inline h-4 w-4"></i>
-                    Create Institution Account
+                   Register your Organization
                 </button>
             </form>
 

@@ -14,35 +14,39 @@ class PhsOnboardingController extends Controller
     public function showForm(Request $request)
     {
         $package = $request->query('package');
-        return view('phs.onboarding-request-form', compact('package'));
+        $packages = PhsTokenController::packages();
+        return view('phs.onboarding-request-form', compact('package', 'packages'));
     }
 
     public function confirmPayment(Request $request)
     {
+        $packages = PhsTokenController::packages();
+        $packageNames = array_column($packages, 'name');
+
         $validated = $request->validate([
             'organization_name' => ['required', 'string', 'max:255'],
             'organization_type' => ['required', 'in:bank,law_firm,corporate'],
-            'contact_name' => ['required', 'string', 'max:255'],
+            'contact_first_name' => ['required', 'string', 'max:255'],
+            'contact_last_name' => ['required', 'string', 'max:255'],
             'contact_email' => ['required', 'email', 'max:255'],
+            'contact_email_confirmation' => ['required', 'email', 'same:contact_email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string'],
             'department' => ['nullable', 'string', 'max:255'],
             'job_title' => ['nullable', 'string', 'max:255'],
-            'initial_token_package' => ['required', 'string', 'max:255'],
+            'initial_token_package' => ['required', 'string', Rule::in($packageNames)],
             'additional_notes' => ['nullable', 'string'],
         ]);
 
-        // Store in session temporarily
-        $request->session()->put('onboarding_data', $validated);
+        // Compose a single contact_name for display/storage
+        $validated['contact_name'] = trim(($validated['contact_first_name'] ?? '') . ' ' . ($validated['contact_last_name'] ?? ''));
 
-        // Calculate amount based on package
-        $packagePrices = [
-            'Starter' => 50000,
-            'Professional' => 110000,
-            'Enterprise' => 200000,
-        ];
+        // Store request data in session temporarily, excluding the confirmation field
+        $request->session()->put('onboarding_data', array_diff_key($validated, ['contact_email_confirmation' => true]));
 
-        $amount = $packagePrices[$validated['initial_token_package']] ?? 0;
+        // Price comes from the single source of truth (PhsTokenController::packages()).
+        $package = $packages[strtolower($validated['initial_token_package'])] ?? null;
+        $amount = $package['price'] ?? 0;
 
         return view('phs.onboarding-payment', compact('validated', 'amount'));
     }

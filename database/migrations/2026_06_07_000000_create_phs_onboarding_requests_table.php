@@ -8,12 +8,17 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('phs_onboarding_requests', function (Blueprint $table) {
+        // If the table already exists on the sqlsrv connection, skip creation.
+        if (Schema::connection('sqlsrv')->hasTable('phs_onboarding_requests')) {
+            return;
+        }
+
+        Schema::connection('sqlsrv')->create('phs_onboarding_requests', function (Blueprint $table) {
             $table->id();
 
             // Request details from form
             $table->string('organization_name', 255);
-            $table->enum('organization_type', ['bank', 'law_firm', 'corporate']);
+            $table->string('organization_type', 50);
             $table->string('contact_name', 255);
             $table->string('contact_email', 191);
             $table->string('phone', 255)->nullable();
@@ -24,7 +29,7 @@ return new class extends Migration
             $table->text('additional_notes')->nullable();
 
             // Workflow status
-            $table->enum('status', ['pending', 'payment_received', 'approved', 'rejected', 'activated'])
+            $table->string('status', 50)
                   ->default('pending')
                   ->index();
 
@@ -50,16 +55,11 @@ return new class extends Migration
                   ->onDelete('set null');
 
             $table->timestamps();
-
-            // Indexes
-            $table->index('contact_email');
-            $table->index('status');
-            $table->index(['status', 'created_at']);
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('phs_onboarding_requests');
+        Schema::connection('sqlsrv')->dropIfExists('phs_onboarding_requests');
     }
 };

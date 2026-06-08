@@ -31,13 +31,13 @@ class PhsDemoSeeder extends Seeder
             ]);
 
             $this->seedInvoices($lawFirm, [
-                ['reference_no' => 'DEMO-INV-LAW-001', 'package_name' => 'Professional', 'tokens' => 5000, 'amount' => 100000],
-                ['reference_no' => 'DEMO-INV-LAW-002', 'package_name' => 'Enterprise', 'tokens' => 10000, 'amount' => 180000],
+                ['reference_no' => 'DEMO-INV-LAW-001', 'package' => 'professional'],
+                ['reference_no' => 'DEMO-INV-LAW-002', 'package' => 'enterprise'],
             ]);
 
             $this->seedInvoices($bank, [
-                ['reference_no' => 'DEMO-INV-BANK-001', 'package_name' => 'Starter', 'tokens' => 2000, 'amount' => 50000],
-                ['reference_no' => 'DEMO-INV-BANK-002', 'package_name' => 'Professional', 'tokens' => 5000, 'amount' => 100000],
+                ['reference_no' => 'DEMO-INV-BANK-001', 'package' => 'starter'],
+                ['reference_no' => 'DEMO-INV-BANK-002', 'package' => 'professional'],
             ]);
         });
     }
@@ -80,15 +80,18 @@ class PhsDemoSeeder extends Seeder
 
     private function seedInvoices(PhsInstitution $institution, array $invoices): void
     {
+        $packages = \App\Http\Controllers\Phs\PhsTokenController::packages();
+
         foreach ($invoices as $invoice) {
+            $pkg = $packages[$invoice['package']];
             $institution->transactions()->firstOrCreate(
                 ['reference_no' => $invoice['reference_no']],
                 [
                     'type' => 'purchase',
-                    'tokens' => $invoice['tokens'],
+                    'tokens' => $pkg['tokens'],
                     'balance_after' => (int) $institution->token_balance,
-                    'package_name' => $invoice['package_name'],
-                    'amount' => $invoice['amount'],
+                    'package_name' => $pkg['name'],
+                    'amount' => $pkg['price'],
                     'payment_method' => 'invoice',
                     'status' => 'pending',
                     'notes' => 'Demo invoice request awaiting KLAES approval',

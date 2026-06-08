@@ -103,8 +103,10 @@ class PhsAdminController extends Controller
     public function invoices()
     {
         $PageTitle = 'PHS — Pending Invoices';
+        // Treat this page as Subscriptions: show completed invoice transactions
+        $PageTitle = 'PHS — Subscriptions';
         $pending = PhsTokenTransaction::with('institution')
-            ->where('status', 'pending')
+            ->where('status', 'completed')
             ->where('payment_method', 'invoice')
             ->orderByDesc('id')
             ->get();
@@ -123,12 +125,14 @@ class PhsAdminController extends Controller
             $institution->token_balance = $newBalance;
             $institution->save();
 
-            $txn->update([
-                'status' => 'completed',
-                'balance_after' => $newBalance,
-                'approved_by' => Auth::id(),
-                'notes' => trim(($txn->notes ? $txn->notes . ' | ' : '') . 'Approved by staff'),
-            ]);
+            // mark transaction completed and record approval/expiry dates
+            $txn->status = 'completed';
+            $txn->balance_after = $newBalance;
+            $txn->approved_by = Auth::id();
+            $txn->approved_at = now();
+            $txn->expires_at = now()->addYear();
+            $txn->notes = trim(($txn->notes ? $txn->notes . ' | ' : '') . 'Approved by staff');
+            $txn->save();
         });
 
         return back()->with('success', 'Invoice approved and tokens credited.');

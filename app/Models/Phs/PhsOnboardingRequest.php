@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class PhsOnboardingRequest extends Model
 {
+    protected $connection = 'sqlsrv';
+
     const STATUS_PENDING = 'pending';
     const STATUS_PAYMENT_RECEIVED = 'payment_received';
     const STATUS_APPROVED = 'approved';

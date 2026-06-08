@@ -25,6 +25,7 @@ Route::prefix('phs')->name('phs.')->group(function () {
     Route::get('/', [PhsLandingController::class, 'index'])->name('landing');
     Route::get('login', [PhsAuthController::class, 'showLogin'])->name('login');
     Route::post('login', [PhsAuthController::class, 'login'])->name('login.submit');
+    Route::get('get-started', function () { return view('phs.get-started'); })->name('get_started');
     Route::get('register', [PhsAuthController::class, 'showRegister'])->name('register');
     Route::post('register', [PhsAuthController::class, 'register'])->name('register.submit');
 

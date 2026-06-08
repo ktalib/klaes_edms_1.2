@@ -102,7 +102,9 @@
       "Bash(sed -i \"s#src=\\\\\"logo_klaes.png\\\\\"#src=\\\\\"http://app.klaes.ng/storage/upload/logo/logo.png\\\\\"#g\" resources/views/phs/dashboard/index.blade.php)",
       "Bash(node -c public/js/phs/portal.js)",
       "Bash(php -r 'echo '\\\\''slip blade compiles: '\\\\''; $c=file_get_contents\\('\\\\''resources/views/phs/print/slip.blade.php'\\\\''\\); echo \\(substr_count\\($c,'\\\\''@forelse'\\\\''\\)===substr_count\\($c,'\\\\''@empty'\\\\''\\)?'\\\\''forelse balanced'\\\\'':'\\\\''MISMATCH'\\\\''\\), PHP_EOL;')",
-      "Bash(php scratch_tx.php)"
+      "Bash(php scratch_tx.php)",
+      "Bash(php -l app/Http/Controllers/Phs/PhsOnboardingController.php)",
+      "Bash(php -l database/seeders/PhsDemoSeeder.php)"
     ],
     "additionalDirectories": [
       "C:\\wamp64\\www\\klaes\\resources\\views\\special_assignment"
