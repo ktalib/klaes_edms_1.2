@@ -94,8 +94,8 @@ class SurrenderReleaseController extends Controller
                 'party_4_name as party_4',
                 'property_location as location',
                 'created_at as date_captured',
-                DB::raw("TRY_CONVERT(DATETIME, deeds_date) as transaction_date"),
-                'deeds_time',
+                DB::raw("TRY_CONVERT(DATETIME, reg_date) as transaction_date"),
+                DB::raw("NULL as deeds_time"),
                 DB::raw("CAST(created_by AS NVARCHAR(100)) as created_by"),
                 DB::raw("'Instrument Capture' as source_table")
             ])

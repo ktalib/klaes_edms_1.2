@@ -64,9 +64,10 @@
             ->whereColumn('s.unit_number', 'bl.unit_no')
             ->where('s.main_application_id', $motherApplication->id);
         })
-        ->leftJoin('st_file_numbers as sfn', function ($join) use ($motherApplication) {
-          $join->on(DB::raw('CAST(bl.unit_no AS NVARCHAR(255))'), '=', DB::raw('CAST(sfn.unit_sequence AS NVARCHAR(255))'))
-               ->where('sfn.parent_id', '=', $motherApplication->primary_file_id)
+        // Link each buyer to its commissioned PUA file number via buyer_list_id
+        // (the reliable key; unit_no like "A"/"B" does NOT match unit_sequence 1/2/3)
+        ->leftJoin('st_file_numbers as sfn', function ($join) {
+          $join->on('bl.id', '=', 'sfn.buyer_list_id')
                ->where('sfn.file_no_type', '=', 'PUA');
         })
         ->select(
@@ -111,13 +112,20 @@
     $npFileNo = $stPrimaryFileNo ?: ($appliedFileNo ?: 'N/A');
     $unitFileNo = $npFileNo . '-' . str_pad(($totalSubApplications + 1), 3, '0', STR_PAD_LEFT);
 
-    // Direct query for unit file numbers as requested
+    // Direct query for unit (PUA) file numbers linked to this primary application.
+    // Match on every reliable link so commissioned units always surface:
+    //  - parent_id           -> the primary st_file_numbers row (most reliable)
+    //  - mother_application_id-> the mother application
+    //  - mls_fileno / np_fileno -> the legacy & new primary file numbers
+    $primaryFileId = $motherApplication->primary_file_id ?? null;
     $stUnitFiles = DB::connection('sqlsrv')
         ->table('st_file_numbers')
         ->where('file_no_type', 'PUA')
-        ->where(function($q) use ($appliedFileNo, $stPrimaryFileNo) {
-            if (!empty($appliedFileNo)) $q->orWhere('mls_fileno', $appliedFileNo);
-            if (!empty($stPrimaryFileNo)) $q->orWhere('np_fileno', $stPrimaryFileNo);
+        ->where(function($q) use ($appliedFileNo, $stPrimaryFileNo, $primaryFileId, $mainApplicationId) {
+            if (!empty($primaryFileId))     $q->orWhere('parent_id', $primaryFileId);
+            if (!empty($mainApplicationId)) $q->orWhere('mother_application_id', $mainApplicationId);
+            if (!empty($appliedFileNo))     $q->orWhere('mls_fileno', $appliedFileNo);
+            if (!empty($stPrimaryFileNo))   $q->orWhere('np_fileno', $stPrimaryFileNo);
         })
         ->get()
         ->map(function($item) {
@@ -389,14 +397,14 @@
       option.value = fileNumber.id;
       
       // Get display components
-      const unitFileNo = fileNumber.fileno;
+      const unitFileNo = resolveUnitFileNo(fileNumber);
       const name = fileNumber.display_name || 'Unknown';
-      
+
       // Try to find buyer info for unit designation and size
       const buyer = findBuyerForFileNumber(fileNumber);
       const unitNo = buyer && buyer.unit_no ? buyer.unit_no : (fileNumber.unit_sequence || 'N/A');
       const unitSize = buyer && (buyer.unit_size || buyer.measurement) ? ` (${buyer.unit_size || buyer.measurement})` : '';
-      
+
       const unitDesignation = `Unit ${unitNo}${unitSize}`;
 
       // Check if commissioned (must have a specific unit file number assigned)
@@ -407,7 +415,7 @@
         // Label format: Unit [No] ([Size]) - [Name] - [FileNo]
         option.textContent = `${unitDesignation} - ${name} - ${unitFileNo}`;
       }
-      
+
       option.dataset.fileData = JSON.stringify(fileNumber);
       selectElement.appendChild(option);
     });
@@ -440,14 +448,15 @@
       option.value = fileNumber.id;
       
       // Get display components
-      const unitFileNo = fileNumber.fileno;
-      const name = fileNumber.display_name || 'Unknown';
-      
-      // Try to find buyer info for unit designation and size
+      const unitFileNo = resolveUnitFileNo(fileNumber);
+      // Prefer the buyer's name (matches the buyer list shown to staff); fall back to the st_file_numbers name
       const buyer = findBuyerForFileNumber(fileNumber);
+      const name = (buyer && buyer.buyer_name) ? buyer.buyer_name : (fileNumber.display_name || 'Unknown');
+
+      // Try to find buyer info for unit designation and size
       const unitNo = buyer && buyer.unit_no ? buyer.unit_no : (fileNumber.unit_sequence || 'N/A');
       const unitSize = buyer && (buyer.unit_size || buyer.measurement) ? ` (${buyer.unit_size || buyer.measurement})` : '';
-      
+
       const unitDesignation = `Unit ${unitNo}${unitSize}`;
 
       // Check if commissioned (must have a specific unit file number assigned)
@@ -456,7 +465,7 @@
         option.textContent = `${unitDesignation} - ${name} - (Not Commissioned)`;
       } else {
         // Label format: Unit [No] ([Size]) - [Name] - [FileNo]
-        // Use direct fileno from the record
+        // Use resolved fileno (stored, or derived from np_fileno + unit_sequence)
         option.textContent = `${unitDesignation} - ${name} - ${unitFileNo}`;
       }
       

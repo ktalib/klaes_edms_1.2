@@ -87,7 +87,8 @@ function tsSelectType(type) {
     tsClearForm();
     tsSelectedType = type;
     tsApplyTheme(type);
-    tsApplyInitiatedByOptions(type);
+    const defaultInitiator = (typeof TS_INITIATED_BY_DEFAULT !== 'undefined' && TS_INITIATED_BY_DEFAULT[type]) || null;
+    tsApplyInitiatedByOptions(type, defaultInitiator);
     tsRefreshRemark();
     document.getElementById('ts-modal').classList.remove('hidden');
     if (typeof lucide !== 'undefined') lucide.createIcons();

@@ -48,7 +48,7 @@
                     @csrf
                     <button class="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-bold {{ $isActive ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' }}">
                         <i data-lucide="{{ $isActive ? 'pause-circle' : 'play-circle' }}" class="h-4 w-4"></i>
-                        {{ $isActive ? 'Suspend institution' : 'Activate institution' }}
+                        {{ $isActive ? ' Suspend Organization' : 'Activate Organization' }}
                     </button>
                 </form>
             </div>
@@ -125,7 +125,7 @@
                 <div class="rounded-lg border border-slate-200 bg-white shadow-sm">
                     <div class="flex items-center gap-3 border-b border-slate-200 px-5 py-4">
                         <div class="grid h-9 w-9 place-items-center rounded-md bg-emerald-50 text-emerald-700"><i data-lucide="history" class="h-4 w-4"></i></div>
-                        <div><h3 class="font-extrabold text-slate-900">Recent searches</h3><p class="text-xs text-slate-500">Latest PHS requests from this institution</p></div>
+                        <div><h3 class="font-extrabold text-slate-900">Recent searches</h3><p class="text-xs text-slate-500">Latest PHS requests from this organization</p></div>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="min-w-full text-left text-sm">

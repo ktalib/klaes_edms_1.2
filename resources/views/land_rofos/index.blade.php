@@ -36,45 +36,24 @@
             </div>
 
             <!-- Statistics Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-10">
-                <!-- Eligible -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                <!-- Total Land RoFO -->
                 <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
                     <div class="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:scale-110 transition-transform duration-500">
-                        <i data-lucide="shield-check" class="h-32 w-32 text-emerald-600"></i>
-                    </div>
-                    <div class="flex items-center gap-4 relative z-10">
-                        <div class="p-3 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100 shadow-sm">
-                            <i data-lucide="shield-check" class="h-6 w-6"></i>
-                        </div>
-                        <div>
-                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Eligible for RoFO</p>
-                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($stats['total_eligible']) }}</h3>
-                        </div>
-                    </div>
-                    <div class="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        <span>Approved records</span>
-                        <span class="text-emerald-500">Ready</span>
-                    </div>
-                </div>
-
-
-                <!-- Generated -->
-                <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
-                    <div class="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:scale-110 transition-transform duration-500">
-                        <i data-lucide="zap" class="h-32 w-32 text-blue-600"></i>
+                        <i data-lucide="layers-3" class="h-32 w-32 text-blue-600"></i>
                     </div>
                     <div class="flex items-center gap-4 relative z-10">
                         <div class="p-3 bg-blue-50 text-blue-600 rounded-2xl border border-blue-100 shadow-sm">
-                            <i data-lucide="zap" class="h-6 w-6"></i>
+                            <i data-lucide="layers-3" class="h-6 w-6"></i>
                         </div>
                         <div>
-                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Generated RoFOs</p>
-                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($stats['generated']) }}</h3>
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Land RoFO</p>
+                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($stats['total_land']) }}</h3>
                         </div>
                     </div>
                     <div class="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        <span>Completed offers</span>
-                        <span class="text-blue-500">Processed</span>
+                        <span>All land records</span>
+                        <span class="text-blue-500">Total</span>
                     </div>
                 </div>
 

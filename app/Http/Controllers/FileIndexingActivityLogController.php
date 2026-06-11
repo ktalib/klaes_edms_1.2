@@ -22,7 +22,7 @@ class FileIndexingActivityLogController extends Controller
 {
     /** Weight each metric contributes to Total weight. */
     private const W_FILES = 1;
-    private const W_INDEXED = 1;
+    private const W_INDEXED = 1.5;
     private const W_TXN = 1;
 
     /** File-number columns shared by the three transaction staging tables. */
@@ -77,24 +77,44 @@ class FileIndexingActivityLogController extends Controller
         return $this->userByKey[$norm] ?? null;
     }
 
-    public function index(Request $request)
+    /**
+     * Normalize request filters, defaulting to today when nothing is supplied.
+     * Scanning the whole file_indexings table (tens of thousands of rows) joined
+     * against the staging tables is slow, so an unfiltered request would be costly.
+     */
+    private function normalizeFilters(Request $request): array
     {
         $user = trim((string) $request->input('user', ''));
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
-        // Scanning the whole file_indexings table (tens of thousands of rows) is slow,
-        // so when no filter at all is supplied default to the current month.
         if ($user === '' && empty($dateFrom) && empty($dateTo)) {
-            $dateFrom = now()->startOfMonth()->toDateString();
+            $dateFrom = now()->toDateString();
             $dateTo = now()->toDateString();
         }
 
-        $filters = [
+        return [
             'user' => $user,
             'date_from' => $dateFrom,
             'date_to' => $dateTo,
         ];
+    }
+
+    /**
+     * Public entry point for other controllers (e.g. the leaderboard) that need the
+     * same per-user grouped report, sorted by total weight. Reuses the optimized,
+     * correct report builder so figures match the activity log page exactly.
+     */
+    public function report(Request $request): array
+    {
+        $this->loadUsers();
+
+        return $this->buildReport($this->normalizeFilters($request));
+    }
+
+    public function index(Request $request)
+    {
+        $filters = $this->normalizeFilters($request);
 
         $this->loadUsers();
         $users = $this->availableUsers();
@@ -102,6 +122,7 @@ class FileIndexingActivityLogController extends Controller
 
         $totals = [
             'files' => array_sum(array_column($groups, 'files')),
+            'related' => array_sum(array_column($groups, 'related')),
             'indexed' => array_sum(array_column($groups, 'indexed')),
             'transactions' => array_sum(array_column($groups, 'transactions')),
             'weight' => array_sum(array_column($groups, 'weight')),
@@ -156,7 +177,7 @@ class FileIndexingActivityLogController extends Controller
     {
         // 1. Main file_indexings rows in scope.
         $query = DB::connection('sqlsrv')->table('file_indexings')
-            ->select(['id', 'file_number', 'temp_file_no', 'file_title', 'created_by', 'created_at']);
+            ->select(['id', 'file_number', 'temp_file_no', 'file_title', 'general_registry', 'created_by', 'created_at']);
 
         if ($this->hasNotDeleted('file_indexings')) {
             $this->applyNotDeleted($query, 'file_indexings');
@@ -215,8 +236,10 @@ class FileIndexingActivityLogController extends Controller
 
             $mainFileNo = $this->primaryFileNumber($rec);
             $relatedNos = $linksByRecord[$rec->id] ?? [];
+            $relatedCount = count($relatedNos);
+            $registry = trim((string) ($rec->general_registry ?? ''));
 
-            $numberOfFiles = 1 + count($relatedNos);
+            $numberOfFiles = 1 + $relatedCount;
 
             // Indexing done: main always counts (it is a file_indexings row);
             // each related file counts if it also exists as a file_indexings row.
@@ -245,9 +268,11 @@ class FileIndexingActivityLogController extends Controller
                 $grouped[$userKey] = [
                     'user' => $this->userDisplay[$userId],
                     'files' => 0,
+                    'related' => 0,
                     'indexed' => 0,
                     'transactions' => 0,
                     'weight' => 0,
+                    'registries' => [],
                     'rows' => [],
                 ];
             }
@@ -255,6 +280,9 @@ class FileIndexingActivityLogController extends Controller
             $grouped[$userKey]['rows'][] = [
                 'file_number' => $mainFileNo !== '' ? $mainFileNo : ($rec->file_title ?: '(untitled)'),
                 'file_title' => $rec->file_title,
+                'registry' => $registry,
+                'related_files' => $relatedCount,
+                'related_file_numbers' => array_values(array_filter($relatedNos, fn ($n) => $n !== '')),
                 'number_of_files' => $numberOfFiles,
                 'indexing_done' => $indexingDone,
                 'transactions' => $transactions,
@@ -263,13 +291,21 @@ class FileIndexingActivityLogController extends Controller
             ];
 
             $grouped[$userKey]['files'] += $numberOfFiles;
+            $grouped[$userKey]['related'] += $relatedCount;
             $grouped[$userKey]['indexed'] += $indexingDone;
             $grouped[$userKey]['transactions'] += $transactions;
             $grouped[$userKey]['weight'] += $weight;
+            if ($registry !== '') {
+                $grouped[$userKey]['registries'][$registry] = true;
+            }
         }
 
         // Order users by total weight (most productive first).
         $groups = array_values($grouped);
+        foreach ($groups as &$g) {
+            $g['registries'] = array_keys($g['registries']);
+        }
+        unset($g);
         usort($groups, fn ($a, $b) => $b['weight'] <=> $a['weight']);
 
         return $groups;
@@ -359,29 +395,35 @@ class FileIndexingActivityLogController extends Controller
                 continue;
             }
 
-            // The WHERE binds each chunk value once per column; keep the total
-            // bound parameters under SQL Server's 2100 cap.
-            $chunkSize = max(1, intdiv(2000, count($columns)));
+            $hasId = Schema::connection('sqlsrv')->hasColumn($table, 'id');
 
-            foreach (array_chunk($fileNumbers, $chunkSize) as $chunk) {
-                $query = DB::connection('sqlsrv')->table($table)
-                    ->select($columns)
-                    ->where(function ($where) use ($columns, $chunk) {
-                        foreach ($columns as $col) {
-                            $where->orWhereIn($col, $chunk);
+            // Query one column at a time so each WHERE ... IN can use a single-column
+            // index (an OR across 4 columns forces a full table scan). A transaction
+            // row is counted once per table — deduped by id when available.
+            $seen = [];
+            foreach ($columns as $col) {
+                $select = $hasId ? ['id', $col] : [$col];
+
+                foreach (array_chunk($fileNumbers, 1000) as $chunk) {
+                    $query = DB::connection('sqlsrv')->table($table)
+                        ->select($select)
+                        ->whereIn($col, $chunk);
+
+                    if ($this->hasNotDeleted($table)) {
+                        $this->applyNotDeleted($query, $table);
+                    }
+
+                    foreach ($query->get() as $row) {
+                        if ($hasId) {
+                            if (isset($seen[$row->id])) {
+                                continue; // already counted via another column
+                            }
+                            $seen[$row->id] = true;
                         }
-                    });
 
-                if ($this->hasNotDeleted($table)) {
-                    $this->applyNotDeleted($query, $table);
-                }
-
-                foreach ($query->get() as $row) {
-                    foreach ($columns as $col) {
                         $value = strtoupper(trim((string) ($row->$col ?? '')));
                         if ($value !== '' && isset($wanted[$value])) {
                             $counts[$value] = ($counts[$value] ?? 0) + 1;
-                            break; // attribute the row once
                         }
                     }
                 }

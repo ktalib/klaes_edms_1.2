@@ -96,90 +96,7 @@
 
     <div class="page-content-layer">
     <!-- Responsive Navigation -->
-    <nav class="sticky top-0 z-10 bg-white/80 backdrop-blur-md shadow-sm">
-        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div class="flex h-16 items-center justify-between">
-                <div class="flex items-center">
-                    <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES" class="h-11 w-auto object-contain">
-                </div>
-                
-                <!-- Desktop Menu -->
-                <div class="hidden items-center space-x-4 md:flex">
-                    <a href="{{ route('phs.login') }}" class="inline-flex items-center justify-center rounded-md border border-gray-300 bg-transparent px-4 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50">
-                        Sign In
-                    </a>
-                    <a href="{{ route('phs.get_started') }}" class="inline-flex items-center justify-center rounded-md border border-gray-300 bg-transparent px-4 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50">
-                        Get Started
-                    </a>
-                    <a href="{{ route('phs.request.form') }}" class="inline-flex items-center justify-center rounded-md border-0 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-blue-700">
-                        Request Access
-                    </a>
-                </div>
-                
-                <!-- Mobile Menu Button -->
-                <button id="mobile-menu-btn" class="rounded-lg p-2 hover:bg-gray-100 md:hidden">
-                    <i data-lucide="menu" class="h-6 w-6 text-gray-700"></i>
-                </button>
-            </div>
-            
-            <!-- Mobile Menu -->
-            <div id="mobile-menu" class="invisible max-h-0 overflow-hidden border-t border-gray-200 opacity-0 transition-all duration-300 ease-in-out md:hidden">
-                <div class="space-y-3 border-t border-gray-200 py-4">
-                    <a href="{{ route('phs.login') }}" class="block rounded-md border border-gray-300 bg-transparent px-4 py-2 text-center text-sm font-medium text-gray-700 transition-all hover:bg-gray-50">
-                        Sign In
-                    </a>
-                    <a href="{{ route('phs.request.form') }}" class="block rounded-md border-0 bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-blue-700">
-                        Request Access
-                    </a>
-                </div>
-            </div>
-        </div>
-    </nav>
-
-    <!-- Pricing Section (Token Packages) -->
-    <div class="bg-gradient-to-br from-gray-50 to-blue-50 py-12 sm:py-20">
-        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div class="mb-8 text-center sm:mb-12">
-                <h2 class="mb-4 text-2xl font-bold text-gray-900 sm:text-3xl md:text-4xl">
-                    Flexible Token Packages
-                </h2>
-            </div>
-            <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 sm:gap-8">
-                <!-- Starter Package -->
-                <div class="rounded-2xl bg-white p-6 shadow-lg sm:p-8">
-                    <h3 class="mb-2 text-xl font-bold text-green-600 sm:text-2xl">Starter</h3>
-                    <div class="mb-2 text-3xl font-bold sm:text-4xl">₦50,000</div>
-                    <p class="mb-4 text-gray-500">2,000 Tokens</p>
-                    <button class="landing-package-btn w-full rounded-lg bg-green-600 py-3 text-white transition hover:bg-green-700" data-tokens="2000" data-price="50000" data-name="Starter">
-                        Get Started
-                    </button>
-                </div>
-                
-                <!-- Professional Package -->
-                <div class="relative rounded-2xl border-2 border-blue-500 bg-white p-6 shadow-lg sm:p-8">
-                    <div class="absolute -top-3 left-1/2 -translate-x-1/2 transform whitespace-nowrap rounded-full bg-gradient-to-r from-blue-500 to-pink-500 px-4 py-1 text-xs font-semibold text-white">
-                        POPULAR
-                    </div>
-                    <h3 class="mb-2 text-xl font-bold text-blue-600 sm:text-2xl">Professional</h3>
-                    <div class="mb-2 text-3xl font-bold sm:text-4xl">₦100,000</div>
-                    <p class="mb-4 text-gray-500">5,000 Tokens</p>
-                    <button class="landing-package-btn w-full rounded-lg bg-blue-600 py-3 text-white transition hover:bg-blue-700" data-tokens="5000" data-price="100000" data-name="Professional">
-                        Get Started
-                    </button>
-                </div>
-                
-                <!-- Enterprise Package -->
-                <div class="rounded-2xl bg-white p-6 shadow-lg sm:col-span-2 lg:col-span-1 sm:p-8">
-                    <h3 class="mb-2 text-xl font-bold text-purple-600 sm:text-2xl">Enterprise</h3>
-                    <div class="mb-2 text-3xl font-bold sm:text-4xl">₦180,000</div>
-                    <p class="mb-4 text-gray-500">10,000 Tokens</p>
-                    <button class="landing-package-btn w-full rounded-lg bg-purple-600 py-3 text-white transition hover:bg-purple-700" data-tokens="10000" data-price="180000" data-name="Enterprise">
-                        Get Started
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+    @include('phs.partials.landing-header')
 
     <!-- Existing Get Started Content -->
     <div class="min-h-screen bg-white">
@@ -187,9 +104,9 @@
             <div class="grid gap-8 lg:grid-cols-12 lg:items-center">
                 <div class="lg:col-span-6">
                     <h2 class="mb-6 text-3xl font-bold text-gray-900">Explore your options to get started</h2>
-                    <p class="mb-6 text-gray-600">Your PHS account unlocks different ways to experience the platform. Choose the option that best fits your organisation—create an account, request institutional access, or purchase tokens.</p>
+                    <p class="mb-6 text-gray-600">Your PHS account unlocks different ways to experience the platform. Choose the option that best fits your organisation—create an account, request Organizational access, or purchase tokens.</p>
                     <div class="flex gap-4">
-                        <a href="{{ route('phs.request.form') }}" class="rounded-md bg-blue-600 px-4 py-2 text-white font-semibold">Request Institutional Access</a>
+                        <a href="{{ route('phs.request.form') }}" class="rounded-md bg-blue-600 px-4 py-2 text-white font-semibold">Request Organizational Access</a>
                         <a href="{{ route('phs.login') }}" class="rounded-md border border-gray-300 px-4 py-2 text-gray-700">Sign In</a>
                     </div>
                 </div>
@@ -222,21 +139,61 @@
                         <i data-lucide="shopping-cart" class="mx-auto h-8 w-8 text-purple-600"></i>
                     </div>
                     <h3 class="mb-2 font-semibold text-lg">Purchase Tokens</h3>
-                    <p class="text-sm text-gray-600">Buy token packages for institutional searches.</p>
+                    <p class="text-sm text-gray-600">Buy token packages for Organizational searches.</p>
                     <div class="mt-4"><a href="{{ route('phs.request.form') }}" class="text-blue-600">Buy tokens →</a></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <script>
-    document.getElementById('mobile-menu-btn')?.addEventListener('click', function() {
-        const menu = document.getElementById('mobile-menu');
-        menu.classList.toggle('invisible');
-        menu.classList.toggle('max-h-0');
-        menu.classList.toggle('opacity-0');
-    });
+    <!-- Pricing Section (Token Packages) — moved to last -->
+    <div class="bg-gradient-to-br from-gray-50 to-blue-50 py-12 sm:py-20">
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div class="mb-8 text-center sm:mb-12">
+                <h2 class="mb-4 text-2xl font-bold text-gray-900 sm:text-3xl md:text-4xl">
+                    Flexible Token Packages
+                </h2>
+            </div>
+            <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 sm:gap-8">
+                <!-- Starter Package -->
+                <div class="rounded-2xl bg-white p-6 shadow-lg sm:p-8">
+                    <h3 class="mb-2 text-xl font-bold text-green-600 sm:text-2xl">Starter</h3>
+                    <div class="mb-2 text-3xl font-bold sm:text-4xl">₦50,000</div>
+                    <p class="mb-4 text-gray-500">2,000 Tokens</p>
+                    <button class="landing-package-btn w-full rounded-lg bg-green-600 py-3 text-white transition hover:bg-green-700" data-tokens="2000" data-price="50000" data-name="Starter">
+                        Get Started
+                    </button>
+                </div>
 
+                <!-- Professional Package -->
+                <div class="relative rounded-2xl border-2 border-blue-500 bg-white p-6 shadow-lg sm:p-8">
+                    <div class="absolute -top-3 left-1/2 -translate-x-1/2 transform whitespace-nowrap rounded-full bg-gradient-to-r from-blue-500 to-pink-500 px-4 py-1 text-xs font-semibold text-white">
+                        POPULAR
+                    </div>
+                    <h3 class="mb-2 text-xl font-bold text-blue-600 sm:text-2xl">Professional</h3>
+                    <div class="mb-2 text-3xl font-bold sm:text-4xl">₦100,000</div>
+                    <p class="mb-4 text-gray-500">5,000 Tokens</p>
+                    <button class="landing-package-btn w-full rounded-lg bg-blue-600 py-3 text-white transition hover:bg-blue-700" data-tokens="5000" data-price="100000" data-name="Professional">
+                        Get Started
+                    </button>
+                </div>
+
+                <!-- Enterprise Package -->
+                <div class="rounded-2xl bg-white p-6 shadow-lg sm:col-span-2 lg:col-span-1 sm:p-8">
+                    <h3 class="mb-2 text-xl font-bold text-purple-600 sm:text-2xl">Enterprise</h3>
+                    <div class="mb-2 text-3xl font-bold sm:text-4xl">₦180,000</div>
+                    <p class="mb-4 text-gray-500">10,000 Tokens</p>
+                    <button class="landing-package-btn w-full rounded-lg bg-purple-600 py-3 text-white transition hover:bg-purple-700" data-tokens="10000" data-price="180000" data-name="Enterprise">
+                        Get Started
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @include('phs.partials.landing-footer')
+
+    <script>
     // Handle package button clicks to redirect to onboarding request
     document.querySelectorAll('.landing-package-btn').forEach(btn => {
         btn.addEventListener('click', function(e) {

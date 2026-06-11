@@ -47,6 +47,7 @@ class LandRofoController extends Controller
             COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND status = 'approved'                                          THEN 1 END)   AS total_eligible,
             COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND status = 'approved' AND ISNULL(rofo_status,'') = 'pending'   THEN 1 END)   AS pending_generation,
             COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND ISNULL(rofo_status,'') = 'generated'                        THEN 1 END)   AS generated,
+            COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS'                                                                THEN 1 END)   AS total_land,
             ISNULL(SUM(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND ISNULL(rofo_status,'') = 'generated' THEN ISNULL(rofo_dev_charge,0) ELSE 0 END), 0) AS total_dev_charge
         ")->first();
 
@@ -68,6 +69,7 @@ class LandRofoController extends Controller
             'total_eligible'    => (int) ($statsRow->total_eligible    ?? 0),
             'pending_generation'=> (int) ($statsRow->pending_generation ?? 0),
             'generated'         => (int) ($statsRow->generated          ?? 0),
+            'total_land'        => (int) ($statsRow->total_land         ?? 0),
             'total_dev_charge'  => (float) ($statsRow->total_dev_charge ?? 0),
             'oss_total'         => $ossTotal,
         ];

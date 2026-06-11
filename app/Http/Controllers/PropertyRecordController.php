@@ -2795,7 +2795,7 @@ class PropertyRecordController extends Controller
                 'file_number' => 'required|string|max:255',
                 'transactions' => 'required|array|min:1',
                 'transactions.*.transaction_type' => 'required|string',
-                'transactions.*.transaction_date' => 'required|date',
+                'transactions.*.transaction_date' => 'nullable|date',
                 'transactions.*.op_serial_number' => 'nullable|string|max:255',
                 'transactions.*.record_id' => 'nullable|integer',
             ]);

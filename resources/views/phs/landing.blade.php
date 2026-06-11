@@ -5,45 +5,7 @@
 @section('content')
 <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
     <!-- Responsive Navigation -->
-    <nav class="sticky top-0 z-10 bg-white/80 backdrop-blur-md shadow-sm">
-        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div class="flex h-16 items-center justify-between">
-                <div class="flex items-center">
-                    <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES" class="h-11 w-auto object-contain">
-                </div>
-                
-                <!-- Desktop Menu -->
-                <div class="hidden items-center space-x-4 md:flex">
-                    <a href="{{ route('phs.login') }}" class="inline-flex items-center justify-center rounded-md border border-gray-300 bg-transparent px-4 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50">
-                        Sign In
-                    </a>
-                    <a href="{{ route('phs.get_started') }}" class="inline-flex items-center justify-center rounded-md border border-gray-300 bg-transparent px-4 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50">
-                        Get Started
-                    </a>
-                    <a href="{{ route('phs.request.form') }}" class="inline-flex items-center justify-center rounded-md border-0 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-blue-700">
-                        Request Access
-                    </a>
-                </div>
-                
-                <!-- Mobile Menu Button -->
-                <button id="mobile-menu-btn" class="rounded-lg p-2 hover:bg-gray-100 md:hidden">
-                    <i data-lucide="menu" class="h-6 w-6 text-gray-700"></i>
-                </button>
-            </div>
-            
-            <!-- Mobile Menu -->
-            <div id="mobile-menu" class="invisible max-h-0 overflow-hidden border-t border-gray-200 opacity-0 transition-all duration-300 ease-in-out md:hidden">
-                <div class="space-y-3 border-t border-gray-200 py-4">
-                    <a href="{{ route('phs.login') }}" class="block rounded-md border border-gray-300 bg-transparent px-4 py-2 text-center text-sm font-medium text-gray-700 transition-all hover:bg-gray-50">
-                        Sign In
-                    </a>
-                    <a href="{{ route('phs.request.form') }}" class="block rounded-md border-0 bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-blue-700">
-                        Request Access
-                    </a>
-                </div>
-            </div>
-        </div>
-    </nav>
+    @include('phs.partials.landing-header')
 
     <!-- Image Slider Banner -->
     <div class="relative mx-auto max-w-7xl px-4 pt-8 sm:px-6 lg:px-8">
@@ -199,57 +161,10 @@
     </div>
 
     <!-- Footer -->
-    <footer class="bg-gray-900 py-12 text-white sm:py-12 no-print">
-        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div class="grid gap-8 sm:grid-cols-2 lg:grid-cols-4 sm:gap-10">
-                <div>
-                    <div class="flex items-center">
-                        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES" class="h-11 w-auto object-contain bg-white rounded-md p-1">
-                    </div>
-                    <p class="mt-4 text-sm leading-relaxed text-gray-400">
-                        Official government platform for legal search services and land record verification in Kano State.
-                    </p>
-                </div>
-                <div>
-                    <h3 class="mb-4 text-base font-semibold uppercase tracking-wider text-gray-300">Services</h3>
-                    <ul class="space-y-2 text-sm text-gray-400">
-                        <li><a href="#" class="hover:text-white transition">Legal Search</a></li>
-                        <li><a href="#" class="hover:text-white transition">Property Records</a></li>
-                        <li><a href="#" class="hover:text-white transition">Certification</a></li>
-                    </ul>
-                </div>
-                <div>
-                    <h3 class="mb-4 text-base font-semibold uppercase tracking-wider text-gray-300">Company</h3>
-                    <ul class="space-y-2 text-sm text-gray-400">
-                        <li><a href="#" class="hover:text-white transition">About</a></li>
-                        <li><a href="#" class="hover:text-white transition">Contact</a></li>
-                        <li><a href="#" class="hover:text-white transition">Support</a></li>
-                    </ul>
-                </div>
-                <div>
-                    <h3 class="mb-4 text-base font-semibold uppercase tracking-wider text-gray-300">Legal</h3>
-                    <ul class="space-y-2 text-sm text-gray-400">
-                        <li><a href="#" class="hover:text-white transition">Privacy</a></li>
-                        <li><a href="#" class="hover:text-white transition">Terms</a></li>
-                        <li><a href="#" class="hover:text-white transition">Cookies</a></li>
-                    </ul>
-                </div>
-            </div>
-            <div class="mt-8 border-t border-gray-800 pt-8 text-center text-sm text-gray-400">
-                <p>&copy; {{ date('Y') }} Kano State Ministry of Land and Physical Planning. All rights reserved.</p>
-            </div>
-        </div>
-    </footer>
+    @include('phs.partials.landing-footer')
 </div>
 
 <script>
-document.getElementById('mobile-menu-btn')?.addEventListener('click', function() {
-    const menu = document.getElementById('mobile-menu');
-    menu.classList.toggle('invisible');
-    menu.classList.toggle('max-h-0');
-    menu.classList.toggle('opacity-0');
-});
-
 // ---- Hero image slider ----
 (function () {
     const slides = Array.from(document.querySelectorAll('#hero-slider .slide'));

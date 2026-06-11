@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="csrf-token" content="{{ csrf_token() }}" />
-  <title>KLAES Enterprise - Institutional Search History Platform</title>
+  <title>KLAES Enterprise - Organizational Search History Platform</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -80,6 +80,25 @@
     .token-display {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
+
+    /* Source tags — mirrors the Legal Search Property Timeline card */
+    .phs-source-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      border: 1px solid transparent;
+    }
+
+    .phs-source-tag-file_history_staging { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
+    .phs-source-tag-CofO_staging         { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
+    .phs-source-tag-pra                  { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+    .phs-source-tag-deed_registrations   { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
 
     .package-card {
       cursor: pointer;
@@ -726,22 +745,18 @@
         </div>
         <div class="min-w-0">
           <p class="text-sm font-bold text-gray-900 truncate" id="sidebar-dashboard-org-name">Search History Portal</p>
-          <p class="text-xs text-gray-500 truncate">PHS workspace</p>
+          <p class="text-xs text-gray-500 truncate">PHS Portal</p>
         </div>
       </div>
       <nav class="flex-1 px-3 py-5 space-y-1">
-        <a href="{{ route('phs.dashboard') }}" class="flex items-center gap-3 rounded-xl bg-blue-50 px-3 py-2.5 text-sm font-semibold text-blue-700">
+        <a href="{{ route('phs.dashboard') }}" id="sidebar-dashboard-link" data-view="dashboard" class="phs-nav-link flex items-center gap-3 rounded-xl bg-blue-50 px-3 py-2.5 text-sm font-semibold text-blue-700">
           <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
           Dashboard
         </a>
-        <a href="#search-query" id="sidebar-search-link" class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900">
+        <a href="#search-query" id="sidebar-search-link" data-view="search" class="phs-nav-link flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900">
           <i data-lucide="search" class="w-4 h-4"></i>
           Search History
         </a>
-        <button id="sidebar-buy-tokens-btn" type="button" class="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900">
-          <i data-lucide="shopping-cart" class="w-4 h-4"></i>
-          Purchase Tokens
-        </button>
         @if ($member->isSuperAdmin())
           <a href="{{ route('phs.org.index') }}" class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900">
             <i data-lucide="settings" class="w-4 h-4"></i>
@@ -750,7 +765,7 @@
         @endif
       </nav>
       <div class="border-t border-gray-100 p-4 space-y-3">
-        <div class="rounded-xl bg-gray-50 px-3 py-3">
+        <div class="rounded-xl bg-gray-50 px-3 py-3" style="display:none">
           <p class="text-xs text-gray-500">Available Tokens</p>
           <p class="text-2xl font-bold text-blue-600" id="sidebar-token-display">0</p>
         </div>
@@ -775,36 +790,38 @@
                 KLAES
               </h1>
               <p class="text-xs sm:text-sm text-gray-600">
-                Institutional Search History Platform
+                Organizational Search History Platform
               </p>
             </div>
           </div>
           
           <!-- Desktop Menu -->
           <div class="hidden md:flex items-center space-x-4">
-            <div class="text-right mr-4">
+            <div class="text-right mr-4" style="display:none">
               <p class="text-xs text-gray-500">Available Tokens</p>
               <p class="text-lg sm:text-xl font-bold text-blue-600" id="token-display-header">
                 0
               </p>
             </div>
-            <div class="flex items-center space-x-2">
+            {{-- <div class="flex items-center space-x-2">
               <div
                 class="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white">
                 <span id="institution-initial">B</span>
               </div>
               <span class="hidden lg:inline text-sm font-medium" id="institution-name">Bank Name</span>
-            </div>
+            </div> --}}
             <button id="dashboard-logout-btn"
               class="inline-flex items-center justify-center rounded-md font-medium text-sm px-4 py-2 bg-transparent border border-gray-300 text-gray-700 hover:bg-gray-50">
               Logout
             </button>
+            @if ($member->isSuperAdmin())
             <button id="open-user-management-btn"
               class="inline-flex items-center justify-center rounded-md font-medium text-sm px-4 py-2 bg-purple-600 text-white hover:bg-purple-700 transition ml-2"
               onclick="window.location.href='{{ route('phs.org.index') }}'">
               <i data-lucide="settings" class="w-4 h-4 mr-2"></i>Manage
               Organization
             </button>
+            @endif
           </div>
           
           <!-- Mobile Menu Button -->
@@ -817,7 +834,7 @@
         <div id="dashboard-mobile-menu" class="md:hidden overflow-hidden transition-all duration-300 ease-in-out max-h-0 opacity-0 invisible">
           <div class="py-4 border-t border-gray-200 space-y-4">
             <div class="flex items-center justify-between">
-              <div>
+              <div style="display:none">
                 <p class="text-xs text-gray-500">Available Tokens</p>
                 <p class="text-xl font-bold text-blue-600" id="mobile-token-display">0</p>
               </div>
@@ -833,11 +850,13 @@
                 class="w-full inline-flex items-center justify-center rounded-md font-medium text-sm px-4 py-2 bg-transparent border border-gray-300 text-gray-700 hover:bg-gray-50">
                 Logout
               </button>
+              @if ($member->isSuperAdmin())
               <button id="mobile-open-user-management-btn"
                 class="w-full inline-flex items-center justify-center rounded-md font-medium text-sm px-4 py-2 bg-purple-600 text-white hover:bg-purple-700 transition"
                 onclick="window.location.href='{{ route('phs.org.index') }}'">
                 <i data-lucide="settings" class="w-4 h-4 mr-2"></i>Manage Organization
               </button>
+              @endif
             </div>
           </div>
         </div>
@@ -850,7 +869,9 @@
       <div class="absolute inset-0 bg-black/20"></div>
       <div class="relative z-10 text-center px-4">
         <p id="banner-text-dashboard" class="text-white text-xl sm:text-2xl font-bold">
-          Welcome to Your Search History Portal
+         Welcome to Your Kano State<br>
+          Ministry of Land and Physical Planning <br>
+          Property History Search Portal
         </p>
         <p id="banner-subtext" class="text-white/80 text-xs sm:text-sm mt-2">
           Secure, fast, and reliable property records
@@ -860,34 +881,111 @@
 
     <main class="flex-1">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        <!-- Token Balance - Responsive -->
-        <section class="mb-6 sm:mb-8 no-print">
-          <div class="token-display rounded-xl shadow-lg p-4 sm:p-6 text-white">
-            <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
-              <div class="text-center sm:text-left">
-                <p class="text-blue-100 text-sm">Available Token Balance</p>
-                <p class="text-4xl sm:text-5xl font-bold mt-1" id="token-balance">0</p>
-                <p class="text-blue-100 text-xs mt-2">
-                  Each search consumes 1 token
-                </p>
-              </div>
-              <div>
-                <button id="buy-tokens-btn"
-                  class="bg-white text-purple-700 px-5 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:shadow-lg transition-all flex items-center gap-2 text-sm sm:text-base">
-                  <i data-lucide="shopping-cart" class="w-4 h-4 sm:w-5 sm:h-5"></i>Purchase
-                  Tokens
-                </button>
-              </div>
+
+        <!-- ==================== DASHBOARD OVERVIEW ==================== -->
+        <div id="dashboard-view">
+          @if ($stats['token_balance'] < 100)
+          <div class="mb-5 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+            <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0"></i>
+            <div class="text-sm text-amber-800">
+              <p class="font-semibold">Low token balance</p>
+              <p>You have <strong>{{ number_format($stats['token_balance']) }}</strong> tokens left.
+                @if ($member->isSuperAdmin())
+                  <a href="{{ route('phs.org.index') }}?tab=subscription" class="font-semibold underline hover:text-amber-900">Top up now</a> to avoid interruptions.
+                @else
+                  Please contact your organization administrator to top up.
+                @endif
+              </p>
             </div>
           </div>
-        </section>
+          @endif
 
+          <!-- Stat Cards -->
+          <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 pb-6 sm:pb-8">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex items-center gap-4">
+              <div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                <i data-lucide="coins" class="w-6 h-6 text-blue-600"></i>
+              </div>
+              <div class="min-w-0">
+                <p class="text-xs text-gray-500">Available Tokens</p>
+                <p class="text-2xl font-bold text-gray-900">{{ number_format($stats['token_balance']) }}</p>
+              </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex items-center gap-4">
+              <div class="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
+                <i data-lucide="search" class="w-6 h-6 text-green-600"></i>
+              </div>
+              <div class="min-w-0">
+                <p class="text-xs text-gray-500">Total Searches</p>
+                <p class="text-2xl font-bold text-gray-900">{{ number_format($stats['total_searches']) }}</p>
+              </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex items-center gap-4">
+              <div class="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
+                <i data-lucide="calendar" class="w-6 h-6 text-purple-600"></i>
+              </div>
+              <div class="min-w-0">
+                <p class="text-xs text-gray-500">Searches This Month</p>
+                <p class="text-2xl font-bold text-gray-900">{{ number_format($stats['searches_this_month']) }}</p>
+              </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex items-center gap-4">
+              <div class="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center flex-shrink-0">
+                <i data-lucide="users" class="w-6 h-6 text-orange-600"></i>
+              </div>
+              <div class="min-w-0">
+                <p class="text-xs text-gray-500">Team Members</p>
+                <p class="text-2xl font-bold text-gray-900">{{ number_format($stats['member_count']) }}</p>
+              </div>
+            </div>
+          </section>
+
+          <!-- Quick action + Recent searches -->
+          <section class="pb-8">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div class="flex items-center justify-between p-4 sm:p-6 border-b border-gray-100">
+                <h2 class="text-lg font-semibold text-gray-900">Recent Searches</h2>
+                <button id="dashboard-new-search-btn"
+                  class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition">
+                  <i data-lucide="search" class="w-4 h-4"></i> Search Now
+                </button>
+              </div>
+              @if ($recentSearches->isEmpty())
+                <div class="p-10 text-center">
+                  <i data-lucide="file-search" class="w-12 h-12 text-gray-300 mx-auto mb-4"></i>
+                  <p class="text-gray-500">No searches yet. Run your first Property History Search.</p>
+                </div>
+              @else
+                <div class="divide-y divide-gray-100">
+                  @foreach ($recentSearches as $log)
+                    <div class="flex items-center justify-between gap-4 px-4 sm:px-6 py-3.5">
+                      <div class="min-w-0">
+                        <p class="text-sm font-medium text-gray-900 truncate">{{ $log->file_number ?: $log->query }}</p>
+                        <p class="text-xs text-gray-500 truncate">
+                          {{ $log->member->name ?? 'Member' }} ·
+                          {{ $log->result_count }} {{ \Illuminate\Support\Str::plural('result', $log->result_count) }}
+                        </p>
+                      </div>
+                      <div class="text-right flex-shrink-0">
+                        <p class="text-xs text-gray-500">{{ $log->created_at?->diffForHumans() }}</p>
+                        <p class="text-[11px] text-gray-400 font-mono">{{ $log->reference_no }}</p>
+                      </div>
+                    </div>
+                  @endforeach
+                </div>
+              @endif
+            </div>
+          </section>
+        </div>
+
+        <!-- ==================== SEARCH HISTORY VIEW ==================== -->
+        <div id="search-view" class="hidden">
         <!-- Search Section - Responsive -->
         <section class="pb-6 sm:pb-8 no-print">
           <div class="bg-white rounded-xl shadow-lg border border-gray-200">
             <div class="p-4 sm:p-6 md:p-8">
               <h2 class="text-lg sm:text-xl font-semibold mb-4">
-                Legal Document Search
+                Property History Search
               </h2>
               <div class="flex flex-col sm:flex-row items-center gap-3">
                 <div class="flex-1 relative w-full">
@@ -898,11 +996,11 @@
                 </div>
                 <button id="search-btn"
                   class="inline-flex items-center justify-center rounded-lg font-medium px-5 sm:px-7 py-2 sm:py-3 h-10 sm:h-12 bg-blue-600 text-white hover:bg-blue-700 transition text-sm sm:text-base w-full sm:w-auto">
-                  <i data-lucide="search" class="w-4 h-4 sm:w-5 sm:h-5 mr-2"></i>Search (1 Token)
+                  <i data-lucide="search" class="w-4 h-4 sm:w-5 sm:h-5 mr-2"></i>1 Token per Search
                 </button>
               </div>
               <p class="text-xs text-gray-500 mt-2.5">
-                Examples: "COM-RES-2021-078", "KN12345", "John Doe"
+                Examples: "COM-RES-2021-78", "KN12345", "John Doe"
               </p>
             </div>
           </div>
@@ -969,12 +1067,14 @@
                   </h3>
                   <div class="space-y-2">
                     <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">File Number:</span><span class="font-medium text-xs sm:text-sm" id="file-number-value">--</span></div>
-                    <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">KANGIS No.:</span><span class="font-medium text-xs sm:text-sm" id="kangis-file-number-value">--</span></div>
-                    <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">Party 1:</span><span class="font-medium text-xs sm:text-sm" id="current-guarantor-value">--</span></div>
-                    <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">Party 2:</span><span class="font-medium text-xs sm:text-sm" id="current-guarantee-value">--</span></div>
+                    <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">File Title:</span><span class="font-semibold text-xs sm:text-sm" id="file-title-value">--</span></div>
+                    <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">Plot No:</span><span class="font-medium text-xs sm:text-sm" id="plot-number-value">--</span></div>
+                    <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">Size:</span><span class="font-medium text-xs sm:text-sm" id="size-value">--</span></div>
+                    <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">TP No:</span><span class="font-medium text-xs sm:text-sm" id="tpno-value">--</span></div>
+                    <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">District:</span><span class="font-medium text-xs sm:text-sm" id="district-value">--</span></div>
                     <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">LGA:</span><span class="font-medium text-xs sm:text-sm" id="lga-value">--</span></div>
-                    <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">Plot Number:</span><span class="font-medium text-xs sm:text-sm" id="plot-number-value">--</span></div>
-                    <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">Property Type:</span><span class="font-medium text-xs sm:text-sm" id="property-type-value">--</span></div>
+                    <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">Land Use:</span><span class="font-medium text-xs sm:text-sm" id="property-type-value">--</span></div>
+                    <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">Last Transaction:</span><span class="font-medium text-xs sm:text-sm" id="last-transaction-value">--</span></div>
                     <div class="flex justify-between py-1"><span class="text-gray-500 text-xs sm:text-sm">Status:</span><span class="font-medium text-green-600 text-xs sm:text-sm" id="status-value">Active</span></div>
                   </div>
                 </div>
@@ -990,9 +1090,13 @@
                   </div>
                 </div>
               </div>
-              <h3 class="font-semibold text-gray-700 mb-4 flex items-center text-sm sm:text-base">
-                <i data-lucide="calendar" class="w-4 h-4 mr-2"></i>Transaction Timeline
-              </h3>
+              <div class="flex flex-col gap-3 mb-4">
+                <h3 class="font-semibold text-gray-700 flex items-center text-sm sm:text-base">
+                  <i data-lucide="calendar" class="w-4 h-4 mr-2"></i>Property Timeline
+                  <span id="timeline-total-count" class="ml-2 inline-flex items-center justify-center min-w-[1.5rem] h-[1.5rem] rounded-full bg-blue-100 text-blue-800 text-xs font-bold px-2">0</span>
+                </h3>
+                <div id="timeline-source-badges" class="flex flex-wrap gap-2"></div>
+              </div>
               <div id="timeline-container" class="space-y-0">
                 <div class="text-center py-8 text-gray-500 text-sm sm:text-base">
                   Select a file to view transaction history
@@ -1002,91 +1106,6 @@
           </div>
         </section>
 
-        <!-- Token Purchase Modal - Responsive -->
-        <div id="token-modal"
-          class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 hidden">
-          <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto">
-            <div class="p-4 sm:p-6 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-xl">
-              <div class="flex justify-between items-start">
-                <div>
-                  <h2 class="text-xl sm:text-2xl md:text-3xl font-bold mb-1.5">
-                    Purchase Tokens
-                  </h2>
-                  <p class="text-blue-100 text-sm">Choose a subscription package</p>
-                </div>
-                <button id="close-token-modal" class="text-white/80 hover:text-white hover:bg-white/20 rounded-lg p-2">
-                  <svg class="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div class="p-4 sm:p-6 md:p-8">
-              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
-                <div class="package-card bg-white rounded-xl shadow-lg border border-gray-200 cursor-pointer"
-                  data-tokens="2000" data-price="50000" data-name="Starter">
-                  <div class="text-center pb-4 pt-6 px-6">
-                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <i data-lucide="package" class="w-8 h-8 text-green-600"></i>
-                    </div>
-                    <h3 class="text-xl sm:text-2xl text-green-600">Starter</h3>
-                    <div class="text-2xl sm:text-3xl md:text-4xl font-bold text-green-600 mt-2">
-                      ₦50,000
-                    </div>
-                    <p class="text-gray-500 text-xs sm:text-sm">2,000 Tokens</p>
-                  </div>
-                </div>
-                <div class="package-card bg-white rounded-xl shadow-lg border border-blue-500 cursor-pointer relative"
-                  data-tokens="5000" data-price="100000" data-name="Professional">
-                  <div class="absolute -top-3 left-1/2 transform -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-blue-500 to-pink-500 text-white text-xs font-semibold rounded-full whitespace-nowrap">
-                    POPULAR
-                  </div>
-                  <div class="text-center pb-4 pt-6 px-6">
-                    <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <i data-lucide="briefcase" class="w-8 h-8 text-blue-600"></i>
-                    </div>
-                    <h3 class="text-xl sm:text-2xl text-blue-600">Professional</h3>
-                    <div class="text-2xl sm:text-3xl md:text-4xl font-bold text-blue-600 mt-2">
-                      ₦100,000
-                    </div>
-                    <p class="text-gray-500 text-xs sm:text-sm">5,000 Tokens</p>
-                  </div>
-                </div>
-                <div class="package-card bg-white rounded-xl shadow-lg border border-gray-200 cursor-pointer"
-                  data-tokens="10000" data-price="180000" data-name="Enterprise">
-                  <div class="text-center pb-4 pt-6 px-6">
-                    <div class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <i data-lucide="building-2" class="w-8 h-8 text-purple-600"></i>
-                    </div>
-                    <h3 class="text-xl sm:text-2xl text-purple-600">Enterprise</h3>
-                    <div class="text-2xl sm:text-3xl md:text-4xl font-bold text-purple-600 mt-2">
-                      ₦180,000
-                    </div>
-                    <p class="text-gray-500 text-xs sm:text-sm">10,000 Tokens</p>
-                  </div>
-                </div>
-              </div>
-              <div class="border-t pt-6 mt-4">
-                <div class="flex flex-col sm:flex-row gap-4 justify-center">
-                  <button id="pay-online-token"
-                    class="inline-flex items-center justify-center gap-2 px-5 sm:px-6 py-2 sm:py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium shadow-md flex-1 max-w-xs text-sm sm:text-base">
-                    <i data-lucide="credit-card" class="w-4 h-4 sm:w-5 sm:h-5"></i>Pay Online
-                  </button>
-                  <button id="pay-invoice-token"
-                    class="inline-flex items-center justify-center gap-2 px-5 sm:px-6 py-2 sm:py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium flex-1 max-w-xs text-sm sm:text-base">
-                    <i data-lucide="file-text" class="w-4 h-4 sm:w-5 sm:h-5"></i>Request Invoice
-                  </button>
-                </div>
-              </div>
-              <div class="flex justify-center gap-4 mt-6">
-                <button id="cancel-token-purchase" class="px-5 sm:px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm sm:text-base">
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <iframe id="print-frame" style="
               position: absolute;
               width: 0;
@@ -1094,6 +1113,7 @@
               border: none;
               visibility: hidden;
             "></iframe>
+        </div><!-- /#search-view -->
       </div>
     </main>
 

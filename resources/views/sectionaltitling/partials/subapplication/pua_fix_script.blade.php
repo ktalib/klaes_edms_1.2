@@ -104,7 +104,38 @@
         };
     });
 
-    function populateUnitDropdown(selectElement) {
+    /**
+     * Resolve the commissioned PUA file number for a buyer.
+     * 1) buyer.unit_fileno (joined in the blade via buyer_list_id)
+     * 2) match against window.ST_UNIT_FILES by buyer_list_id
+     * 3) derive from np_fileno + zero-padded unit_sequence
+     */
+    function resolvePuaFileNo(buyer) {
+        if (!buyer) return '';
+        if (buyer.unit_fileno && buyer.unit_fileno !== 'N/A') return buyer.unit_fileno;
+
+        const stFiles = window.ST_UNIT_FILES || [];
+        const buyerId = Number(buyer.buyer_id || buyer.id);
+        const match = stFiles.find(f => Number(f.buyer_list_id) === buyerId);
+        if (match) {
+            if (match.fileno && match.fileno !== 'N/A') return match.fileno;
+            const np = (match.np_fileno || '').toString().trim();
+            const seq = parseInt(match.unit_sequence, 10);
+            if (np && !Number.isNaN(seq)) return `${np}-${seq.toString().padStart(3, '0')}`;
+        }
+        return '';
+    }
+
+    function populateUnitDropdown(arg) {
+        // Accept either the <select> element or (from the main script) an array/undefined.
+        const selectElement = (arg && arg.tagName === 'SELECT')
+            ? arg
+            : document.getElementById('unit-file-select');
+        if (!selectElement) {
+            console.warn('[PUA Fix] unit-file-select not found');
+            return;
+        }
+
         // data comes from window.SUB_APP_BUYERS
         const buyers = window.SUB_APP_BUYERS || [];
         console.log('[PUA Fix] Populating dropdown with', buyers.length, 'units');
@@ -126,9 +157,9 @@
             const option = document.createElement('option');
             // Value is unit_no as that's what we want to save
             option.value = buyer.unit_no;
-            
-            const fileno = (buyer.unit_fileno && buyer.unit_fileno !== 'N/A') ? buyer.unit_fileno : '';
-            
+
+            const fileno = resolvePuaFileNo(buyer);
+
             if (!fileno) {
                 option.disabled = true;
                 option.text = `Unit ${buyer.unit_no} (${buyer.unit_size || 'N/A'}) - ${buyer.buyer_name} - (Not Commissioned)`;

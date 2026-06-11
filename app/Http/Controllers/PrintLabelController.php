@@ -1058,6 +1058,7 @@ SQL;
             'label_format' => 'required|in:standard,compact,qr_code,30-in-1',
             'orientation' => 'required|in:portrait,landscape',
             'batch_size' => 'nullable|integer|min:1|max:' . self::MAX_BATCH_SELECTION,
+            'assignment_mode' => 'nullable|in:sequential,fixed',
         ];
 
         if ($source === 'grouping') {
@@ -1202,6 +1203,12 @@ SQL;
                         ]);
                     }
 
+                    // Sequential (default): fill each shelf up to RACK_SHELF_CAPACITY, then roll to the
+                    // next shelf (A1 x100, A2 x100, ...). Fixed/freestyle: assign the whole batch to the
+                    // single selected shelf regardless of capacity.
+                    $assignmentMode = strtolower(trim((string) ($validated['assignment_mode'] ?? 'sequential')));
+                    $enforceShelfCapacity = $assignmentMode !== 'fixed';
+
                     $rackPrimary = strtoupper(trim($validated['rack_primary']));
                     $rackSecondary = isset($validated['rack_secondary']) && $validated['rack_secondary'] !== ''
                         ? strtoupper(trim($validated['rack_secondary']))
@@ -1243,7 +1250,8 @@ SQL;
                             $rackSecondary,
                             $activeShelfNumber,
                             true,
-                            $manualOverride
+                            $manualOverride,
+                            $enforceShelfCapacity
                         );
 
                         $assignable = (int) ($claim['assignable'] ?? 0);
@@ -1859,7 +1867,8 @@ SQL;
         ?string $rackSecondary = null,
         int $shelfNumber = 1,
         bool $allowPartial = false,
-        bool $allowCapacityOverride = false
+        bool $allowCapacityOverride = false,
+        bool $enforceCapacity = false
     ): array
     {
         $lockForUpdate = !$allowCapacityOverride;
@@ -1894,11 +1903,27 @@ SQL;
         $registriesMatch = $hasRegistryAssignment && strcasecmp($assignment['registry'], $normalizedRegistry) === 0;
         $registriesConflict = $hasRegistryAssignment && !$registriesMatch;
 
-        // Freestyle: no capacity limit — always assign the full requested count
+        // Fixed / freestyle: no capacity limit — assign the full requested count to this one shelf.
+        if (!$enforceCapacity) {
+            return [
+                'label'              => $label,
+                'assignable'         => $requestedCount,
+                'remaining'          => PHP_INT_MAX,
+                'capacity_overridden' => false,
+            ];
+        }
+
+        // Sequential: fill this shelf up to RACK_SHELF_CAPACITY, then let the caller advance to the
+        // next shelf. A shelf already claimed by a different registry has no room here.
+        $available = $registriesConflict ? 0 : max(0, self::RACK_SHELF_CAPACITY - $currentCounter);
+        $assignable = $allowPartial
+            ? min($requestedCount, $available)
+            : ($available >= $requestedCount ? $requestedCount : 0);
+
         return [
             'label'              => $label,
-            'assignable'         => $requestedCount,
-            'remaining'          => PHP_INT_MAX,
+            'assignable'         => $assignable,
+            'remaining'          => max(0, $available - $assignable),
             'capacity_overridden' => false,
         ];
     }

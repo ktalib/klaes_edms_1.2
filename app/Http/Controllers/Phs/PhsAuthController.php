@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class PhsAuthController extends Controller
@@ -90,7 +91,31 @@ class PhsAuthController extends Controller
         return view('phs.auth.register-with-token', [
             'onboardingRequest' => $onboardingRequest,
             'token' => $token,
+            'suggestedUsername' => $this->suggestUsername($onboardingRequest->organization_name),
         ]);
+    }
+
+    /**
+     * Build a unique username suggestion derived from the organization name.
+     * The user may override it on the registration form.
+     */
+    private function suggestUsername(?string $organizationName): string
+    {
+        $base = \Str::slug((string) $organizationName, '_');
+
+        if ($base === '') {
+            $base = 'org';
+        }
+
+        $username = $base;
+        $suffix = 1;
+
+        while (PhsInstitution::where('username', $username)->exists()) {
+            $username = $base . $suffix;
+            $suffix++;
+        }
+
+        return $username;
     }
 
     public function registerWithToken($token, Request $request)
@@ -105,13 +130,24 @@ class PhsAuthController extends Controller
         }
 
         $validated = $request->validate([
+            'username' => [
+                'required',
+                'string',
+                'min:3',
+                'max:100',
+                'regex:/^[a-z0-9_]+$/',
+                Rule::unique('sqlsrv.phs_institutions', 'username'),
+            ],
             'password' => ['required', 'string', 'min:6', 'confirmed'],
             'agree_terms' => ['accepted'],
+        ], [
+            'username.regex' => 'The username may only contain lowercase letters, numbers, and underscores.',
         ]);
 
         $member = DB::connection('sqlsrv')->transaction(function () use ($onboardingRequest, $validated) {
             $institution = PhsInstitution::create([
                 'name' => $onboardingRequest->organization_name,
+                'username' => $validated['username'],
                 'type' => $onboardingRequest->organization_type,
                 'email' => $onboardingRequest->contact_email,
                 'phone' => $onboardingRequest->phone,
@@ -157,8 +193,8 @@ class PhsAuthController extends Controller
         $member->forceFill(['last_login_at' => now()])->save();
         $request->session()->regenerate();
 
-        return redirect()->route('phs.dashboard')
-            ->with('status', 'Welcome! Your organization is now registered. Please purchase tokens to begin searching.');
+        return redirect()->to(route('phs.org.index') . '?tab=branding')
+            ->with('status', 'Welcome! Your organization is now registered. Set up your branding to get started.');
     }
 
     public function logout(Request $request)

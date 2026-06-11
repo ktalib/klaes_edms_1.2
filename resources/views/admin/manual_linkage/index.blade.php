@@ -220,6 +220,8 @@
                 <form action="{{ route('admin.manual-linkage.store') }}" method="POST" id="linkage-form">
                     @csrf
                     <input type="hidden" name="workflow_type" id="hidden_workflow_type">
+                    {{-- Single canonical destination file number (written by every workflow's selector) --}}
+                    <input type="hidden" name="new_file_number" id="new_file_number" value="">
 
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 bg-white border border-slate-200 rounded-3xl p-6 lg:p-8">
 
@@ -238,7 +240,6 @@
                                         <div class="flex-1 min-w-0 space-y-1">
                                             <span class="px-2 py-0.5 bg-amber-600 text-white text-[9px] font-black rounded uppercase tracking-wider">Merged Result File</span>
                                             <div id="merger-result-file-no" class="text-sm font-bold text-slate-800 font-mono mt-1">NOT SELECTED</div>
-                                            <input type="hidden" name="new_file_number" id="new_file_number" value="">
                                             <div id="merger-result-title" class="text-xs text-slate-500 truncate">—</div>
                                         </div>
                                         <button type="button" onclick="openMergerResultSelector()"
@@ -289,9 +290,6 @@
                                         </table>
                                         <button type="button" onclick="clearSubdivisionParent()" class="mt-2 text-[10px] text-slate-400 hover:text-red-500 transition">✕ Clear</button>
                                     </div>
-                                    <p class="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1 border border-amber-200">
-                                        If you cannot find the file, it has not been indexed yet — index it first.
-                                    </p>
                                 </div>
 
                                 {{-- Mother Plot Location Details --}}
@@ -308,21 +306,27 @@
                                         </div>
                                         <div>
                                             <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Street Name</label>
-                                            <select name="street_name" id="street_name" onchange="updateManualLocationPreview()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                                            <select name="street_name" id="street_name" onchange="onStreetChange()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
                                                 <option value="">SELECT STREET</option>
                                                 @foreach($streetNames as $street)
                                                     <option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>
                                                 @endforeach
                                             </select>
+                                            <input type="text" id="street_other" name="street_name" placeholder="Specify street" disabled
+                                                   oninput="updateManualLocationPreview()"
+                                                   class="hidden w-full mt-2 px-3 py-2 rounded-lg border border-indigo-300 text-sm">
                                         </div>
                                         <div>
                                             <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">District</label>
-                                            <select name="district" id="district" onchange="updateManualLocationPreview()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                                            <select name="district" id="district" onchange="onDistrictChange()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
                                                 <option value="">SELECT DISTRICT</option>
                                                 @foreach($districts as $district)
                                                     <option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>
                                                 @endforeach
                                             </select>
+                                            <input type="text" id="district_other" name="district" placeholder="Specify district" disabled
+                                                   oninput="updateManualLocationPreview()"
+                                                   class="hidden w-full mt-2 px-3 py-2 rounded-lg border border-indigo-300 text-sm">
                                         </div>
                                         <div>
                                             <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">LGA</label>
@@ -351,19 +355,18 @@
                             {{-- Source verify panel (all non-Merger workflows) --}}
                             <div id="source-verify-panel" class="space-y-6">
                                 <div class="space-y-4">
-                                    <label class="block text-sm font-semibold text-slate-700" id="old-input-label">Add Old File Number</label>
+                                    <label class="block text-sm font-semibold text-slate-700" id="old-input-label">Select Legacy File</label>
                                     <div class="flex gap-2">
-                                        <div class="relative flex-1">
-                                            <i data-lucide="file-text" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                            <input type="text" id="old-file-input" placeholder="e.g. RES-2000-158"
-                                                class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                                        </div>
-                                        <button type="button" id="btn-verify-old"
-                                            class="px-5 py-3 bg-slate-800 text-white rounded-xl text-sm font-semibold hover:bg-slate-700 transition whitespace-nowrap">
-                                            Verify &amp; Add
+                                        <button type="button" id="btn-select-old"
+                                            class="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-slate-800 text-white rounded-xl text-sm font-semibold hover:bg-slate-700 transition">
+                                            <i data-lucide="search" class="w-4 h-4"></i> Select File
+                                        </button>
+                                        <button type="button" id="btn-clear-old" onclick="clearSourceSelection()"
+                                            class="px-4 py-3 bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 border border-slate-200 rounded-xl text-sm font-semibold transition flex items-center gap-2 whitespace-nowrap">
+                                            <i data-lucide="x" class="w-4 h-4"></i> Clear
                                         </button>
                                     </div>
-                                    <p class="text-[11px] text-slate-400" id="old-help-text">Type the file number and click verify.</p>
+                                    <p class="text-[11px] text-slate-400" id="old-help-text">Use the file selector to choose the legacy file.</p>
                                 </div>
 
                                 <div id="verify-loader" class="hidden py-4 flex justify-center">
@@ -423,27 +426,15 @@
         </div>
     </div>
 </div>
-@endsection
 
+{{-- Inside the content section so the component's Select2 CDN <script> loads AFTER jQuery (head),
+     otherwise loose output renders before <head> and $.fn.select2 is undefined → search breaks. --}}
 @include('components.global-fileno-modal')
+@endsection
 
 @section('footer-scripts')
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script>
-// ─── Temp File No Auto-Generation ────────────────────────────────────────────
-const TEMP_FILENO_URL = '{{ route("instruments.getNextTempFileNo") }}';
-
-function fetchAndSetTempFileNo() {
-    const input = document.getElementById('temp_file_no');
-    if (!input) return;
-    input.value = 'Generating...';
-
-    fetch(TEMP_FILENO_URL)
-        .then(r => r.json())
-        .then(data => { input.value = data.temp_fileno || ''; })
-        .catch(() => { input.value = ''; });
-}
-
 // ─── Global State ───────────────────────────────────────────────────────────
 let selectedWorkflow = null;
 let selectedOldFiles = [];
@@ -510,6 +501,15 @@ function goBackToStep1() {
     if (mrDetails) mrDetails.classList.add('hidden');
     const mrHidden = document.getElementById('new_file_number');
     if (mrHidden)  mrHidden.value = '';
+    // Restore the district / street "Other → specify" toggles to their default state
+    const distSelect = document.getElementById('district');
+    if (distSelect) distSelect.setAttribute('name', 'district');
+    const distOther = document.getElementById('district_other');
+    if (distOther) { distOther.classList.add('hidden'); distOther.disabled = true; distOther.value = ''; }
+    const streetSelect = document.getElementById('street_name');
+    if (streetSelect) streetSelect.setAttribute('name', 'street_name');
+    const streetOther = document.getElementById('street_other');
+    if (streetOther) { streetOther.classList.add('hidden'); streetOther.disabled = true; streetOther.value = ''; }
     renderBadges();
     const form = document.getElementById('linkage-form');
     if (form) form.reset();
@@ -530,8 +530,8 @@ function tailorLeftForm() {
     const texts = {
         Subdivision:          { header: 'Subdivision Parent File',  label: 'Enter Parent File Number',          help: 'Verify the one parent file to be split. (Exactly 1 required).',         list: 'Parent File to Decommission' },
         Merger:               { header: 'Merged Result File',       label: '',                                  help: '',                                                                       list: '' },
-        'Plot Extension':     { header: 'Legacy Plot File',         label: 'Enter Legacy Plot File Number',     help: 'Verify the original plot file. (Exactly 1 required).',                  list: 'Plot File to Decommission'   },
-        'Change of Purpose':  { header: 'Legacy Source File',       label: 'Enter Legacy File Number',          help: 'Verify the file to re-purpose. (Exactly 1 required).',                 list: 'Legacy File to Re-Purpose'   },
+        'Plot Extension':     { header: 'Legacy Plot File',         label: 'Select Legacy Plot File',           help: 'Choose the original plot file. (Exactly 1 required).',                  list: 'Plot File to Decommission'   },
+        'Change of Purpose':  { header: 'Legacy Source File',       label: 'Select Legacy File',                help: 'Choose the file to re-purpose. (Exactly 1 required).',                 list: 'Legacy File to Re-Purpose'   },
     };
     const t = texts[selectedWorkflow] || {};
     document.getElementById('old-side-header').textContent = t.header || 'Source File';
@@ -619,12 +619,73 @@ function manualLocationBlock(title) {
     `;
 }
 
+// District "Other" → reveal a free-text "Specify district" field.
+// When active, the select stops submitting and the text input (also name="district") wins.
+function onDistrictChange() {
+    const select  = document.getElementById('district');
+    const specify = document.getElementById('district_other');
+    if (select && specify) {
+        const isOther = (select.value || '').trim().toLowerCase() === 'other';
+        if (isOther) {
+            specify.classList.remove('hidden');
+            specify.disabled = false;
+            select.removeAttribute('name');   // avoid submitting the literal "Other"
+            specify.focus();
+        } else {
+            specify.classList.add('hidden');
+            specify.disabled = true;
+            specify.value = '';
+            select.setAttribute('name', 'district');
+        }
+    }
+    updateManualLocationPreview();
+}
+
+function districtValue() {
+    const select = document.getElementById('district');
+    const v = select?.value || '';
+    if (v.trim().toLowerCase() === 'other') {
+        return document.getElementById('district_other')?.value?.trim() || '';
+    }
+    return v;
+}
+
+// Street "Other" → reveal a free-text "Specify street" field (same pattern as district).
+function onStreetChange() {
+    const select  = document.getElementById('street_name');
+    const specify = document.getElementById('street_other');
+    if (select && specify) {
+        const isOther = (select.value || '').trim().toLowerCase() === 'other';
+        if (isOther) {
+            specify.classList.remove('hidden');
+            specify.disabled = false;
+            select.removeAttribute('name');
+            specify.focus();
+        } else {
+            specify.classList.add('hidden');
+            specify.disabled = true;
+            specify.value = '';
+            select.setAttribute('name', 'street_name');
+        }
+    }
+    updateManualLocationPreview();
+}
+
+function streetValue() {
+    const select = document.getElementById('street_name');
+    const v = select?.value || '';
+    if (v.trim().toLowerCase() === 'other') {
+        return document.getElementById('street_other')?.value?.trim() || '';
+    }
+    return v;
+}
+
 function updateManualLocationPreview() {
     const parts = [
         document.getElementById('plot_number')?.value ? 'Plot ' + document.getElementById('plot_number').value.trim() : '',
         document.getElementById('house_no')?.value    ? 'House ' + document.getElementById('house_no').value.trim()   : '',
-        document.getElementById('street_name')?.value || '',
-        document.getElementById('district')?.value    || '',
+        streetValue(),
+        districtValue(),
         document.getElementById('lga')?.value         || '',
         document.getElementById('state')?.value       || '',
     ].filter(Boolean);
@@ -643,8 +704,10 @@ function addSubdivisionChild() {
         new_file_number: '',
         file_title:      '',
         plot_number:     '',
+        location:        '',
         plot_size:       '',
         survey_plan_no:  '',
+        unindexed:       false,
     });
     renderSubdivisionChildren();
 }
@@ -652,6 +715,37 @@ function addSubdivisionChild() {
 function removeSubdivisionChild(index) {
     subdivisionChildren = subdivisionChildren.filter(c => c.index !== index);
     renderSubdivisionChildren();
+}
+
+// Keep child state in sync with editable inputs so values survive re-renders
+function updateSubdivisionChildField(index, field, value) {
+    const child = subdivisionChildren.find(c => c.index === index);
+    if (child) child[field] = value;
+}
+
+// Inject hidden unindexed_file_numbers[] inputs from the un-indexed picks (Merger cards / Subdivision children)
+function injectUnindexedInputs() {
+    const form = document.getElementById('linkage-form');
+    if (!form) return;
+    form.querySelectorAll('input[data-unindexed="1"]').forEach(el => el.remove());
+    const add = (fn) => {
+        if (!fn) return;
+        const inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'unindexed_file_numbers[]';
+        inp.value = fn;
+        inp.setAttribute('data-unindexed', '1');
+        form.appendChild(inp);
+    };
+    if (selectedWorkflow === 'Merger') {
+        document.querySelectorAll('.manual-merger-location-card').forEach(card => {
+            const flag = card.querySelector('.source-unindexed-flag')?.value;
+            const fn   = card.querySelector('input[name*="[source_file_no]"]')?.value?.trim();
+            if (flag === '1' && fn) add(fn);
+        });
+    } else if (selectedWorkflow === 'Subdivision') {
+        subdivisionChildren.forEach(c => { if (c.unindexed && c.new_file_number) add(c.new_file_number); });
+    }
 }
 
 function renderSubdivisionChildren() {
@@ -674,8 +768,8 @@ function renderSubdivisionChildren() {
                     <div class="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 min-w-0">
                         <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-400 flex-shrink-0"></i>
                         <div class="min-w-0">
-                            <span id="sub-child-fileno-display-${child.index}" class="text-xs font-mono font-bold text-slate-800 block">${child.new_file_number || 'NOT SELECTED'}</span>
-                            <span id="sub-child-title-display-${child.index}" class="text-[10px] text-slate-400 block truncate">${child.file_title || 'Click Select to choose child file'}</span>
+                            <span id="sub-child-fileno-display-${child.index}" class="text-xs font-mono font-bold text-slate-800 block">${child.new_file_number || 'NOT SELECTED'}${child.unindexed ? ' <span class="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[8px] font-bold uppercase tracking-wider align-middle">related · un-indexed</span>' : ''}</span>
+                            <span id="sub-child-title-display-${child.index}" class="text-[10px] text-slate-400 block truncate">${child.unindexed ? 'Saved as a related file number only' : (child.file_title || 'Click Select to choose child file')}</span>
                         </div>
                         <input type="hidden" name="children[${child.index}][new_file_number]" value="${child.new_file_number || ''}">
                     </div>
@@ -687,11 +781,28 @@ function renderSubdivisionChildren() {
                 <button type="button" onclick="removeSubdivisionChild(${child.index})"
                     class="w-7 h-7 rounded-full bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center text-base font-bold flex-shrink-0 transition">&times;</button>
             </div>
-            <div class="pl-8">
-                <div class="w-40">
-                    <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Plot No</label>
-                    <input type="text" name="children[${child.index}][plot_number]"
-                           value="${child.plot_number}" placeholder="e.g. 45A"
+            <div class="pl-8 space-y-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">File Title</label>
+                        <input type="text" name="children[${child.index}][file_title]" id="sub-child-title-input-${child.index}"
+                               value="${child.file_title || ''}" placeholder="Auto-fills when file is selected"
+                               oninput="updateSubdivisionChildField(${child.index}, 'file_title', this.value)"
+                               class="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-xs font-semibold">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Plot No</label>
+                        <input type="text" name="children[${child.index}][plot_number]"
+                               value="${child.plot_number}" placeholder="e.g. 45A"
+                               oninput="updateSubdivisionChildField(${child.index}, 'plot_number', this.value)"
+                               class="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-xs">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Property Location</label>
+                    <input type="text" name="children[${child.index}][location]" id="sub-child-location-input-${child.index}"
+                           value="${child.location || ''}" placeholder="Auto-fills when file is selected"
+                           oninput="updateSubdivisionChildField(${child.index}, 'location', this.value)"
                            class="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-xs">
                 </div>
             </div>
@@ -710,16 +821,17 @@ function openFileSelectorForMergerCard(index) {
 
 function backfillMergerCardFromModal(index, data) {
     if (!data.record) {
-        Swal.fire({
-            icon: 'error',
-            title: 'File Not Indexed',
-            html: `<strong>${data.fileNumber}</strong> was not found in the File Indexing system.<br><br>
-                   The source file must be <strong>indexed first</strong> before it can be used here.`,
-        });
+        // Not indexed → add directly as a related (un-indexed) file, no confirmation
+        markMergerCardUnindexed(index, data.fileNumber);
         return;
     }
     const card = document.getElementById(`manual_merger_location_card_${index}`);
     if (!card) return;
+    // A real indexed file replaces any prior un-indexed flag on this card
+    const flagEl  = card.querySelector('.source-unindexed-flag');
+    if (flagEl) flagEl.value = '0';
+    const badgeEl = card.querySelector('.source-unindexed-badge');
+    if (badgeEl) badgeEl.classList.add('hidden');
 
     const fileNoInput = card.querySelector(`input[name="location_details[${index}][source_file_no]"]`);
     if (fileNoInput) fileNoInput.value = data.fileNumber;
@@ -747,6 +859,25 @@ function backfillMergerCardFromModal(index, data) {
     if (window.lucide) window.lucide.createIcons();
 }
 
+// Mark a merger source card as an un-indexed (related-only) file number
+function markMergerCardUnindexed(index, fileNumber) {
+    const card = document.getElementById(`manual_merger_location_card_${index}`);
+    if (!card) return;
+    const fileNoInput = card.querySelector(`input[name="location_details[${index}][source_file_no]"]`);
+    if (fileNoInput) fileNoInput.value = fileNumber;
+    const fileNoDisplay = card.querySelector('.source-file-display');
+    if (fileNoDisplay) fileNoDisplay.innerText = fileNumber;
+    const flagEl = card.querySelector('.source-unindexed-flag');
+    if (flagEl) flagEl.value = '1';
+    const badgeEl = card.querySelector('.source-unindexed-badge');
+    if (badgeEl) badgeEl.classList.remove('hidden');
+    const titleDisplay = card.querySelector('.source-title-display');
+    if (titleDisplay) titleDisplay.innerText = 'Saved as a related file number only';
+    const titleInput = card.querySelector(`input[name="location_details[${index}][source_file_title]"]`);
+    if (titleInput) titleInput.value = '';
+    if (window.lucide) window.lucide.createIcons();
+}
+
 function manualMergerLocationCardHTML(index, fileData) {
     const fileNo    = fileData?.file_number || '';
     const fileTitle = fileData?.file_title  || '';
@@ -757,7 +888,9 @@ function manualMergerLocationCardHTML(index, fileData) {
                     <div class="flex flex-col gap-1">
                         <span class="px-2 py-0.5 w-fit bg-slate-600 text-white text-[9px] font-black rounded uppercase tracking-wider">Source File</span>
                         <span class="source-file-display text-sm font-bold text-slate-800 font-mono">${fileNo || 'NOT SELECTED'}</span>
+                        <span class="source-unindexed-badge hidden mt-0.5 w-fit px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[8px] font-bold uppercase tracking-wider">related · un-indexed</span>
                         <input type="hidden" name="location_details[${index}][source_file_no]" value="${fileNo}">
+                        <input type="hidden" name="location_details[${index}][unindexed]" class="source-unindexed-flag" value="0">
                     </div>
                     <div class="flex-1 min-w-0">
                         <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-tight mb-0.5">FILE TITLE</label>
@@ -784,11 +917,17 @@ function manualMergerLocationCardHTML(index, fileData) {
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Street Name</label>
-                    <select name="location_details[${index}][street_name]" onchange="updateManualMergerLocationPreview(${index})" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm">${manualStreetOptions}</select>
+                    <select name="location_details[${index}][street_name]" onchange="onMergerCardOther(${index}, 'street_name')" class="merger-select-street_name w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm">${manualStreetOptions}</select>
+                    <input type="text" name="location_details[${index}][street_name]" disabled placeholder="Specify street"
+                           class="merger-specify-street_name hidden w-full mt-2 px-4 py-2.5 rounded-xl border border-indigo-300 text-sm"
+                           oninput="updateManualMergerLocationPreview(${index})">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 uppercase mb-2">District</label>
-                    <select name="location_details[${index}][district]" onchange="updateManualMergerLocationPreview(${index})" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm">${manualDistrictOptions}</select>
+                    <select name="location_details[${index}][district]" onchange="onMergerCardOther(${index}, 'district')" class="merger-select-district w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm">${manualDistrictOptions}</select>
+                    <input type="text" name="location_details[${index}][district]" disabled placeholder="Specify district"
+                           class="merger-specify-district hidden w-full mt-2 px-4 py-2.5 rounded-xl border border-indigo-300 text-sm"
+                           oninput="updateManualMergerLocationPreview(${index})">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 uppercase mb-2">LGA</label>
@@ -831,8 +970,8 @@ function generateManualMergerSources() {
     for (let i = 1; i <= count; i++) {
         const sizeDiv = document.createElement('div');
         sizeDiv.innerHTML = `
-            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Plot ${i} Size</label>
-            <input type="number" name="plot_sizes[]" class="manual-merger-source-input w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" step="0.01" placeholder="0.00" oninput="calculateManualMergerTotal()">
+            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Plot ${i} Size (Ha)</label>
+            <input type="text" name="plot_sizes[]" class="manual-merger-source-input w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" placeholder="e.g. 0.50" oninput="calculateManualMergerTotal()">
         `;
         sourceContainer.appendChild(sizeDiv);
 
@@ -864,7 +1003,7 @@ function calculateManualMergerTotal() {
         if (!isNaN(v)) total += v;
     });
     const totalInput = document.getElementById('plot_size');
-    if (totalInput) totalInput.value = total > 0 ? `${total.toFixed(2)} Sqm` : '';
+    if (totalInput) totalInput.value = total > 0 ? `${total.toFixed(2)} Ha` : '';
 }
 
 function backfillManualMergerCard(index, fileData) {
@@ -895,13 +1034,49 @@ function setManualSelectValue(select, value) {
     });
 }
 
+// Merger card "Other" → reveal a free-text "Specify" field for street/district
+function onMergerCardOther(index, field) {
+    const card = document.getElementById(`manual_merger_location_card_${index}`);
+    if (!card) return;
+    const select  = card.querySelector(`.merger-select-${field}`);
+    const specify = card.querySelector(`.merger-specify-${field}`);
+    if (select && specify) {
+        const fieldName = `location_details[${index}][${field}]`;
+        const isOther = (select.value || '').trim().toLowerCase() === 'other';
+        if (isOther) {
+            specify.classList.remove('hidden');
+            specify.disabled = false;
+            select.removeAttribute('name');
+            specify.setAttribute('name', fieldName);
+            specify.focus();
+        } else {
+            specify.classList.add('hidden');
+            specify.disabled = true;
+            specify.value = '';
+            specify.removeAttribute('name');
+            select.setAttribute('name', fieldName);
+        }
+    }
+    updateManualMergerLocationPreview(index);
+}
+
+// Read a merger card select's value, using its "Specify" field when "Other" is chosen
+function mergerCardFieldValue(card, field) {
+    const select = card.querySelector(`.merger-select-${field}`);
+    const v = select?.value || '';
+    if (v.trim().toLowerCase() === 'other') {
+        return card.querySelector(`.merger-specify-${field}`)?.value?.trim() || '';
+    }
+    return v;
+}
+
 function updateManualMergerLocationPreview(index) {
     const card = document.getElementById(`manual_merger_location_card_${index}`);
     if (!card) return;
     const plot     = card.querySelector(`input[name="location_details[${index}][plot_no]"]`)?.value   || '';
     const house    = card.querySelector(`input[name="location_details[${index}][house_no]"]`)?.value  || '';
-    const street   = card.querySelector(`select[name="location_details[${index}][street_name]"]`)?.value || '';
-    const district = card.querySelector(`select[name="location_details[${index}][district]"]`)?.value || '';
+    const street   = mergerCardFieldValue(card, 'street_name');
+    const district = mergerCardFieldValue(card, 'district');
     const lga      = card.querySelector(`select[name="location_details[${index}][lga]"]`)?.value      || '';
     const state    = card.querySelector(`select[name="location_details[${index}][state]"]`)?.value    || '';
     const parts    = [];
@@ -1003,7 +1178,7 @@ function backfillMergerResult(data) {
             icon: 'error',
             title: 'File Not Indexed',
             html: `<strong>${data.fileNumber}</strong> was not found in the File Indexing system.<br><br>
-                   The merged result file must be <strong>indexed first</strong> before it can be linked here.`,
+                   The merged result file must be <strong>indexed first</strong> before it can be linked here.<br><br>Index it first, then return here.`,
         });
         return;
     }
@@ -1071,7 +1246,7 @@ function openSubdivisionParentSelector() {
                     icon: 'error',
                     title: 'File Not Indexed',
                     html: `<strong>${data.fileNumber}</strong> was not found in the File Indexing system.<br><br>
-                           The parent file must be <strong>indexed first</strong> before it can be used here.`,
+                           The parent file must be <strong>indexed first</strong> before it can be used here.<br><br>Index it first, then return here.`,
                 });
                 return;
             }
@@ -1123,6 +1298,55 @@ function clearSubdivisionParent() {
     if (detailsEl) detailsEl.classList.add('hidden');
 }
 
+// ─── Land-use derived from file-number prefix ────────────────────────────────
+// (longest-first so CON-RES-RC matches before CON-RES before RES)
+const LAND_USE_PREFIX_MAP = {
+    'CON-RES-RC': 'Residential', 'CON-COM-RC': 'Commercial', 'CON-IND-RC': 'Industrial', 'CON-AG-RC': 'Agriculture',
+    'RES-RC': 'Residential', 'COM-RC': 'Commercial', 'IND-RC': 'Industrial', 'AG-RC': 'Agriculture',
+    'CON-RES': 'Residential', 'CON-COM': 'Commercial', 'CON-IND': 'Industrial', 'CON-AG': 'Agriculture',
+    'RES': 'Residential', 'COM': 'Commercial', 'IND': 'Industrial', 'AG': 'Agriculture',
+};
+const LAND_USE_PREFIXES = Object.keys(LAND_USE_PREFIX_MAP).sort((a, b) => b.length - a.length);
+
+function deriveLandUseFromFileNo(fileNo) {
+    const fn = (fileNo || '').trim().toUpperCase();
+    if (!fn) return null;
+    for (const prefix of LAND_USE_PREFIXES) {
+        if (fn === prefix || fn.startsWith(prefix + '-')) return LAND_USE_PREFIX_MAP[prefix];
+    }
+    return null;
+}
+
+function applyCopPurposeFromFileNo(fileNo) {
+    const landUse       = deriveLandUseFromFileNo(fileNo);
+    const display       = document.getElementById('cop-purpose-display');
+    const hiddenPurpose = document.getElementById('purpose');
+    const oldLandUse    = (firstFileDetails?.land_use || selectedOldFileDetails[0]?.land_use || '').trim();
+    const sameAsOld     = landUse && oldLandUse && landUse.toUpperCase() === oldLandUse.toUpperCase();
+
+    if (display) {
+        if (!landUse) {
+            display.textContent = 'Could not detect — check the file number prefix';
+            display.className   = 'text-amber-600 italic';
+        } else if (sameAsOld) {
+            display.textContent = `${landUse} — same as legacy purpose, not a valid change`;
+            display.className   = 'font-semibold text-red-600';
+        } else {
+            display.textContent = landUse;
+            display.className   = 'font-semibold text-slate-800';
+        }
+    }
+    if (hiddenPurpose) hiddenPurpose.value = landUse || '';
+
+    if (sameAsOld) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Purpose Unchanged',
+            html: `The selected destination file is also <strong>${landUse}</strong>, the same as the legacy file. A Change of Purpose must convert the land to a <strong>different</strong> use.`,
+        });
+    }
+}
+
 // ─── Destination File Selector (Plot Extension & Change of Purpose) ──────────
 function openDestinationFileSelector(workflow) {
     GlobalFileNoModal.open({
@@ -1132,7 +1356,7 @@ function openDestinationFileSelector(workflow) {
                     icon: 'error',
                     title: 'File Not Indexed',
                     html: `<strong>${data.fileNumber}</strong> was not found in the File Indexing system.<br><br>
-                           The file must be <strong>indexed first</strong> before it can be linked here.`,
+                           The file must be <strong>indexed first</strong> before it can be linked here.<br><br>Index it first, then return here.`,
                 });
                 return;
             }
@@ -1171,7 +1395,22 @@ function backfillDestinationFile(workflow, data) {
     const detailsEl = document.getElementById(`${prefix}-dest-details`);
     if (detailsEl) detailsEl.classList.remove('hidden');
 
+    // Change of Purpose: derive the New Purpose from the file number prefix
+    if (workflow === 'Change of Purpose') applyCopPurposeFromFileNo(fileNo);
+
     if (window.lucide) window.lucide.createIcons();
+}
+
+// Reset the selected legacy/source file(s) so the user can pick again after a mistake
+function clearSourceSelection() {
+    selectedOldFiles       = [];
+    selectedOldFileDetails = [];
+    firstFileDetails       = null;
+    if (typeof renderBadges === 'function') renderBadges();
+    const verifyCard = document.getElementById('verify-card');
+    if (verifyCard) verifyCard.classList.add('hidden');
+    const alreadyLinked = document.getElementById('v-already-linked-badge');
+    if (alreadyLinked) { alreadyLinked.classList.add('hidden'); alreadyLinked.textContent = ''; }
 }
 
 function clearDestinationFile(workflow) {
@@ -1182,42 +1421,60 @@ function clearDestinationFile(workflow) {
     if (fileNoEl) fileNoEl.textContent = 'NOT SELECTED';
     const detailsEl = document.getElementById(`${prefix}-dest-details`);
     if (detailsEl) detailsEl.classList.add('hidden');
+
+    if (workflow === 'Change of Purpose') {
+        const display = document.getElementById('cop-purpose-display');
+        if (display) { display.textContent = 'Auto-detected from the file number prefix'; display.className = 'text-slate-400 italic'; }
+        const hiddenPurpose = document.getElementById('purpose');
+        if (hiddenPurpose) hiddenPurpose.value = '';
+    }
 }
 
 // ─── Subdivision Child File Selector ─────────────────────────────────────────
 function openSubdivisionChildSelector(childIndex) {
     GlobalFileNoModal.open({
         callback: function(data) {
-            if (!data.record) {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'File Not Indexed',
-                    html: `<strong>${data.fileNumber}</strong> was not found in the File Indexing system.<br><br>
-                           The child file must be <strong>indexed first</strong> before it can be linked here.`,
-                });
-                return;
-            }
-            backfillSubdivisionChildFile(childIndex, data);
+            // Not indexed → add directly as a related (un-indexed) file, no confirmation
+            backfillSubdivisionChildFile(childIndex, data, !data.record);
         }
     });
 }
 
-function backfillSubdivisionChildFile(childIndex, data) {
+function backfillSubdivisionChildFile(childIndex, data, unindexed = false) {
     const fileNo = data.fileNumber || '';
     const record = data.record    || {};
     const title  = (record.file_name || record.file_title || '').toUpperCase();
+    const plotNo = (record.plot_no && record.plot_no !== 'N/A') ? String(record.plot_no).trim() : '';
+    const location = (record.location && record.location !== 'N/A')
+        ? String(record.location).trim()
+        : [record.street_name, record.district, record.lga, record.state].filter(Boolean).join(', ');
 
     const child = subdivisionChildren.find(c => c.index === childIndex);
     if (child) {
         child.new_file_number = fileNo;
         child.file_title      = title;
+        child.unindexed       = !!unindexed;
+        if (plotNo) child.plot_number = plotNo;
+        if (location) child.location = location;
     }
+    // Re-render so the un-indexed badge/state shows on the row
+    if (unindexed) { renderSubdivisionChildren(); return; }
 
     const fileNoDisplay = document.getElementById(`sub-child-fileno-display-${childIndex}`);
     if (fileNoDisplay) fileNoDisplay.textContent = fileNo || 'NOT SELECTED';
 
     const titleDisplay = document.getElementById(`sub-child-title-display-${childIndex}`);
     if (titleDisplay) titleDisplay.textContent = title || '—';
+
+    const titleInput = document.getElementById(`sub-child-title-input-${childIndex}`);
+    if (titleInput) titleInput.value = title;
+
+    // Backfill Plot No + Property Location from the selected child file's record, if found
+    const plotInput = document.querySelector(`input[name="children[${childIndex}][plot_number]"]`);
+    if (plotInput && plotNo) plotInput.value = plotNo;
+
+    const locationInput = document.getElementById(`sub-child-location-input-${childIndex}`);
+    if (locationInput && location) locationInput.value = location;
 
     const hiddenInput = document.querySelector(`input[name="children[${childIndex}][new_file_number]"]`);
     if (hiddenInput) hiddenInput.value = fileNo;
@@ -1233,18 +1490,6 @@ function renderTailoredForm() {
 
     if (selectedWorkflow === 'Subdivision') {
         html = `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 uppercase mb-2">File Title</label>
-                    <input type="text" name="file_title" id="file_title"
-                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold" placeholder="Common holder / applicant name">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Applicant Name</label>
-                    <input type="text" name="applicant_name" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm" placeholder="e.g. Musa Ibrahim">
-                </div>
-            </div>
-
             <div class="border border-indigo-200 rounded-2xl p-4 bg-indigo-50/20 space-y-3">
                 <div class="flex items-center justify-between">
                     <span class="text-xs font-bold uppercase tracking-wider text-indigo-700">Child Plot Files <span class="text-red-500">*</span></span>
@@ -1263,22 +1508,14 @@ function renderTailoredForm() {
         `;
     } else if (selectedWorkflow === 'Merger') {
         html = `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Temp File No</label>
-                    <input type="text" name="temp_file_no" id="temp_file_no" readonly
-                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold font-mono text-slate-700"
-                        placeholder="Auto-generating...">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Number of Source Plots <span class="text-red-500">*</span></label>
-                    <input type="number" name="num_plots" id="num_plots" min="2" max="50" oninput="generateManualMergerSources()"
-                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-orange-600">
-                </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Number of Source Plots <span class="text-red-500">*</span></label>
+                <input type="number" name="num_plots" id="num_plots" min="2" max="50" oninput="generateManualMergerSources()"
+                    class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-orange-600">
             </div>
 
             <div class="border border-slate-200 rounded-2xl p-4 bg-slate-50/40 space-y-4">
-                <span class="text-xs font-bold uppercase tracking-wider text-orange-600">Individual Plot Sizes (Sqm)</span>
+                <span class="text-xs font-bold uppercase tracking-wider text-orange-600">Individual Plot Sizes (Hectares)</span>
                 <div id="manual_merger_sources_container" class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <p class="col-span-full text-slate-400 text-xs italic">Set number of plots to define source sizes.</p>
                 </div>
@@ -1317,7 +1554,6 @@ function renderTailoredForm() {
                     <div class="flex-1 min-w-0 space-y-1">
                         <span class="px-2 py-0.5 bg-emerald-600 text-white text-[9px] font-black rounded uppercase tracking-wider">Extended / New File <span class="text-red-300">*</span></span>
                         <div id="ext-dest-file-no" class="text-sm font-bold text-slate-800 font-mono mt-1">NOT SELECTED</div>
-                        <input type="hidden" name="new_file_number" id="new_file_number" value="">
                     </div>
                     <button type="button" onclick="openDestinationFileSelector('Plot Extension')"
                         class="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition shadow-sm whitespace-nowrap flex-shrink-0">
@@ -1334,9 +1570,6 @@ function renderTailoredForm() {
                     </table>
                     <button type="button" onclick="clearDestinationFile('Plot Extension')" class="mt-2 text-[10px] text-slate-400 hover:text-red-500 transition">✕ Clear Selection</button>
                 </div>
-                <p class="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1 border border-amber-200">
-                    If you cannot find the file, it has not been indexed yet — index it first, then return here.
-                </p>
             </div>
 
         `;
@@ -1347,7 +1580,6 @@ function renderTailoredForm() {
                     <div class="flex-1 min-w-0 space-y-1">
                         <span class="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-black rounded uppercase tracking-wider">Changed-Purpose / New File <span class="text-red-300">*</span></span>
                         <div id="cop-dest-file-no" class="text-sm font-bold text-slate-800 font-mono mt-1">NOT SELECTED</div>
-                        <input type="hidden" name="new_file_number" id="new_file_number" value="">
                     </div>
                     <button type="button" onclick="openDestinationFileSelector('Change of Purpose')"
                         class="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition shadow-sm whitespace-nowrap flex-shrink-0">
@@ -1364,49 +1596,22 @@ function renderTailoredForm() {
                     </table>
                     <button type="button" onclick="clearDestinationFile('Change of Purpose')" class="mt-2 text-[10px] text-slate-400 hover:text-red-500 transition">✕ Clear Selection</button>
                 </div>
-                <p class="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1 border border-amber-200">
-                    If you cannot find the file, it has not been indexed yet — index it first, then return here.
-                </p>
             </div>
 
             <div>
                 <label class="block text-xs font-bold text-slate-600 uppercase mb-2">New Purpose <span class="text-red-500">*</span></label>
-                <select name="purpose" id="purpose" class="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm">
-                    <option value="">- Select New Purpose -</option>
-                    <option value="RES">Residential</option>
-                    <option value="COM">Commercial</option>
-                    <option value="IND">Industrial</option>
-                    <option value="AGR">Agricultural</option>
-                    <option value="MIX">Mixed Use</option>
-                </select>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Land Size (Sqm)</label>
-                    <input type="number" step="0.01" name="land_size" id="manual_cop_land_size" oninput="calculateManualCopFee()"
-                        class="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm" placeholder="e.g. 500.00">
+                <div class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm flex items-center justify-between gap-2">
+                    <span id="cop-purpose-display" class="text-slate-400 italic">Auto-detected from the file number prefix</span>
+                    <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider bg-white border border-slate-200 rounded px-1.5 py-0.5">Auto</span>
                 </div>
-                <div class="bg-blue-50/50 p-3 rounded-xl border border-blue-100 flex flex-col justify-center">
-                    <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Application Fee (NGN 50/sqm)</label>
-                    <input type="text" id="manual_cop_fee_display" class="w-full bg-transparent border-none text-sm font-bold text-blue-700 p-0" value="0.00" readonly>
-                    <input type="hidden" name="knupda_fee" id="manual_cop_fee_hidden" value="0">
-                </div>
+                <input type="hidden" name="purpose" id="purpose" value="">
+                <p class="text-[11px] text-slate-400 mt-1">Derived from the selected file number (e.g. RES → Residential, CON-COM → Commercial). No manual entry needed.</p>
             </div>
-
-            ${approvalFieldsHTML()}
-
-            ${manualLocationBlock('File & Purpose Location Details')}
-
         `;
     }
 
     fieldsContainer.innerHTML = html;
     if (window.lucide) window.lucide.createIcons();
-
-    if (selectedWorkflow === 'Merger') {
-        fetchAndSetTempFileNo();
-    }
 }
 
 // ─── Badge Rendering (shared helper, called by DOMContentLoaded closures) ────
@@ -1414,8 +1619,7 @@ let renderBadges = () => {};
 
 // ─── DOMContentLoaded: Verify + Badge + Submit ───────────────────────────────
 document.addEventListener('DOMContentLoaded', function () {
-    const oldFileInput   = document.getElementById('old-file-input');
-    const btnVerifyOld   = document.getElementById('btn-verify-old');
+    const btnSelectOld   = document.getElementById('btn-select-old');
     const verifyLoader   = document.getElementById('verify-loader');
     const verifyCard     = document.getElementById('verify-card');
     const selectedList   = document.getElementById('selected-files-list');
@@ -1475,29 +1679,42 @@ document.addEventListener('DOMContentLoaded', function () {
         renderBadges();
     }
 
-    // ── Verify AJAX ───────────────────────────────────────────────────────────
-    btnVerifyOld.addEventListener('click', function () {
-        const rawFile = oldFileInput.value.trim();
-        if (!rawFile) {
-            Swal.fire({ icon: 'warning', title: 'Input Required', text: 'Please enter a valid file number to verify.' });
-            return;
-        }
-        const fileNo = rawFile.toUpperCase();
+    // ── Source File Selection (global file-number selector + validation) ─────
+    if (btnSelectOld) {
+        btnSelectOld.addEventListener('click', function () {
+            // Single-source workflows: re-selecting replaces the current pick instead of blocking
+            if (selectedWorkflow !== 'Merger' && selectedOldFiles.length >= 1) {
+                clearSourceSelection();
+            }
+            GlobalFileNoModal.open({
+                callback: function (data) {
+                    if (!data.record) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'File Not Indexed',
+                            html: `<strong>${data.fileNumber}</strong> was not found in the File Indexing system.<br><br>
+                                   The file must be <strong>indexed first</strong> before it can be used here.<br><br>Index it first, then return here.`,
+                        });
+                        return;
+                    }
+                    verifyAndPromptOldFile(data.fileNumber);
+                }
+            });
+        });
+    }
+
+    // ── Verify selected source file (decommission / already-linked / tx checks)
+    function verifyAndPromptOldFile(rawFile) {
+        const fileNo = (rawFile || '').trim().toUpperCase();
+        if (!fileNo) return;
 
         if (selectedOldFiles.includes(fileNo)) {
             Swal.fire({ icon: 'info', title: 'Duplicate', text: 'This file is already selected.' });
             return;
         }
         if (selectedWorkflow !== 'Merger' && selectedOldFiles.length >= 1) {
-            Swal.fire({ icon: 'warning', title: 'Limit Exceeded', text: `${selectedWorkflow} allows exactly one legacy source file.` });
+            Swal.fire({ icon: 'warning', title: 'Limit Exceeded', text: `${selectedWorkflow} allows exactly one legacy source file. Remove the current one first.` });
             return;
-        }
-        if (selectedWorkflow === 'Merger') {
-            const numPlots = parseInt(document.getElementById('num_plots')?.value || '0') || 0;
-            if (numPlots > 0 && selectedOldFiles.length >= numPlots) {
-                Swal.fire({ icon: 'warning', title: 'All Source Slots Filled', text: `This merger is set to ${numPlots} plots. Increase "Plots to Merge" before adding another source file.` });
-                return;
-            }
         }
 
         verifyLoader.classList.remove('hidden');
@@ -1551,27 +1768,25 @@ document.addEventListener('DOMContentLoaded', function () {
                 </div>`;
                 verifyCard.classList.remove('hidden');
 
-                const existingLinkageWarning = data.existing_linkage
-                    ? `<br><br><span class="text-orange-600 font-semibold text-sm">⚠ Warning: This file was previously processed on ${data.existing_linkage.date} as a <em>${data.existing_linkage.workflow_type}</em> → ${data.existing_linkage.new_file_number}. The system will block a duplicate linkage at save time.</span>`
-                    : '';
+                // The global picker already confirmed the file is indexed and we've validated
+                // it here (not decommissioned, exists), so add it directly — no extra confirm
+                // click that races with the file-picker modal's close lifecycle.
+                addFileToList(data);
+                verifyCard.classList.remove('hidden'); // keep the verified details visible after add
 
-                Swal.fire({
-                    title: 'Verify File Details',
-                    html: `Add <strong>${data.file_number}</strong> (${data.file_title})? It has ${tx.total} historical transaction(s).${existingLinkageWarning}`,
-                    icon: data.existing_linkage ? 'warning' : 'question',
-                    showCancelButton:    true,
-                    confirmButtonColor:  '#3085d6',
-                    cancelButtonColor:   '#d33',
-                    confirmButtonText:   'Yes, Add File',
-                }).then(result => {
-                    if (result.isConfirmed) addFileToList(data);
-                });
+                if (data.existing_linkage) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Heads up — already linked',
+                        html: `<strong>${data.file_number}</strong> was previously processed on ${data.existing_linkage.date} as a <em>${data.existing_linkage.workflow_type}</em> → ${data.existing_linkage.new_file_number}.<br><br>It has been added, but the system will block a duplicate linkage at save time.`,
+                    });
+                }
             })
             .catch(() => {
                 verifyLoader.classList.add('hidden');
                 Swal.fire({ icon: 'error', title: 'Request Failed', text: 'Unable to communicate with verification server.' });
             });
-    });
+    }
 
     function addFileToList(fileData) {
         const fileNo = fileData.file_number;
@@ -1602,7 +1817,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         renderBadges();
-        oldFileInput.value = '';
         verifyCard.classList.add('hidden');
         if (vAlreadyLinked) { vAlreadyLinked.classList.add('hidden'); vAlreadyLinked.textContent = ''; }
     }
@@ -1677,6 +1891,20 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
+        // Change of Purpose: the new purpose must differ from the legacy file's land use
+        if (selectedWorkflow === 'Change of Purpose') {
+            const newPurpose = (document.getElementById('purpose')?.value || '').trim();
+            const oldLandUse = (firstFileDetails?.land_use || selectedOldFileDetails[0]?.land_use || '').trim();
+            if (newPurpose && oldLandUse && newPurpose.toUpperCase() === oldLandUse.toUpperCase()) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Purpose Unchanged',
+                    html: `The destination file's purpose (<strong>${newPurpose}</strong>) is the same as the legacy file's land use (<strong>${oldLandUse}</strong>).<br><br>A Change of Purpose must convert the land to a <strong>different</strong> use — select a destination file with a different purpose prefix.`,
+                });
+                return;
+            }
+        }
+
         // Build confirm summary
         let newFileDisplay = '';
         let sourceFilesDisplay = selectedOldFiles.join(', ');
@@ -1701,15 +1929,53 @@ document.addEventListener('DOMContentLoaded', function () {
         const approvalRef  = document.querySelector('input[name="approval_reference"]')?.value?.trim() || '—';
         const approvalDate = document.querySelector('input[name="approval_date"]')?.value || '—';
 
+        // Workflow-specific wording for the confirmation summary
+        const wfCopy = {
+            'Subdivision': {
+                title:  'Confirm Subdivision Linkage',
+                source: 'Parent file (to decommission)',
+                dest:   'Subdivided into',
+                action: 'decommission the parent file and link it to its already-created child plots',
+            },
+            'Merger': {
+                title:  'Confirm Merger Linkage',
+                source: 'Plots merged (to decommission)',
+                dest:   'Merged into',
+                action: 'decommission the source plots and link them to the merged file',
+            },
+            'Plot Extension': {
+                title:  'Confirm Plot Extension Linkage',
+                source: 'Original file (to decommission)',
+                dest:   'Extended into',
+                action: 'decommission the original file and link it to the extended file',
+            },
+            'Change of Purpose': {
+                title:  'Confirm Change of Purpose Linkage',
+                source: 'Original file (to decommission)',
+                dest:   'Re-purposed into',
+                action: 'decommission the original file and link it to the re-purposed file',
+            },
+        };
+        const copy = wfCopy[selectedWorkflow] || {
+            title: 'Confirm Manual Linkage', source: 'Source file(s)', dest: 'Linked to',
+            action: 'decommission the source file(s) and patch lineage on the destination(s)',
+        };
+
+        // Change of Purpose shows the auto-derived New Purpose
+        const copPurpose = selectedWorkflow === 'Change of Purpose'
+            ? (document.getElementById('purpose')?.value?.trim() || '—')
+            : null;
+
         Swal.fire({
-            title: 'Confirm Manual Linkage Operation',
+            title: copy.title,
             html: `<div class="text-left space-y-2 text-sm">
                 <div><span class="text-slate-400">Workflow:</span> <strong>${selectedWorkflow}</strong></div>
-                <div><span class="text-slate-400">Source File(s):</span> <strong class="font-mono">${sourceFilesDisplay}</strong></div>
-                ${newFileDisplay ? `<div><span class="text-slate-400">Merged/Linked To:</span><br>${newFileDisplay}</div>` : ''}
+                <div><span class="text-slate-400">${copy.source}:</span> <strong class="font-mono">${sourceFilesDisplay}</strong></div>
+                ${newFileDisplay ? `<div><span class="text-slate-400">${copy.dest}:</span><br>${newFileDisplay}</div>` : ''}
+                ${copPurpose ? `<div><span class="text-slate-400">New purpose:</span> <strong>${copPurpose}</strong></div>` : ''}
                 ${selectedWorkflow !== 'Merger' ? `<div><span class="text-slate-400">Approval Ref:</span> ${approvalRef} &nbsp;|&nbsp; <span class="text-slate-400">Date:</span> ${approvalDate}</div>` : ''}
                 <hr class="my-2 border-slate-200">
-                <p class="text-red-600 font-semibold text-xs">This will decommission the source file(s), patch lineage on the destination(s), and is audited. This action is irreversible.</p>
+                <p class="text-red-600 font-semibold text-xs">This will ${copy.action}. It is audited and irreversible.</p>
             </div>`,
             icon:               'warning',
             showCancelButton:   true,
@@ -1717,7 +1983,10 @@ document.addEventListener('DOMContentLoaded', function () {
             cancelButtonColor:  '#d33',
             confirmButtonText:  'Yes, Backfill Linkage',
         }).then(result => {
-            if (result.isConfirmed) linkageForm.submit();
+            if (result.isConfirmed) {
+                injectUnindexedInputs();
+                linkageForm.submit();
+            }
         });
     });
 });

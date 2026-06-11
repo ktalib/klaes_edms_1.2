@@ -29,6 +29,8 @@
   </script>
 
   <style>
+    html, body { margin: 0; padding: 0; }
+
     .user-card {
       transition: all 0.3s ease;
     }
@@ -297,6 +299,12 @@
             >
               <i data-lucide="palette" class="w-3 h-3 sm:w-4 sm:h-4"></i> Branding
             </button>
+            <button
+              class="py-3 sm:py-4 text-xs sm:text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors whitespace-nowrap flex items-center gap-1 sm:gap-2"
+              data-tab="subscription"
+            >
+              <i data-lucide="credit-card" class="w-3 h-3 sm:w-4 sm:h-4"></i> Subscription
+            </button>
           </div>
         </div>
 
@@ -324,9 +332,9 @@
                   <th class="text-left py-3 sm:py-4 px-4 sm:px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                   <th class="text-left py-3 sm:py-4 px-4 sm:px-6 text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Job Title</th>
                   <th class="text-left py-3 sm:py-4 px-4 sm:px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">User Type</th>
-                  <th class="text-left py-3 sm:py-4 px-4 sm:px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">Tokens</th>
+                  <th class="text-left py-3 sm:py-4 px-4 sm:px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">Available Tokens</th>
                   <th class="text-left py-3 sm:py-4 px-4 sm:px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th class="text-left py-3 sm:py-4 px-4 sm:px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th class="text-right py-3 sm:py-4 px-4 sm:px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody id="users-table-body" class="divide-y divide-gray-100"></tbody>
@@ -408,6 +416,13 @@
                 <label class="block text-sm font-medium text-gray-700 mb-2">Organization Name</label>
                 <input type="text" id="org-name" class="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base" placeholder="Enter organization name" />
                 <p class="text-xs text-gray-500 mt-2">This will appear in headers and user interfaces</p>
+              </div>
+
+              <!-- Organization Username -->
+              <div class="bg-gray-50 rounded-2xl p-4 sm:p-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Organization Username</label>
+                <input type="text" id="org-username" pattern="[a-z0-9_]+" class="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base" placeholder="organization_username" />
+                <p class="text-xs text-gray-500 mt-2">Lowercase letters, numbers and underscores only. Must be unique.</p>
               </div>
 
               <!-- Colors -->
@@ -500,6 +515,141 @@
           <div class="flex flex-col sm:flex-row justify-end gap-3 sm:gap-4 mt-6 sm:mt-10">
             <button id="reset-settings" class="px-4 sm:px-6 py-2 sm:py-3 border border-gray-300 rounded-2xl text-gray-700 hover:bg-gray-50 transition font-medium text-sm sm:text-base order-2 sm:order-1">Reset to Defaults</button>
             <button id="save-settings" class="px-5 sm:px-8 py-2 sm:py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl transition font-medium text-sm sm:text-base order-1 sm:order-2">Save Branding Changes</button>
+          </div>
+        </div>
+
+        <!-- Subscription Tab -->
+        <div id="subscription-tab" class="p-4 sm:p-6 hidden">
+          @php
+            $activation = optional($institution)->created_at ? \Carbon\Carbon::parse($institution->created_at) : null;
+            if ($subscription && $subscription->approved_at) {
+                $activation = \Carbon\Carbon::parse($subscription->approved_at);
+            }
+            $expiry = $subscription && $subscription->expires_at
+                ? \Carbon\Carbon::parse($subscription->expires_at)
+                : ($activation ? $activation->copy()->addYear() : null);
+            $expired = $expiry && $expiry->isPast();
+          @endphp
+
+          <div class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h2 class="text-xl sm:text-2xl font-semibold text-gray-900">Subscription</h2>
+              <p class="text-xs sm:text-sm text-gray-500">Your current plan and billing history</p>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+              <a href="{{ route('phs.org.invoice.download') }}" class="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-2xl transition text-sm sm:text-base justify-center">
+                <i data-lucide="file-down" class="w-4 h-4 sm:w-5 sm:h-5"></i>
+                <span>Download Invoice</span>
+              </a>
+              <button id="buy-tokens-btn" class="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl transition shadow-sm text-sm sm:text-base justify-center">
+                <i data-lucide="shopping-cart" class="w-4 h-4 sm:w-5 sm:h-5"></i>
+                <span>Top-up</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Current Plan Card -->
+          <div class="rounded-2xl border border-gray-200 bg-gradient-to-br from-blue-50 to-white p-6 sm:p-8 mb-6">
+            <div class="flex flex-col sm:flex-row justify-between gap-4">
+              <div>
+                <p class="text-xs uppercase tracking-wider text-gray-500">Current Plan</p>
+                <h3 class="text-2xl font-bold text-gray-900 mt-1">{{ $subscription->package_name ?? '—' }}</h3>
+                <div class="mt-3">
+                  @if (!$subscription)
+                    <span class="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">No active plan</span>
+                  @elseif ($expired)
+                    <span class="px-3 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">Expired</span>
+                  @else
+                    <span class="px-3 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">Active</span>
+                  @endif
+                </div>
+              </div>
+              <div class="text-left sm:text-right">
+                <p class="text-xs uppercase tracking-wider text-gray-500">Token Balance</p>
+                <p class="text-3xl font-bold text-blue-600 mt-1">{{ number_format((int) $institution->token_balance) }}</p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-gray-200">
+              <div>
+                <p class="text-xs text-gray-500">Tokens Included</p>
+                <p class="text-sm font-semibold text-gray-900 mt-1">{{ $subscription ? number_format($subscription->tokens) : '—' }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Amount Paid</p>
+                <p class="text-sm font-semibold text-gray-900 mt-1">{{ $subscription && $subscription->amount ? 'NGN ' . number_format((float) $subscription->amount) : '—' }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Activation Date</p>
+                <p class="text-sm font-semibold text-gray-900 mt-1">{{ $activation ? $activation->format('M j, Y') : '—' }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Expires</p>
+                <p class="text-sm font-semibold {{ $expired ? 'text-red-600' : 'text-gray-900' }} mt-1">{{ $expiry ? $expiry->format('M j, Y') : '—' }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Billing History -->
+          <h3 class="text-lg font-semibold text-gray-900 mb-3">Billing History</h3>
+          <div class="overflow-x-auto rounded-2xl border border-gray-100">
+            <table class="w-full min-w-[640px]">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Package</th>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Tokens</th>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                @forelse ($subscriptionHistory as $row)
+                  <tr>
+                    <td class="py-3 px-4 text-sm text-gray-700">{{ optional($row->created_at)->format('M j, Y') ?? '—' }}</td>
+                    <td class="py-3 px-4 text-sm font-medium text-gray-900">{{ $row->package_name ?? '—' }}</td>
+                    <td class="py-3 px-4 text-sm text-gray-700">{{ number_format($row->tokens) }}</td>
+                    <td class="py-3 px-4 text-sm text-gray-700">{{ $row->amount ? 'NGN ' . number_format((float) $row->amount) : '—' }}</td>
+                    <td class="py-3 px-4 text-sm text-gray-700 capitalize">{{ $row->payment_method ? str_replace('_', ' ', $row->payment_method) : '—' }}</td>
+                    <td class="py-3 px-4 text-sm">
+                      <span class="px-2.5 py-0.5 rounded-full text-xs font-medium {{ $row->status === 'completed' ? 'bg-green-100 text-green-700' : ($row->status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600') }}">
+                        {{ ucfirst($row->status) }}
+                      </span>
+                    </td>
+                    <td class="py-3 px-4 text-sm text-gray-500">{{ $row->reference_no ?? '—' }}</td>
+                  </tr>
+                @empty
+                  <tr><td colspan="7" class="py-8 text-center text-sm text-gray-400">No subscription history yet.</td></tr>
+                @endforelse
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Token Wallet Activity (all transaction types) -->
+          <div class="flex items-center justify-between mt-8 mb-3">
+            <h3 class="text-lg font-semibold text-gray-900">Token Wallet Activity</h3>
+            <button id="refresh-ledger" class="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i> Refresh
+            </button>
+          </div>
+          <div class="overflow-x-auto rounded-2xl border border-gray-100">
+            <table class="w-full min-w-[640px]">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                  <th class="text-right py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Tokens</th>
+                  <th class="text-right py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
+                </tr>
+              </thead>
+              <tbody id="wallet-ledger-body" class="divide-y divide-gray-100">
+                <tr><td colspan="6" class="py-8 text-center text-sm text-gray-400">Loading…</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -645,6 +795,97 @@
     </div>
   </div>
 
+  <!-- Token Purchase Modal -->
+  <div id="token-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 hidden">
+    <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto">
+      <div class="p-4 sm:p-6 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-xl">
+        <div class="flex justify-between items-start">
+          <div>
+            <h2 class="text-xl sm:text-2xl font-bold mb-1.5">Top-up</h2>
+            
+          </div>
+          <button id="close-token-modal" class="text-white/80 hover:text-white hover:bg-white/20 rounded-lg p-2">
+            <i data-lucide="x" class="w-5 h-5 sm:w-6 sm:h-6"></i>
+          </button>
+        </div>
+      </div>
+      <div class="p-4 sm:p-6 md:p-8">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8 hidden">
+          @foreach ($packages as $key => $pkg)
+          @if (strtolower($key) === 'starter') @continue @endif
+          <div class="package-card bg-white rounded-xl shadow-lg border-2 border-gray-200 cursor-pointer p-6 text-center transition"
+            data-key="{{ $key }}" data-name="{{ $pkg['name'] }}" data-tokens="{{ $pkg['tokens'] }}" data-price="{{ $pkg['price'] }}">
+            <h3 class="text-xl sm:text-2xl font-semibold text-gray-900">{{ $pkg['name'] }}</h3>
+            <div class="text-2xl sm:text-3xl font-bold text-blue-600 mt-2">₦{{ number_format($pkg['price']) }}</div>
+            <p class="text-gray-500 text-xs sm:text-sm mt-1">{{ number_format($pkg['tokens']) }} tokens / bundle</p>
+          </div>
+          @endforeach
+        </div>
+
+        {{-- Bundle quantity + live total --}}
+        <div class="rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:p-5 mb-2">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <label for="topup-qty" class="block text-sm font-semibold text-gray-700 mb-1">Number of bundles</label>
+              <div class="flex items-center gap-2">
+                <button type="button" id="topup-minus" class="w-9 h-9 rounded-lg border border-gray-300 bg-white text-lg font-bold text-gray-600 hover:bg-gray-100">−</button>
+                <input type="number" id="topup-qty" min="1" max="10" value="1" class="w-20 text-center px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                <button type="button" id="topup-plus" class="w-9 h-9 rounded-lg border border-gray-300 bg-white text-lg font-bold text-gray-600 hover:bg-gray-100">+</button>
+              </div>
+              <p class="text-xs text-gray-400 mt-1">Max 10 bundles per top-up.</p>
+            </div>
+            <div class="text-left sm:text-right">
+              <p class="text-xs uppercase tracking-wider text-gray-500">You receive</p>
+              <p class="text-2xl font-bold text-gray-900"><span id="topup-tokens">0</span> <span class="text-sm font-medium text-gray-500">tokens</span></p>
+              <p class="text-sm text-gray-500 mt-1">Total: <span class="font-bold text-blue-600" id="topup-total">₦0</span></p>
+            </div>
+          </div>
+        </div>
+        {{-- Step 1: continue to reveal payment methods --}}
+        <div id="topup-continue-row" class="border-t pt-6 mt-4 flex justify-center">
+          <button id="topup-continue"
+            class="inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium shadow-md text-sm sm:text-base">
+            Continue to Payment
+            <i data-lucide="arrow-right" class="w-4 h-4 sm:w-5 sm:h-5"></i>
+          </button>
+        </div>
+
+        {{-- Step 2: payment methods (revealed after Continue) --}}
+        <div id="topup-methods" class="border-t pt-6 mt-4 hidden">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-sm font-semibold text-gray-700">Choose a payment method</p>
+            <button id="topup-back" type="button" class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
+              <i data-lucide="arrow-left" class="w-4 h-4"></i> Change bundle
+            </button>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <button id="pay-bank-transfer" data-method="bank_transfer"
+              class="group flex flex-col items-start gap-1 rounded-xl border-2 border-blue-500 bg-blue-50 p-4 text-left transition hover:bg-blue-100">
+              <span class="inline-flex items-center gap-2 font-semibold text-gray-900"><i data-lucide="building-2" class="w-4 h-4 text-blue-600"></i> Bank Transfer</span>
+              <span class="text-xs text-gray-500">Admin confirms payment, then tokens are credited.</span>
+              <span class="mt-1 inline-block rounded-full bg-blue-600/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-700">Available</span>
+            </button>
+            <button id="pay-interswitch" data-method="interswitch"
+              class="flex flex-col items-start gap-1 rounded-xl border border-gray-200 bg-white p-4 text-left transition hover:bg-gray-50">
+              <span class="inline-flex items-center gap-2 font-semibold text-gray-900"><i data-lucide="credit-card" class="w-4 h-4 text-gray-500"></i> Interswitch</span>
+              <span class="text-xs text-gray-500">Instant card/online payment.</span>
+              <span class="mt-1 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-500">Coming soon</span>
+            </button>
+            <button id="pay-paystack" data-method="paystack"
+              class="flex flex-col items-start gap-1 rounded-xl border border-gray-200 bg-white p-4 text-left transition hover:bg-gray-50">
+              <span class="inline-flex items-center gap-2 font-semibold text-gray-900"><i data-lucide="credit-card" class="w-4 h-4 text-gray-500"></i> Paystack</span>
+              <span class="text-xs text-gray-500">Instant card/online payment.</span>
+              <span class="mt-1 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-500">Coming soon</span>
+            </button>
+          </div>
+        </div>
+        <div class="flex justify-center gap-4 mt-6">
+          <button id="cancel-token-purchase" class="px-5 sm:px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm sm:text-base">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     window.PHS_ORG = {
       institution: @json($institution),
@@ -656,7 +897,11 @@
         membersStore: "{{ route('phs.org.members.store') }}",
         membersBase: "{{ url('/phs/organization/members') }}",
         branding: "{{ route('phs.org.branding') }}",
-        activity: "{{ route('phs.org.activity') }}"
+        activity: "{{ route('phs.org.activity') }}",
+        payOnline: "{{ route('phs.tokens.payOnline') }}",
+        topup: "{{ route('phs.tokens.topup') }}",
+        requestInvoice: "{{ route('phs.tokens.requestInvoice') }}",
+        transactions: "{{ route('phs.tokens.transactions') }}"
       },
       assets: {
         logo: "{{ $institution->logo_path ? asset('storage/' . $institution->logo_path) : '' }}",
@@ -664,6 +909,7 @@
       }
     };
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="{{ asset('js/phs/organization.js') }}"></script>
 </body>
 </html>

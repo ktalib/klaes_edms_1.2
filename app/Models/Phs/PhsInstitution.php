@@ -12,6 +12,7 @@ class PhsInstitution extends Model
 
     protected $fillable = [
         'name',
+        'username',
         'type',
         'email',
         'phone',
@@ -21,6 +22,11 @@ class PhsInstitution extends Model
         'logo_path',
         'banner_path',
         'status',
+        'low_balance_notified_at',
+    ];
+
+    protected $casts = [
+        'low_balance_notified_at' => 'datetime',
     ];
 
     public function members()

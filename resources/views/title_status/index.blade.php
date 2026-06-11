@@ -400,6 +400,7 @@
     const TS_FILE_INFO_URL   = '{{ route('title-status.file-info') }}';
     const TS_CSRF            = '{{ csrf_token() }}';
     const TS_INITIATED_BY_BY_TYPE = @json($initiatedByByType);
+    const TS_INITIATED_BY_DEFAULT = { 'Revoke (CofO)': 'Ministry' };
 </script>
 <script src="{{ asset('js/title_status.js') }}?v={{ filemtime(public_path('js/title_status.js')) }}"></script>
 @endpush

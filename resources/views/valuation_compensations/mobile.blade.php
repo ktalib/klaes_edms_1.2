@@ -890,6 +890,10 @@
                                     </select>
                                     <input type="text" class="inp building-stage-mobile-other hidden mt-2" placeholder="Specify stage...">
                                 </div>
+                                <div style="margin-top: 12px;">
+                                    <label style="font-size: 9px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; display: block; text-transform: uppercase;">Number of Floors</label>
+                                    <input type="number" min="1" step="1" class="inp building-mobile-floors" placeholder="e.g. 2">
+                                </div>
                                 <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                                     <div>
                                         <label style="font-size: 9px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; display: block; text-transform: uppercase;">Length (L) (m)</label>
@@ -919,6 +923,7 @@
                         </div>
                         <input type="hidden" name="building_type" id="building_type_final_mobile">
                         <input type="hidden" name="completion_stage" id="completion_stage_final_mobile">
+                        <input type="hidden" name="number_of_floors" id="number_of_floors_final_mobile">
                     </div>
                     
                     <div style="display: none;">
@@ -1438,15 +1443,17 @@
         function calculateBuildingRowMobile(row) {
             const length = parseFloat(row.querySelector('.building-mobile-length').value) || 0;
             const breadth = parseFloat(row.querySelector('.building-mobile-breadth').value) || 0;
+            const floors = parseFloat(row.querySelector('.building-mobile-floors')?.value) || 1;
 
-            // If L and B are provided, update Area Covered for this row
+            // If L and B are provided, Area Covered = footprint (L×B) × floors (total built-up area)
             if (length > 0 && breadth > 0) {
-                const areaVal = length * breadth;
+                const areaVal = length * breadth * floors;
                 row.querySelector('.building-mobile-area').value = areaVal.toFixed(2);
             }
 
             const area = parseFloat(row.querySelector('.building-mobile-area').value) || 0;
             const rate = parseFloat(row.querySelector('.building-mobile-rate').value) || 0;
+            // Floors are already baked into Area Covered, so Amount = Area × Rate.
             const total = area * rate;
             row.querySelector('.building-mobile-comp').value = total.toFixed(2);
         }
@@ -2112,11 +2119,12 @@
             });
 
             // Bind listeners for measurement and cost inputs
-            document.querySelectorAll('.building-mobile-length, .building-mobile-breadth, .building-mobile-area, .building-mobile-rate').forEach(inp => {
+            document.querySelectorAll('.building-mobile-length, .building-mobile-breadth, .building-mobile-area, .building-mobile-rate, .building-mobile-floors').forEach(inp => {
                 inp.oninput = function() {
                     const row = this.closest('.building-type-mobile-row');
                     calculateBuildingRowMobile(row);
                     calculateAllCompensation();
+                    updateFinalBuildingAssessmentMobile();
                 };
             });
         }
@@ -2124,6 +2132,7 @@
         function updateFinalBuildingAssessmentMobile() {
             const types = [];
             const stages = [];
+            const floors = [];
             document.querySelectorAll('.building-type-mobile-row').forEach(row => {
                 const typeSel = row.querySelector('.building-type-mobile-select');
                 const typeOther = row.querySelector('.building-type-mobile-other');
@@ -2140,11 +2149,16 @@
                     if (val === 'Other' || val === 'Others') val = stageOther?.value || val;
                     if (val) stages.push(val);
                 }
+
+                const floorsInp = row.querySelector('.building-mobile-floors');
+                if (floorsInp && floorsInp.value) floors.push(floorsInp.value);
             });
             const typeFinal = document.getElementById('building_type_final_mobile');
             const stageFinal = document.getElementById('completion_stage_final_mobile');
+            const floorsFinal = document.getElementById('number_of_floors_final_mobile');
             if (typeFinal) typeFinal.value = types.join(', ');
             if (stageFinal) stageFinal.value = stages.join(', ');
+            if (floorsFinal) floorsFinal.value = floors.join(', ');
         }
 
         // Initialize mobile listeners on start

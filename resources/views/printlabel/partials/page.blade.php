@@ -410,6 +410,18 @@
                                                 <span>Enable to ignore grouping rows that already have a <code>shelf_rack</code> so you only load unassigned files.</span>
                                             </span>
                                         </label>
+                                        <label for="sequentialAssignmentToggle" class="flex cursor-pointer items-start gap-3 rounded-lg border border-dashed border-emerald-200 bg-emerald-50 px-3 py-3 text-xs text-emerald-700">
+                                            <input
+                                                type="checkbox"
+                                                id="sequentialAssignmentToggle"
+                                                checked
+                                                class="mt-1 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                                            />
+                                            <span>
+                                                <span class="block font-semibold uppercase tracking-wide text-[11px] text-emerald-800">Sequential Shelf Assignment</span>
+                                                <span>Spread files across shelves &mdash; fill up to 100 per Shelf/Rack (e.g. A1), then advance to the next (A2, A3&hellip;). Uncheck to stamp the selected Shelf/Rack on every file.</span>
+                                            </span>
+                                        </label>
                                         <label for="shelfLabelModeToggle" class="flex cursor-pointer items-start gap-3 rounded-lg border border-dashed border-blue-200 bg-blue-50 px-3 py-3 text-xs text-blue-700">
                                             <input
                                                 type="checkbox"

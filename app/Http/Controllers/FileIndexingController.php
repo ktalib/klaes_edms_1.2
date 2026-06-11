@@ -523,55 +523,42 @@ class FileIndexingController extends Controller
     }
 
 
-    public function index()
+    /**
+     * Get leaderboard data for the modal
+     */
+    public function leaderboardData(Request $request)
     {
         try {
-            // Get recent file indexing records to generate AI insights
-            $recentIndexes = FileIndexing::orderBy('created_at', 'desc')
-                ->limit(10)
-                ->get();
+            // Reuse the activity log's optimized, correct report builder so the
+            // leaderboard figures match the page exactly and we avoid the slow
+            // OR-join full table scan that previously timed out.
+            $groups = app(FileIndexingActivityLogController::class)->report($request);
 
-            $aiInsights = $recentIndexes->map(function ($fi) {
-                $owner = $fi->file_title ?? ($fi->owner_name ?? null) ?? 'Unknown Owner';
-                $scannedCount = isset($fi->scannings_count) ? $fi->scannings_count : 0;
-                $typedCount = isset($fi->pagetypings_count) ? $fi->pagetypings_count : 0;
+            // $groups is already sorted by total weight (most productive first).
+            $leaderboard = collect($groups)
+                ->take(10)
+                ->map(function ($group) {
+                    return [
+                        'name' => $group['user'],
+                        'files' => (int) $group['files'],
+                        'indexed' => (int) $group['indexed'],
+                        'transactions' => (int) $group['transactions'],
+                        'weight' => rtrim(rtrim(number_format((float) $group['weight'], 1), '0'), '.'),
+                    ];
+                })
+                ->values();
 
-                $confidence = min(98, 50 + ($scannedCount * 12) + ($typedCount * 6));
+            return response()->json($leaderboard);
 
-                $title = $fi->file_title ?? '';
-                $keywords = array_values(array_filter(array_map('trim', preg_split('/\s+/', preg_replace('/[^A-Za-z0-9 ]/', ' ', $title)))));
-                if (!empty($fi->land_use_type)) {
-                    array_unshift($keywords, $fi->land_use_type);
-                }
-
-                $issues = [];
-                if (!empty($fi->is_problematic))
-                    $issues[] = 'Flagged as problematic';
-                if (empty($fi->plot_number))
-                    $issues[] = 'Missing plot number';
-
-                return [
-                    'id' => $fi->id,
-                    'file_number' => $fi->file_number ?? '',
-                    'owner' => $owner,
-                    'document_type' => $fi->document_type ?? ($fi->land_use_type ?? 'Property Document'),
-                    'plot_number' => $fi->plot_number ?? '',
-                    'land_use' => $fi->land_use_type ?? 'Residential',
-                    'confidence' => $confidence,
-                    'keywords' => $keywords,
-                    'issues' => $issues,
-                    'text_quality' => $scannedCount > 0 ? 'Good' : 'Unknown',
-                    'structure' => $typedCount > 0 ? 'Complete sections' : 'Partial',
-                    'signature' => 'Not detected',
-                    'stamp' => $scannedCount > 0 ? 'Official stamp detected' : 'Not detected',
-                    'gis_verification' => 'Matched with parcel data',
-                ];
-            })->values();
-
-            return view('fileindexing.index', compact('aiInsights', 'recentIndexes'));
         } catch (\Throwable $e) {
-            // Fallback: render view with empty aiInsights
-            return view('fileindexing.index', ['aiInsights' => collect(), 'recentIndexes' => collect()]);
+            Log::error('Failed to fetch leaderboard data', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to load leaderboard data'
+            ], 500);
         }
     }
 

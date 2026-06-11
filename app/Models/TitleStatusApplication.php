@@ -40,7 +40,7 @@ class TitleStatusApplication extends Model
     public const INITIATED_BY_BY_TYPE = [
         self::TYPE_WITHDRAWAL   => ['Applicant'],
         self::TYPE_CANCELLATION => ['Ministry', 'Allottee'],
-        self::TYPE_REVOKE       => ['Court Order'],
+        self::TYPE_REVOKE       => ['Ministry', 'Allottee'],
         self::TYPE_LITIGATION   => ['Court Order'],
         self::TYPE_AMENDMENT    => ['Ministry', 'Allottee'],
         self::TYPE_SURRENDER    => ['Applicant'],

@@ -73,22 +73,58 @@
             <form method="POST" action="{{ route('phs.register.token.submit', ['token' => $token]) }}" class="space-y-6">
                 @csrf
 
+                {{-- Row 1: Activation Code + Username --}}
                 <fieldset>
-                    <legend class="text-lg font-semibold mb-4">Create Your Password</legend>
+                    <legend class="text-lg font-semibold mb-1">Organization Account</legend>
+                    <p class="text-sm text-gray-500 mb-4">Confirm your activation code and choose a username for your organization.</p>
 
-                    <div>
-                        <label for="password" class="block text-sm font-medium text-gray-700">Password *</label>
-                        <input type="password" id="password" name="password" required
-                            class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="Minimum 6 characters">
-                        <p class="text-sm text-gray-500 mt-1">Use a strong password with a mix of letters, numbers, and symbols.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div>
+                            <label for="activation_code" class="block text-sm font-medium text-gray-700">Activation Code</label>
+                            <div class="relative mt-1">
+                                <input type="text" id="activation_code" value="{{ $token }}" readonly
+                                    class="block w-full px-4 py-2.5 border border-gray-300 rounded-lg shadow-sm bg-gray-50 text-gray-500 cursor-not-allowed focus:outline-none font-mono text-sm pr-10 truncate"
+                                    onclick="this.select()">
+                                <svg class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1.5">One-time code. It cannot be changed.</p>
+                        </div>
+
+                        <div>
+                            <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
+                            <input type="text" id="username" name="username" readonly
+                                value="{{ old('username', $suggestedUsername) }}"
+                                pattern="[a-z0-9_]+"
+                                class="mt-1 block w-full px-4 py-2.5 border border-gray-300 rounded-lg shadow-sm bg-gray-100 text-gray-600 cursor-not-allowed focus:outline-none"
+                                placeholder="organization_username">
+                            <p class="text-xs text-gray-400 mt-1.5">Auto-assigned from your organization name.</p>
+                            <p class="text-xs text-blue-500 mt-1 flex items-start gap-1">
+                                <svg class="h-3.5 w-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                                You can update this later under Organization &rsaquo; Branding settings.
+                            </p>
+                        </div>
                     </div>
+                </fieldset>
 
-                    <div class="mt-4">
-                        <label for="password_confirmation" class="block text-sm font-medium text-gray-700">Confirm Password *</label>
-                        <input type="password" id="password_confirmation" name="password_confirmation" required
-                            class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="Re-enter your password">
+                {{-- Row 2: Password + Confirm Password --}}
+                <fieldset>
+                    <legend class="text-lg font-semibold mb-1">Create Your Password</legend>
+                    <p class="text-sm text-gray-500 mb-4">Use a strong password with a mix of letters, numbers, and symbols.</p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div>
+                            <label for="password" class="block text-sm font-medium text-gray-700">Password <span class="text-red-500">*</span></label>
+                            <input type="password" id="password" name="password" required
+                                class="mt-1 block w-full px-4 py-2.5 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="Minimum 6 characters">
+                        </div>
+
+                        <div>
+                            <label for="password_confirmation" class="block text-sm font-medium text-gray-700">Confirm Password <span class="text-red-500">*</span></label>
+                            <input type="password" id="password_confirmation" name="password_confirmation" required
+                                class="mt-1 block w-full px-4 py-2.5 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="Re-enter your password">
+                        </div>
                     </div>
                 </fieldset>
 

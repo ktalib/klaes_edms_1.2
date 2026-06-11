@@ -23,10 +23,27 @@ class PhsDashboardController extends Controller
         $member = Auth::guard('phs')->user();
         $institution = $member->institution;
 
+        $searchLogs = PhsSearchLog::where('phs_institution_id', $institution->id);
+
+        $stats = [
+            'token_balance' => $member->isSuperAdmin() ? (int) $institution->token_balance : (int) $member->allocated_tokens,
+            'total_searches' => (clone $searchLogs)->count(),
+            'searches_this_month' => (clone $searchLogs)->where('created_at', '>=', now()->startOfMonth())->count(),
+            'member_count' => $institution->members()->count(),
+        ];
+
+        $recentSearches = PhsSearchLog::with('member')
+            ->where('phs_institution_id', $institution->id)
+            ->latest()
+            ->limit(5)
+            ->get();
+
         return view('phs.dashboard.index', [
             'member' => $member,
             'institution' => $institution,
             'packages' => PhsTokenController::packages(),
+            'stats' => $stats,
+            'recentSearches' => $recentSearches,
         ]);
     }
 
@@ -53,24 +70,44 @@ class PhsDashboardController extends Controller
             ], 422);
         }
 
-        // Deduct 1 token BEFORE running the search (atomic; null = insufficient balance).
+        // Token spend model: super admins draw from the organization pool (they
+        // manage it); regular members spend their own carved-out allocation.
         $reference = 'PHS/' . now()->format('Y') . '/' . strtoupper(Str::random(6));
-        $debit = $institution->deductTokens(1, $member->id, [
-            'reference_no' => $reference,
-            'notes' => 'Search: ' . Str::limit($query, 100),
-        ]);
 
-        if ($debit === null) {
+        if ($member->isSuperAdmin()) {
+            $debit = $institution->deductTokens(1, $member->id, [
+                'reference_no' => $reference,
+                'notes' => 'Search: ' . Str::limit($query, 100),
+            ]);
+            $debited = $debit !== null;
+        } else {
+            $debited = \DB::connection('sqlsrv')->table('phs_members')
+                ->where('id', $member->id)
+                ->where('allocated_tokens', '>=', 1)
+                ->update([
+                    'allocated_tokens' => \DB::raw('allocated_tokens - 1'),
+                    'tokens_used' => \DB::raw('tokens_used + 1'),
+                ]) > 0;
+        }
+
+        if (!$debited) {
             return response()->json([
                 'success' => false,
                 'insufficient_tokens' => true,
-                'message' => 'Insufficient tokens. Please purchase more tokens to continue.',
-                'token_balance' => (int) $institution->fresh()->token_balance,
+                'message' => $member->isSuperAdmin()
+                    ? 'Insufficient organization tokens. Please purchase more to continue.'
+                    : 'You have no tokens left. Please contact your organization administrator for more.',
+                'token_balance' => $member->isSuperAdmin()
+                    ? (int) $institution->fresh()->token_balance
+                    : (int) $member->fresh()->allocated_tokens,
             ], 422);
         }
 
-        // member.tokens_used counter
-        $member->increment('tokens_used');
+        if ($member->isSuperAdmin()) {
+            $member->increment('tokens_used');
+        }
+        $member->refresh();
+        $institution->refresh();
 
         $results = $this->searchService->search(['query' => $query]);
         $transactions = $results['transactions'] ?? [];
@@ -88,7 +125,7 @@ class PhsDashboardController extends Controller
         return response()->json([
             'success' => true,
             'reference_no' => $reference,
-            'token_balance' => (int) $institution->fresh()->token_balance,
+            'token_balance' => $member->isSuperAdmin() ? (int) $institution->token_balance : (int) $member->allocated_tokens,
             'transactions' => $transactions,
             'file_title' => $results['file_title'] ?? null,
             'file_district' => $results['file_district'] ?? null,

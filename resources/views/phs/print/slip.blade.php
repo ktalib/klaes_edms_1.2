@@ -9,7 +9,8 @@
         body { background: #f3f4f6; color: #111827; font-family: Georgia, "Times New Roman", Times, serif; padding: 32px; }
         .toolbar { margin: 0 auto 16px; max-width: 920px; text-align: right; }
         .toolbar button { background: #14532d; border: 0; border-radius: 6px; color: white; cursor: pointer; font: 700 13px Arial, sans-serif; padding: 10px 14px; }
-        .slip { background: white; border: 1px solid #e5e7eb; box-shadow: 0 10px 40px rgba(15, 23, 42, .08); margin: 0 auto; max-width: 920px; }
+        .slip { background: white; border: 1px solid #e5e7eb; box-shadow: 0 10px 40px rgba(15, 23, 42, .08); margin: 0 auto; max-width: 920px; position: relative; overflow: hidden; }
+        .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 36px; font-weight: 900; letter-spacing: 2px; color: rgba(22, 101, 52, .12); white-space: nowrap; text-transform: uppercase; text-align: center; line-height: 1.3; pointer-events: none; z-index: 5; }
         .header { border-bottom: 3px solid #166534; padding: 20px 30px 16px; }
         .logo-container { align-items: center; display: flex; gap: 20px; justify-content: space-between; }
         .logo-box { align-items: center; border: 1px solid #d1d5db; border-radius: 10px; display: flex; height: 64px; justify-content: center; overflow: hidden; width: 64px; }
@@ -18,10 +19,10 @@
         .title-container h1 { color: #166534; font-size: 21px; letter-spacing: .5px; line-height: 1.25; }
         .title-container h3 { color: #374151; font-size: 13px; font-weight: normal; margin-top: 6px; }
         .content { padding: 24px 30px; }
-        .info-section { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 24px; }
-        .info-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; }
-        .info-box h4 { border-bottom: 2px solid #166534; color: #166534; display: inline-block; font-size: 13px; margin-bottom: 12px; padding-bottom: 7px; }
-        .info-row { display: flex; font-size: 12px; gap: 12px; margin-bottom: 8px; }
+        .info-section { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 12px; }
+        .info-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }
+        .info-box h4 { border-bottom: 2px solid #166534; color: #166534; display: inline-block; font-size: 12px; margin-bottom: 7px; padding-bottom: 4px; }
+        .info-row { display: flex; font-size: 11px; gap: 12px; margin-bottom: 4px; }
         .info-label { color: #6b7280; flex: 0 0 120px; }
         .info-value { color: #111827; flex: 1; font-weight: 600; }
         .section-title { border-bottom: 2px solid #166534; color: #166534; display: inline-block; font-size: 15px; font-weight: bold; margin: 8px 0 14px; padding-bottom: 8px; }
@@ -40,10 +41,19 @@
         .tl-desc { border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 11px; line-height: 1.55; margin-top: 10px; padding-top: 8px; }
         .note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; color: #78350f; font-size: 12px; line-height: 1.6; margin-top: 22px; padding: 12px; }
         .footer { background: #f9fafb; border-top: 1px solid #e5e7eb; color: #6b7280; font-family: Arial, sans-serif; font-size: 11px; line-height: 1.6; padding: 15px 30px; text-align: center; }
-        .footer-logos { align-items: center; display: flex; justify-content: space-between; gap: 20px; margin-top: 56px; padding: 16px 30px 32px; }
-        .footer-logos .logo-box { border: 0; height: 110px; width: 110px; }
-        .signature { display: flex; justify-content: flex-end; padding: 26px 30px 30px; }
+        .footer-logos { align-items: center; display: flex; justify-content: space-between; gap: 20px; margin-top: 24px; padding: 12px 30px 24px; width: 100%; }
+        .footer-logos .org-brand { align-items: center; display: flex; gap: 16px; flex: 1; }
+        .footer-logos .klaes-brand { align-items: center; display: flex; }
+        .footer-logos .klaes-brand img { height: 40px; width: auto; }
+        .footer-logos .logo-box { border: 0; height: 70px; width: 70px; }
+        .footer-logos .org-name { color: #166534; font-size: 12px; font-weight: bold; line-height: 1.2; white-space: nowrap; flex: 1; text-align: center; }
+        .header, .content, .footer, .signature, .footer-logos { position: relative; z-index: 1; }
+        .signature { display: flex; justify-content: space-between; align-items: flex-end; padding: 26px 30px 30px; }
+        .qr-box { text-align: center; }
+        .qr-box canvas, .qr-box img { display: block; }
+        .qr-box .qr-label { color: #6b7280; font-family: Arial, sans-serif; font-size: 9px; letter-spacing: .4px; margin-top: 4px; }
         .sig-line { text-align: center; width: 250px; }
+        .sig-img { display: block; height: 55px; max-width: 230px; margin: 0 auto 6px; object-fit: contain; }
         .sig-line hr { border: 0; border-top: 1px solid #111827; margin-bottom: 8px; }
         @media print {
             @page { size: A4 portrait; margin: 8mm; }
@@ -54,7 +64,6 @@
             /* Compact everything so short results stay on a single page */
             .header { padding: 10px 18px 8px; border-bottom-width: 2px; }
             .logo-box { height: 46px; width: 46px; }
-            .footer-logos .logo-box { height: 96px; width: 96px; }
             .title-container h1 { font-size: 16px; }
             .title-container h3 { font-size: 11px; margin-top: 3px; }
             .content { padding: 12px 18px; }
@@ -72,14 +81,18 @@
             .tl-desc { font-size: 10px; margin-top: 7px; padding-top: 6px; }
             .note { font-size: 11px; line-height: 1.45; margin-top: 12px; padding: 9px; }
             .slip { min-height: auto; padding-bottom: 0; }
-            .footer-logos { margin-top: 40px; padding: 14px 18px 6px; }
-            .footer { font-size: 10px; line-height: 1.45; padding: 10px 18px; }
-            .signature { padding: 14px 18px 16px; }
+            .footer-logos { margin-top: 4px; padding: 4px 18px 2px; justify-content: space-between; }
+            .footer-logos .logo-box { height: 50px; width: 50px; }
+            .footer-logos .klaes-brand img { height: 42px; }
+            .footer-logos .org-name { font-size: 12px; white-space: nowrap; }
+            .footer { font-size: 10px; line-height: 1.4; padding: 6px 18px; }
+            .signature { padding: 4px 18px 2px; }
+            .sig-img { height: 46px; }
 
             /* Keep blocks intact across page breaks */
             .timeline-row, .info-box, .note, .footer, .footer-logos, .signature { break-inside: avoid; page-break-inside: avoid; }
         }
-        @media (max-width: 760px) {
+        @media screen and (max-width: 760px) {
             body { padding: 12px; }
             .logo-container { align-items: flex-start; }
             .logo-box { height: 48px; width: 48px; }
@@ -93,12 +106,13 @@
     <div class="toolbar"><button type="button" onclick="window.print()">Print Slip</button></div>
 
     <article class="slip">
+        <div class="watermark" aria-hidden="true">PROPERTY HISTORY SEARCH (PHS) <br> &nbsp;&bull;&nbsp;  Not For Sale</div>
         <header class="header">
             <div class="logo-container">
                 <div class="logo-box"><img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Ministry Logo"></div>
                 <div class="title-container">
                     <h1>KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</h1>
-                    <h3>OFFICIAL SEARCH SLIP (CERTIFIED COPY)</h3>
+                    <h3>PROPERTY HISTORY SEARCH (PHS) PORTAL OFFICIAL SEARCH SLIP</h3>
                 </div>
                 <div class="logo-box"><img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Ministry Logo"></div>
             </div>
@@ -128,7 +142,7 @@
                 </div>
             </div>
 
-            <div class="section-title">TRANSACTION TIMELINE</div>
+            <div class="section-title">TRANSACTION(S) TIMELINE ({{ count($data['rows'] ?? []) }})</div>
             <div class="timeline">
                 @forelse(($data['rows'] ?? []) as $row)
                     @php
@@ -179,21 +193,64 @@
 
         <footer class="footer">
             <p>This is an electronically generated official search slip. Verification can be made at www.klaes.gov.ng/verify</p>
-            <p><strong>STATUS: CERTIFIED VERIFIED ✓</strong></p>
-            <p>{{ $data['generated_by'] ?? '' }}</p>
+          
+            <p>{{ (!empty($data['full_name']) && !empty($institution->name))
+                    ? str_replace($data['full_name'], $data['full_name'] . '/' . $institution->name, $data['generated_by'] ?? '')
+                    : ($data['generated_by'] ?? '') }}</p>
         </footer>
 
         <div class="signature">
+            <div class="qr-box">
+                <div id="qr-code"></div>
+                <div class="qr-label"></div>
+            </div>
             <div class="sig-line">
+                @if(!empty($authorizedSignatureSrc))
+                    <img class="sig-img" src="http://app.klaes.ng/storage/signing_officer_signatures/S3AuwOc91sjQfIYVtLuSlu3aPJ78DdR4JZcWP0Xf.jpg" alt="Authorized Signatory Signature">
+                @endif
                 <hr>
-                <p style="font-size:11px;">Authorized Signatory<br>Kano State Land Administration</p>
+                {{-- <p style="font-size:11px;" class='date'>{{ $data['generated_date'] ?? '' }}</p> --}}
+                <p style="font-size:11px;">Authorized Signatory</p>
             </div>
         </div>
-
+<br><br><br><br><br><br><br><br><br><br><br>
         <div class="footer-logos">
-            <div class="logo-box"><img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES Logo"></div>
-            <div class="logo-box"><img src="http://app.klaes.ng/assets/logo/las.jpg" alt="Land Administration Logo"></div>
+            <div class="org-brand">
+                <div class="logo-box">
+                    @if(!empty($institution->logo_path))
+
+                      <img src="{{ asset('storage/' . $institution->logo_path) }}" alt="{{ $institution->name }} Logo">
+
+                      
+                        {{-- <img src="{{ asset('storage/' . $institution->logo_path) }}" alt="{{ $institution->name }} Logo"> --}}
+                    @else
+                        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Organization Logo">
+                    @endif
+                </div>
+                <div class="org-name" >For {{ $institution->name }} Authorized by Kano State Ministry Of Land and Physical Planning</div>
+            </div>
+            <div class="klaes-brand">
+                <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="KLAES Logo">
+            </div>
         </div>
     </article>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script>
+        (function () {
+            var qrText = @json($data['qr_data'] ?? '');
+            var el = document.getElementById('qr-code');
+            if (el && qrText && typeof QRCode !== 'undefined') {
+                new QRCode(el, {
+                    text: qrText,
+                    width: 50,
+                    height: 50,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+            }
+        })();
+    </script>
 </body>
 </html>

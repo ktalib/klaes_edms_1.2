@@ -70,6 +70,7 @@
                 rackLabelStatus: null,
                 registryProgress: null,
                 excludeAssignedFromBatch: false,
+                sequentialShelfAssignment: true,
                 shelfLabelMode: false,
                 shelfLabelCount: MAX_SHELF_LABEL_MODE_COUNT,
                 shelfLabelNoSequence: false,
@@ -1955,6 +1956,7 @@
                     payload.rack_primary = state.rackPrimary;
                     payload.rack_secondary = state.rackSecondary || null;
                     payload.shelf = parseInt(state.shelfNumber, 10);
+                    payload.assignment_mode = state.sequentialShelfAssignment ? 'sequential' : 'fixed';
                     payload.manual_override = isManualOverride;
                     if (isManualOverride) {
                         payload.override_input = Array.isArray(state.registryOverrideNumbers)
@@ -3363,6 +3365,7 @@
                     state.rangeStart = defaultRange.start;
                     state.rangeEnd = defaultRange.end;
                     state.excludeAssignedFromBatch = false;
+                    state.sequentialShelfAssignment = true;
                     state.rackLabelStatus = null;
                     state.registryProgress = null;
                     state.availableFiles = [];
@@ -3414,6 +3417,10 @@
                     const excludeToggle = document.getElementById("excludeAssignedToggle");
                     if (excludeToggle) {
                         excludeToggle.checked = false;
+                    }
+                    const sequentialAssignmentToggleEl = document.getElementById("sequentialAssignmentToggle");
+                    if (sequentialAssignmentToggleEl) {
+                        sequentialAssignmentToggleEl.checked = true;
                     }
 
                     const registryOverrideToggleEl = document.getElementById('registryOverrideToggle');
@@ -3604,6 +3611,19 @@
             if (excludeAssignedToggle) {
                 excludeAssignedToggle.addEventListener("change", function () {
                     state.excludeAssignedFromBatch = this.checked;
+                });
+            }
+
+            const sequentialAssignmentToggle = document.getElementById("sequentialAssignmentToggle");
+            if (sequentialAssignmentToggle) {
+                state.sequentialShelfAssignment = sequentialAssignmentToggle.checked;
+                sequentialAssignmentToggle.addEventListener("change", function () {
+                    state.sequentialShelfAssignment = this.checked;
+                    // Assignment changes which shelves files land on, so any prepared batch is stale.
+                    resetPreparedState();
+                    if (state.activeTab === 'preview') {
+                        refreshPreview(true);
+                    }
                 });
             }
 

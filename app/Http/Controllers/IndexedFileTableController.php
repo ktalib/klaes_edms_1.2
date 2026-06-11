@@ -963,6 +963,113 @@ class IndexedFileTableController extends Controller
     }
 
     /**
+     * Match an indexed file to a correspondence file number.
+     * Sets is_corresponding_file = 1 and stores the chosen corresponding_fileno.
+     *
+     * POST /api/indexed-files/{id}/match-correspondence
+     */
+    public function matchCorrespondence(Request $request, $id): JsonResponse
+    {
+        try {
+            $fileId = (int) $id;
+            if ($fileId <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid file ID.',
+                ], 422);
+            }
+
+            $correspondingFileNo = trim((string) $request->input('corresponding_fileno', ''));
+            if ($correspondingFileNo === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Correspondence File Number is required.',
+                ], 422);
+            }
+
+            $exists = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('id', $fileId)
+                ->exists();
+
+            if (!$exists) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Indexed file not found.',
+                ], 404);
+            }
+
+            DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('id', $fileId)
+                ->update([
+                    'is_corresponding_file' => 1,
+                    'corresponding_fileno'  => $correspondingFileNo,
+                    'updated_at'            => now(),
+                ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Correspondence file {$correspondingFileNo} matched successfully.",
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Error matching correspondence file: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to match correspondence file.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Remove the correspondence match from an indexed file.
+     * Clears is_corresponding_file and corresponding_fileno (e.g. mistaken match).
+     *
+     * POST /api/indexed-files/{id}/unmatch-correspondence
+     */
+    public function unmatchCorrespondence(Request $request, $id): JsonResponse
+    {
+        try {
+            $fileId = (int) $id;
+            if ($fileId <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid file ID.',
+                ], 422);
+            }
+
+            $affected = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('id', $fileId)
+                ->update([
+                    'is_corresponding_file' => 0,
+                    'corresponding_fileno'  => null,
+                    'updated_at'            => now(),
+                ]);
+
+            if ($affected === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Indexed file not found.',
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Correspondence match removed successfully.',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Error removing correspondence match: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to remove correspondence match.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Check whether a selected KANGIS file number (e.g. "MLKN 1") already has
      * existing KANGIS-variant siblings in file_indexings.
      * Used for the live pre-submit check in the create form.

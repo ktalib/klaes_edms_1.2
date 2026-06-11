@@ -334,6 +334,7 @@ class SltrPrintLabelController extends Controller
                 $batch = SltrPrintLabelBatch::create([
                     'batch_number'  => $batchNumber,
                     'prefix'        => $prefix,
+                    'sub_prefix'    => $subPrefix, // "Group" — distinct sub_prefix from grouping
                     'sys_batch_no'  => 0, // No longer using sys_batch_no as primary grouping
                     'status'        => SltrPrintLabelBatch::STATUS_PENDING,
                     'full_label'    => $fullLabel,

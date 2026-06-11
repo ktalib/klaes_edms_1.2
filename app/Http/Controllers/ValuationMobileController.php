@@ -179,6 +179,7 @@ class ValuationMobileController extends Controller
                 'building_type' => $buildingType,
                 'building_count' => $request->building_count ?? 1,
                 'completion_stage' => $completionStage,
+                'number_of_floors' => $request->number_of_floors,
                 'length' => $request->length,
                 'breadth' => $request->breadth,
                 'area_covered' => $request->area_covered,

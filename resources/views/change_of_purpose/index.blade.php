@@ -537,10 +537,19 @@
 
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                         <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Location / Street</label>
-                            <input id="cop-location" name="location" type="text"
-                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm cop-prefill"
-                                placeholder="e.g. Nassarawa GRA">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Street</label>
+                            <select id="cop-street" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm">
+                                <option value="">- Select Street -</option>
+                                @foreach($streetNames as $street)
+                                    <option value="{{ $street->name }}">{{ \Illuminate\Support\Str::upper((string) $street->name) }}</option>
+                                @endforeach
+                                <option value="Other">OTHER</option>
+                            </select>
+                            <input id="cop-street-other" type="text"
+                                class="w-full px-4 py-3 mt-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm hidden"
+                                placeholder="Type street name">
+                            {{-- Hidden: full location details (street, district, LGA, state) --}}
+                            <input id="cop-location" name="location" type="hidden">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">District</label>

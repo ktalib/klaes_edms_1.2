@@ -34,6 +34,7 @@ Route::prefix('phs')->name('phs.')->group(function () {
     Route::post('request', [PhsOnboardingController::class, 'confirmPayment'])->name('request.confirm');
     Route::post('request/submit', [PhsOnboardingController::class, 'submitRequest'])->name('request.submit');
     Route::get('request/{id}/pending', [PhsOnboardingController::class, 'showPending'])->name('request.pending');
+    Route::get('request/{id}/invoice', [PhsOnboardingController::class, 'downloadInvoice'])->name('request.invoice');
     Route::get('register/{token}', [PhsAuthController::class, 'showRegisterWithToken'])->name('register.token');
     Route::post('register/{token}', [PhsAuthController::class, 'registerWithToken'])->name('register.token.submit');
 
@@ -49,6 +50,7 @@ Route::prefix('phs')->name('phs.')->group(function () {
 
         Route::get('tokens/transactions', [PhsTokenController::class, 'transactions'])->name('tokens.transactions');
         Route::post('tokens/pay-online', [PhsTokenController::class, 'payOnline'])->name('tokens.payOnline');
+        Route::post('tokens/topup', [PhsTokenController::class, 'requestTopup'])->name('tokens.topup');
         Route::post('tokens/request-invoice', [PhsTokenController::class, 'requestInvoice'])->name('tokens.requestInvoice');
 
         // Organization / User Management console — super_admin only.
@@ -60,6 +62,7 @@ Route::prefix('phs')->name('phs.')->group(function () {
             Route::delete('members/{id}', [PhsOrganizationController::class, 'destroyMember'])->name('members.destroy');
             Route::get('activity', [PhsOrganizationController::class, 'activity'])->name('activity');
             Route::post('branding', [PhsOrganizationController::class, 'updateBranding'])->name('branding');
+            Route::get('invoice/download', [PhsOnboardingController::class, 'downloadOrgInvoice'])->name('invoice.download');
         });
     });
 });

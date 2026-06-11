@@ -4,7 +4,7 @@
 
 @section('content')
 <div class="flex-1 overflow-auto bg-slate-50 flex flex-col min-h-full">
-    @include('admin.header', ['PageTitle' => $PageTitle, 'PageDescription' => 'Review and approve PHS onboarding requests submitted by institutions.'])
+    @include('admin.header', ['PageTitle' => $PageTitle, 'PageDescription' => 'Review and approve PHS onboarding requests submitted by organizations.'])
     <div class="flex-1 p-6">
         <div class="mb-8">
             <h1 class="text-3xl font-bold mb-4">{{ $PageTitle }}</h1>
@@ -43,7 +43,9 @@
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Contact</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Email</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Type</th>
+                        <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Subscription</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
+                        <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Payment</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Submitted</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Action</th>
                     </tr>
@@ -58,6 +60,20 @@
                             <td class="px-6 py-4 text-sm">{{ $req->contact_email }}</td>
                             <td class="px-6 py-4 text-sm capitalize">{{ str_replace('_', ' ', $req->organization_type) }}</td>
                             <td class="px-6 py-4 text-sm">
+                                @if ($req->initial_token_package)
+                                    @php $pkg = \App\Http\Controllers\Phs\PhsTokenController::packages()[strtolower($req->initial_token_package)] ?? null; @endphp
+                                    <div class="font-medium text-gray-900">{{ $req->initial_token_package }}</div>
+                                    @if ($pkg)
+                                        <div class="text-xs text-gray-500">{{ number_format($pkg['tokens']) }} tokens</div>
+                                    @endif
+                                    @if ($req->payment_amount)
+                                        <div class="text-xs text-gray-500">₦{{ number_format((float) $req->payment_amount) }}</div>
+                                    @endif
+                                @else
+                                    <span class="text-gray-400">—</span>
+                                @endif
+                            </td>
+                            <td class="px-6 py-4 text-sm">
                                 @php
                                     $statusColors = [
                                         'pending' => 'bg-yellow-100 text-yellow-800',
@@ -70,6 +86,29 @@
                                 <span class="px-3 py-1 rounded-full text-xs font-medium {{ $statusColors[$req->status] ?? 'bg-gray-100 text-gray-800' }}">
                                     {{ ucwords(str_replace('_', ' ', $req->status)) }}
                                 </span>
+                            </td>
+                            <td class="px-6 py-4 text-sm">
+                                @php
+                                    $payColors = [
+                                        'completed' => 'bg-green-100 text-green-800',
+                                        'incomplete' => 'bg-amber-100 text-amber-800',
+                                        'overpaid' => 'bg-sky-100 text-sky-800',
+                                        'not_paid' => 'bg-gray-100 text-gray-600',
+                                    ];
+                                    $payLabels = [
+                                        'completed' => 'Completed',
+                                        'incomplete' => 'Incomplete',
+                                        'overpaid' => 'Overpaid',
+                                        'not_paid' => 'Not paid',
+                                    ];
+                                    $ps = $req->payment_status ?: 'not_paid';
+                                @endphp
+                                <span class="px-3 py-1 rounded-full text-xs font-medium {{ $payColors[$ps] ?? 'bg-gray-100 text-gray-600' }}">
+                                    {{ $payLabels[$ps] ?? ucfirst($ps) }}
+                                </span>
+                                @if ($ps === 'incomplete' && $req->outstanding_amount)
+                                    <div class="text-xs text-amber-700 mt-1">₦{{ number_format((float) $req->outstanding_amount) }} outstanding</div>
+                                @endif
                             </td>
                             <td class="px-6 py-4 text-sm">{{ $req->created_at->format('M j, Y') }}</td>
                             <td class="px-6 py-4 text-sm relative">
@@ -87,6 +126,10 @@
                                                 <path d="M10 4a6 6 0 100 12 6 6 0 000-12zM10 8a2 2 0 110 4 2 2 0 010-4z" />
                                             </svg>
                                             View
+                                        </a>
+                                        <a href="{{ route('system-admin.phs.requests.invoice', ['id' => $req->id]) }}" target="_blank" rel="noopener" class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                                            Print Invoice
                                         </a>
                                         <form action="{{ route('system-admin.phs.requests.approve', ['id' => $req->id]) }}" method="POST" class="m-0 approve-form">
                                             @csrf

@@ -32,6 +32,7 @@ class KangisPrintLabelController extends Controller
             ->limit(5)
             ->get();
 
+            
         return view('kangis_printlabel.index', compact('recentBatches'));
     }
 
@@ -312,8 +313,12 @@ class KangisPrintLabelController extends Controller
                     throw ValidationException::withMessages(['file_ids' => 'No valid matching records found in kangis_grouping.']);
                 }
 
-                // Group by registry_batch_no (this allows "1 will A1 and 5 will have A2" logic)
-                $groups = $filesFromDb->groupBy('registry_batch_no');
+                // Group by registry_batch_no and order ascending so the lowest batch
+                // maps to the starting shelf the user selected, then increments (B1, B2, ...).
+                $groups = $filesFromDb->groupBy('registry_batch_no')
+                    ->sortBy(function ($groupFiles, $key) {
+                        return is_numeric($key) ? (int) $key : PHP_INT_MAX;
+                    }, SORT_REGULAR);
                 
                 $createdBatchesData = [];
                 $allLabelItems = [];
@@ -322,12 +327,22 @@ class KangisPrintLabelController extends Controller
                 $currentRackSecondary = $rackSecondary;
                 $currentShelfNumber = $shelfNumber;
 
+                // Anchor = lowest loaded registry batch. It maps to the shelf the user selected;
+                // every other batch is offset from it so gaps in the loaded batches are preserved
+                // (e.g. start B1 at batch 25 -> batch 32 lands on B8, not B2).
+                $anchorBatch = $groups->keys()
+                    ->filter(function ($k) { return is_numeric($k); })
+                    ->map(function ($k) { return (int) $k; })
+                    ->min();
+
                 foreach ($groups as $regBatchNo => $groupFiles) {
                     $regBatchNoStr = (string)$regBatchNo;
-                    
-                    // 1. Derive Shelf from Batch Number (User Request: Batch 3 should map to A3 even if A2 is empty)
-                    if (is_numeric($regBatchNoStr)) {
-                        $currentShelfNumber = (int)$regBatchNoStr;
+
+                    // Derive the shelf from the file's registry batch range, preserving gaps:
+                    //   shelf = selected start shelf + (this batch - lowest loaded batch)
+                    // so batch 25 -> B1, 32 -> B8, regardless of which batches were skipped.
+                    if ($anchorBatch !== null && is_numeric($regBatchNoStr)) {
+                        $currentShelfNumber = max(1, $shelfNumber + ((int) $regBatchNoStr - $anchorBatch));
                         $currentFullLabel   = $currentRackPrimary . $currentShelfNumber;
                     }
 
@@ -437,13 +452,6 @@ class KangisPrintLabelController extends Controller
                         'batch' => $batch->fresh(),
                         'file_count' => $groupFiles->count()
                     ];
-
-                    if ($groups->count() > 1) {
-                        $currentFullLabel = $this->getNextShelfLabel($currentFullLabel);
-                        if (preg_match('/^([A-Z]{1,2})(\d+)$/i', $currentFullLabel, $m)) {
-                            $currentShelfNumber = (int)$m[2];
-                        }
-                    }
                 }
 
                 return [

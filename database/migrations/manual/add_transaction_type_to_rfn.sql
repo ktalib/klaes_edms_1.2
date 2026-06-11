@@ -120,9 +120,16 @@ GO
 --      IND, IND-RC, CON-IND, CON-IND-RC                 -> Industrial
 --      AG,  AG-RC,  CON-AG,  CON-AG-RC                  -> Agriculture
 -- ---------------------------------------------------------------------------
+-- Title-match: only flag as Change of Purpose if the related's title in
+-- file_indexings matches the parent's file_title in related_file_number.
+-- Same owner changing the use of their property; if titles differ, it's
+-- a sale or unrelated linkage and should NOT be Change of Purpose.
 UPDATE r
 SET r.transaction_type = 'Change of Purpose'
 FROM [dbo].[related_file_number] r
+INNER JOIN [dbo].[file_indexings] fi_rel WITH (NOLOCK)
+        ON fi_rel.file_number = r.related_fileno
+       AND fi_rel.deleted_at IS NULL
 CROSS APPLY (
     SELECT
         CASE
@@ -143,7 +150,10 @@ CROSS APPLY (
 WHERE r.transaction_type IS NULL
   AND p.related_use IS NOT NULL
   AND p.parent_use  IS NOT NULL
-  AND p.related_use <> p.parent_use;
+  AND p.related_use <> p.parent_use
+  AND r.file_title       IS NOT NULL AND LTRIM(RTRIM(r.file_title)) <> ''
+  AND fi_rel.file_title  IS NOT NULL AND LTRIM(RTRIM(fi_rel.file_title)) <> ''
+  AND UPPER(LTRIM(RTRIM(r.file_title))) = UPPER(LTRIM(RTRIM(fi_rel.file_title)));
 
 PRINT CONCAT('Phase 3 (change of purpose): ', @@ROWCOUNT, ' rows labelled.');
 

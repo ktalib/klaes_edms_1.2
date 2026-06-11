@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Commissioning Status Fix</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .unit { background: #f9f9f9; padding: 10px; margin: 10px 0; border-radius: 3px; }
+        .commissioned { border-left: 4px solid #28a745; }
+        .not-commissioned { border-left: 4px solid #dc3545; }
+        .loading { color: #007bff; }
+        .error { color: #dc3545; }
+        .success { color: #28a745; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        .dropdown-test { margin: 20px 0; }
+        select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Commissioning Status Fix Test</h1>
+        <p>Testing the fix for RES-1982-2081 unit commissioning status display.</p>
+
+        <!-- Test the new units API endpoint -->
+        <div class="test-section">
+            <h2>Test 1: New Units API Endpoint</h2>
+            <button onclick="testNewUnitsAPI()">Test /api/file-numbers/units-for-dropdown</button>
+            <div id="unitsApiResult"></div>
+        </div>
+
+        <!-- Test the buyer list API -->
+        <div class="test-section">
+            <h2>Test 2: Updated Buyer List API</h2>
+            <p>Enter Application ID (find this from st_file_numbers where np_fileno = 'RES-1982-2081'):</p>
+            <input type="number" id="applicationId" placeholder="Application ID" value="">
+            <button onclick="testBuyerListAPI()">Test Buyer List API</button>
+            <div id="buyerListResult"></div>
+        </div>
+
+        <!-- Test dropdown simulation -->
+        <div class="test-section">
+            <h2>Test 3: Dropdown Simulation</h2>
+            <div class="dropdown-test">
+                <label for="unitSelect">Unit File Number:</label>
+                <select id="unitSelect">
+                    <option value="">Select a Unit File Number to begin...</option>
+                </select>
+            </div>
+            <button onclick="populateDropdown()">Load Units into Dropdown</button>
+            <div id="dropdownResult"></div>
+        </div>
+
+        <!-- Test raw SQL query -->
+        <div class="test-section">
+            <h2>Test 4: Raw Database Check</h2>
+            <button onclick="testDirectQuery()">Check st_file_numbers Table Directly</button>
+            <div id="directQueryResult"></div>
+        </div>
+    </div>
+
+    <script>
+        // Test the new units API endpoint
+        async function testNewUnitsAPI() {
+            const resultDiv = document.getElementById('unitsApiResult');
+            resultDiv.innerHTML = '<div class="loading">Testing new units API...</div>';
+            
+            try {
+                const response = await fetch('/api/file-numbers/units-for-dropdown?parent_file_no=RES-1982-2081');
+                const data = await response.json();
+                
+                if (data.success) {
+                    let html = '<div class="success">✓ API call successful</div>';
+                    html += `<p><strong>Parent File:</strong> ${data.parent_file_no}</p>`;
+                    html += `<p><strong>Units Found:</strong> ${data.data.length}</p>`;
+                    
+                    data.data.forEach(unit => {
+                        const commissionedClass = unit.is_commissioned ? 'commissioned' : 'not-commissioned';
+                        html += `
+                            <div class="unit ${commissionedClass}">
+                                <strong>${unit.fileno}</strong><br>
+                                Applicant: ${unit.applicant_name}<br>
+                                Type: ${unit.applicant_type}<br>
+                                Status: ${unit.status}<br>
+                                Commissioned: ${unit.is_commissioned ? 'Yes' : 'No'}<br>
+                                Display Text: ${unit.display_text}
+                            </div>
+                        `;
+                    });
+                    
+                    html += '<h4>Raw Response:</h4>';
+                    html += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">API Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Request failed: ${error.message}</div>`;
+            }
+        }
+
+        // Test the buyer list API
+        async function testBuyerListAPI() {
+            const applicationId = document.getElementById('applicationId').value;
+            const resultDiv = document.getElementById('buyerListResult');
+            
+            if (!applicationId) {
+                resultDiv.innerHTML = '<div class="error">Please enter an Application ID</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="loading">Testing buyer list API...</div>';
+            
+            try {
+                const response = await fetch(`/buyer/list/${applicationId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    let html = '<div class="success">✓ Buyer List API call successful</div>';
+                    html += `<p><strong>Records Found:</strong> ${data.count}</p>`;
+                    
+                    data.records.forEach(record => {
+                        const commissionedClass = record.is_commissioned ? 'commissioned' : 'not-commissioned';
+                        html += `
+                            <div class="unit ${commissionedClass}">
+                                <strong>Unit ${record.unit_no}</strong><br>
+                                Buyer: ${record.buyer_title} ${record.buyer_name}<br>
+                                Unit File No: ${record.unit_file_no || 'Not assigned'}<br>
+                                File Status: ${record.file_status || 'N/A'}<br>
+                                Commissioned: ${record.is_commissioned ? 'Yes' : 'No'}<br>
+                                Display: ${record.display_text || 'N/A'}
+                            </div>
+                        `;
+                    });
+                    
+                    html += '<h4>Raw Response:</h4>';
+                    html += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">API Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Request failed: ${error.message}</div>`;
+            }
+        }
+
+        // Populate dropdown with corrected data
+        async function populateDropdown() {
+            const select = document.getElementById('unitSelect');
+            const resultDiv = document.getElementById('dropdownResult');
+            
+            resultDiv.innerHTML = '<div class="loading">Loading units into dropdown...</div>';
+            
+            try {
+                const response = await fetch('/api/file-numbers/units-for-dropdown?parent_file_no=RES-1982-2081');
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Clear existing options
+                    select.innerHTML = '<option value="">Select a Unit File Number to begin...</option>';
+                    
+                    // Add units with corrected commissioning status
+                    data.data.forEach(unit => {
+                        const option = document.createElement('option');
+                        option.value = unit.fileno;
+                        option.textContent = unit.display_text;
+                        option.dataset.commissioned = unit.is_commissioned;
+                        select.appendChild(option);
+                    });
+                    
+                    resultDiv.innerHTML = `
+                        <div class="success">✓ Dropdown populated with ${data.data.length} units</div>
+                        <p>The dropdown above now shows the correct commissioning status!</p>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Failed to load units: ${data.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Failed to load units: ${error.message}</div>`;
+            }
+        }
+
+        // Test direct database query simulation
+        async function testDirectQuery() {
+            const resultDiv = document.getElementById('directQueryResult');
+            resultDiv.innerHTML = '<div class="loading">Checking database directly...</div>';
+            
+            try {
+                // This simulates what should be in the database
+                const simulatedData = [
+                    {
+                        fileno: 'ST-RES-2026-4-001',
+                        applicant_name: 'UMAR SADIQ ABUBAKAR',
+                        status: 'USED',
+                        date_commissioned: '2026-04-14 00:00:00.000',
+                        is_commissioned: true
+                    },
+                    {
+                        fileno: 'ST-RES-2026-4-002', 
+                        applicant_name: 'KABIR SADIQ HAMISU',
+                        status: 'USED',
+                        date_commissioned: '2026-04-14 00:00:00.000',
+                        is_commissioned: true
+                    },
+                    {
+                        fileno: 'ST-RES-2026-4-003',
+                        applicant_name: 'ADAMU SADIQ ABUBAKAR', 
+                        status: 'USED',
+                        date_commissioned: '2026-04-14 00:00:00.000',
+                        is_commissioned: true
+                    }
+                ];
+                
+                let html = '<div class="success">✓ Database simulation complete</div>';
+                html += '<p>Based on your SQL query results, this is what the data should look like:</p>';
+                
+                simulatedData.forEach(record => {
+                    const commissionedClass = record.is_commissioned ? 'commissioned' : 'not-commissioned';
+                    html += `
+                        <div class="unit ${commissionedClass}">
+                            <strong>${record.fileno}</strong><br>
+                            Applicant: ${record.applicant_name}<br>
+                            Status: ${record.status}<br>
+                            Date Commissioned: ${record.date_commissioned}<br>
+                            Should Show: ${record.is_commissioned ? 'Commissioned' : 'Not Commissioned'}
+                        </div>
+                    `;
+                });
+                
+                resultDiv.innerHTML = html;
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Handle dropdown selection
+        document.getElementById('unitSelect').addEventListener('change', function() {
+            const selected = this.options[this.selectedIndex];
+            if (selected.value) {
+                const commissioned = selected.dataset.commissioned === 'true';
+                const message = commissioned 
+                    ? `Selected unit ${selected.value} is COMMISSIONED ✓`
+                    : `Selected unit ${selected.value} is NOT COMMISSIONED ✗`;
+                
+                console.log(message);
+            }
+        });
+    </script>
+</body>
+</html>

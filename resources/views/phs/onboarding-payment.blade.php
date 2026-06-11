@@ -150,7 +150,7 @@
 </div>
 
 <div class="page-wrapper">
-    <div class="step-badge">Step 2 of 2 — Payment Verification</div>
+    <div class="step-badge">Step 3 of 3 — Payment Verification</div>
 
     <div class="main-grid">
 

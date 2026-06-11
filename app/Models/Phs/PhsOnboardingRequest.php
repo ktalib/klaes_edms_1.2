@@ -14,6 +14,11 @@ class PhsOnboardingRequest extends Model
     const STATUS_REJECTED = 'rejected';
     const STATUS_ACTIVATED = 'activated';
 
+    const PAYMENT_NOT_PAID = 'not_paid';
+    const PAYMENT_INCOMPLETE = 'incomplete';
+    const PAYMENT_COMPLETED = 'completed';
+    const PAYMENT_OVERPAID = 'overpaid';
+
     protected $fillable = [
         'organization_name',
         'organization_type',
@@ -35,13 +40,82 @@ class PhsOnboardingRequest extends Model
         'activation_token',
         'activation_token_expires_at',
         'created_phs_institution_id',
+        'invoice_number',
+        'invoice_generated_at',
+        'invoice_sent_at',
+        'invoice_pdf_path',
+        'cac_registration_number',
+        'cac_document_path',
+        'additional_documents',
+        'payment_status',
+        'expected_amount',
+        'verified_amount',
+        'outstanding_amount',
+        'payment_verified_at',
+        'payment_verified_by',
+        'payment_verification_notes',
     ];
 
     protected $casts = [
         'payment_received_at' => 'datetime',
         'approved_at' => 'datetime',
         'activation_token_expires_at' => 'datetime',
+        'invoice_generated_at' => 'datetime',
+        'invoice_sent_at' => 'datetime',
+        'additional_documents' => 'array',
+        'expected_amount' => 'decimal:2',
+        'verified_amount' => 'decimal:2',
+        'outstanding_amount' => 'decimal:2',
+        'payment_verified_at' => 'datetime',
     ];
+
+    /** Staff (main app user) who verified the payment. */
+    public function paymentVerifier()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'payment_verified_by');
+    }
+
+    /**
+     * Derive a payment status from expected vs verified amounts.
+     * not_paid | incomplete | completed | overpaid
+     */
+    public static function derivePaymentStatus($expected, $verified): string
+    {
+        $expected = (float) $expected;
+        $verified = (float) $verified;
+        if ($verified <= 0) {
+            return self::PAYMENT_NOT_PAID;
+        }
+        if ($verified < $expected) {
+            return self::PAYMENT_INCOMPLETE;
+        }
+        if ($verified > $expected) {
+            return self::PAYMENT_OVERPAID;
+        }
+        return self::PAYMENT_COMPLETED;
+    }
+
+    public function isPaymentComplete(): bool
+    {
+        return in_array($this->payment_status, [self::PAYMENT_COMPLETED, self::PAYMENT_OVERPAID], true);
+    }
+
+    /**
+     * Build a unique invoice number: PHS-INV-YYYYMMDD-XXXX (per-day sequence).
+     */
+    public function generateInvoiceNumber(): string
+    {
+        $date = now()->format('Ymd');
+
+        $last = static::whereNotNull('invoice_number')
+            ->where('invoice_number', 'like', 'PHS-INV-' . $date . '-%')
+            ->orderByDesc('invoice_number')
+            ->first();
+
+        $sequence = $last ? ((int) substr($last->invoice_number, -4)) + 1 : 1;
+
+        return 'PHS-INV-' . $date . '-' . str_pad((string) $sequence, 4, '0', STR_PAD_LEFT);
+    }
 
     public function institution()
     {

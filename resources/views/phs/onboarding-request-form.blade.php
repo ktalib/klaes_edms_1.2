@@ -43,15 +43,17 @@
 
     /* Package cards in sidebar */
     .pkg-list { display: flex; flex-direction: column; gap: 10px; }
-    .pkg-item { background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 13px 15px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background .15s; }
-    .pkg-item:hover { background: rgba(255,255,255,.17); }
-    .pkg-item.active { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.45); }
+    .pkg-item { background: var(--card-bg, rgba(255,255,255,.10)); border: 1px solid rgba(255,255,255,.14); border-left: 4px solid var(--accent, rgba(255,255,255,.3)); border-radius: 12px; padding: 13px 15px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: filter .15s, box-shadow .15s; }
+    .pkg-item:hover { filter: brightness(1.12); }
+    .pkg-item.active { border-color: var(--accent, #fff); box-shadow: 0 0 0 2px var(--accent, #fff); }
     .pk-name { font-size: 13px; font-weight: 600; color: #fff; }
     .pk-tok { font-size: 10px; color: rgba(255,255,255,.55); margin-top: 2px; }
+    .pk-badge { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; padding: 2px 8px; border-radius: 20px; background: rgba(0,0,0,.12); border: 1px solid var(--accent, rgba(255,255,255,.18)); font-size: 10px; font-weight: 600; color: #fff; }
+    .pk-badge svg { stroke: var(--accent, rgba(255,255,255,.9)); }
     .pk-right { display: flex; align-items: center; gap: 8px; }
     .pk-price { font-family: 'Sora', sans-serif; font-size: 14px; font-weight: 700; color: #fff; }
     .pk-dot { width: 8px; height: 8px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); transition: all .15s; flex-shrink: 0; }
-    .pkg-item.active .pk-dot { background: #fff; border-color: #fff; }
+    .pkg-item.active .pk-dot { background: var(--accent, #fff); border-color: var(--accent, #fff); }
 
     /* Form card */
     .form-card { background: #fff; border-radius: 20px; border: 1px solid rgba(108,99,255,.10); box-shadow: 0 4px 24px rgba(108,99,255,.07); padding: 32px 32px; }
@@ -59,6 +61,7 @@
     .section-title .icon { width: 28px; height: 28px; border-radius: 8px; background: #ededff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .section-title .icon svg { width: 14px; height: 14px; stroke: #6c63ff; fill: none; stroke-width: 2; }
     .section-divider { height: 1px; background: #eeecfa; margin: 24px 0; }
+    .wizard-step[hidden] { display: none; }
 
     /* Fields */
     .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
@@ -114,7 +117,7 @@
 </div>
 
 <div class="page-wrapper">
-    <div class="step-badge">Step 1 of 2 — Access Request</div>
+    <div class="step-badge" id="step-badge">Step 1 of 3 — Organization Details</div>
 
     <div class="main-grid">
 
@@ -122,13 +125,32 @@
         <div class="sidebar-card">
             <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES" class="sb-logo">
             <div class="sb-eyebrow">Kano State Ministry of Land &amp; Physical Planning</div>
-            <div class="sb-title">Property History Search (PHS)</div>
+            <div class="sb-title">Property History Search (PHS) Portal</div>
             <div class="sb-desc">Request institutional access to search official property records. Select a token package to continue.</div>
 
             <div class="pkg-list">
+                @php
+                    $pkgColors = [
+                        ['accent' => '#fbbf24', 'bg' => 'rgba(251,191,36,.16)'],   // amber
+                        ['accent' => '#34d399', 'bg' => 'rgba(52,211,153,.16)'],   // emerald
+                        ['accent' => '#38bdf8', 'bg' => 'rgba(56,189,248,.16)'],   // sky
+                        ['accent' => '#f472b6', 'bg' => 'rgba(244,114,182,.16)'],  // pink
+                        ['accent' => '#c4b5fd', 'bg' => 'rgba(196,181,253,.18)'],  // violet
+                    ];
+                @endphp
                 @foreach ($packages as $pkg)
-                <div class="pkg-item" data-pkg="{{ $pkg['name'] }}">
-                    <div><div class="pk-name">{{ $pkg['name'] }}</div><div class="pk-tok">{{ number_format($pkg['tokens']) }} tokens</div></div>
+                @php $c = $pkgColors[$loop->index % count($pkgColors)]; @endphp
+                <div class="pkg-item" data-pkg="{{ $pkg['name'] }}" style="--accent: {{ $c['accent'] }}; --card-bg: {{ $c['bg'] }};">
+                    <div>
+                        <div class="pk-name">{{ $pkg['name'] }}</div>
+                        <div class="pk-tok">{{ number_format($pkg['tokens']) }} tokens</div>
+                        @if (!empty($pkg['team_members']))
+                        <span class="pk-badge">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            {{ $pkg['team_members'] }} team {{ \Illuminate\Support\Str::plural('member', $pkg['team_members']) }}
+                        </span>
+                        @endif
+                    </div>
                     <div class="pk-right"><span class="pk-price">₦{{ number_format($pkg['price']) }}</span><span class="pk-dot"></span></div>
                 </div>
                 @endforeach
@@ -147,7 +169,7 @@
             </div>
             @endif
 
-            <form method="POST" action="{{ route('phs.request.confirm') }}" id="requestForm">
+            <form method="POST" action="{{ route('phs.request.confirm') }}" id="requestForm" enctype="multipart/form-data">
                 @csrf
 
                 {{-- Hidden select for token package --}}
@@ -159,6 +181,7 @@
                     @endforeach
                 </select>
 
+                <div class="wizard-step" data-step="1">
                 {{-- Organization --}}
                 <div class="section-title">
                     <span class="icon"><svg viewBox="0 0 24 24"><path d="M3 21h18M3 10h18M12 3 2 10h20L12 3z"/></svg></span>
@@ -231,6 +254,31 @@
                 </div>
                
 
+                </div>{{-- /wizard step 1 --}}
+
+                <div class="wizard-step" data-step="2" hidden>
+                {{-- CAC Documentation --}}
+                <div class="section-title">
+                    <span class="icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+                    CAC Documentation
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label class="field-label">CAC Registration Number <span class="req">*</span></label>
+                        <input type="text" name="cac_registration_number" value="{{ old('cac_registration_number') }}" required placeholder="e.g. RC123456" class="field-input">
+                    </div>
+                    <div class="field">
+                        <label class="field-label">CAC Certificate (PDF) <span class="req">*</span></label>
+                        <input type="file" name="cac_document" accept="application/pdf,.pdf" required class="field-input" style="padding:9px 12px;">
+                        <span style="font-size:11px;color:#8b88aa;margin-top:5px;">PDF only · max 5MB</span>
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="field-label">Additional Documents (optional)</label>
+                    <input type="file" name="additional_documents[]" accept=".pdf,.jpg,.jpeg,.png" multiple class="field-input" style="padding:9px 12px;">
+                    <span style="font-size:11px;color:#8b88aa;margin-top:5px;">Supporting documents (ID, authorization letter, etc.) — PDF/JPG/PNG, max 5MB each.</span>
+                </div>
+
                 <div class="section-divider"></div>
 
                 {{-- Notes --}}
@@ -241,13 +289,24 @@
                 <div class="field">
                     <textarea name="additional_notes" rows="3" placeholder="Any special requirements or questions?" class="field-textarea">{{ old('additional_notes') }}</textarea>
                 </div>
+                </div>{{-- /wizard step 2 --}}
 
                 <div class="action-row">
-                    <a href="{{ route('phs.landing') }}" class="btn-cancel">
-                        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
-                        Cancel
-                    </a>
-                    <button type="submit" class="btn-submit">
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <a href="{{ route('phs.landing') }}" class="btn-cancel">
+                            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                            Cancel
+                        </a>
+                        <button type="button" class="btn-cancel" id="btn-back" style="display:none;">
+                            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                            Back
+                        </button>
+                    </div>
+                    <button type="button" class="btn-submit" id="btn-next">
+                        Continue
+                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </button>
+                    <button type="submit" class="btn-submit" id="btn-finish" style="display:none;">
                         Continue to Payment
                         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                     </button>
@@ -277,12 +336,50 @@
         item.addEventListener('click', () => selectPkg(item.dataset.pkg));
     });
 
-    // Warn if no package selected on submit
-    document.getElementById('requestForm').addEventListener('submit', function(e) {
+    /* ---------- Multi-step wizard (steps 1 & 2 of 3) ---------- */
+    const step1 = document.querySelector('.wizard-step[data-step="1"]');
+    const step2 = document.querySelector('.wizard-step[data-step="2"]');
+    const stepBadge = document.getElementById('step-badge');
+    const btnNext = document.getElementById('btn-next');
+    const btnBack = document.getElementById('btn-back');
+    const btnFinish = document.getElementById('btn-finish');
+
+    function showStep(n) {
+        step1.hidden = n !== 1;
+        step2.hidden = n !== 2;
+        btnNext.style.display = n === 1 ? '' : 'none';
+        btnFinish.style.display = n === 2 ? '' : 'none';
+        btnBack.style.display = n === 2 ? '' : 'none';
+        stepBadge.textContent = n === 1
+            ? 'Step 1 of 3 — Organization Details'
+            : 'Step 2 of 3 — Documents';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    btnNext.addEventListener('click', function () {
+        // Validate step-1 required fields with native messages.
+        for (const el of step1.querySelectorAll('[required]')) {
+            if (!el.checkValidity()) { el.reportValidity(); return; }
+        }
+        const email = document.querySelector('[name="contact_email"]').value.trim();
+        const confirmEmail = document.querySelector('[name="contact_email_confirmation"]').value.trim();
+        if (email !== confirmEmail) { alert('Email addresses do not match.'); return; }
+        if (!tokenSel.value) { alert('Please select a token package from the sidebar before continuing.'); return; }
+        showStep(2);
+    });
+
+    btnBack.addEventListener('click', () => showStep(1));
+
+    // Final guard on submit.
+    document.getElementById('requestForm').addEventListener('submit', function (e) {
         if (!tokenSel.value) {
             e.preventDefault();
             alert('Please select a token package from the sidebar before continuing.');
         }
     });
+
+    // If the server returned validation errors, surface them where the user can
+    // act — start on step 1 (the error summary is shown above the form).
+    showStep(1);
 </script>
 @endsection

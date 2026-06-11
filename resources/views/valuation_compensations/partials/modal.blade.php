@@ -262,7 +262,7 @@
                                         <i data-lucide="building" class="h-3 w-3"></i>
                                         Building 1
                                     </div>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div>
                                             <label class="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Building Type</label>
                                             <select class="building-type-select w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-blue-500 transition text-sm font-medium">
@@ -282,6 +282,10 @@
                                                 @endforeach
                                             </select>
                                             <input type="text" class="building-stage-other hidden mt-2 w-full px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 focus:border-blue-500 focus:bg-white transition text-xs font-medium" placeholder="Specify stage...">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Number of Floors</label>
+                                            <input type="number" min="1" step="1" class="building-floors w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-blue-500 transition text-sm font-medium" placeholder="e.g. 2">
                                         </div>
                                     </div>
 
@@ -314,6 +318,7 @@
                             </div>
                             <input type="hidden" name="building_type" id="building_type_final" required>
                             <input type="hidden" name="completion_stage" id="completion_stage_final">
+                            <input type="hidden" name="number_of_floors" id="number_of_floors_final">
                         </div>
                     </div>
 

@@ -14,6 +14,8 @@ class SltrPrintLabelBatch extends Model
     protected $fillable = [
         'batch_number',
         'prefix',
+        'sub_prefix',
+        'digit_rank',
         'sys_batch_no',
         'batch_size',
         'generated_count',

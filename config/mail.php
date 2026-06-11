@@ -43,6 +43,9 @@ return [
             'password' => env('MAIL_PASSWORD'),
             'timeout' => null,
             'local_domain' => env('MAIL_EHLO_DOMAIN'),
+            // Set MAIL_VERIFY_PEER=false ONLY for local dev that lacks a CA bundle.
+            // Keep it true in production so TLS certificates are verified.
+            'verify_peer' => env('MAIL_VERIFY_PEER', true),
         ],
 
         'ses' => [

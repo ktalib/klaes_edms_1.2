@@ -1300,10 +1300,22 @@ const executeSearchAjax = (filters, searchData) => {
     return text.toString().toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
   };
 
+  // File numbers issued in the current year are brand-new consolidated/working
+  // files — they must never outrank the historical chain, so they always sort to
+  // the bottom of the timeline with a weight of 0.
+  const CURRENT_FILE_YEAR = new Date().getFullYear();
+  const isCurrentYearFileNumber = (item) => {
+    const fileNo = String(getMappedValue(item, 'fileNumber') || '');
+    const match = fileNo.match(/\b(?:19|20)\d{2}\b/);
+    return match ? Number(match[0]) === CURRENT_FILE_YEAR : false;
+  };
+
   // Rule B: transaction-type priority for Timeline sort order.
   // Priority group (always displayed first, in weight order): OP=10, TOT=9, RoFO=8.
   // CofO + all other instruments = 1 → sorted chronologically by reg date within tie.
+  // Current-year file numbers are forced to weight 0 (sorted last).
   const recordPriorityWeight = (item) => {
+    if (isCurrentYearFileNumber(item)) return 0;
     const txType = canonicalWeightingInstrumentType(getMappedValue(item, 'transactionType'));
     if (txType === 'occupancy permit') return 10;
     if (txType === 'transfer of title') return 9;

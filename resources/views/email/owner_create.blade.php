@@ -1,65 +1,51 @@
-<!doctype html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+@extends('email.layouts.master')
 
-<head>
-    <title>
-    </title>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link href="https://fonts.googleapis.com/css?family=Open+Sans" rel="stylesheet" type="text/css">
-
-    <style>
-        .body532 blockquote {
-            border-left: 5px solid #ccc;
-            font-style: italic;
-            margin-left: 0;
-            margin-right: 0;
-            overflow: hidden;
-            padding-left: 1.5em;
-            padding-right: 1.5em;
-        }
-    </style>
-</head>
-
-<body style="font-family: 'Poppins', Arial, sans-serif">
-    <table width="100%" border="0" cellspacing="0" cellpadding="0">
+@section('content')
+    <h2 style="color: #1e3a5f; font-size: 22px; margin-bottom: 20px;">Welcome to {{ env('APP_NAME') }}</h2>
+    
+    <p>Dear <strong>{{ $data['name'] }}</strong>,</p>
+    
+    <div class="success-box">
+        <p>We are excited to have you on board and look forward to providing you with an exceptional experience.</p>
+    </div>
+    
+    <h3>Your Account Details</h3>
+    
+    <table class="details">
         <tr>
-            <td align="center" style="padding: 20px;">
-                <table class="content" width="600" border="0" cellspacing="0" cellpadding="0"
-                    style="border-collapse: collapse; border: 1px solid #cccccc;">
-                    <!-- Header -->
-                    <tr>
-                        <td class="header"
-                            style="background-color: #345C72; padding: 40px; text-align: center; color: white; font-size: 24px;">
-                            <img src="{{ asset(Storage::url('upload/logo/')) . '/' . $data['logo'] }}"
-                                style="height: 100px;" alt="">
-                        </td>
-                    </tr>
-
-                    <!-- Body -->
-                    <tr>
-                        <td class="body532" style="padding: 40px; text-align: left; font-size: 16px; line-height: 1.6;">
-                            <p><strong>{{ __('Dear') }} {{ $data['name'] }}</strong>,</p>
-                            <p>&nbsp;</p>
-                            <blockquote>
-                                <p> {{ __('We are excited to have you on board and look forward to providing you with an exceptional experience.') }}</p>
-                                <p>{{ __('We hope you enjoy your experience with us. If you have any feedback, feel free to share it with us.') }}</p>
-                                <p>&nbsp;</p>
-                                <p>{{ __('Your account details are as follows:') }}</p>
-                                <p><strong>{{ __('App Link:') }}</strong> <a href="{{ $data['url'] }}">{{ $data['url'] }}</a></p>
-                                <p><strong>{{ __('Username:') }}</strong> {{ $data['email'] }}</p>
-                                <p><strong>{{ __('Password:') }}</strong> {{ $data['password'] }}</p>
-                                <p>&nbsp;</p>
-                                <p>{{ __('Thank you for choosing.') }}</p>
-                            </blockquote>
-
-                        </td>
-                    </tr>
-                </table>
-            </td>
+            <td>App Link:</td>
+            <td><a href="{{ $data['url'] }}">{{ $data['url'] }}</a></td>
+        </tr>
+        <tr>
+            <td>Username/Email:</td>
+            <td><strong>{{ $data['email'] }}</strong></td>
+        </tr>
+        <tr>
+            <td>Password:</td>
+            <td><code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px;">{{ $data['password'] }}</code></td>
         </tr>
     </table>
-</body>
-
-</html>
+    
+    <div class="warning-box">
+        <strong>⚠️ Important:</strong> Please change your password immediately after your first login for security purposes.
+    </div>
+    
+    <h3>Next Steps</h3>
+    <ul class="list">
+        <li>Log in using your credentials above</li>
+        <li>Update your profile information</li>
+        <li>Explore the platform features</li>
+    </ul>
+    
+    <p>We hope you enjoy your experience with us. If you have any questions or feedback, feel free to reach out to our support team.</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ $data['url'] }}" class="btn btn-primary" style="display: inline-block; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); color: white; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-weight: 600;">Go to Platform</a>
+    </div>
+    
+    <hr class="divider">
+    
+    <p style="text-align: center; color: #6b7280; font-size: 12px; margin-top: 20px;">
+        Thank you for choosing {{ env('APP_NAME') }}!
+    </p>
+@endsection

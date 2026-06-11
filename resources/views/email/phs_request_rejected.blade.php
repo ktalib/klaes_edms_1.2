@@ -1,40 +1,56 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>PHS Onboarding Request Status</title>
-    <style>
-        body { font-family: Arial, sans-serif; color: #1f2937; background: #f9fafb; margin: 0; padding: 0; }
-        .container { max-width: 600px; margin: 24px auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
-        .content { padding: 24px; }
-        .button { display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 8px; margin-top: 16px; }
-        .section-title { font-size: 18px; font-weight: 700; margin-top: 24px; }
-        .blockquote { margin: 12px 0; padding: 14px 18px; background: #f3f4f6; border-left: 4px solid #ef4444; }
-        .footer { margin-top: 32px; font-size: 14px; color: #6b7280; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="content">
-            <h1>Your PHS Onboarding Request Status</h1>
-            <p>Dear {{ $request->contact_name }},</p>
-            <p>Thank you for submitting your onboarding request for the Property History Search (PHS) portal. We appreciate your interest.</p>
+@extends('email.layouts.master')
 
-            <p class="section-title">Request Status</p>
-            <p>Unfortunately, your request has been <strong>rejected</strong>. Please see the reason below:</p>
-            <div class="blockquote">{{ $request->rejection_reason }}</div>
-
-            <p class="section-title">Next Steps</p>
-            <p>If you believe this decision was made in error or would like to discuss your request further, please contact our support team.</p>
-            <p>You may also submit a new request with updated information:</p>
-            <a class="button" href="{{ $resubmitUrl }}">Submit a New Request</a>
-
-            <p class="section-title">Request Details</p>
-            <p><strong>Organization:</strong> {{ $request->organization_name }}<br>
-            <strong>Request Submitted:</strong> {{ $request->created_at->format('F j, Y') }}</p>
-
-            <p class="footer">If you have any questions, please reach out to our support team.</p>
-        </div>
+@section('content')
+    <h2 style="color: #1e3a5f; font-size: 22px; margin-bottom: 20px;">Update on Your PHS Onboarding Request</h2>
+    
+    <p>Dear <strong>{{ $request->contact_name }}</strong>,</p>
+    
+    <p>Thank you for submitting your onboarding request for the Property History Search (PHS) portal. We appreciate your interest in our services.</p>
+    
+    <div class="danger-box">
+        <strong>Request Status: Rejected</strong><br>
+        Unfortunately, your request could not be approved at this time.
     </div>
-</body>
-</html>
+    
+    <h3>Reason for Rejection</h3>
+    <div style="background: #f3f4f6; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
+        <p style="margin: 0; color: #1f2937;">{{ $request->rejection_reason }}</p>
+    </div>
+    
+    <h3>What You Can Do</h3>
+    <ul class="list">
+        <li>If you believe this decision was made in error, you may request a review</li>
+        <li>Address the concerns mentioned above and submit a new request</li>
+        <li>Contact our support team for more information</li>
+    </ul>
+    
+    <h3>Request Details</h3>
+    <table class="details">
+        <tr>
+            <td>Organization:</td>
+            <td>{{ $request->organization_name }}</td>
+        </tr>
+        <tr>
+            <td>Request Date:</td>
+            <td>{{ $request->created_at->format('F j, Y') }}</td>
+        </tr>
+        <tr>
+            <td>Decision Date:</td>
+            <td>{{ now()->format('F j, Y') }}</td>
+        </tr>
+    </table>
+    
+    <h3>Next Steps</h3>
+    <p>You may submit a new request at any time. To do so:</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ $resubmitUrl ?? 'https://app.klaes.ng/phs/onboard' }}" class="btn btn-primary" style="display: inline-block; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); color: white; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-weight: 600;">Submit New Request</a>
+    </div>
+    
+    <hr class="divider">
+    
+    <p style="color: #6b7280; font-size: 12px;">
+        If you have questions about this decision or need further assistance, please reach out to our support team. We're happy to help clarify any concerns.<br>
+        <strong>Kano State Ministry of Land & Physical Planning — PHS Portal</strong>
+    </p>
+@endsection

@@ -10,6 +10,15 @@
   const fmt = (n) => new Intl.NumberFormat().format(Number(n || 0));
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
 
+  // SweetAlert toast/dialog with a graceful fallback to the native alert().
+  const notify = (message, icon = 'success') => {
+    if (window.Swal) {
+      return window.Swal.fire({ text: message, icon, confirmButtonColor: '#2563eb' });
+    }
+    window.alert(message);
+    return Promise.resolve();
+  };
+
   function postJson(url, method, payload) {
     return fetch(url, {
       method,
@@ -69,25 +78,43 @@
     const tbody = $('users-table-body');
     if (!tbody) return;
     tbody.innerHTML = members.map((user) => {
+      const isAdmin = user.user_type === 'super_admin';
+      const avail = Number(user.allocated_tokens || 0);
       const used = Number(user.tokens_used || 0);
-      const pct = Math.min((used / 500) * 100, 100);
+      const allocated = avail + used; // initial allocation, minus nothing — used was carved from it
+      const usedPct = allocated > 0 ? Math.min(Math.round((used / allocated) * 100), 100) : 0;
       const isSelf = Number(user.id) === Number(cfg.member?.id);
-      return `<tr class="table-row">
+
+      const orgBalance = Number(cfg.institution?.token_balance || 0);
+      const tokensCell = isAdmin
+        ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 whitespace-nowrap">
+             <i data-lucide="infinity" class="w-3.5 h-3.5"></i> Org pool · ${fmt(orgBalance)}
+           </span>`
+        : `<div class="min-w-[150px]">
+             <div class="flex items-baseline justify-between mb-1">
+               <span class="text-sm font-bold text-gray-900">${fmt(avail)}</span>
+               <span class="text-[11px] font-semibold text-gray-500">of ${fmt(allocated)} allocated</span>
+             </div>
+             <div class="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+               <div class="h-full bg-blue-600 rounded-full" style="width:${usedPct}%"></div>
+             </div>
+             <p class="text-[11px] font-semibold text-gray-500 mt-1">${fmt(used)} used</p>
+           </div>`;
+
+      return `<tr class="table-row hover:bg-gray-50/70 transition-colors">
         <td class="py-3 sm:py-4 px-4 sm:px-6">
           <div class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">${esc((user.name || '?').charAt(0).toUpperCase())}</div>
-            <div><p class="font-medium text-sm sm:text-base">${esc(user.name)}</p><p class="text-xs text-gray-500 md:hidden">${esc(user.email)}</p></div>
+            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-semibold text-sm shadow-sm">${esc((user.name || '?').charAt(0).toUpperCase())}</div>
+            <div><p class="font-medium text-sm sm:text-base text-gray-900">${esc(user.name)}</p><p class="text-xs text-gray-500 md:hidden">${esc(user.email)}</p></div>
           </div>
         </td>
         <td class="py-3 sm:py-4 px-4 sm:px-6 text-sm text-gray-600">${esc(user.email)}</td>
         <td class="py-3 sm:py-4 px-4 sm:px-6 text-sm text-gray-600 hidden md:table-cell">${esc(user.job_title || '-')}</td>
-        <td class="py-3 sm:py-4 px-4 sm:px-6"><span class="px-2.5 py-1 rounded-full text-xs font-medium ${user.user_type === 'super_admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">${esc(roleLabel(user.user_type))}</span></td>
-        <td class="py-3 sm:py-4 px-4 sm:px-6">
-          <div class="flex items-center gap-2 min-w-[110px]"><div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-blue-600 rounded-full token-usage-bar" style="width:${pct}%"></div></div><span class="text-xs sm:text-sm font-medium">${fmt(used)}</span></div>
-        </td>
-        <td class="py-3 sm:py-4 px-4 sm:px-6"><span class="px-2.5 py-1 rounded-full text-xs font-medium ${user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}">${esc(roleLabel(user.status))}</span></td>
-        <td class="py-3 sm:py-4 px-4 sm:px-6">
-          ${isSelf ? '<span class="text-xs text-gray-400">Current user</span>' : `<button class="text-red-600 hover:text-red-700 text-sm font-medium" data-delete-user="${user.id}"><i data-lucide="trash-2" class="w-4 h-4 inline mr-1"></i>Remove</button>`}
+        <td class="py-3 sm:py-4 px-4 sm:px-6"><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}"><span class="w-1.5 h-1.5 rounded-full ${isAdmin ? 'bg-purple-500' : 'bg-blue-500'}"></span>${esc(roleLabel(user.user_type))}</span></td>
+        <td class="py-3 sm:py-4 px-4 sm:px-6">${tokensCell}</td>
+        <td class="py-3 sm:py-4 px-4 sm:px-6"><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}"><span class="w-1.5 h-1.5 rounded-full ${user.status === 'active' ? 'bg-green-500' : 'bg-gray-400'}"></span>${esc(roleLabel(user.status))}</span></td>
+        <td class="py-3 sm:py-4 px-4 sm:px-6 text-right">
+          ${isSelf ? '<span class="text-xs text-gray-400">Current user</span>' : `<button class="inline-flex items-center gap-1 text-red-600 hover:text-red-700 hover:bg-red-50 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors" data-delete-user="${user.id}"><i data-lucide="trash-2" class="w-4 h-4"></i>Remove</button>`}
         </td>
       </tr>`;
     }).join('');
@@ -106,7 +133,7 @@
       renderUsersTable();
       updateStats();
     } catch (error) {
-      alert(error.message || 'Unable to remove member.');
+      notify(error.message || 'Unable to remove member.', 'error');
     }
   }
 
@@ -141,6 +168,7 @@
 
   function loadBrandingValues() {
     $('org-name').value = org.name || '';
+    if ($('org-username')) $('org-username').value = org.username || '';
     $('primary-color').value = org.primary_color || '#3b82f6';
     $('primary-color-hex').value = org.primary_color || '#3b82f6';
     $('secondary-color').value = org.secondary_color || '#7c3aed';
@@ -211,7 +239,7 @@
         document.querySelectorAll('[data-tab]').forEach((btn) => btn.classList.add('text-gray-500'));
         tab.classList.add('tab-active');
         tab.classList.remove('text-gray-500');
-        ['users', 'roles', 'activity', 'branding'].forEach((name) => $(name + '-tab').classList.add('hidden'));
+        ['users', 'roles', 'activity', 'branding', 'subscription'].forEach((name) => $(name + '-tab').classList.add('hidden'));
         $(tab.dataset.tab + '-tab').classList.remove('hidden');
         setSidebarActive(tab.dataset.tab);
         if (tab.dataset.tab === 'activity') loadActivityLog();
@@ -223,6 +251,13 @@
         document.querySelector(`[data-tab="${button.dataset.sidebarTab}"]`)?.click();
       });
     });
+
+    // Deep-link support: open a specific tab via ?tab=branding (or #branding).
+    const requestedTab = new URLSearchParams(window.location.search).get('tab')
+      || window.location.hash.replace('#', '');
+    if (requestedTab) {
+      document.querySelector(`[data-tab="${requestedTab}"]`)?.click();
+    }
   }
 
   function setupColorInputs() {
@@ -261,6 +296,7 @@
   async function saveSettings() {
     const form = new FormData();
     form.append('name', $('org-name').value);
+    if ($('org-username')?.value) form.append('username', $('org-username').value);
     form.append('primary_color', $('primary-color').value);
     form.append('secondary_color', $('secondary-color').value);
     if (logoFile) form.append('logo', logoFile);
@@ -269,20 +305,24 @@
       const response = await fetch(cfg.routes.branding, { method: 'POST', headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': token }, body: form });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw data;
-      alert(data.message || 'Branding updated.');
+      notify(data.message || 'Branding updated.', 'success');
       org.name = $('org-name').value;
+      if (data.data?.username !== undefined) {
+        org.username = data.data.username;
+        if ($('org-username')) $('org-username').value = data.data.username;
+      }
       org.primary_color = $('primary-color').value;
       org.secondary_color = $('secondary-color').value;
       applyHeader();
       updatePreview();
     } catch (error) {
-      alert(error.message || Object.values(error.errors || {})[0]?.[0] || 'Unable to save branding.');
+      notify(error.message || Object.values(error.errors || {})[0]?.[0] || 'Unable to save branding.', 'error');
     }
   }
 
   async function addNewUser() {
     const password = $('temp-password').value;
-    if (password !== $('confirm-password').value) return alert('Passwords do not match.');
+    if (password !== $('confirm-password').value) return notify('Passwords do not match.', 'error');
     const payload = {
       name: $('user-fullname').value.trim(),
       email: $('user-email').value.trim(),
@@ -291,6 +331,7 @@
       department: $('department').value.trim(),
       user_type: document.querySelector('input[name="user-type"]:checked')?.value || 'regular_user',
       access_role: document.querySelector('input[name="access-role"]:checked')?.value || 'search_only',
+      token_allocation: parseInt($('token-allocation')?.value, 10) || 0,
     };
     try {
       const data = await postJson(cfg.routes.membersStore, 'POST', payload);
@@ -298,9 +339,9 @@
       renderUsersTable();
       updateStats();
       closeModal();
-      alert(data.message || 'Member added.');
+      notify(data.message || 'Member added.', 'success');
     } catch (error) {
-      alert(error.message || Object.values(error.errors || {})[0]?.[0] || 'Unable to add member.');
+      notify(error.message || Object.values(error.errors || {})[0]?.[0] || 'Unable to add member.', 'error');
     }
   }
 
@@ -315,6 +356,116 @@
     $('close-modal-btn')?.addEventListener('click', closeModal);
     $('cancel-add-user')?.addEventListener('click', closeModal);
     $('confirm-add-user')?.addEventListener('click', addNewUser);
+  }
+
+  let selectedPackage = null;
+  let selectedPkgData = { tokens: 0, price: 0 };
+
+  function setupTokenPurchase() {
+    const modal = $('token-modal');
+    if (!modal) return;
+    const qty = $('topup-qty');
+
+    const clampQty = () => Math.max(1, Math.min(10, parseInt(qty?.value, 10) || 1));
+    function recalc() {
+      const n = clampQty();
+      const tokens = n * (selectedPkgData.tokens || 0);
+      const total = n * (selectedPkgData.price || 0);
+      if ($('topup-tokens')) $('topup-tokens').textContent = tokens.toLocaleString();
+      if ($('topup-total')) $('topup-total').textContent = '₦' + total.toLocaleString();
+    }
+
+    const cards = document.querySelectorAll('.package-card');
+    cards.forEach((card) => {
+      card.addEventListener('click', () => {
+        cards.forEach((el) => el.classList.remove('border-blue-500', 'ring-2', 'ring-blue-500'));
+        card.classList.add('border-blue-500', 'ring-2', 'ring-blue-500');
+        selectedPackage = card.dataset.key;
+        selectedPkgData = { tokens: Number(card.dataset.tokens) || 0, price: Number(card.dataset.price) || 0 };
+        recalc();
+      });
+    });
+    cards[0]?.click();
+
+    qty?.addEventListener('input', recalc);
+    $('topup-minus')?.addEventListener('click', () => { if (qty) { qty.value = Math.max(1, clampQty() - 1); recalc(); } });
+    $('topup-plus')?.addEventListener('click', () => { if (qty) { qty.value = Math.min(10, clampQty() + 1); recalc(); } });
+
+    // Step toggling: bundle selection → payment methods.
+    const showMethods = (show) => {
+      $('topup-methods')?.classList.toggle('hidden', !show);
+      $('topup-continue-row')?.classList.toggle('hidden', show);
+    };
+    const resetSteps = () => showMethods(false);
+
+    $('buy-tokens-btn')?.addEventListener('click', () => { resetSteps(); modal.classList.remove('hidden'); });
+    $('close-token-modal')?.addEventListener('click', () => modal.classList.add('hidden'));
+    $('cancel-token-purchase')?.addEventListener('click', () => modal.classList.add('hidden'));
+    $('topup-continue')?.addEventListener('click', () => {
+      if (!selectedPackage) return notify('Please select a bundle first.', 'warning');
+      showMethods(true);
+    });
+    $('topup-back')?.addEventListener('click', () => showMethods(false));
+
+    const action = async (url, payload) => {
+      if (!selectedPackage) return notify('Please select a bundle first.', 'warning');
+      try {
+        const data = await postJson(url, 'POST', payload);
+        await notify(data.message || 'Token request submitted.', 'success');
+        // Reload so the balance, wallet, and ledger refresh.
+        window.location.reload();
+      } catch (error) {
+        notify(error.message || Object.values(error.errors || {})[0]?.[0] || 'Token action failed.', 'error');
+      }
+    };
+
+    // Bank transfer: create a pending topup that staff confirm.
+    $('pay-bank-transfer')?.addEventListener('click', () =>
+      action(cfg.routes.topup, { package: selectedPackage, bundle_count: clampQty(), payment_method: 'bank_transfer' }));
+
+    // Auto gateways — not yet integrated.
+    $('pay-interswitch')?.addEventListener('click', () => notify('Interswitch payments are coming soon. Please use Bank Transfer for now.', 'warning'));
+    $('pay-paystack')?.addEventListener('click', () => notify('Paystack payments are coming soon. Please use Bank Transfer for now.', 'warning'));
+  }
+
+  function ledgerTypeLabel(type) {
+    return ({
+      purchase: 'Subscription',
+      topup: 'Top-up',
+      search_debit: 'Search',
+      adjustment: 'Adjustment',
+      bonus: 'Bonus',
+    })[type] || (type ? type.replace(/_/g, ' ') : '—');
+  }
+
+  async function loadWalletLedger() {
+    const tbody = $('wallet-ledger-body');
+    if (!tbody || !cfg.routes.transactions) return;
+    try {
+      const res = await fetch(cfg.routes.transactions, { headers: { Accept: 'application/json' } });
+      const data = await res.json();
+      const rows = data.data || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-sm text-gray-400">No wallet activity yet.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map((t) => {
+        const n = Number(t.tokens || 0);
+        const credit = n >= 0;
+        const date = t.created_at ? new Date(t.created_at).toLocaleString() : '—';
+        const statusCls = t.status === 'completed' ? 'bg-green-100 text-green-700' : (t.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600');
+        return `<tr>
+          <td class="py-3 px-4 text-sm text-gray-700">${esc(date)}</td>
+          <td class="py-3 px-4 text-sm font-medium text-gray-900">${esc(ledgerTypeLabel(t.type))}</td>
+          <td class="py-3 px-4 text-sm text-right font-semibold ${credit ? 'text-green-600' : 'text-red-600'}">${credit ? '+' : ''}${fmt(n)}</td>
+          <td class="py-3 px-4 text-sm text-right text-gray-700">${t.balance_after != null ? fmt(t.balance_after) : '—'}</td>
+          <td class="py-3 px-4 text-sm"><span class="px-2.5 py-0.5 rounded-full text-xs font-medium ${statusCls}">${esc((t.status || '—').charAt(0).toUpperCase() + (t.status || '').slice(1))}</span></td>
+          <td class="py-3 px-4 text-sm text-gray-500 font-mono text-xs">${esc(t.reference_no || '—')}</td>
+        </tr>`;
+      }).join('');
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-sm text-red-500">Unable to load wallet activity.</td></tr>';
+    }
   }
 
   function setupMisc() {
@@ -337,7 +488,10 @@
     setupColorInputs();
     setupUploads();
     setupModal();
+    setupTokenPurchase();
     setupMisc();
+    loadWalletLedger();
+    $('refresh-ledger')?.addEventListener('click', loadWalletLedger);
     window.lucide?.createIcons();
   });
 })();

@@ -1049,18 +1049,9 @@ document.addEventListener('DOMContentLoaded', function() {
                                 var val = d.data.next_batch_no;
                                 bi.value = val;
                                 state.kangisBatchNo = val.toString();
-                                
-                                // Sync shelf number if it's a single number
-                                if (/^\d+$/.test(val)) {
-                                    var num = parseInt(val);
-                                    if (num >= 1 && num <= 100) {
-                                        state.shelfNumber = num.toString();
-                                        var ss = document.getElementById('shelfNumberSelect');
-                                        if (ss) ss.value = num;
-                                        updateFullLabelDisplay();
-                                        fetchRackLabelStatus(state.fullLabel);
-                                    }
-                                }
+                                // Note: do NOT sync the shelf to the batch number. The shelf is
+                                // chosen independently (rack + shelf) and increments per batch
+                                // server-side, so batch 25 maps to the selected shelf (e.g. B1).
                             }
                         }
                     })
@@ -1074,18 +1065,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (kangisBatchNoInput) {
         kangisBatchNoInput.addEventListener('input', function() {
             state.kangisBatchNo = this.value;
-            // Sync shelf number if it's a single numeric batch
-            if (/^\d+$/.test(this.value.trim())) {
-                var num = parseInt(this.value.trim());
-                if (num >= 1 && num <= 100) {
-                    state.shelfNumber = num.toString();
-                    var ss = document.getElementById('shelfNumberSelect');
-                    if (ss) ss.value = num;
-                    updateFullLabelDisplay();
-                    fetchRackLabelStatus(state.fullLabel);
-                    if (state.activeTab === 'preview') refreshPreview(true);
-                }
-            }
+            // The shelf is selected independently of the registry batch number; it must not
+            // be overwritten here. The server assigns the chosen shelf to the lowest batch
+            // and increments for subsequent batches.
         });
     }
 

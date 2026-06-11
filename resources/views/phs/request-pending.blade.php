@@ -70,7 +70,13 @@
                 <p class="text-gray-700">
                     If you have any questions, please don't hesitate to contact our support team.
                 </p>
-                <div class="flex gap-4 justify-center">
+                <div class="flex flex-wrap gap-4 justify-center">
+                    @if ($request->invoice_pdf_path)
+                        <a href="{{ route('phs.request.invoice', ['id' => $request->id]) }}" class="inline-flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                            Download Invoice
+                        </a>
+                    @endif
                     <a href="{{ route('phs.landing') }}" class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium">
                         Back to Home
                     </a>
@@ -78,6 +84,9 @@
                         Sign In
                     </a>
                 </div>
+                @if ($request->invoice_number)
+                    <p class="mt-3 text-xs text-gray-400">Invoice No: {{ $request->invoice_number }}</p>
+                @endif
             </div>
         </div>
     </div>

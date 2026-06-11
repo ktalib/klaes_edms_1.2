@@ -34,6 +34,7 @@ class ValuationCompensation extends Model
         'compensated_items',
         'compensated_items_other',
         'completion_stage',
+        'number_of_floors',
 
         'project_id',
         'sub_project_id',

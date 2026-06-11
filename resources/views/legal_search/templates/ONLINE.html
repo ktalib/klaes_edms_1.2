@@ -32,10 +32,14 @@
         position: absolute;
         top: 50%;
         left: 50%;
-        transform: translate(-50%, -50%);
-        width: 350px;
-        height: auto;
-        opacity: 0.06;
+        transform: translate(-50%, -50%) rotate(-30deg);
+        font-size: 70px;
+        font-weight: 900;
+        letter-spacing: 2px;
+        color: rgba(0, 0, 0, 0.12);
+        white-space: nowrap;
+        text-transform: uppercase;
+        text-align: center;
         pointer-events: none;
         z-index: 0;
       }
@@ -257,7 +261,7 @@
           break-inside: auto !important;
         }
         .watermark-img, .watermark-copy { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .watermark-img { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        .watermark-img { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); }
         .watermark-copy { position: fixed; top: 45%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); }
         .transaction-table { margin-bottom: 1px; }
         .transaction-table th, .transaction-table td { padding: 3px 3px; }
@@ -293,7 +297,7 @@
   </head>
   <body>
     <div class="page">
-      <img id="watermark-img" class="watermark-img" src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/Coat_of_arms_of_Nigeria.svg/250px-Coat_of_arms_of_Nigeria.svg.png" alt="" />
+      <div id="watermark-img" class="watermark-img">Online Legal Search</div>
       <div id="wm-copy" class="watermark-copy">FILE COPY</div>
 
       <header>

@@ -353,18 +353,19 @@ class ChangeOfPurposeController extends Controller
         $term = trim((string) $request->input('term', ''));
         $limit = max(1, min((int) $request->input('limit', 50), 200));
 
-        if (strlen($term) < 2) {
-            return response()->json(['success' => true, 'data' => []]);
-        }
-
+        // An empty/short term is used to load the initial list when the selector
+        // modal opens, so return the most recent approved applications instead of
+        // an empty set — otherwise the modal appears blank.
         $results = ChangeOfPurposeApplication::query()
             ->where('status', ChangeOfPurposeApplication::STATUS_APPROVED)
-            ->where(function ($q) use ($term) {
-                $q->where('applicant_name', 'LIKE', "%{$term}%")
-                    ->orWhere('file_no', 'LIKE', "%{$term}%")
-                    ->orWhere('land_use', 'LIKE', "%{$term}%")
-                    ->orWhere('location', 'LIKE', "%{$term}%")
-                    ->orWhere('purpose', 'LIKE', "%{$term}%");
+            ->when(strlen($term) >= 2, function ($query) use ($term) {
+                $query->where(function ($q) use ($term) {
+                    $q->where('applicant_name', 'LIKE', "%{$term}%")
+                        ->orWhere('file_no', 'LIKE', "%{$term}%")
+                        ->orWhere('land_use', 'LIKE', "%{$term}%")
+                        ->orWhere('location', 'LIKE', "%{$term}%")
+                        ->orWhere('purpose', 'LIKE', "%{$term}%");
+                });
             })
             ->orderByDesc('created_at')
             ->limit($limit)

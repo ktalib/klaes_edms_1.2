@@ -542,6 +542,7 @@ class FileNumberApiController extends Controller
                 'plot_no' => $row->plot_number,
                 'tp_no' => $row->tp_no,
                 'location' => $row->district,
+                'district' => $row->district,
                 'lga' => $row->lga,
                 'tracking_id' => $row->tracking_id,
                 'is_indexed' => true,
@@ -1277,6 +1278,87 @@ class FileNumberApiController extends Controller
     }
 
     /**
+     * Get unit file numbers for PHS unit selection dropdown
+     * This should return units with their actual commissioning status
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getUnitsForDropdown(Request $request): JsonResponse
+    {
+        try {
+            $parentFileNo = $request->get('parent_file_no', 'RES-1982-2081');
+            
+            // Get unit file numbers with their actual commissioning status
+            $units = DB::connection('sqlsrv')->table('st_file_numbers')
+                ->select([
+                    'id',
+                    'fileno',
+                    'np_fileno', 
+                    'first_name',
+                    'surname',
+                    'corporate_name',
+                    'applicant_type',
+                    'status',
+                    'date_commissioned',
+                    'used_at'
+                ])
+                ->where('np_fileno', $parentFileNo)
+                ->whereIn('file_no_type', ['PUA', 'SUA'])
+                ->orderBy('unit_sequence')
+                ->get();
+
+            $formattedUnits = $units->map(function ($unit) {
+                // Determine commissioning status based on database fields
+                $isCommissioned = !empty($unit->date_commissioned) || 
+                                (!empty($unit->used_at) && $unit->status === 'USED');
+                
+                // Get applicant name
+                $applicantName = '';
+                if ($unit->applicant_type === 'Corporate') {
+                    $applicantName = $unit->corporate_name ?: 'Corporate Applicant';
+                } else {
+                    $applicantName = trim(($unit->first_name ?: '') . ' ' . ($unit->surname ?: ''));
+                    if (empty($applicantName)) {
+                        $applicantName = 'Individual Applicant';
+                    }
+                }
+                
+                return [
+                    'id' => $unit->id,
+                    'fileno' => $unit->fileno,
+                    'np_fileno' => $unit->np_fileno,
+                    'applicant_name' => $applicantName,
+                    'applicant_type' => $unit->applicant_type,
+                    'status' => $unit->status,
+                    'is_commissioned' => $isCommissioned,
+                    'date_commissioned' => $unit->date_commissioned,
+                    'display_text' => $unit->fileno . ' - ' . $applicantName . ' - ' . 
+                                    ($isCommissioned ? 'Commissioned' : 'Not Commissioned')
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Unit file numbers fetched successfully.',
+                'data' => $formattedUnits,
+                'parent_file_no' => $parentFileNo
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error fetching units for dropdown: ' . $e->getMessage(), [
+                'parent_file_no' => $request->get('parent_file_no'),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error fetching unit file numbers: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Helper method to get display name for applicant
      * 
      * @param object $item
@@ -1408,6 +1490,7 @@ class FileNumberApiController extends Controller
             'new_kangis_file_no' => $record['NewKANGISFileNo'] ?? null,
             'file_name' => $record['FileName'] ?? $record['fi_file_title'] ?? null,
             'location' => $record['location'] ?? $record['ma_location'] ?? null,
+            'district' => $record['district'] ?? $record['fi_district'] ?? $record['ma_district'] ?? null,
             'lga'      => $record['lga'] ?? $record['fi_lga'] ?? $record['ma_lga'] ?? null,
             'plot_no'  => $record['plot_no'] ?? $record['fi_plot_no'] ?? $record['ma_plot_no'] ?? null,
             'tp_no'    => $record['tp_no'] ?? $record['fi_tp_no'] ?? null,

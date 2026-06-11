@@ -336,6 +336,13 @@ window.VFC = {
             self.updateFinalBuildingType();
         });
 
+        $(document).on('input', '.building-floors', function () {
+            const $row = $(this).closest('.building-type-row');
+            self.calculateBuildingRow($row);
+            self.calculateCompensation();
+            self.updateFinalBuildingType();
+        });
+
         $('#compensated_items_other').on('input', function () {
             self.updateCompensatedItemsValue();
         });
@@ -550,6 +557,7 @@ window.VFC = {
             data.buildings.push({
                 building_type: type,
                 stage: stage,
+                floors: $(this).find('.building-floors').val() || '',
                 length: parseFloat($(this).find('.building-length').val()) || 0,
                 breadth: parseFloat($(this).find('.building-breadth').val()) || 0,
                 area: parseFloat($(this).find('.building-area').val()) || 0,
@@ -594,15 +602,17 @@ window.VFC = {
     calculateBuildingRow: function ($row) {
         const length = parseFloat($row.find('.building-length').val()) || 0;
         const breadth = parseFloat($row.find('.building-breadth').val()) || 0;
+        const floors = parseFloat($row.find('.building-floors').val()) || 1;
 
-        // If L and B are provided, update Area Covered for this row
+        // If L and B are provided, Area Covered = footprint (L×B) × floors (total built-up area)
         if (length > 0 && breadth > 0) {
-            const areaVal = length * breadth;
+            const areaVal = length * breadth * floors;
             $row.find('.building-area').val(areaVal.toFixed(2));
         }
 
         const area = parseFloat($row.find('.building-area').val()) || 0;
         const rate = parseFloat($row.find('.building-rate').val()) || 0;
+        // Floors are already baked into Area Covered, so Amount = Area × Rate.
         const total = area * rate;
         $row.find('.building-comp').val(total.toFixed(2));
     },
@@ -802,6 +812,7 @@ window.VFC = {
 
         const types = record.building_type ? record.building_type.split(', ') : [];
         const stages = record.completion_stage ? record.completion_stage.split(', ') : [];
+        const floors = record.number_of_floors ? record.number_of_floors.split(', ') : [];
 
         // Distribute totals per building
         const lenPerB = record.length ? (parseFloat(record.length) / count).toFixed(2) : '';
@@ -832,6 +843,9 @@ window.VFC = {
                 $stageSelect.val('Other').trigger('change');
                 $row.find('.building-stage-other').val(stageVal).removeClass('hidden');
             }
+
+            // Populate Number of Floors
+            $row.find('.building-floors').val(floors[idx] || '');
 
             // Populate measurements
             $row.find('.building-length').val(lenPerB);
@@ -883,6 +897,7 @@ window.VFC = {
                     const $row = $('.building-type-row').eq(idx);
                     $row.find('.building-type-select').val(bldg.building_type || '');
                     $row.find('.building-stage-select').val(bldg.stage || '');
+                    $row.find('.building-floors').val(bldg.floors || '');
                     $row.find('.building-length').val(bldg.length || '');
                     $row.find('.building-breadth').val(bldg.breadth || '');
                     $row.find('.building-area').val(bldg.area || '');
@@ -1539,6 +1554,7 @@ window.VFC = {
     updateFinalBuildingType: function () {
         const types = [];
         const stages = [];
+        const floors = [];
         $('.building-type-row').each(function () {
             let val = $(this).find('.building-type-select').val();
             const other = $(this).find('.building-type-other').val();
@@ -1553,9 +1569,13 @@ window.VFC = {
                 sVal = sOther || sVal;
             }
             if (sVal) stages.push(sVal);
+
+            const fVal = $(this).find('.building-floors').val();
+            if (fVal) floors.push(fVal);
         });
         $('#building_type_final').val(types.join(', '));
         $('#completion_stage_final').val(stages.join(', '));
+        $('#number_of_floors_final').val(floors.join(', '));
     },
 
     syncBuildingTypes: function () {
@@ -1569,7 +1589,7 @@ window.VFC = {
             const $template = $rows.first().clone();
             $template.find('select').val('');
             $template.find('.building-type-other, .building-stage-other').val('').addClass('hidden');
-            $template.find('.building-length, .building-breadth, .building-area, .building-rate, .building-comp').val('');
+            $template.find('.building-length, .building-breadth, .building-area, .building-rate, .building-comp, .building-floors').val('');
             for (let i = 0; i < count - currentCount; i++) {
                 $container.append($template.clone());
             }

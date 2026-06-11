@@ -27,6 +27,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\BackfillPropIdMaster::class,
         CleanupExpiredDigitalAccess::class,
         \App\Console\Commands\SpaTriggerSecondService::class,
+        \App\Console\Commands\PhsLowBalanceReminders::class,
     ];
 
     /**
@@ -59,6 +60,9 @@ class Kernel extends ConsoleKernel
 
         // Auto-trigger second serve notices for SPA first-serve records 14+ days old
         $schedule->command('spa:trigger-second-service')->dailyAt('08:00')->withoutOverlapping();
+
+        // Warn PHS organizations whose token balance is running low (daily).
+        $schedule->command('phs:low-balance-reminders')->dailyAt('07:00')->withoutOverlapping();
      }
 
 

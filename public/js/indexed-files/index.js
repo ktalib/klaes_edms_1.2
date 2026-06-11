@@ -472,6 +472,11 @@ function buildActionsMenu(row, viewUrl) {
           Has Temporary File
         </button>`;
 
+  const mccFileNoButton = `<button type="button" class="mcc-fileno-btn flex items-start gap-2.5 w-full text-left px-4 py-2.5 text-sm text-orange-700 hover:bg-orange-50 transition-colors" data-file-id="${id}">
+          <i data-lucide="git-compare" class="h-4 w-4 mt-0.5 shrink-0 text-orange-600"></i>
+          <span class="leading-snug">Match Correspondence<br>FileNo${isMatchedRow ? ' <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-green-50 text-green-600 border border-green-200 align-middle">MATCHED</span>' : ''}</span>
+        </button>`;
+
   const updatePlaceholderButton = (isKangisVariant || row.kangis_fileno_placeholder) ? `<button type="button" class="update-placeholder-btn block w-full text-left px-4 py-2.5 text-sm text-purple-700 hover:bg-purple-50 transition-colors" data-file-id="${id}" data-placeholder="${escapeHtml(row.kangis_fileno_placeholder ?? '')}">
           <i data-lucide="edit-3" class="h-4 w-4 mr-2.5 inline text-purple-600"></i>
           KANGIS FileNo Placeholder
@@ -520,6 +525,7 @@ function buildActionsMenu(row, viewUrl) {
           ${commissionSheetButton}
           ${duplicateButton}
           ${tempFileButton}
+          ${mccFileNoButton}
           ${updatePlaceholderButton}
           ${deleteButton ? '<div class="border-t border-slate-50 my-1.5"></div>' + deleteButton : ''}
         </div>
@@ -685,6 +691,14 @@ function handleTableBodyClick(event) {
     event.stopPropagation();
     const viewOnly = tempFileButton.classList.contains('open-temp-file-btn');
     handleHasTempFile(tempFileButton, viewOnly);
+    return;
+  }
+
+  const mccBtn = event.target.closest('.mcc-fileno-btn');
+  if (mccBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    openMccModal(mccBtn);
     return;
   }
 
@@ -1586,6 +1600,283 @@ async function handleMarkDuplicate(button) {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * MCC FileNo — Match Cadastral Correspondence FileNo modal
+ * ------------------------------------------------------------------------- */
+let mccState = { fileId: null, fileNumber: null, selectedCadastral: null, isMatched: false };
+
+function mccShow(id, show) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('hidden', !show);
+}
+
+function mccDetailRow(label, value) {
+  const clean = value !== undefined && value !== null ? String(value).trim() : '';
+  const display = (clean !== '' && clean !== '-') ? escapeHtml(clean) : '<span class="text-gray-300">—</span>';
+  return `<div class="flex flex-col">
+      <dt class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${label}</dt>
+      <dd class="text-gray-800 font-medium break-words">${display}</dd>
+    </div>`;
+}
+
+function renderMccLandDetails(row) {
+  const el = document.getElementById('mcc-land-details');
+  if (!el) return;
+  const locationParts = [row.plot_number, row.district, row.lga].filter(v => v && String(v).trim() !== '' && String(v).trim() !== '-');
+  const location = (row.location && row.location !== '-') ? row.location : locationParts.join(', ');
+  el.innerHTML = [
+    mccDetailRow('File No', row.file_number),
+    mccDetailRow('File Title', row.file_title),
+    mccDetailRow('Plot No', row.plot_number),
+    mccDetailRow('TP No', row.tp_no),
+    mccDetailRow('LPKN No', row.lpkn_no),
+    mccDetailRow('District', row.district),
+    mccDetailRow('LGA', row.lga),
+    mccDetailRow('Location', location),
+  ].join('');
+}
+
+function renderMccCadastralDetails(fileNumber, details) {
+  const el = document.getElementById('mcc-cadastral-details');
+  if (!el) return;
+  const locationParts = [];
+  if (details) {
+    if (details.plot_no) locationParts.push(details.plot_no);
+    if (details.district_name) locationParts.push(details.district_name);
+    if (details.lga_name || details.lga) locationParts.push(details.lga_name || details.lga);
+  }
+  const location = (details && details.location) ? details.location : locationParts.join(', ');
+  el.innerHTML = [
+    mccDetailRow('File No', fileNumber),
+    mccDetailRow('File Title', details ? details.title : ''),
+    mccDetailRow('Plot No', details ? details.plot_no : ''),
+    mccDetailRow('TP No', details ? details.tp_no : ''),
+    mccDetailRow('LPKN No', details ? details.lpkn_no : ''),
+    mccDetailRow('District', details ? details.district_name : ''),
+    mccDetailRow('LGA', details ? (details.lga_name || details.lga) : ''),
+    mccDetailRow('Location', location),
+  ].join('');
+}
+
+function setMccMatchEnabled(enabled) {
+  const btn = document.getElementById('mcc-match-btn');
+  if (!btn) return;
+  btn.disabled = !enabled;
+  btn.classList.toggle('opacity-50', !enabled);
+  btn.classList.toggle('cursor-not-allowed', !enabled);
+}
+
+async function loadMccCadastralDetails(fileNumber) {
+  mccShow('mcc-cadastral-awaiting', false);
+  mccShow('mcc-cadastral-details', false);
+  mccShow('mcc-cadastral-loading', true);
+  const details = await fetchMatchedFileDetails(fileNumber);
+  renderMccCadastralDetails(fileNumber, details);
+  mccShow('mcc-cadastral-loading', false);
+  mccShow('mcc-cadastral-details', true);
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function openMccModal(button) {
+  const fileId = button.getAttribute('data-file-id');
+  const row = rowCache.get(String(fileId));
+  closeAllActionMenus();
+  if (!row) {
+    alert('Unable to load file details for matching.');
+    return;
+  }
+
+  const modal = document.getElementById('mcc-file-modal');
+  if (!modal) return;
+
+  const isMatched = !!(row.corresponding_fileno && String(row.corresponding_fileno).trim() !== '' && String(row.corresponding_fileno).trim() !== '-');
+  mccState = {
+    fileId,
+    fileNumber: row.file_number || '',
+    selectedCadastral: isMatched ? row.corresponding_fileno : null,
+    isMatched,
+  };
+
+  const idInput = document.getElementById('mcc-file-id');
+  if (idInput) idInput.value = fileId;
+  renderMccLandDetails(row);
+
+  const badge = document.getElementById('mcc-status-badge');
+  const cadInput = document.getElementById('mcc-cadastral-input');
+  if (cadInput) cadInput.value = isMatched ? (row.corresponding_fileno || '') : '';
+
+  if (isMatched) {
+    mccShow('mcc-cadastral-selector', false);
+    mccShow('mcc-match-btn', false);
+    mccShow('mcc-unmatch-btn', true);
+    if (badge) badge.innerHTML = `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200"><i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Matched</span>`;
+    modal.classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+    await loadMccCadastralDetails(row.corresponding_fileno);
+  } else {
+    mccShow('mcc-cadastral-selector', true);
+    mccShow('mcc-cadastral-awaiting', true);
+    mccShow('mcc-cadastral-details', false);
+    mccShow('mcc-cadastral-loading', false);
+    mccShow('mcc-match-btn', true);
+    mccShow('mcc-unmatch-btn', false);
+    setMccMatchEnabled(false);
+    if (badge) badge.innerHTML = `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200"><i data-lucide="clock" class="w-3.5 h-3.5"></i> Not Matched</span>`;
+    modal.classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+  }
+}
+
+function closeMccModal() {
+  const modal = document.getElementById('mcc-file-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function openMccCadastralSelector() {
+  const onPicked = (fileNumber) => {
+    if (!fileNumber) return;
+    mccState.selectedCadastral = fileNumber;
+    const cadInput = document.getElementById('mcc-cadastral-input');
+    if (cadInput) cadInput.value = fileNumber;
+    setMccMatchEnabled(true);
+    loadMccCadastralDetails(fileNumber);
+  };
+
+  if (typeof window.GlobalFileNoModal !== 'undefined' && typeof window.GlobalFileNoModal.open === 'function') {
+    window.GlobalFileNoModal.open({
+      callback: function (result) {
+        if (result && result.fileNumber) onPicked(String(result.fileNumber).trim());
+      }
+    });
+  } else {
+    const val = prompt('Enter the Cadastral Correspondence File Number:');
+    if (val && val.trim()) onPicked(val.trim());
+  }
+}
+
+async function submitMccMatch() {
+  const fileId = mccState.fileId;
+  const fileNumber = mccState.fileNumber || `File #${fileId}`;
+  const correspondingFileNo = mccState.selectedCadastral;
+
+  if (!fileId || !correspondingFileNo) {
+    if (window.Swal) {
+      await window.Swal.fire({ icon: 'warning', title: 'Select a file', text: 'Please select a cadastral correspondence file number first.' });
+    } else {
+      alert('Please select a cadastral correspondence file number first.');
+    }
+    return;
+  }
+
+  let isConfirmed = false;
+  if (window.Swal) {
+    const confirmation = await window.Swal.fire({
+      title: 'Confirm Match',
+      html: `<div class="text-sm text-left space-y-1">
+               <div><span class="font-semibold" style="color:#7a1212">Land:</span> ${escapeHtml(fileNumber)}</div>
+               <div><span class="font-semibold" style="color:#8a5a2b">Cadastral:</span> ${escapeHtml(correspondingFileNo)}</div>
+             </div>`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, match',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#8a5a2b',
+      reverseButtons: true,
+    });
+    isConfirmed = !!confirmation.isConfirmed;
+  } else {
+    isConfirmed = window.confirm(`Match ${fileNumber} ↔ ${correspondingFileNo}?`);
+  }
+  if (!isConfirmed) return;
+
+  const csrfToken = getCsrfToken();
+  if (!csrfToken) {
+    alert('Unable to locate CSRF token. Please refresh the page and try again.');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${window.location.origin}/api/indexed-files/${encodeURIComponent(fileId)}/match-correspondence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({ corresponding_fileno: correspondingFileNo })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.success) throw new Error(result.message || 'Failed to match correspondence file.');
+
+    closeMccModal();
+    if (window.Swal) {
+      await window.Swal.fire({ icon: 'success', title: 'Matched', text: result.message || 'Correspondence file matched successfully.' });
+    } else {
+      alert(result.message || 'Correspondence file matched successfully.');
+    }
+    await loadTable();
+  } catch (error) {
+    console.error('Failed to match correspondence file:', error);
+    if (window.Swal) {
+      await window.Swal.fire({ icon: 'error', title: 'Failed', text: error.message || 'Failed to match correspondence file.' });
+    } else {
+      alert(error.message || 'Failed to match correspondence file.');
+    }
+  }
+}
+
+async function submitMccUnmatch() {
+  const fileId = mccState.fileId;
+  const fileNumber = mccState.fileNumber || `File #${fileId}`;
+  const correspondingFileNo = mccState.selectedCadastral || '';
+  if (!fileId) return;
+
+  let isConfirmed = false;
+  if (window.Swal) {
+    const confirmation = await window.Swal.fire({
+      title: 'Remove Match?',
+      html: `Unmatch <strong>${escapeHtml(fileNumber)}</strong>${correspondingFileNo ? ` from <strong>${escapeHtml(correspondingFileNo)}</strong>` : ''}?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, unmatch',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#7a1212',
+      reverseButtons: true,
+    });
+    isConfirmed = !!confirmation.isConfirmed;
+  } else {
+    isConfirmed = window.confirm(`Remove the correspondence match for ${fileNumber}?`);
+  }
+  if (!isConfirmed) return;
+
+  const csrfToken = getCsrfToken();
+  if (!csrfToken) {
+    alert('Unable to locate CSRF token. Please refresh the page and try again.');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${window.location.origin}/api/indexed-files/${encodeURIComponent(fileId)}/unmatch-correspondence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({ id: fileId })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.success) throw new Error(result.message || 'Failed to remove correspondence match.');
+
+    closeMccModal();
+    if (window.Swal) {
+      await window.Swal.fire({ icon: 'success', title: 'Unmatched', text: result.message || 'Correspondence match removed successfully.' });
+    } else {
+      alert(result.message || 'Correspondence match removed successfully.');
+    }
+    await loadTable();
+  } catch (error) {
+    console.error('Failed to remove correspondence match:', error);
+    if (window.Swal) {
+      await window.Swal.fire({ icon: 'error', title: 'Failed', text: error.message || 'Failed to remove correspondence match.' });
+    } else {
+      alert(error.message || 'Failed to remove correspondence match.');
+    }
+  }
+}
+
 function handleHasTempFile(button, viewOnly = false) {
   const fileId = button.getAttribute('data-file-id');
   const fileNumber = button.getAttribute('data-file-number') || '';
@@ -1976,6 +2267,23 @@ document.addEventListener('DOMContentLoaded', function () {
   if (cancelPlaceholderBtn) cancelPlaceholderBtn.addEventListener('click', closePlaceholderModal);
   if (placeholderBackdrop) placeholderBackdrop.addEventListener('click', closePlaceholderModal);
   if (submitPlaceholderBtn) submitPlaceholderBtn.addEventListener('click', submitUpdatePlaceholder);
+
+  // MCC FileNo (Match Cadastral Correspondence) modal events
+  const mccCloseBtn = document.getElementById('close-mcc-file-modal');
+  const mccCancelBtn = document.getElementById('cancel-mcc-file');
+  const mccBackdrop = document.getElementById('mcc-file-backdrop');
+  const mccMatchBtn = document.getElementById('mcc-match-btn');
+  const mccUnmatchBtn = document.getElementById('mcc-unmatch-btn');
+  const mccSelectorBtn = document.getElementById('mcc-open-fileno-selector-btn');
+  const mccCadastralInput = document.getElementById('mcc-cadastral-input');
+
+  if (mccCloseBtn) mccCloseBtn.addEventListener('click', closeMccModal);
+  if (mccCancelBtn) mccCancelBtn.addEventListener('click', closeMccModal);
+  if (mccBackdrop) mccBackdrop.addEventListener('click', closeMccModal);
+  if (mccMatchBtn) mccMatchBtn.addEventListener('click', submitMccMatch);
+  if (mccUnmatchBtn) mccUnmatchBtn.addEventListener('click', submitMccUnmatch);
+  if (mccSelectorBtn) mccSelectorBtn.addEventListener('click', openMccCadastralSelector);
+  if (mccCadastralInput) mccCadastralInput.addEventListener('click', openMccCadastralSelector);
 });
 
 function getRowFromCache(id) {

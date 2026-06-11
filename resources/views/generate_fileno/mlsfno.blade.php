@@ -2249,6 +2249,9 @@
                         </div>
                     </div>
             
+                </div>
+            </div>
+
             <!-- Change of Purpose Selection Modal -->
             <div id="copFileModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-[101]">
                 <div class="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
@@ -2284,8 +2287,6 @@
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
                 </div>
             </div>
 

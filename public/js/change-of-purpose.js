@@ -164,6 +164,82 @@
     }
 
     /* ----------------------------------------
+       Property location preview + select helpers
+       ---------------------------------------- */
+    // Select an <option> whose value (or visible text) matches the given value,
+    // case-insensitively. Returns true when a match was applied.
+    function copSetSelectByValue(selectEl, value) {
+        if (!selectEl || value == null) return false;
+        var target = String(value).trim().toLowerCase();
+        if (!target) return false;
+        for (var i = 0; i < selectEl.options.length; i++) {
+            var opt = selectEl.options[i];
+            if (opt.value.trim().toLowerCase() === target ||
+                opt.textContent.trim().toLowerCase() === target) {
+                selectEl.selectedIndex = i;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Resolve the chosen street: either the dropdown value, or the free-text
+    // "Other" input when "Other" is selected.
+    function copResolveStreet() {
+        var sel   = document.getElementById('cop-street');
+        var other = document.getElementById('cop-street-other');
+        if (!sel) return '';
+        if ((sel.value || '').trim().toLowerCase() === 'other') {
+            return (other?.value || '').trim();
+        }
+        return (sel.value || '').trim();
+    }
+
+    // Writes the Full Property Location into the hidden `location` field and the
+    // on-screen preview (they always mirror each other).
+    function copApplyLocation(fullLocation) {
+        var value = (fullLocation || '').trim();
+        var locEl = document.getElementById('cop-location');
+        if (locEl) locEl.value = value;
+
+        var preview = document.getElementById('cop-location-preview');
+        if (!preview) return;
+        if (value) {
+            preview.textContent = value;
+            preview.classList.remove('italic', 'text-slate-700');
+            preview.classList.add('text-slate-800');
+        } else {
+            preview.textContent = 'No location details entered yet.';
+            preview.classList.remove('text-slate-800');
+            preview.classList.add('italic');
+        }
+    }
+
+    // Builds the Full Property Location from the individual fields (street, plot,
+    // district, LGA, state). Used while the user fills the form manually.
+    function copUpdateLocationPreview() {
+        var street   = copResolveStreet();
+        var plot     = (document.getElementById('cop-plot-no')?.value || '').trim();
+        var district = (document.getElementById('cop-district')?.value || '').trim();
+        var lga      = (document.getElementById('cop-lga')?.value || '').trim();
+        var state    = (document.getElementById('cop-state')?.value || '').trim();
+        copApplyLocation([
+            plot ? 'Plot ' + plot : '',
+            street, district, lga, state
+        ].filter(Boolean).join(', '));
+    }
+
+    // Show/hide the "Other" street text box based on the dropdown selection.
+    function copToggleStreetOther() {
+        var sel   = document.getElementById('cop-street');
+        var other = document.getElementById('cop-street-other');
+        if (!sel || !other) return;
+        var isOther = (sel.value || '').trim().toLowerCase() === 'other';
+        other.classList.toggle('hidden', !isOther);
+        if (!isOther) other.value = '';
+    }
+
+    /* ----------------------------------------
        Wizard
        ---------------------------------------- */
     function setStep(step) {
@@ -272,6 +348,7 @@
         document.getElementById('cop-purpose').value = '';
         document.getElementById('cop-res-addr-street-other-wrapper')?.classList.add('hidden');
         document.getElementById('cop-res-addr-district-other-wrapper')?.classList.add('hidden');
+        document.getElementById('cop-street-other')?.classList.add('hidden');
         document.getElementById('cop-residential-address').value = '';
         // Reset land use select
         var luSel = document.getElementById('cop-land-use-id');
@@ -281,6 +358,7 @@
         if (purSel) { purSel.innerHTML = '<option value="">- Select Land Use First -</option>'; purSel.disabled = true; }
         selectedFileRecord = null;
         resetPrefilled();
+        copUpdateLocationPreview();
         setStep(1);
     }
 
@@ -935,6 +1013,16 @@
         // Address builder
         copInitAddressBuilder();
 
+        // Live "Full Property Location Preview" + hidden location updates
+        ['cop-plot-no', 'cop-street', 'cop-street-other', 'cop-district', 'cop-lga', 'cop-state'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('input', copUpdateLocationPreview);
+            el.addEventListener('change', copUpdateLocationPreview);
+        });
+        // Toggle the free-text "Other" street box
+        document.getElementById('cop-street')?.addEventListener('change', copToggleStreetOther);
+
         // File Number Selector button
         document.getElementById('cop-select-file-btn')?.addEventListener('click', function () {
             if (!window.GlobalFileNoModal) return;
@@ -950,14 +1038,20 @@
                     if (data.record) {
                         showFileDetails(data.record);
                         var rec = data.record;
-                        var nameEl = document.getElementById('cop-applicant-name');
-                        var locEl  = document.getElementById('cop-location');
-                        var plotEl = document.getElementById('cop-plot-no');
+                        var nameEl   = document.getElementById('cop-applicant-name');
+                        var plotEl   = document.getElementById('cop-plot-no');
+                        var distEl   = document.getElementById('cop-district');
+                        var lgaEl    = document.getElementById('cop-lga');
                         var applicantName = rec.FileName || rec.file_name || '';
                         if (nameEl && applicantName) { nameEl.value = applicantName; }
-                        if (locEl  && !locEl.value  && rec.location) { locEl.value  = rec.location; }
                         if (plotEl && !plotEl.value && rec.plot_no)   { plotEl.value = rec.plot_no;  }
+                        // Backfill the District / LGA dropdowns from the file record.
+                        // The Street dropdown is left untouched — it is for the street only.
+                        if (distEl && !distEl.value && rec.district) { copSetSelectByValue(distEl, rec.district); }
+                        if (lgaEl  && !lgaEl.value  && rec.lga)      { copSetSelectByValue(lgaEl, rec.lga); }
                         greyOutPrefilled();
+                        // The record's full property location backfills the hidden location field.
+                        if (rec.location) { copApplyLocation(rec.location); }
                     }
                 }
             });

@@ -22,6 +22,7 @@ class PhsMember extends Authenticatable
         'user_type',
         'access_role',
         'tokens_used',
+        'allocated_tokens',
         'status',
         'last_login_at',
     ];
@@ -33,6 +34,8 @@ class PhsMember extends Authenticatable
 
     protected $casts = [
         'last_login_at' => 'datetime',
+        'allocated_tokens' => 'integer',
+        'tokens_used' => 'integer',
     ];
 
     public function institution()

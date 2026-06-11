@@ -12,6 +12,9 @@
                     <h1 class="text-3xl font-bold">{{ $PageTitle }}</h1>
                     <a href="{{ route('system-admin.phs.requests.index') }}" class="text-blue-600 hover:text-blue-800 mt-2">← Back to Requests</a>
                 </div>
+                <a href="{{ route('system-admin.phs.requests.invoice', ['id' => $request->id]) }}" target="_blank" rel="noopener" class="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    <i data-lucide="printer" class="h-4 w-4"></i> Print Invoice
+                </a>
                 @php
                 $statusColors = [
                     'pending' => 'bg-yellow-100 text-yellow-800',
@@ -103,12 +106,105 @@
                 </div>
             </div>
 
+            <section class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <h3 class="text-lg font-semibold text-slate-900 mb-3">CAC Documentation</h3>
+                <div class="grid gap-4 sm:grid-cols-2 text-sm text-slate-700">
+                    <div>
+                        <p class="text-slate-500">CAC Registration Number</p>
+                        <p class="font-semibold">{{ $request->cac_registration_number ?: 'Not provided' }}</p>
+                    </div>
+                    <div>
+                        <p class="text-slate-500">CAC Certificate</p>
+                        @if ($request->cac_document_path)
+                            <a href="{{ asset('storage/' . $request->cac_document_path) }}" target="_blank" rel="noopener"
+                               class="mt-1 inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                                <i data-lucide="file-text" class="h-3.5 w-3.5"></i> View CAC Certificate
+                            </a>
+                        @else
+                            <p class="font-semibold text-slate-400">Not uploaded</p>
+                        @endif
+                    </div>
+                    @if (!empty($request->additional_documents))
+                        <div class="sm:col-span-2">
+                            <p class="text-slate-500 mb-1">Additional Documents</p>
+                            <div class="flex flex-wrap gap-2">
+                                @foreach ($request->additional_documents as $i => $doc)
+                                    <a href="{{ asset('storage/' . $doc) }}" target="_blank" rel="noopener"
+                                       class="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                                        <i data-lucide="paperclip" class="h-3.5 w-3.5"></i> Document {{ $i + 1 }}
+                                    </a>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+                </div>
+            </section>
+
             @if ($request->rejection_reason)
                 <div class="rounded-2xl border border-red-200 bg-red-50 p-5">
                     <h3 class="text-lg font-semibold text-red-900 mb-3">Rejection Reason</h3>
                     <p class="text-sm text-red-800">{{ $request->rejection_reason }}</p>
                 </div>
             @endif
+        </div>
+    </div>
+
+    <!-- Payment Verification -->
+    @php
+        $pkg = \App\Http\Controllers\Phs\PhsTokenController::packages()[strtolower((string) $request->initial_token_package)] ?? null;
+        $expected = $request->expected_amount ?? ($pkg['price'] ?? $request->payment_amount ?? 0);
+        $ps = $request->payment_status ?: 'not_paid';
+        $payBadge = [
+            'completed' => ['Completed', 'bg-green-100 text-green-800 ring-green-200'],
+            'incomplete' => ['Incomplete', 'bg-amber-100 text-amber-800 ring-amber-200'],
+            'overpaid' => ['Overpaid', 'bg-sky-100 text-sky-800 ring-sky-200'],
+            'not_paid' => ['Not Paid', 'bg-gray-100 text-gray-600 ring-gray-200'],
+        ][$ps] ?? ['Unknown', 'bg-gray-100 text-gray-600 ring-gray-200'];
+    @endphp
+    <div class="mt-8 bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="border-b border-slate-200 bg-slate-50 px-6 py-5 flex items-center justify-between">
+            <div>
+                <p class="text-sm uppercase tracking-[0.24em] text-slate-500">Payment Verification</p>
+                <h2 class="text-xl font-bold text-slate-900">Confirm the amount received</h2>
+            </div>
+            <span class="inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold ring-1 {{ $payBadge[1] }}">{{ $payBadge[0] }}</span>
+        </div>
+        <div class="p-6 grid gap-6 lg:grid-cols-2">
+            <div class="space-y-3 text-sm">
+                <div class="flex justify-between border-b border-slate-100 pb-2"><span class="text-slate-500">Expected (package price)</span><span class="font-semibold text-slate-900">₦{{ number_format((float) $expected, 2) }}</span></div>
+                <div class="flex justify-between border-b border-slate-100 pb-2"><span class="text-slate-500">Amount entered by organization</span><span class="font-semibold text-slate-900">₦{{ number_format((float) $request->payment_amount, 2) }}</span></div>
+                <div class="flex justify-between border-b border-slate-100 pb-2"><span class="text-slate-500">Reference</span><span class="font-mono text-xs text-slate-700">{{ $request->payment_reference ?: '—' }}</span></div>
+                <div class="flex justify-between border-b border-slate-100 pb-2"><span class="text-slate-500">Verified amount</span><span class="font-semibold text-slate-900">{{ $request->verified_amount !== null ? '₦' . number_format((float) $request->verified_amount, 2) : '—' }}</span></div>
+                <div class="flex justify-between"><span class="text-slate-500">Outstanding balance</span>
+                    <span class="font-bold {{ (float) $request->outstanding_amount > 0 ? 'text-amber-700' : 'text-green-700' }}">₦{{ number_format((float) ($request->outstanding_amount ?? 0), 2) }}</span>
+                </div>
+                @if ($request->payment_verified_at)
+                    <p class="text-xs text-slate-400 pt-2">Verified {{ $request->payment_verified_at->format('M j, Y g:i A') }}{{ optional($request->paymentVerifier)->name ? ' by ' . $request->paymentVerifier->name : '' }}.</p>
+                @endif
+                @if ($request->payment_verification_notes)
+                    <p class="text-xs text-slate-500 italic">“{{ $request->payment_verification_notes }}”</p>
+                @endif
+            </div>
+
+            <form method="POST" action="{{ route('system-admin.phs.requests.verify-payment', ['id' => $request->id]) }}" class="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-3">
+                @csrf
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Expected amount (₦)</label>
+                    <input type="number" name="expected_amount" min="0" step="0.01" value="{{ (float) $expected }}" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Amount received (₦) <span class="text-rose-500">*</span></label>
+                    <input type="number" name="verified_amount" min="0" step="0.01" required value="{{ $request->verified_amount }}" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="0.00">
+                    <p class="text-[11px] text-slate-400 mt-1">Enter 0 if nothing has been received yet.</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Notes</label>
+                    <textarea name="payment_verification_notes" rows="2" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Bank reference, discrepancy, etc.">{{ $request->payment_verification_notes }}</textarea>
+                </div>
+                <button type="submit" class="w-full inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">
+                    <i data-lucide="badge-check" class="h-4 w-4"></i> Confirm Payment
+                </button>
+            </form>
         </div>
     </div>
 

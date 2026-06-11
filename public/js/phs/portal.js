@@ -122,58 +122,75 @@
     const fileNo = result.file_index_number || result.query || '-';
     const rows = result.transactions || [];
     const latestRow = rows.length ? rows[rows.length - 1] : {};
-    const latestParty1 = latestRow.party_1 || latestRow.grantor || result.party_1 || result.grantor || '-';
-    const latestParty2 = latestRow.party_2 || latestRow.grantee || result.party_2 || result.grantee || '-';
-    $('file-reference').textContent = fileNo;
-    $('file-number-value').textContent = fileNo;
-    $('kangis-file-number-value').textContent = result.file_tp_no || '-';
-    $('current-guarantor-value').textContent = latestParty1;
-    $('current-guarantee-value').textContent = latestParty2;
-    $('lga-value').textContent = [result.file_district, result.file_lga].filter(Boolean).join(' / ') || '-';
-    $('plot-number-value').textContent = result.file_plot_number || '-';
-    $('property-type-value').textContent = result.file_land_use || '-';
-    $('status-value').textContent = (result.total_count || 0) > 0 ? 'Found' : 'Not Found';
-    $('requesting-institution').textContent = cfg.institution?.name || '-';
-    $('search-date').textContent = now.toLocaleString();
-    $('reference-no').textContent = result.reference_no || '-';
+    const latestDate = latestRow.transaction_date || latestRow.reg_date || latestRow.deeds_date || latestRow.sort_date || '-';
+
+    // File Information panel — mirrors the Legal Search "File Information" field set.
+    const setText = (id, val) => { const el = $(id); if (el) el.textContent = (val === undefined || val === null || val === '') ? '-' : val; };
+    setText('file-reference', fileNo);
+    setText('file-number-value', fileNo);
+    setText('file-title-value', result.file_title);
+    setText('plot-number-value', result.file_plot_number);
+    setText('size-value', result.file_size);
+    setText('tpno-value', result.file_tp_no);
+    setText('district-value', result.file_district);
+    setText('lga-value', result.file_lga);
+    setText('property-type-value', result.file_land_use);
+    setText('last-transaction-value', latestDate);
+    setText('status-value', (result.total_count || rows.length) > 0 ? 'Found' : 'Not Found');
+    setText('requesting-institution', cfg.institution?.name);
+    setText('search-date', now.toLocaleString());
+    setText('reference-no', result.reference_no);
+
+    // Source-breakdown badges + total count (mirrors the LS Property Timeline modal).
+    const sourceLabels = { file_history_staging: 'File History', CofO_staging: 'CofO', pra: 'PRA', deed_registrations: 'Deed Reg.' };
+    const counts = {};
+    rows.forEach((r) => { const s = r.source_table || ''; if (s) counts[s] = (counts[s] || 0) + 1; });
+    const badgesEl = $('timeline-source-badges');
+    if (badgesEl) {
+      badgesEl.innerHTML = Object.entries(counts)
+        .map(([s, c]) => `<span class="phs-source-tag phs-source-tag-${s}">${esc(sourceLabels[s] || s)}: ${c}</span>`)
+        .join('');
+    }
+    const totalEl = $('timeline-total-count');
+    if (totalEl) totalEl.textContent = String(rows.length);
 
     $('timeline-container').innerHTML = rows.length ? rows.map((row, index) => {
+      const src = row.source_table || '';
+      const srcLabel = sourceLabels[src] || src || 'Record';
       const type = row.transaction_type || row.instrument_type || '-';
       const date = row.transaction_date || row.reg_date || row.deeds_date || row.sort_date || '-';
-      const grantor = row.party_1 || row.grantor || '-';
-      const grantee = row.party_2 || row.grantee || '-';
-      const reg = row.registration || row.reg_no || row.regNo || '';
-      const comments = row.comments && row.comments !== '-' ? row.comments : '';
-      const descParts = [];
-      if (reg && reg !== '-') descParts.push(`Registration Particulars: ${esc(reg)}`);
-      if (comments) descParts.push(esc(comments));
-      const description = descParts.join(' &middot; ');
+      const party1 = row.party_1 || row.grantor || '-';
+      const party2 = row.party_2 || row.grantee || '-';
+      const party3 = row.party_3 || '';
+      const reg = row.registration || row.reg_no || row.regNo || row.registration_particulars || '';
+      const location = row.location || row.property_location || [result.file_district, result.file_lga].filter(Boolean).join(', ') || '';
       return `<div class="timeline-item ${index === rows.length - 1 ? '' : 'completed'}">
-        <div class="flex items-start gap-4">
-          <div class="flex-1">
-            <div class="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
-              <span class="text-xs sm:text-sm font-semibold text-blue-600 bg-blue-50 px-2 sm:px-3 py-1 rounded-full">${esc(type)}</span>
-              <span class="text-xs text-gray-400 flex items-center"><i data-lucide="calendar" class="w-3 h-3 mr-1"></i>${esc(date)}</span>
+        <div class="bg-white rounded-xl p-3 sm:p-4 border border-gray-100 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div class="flex items-center gap-2 flex-wrap">
+              ${src ? `<span class="phs-source-tag phs-source-tag-${src}">${esc(srcLabel)}</span>` : ''}
+              <span class="text-sm font-semibold text-gray-800">${esc(type)}</span>
+              ${reg && reg !== '-' ? `<span class="text-xs text-gray-400">Reg: ${esc(reg)}</span>` : ''}
             </div>
-            <div class="bg-gradient-to-r from-gray-50 to-white rounded-xl p-3 sm:p-4 border border-gray-100">
-              <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div class="flex-1">
-                  <div class="flex items-center gap-2 mb-2">
-                    <div class="w-6 h-6 sm:w-8 sm:h-8 bg-blue-100 rounded-full flex items-center justify-center"><i data-lucide="user" class="w-3 h-3 sm:w-4 sm:h-4 text-blue-600"></i></div>
-                    <div><p class="text-xs text-gray-400">From</p><p class="font-semibold text-gray-800 text-xs sm:text-sm">${esc(grantor)}</p></div>
-                  </div>
-                </div>
-                <div class="hidden md:block"><i data-lucide="arrow-right" class="w-4 h-4 sm:w-5 sm:h-5 text-gray-400"></i></div>
-                <div class="flex-1">
-                  <div class="flex items-center gap-2 mb-2">
-                    <div class="w-6 h-6 sm:w-8 sm:h-8 bg-green-100 rounded-full flex items-center justify-center"><i data-lucide="user-check" class="w-3 h-3 sm:w-4 sm:h-4 text-green-600"></i></div>
-                    <div><p class="text-xs text-gray-400">To</p><p class="font-semibold text-gray-800 text-xs sm:text-sm">${esc(grantee)}</p></div>
-                  </div>
-                </div>
-              </div>
-              ${description ? `<div class="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-gray-100"><p class="text-xs text-gray-500"><i data-lucide="file-text" class="w-3 h-3 inline mr-1"></i>${description}</p></div>` : ''}
-            </div>
+            <span class="text-xs text-gray-500 whitespace-nowrap flex items-center"><i data-lucide="calendar" class="w-3 h-3 mr-1"></i>${esc(date)}</span>
           </div>
+          <div class="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 sm:w-8 sm:h-8 bg-blue-100 rounded-full flex items-center justify-center"><i data-lucide="user" class="w-3 h-3 sm:w-4 sm:h-4 text-blue-600"></i></div>
+              <div><p class="text-[10px] text-gray-400 uppercase tracking-wide">From</p><p class="font-semibold text-gray-800 text-xs sm:text-sm">${esc(party1)}</p></div>
+            </div>
+            <i data-lucide="arrow-right" class="w-4 h-4 text-gray-400"></i>
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 sm:w-8 sm:h-8 bg-green-100 rounded-full flex items-center justify-center"><i data-lucide="user-check" class="w-3 h-3 sm:w-4 sm:h-4 text-green-600"></i></div>
+              <div><p class="text-[10px] text-gray-400 uppercase tracking-wide">To</p><p class="font-semibold text-gray-800 text-xs sm:text-sm">${esc(party2)}</p></div>
+            </div>
+            ${party3 ? `<i data-lucide="arrow-right" class="w-4 h-4 text-gray-400"></i>
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 sm:w-8 sm:h-8 bg-purple-100 rounded-full flex items-center justify-center"><i data-lucide="user" class="w-3 h-3 sm:w-4 sm:h-4 text-purple-600"></i></div>
+              <div><p class="text-[10px] text-gray-400 uppercase tracking-wide">Party 3</p><p class="font-semibold text-gray-800 text-xs sm:text-sm">${esc(party3)}</p></div>
+            </div>` : ''}
+          </div>
+          ${location ? `<p class="text-xs text-gray-400 mt-3 flex items-center"><i data-lucide="map-pin" class="w-3 h-3 mr-1"></i>${esc(location)}</p>` : ''}
         </div>
       </div>`;
     }).join('') : '<div class="text-center py-8 text-gray-500 text-sm sm:text-base">No timeline rows available</div>';
@@ -252,11 +269,31 @@
     initTokenPurchase();
     $('search-btn')?.addEventListener('click', performSearch);
     $('search-query')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') performSearch(); });
-    $('sidebar-search-link')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      $('search-query')?.focus();
-      $('search-query')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
+    // Toggle between the Dashboard overview and the Search History view.
+    function setView(view) {
+      const isSearch = view === 'search';
+      $('dashboard-view')?.classList.toggle('hidden', isSearch);
+      $('search-view')?.classList.toggle('hidden', !isSearch);
+      $('org-dashboard-banner')?.classList.toggle('hidden', isSearch);
+      document.querySelectorAll('.phs-nav-link').forEach((link) => {
+        const active = link.dataset.view === view;
+        link.classList.toggle('bg-blue-50', active);
+        link.classList.toggle('text-blue-700', active);
+        link.classList.toggle('font-semibold', active);
+        link.classList.toggle('text-gray-600', !active);
+        link.classList.toggle('font-medium', !active);
+      });
+      if (isSearch) {
+        $('search-query')?.focus();
+        $('search-query')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+
+    $('sidebar-dashboard-link')?.addEventListener('click', (e) => { e.preventDefault(); setView('dashboard'); });
+    $('sidebar-search-link')?.addEventListener('click', (e) => { e.preventDefault(); setView('search'); });
+    $('dashboard-new-search-btn')?.addEventListener('click', () => setView('search'));
     $('sidebar-buy-tokens-btn')?.addEventListener('click', () => show($('token-modal')));
     $('try-new-search')?.addEventListener('click', () => { $('search-query').value = ''; hide($('results-section')); $('search-query').focus(); });
     $('back-to-dashboard-btn')?.addEventListener('click', () => { hide($('file-details-section')); show($('results-section')); });

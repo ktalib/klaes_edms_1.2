@@ -17,10 +17,25 @@ class PhsOrganizationController extends Controller
         $member = Auth::guard('phs')->user();
         $institution = $member->institution;
 
+        // Current plan = most recent completed token purchase; history = all purchases.
+        $subscription = $institution->transactions()
+            ->where('type', 'purchase')
+            ->where('status', 'completed')
+            ->orderByDesc('id')
+            ->first();
+
+        $subscriptionHistory = $institution->transactions()
+            ->where('type', 'purchase')
+            ->orderByDesc('id')
+            ->get();
+
         return view('phs.organization.index', [
             'member' => $member,
             'institution' => $institution,
             'members' => $institution->members()->orderBy('id')->get(),
+            'subscription' => $subscription,
+            'subscriptionHistory' => $subscriptionHistory,
+            'packages' => PhsTokenController::packages(),
         ]);
     }
 
@@ -45,18 +60,38 @@ class PhsOrganizationController extends Controller
             'department' => ['nullable', 'string', 'max:150'],
             'user_type' => ['required', 'in:super_admin,regular_user'],
             'access_role' => ['required', 'in:search_only,report_viewer,analytics_viewer'],
+            'token_allocation' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        $member = $institution->members()->create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => Hash::make($data['password']),
-            'job_title' => $data['job_title'] ?? null,
-            'department' => $data['department'] ?? null,
-            'user_type' => $data['user_type'],
-            'access_role' => $data['access_role'],
-            'status' => 'active',
-        ]);
+        $allocation = (int) ($data['token_allocation'] ?? 0);
+
+        // The allocation is funded from the organization wallet, so it can't exceed the balance.
+        if ($allocation > (int) $institution->token_balance) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Allocation exceeds the organization token balance (' . number_format($institution->token_balance) . ' available).',
+            ], 422);
+        }
+
+        $member = \DB::connection('sqlsrv')->transaction(function () use ($institution, $data, $allocation) {
+            $member = $institution->members()->create([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                'password' => Hash::make($data['password']),
+                'job_title' => $data['job_title'] ?? null,
+                'department' => $data['department'] ?? null,
+                'user_type' => $data['user_type'],
+                'access_role' => $data['access_role'],
+                'allocated_tokens' => $allocation,
+                'status' => 'active',
+            ]);
+
+            if ($allocation > 0) {
+                $institution->decrement('token_balance', $allocation);
+            }
+
+            return $member;
+        });
 
         return response()->json(['success' => true, 'message' => 'Team member added.', 'data' => $member]);
     }
@@ -137,14 +172,27 @@ class PhsOrganizationController extends Controller
 
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
+            'username' => [
+                'sometimes',
+                'string',
+                'min:3',
+                'max:100',
+                'regex:/^[a-z0-9_]+$/',
+                \Illuminate\Validation\Rule::unique('sqlsrv.phs_institutions', 'username')->ignore($institution->id),
+            ],
             'primary_color' => ['nullable', 'string', 'max:20'],
             'secondary_color' => ['nullable', 'string', 'max:20'],
             'logo' => ['nullable', 'image', 'max:2048'],
             'banner' => ['nullable', 'image', 'max:4096'],
+        ], [
+            'username.regex' => 'The username may only contain lowercase letters, numbers, and underscores.',
         ]);
 
         if (!empty($data['name'])) {
             $institution->name = $data['name'];
+        }
+        if (!empty($data['username'])) {
+            $institution->username = $data['username'];
         }
         if (!empty($data['primary_color'])) {
             $institution->primary_color = $data['primary_color'];
@@ -173,6 +221,7 @@ class PhsOrganizationController extends Controller
             'message' => 'Branding updated.',
             'data' => [
                 'name' => $institution->name,
+                'username' => $institution->username,
                 'primary_color' => $institution->primary_color,
                 'secondary_color' => $institution->secondary_color,
                 'logo_url' => $institution->logo_path ? asset('storage/' . $institution->logo_path) : null,

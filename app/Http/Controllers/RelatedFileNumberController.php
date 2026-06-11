@@ -59,7 +59,19 @@ class RelatedFileNumberController extends Controller
         $q = DB::connection('sqlsrv')->table('related_file_number')
             ->where('related_fileno', 'not like', 'TEMP-%')
             ->where('related_fileno', 'not like', 'TEMP%')
-            ->whereNotIn('source_table', ['pic', 'dciv_file_no']);
+            ->whereNotIn('source_table', ['pic', 'dciv_file_no'])
+            // Parent file_number must exist (was the "if the rfn doesn't have
+            // a pfn it should not display" requirement).
+            ->whereNotNull('file_number')
+            ->whereRaw("LTRIM(RTRIM(file_number)) <> ''")
+            // Drop junk related_filenos:
+            //   * shorter than 3 chars (e.g. "Q")
+            //   * purely numeric (e.g. "652", "1234")
+            //   * TP-* prefix (Town Planning, not a registry file)
+            ->whereRaw("LEN(LTRIM(RTRIM(related_fileno))) >= 3")
+            ->whereRaw("related_fileno LIKE '%[^0-9]%'")  // contains at least one non-digit
+            ->where('related_fileno', 'not like', 'TP-%')
+            ->where('related_fileno', 'not like', 'TP %');
 
         // Hide rows where related_fileno carries noise / annotations
         foreach (self::NOISE_PATTERNS as $pattern) {
@@ -179,7 +191,14 @@ class RelatedFileNumberController extends Controller
      */
     private function buildTotalsCountSql(): string
     {
-        $where = "related_fileno NOT LIKE 'TEMP-%' AND related_fileno NOT LIKE 'TEMP%' AND source_table NOT IN ('pic','dciv_file_no')";
+        $where = "related_fileno NOT LIKE 'TEMP-%'"
+              . " AND related_fileno NOT LIKE 'TEMP%'"
+              . " AND source_table NOT IN ('pic','dciv_file_no')"
+              . " AND file_number IS NOT NULL AND LTRIM(RTRIM(file_number)) <> ''"
+              . " AND LEN(LTRIM(RTRIM(related_fileno))) >= 3"
+              . " AND related_fileno LIKE '%[^0-9]%'"
+              . " AND related_fileno NOT LIKE 'TP-%'"
+              . " AND related_fileno NOT LIKE 'TP %'";
         foreach (self::NOISE_PATTERNS as $pattern) {
             $where .= " AND related_fileno NOT LIKE " . "'" . str_replace("'", "''", $pattern) . "'";
         }

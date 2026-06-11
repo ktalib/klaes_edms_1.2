@@ -1,49 +1,54 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>PHS Onboarding Approved</title>
-    <style>
-        body { font-family: Arial, sans-serif; color: #1f2937; background: #f9fafb; margin: 0; padding: 0; }
-        .container { max-width: 600px; margin: 24px auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
-        .content { padding: 24px; }
-        .button { display: inline-block; background: #10b981; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 8px; margin-top: 16px; }
-        .section-title { font-size: 18px; font-weight: 700; margin-top: 24px; }
-        .list { margin: 12px 0 0; padding-left: 18px; }
-        .footer { margin-top: 32px; font-size: 14px; color: #6b7280; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="content">
-            <h1>Your PHS Onboarding Request Has Been Approved</h1>
-            <p>Welcome! Your onboarding request for the Property History Search portal has been reviewed and approved.</p>
+@extends('email.layouts.master')
 
-            <p class="section-title">Organization Information</p>
-            <ul class="list">
-                <li><strong>Name:</strong> {{ $request->organization_name }}</li>
-                <li><strong>Type:</strong> {{ str_replace('_', ' ', $request->organization_type) }}</li>
-                <li><strong>Contact:</strong> {{ $request->contact_name }}</li>
-            </ul>
-
-            <p class="section-title">Complete Your Registration</p>
-            <p>Click the button below to complete your registration and activate your account.</p>
-            <a class="button" href="{{ $registrationUrl }}">Complete Registration</a>
-
-            <p>You will be asked to create a password to secure your account.</p>
-
-            <p class="section-title">Important Notes</p>
-            <ul class="list">
-                <li><strong>Link Expires:</strong> {{ $expiresAt->format('F j, Y \a\t g:i A') }}</li>
-                <li>If the link expires, please submit a new request.</li>
-                <li>Once registered, you can purchase search tokens to begin searching property records.</li>
-            </ul>
-
-            <p class="section-title">Need Help?</p>
-            <p>If you have any questions about the PHS portal or need assistance, please contact our support team.</p>
-
-            <p class="footer">Thank you for choosing the Property History Search portal.</p>
-        </div>
+@section('content')
+    <h2 style="color: #1e3a5f; font-size: 22px; margin-bottom: 20px;">🎉 Your PHS Onboarding Request Has Been Approved!</h2>
+    
+    <div class="success-box">
+        <strong>Congratulations!</strong> Your onboarding request for the Property History Search portal has been reviewed and approved.
     </div>
-</body>
-</html>
+    
+    <h3>Organization Information</h3>
+    <table class="details">
+        <tr>
+            <td>Organization Name:</td>
+            <td><strong>{{ $request->organization_name }}</strong></td>
+        </tr>
+        <tr>
+            <td>Organization Type:</td>
+            <td>{{ str_replace('_', ' ', $request->organization_type) }}</td>
+        </tr>
+        <tr>
+            <td>Primary Contact:</td>
+            <td>{{ $request->contact_name }}</td>
+        </tr>
+    </table>
+    
+    <h3>Complete Your Registration</h3>
+    <p>Click the button below to complete your registration and create your account password:</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ $registrationUrl }}" class="btn" style="display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-weight: 600;">Complete Registration</a>
+    </div>
+    
+    <div class="info-box">
+        <strong>⏱️ Link Expiration:</strong> This link will expire on <strong>{{ $expiresAt->format('F j, Y \a\t g:i A') }}</strong>. If the link expires, please submit a new request.
+    </div>
+    
+    <h3>Important Information</h3>
+    <ul class="list">
+        <li>You will be asked to create a secure password for your account</li>
+        <li>Once registered, you can log in and purchase search tokens</li>
+        <li>Begin searching property records immediately after activation</li>
+        <li>Your account will have the requested token package: <strong>{{ $request->initial_token_package ?? 'Standard' }}</strong></li>
+    </ul>
+    
+    <h3>Need Help?</h3>
+    <p>If you have any questions about the PHS portal or need assistance with registration, please don't hesitate to contact our support team. We're here to help!</p>
+    
+    <hr class="divider">
+    
+    <p style="text-align: center; color: #6b7280; font-size: 12px; margin-top: 20px;">
+        Thank you for choosing the Property History Search portal.<br>
+        <strong>Kano State Ministry of Land & Physical Planning</strong>
+    </p>
+@endsection

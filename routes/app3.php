@@ -522,8 +522,21 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('system-admin/phs')->name('system-admin.phs.')->group(function () {
         Route::get('/', [PhsAdminController::class, 'index'])->name('index');
         Route::get('/invoices', [PhsAdminController::class, 'invoices'])->name('invoices');
+        Route::get('/pending-invoices', [PhsAdminController::class, 'pendingInvoices'])->name('pending-invoices');
+        Route::get('/invoices/{txnId}/print', [PhsAdminController::class, 'transactionInvoice'])->name('invoices.print');
         Route::post('/invoices/{txnId}/approve', [PhsAdminController::class, 'approveInvoice'])->name('invoices.approve');
         Route::get('/usage', [PhsAdminController::class, 'usage'])->name('usage');
+        Route::get('/topups', [PhsAdminController::class, 'topups'])->name('topups');
+        Route::post('/topups/{txnId}/approve', [PhsAdminController::class, 'approveTopup'])->name('topups.approve');
+        Route::post('/topups/{txnId}/reject', [PhsAdminController::class, 'rejectTopup'])->name('topups.reject');
+        Route::get('/wallets', [PhsAdminController::class, 'wallets'])->name('wallets');
+
+        // Token package management (CRUD)
+        Route::get('/packages', [PhsAdminController::class, 'packages'])->name('packages.index');
+        Route::post('/packages', [PhsAdminController::class, 'storePackage'])->name('packages.store');
+        Route::put('/packages/{id}', [PhsAdminController::class, 'updatePackage'])->name('packages.update');
+        Route::delete('/packages/{id}', [PhsAdminController::class, 'destroyPackage'])->name('packages.destroy');
+
         Route::get('/institutions/{id}', [PhsAdminController::class, 'show'])->name('institutions.show');
         Route::post('/institutions/{id}/tokens', [PhsAdminController::class, 'allocateTokens'])->name('institutions.tokens');
         Route::post('/institutions/{id}/suspend', [PhsAdminController::class, 'suspend'])->name('institutions.suspend');
@@ -533,6 +546,8 @@ Route::middleware(['auth'])->group(function () {
         Route::prefix('requests')->name('requests.')->group(function () {
             Route::get('/', [PhsAdminController::class, 'onboardingRequests'])->name('index');
             Route::get('{id}', [PhsAdminController::class, 'showRequest'])->name('show');
+            Route::get('{id}/invoice', [PhsAdminController::class, 'requestInvoice'])->name('invoice');
+            Route::post('{id}/verify-payment', [PhsAdminController::class, 'verifyRequestPayment'])->name('verify-payment');
             Route::post('{id}/approve', [PhsAdminController::class, 'approveRequest'])->name('approve');
             Route::post('{id}/reject', [PhsAdminController::class, 'rejectRequest'])->name('reject');
         });
@@ -669,6 +684,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/view-list', [IndexedFileTableController::class, 'viewList'])->name('view-list');
         Route::post('/{id}/mark-duplicate', [IndexedFileTableController::class, 'markAsDuplicate'])->name('mark-duplicate');
         Route::post('/{id}/set-temp-file', [IndexedFileTableController::class, 'setTempFile'])->name('set-temp-file');
+        Route::post('/{id}/match-correspondence', [IndexedFileTableController::class, 'matchCorrespondence'])->name('match-correspondence');
+        Route::post('/{id}/unmatch-correspondence', [IndexedFileTableController::class, 'unmatchCorrespondence'])->name('unmatch-correspondence');
         Route::get('/related-files/{id}', [IndexedFileTableController::class, 'getRelatedFiles'])->name('related-files');
         Route::put('/related-files/{id}', [IndexedFileTableController::class, 'updateRelatedFile'])->name('related-files.update');
         Route::get('/edms-files/{id}', [IndexedFileTableController::class, 'getEdmsFiles'])->name('edms-files');

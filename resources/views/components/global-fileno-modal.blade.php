@@ -1,4 +1,3 @@
-@php $isFileIndexingCreate = str_contains(request()->url(), 'fileindexing/create'); @endphp
 <!-- Global File Number Modal -->
 <div id="global-fileno-modal"
     class="fixed inset-0 bg-black bg-opacity-60 z-[2000000] hidden items-center justify-center p-4"
@@ -215,8 +214,8 @@
                                             class="w-full p-2 text-sm border border-gray-300 rounded year-select"
                                             data-placeholder="Select year">
                                             <option value="">Select year</option>
-                                            @for($year = ($isFileIndexingCreate ? date('Y') - 1 : date('Y')); $year >= 1981; $year--)
-                                                <option value="{{ $year }}" {{ (!$isFileIndexingCreate && $year == date('Y')) ? 'selected' : '' }}>
+                                            @for($year = date('Y'); $year >= 1981; $year--)
+                                                <option value="{{ $year }}" {{ ($year == date('Y')) ? 'selected' : '' }}>
                                                     {{ $year }}
                                                 </option>
                                             @endfor
@@ -259,8 +258,8 @@
                                             class="w-full p-2 text-sm border border-gray-300 rounded year-select"
                                             data-placeholder="Select year">
                                             <option value="">Select year</option>
-                                            @for($year = ($isFileIndexingCreate ? date('Y') - 1 : date('Y')); $year >= 1981; $year--)
-                                                <option value="{{ $year }}" {{ (!$isFileIndexingCreate && $year == date('Y')) ? 'selected' : '' }}>
+                                            @for($year = date('Y'); $year >= 1981; $year--)
+                                                <option value="{{ $year }}" {{ ($year == date('Y')) ? 'selected' : '' }}>
                                                     {{ $year }}
                                                 </option>
                                             @endfor
@@ -612,8 +611,8 @@
                             <label class="block text-sm font-medium text-gray-700 mb-1">Year</label>
                             <select id="mls-sit-year" class="w-full p-2 border border-gray-300 rounded year-select focus:ring-2 focus:ring-pink-500" data-placeholder="Select year">
                                 <option value="">Select year</option>
-                                @for($year = ($isFileIndexingCreate ? date('Y') - 1 : date('Y')); $year >= 1981; $year--)
-                                    <option value="{{$year}}" {{(!$isFileIndexingCreate && $year == date('Y')) ? 'selected' : ''}}>
+                                @for($year = date('Y'); $year >= 1981; $year--)
+                                    <option value="{{$year}}" {{($year == date('Y')) ? 'selected' : ''}}>
                                         {{$year}}
                                     </option>
                                 @endfor
@@ -664,8 +663,8 @@
                             <label class="block text-sm font-medium text-gray-700 mb-1">Year</label>
                             <select id="mls-dciv-lpcc-year" class="w-full p-2 border border-gray-300 rounded year-select focus:ring-2 focus:ring-teal-500" data-placeholder="Select year">
                                 <option value="">Select year</option>
-                                @for($year = ($isFileIndexingCreate ? date('Y') - 1 : date('Y')); $year >= 1981; $year--)
-                                    <option value="{{$year}}" {{(!$isFileIndexingCreate && $year == date('Y')) ? 'selected' : ''}}>
+                                @for($year = date('Y'); $year >= 1981; $year--)
+                                    <option value="{{$year}}" {{($year == date('Y')) ? 'selected' : ''}}>
                                         {{$year}}
                                     </option>
                                 @endfor

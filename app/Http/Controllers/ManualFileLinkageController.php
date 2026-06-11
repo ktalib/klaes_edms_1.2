@@ -16,10 +16,6 @@ class ManualFileLinkageController extends Controller
 {
     public function index()
     {
-        if (Auth::user()->assign_role !== 'Supper Admin') {
-            abort(403, 'Unauthorized access. Only Supper Admin can manage manually processed file linkages.');
-        }
-
         $linkages = DB::connection('sqlsrv')
             ->table('manual_file_linkages')
             ->orderBy('created_at', 'desc')
@@ -38,10 +34,6 @@ class ManualFileLinkageController extends Controller
      */
     public function searchOldFile(Request $request)
     {
-        if (Auth::user()->assign_role !== 'Supper Admin') {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
         $fileNumber = strtoupper(trim((string) $request->input('file_number')));
 
         if (empty($fileNumber)) {
@@ -74,17 +66,13 @@ class ManualFileLinkageController extends Controller
             return response()->json(['exists' => false, 'message' => 'File number not found in active records.']);
         }
 
-        // Transaction counts across staging tables
-        $cofoCount = Schema::connection('sqlsrv')->hasTable('CofO_staging')
-            ? DB::connection('sqlsrv')->table('CofO_staging')->where('mlsFNo', $fileNumber)->count()
-            : 0;
-        $praCount = Schema::connection('sqlsrv')->hasTable('pra')
-            ? DB::connection('sqlsrv')->table('pra')->where('mlsFNo', $fileNumber)->count()
-            : 0;
+        // Transaction counts across staging tables. Each table stores the file number
+        // under a different column, so resolve the right one and never let a single
+        // missing table/column break the whole verification.
+        $cofoCount = $this->countByFileNumber('CofO_staging', ['mlsFNo', 'file_number'], $fileNumber);
+        $praCount  = $this->countByFileNumber('pra', ['mlsFNo', 'fileno', 'file_number'], $fileNumber);
         $deedTable = Schema::connection('sqlsrv')->hasTable('deeds_registrations') ? 'deeds_registrations' : 'deed_registrations';
-        $deedCount = Schema::connection('sqlsrv')->hasTable($deedTable)
-            ? DB::connection('sqlsrv')->table($deedTable)->where('file_number', $fileNumber)->count()
-            : 0;
+        $deedCount = $this->countByFileNumber($deedTable, ['fileno', 'parent_fileno', 'file_number'], $fileNumber);
 
         // Check if this file was already used as a source in a previous manual linkage
         $existingLinkage = DB::connection('sqlsrv')
@@ -125,10 +113,6 @@ class ManualFileLinkageController extends Controller
      */
     public function store(Request $request)
     {
-        if (Auth::user()->assign_role !== 'Supper Admin') {
-            abort(403, 'Unauthorized.');
-        }
-
         $workflowType = $request->input('workflow_type');
 
         // Strip empty values submitted by hidden inputs in non-active panels
@@ -163,12 +147,18 @@ class ManualFileLinkageController extends Controller
             'location'           => 'nullable|string|max:2000',
             'land_size'          => 'nullable|numeric',
             'purpose'            => 'nullable|string|max:50',
+            // File numbers picked that are NOT in the indexing system — recorded as
+            // related file numbers only (no decommission, no indexing row created).
+            'unindexed_file_numbers'   => 'nullable|array',
+            'unindexed_file_numbers.*' => 'nullable|string',
         ];
 
         if ($workflowType === 'Subdivision') {
             $baseRules['children']                      = 'required|array|min:1';
             $baseRules['children.*.new_file_number']    = 'required|string';
+            $baseRules['children.*.file_title']         = 'nullable|string|max:500';
             $baseRules['children.*.plot_number']        = 'nullable|string|max:100';
+            $baseRules['children.*.location']           = 'nullable|string|max:2000';
             $baseRules['children.*.plot_size']          = 'nullable|string|max:100';
             $baseRules['children.*.survey_plan_no']     = 'nullable|string|max:255';
         } else {
@@ -183,6 +173,12 @@ class ManualFileLinkageController extends Controller
             $validated['old_file_numbers']
         )));
 
+        // Un-indexed file numbers: recorded as related only, never decommissioned/indexed
+        $unindexedFiles = array_values(array_unique(array_map(
+            fn ($f) => strtoupper(trim((string) $f)),
+            array_filter($validated['unindexed_file_numbers'] ?? [], fn ($v) => trim((string) $v) !== '')
+        )));
+
         $applicantName    = trim($validated['applicant_name'] ?? '');
         $fileTitle        = trim($validated['file_title'] ?? '');
         $remarks          = trim($validated['remarks'] ?? '');
@@ -195,16 +191,32 @@ class ManualFileLinkageController extends Controller
             foreach ($validated['children'] as $child) {
                 $children[] = [
                     'new_file_number' => strtoupper(trim($child['new_file_number'])),
+                    'file_title'      => trim($child['file_title'] ?? ''),
                     'plot_number'     => trim($child['plot_number'] ?? ''),
+                    'location'        => trim($child['location'] ?? ''),
                     'plot_size'       => trim($child['plot_size'] ?? ''),
                     'survey_plan_no'  => trim($child['survey_plan_no'] ?? ''),
                 ];
             }
+            // Guard: at least one child must be an indexed file (un-indexed children are
+            // saved as related file numbers and need an indexed sibling to attach to).
+            $allChildNumbers = array_column($children, 'new_file_number');
+            if (empty(array_diff($allChildNumbers, $unindexedFiles))) {
+                return back()
+                    ->withErrors(['error' => 'At least one child plot must be an indexed file. '
+                        . 'Un-indexed children are recorded as related file numbers and need an indexed child to link to.'])
+                    ->withInput();
+            }
+
             // Guard: no child file can equal the parent
             foreach ($children as $child) {
                 if (in_array($child['new_file_number'], $oldFileNumbers, true)) {
                     return back()
-                        ->withErrors(['error' => "Child file {$child['new_file_number']} cannot equal the parent file."])
+                        ->withErrors(['error' =>
+                            "The file {$child['new_file_number']} is selected as both the parent (source) file and a child plot. "
+                            . "In a Subdivision the parent is the original plot that gets decommissioned, and each child must be a different, "
+                            . "newly-created file. Pick the correct mother plot on the left, or choose a different child file — they cannot be the same number."
+                        ])
                         ->withInput();
                 }
             }
@@ -212,7 +224,11 @@ class ManualFileLinkageController extends Controller
             $newFileNumber = strtoupper(trim($validated['new_file_number']));
             if (in_array($newFileNumber, $oldFileNumbers, true)) {
                 return back()
-                    ->withErrors(['new_file_number' => 'New file number cannot be the same as any old file number.'])
+                    ->withErrors(['new_file_number' =>
+                        "The file {$newFileNumber} is selected as both the legacy source file and the processed destination file. "
+                        . "The source file is the old file that gets decommissioned, and the destination is the already-processed new file — "
+                        . "they must be different file numbers."
+                    ])
                     ->withInput();
             }
         }
@@ -246,7 +262,9 @@ class ManualFileLinkageController extends Controller
 
         try {
             $commissionedBy = Auth::user()->first_name . ' ' . Auth::user()->last_name;
-            $firstOldFile   = $oldFileNumbers[0];
+            // Prefer an indexed source as the reference file (un-indexed ones have no record)
+            $indexedOldFiles = array_values(array_diff($oldFileNumbers, $unindexedFiles));
+            $firstOldFile    = $indexedOldFiles[0] ?? $oldFileNumbers[0];
 
             // Fetch details of the first source file BEFORE decommissioning deletes it
             $oldIndexing = DB::connection('sqlsrv')
@@ -269,12 +287,16 @@ class ManualFileLinkageController extends Controller
                 $oldPropIds = [(int) $oldIndexing->prop_id];
             }
 
-            // Decommission old files once (regardless of child count for Subdivision)
+            // Decommission only the INDEXED source files (un-indexed ones have no
+            // record to decommission — they are captured as related file numbers).
+            $filesToDecommission = array_values(array_diff($oldFileNumbers, $unindexedFiles));
             $workflowService = app(PlotWorkflowService::class);
             $decommReason = $workflowType === 'Subdivision'
                 ? 'Subdivision → ' . implode(', ', array_column($children, 'new_file_number'))
                 : "Manual Linkage: {$workflowType} → {$newFileNumber}";
-            $workflowService->decommissionFiles($oldFileNumbers, $decommReason, $commissionedBy);
+            if (!empty($filesToDecommission)) {
+                $workflowService->decommissionFiles($filesToDecommission, $decommReason, $commissionedBy);
+            }
 
             $allocationService = app(PropertyIdAllocationService::class);
             $linkageGroupId    = Str::uuid()->toString();
@@ -283,8 +305,25 @@ class ManualFileLinkageController extends Controller
             if ($workflowType === 'Subdivision') {
                 $parentPropId = $oldPropIds[0] ?? null;
 
+                // Un-indexed children are recorded as related file numbers only
+                $unindexedChildNumbers = array_values(array_intersect(
+                    array_column($children, 'new_file_number'),
+                    $unindexedFiles
+                ));
+                // Each processed child's lineage = parent source(s) + un-indexed siblings
+                $childRelatedFilenos = array_values(array_unique(array_merge($oldFileNumbers, $unindexedChildNumbers)));
+                $firstIndexedChildId     = null;
+                $firstIndexedChildNumber = null;
+                $firstIndexedChildPropId = null;
+
                 foreach ($children as $childData) {
                     $childFileNumber  = $childData['new_file_number'];
+
+                    // Skip un-indexed children — they get no indexing row, only related links
+                    if (in_array($childFileNumber, $unindexedFiles, true)) {
+                        continue;
+                    }
+
                     $childNewIndexing = DB::connection('sqlsrv')
                         ->table('file_indexings')
                         ->where('file_number', $childFileNumber)
@@ -298,11 +337,14 @@ class ManualFileLinkageController extends Controller
                         ['skip_lookup' => true, 'temp_fileno' => $firstOldFile]
                     );
 
+                    // Per-child title (entered/auto-filled in the child row) drives holder + title
+                    $childTitle = $childData['file_title']
+                        ?: ($childNewIndexing->file_title ?? ($oldIndexing->file_title ?? 'Manual Linkage Result'));
+
                     // file_indexings row for this child
                     $indexingPayload = [
                         'file_number'      => $childFileNumber,
-                        'file_title'       => $childNewIndexing->file_title
-                            ?? ($fileTitle ?: ($applicantName ?: ($oldIndexing->file_title ?? 'Manual Linkage Result'))),
+                        'file_title'       => $childTitle,
                         'land_use_type'    => $request->input('land_use_type')
                             ?: ($childNewIndexing->land_use_type ?? ($oldIndexing->land_use_type ?? 'N/A')),
                         'plot_number'      => $childData['plot_number']
@@ -311,19 +353,20 @@ class ManualFileLinkageController extends Controller
                             ?: ($childNewIndexing->district ?? ($oldIndexing->district ?? null)),
                         'lga'              => $request->input('lga')
                             ?: ($childNewIndexing->lga ?? ($oldIndexing->lga ?? null)),
-                        'location'         => $request->input('location')
-                            ?: ($childNewIndexing->location ?? ($oldIndexing->location ?? null)),
+                        'location'         => $childData['location']
+                            ?: ($request->input('location')
+                                ?: ($childNewIndexing->location ?? ($oldIndexing->location ?? null))),
                         'plot_size'        => $childData['plot_size']
                             ?: ($childNewIndexing->plot_size ?? null),
                         'tp_no'            => $childNewIndexing->tp_no ?? ($oldIndexing->tp_no ?? null),
                         'lpkn_no'          => $childNewIndexing->lpkn_no ?? ($oldIndexing->lpkn_no ?? null),
                         'tracking_id'      => $childNewIndexing->tracking_id ?? ($oldIndexing->tracking_id ?? null),
                         'original_holder'  => $childNewIndexing->original_holder
-                            ?? ($oldIndexing->original_holder ?? ($applicantName ?: null)),
-                        'current_holder'   => $applicantName
+                            ?? ($oldIndexing->original_holder ?? ($childTitle ?: null)),
+                        'current_holder'   => $childTitle
                             ?: ($childNewIndexing->current_holder ?? ($oldIndexing->current_holder ?? null)),
                         'parent_prop_id'   => $parentPropId,
-                        'related_fileno'   => json_encode($oldFileNumbers),
+                        'related_fileno'   => json_encode($childRelatedFilenos),
                         'has_transaction'  => 1,
                         'prop_id'          => $childPropId,
                         'general_registry' => $childNewIndexing->general_registry
@@ -335,9 +378,16 @@ class ManualFileLinkageController extends Controller
                         DB::connection('sqlsrv')->table('file_indexings')
                             ->where('id', $childNewIndexing->id)
                             ->update($indexingPayload);
+                        $childIndexingId = $childNewIndexing->id;
                     } else {
                         $indexingPayload['created_at'] = now();
-                        DB::connection('sqlsrv')->table('file_indexings')->insert($indexingPayload);
+                        $childIndexingId = DB::connection('sqlsrv')->table('file_indexings')->insertGetId($indexingPayload);
+                    }
+
+                    if ($firstIndexedChildId === null) {
+                        $firstIndexedChildId     = $childIndexingId;
+                        $firstIndexedChildNumber = $childFileNumber;
+                        $firstIndexedChildPropId = $childPropId;
                     }
 
                     // fileNumber row for this child
@@ -348,8 +398,8 @@ class ManualFileLinkageController extends Controller
 
                     $fileNumberPayload = [
                         'mlsfNo'              => $childFileNumber,
-                        'FileName'            => $fileTitle
-                            ?: ($applicantName ?: ($childFileNoRecord->FileName ?? ($oldIndexing->file_title ?? 'Manual Linkage Result'))),
+                        'FileName'            => $childTitle
+                            ?: ($childFileNoRecord->FileName ?? ($oldIndexing->file_title ?? 'Manual Linkage Result')),
                         'tracking_id'         => $childFileNoRecord->tracking_id ?? ($oldIndexing->tracking_id ?? null),
                         'commissioning_date'  => $childFileNoRecord->commissioning_date ?? now(),
                         'updated_at'          => now(),
@@ -358,7 +408,7 @@ class ManualFileLinkageController extends Controller
                         $fileNumberPayload['parent_prop_id'] = $parentPropId;
                     }
                     if (Schema::connection('sqlsrv')->hasColumn('fileNumber', 'related_fileno')) {
-                        $fileNumberPayload['related_fileno'] = json_encode($oldFileNumbers);
+                        $fileNumberPayload['related_fileno'] = json_encode($childRelatedFilenos);
                     }
 
                     if ($childFileNoRecord) {
@@ -388,7 +438,7 @@ class ManualFileLinkageController extends Controller
                         $oldFileNumbers,
                         $childFileNumber,
                         $childPropId,
-                        $applicantName ?: ($oldIndexing->file_title ?? 'N/A'),
+                        $childTitle ?: ($oldIndexing->file_title ?? 'N/A'),
                         $remarks,
                         $commissionedBy,
                         $approvalReference,
@@ -400,6 +450,15 @@ class ManualFileLinkageController extends Controller
                     );
                 }
 
+                // Record un-indexed children as related file numbers (attached to the first indexed child)
+                $this->recordRelatedFileNumbers(
+                    $firstIndexedChildId,
+                    $firstIndexedChildNumber ?? '',
+                    $unindexedChildNumbers,
+                    $firstIndexedChildPropId,
+                    'Subdivision'
+                );
+
                 app(AuditService::class)->logAction(
                     'MANUAL_LINKAGE',
                     'manual_file_linkages',
@@ -407,6 +466,7 @@ class ManualFileLinkageController extends Controller
                     ['old_files' => $oldFileNumbers],
                     [
                         'children'          => array_column($children, 'new_file_number'),
+                        'unindexed_related' => $unindexedChildNumbers,
                         'workflow_type'     => 'Subdivision',
                         'linkage_group_id'  => $linkageGroupId,
                     ],
@@ -474,10 +534,15 @@ class ManualFileLinkageController extends Controller
                     DB::connection('sqlsrv')->table('file_indexings')
                         ->where('id', $newIndexing->id)
                         ->update($indexingPayload);
+                    $newIndexingId = $newIndexing->id;
                 } else {
                     $indexingPayload['created_at'] = now();
-                    DB::connection('sqlsrv')->table('file_indexings')->insert($indexingPayload);
+                    $newIndexingId = DB::connection('sqlsrv')->table('file_indexings')->insertGetId($indexingPayload);
                 }
+
+                // Record un-indexed source files (Merger) as related file numbers on the destination
+                $unindexedSources = array_values(array_intersect($oldFileNumbers, $unindexedFiles));
+                $this->recordRelatedFileNumbers($newIndexingId, $newFileNumber, $unindexedSources, $propId, $workflowType);
 
                 $newFileNumberRecord = DB::connection('sqlsrv')
                     ->table('fileNumber')
@@ -612,6 +677,82 @@ class ManualFileLinkageController extends Controller
         }
 
         return (int) DB::connection('sqlsrv')->table('manual_file_linkages')->insertGetId($row);
+    }
+
+    /**
+     * Record un-indexed file numbers in the related_file_number table, attached to the
+     * surviving/destination indexing record. One row per destination (the unique
+     * (source_table, source_id) constraint allows a single row per source record), with
+     * the related file numbers comma-joined.
+     */
+    private function recordRelatedFileNumbers(?int $destIndexingId, string $destFileNumber, array $relatedNumbers, $propId, string $workflowType): void
+    {
+        $relatedNumbers = array_values(array_filter(array_unique(array_map('trim', $relatedNumbers)), fn ($v) => $v !== ''));
+        if ($destIndexingId === null || empty($relatedNumbers)) {
+            return;
+        }
+        if (!Schema::connection('sqlsrv')->hasTable('related_file_number')) {
+            return;
+        }
+
+        $row = [
+            'related_fileno' => mb_substr(implode(', ', $relatedNumbers), 0, 500),
+            'prop_id'        => ($propId !== null && $propId !== '') ? (string) $propId : null,
+            'file_number'    => $destFileNumber,
+            'updated_at'     => now(),
+        ];
+        $optional = [
+            'transaction_type' => $workflowType,
+            'comment'          => 'Manual linkage: un-indexed related file number(s)',
+        ];
+        foreach ($optional as $col => $value) {
+            if (Schema::connection('sqlsrv')->hasColumn('related_file_number', $col)) {
+                $row[$col] = $value;
+            }
+        }
+
+        $match    = ['source_table' => 'file_indexings', 'source_id' => $destIndexingId];
+        $existing = DB::connection('sqlsrv')->table('related_file_number')->where($match)->first();
+
+        try {
+            if ($existing) {
+                DB::connection('sqlsrv')->table('related_file_number')->where('id', $existing->id)->update($row);
+            } else {
+                DB::connection('sqlsrv')->table('related_file_number')->insert($row + $match + ['created_at' => now()]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('recordRelatedFileNumbers failed', ['error' => $e->getMessage(), 'dest' => $destFileNumber]);
+        }
+    }
+
+    /**
+     * Count rows in $table matching $fileNumber, using the first $candidateCols
+     * that actually exists on the table. Returns 0 if the table or all columns
+     * are missing, so a schema mismatch never 500s the verify endpoint.
+     */
+    private function countByFileNumber(string $table, array $candidateCols, string $fileNumber): int
+    {
+        if (!Schema::connection('sqlsrv')->hasTable($table)) {
+            return 0;
+        }
+
+        $column = null;
+        foreach ($candidateCols as $col) {
+            if (Schema::connection('sqlsrv')->hasColumn($table, $col)) {
+                $column = $col;
+                break;
+            }
+        }
+        if ($column === null) {
+            return 0;
+        }
+
+        try {
+            return (int) DB::connection('sqlsrv')->table($table)->where($column, $fileNumber)->count();
+        } catch (\Throwable $e) {
+            Log::warning("countByFileNumber failed for {$table}.{$column}", ['error' => $e->getMessage()]);
+            return 0;
+        }
     }
 
     private function clearCache(): void

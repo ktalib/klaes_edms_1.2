@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\Log;
 
 class RofoPraSyncer
 {
+    /** Every ROFO (Right of Occupancy) is granted by the State. */
+    private const GRANTOR = 'KANO STATE GOVERNMENT';
+
     private PraRecordService $service;
 
     public function __construct(PraRecordService $service)
@@ -44,6 +47,7 @@ class RofoPraSyncer
             'location'           => $rec->location,
             'property_description'=> $rec->location,
             'lgsaOrCity'         => $rec->lga ?? null,
+            'Grantor'            => self::GRANTOR,
             'party_2'            => $rec->applicant_name,
             'Grantee'            => $rec->applicant_name,
             'source'             => $isOss ? 'oss_rofo' : 'land_rofo',
@@ -83,6 +87,7 @@ class RofoPraSyncer
             'location'           => $rec->location,
             'property_description'=> $rec->location,
             'lgsaOrCity'         => $rec->lga,
+            'Grantor'            => self::GRANTOR,
             'party_2'            => $rec->applicant_name,
             'Grantee'            => $rec->applicant_name,
             'source'             => 'sltr_rofo',
@@ -127,6 +132,8 @@ class RofoPraSyncer
                     'mother_applications.property_district',
                     'mother_applications.property_lga',
                     'mother_applications.land_use as mother_land_use',
+                    'mother_applications.approval_date as mother_approval_date',
+                    'subapplications.approval_date as sub_approval_date',
                     'rofo.rofo_no',
                     'rofo.location as rofo_location',
                     'rofo.plot_no as rofo_plot_no',
@@ -176,7 +183,10 @@ class RofoPraSyncer
             'rofo_number'        => $fileNumber,
             'instrument_type'    => 'Right of Occupancy (ST)',
             'transaction_type'   => 'Right of Occupancy (ST)',
-            'transaction_date'   => $row->approval_date ?: now()->toDateString(),
+            'transaction_date'   => $row->approval_date
+                ?: ($row->sub_approval_date ?? null)
+                ?: ($row->mother_approval_date ?? null)
+                ?: now()->toDateString(),
             'land_use'           => $row->specific_land_use ?: $row->mother_land_use,
             'purpose'            => $row->rofo_purpose,
             'plot_no'            => $row->rofo_plot_no ?: ($row->property_plot_no ?? null),
@@ -184,6 +194,7 @@ class RofoPraSyncer
             'location'           => $location,
             'property_description'=> $location,
             'lgsaOrCity'         => $row->property_lga,
+            'Grantor'            => self::GRANTOR,
             'party_2'            => $ownerName,
             'Grantee'            => $ownerName,
             'source'             => 'st_rofo',

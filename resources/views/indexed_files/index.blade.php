@@ -677,6 +677,98 @@
         </div>
     </div>
 
+    <!-- MCC FileNo: Match Cadastral Correspondence FileNo Modal -->
+    <div id="mcc-file-modal" class="fixed inset-0 z-[120] hidden overflow-y-auto" role="dialog" aria-modal="true">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" id="mcc-file-backdrop"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full border border-gray-100">
+                <input type="hidden" id="mcc-file-id">
+
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-[#5c0d0d] via-[#7c3a1d] to-[#9c6b32] px-6 py-4 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
+                            <i data-lucide="git-compare" class="w-5 h-5 text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white">Match Cadastral Correspondence FileNo</h3>
+                            <p class="text-xs text-white/80 font-medium">Link a Land file with its Cadastral Correspondence file</p>
+                        </div>
+                    </div>
+                    <button type="button" id="close-mcc-file-modal" class="text-white/70 hover:text-white transition-colors">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+
+                <!-- Body: two columns -->
+                <div class="px-6 py-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 border border-gray-200 rounded-2xl overflow-hidden">
+                        <!-- LAND side -->
+                        <div class="p-5 border-b md:border-b-0 md:border-r border-gray-200 bg-[#fbe9e9]">
+                            <div class="flex items-center gap-2 pb-3 mb-4 border-b border-gray-100">
+                                <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[#fdeaea] text-[#7a1212]"><i data-lucide="file-text" class="w-4 h-4"></i></span>
+                                <h4 class="text-sm font-bold text-[#7a1212] uppercase tracking-wide">Land Department</h4>
+                            </div>
+                            <dl class="grid grid-cols-2 gap-x-4 gap-y-3" id="mcc-land-details"></dl>
+                        </div>
+
+                        <!-- CADASTRAL side -->
+                        <div class="p-5 bg-[#faf3ea]/60">
+                            <div class="flex items-center gap-2 pb-3 mb-4 border-b border-gray-100">
+                                <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[#f3e6d3] text-[#8a5a2b]"><i data-lucide="compass" class="w-4 h-4"></i></span>
+                                <h4 class="text-sm font-bold text-[#8a5a2b] uppercase tracking-wide">Cadastral Department</h4>
+                            </div>
+
+                            <!-- Selector (unmatched only) -->
+                            <div id="mcc-cadastral-selector" class="mb-4 hidden">
+                                <label class="text-xs font-bold text-[#8a5a2b] uppercase tracking-wider block mb-1.5">Cadastral File Number <span class="text-red-500">*</span></label>
+                                <div class="flex items-center gap-2">
+                                    <input type="text" id="mcc-cadastral-input" readonly class="flex-1 px-4 py-2.5 rounded-xl border-2 border-[#e3cba5] bg-white text-gray-800 font-semibold cursor-pointer" placeholder="Click to select cadastral file...">
+                                    <button type="button" id="mcc-open-fileno-selector-btn" class="px-4 py-2.5 rounded-xl bg-[#8a5a2b] text-white font-bold hover:bg-[#73491f] transition-all shadow-sm flex items-center gap-2 whitespace-nowrap">
+                                        <i data-lucide="file-search" class="w-4 h-4"></i>
+                                        Select
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Awaiting placeholder -->
+                            <div id="mcc-cadastral-awaiting" class="flex flex-col items-center justify-center py-10 text-center">
+                                <span class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#f3e6d3] text-[#8a5a2b] mb-3"><i data-lucide="clock" class="w-6 h-6"></i></span>
+                                <p class="text-sm font-semibold text-[#8a5a2b]">Awaiting Match</p>
+                                <p class="text-xs text-gray-400 mt-1">Select a cadastral file number to view its details.</p>
+                            </div>
+
+                            <!-- Loading -->
+                            <div id="mcc-cadastral-loading" class="hidden py-10 text-center text-sm text-gray-400">
+                                <i data-lucide="loader" class="w-5 h-5 animate-spin inline-block"></i> Loading details...
+                            </div>
+
+                            <!-- Details -->
+                            <dl class="grid grid-cols-2 gap-x-4 gap-y-3 hidden" id="mcc-cadastral-details"></dl>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="bg-gray-50 px-6 py-5 flex items-center justify-between gap-3 rounded-b-2xl border-t border-gray-100">
+                    <div id="mcc-status-badge"></div>
+                    <div class="flex items-center gap-3">
+                        <button type="button" id="cancel-mcc-file" class="px-6 py-2.5 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-200 transition-all">Cancel</button>
+                        <button type="button" id="mcc-unmatch-btn" class="hidden px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-[#7a1212] hover:bg-[#5c0d0d] shadow-lg shadow-[#7a1212]/25 transition-all inline-flex items-center gap-2">
+                            <i data-lucide="unlink" class="w-4 h-4"></i>
+                            Unmatch
+                        </button>
+                        <button type="button" id="mcc-match-btn" class="hidden px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-[#8a5a2b] hover:bg-[#73491f] shadow-lg shadow-[#8a5a2b]/25 transition-all inline-flex items-center gap-2">
+                            <i data-lucide="link" class="w-4 h-4"></i>
+                            Match
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
 
     <script type="module" src="{{ asset('js/indexed-files/index.js') }}"></script>

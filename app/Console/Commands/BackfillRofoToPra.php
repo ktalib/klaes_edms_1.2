@@ -114,13 +114,45 @@ class BackfillRofoToPra extends Command
     {
         $this->info('Backfilling ST (Sectional Titling) ROFOs...');
         $synced = 0;
+        $conn = DB::connection('sqlsrv');
 
-        DB::connection('sqlsrv')->table('rofo')
-            ->select('sub_application_id')
+        // ST ROFOs live in the `rofo` table, but rofo.sub_application_id is
+        // unreliable for legacy rows (it points at IDs that no longer exist in
+        // subapplications). The dependable link is the mother application:
+        // any subapplication whose mother (main_application_id) has ROFO rows.
+        // We also union the directly-referenced sub_application_ids so the
+        // correctly-linked rows are never missed.
+        $motherIds = $conn->table('rofo')
+            ->whereNotNull('application_id')
+            ->distinct()->pluck('application_id')
+            ->map(fn ($v) => (int) $v)->filter()->values()->all();
+
+        $directSubIds = $conn->table('rofo')
             ->whereNotNull('sub_application_id')
+            ->distinct()->pluck('sub_application_id')
+            ->map(fn ($v) => (int) $v)->filter()->values()->all();
+
+        if (empty($motherIds) && empty($directSubIds)) {
+            return 0;
+        }
+
+        $conn->table('subapplications')
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->where(function ($q) use ($motherIds, $directSubIds) {
+                if (!empty($motherIds)) {
+                    $q->orWhereIn('main_application_id', $motherIds);
+                }
+                if (!empty($directSubIds)) {
+                    $q->orWhereIn('id', $directSubIds);
+                }
+            })
+            ->whereNotNull('fileno')
+            ->where('fileno', '<>', '')
             ->orderBy('id')
             ->chunk($chunk, function ($rows) use ($syncer, $dryRun, &$synced) {
-                $ids = $rows->pluck('sub_application_id')
+                $ids = $rows->pluck('id')
                     ->map(fn ($v) => (int) $v)
                     ->filter()
                     ->unique()
@@ -132,16 +164,8 @@ class BackfillRofoToPra extends Command
                 }
 
                 if ($dryRun) {
-                    // Use the same join logic as syncer to count would-sync rows,
-                    // but skip the actual insert.
-                    $rows = DB::connection('sqlsrv')->table('subapplications')
-                        ->leftJoin('mother_applications', 'subapplications.main_application_id', '=', 'mother_applications.id')
-                        ->whereIn('subapplications.id', $ids)
-                        ->select('subapplications.id', 'subapplications.fileno as sub_fileno', 'mother_applications.fileno as mother_fileno')
-                        ->get();
-
                     foreach ($rows as $row) {
-                        $fileNumber = trim((string) ($row->sub_fileno ?? $row->mother_fileno ?? ''));
+                        $fileNumber = trim((string) ($row->fileno ?? ''));
                         if ($fileNumber !== '' && !$this->praExists($fileNumber)) {
                             $this->line("  [ST] would sync sub_application_id={$row->id} file_number={$fileNumber}");
                             $synced++;

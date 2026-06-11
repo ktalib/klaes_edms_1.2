@@ -1489,6 +1489,7 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'fileindexing'], func
     Route::get('/', [App\Http\Controllers\FileIndexController::class, 'index'])->name('fileindexing.index');
     Route::get('/create', App\Http\Controllers\FileIndexCreatePageController::class)->name('fileindexing.create');
     Route::get('/activity-log', [App\Http\Controllers\FileIndexingActivityLogController::class, 'index'])->name('fileindexing.activity-log');
+    Route::get('/leaderboard-data', [FileIndexingController::class, 'leaderboardData'])->name('fileindexing.leaderboard-data');
     Route::get('/api/sltr-grouping-details', [App\Http\Controllers\FileIndexingController::class, 'getSltrGroupingDetails'])->name('fileindexing.api.sltr-grouping-details');
     Route::get('/api/check-temp-association', [App\Http\Controllers\FileIndexingController::class, 'checkTempAssociation'])->name('fileindexing.api.check-temp-association');
 

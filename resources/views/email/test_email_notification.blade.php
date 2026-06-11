@@ -1,57 +1,38 @@
-<!doctype html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+@extends('email.layouts.master')
 
-<head>
-    <title>
-    </title>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet" type="text/css">
-</head>
-
-<body style="font-family: 'Poppins', Arial, sans-serif">
-    <table width="100%" border="0" cellspacing="0" cellpadding="0">
+@section('content')
+    <h2 style="color: #1e3a5f; font-size: 22px; margin-bottom: 20px;">Test Email from {{ env('APP_NAME') }}</h2>
+    
+    <div class="success-box">
+        <strong>✅ Email System Test Successful!</strong><br>
+        This is a test message from your {{ env('APP_NAME') }} application.
+    </div>
+    
+    <h3>Test Information</h3>
+    <table class="details">
         <tr>
-            <td align="center" style="padding: 20px;">
-                <table class="content" width="600" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: 1px solid #cccccc;">
-                    <!-- Header -->
-                    <tr>
-                        <td class="header" style="background-color: #345C72; padding: 40px; text-align: center; color: white; font-size: 24px;">
-                        <img src="{{ asset(Storage::url('upload/logo/')) . '/' . $data['company_logo'] }}" style="height: 100px;" alt="">
-                        </td>
-                    </tr>
-
-                    <!-- Body -->
-                    <tr>
-                        <td class="body" style="padding: 40px; text-align: left; font-size: 16px; line-height: 1.6;">
-                        {{ __('Hello, Sir!') }} <br>
-                        {{ __('This test mail from') }} {{ env('APP_NAME') }}.
-                        </td>
-                    </tr>
-
-                    <!-- Call to action Button -->
-                    <tr>
-                        <td style="padding: 40px 40px 40px 40px; text-align: center;">
-                            <!-- CTA Button -->
-                            <table cellspacing="0" cellpadding="0" style="margin: auto;">
-                                <tr>
-                                    <td align="center" style="background-color: #345C72; padding: 10px 20px; border-radius: 5px;">
-                                        <a href="{{ route('home') }}" target="_blank" style="color: #ffffff; text-decoration: none; font-weight: bold;">{{ __('Go Back') }}</a>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                    <!-- Footer -->
-                    <tr>
-                        <td class="footer" style="background-color: #333333; padding: 40px; text-align: center; color: white; font-size: 14px;">
-                        Copyright &copy; {{ date('Y') }} | {{ env('APP_NAME') }}
-                        </td>
-                    </tr>
-                </table>
-            </td>
+            <td>Application:</td>
+            <td>{{ env('APP_NAME') }}</td>
+        </tr>
+        <tr>
+            <td>Test Sent:</td>
+            <td>{{ now()->format('F j, Y \a\t g:i A') }}</td>
+        </tr>
+        <tr>
+            <td>Status:</td>
+            <td><span class="badge badge-success">DELIVERED</span></td>
         </tr>
     </table>
-</body>
-</html>
+    
+    <p>If you received this email, your email configuration is working correctly!</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ route('home') }}" class="btn btn-primary" style="display: inline-block; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); color: white; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-weight: 600;">Return to Application</a>
+    </div>
+    
+    <hr class="divider">
+    
+    <p style="color: #6b7280; font-size: 12px;">
+        This is an automated test email. You can safely ignore this message if you did not initiate this test.
+    </p>
+@endsection

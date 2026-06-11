@@ -310,6 +310,7 @@ Route::prefix('file-numbers')->controller(FileNumberApiController::class)->group
     Route::get('/st-all', 'getAllSTFileNumbers');
     Route::get('/st-stats', 'getSTFileNumberStats');
     Route::get('/st-dropdown-data', 'getSTDropdownData');
+    Route::get('/units-for-dropdown', 'getUnitsForDropdown');
 });
 
 Route::prefix('reference')->controller(ReferenceDataController::class)->group(function () {
