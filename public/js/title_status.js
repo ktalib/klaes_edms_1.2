@@ -87,6 +87,7 @@ function tsSelectType(type) {
     tsClearForm();
     tsSelectedType = type;
     tsApplyTheme(type);
+    tsToggleCofoSection(type);
     const defaultInitiator = (typeof TS_INITIATED_BY_DEFAULT !== 'undefined' && TS_INITIATED_BY_DEFAULT[type]) || null;
     tsApplyInitiatedByOptions(type, defaultInitiator);
     tsRefreshRemark();
@@ -129,6 +130,19 @@ function tsApplyInitiatedByOptions(type, preselect) {
         if (preselect && options.includes(preselect)) {
             select.value = preselect;
         }
+    }
+}
+
+/* Show the Certificate of Occupancy detail fields only for CofO revocation,
+   since those fields map directly onto the Certificate of Revocation. */
+function tsToggleCofoSection(type) {
+    const section = document.getElementById('ts-cofo-section');
+    if (!section) return;
+    if (type === 'Revoke (CofO)') {
+        section.classList.remove('hidden');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    } else {
+        section.classList.add('hidden');
     }
 }
 
@@ -266,6 +280,7 @@ function tsOpenEdit(btn) {
     tsSelectedType = record.title_type ?? '';
 
     tsApplyTheme(tsSelectedType);
+    tsToggleCofoSection(tsSelectedType);
     tsApplyInitiatedByOptions(tsSelectedType, record.initiated_by);
 
     // File card
@@ -273,7 +288,8 @@ function tsOpenEdit(btn) {
     document.getElementById('ts-source_table').value      = record.source_table ?? '';
     document.getElementById('ts-source_id').value         = record.source_id ?? '';
     document.getElementById('ts-file-no-display').textContent    = record.file_no ?? '';
-    document.getElementById('ts-file-title-display').textContent = record.file_title ?? '';
+    const fileTitleDisplay = document.getElementById('ts-file-title-display');
+    if (fileTitleDisplay) fileTitleDisplay.textContent = record.file_title ?? '';
     document.getElementById('ts-file-placeholder').classList.add('hidden');
     document.getElementById('ts-file-selected').classList.remove('hidden');
     document.getElementById('ts-file-card').classList.add('selected');
@@ -281,11 +297,14 @@ function tsOpenEdit(btn) {
     const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
     setVal('ts-file_title',          record.file_title);
     setVal('ts-applicant_name',      record.applicant_name);
+    setVal('ts-cofo_number',         record.cofo_number);
     setVal('ts-title_no',            record.title_no);
+    setVal('ts-reg_page',            record.reg_page);
+    setVal('ts-reg_volume',          record.reg_volume);
     setVal('ts-plot_no',             record.plot_no);
     setVal('ts-location',            record.location);
     setVal('ts-land_use',            record.land_use);
-    setVal('ts-date_of_issue',       record.date_of_issue);
+    setVal('ts-date_of_issue',       record.date_of_issue ? String(record.date_of_issue).substring(0, 10) : '');
     setVal('ts-date_of_expiry',      record.date_of_expiry);
     setVal('ts-initiated_by',        record.initiated_by);
     setVal('ts-reason',              record.reason);
@@ -311,7 +330,10 @@ function tsView(btn) {
         row('File Title',        record.file_title),
         row('Applicant',         record.applicant_name),
         row('Title Type',        record.title_type),
-        row('Title No',          record.title_no),
+        row('CofO No',           record.cofo_number),
+        row('Registered as No',  record.title_no),
+        row('At Page',           record.reg_page),
+        row('In Volume',         record.reg_volume),
         row('Plot No',           record.plot_no),
         row('Location',          record.location),
         row('Land Use',          record.land_use),
@@ -369,6 +391,11 @@ function tsSubmit() {
         land_use:        g('ts-land_use'),
         district:        g('ts-district'),
         lga:             g('ts-lga'),
+        cofo_number:     g('ts-cofo_number'),
+        title_no:        g('ts-title_no'),
+        reg_page:        g('ts-reg_page'),
+        reg_volume:      g('ts-reg_volume'),
+        date_of_issue:   g('ts-date_of_issue'),
         initiated_by:    initiatedBy,
         reason:          reason,
         remark:          g('ts-remark'),
@@ -505,6 +532,7 @@ function tsCloseModal() {
 function tsClearForm() {
     ['ts-file_no','ts-file_title','ts-applicant_name','ts-plot_no','ts-location',
      'ts-land_use','ts-district','ts-lga','ts-source_table','ts-source_id',
+     'ts-cofo_number','ts-title_no','ts-reg_page','ts-reg_volume','ts-date_of_issue',
      'ts-initiated_by','ts-reason','ts-remark']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
@@ -512,6 +540,7 @@ function tsClearForm() {
     document.getElementById('ts-file-selected').classList.add('hidden');
     document.getElementById('ts-file-card').classList.remove('selected');
     document.getElementById('ts-file-summary').classList.add('hidden');
+    tsToggleCofoSection('');
 
     tsEditId       = null;
     tsSelectedType = '';

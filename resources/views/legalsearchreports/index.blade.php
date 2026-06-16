@@ -128,9 +128,8 @@
         border-bottom: 2px solid #e5e7eb; padding: .75rem .85rem;
         white-space: nowrap; vertical-align: middle;
     }
-    #legal-search-logs-table thead th.sorting::after,
-    #legal-search-logs-table thead th.sorting_asc::after,
-    #legal-search-logs-table thead th.sorting_desc::after { font-size: .65rem; }
+    #legal-search-logs-table thead th::before,
+    #legal-search-logs-table thead th::after { display: none !important; }
 
     #legal-search-logs-table tbody td {
         padding: .7rem .85rem; border-bottom: 1px solid #f1f5f9;
@@ -338,6 +337,7 @@
                                     <th>S/N</th>
                                     <th>Date</th>
                                     <th>Search Parameter</th>
+                                    <th>Source</th>
                                     <th>Search Value</th>
                                     <th>Result</th>
                                     <th>LGA</th>
@@ -549,7 +549,16 @@ function initDataTable() {
     dtTable = $('#legal-search-logs-table').DataTable({
         processing: true,
         serverSide: true,
-        ajax: '{{ route("legalsearchreports.data") }}',
+        ordering: false,
+        ajax: {
+            url: '{{ route("legalsearchreports.data") }}',
+            data: function(d) {
+                d.order = [{ column: 1, dir: 'desc' }];
+                if (d.columns && d.columns[1]) {
+                    d.columns[1].orderable = true;
+                }
+            }
+        },
         columns: [
             {
                 data: 'DT_RowIndex', name: 'DT_RowIndex',
@@ -567,6 +576,11 @@ function initDataTable() {
                         ? `<span class="badge badge-outline">${data}</span>`
                         : '<span class="cell-secondary">—</span>';
                 }
+            },
+            {
+                data: 'source_display', name: 'search_source',
+                orderable: false, searchable: false,
+                render: function(data) { return data || '—'; }
             },
             {
                 data: 'search_value', name: 'search_value',

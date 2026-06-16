@@ -414,14 +414,12 @@
 
     @php
         $requestedStatus = request('status', 'Original');
-        $isCTCBatch = request('isCTC') == 1;
         $printVersions = ($requestedStatus === 'Batch') ? ['Original', 'Duplicate', 'Triplicate'] : [$requestedStatus];
-        
+
         $versionColors = [
             'Original' => '#ff0000',
             'Duplicate' => '#0000ff',
             'Triplicate' => '#008000',
-            'CTC' => '#ff0000'
         ];
     @endphp
 
@@ -445,7 +443,7 @@
             <div class="inner-content" style="position: relative;">
                 <!-- Version & Security Code (absolutely positioned top-right) -->
                 <div style="position: absolute; top: 10px; right: 10px; text-align: right; font-weight: bold; font-size: 16px; letter-spacing: 0.35em; z-index: 2;">
-                    <span style="color: {{ $versionColors[$version] ?? '#ff0000' }}; text-transform: uppercase;">{{ $version }}</span>
+                    @if($version !== 'CTC')<span style="color: {{ $versionColors[$version] ?? '#ff0000' }}; text-transform: uppercase;">{{ $version }}</span>@endif
                     
                     @if(isset($securityCode))
                         @php

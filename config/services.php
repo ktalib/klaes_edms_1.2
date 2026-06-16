@@ -35,6 +35,12 @@ return [
         'url' => env('AI_FOLDER_SEARCH_URL', 'http://10.50.1.2:7000/'),
     ],
 
+    'paystack' => [
+        'secret'   => env('PAYSTACK_SECRET_KEY'),
+        'public'   => env('PAYSTACK_PUBLIC_KEY'),
+        'base_url' => 'https://api.paystack.co',
+    ],
+
     'ebulksms' => [
         'username' => env('EBULKSMS_USERNAME'),
         'apikey' => env('EBULKSMS_APIKEY'),

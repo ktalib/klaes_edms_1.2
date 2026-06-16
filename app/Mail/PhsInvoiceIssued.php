@@ -24,7 +24,7 @@ class PhsInvoiceIssued extends Mailable
         $number = $this->request->invoice_number ? ' ' . $this->request->invoice_number : '';
 
         return new Envelope(
-            subject: 'Your PHS Invoice' . $number,
+            subject: 'Your PHS Portal Invoice' . $number,
         );
     }
 

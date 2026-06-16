@@ -194,13 +194,52 @@ class MlsFileNoController extends Controller
                 ])
                 ->where('mls_file_no.file_option', 'temporary');
 
-            $unionSql = $query1->toSql() . " UNION ALL " . $query2->toSql();
-            $bindings = array_merge($query1->getBindings(), $query2->getBindings());
+            // Plot Extension transactions: retain the original file number and are
+            // stored in the isolated plot_extensions table. Surface them in the
+            // main list with a distinct "Plot Extension" source badge.
+            $query3 = DB::connection('sqlsrv')
+                ->table('plot_extensions')
+                ->leftJoin('purposes', 'plot_extensions.purpose_id', '=', 'purposes.id')
+                ->select([
+                    'plot_extensions.id as id',
+                    'plot_extensions.original_file_no as mlsfNo',
+                    'plot_extensions.file_name as FileName',
+                    'plot_extensions.created_at as created_at',
+                    'plot_extensions.updated_at as updated_at',
+                    'plot_extensions.location as location',
+                    'plot_extensions.lga as lga',
+                    'plot_extensions.created_by as created_by',
+                    DB::raw('0 as is_deleted'),
+                    DB::raw("'Plot Extension' as SOURCE"),
+                    'plot_extensions.plot_no as plot_no',
+                    'plot_extensions.tp_no as tp_no',
+                    'plot_extensions.tracking_id as tracking_id',
+                    'plot_extensions.created_at as commissioning_date',
+                    DB::raw('NULL as kangisFileNo'),
+                    DB::raw('NULL as NewKANGISFileNo'),
+                    DB::raw('NULL as st_file_no'),
+                    DB::raw('NULL as batch_no'),
+                    'plot_extensions.purpose_id as purpose_id',
+                    'plot_extensions.customer_type as customer_type',
+                    'plot_extensions.land_use as land_use',
+                    DB::raw('NULL as source_instrument_capture_id'),
+                    DB::raw('NULL as source_pra_id'),
+                    DB::raw('NULL as source_temp_fileno'),
+                    DB::raw('NULL as source_prop_id'),
+                    'purposes.name as purpose_name'
+                ])
+                ->where(function ($q) {
+                    $q->whereNull('plot_extensions.is_deleted')->orWhere('plot_extensions.is_deleted', 0);
+                });
+
+            $unionSql = $query1->toSql() . " UNION ALL " . $query2->toSql() . " UNION ALL " . $query3->toSql();
+            $bindings = array_merge($query1->getBindings(), $query2->getBindings(), $query3->getBindings());
 
             $query = DB::connection('sqlsrv')
                 ->table(DB::raw("({$unionSql}) as sub"))
                 ->mergeBindings($query1)
-                ->mergeBindings($query2);
+                ->mergeBindings($query2)
+                ->mergeBindings($query3);
 
             // Apply filters from DataTables
             if ($request->filled('year')) {
@@ -325,6 +364,7 @@ class MlsFileNoController extends Controller
                         'api' => 'bg-teal-100 text-teal-800',
                         'upload' => 'bg-cyan-100 text-cyan-800',
                         'legacy' => 'bg-amber-100 text-amber-800',
+                        'plot extension' => 'bg-rose-100 text-rose-800',
                         'unknown' => 'bg-gray-100 text-gray-800'
                     ];
 
@@ -488,6 +528,45 @@ class MlsFileNoController extends Controller
                         'mls_file_no.created_at as created_at',
                         'mls_file_no.updated_at as updated_at',
                         DB::raw("'MLS_Commissioned' as SOURCE"),
+                        'purposes.name as purpose_name'
+                    ])
+                    ->first();
+            }
+
+            if (!$fileNumber) {
+                // Plot Extension fallback: these retain the original file number but live
+                // only in the isolated plot_extensions table. The original file row may not
+                // exist in fileNumber/mls_file_no (e.g. non-indexed files, or a different
+                // production dataset), so resolve the sheet from the plot extension itself.
+                $fileNumber = DB::connection('sqlsrv')
+                    ->table('plot_extensions')
+                    ->leftJoin('purposes', 'plot_extensions.purpose_id', '=', 'purposes.id')
+                    ->where(function ($query) use ($identifier, $isNumeric) {
+                        $query->where('plot_extensions.original_file_no', $identifier);
+                        if ($isNumeric) {
+                            $query->orWhere('plot_extensions.id', (int) $identifier);
+                        }
+                    })
+                    ->where(function ($query) {
+                        $query->whereNull('plot_extensions.is_deleted')->orWhere('plot_extensions.is_deleted', 0);
+                    })
+                    ->orderByDesc('plot_extensions.id')
+                    ->select([
+                        'plot_extensions.id as id',
+                        'plot_extensions.original_file_no as mlsfNo',
+                        'plot_extensions.file_name as FileName',
+                        'plot_extensions.plot_no as plot_no',
+                        'plot_extensions.tp_no as tp_no',
+                        'plot_extensions.location as location',
+                        'plot_extensions.lga as lga',
+                        'plot_extensions.district as district',
+                        'plot_extensions.tracking_id as tracking_id',
+                        'plot_extensions.purpose_id as purpose_id',
+                        'plot_extensions.customer_type as customer_type',
+                        DB::raw('NULL as batch_no'),
+                        'plot_extensions.created_at as created_at',
+                        'plot_extensions.updated_at as updated_at',
+                        DB::raw("'Plot Extension' as SOURCE"),
                         'purposes.name as purpose_name'
                     ])
                     ->first();

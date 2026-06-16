@@ -4,7 +4,7 @@
         <div class="grid gap-8 sm:grid-cols-2 lg:grid-cols-4 sm:gap-10">
             <div>
                 <div class="flex items-center">
-                    <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES" class="h-11 w-auto object-contain bg-white rounded-md p-1">
+                    <img src="{{ asset('assets/logo/phs-dark-logo.jpeg') }}" alt="PHS Portal" class="h-11 w-auto object-contain">
                 </div>
                 <p class="mt-4 text-sm leading-relaxed text-gray-400">
                     Official government platform for legal search services and land record verification in Kano State.

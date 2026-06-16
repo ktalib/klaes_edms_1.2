@@ -112,6 +112,9 @@
                                     <div class="min-w-0">
                                         <p class="font-bold text-slate-900">{{ $member->name }}</p>
                                         <p class="truncate text-xs text-slate-500">{{ $member->email }}</p>
+                                        @if($member->phone)
+                                            <p class="mt-0.5 flex items-center gap-1 text-xs text-slate-500"><i data-lucide="phone" class="h-3 w-3"></i>{{ $member->phone }}</p>
+                                        @endif
                                         <p class="mt-2 text-[11px] font-bold uppercase text-slate-500">{{ str_replace('_', ' ', $member->user_type) }} / {{ $member->status }}</p>
                                     </div>
                                 </div>

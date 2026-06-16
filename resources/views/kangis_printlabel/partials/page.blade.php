@@ -313,6 +313,14 @@
                                 >
                                     <i data-lucide="refresh-cw" class="h-4 w-4"></i>
                                 </button>
+                                <button
+                                    id="backfillSysBatchNoBtn"
+                                    class="inline-flex items-center gap-1 justify-center rounded-md border border-amber-400 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100"
+                                    title="Backfill missing Registry Batch No from source records"
+                                >
+                                    <i data-lucide="database-zap" class="h-4 w-4"></i>
+                                    Backfill
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -338,8 +346,9 @@
 
                         <div id="batchList" class="rounded-md border">
                             <div class="p-3 bg-gray-50">
-                                <div class="grid grid-cols-7 gap-4 text-sm font-medium">
+                                <div class="grid grid-cols-8 gap-4 text-sm font-medium">
                                     <div>Batch Number</div>
+                                    <div>Registry Batch No</div>
                                     <div>Created Date</div>
                                     <div>Files Count</div>
                                     <div>Format</div>

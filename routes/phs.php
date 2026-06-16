@@ -38,6 +38,16 @@ Route::prefix('phs')->name('phs.')->group(function () {
     Route::get('register/{token}', [PhsAuthController::class, 'showRegisterWithToken'])->name('register.token');
     Route::post('register/{token}', [PhsAuthController::class, 'registerWithToken'])->name('register.token.submit');
 
+    // LSA (License & Service Agreement) — public, secured by per-request token in URL
+    Route::get('lsa/{id}/{token}/download', [PhsOnboardingController::class, 'downloadLsa'])->name('lsa.download');
+    Route::get('lsa/{id}/{token}/upload', [PhsOnboardingController::class, 'showLsaUpload'])->name('lsa.upload.form');
+    Route::post('lsa/{id}/{token}/upload', [PhsOnboardingController::class, 'uploadLsa'])->name('lsa.upload');
+
+    // Paystack payment — public, secured by per-request payment_token in URL
+    Route::get('payment/{id}/{token}', [PhsOnboardingController::class, 'showPaymentPage'])->name('payment.form');
+    Route::post('payment/{id}/{token}/initiate', [PhsOnboardingController::class, 'initiatePaystackPayment'])->name('payment.initiate');
+    Route::get('payment/{id}/{token}/callback', [PhsOnboardingController::class, 'handlePaystackCallback'])->name('payment.callback');
+
     // ---- Authenticated PHS members ----
     Route::middleware('auth:phs')->group(function () {
         Route::post('logout', [PhsAuthController::class, 'logout'])->name('logout');
@@ -45,12 +55,26 @@ Route::prefix('phs')->name('phs.')->group(function () {
         Route::get('dashboard', [PhsDashboardController::class, 'index'])->name('dashboard');
         Route::post('search', [PhsDashboardController::class, 'search'])->name('search');
 
+        // File-number selector data — PHS's own gated copy of the internal
+        // /api/file-numbers/* endpoints. Reuses the tested controller logic but
+        // sits behind auth:phs so only logged-in members can search the registry.
+        Route::prefix('api/file-numbers')->name('api.file-numbers.')
+            ->controller(\App\Http\Controllers\FileNumberApiController::class)
+            ->group(function () {
+                Route::get('mls', 'mls')->name('mls');
+                Route::get('kangis', 'kangis')->name('kangis');
+                Route::get('newkangis', 'newKangis')->name('newkangis');
+                Route::get('lookup', 'lookup')->name('lookup');
+            });
+
         Route::get('slip/data', [PhsSlipController::class, 'data'])->name('slip.data');
         Route::get('slip/print', [PhsSlipController::class, 'print'])->name('slip.print');
 
         Route::get('tokens/transactions', [PhsTokenController::class, 'transactions'])->name('tokens.transactions');
         Route::post('tokens/pay-online', [PhsTokenController::class, 'payOnline'])->name('tokens.payOnline');
         Route::post('tokens/topup', [PhsTokenController::class, 'requestTopup'])->name('tokens.topup');
+        Route::post('tokens/topup/paystack/initiate', [PhsTokenController::class, 'initiateTopupPaystack'])->name('tokens.topup.paystack.initiate');
+        Route::get('tokens/topup/paystack/callback', [PhsTokenController::class, 'handleTopupCallback'])->name('tokens.topup.paystack.callback');
         Route::post('tokens/request-invoice', [PhsTokenController::class, 'requestInvoice'])->name('tokens.requestInvoice');
 
         // Organization / User Management console — super_admin only.

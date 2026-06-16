@@ -20,7 +20,7 @@ class PhsRequestRejected extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Your PHS Onboarding Request Status Update',
+            subject: 'Your PHS Portal Onboarding Request Status Update',
         );
     }
 

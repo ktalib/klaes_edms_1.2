@@ -21,6 +21,14 @@
 </IfModule>
 
 # Increase Upload Limits
+# PHP 8 loads as "php_module" (php8apache2_4); PHP 7/legacy used mod_php7/mod_php.
+<IfModule php_module>
+    php_value upload_max_filesize 512M
+    php_value post_max_size 512M
+    php_value max_execution_time 600
+    php_value max_input_time 600
+    php_value memory_limit 512M
+</IfModule>
 <IfModule mod_php.c>
     php_value upload_max_filesize 512M
     php_value post_max_size 512M

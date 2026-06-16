@@ -641,7 +641,7 @@
                     const serial = $('#mls-extension-serial').val();
 
                     if (prefix && year && serial) {
-                        return `${prefix}-${year}-${serial}-EXTENSION`;
+                        return `${prefix}-${year}-${serial} AND EXTENSION`;
                     }
                     break;
                 }

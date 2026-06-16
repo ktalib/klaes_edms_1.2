@@ -4,12 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
     <title>@yield('title', 'KLAES - Property History Search Portal')</title>
+    <script>
+        (function() {
+            const t = localStorage.getItem('phs-theme');
+            if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches))
+                document.documentElement.classList.add('dark');
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <meta name="csrf-token" content="{{ csrf_token() }}" />
 
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
@@ -26,14 +34,41 @@
                 },
             },
         };
+
+        function phsToggleTheme() {
+            const isDark = document.documentElement.classList.toggle('dark');
+            localStorage.setItem('phs-theme', isDark ? 'dark' : 'light');
+            if (window.lucide) window.lucide.createIcons();
+        }
     </script>
 
     <style>
+        :root {
+            --phs-border: #e5e7eb;
+            --phs-timeline-dot: #3b82f6;
+            --phs-timeline-dot-border: white;
+            --phs-timeline-dot-shadow: #e5e7eb;
+            --phs-spinner-track: #e5e7eb;
+            --phs-spinner-head: #3b82f6;
+            --phs-table-hover: #f8fafc;
+            --phs-preloader-bg: #ffffff;
+        }
+        .dark {
+            --phs-border: #374151;
+            --phs-timeline-dot: #60a5fa;
+            --phs-timeline-dot-border: #1f2937;
+            --phs-timeline-dot-shadow: #374151;
+            --phs-spinner-track: #374151;
+            --phs-spinner-head: #60a5fa;
+            --phs-table-hover: #1f2937;
+            --phs-preloader-bg: #111827;
+        }
+
         .loading-spinner {
             width: 1rem;
             height: 1rem;
-            border: 2px solid #e5e7eb;
-            border-top: 2px solid #3b82f6;
+            border: 2px solid var(--phs-spinner-track);
+            border-top: 2px solid var(--phs-spinner-head);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -44,7 +79,7 @@
         }
 
         .timeline-item {
-            border-left: 2px solid #e5e7eb;
+            border-left: 2px solid var(--phs-border);
             position: relative;
             padding-left: 1.5rem;
             padding-bottom: 1.5rem;
@@ -62,9 +97,9 @@
             width: 1rem;
             height: 1rem;
             border-radius: 50%;
-            background: #3b82f6;
-            border: 2px solid white;
-            box-shadow: 0 0 0 2px #e5e7eb;
+            background: var(--phs-timeline-dot);
+            border: 2px solid var(--phs-timeline-dot-border);
+            box-shadow: 0 0 0 2px var(--phs-timeline-dot-shadow);
         }
 
         .timeline-item.completed::before {
@@ -83,6 +118,9 @@
         .package-card.selected {
             border: 2px solid #3b82f6 !important;
             background-color: #eff6ff;
+        }
+        .dark .package-card.selected {
+            background-color: #1e3a5f;
         }
 
         .page {
@@ -284,7 +322,7 @@
         }
 
         .table-row:hover {
-            background-color: #f8fafc;
+            background-color: var(--phs-table-hover);
         }
 
         .dropzone-active {
@@ -309,7 +347,8 @@
     @yield('extra_styles')
 </head>
 
-<body class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
+<body class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 dark:text-gray-100">
+
     @yield('content')
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -326,5 +365,18 @@
     </script>
 
     @yield('extra_scripts')
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const preloader = document.getElementById('preloader');
+            if (preloader) {
+                setTimeout(function () {
+                    preloader.style.opacity = '0';
+                    preloader.style.transition = 'opacity 0.3s ease';
+                    setTimeout(function () { preloader.style.display = 'none'; }, 300);
+                }, 500);
+            }
+        });
+    </script>
 </body>
 </html>

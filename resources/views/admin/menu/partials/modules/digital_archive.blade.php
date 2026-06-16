@@ -22,6 +22,11 @@
         <span>Track File (Archive)</span>
       </a>
 
+      <a href="{{ route('create-file-tracker.quick-search') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.quick-search') ? 'active' : '' }}">
+        <i data-lucide="search" class="h-4 w-4 text-indigo-500"></i>
+        <span>Quick Search</span>
+      </a>
+
       @if($hasRole('Log a File'))
       <a href="{{ route('create-file-tracker.index') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.index') && !request('url') ? 'active' : '' }}">
         <i data-lucide="file-plus" class="h-4 w-4 text-blue-500"></i>

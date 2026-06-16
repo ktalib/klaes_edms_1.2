@@ -3,6 +3,9 @@
 @section('title', 'PHS Portal - Complete Registration')
 
 @section('content')
+<div id="preloader" style="position:fixed;inset:0;background:var(--phs-preloader-bg,#fff);display:flex;align-items:center;justify-content:center;z-index:9999;">
+    <img src="http://app.klaes.ng/storage/upload/logo/klas_logo.gif" alt="Loading..." style="width:200px;height:auto;">
+</div>
 <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
     <!-- Navigation -->
     <nav class="sticky top-0 z-10 bg-white/80 backdrop-blur-md shadow-sm">

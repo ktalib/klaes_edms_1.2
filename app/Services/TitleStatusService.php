@@ -192,6 +192,7 @@ class TitleStatusService
             'file_indexings'       => 'file_number',
             'instrument_capture'   => 'file_no',
             'deed_registrations'   => 'file_no',
+            'CofO_staging'         => 'mlsFNo',
             default                => 'file_number',
         };
     }

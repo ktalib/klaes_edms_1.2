@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Phs;
 use App\Http\Controllers\Controller;
 use App\Mail\PhsTopupConfirmed;
 use App\Models\Phs\PhsTokenPackage;
+use App\Models\Phs\PhsTokenTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
@@ -105,12 +108,8 @@ class PhsTokenController extends Controller
 
         $method = $data['payment_method'] ?? 'bank_transfer';
 
-        // Auto gateways are not integrated yet — surface the option but don't process.
-        if (in_array($method, ['interswitch', 'paystack'], true)) {
-            return response()->json([
-                'success' => false,
-                'message' => ucfirst($method) . ' payments are coming soon. Please use Bank Transfer for now.',
-            ], 422);
+        if ($method === 'interswitch') {
+            return response()->json(['success' => false, 'message' => 'Interswitch payments are coming soon.'], 422);
         }
 
         $package = $this->resolvePackage($data['package']);
@@ -147,6 +146,118 @@ class PhsTokenController extends Controller
             'pending' => true,
             'token_balance' => (int) $institution->token_balance,
         ]);
+    }
+
+    /** Initiate a Paystack payment for a token top-up. Returns authorization_url. */
+    public function initiateTopupPaystack(Request $request)
+    {
+        $member = Auth::guard('phs')->user();
+        $institution = $member->institution;
+
+        if (!$member->isSuperAdmin()) {
+            return response()->json(['success' => false, 'message' => 'Only an administrator can top up tokens.'], 403);
+        }
+
+        $data = $request->validate([
+            'package'      => ['required', 'string'],
+            'bundle_count' => ['required', 'integer', 'min:1', 'max:10'],
+        ]);
+
+        $package = $this->resolvePackage($data['package']);
+        if (!$package) {
+            return response()->json(['success' => false, 'message' => 'Invalid bundle selected.'], 422);
+        }
+
+        $bundles    = (int) $data['bundle_count'];
+        $tokens     = $bundles * (int) $package['tokens'];
+        $amount     = $bundles * (float) $package['price'];
+        $amountKobo = (int) round($amount * 100);
+        $reference  = 'TOPUP-' . now()->format('Ymd') . '-' . strtoupper(Str::random(8));
+
+        $txn = $institution->transactions()->create([
+            'phs_member_id'      => $member->id,
+            'type'               => 'topup',
+            'tokens'             => $tokens,
+            'balance_after'      => (int) $institution->token_balance,
+            'package_name'       => $package['name'],
+            'amount'             => $amount,
+            'payment_method'     => 'paystack',
+            'status'             => 'pending',
+            'reference_no'       => $reference,
+            'topup_bundle_count' => $bundles,
+            'topup_unit_price'   => $package['price'],
+            'notes'              => $bundles . ' × ' . $package['name'] . ' bundle (Paystack — awaiting payment)',
+        ]);
+
+        $paystackResponse = Http::withToken(config('services.paystack.secret'))
+            ->post('https://api.paystack.co/transaction/initialize', [
+                'email'        => $member->email,
+                'amount'       => $amountKobo,
+                'reference'    => $reference,
+                'callback_url' => route('phs.tokens.topup.paystack.callback'),
+            ]);
+
+        if (!$paystackResponse->successful() || !$paystackResponse->json('data.authorization_url')) {
+            $txn->delete();
+            return response()->json(['success' => false, 'message' => 'Could not reach payment gateway. Please try again.'], 500);
+        }
+
+        return response()->json([
+            'success'           => true,
+            'authorization_url' => $paystackResponse->json('data.authorization_url'),
+        ]);
+    }
+
+    /** Paystack callback after org completes top-up payment. */
+    public function handleTopupCallback(Request $request)
+    {
+        $reference = $request->query('reference') ?? $request->query('trxref');
+
+        if (!$reference) {
+            return redirect()->route('phs.org.index')->with('error', 'Payment reference missing.');
+        }
+
+        $txn = PhsTokenTransaction::where('reference_no', $reference)
+            ->where('payment_method', 'paystack')
+            ->where('type', 'topup')
+            ->first();
+
+        if (!$txn) {
+            return redirect()->route('phs.org.index')->with('error', 'Transaction not found.');
+        }
+
+        if ($txn->status === 'completed') {
+            return redirect()->route('phs.org.index', ['tab' => 'subscription'])
+                ->with('success', 'Payment already processed. Your tokens are available.');
+        }
+
+        $verify = Http::withToken(config('services.paystack.secret'))
+            ->get('https://api.paystack.co/transaction/verify/' . urlencode($reference));
+
+        if (!$verify->successful() || $verify->json('data.status') !== 'success') {
+            $txn->update(['status' => 'failed', 'notes' => $txn->notes . ' | Paystack verification failed']);
+            return redirect()->route('phs.org.index')->with('error', 'Payment verification failed. Contact support with reference: ' . $reference);
+        }
+
+        $institution = $txn->institution;
+
+        DB::connection('sqlsrv')->transaction(function () use ($txn, $institution) {
+            $newBalance = (int) $institution->token_balance + (int) $txn->tokens;
+            $institution->update(['token_balance' => $newBalance]);
+            $txn->update([
+                'status'        => 'completed',
+                'balance_after' => $newBalance,
+                'notes'         => $txn->notes . ' | Paystack payment confirmed',
+            ]);
+        });
+
+        try {
+            $txn->refresh();
+            Mail::to($institution->email)->send(new PhsTopupConfirmed($txn));
+        } catch (\Throwable) {}
+
+        return redirect()->route('phs.org.index', ['tab' => 'subscription'])
+            ->with('success', number_format((int) $txn->tokens) . ' tokens have been credited to your account. Reference: ' . $reference);
     }
 
     /**

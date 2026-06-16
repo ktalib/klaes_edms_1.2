@@ -192,12 +192,31 @@
             </a>
           </div>
 
-          <!-- v. OSS Recommendation   -->
-          <a href="{{ route('land-recommendations.index', ['type' => 'OSS']) }}"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('land-recommendations.index') && strtoupper((string) request()->query('type')) === 'OSS' ? 'active' : '' }}">
-            <i data-lucide="check-circle" class="h-3.5 w-3.5 text-orange-400"></i>
-            <span>OSS Recommendation</span>
-          </a>
+          <!-- v. OSS Letter of Grant -->
+          <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+            data-section="ossLetterOfGrant-oss">
+            <div class="flex items-center gap-2">
+              <i data-lucide="scroll" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>OSS Letter of Grant</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-3.5 w-3.5 transition-transform duration-200" data-chevron="ossLetterOfGrant-oss"></i>
+          </div>
+
+          <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="ossLetterOfGrant-oss">
+            <!-- 1. OSS Recommendation -->
+            <a href="{{ route('land-recommendations.index', ['type' => 'OSS']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('land-recommendations.index') && strtoupper((string) request()->query('type')) === 'OSS' ? 'active' : '' }}">
+              <i data-lucide="check-circle" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>OSS Recommendation</span>
+            </a>
+
+            <!-- 2. OSS RofO -->
+            <a href="/land-rofos?=oss-rofo&view=only"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->is('land-rofos') && request()->query('view') === 'only' ? 'active' : '' }}">
+              <i data-lucide="file-check" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>OSS RofO</span>
+            </a>
+          </div>
         </div>
       @endif
 
@@ -220,7 +239,7 @@
           </a>
 
           <!-- ii. RofO -->
-          <a href="{{ route('land-rofos.index') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('land-rofos.index') ? 'active' : '' }}">
+          <a href="{{ route('land-rofos.index') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('land-rofos.index') && request()->query('view') !== 'only' ? 'active' : '' }}">
             <i data-lucide="file-check" class="h-3.5 w-3.5 text-orange-400"></i>
             <span>RofO</span>
           </a>
@@ -320,11 +339,12 @@
           </a>
 
           <!-- iv. Parcel Update -->
+          @if($hasRole('Parcel Update-New'))
           <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
             data-section="parcelUpdate-lands">
             <div class="flex items-center gap-2">
               <i data-lucide="map" class="h-3.5 w-3.5 text-orange-400"></i>
-              <span>Parcel Update</span>
+              <span>Parcel Update-New</span>
             </div>
             <i data-lucide="chevron-right" class="h-3.5 w-3.5 transition-transform duration-200" data-chevron="parcelUpdate-lands"></i>
           </div>
@@ -357,7 +377,15 @@
               <i data-lucide="scissors" class="h-3.5 w-3.5 text-orange-400"></i>
               <span>Plot Separation</span>
             </a>
+
+            <!-- 5. Parcel Update-Legacy (view only) -->
+            <a href="{{ route('admin.manual-linkage.index') }}?url=land_view"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('admin.manual-linkage.*') && request()->query('url') === 'land_view' ? 'active' : '' }}">
+              <i data-lucide="link" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>Parcel Update-Legacy</span>
+            </a>
           </div>
+          @endif
 
           <!-- iii. Title Status Update -->
           <a href="{{ route('title-status.index') }}?url=land"

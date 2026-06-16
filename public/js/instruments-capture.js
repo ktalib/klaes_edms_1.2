@@ -1787,6 +1787,14 @@ document.addEventListener('DOMContentLoaded', function () {
             if (typeof window.applyPrimaryFileSelection === 'function') {
                 window.applyPrimaryFileSelection({ fileno: fileNo, mlsFileno: fileNo }, 'instruments-page');
             }
+
+            // Backfill the property details from any existing record on this file
+            // so capturing the missing mortgage starts from the file's known
+            // location/plot/land-use rather than a blank form.
+            if (window.PraFormController && window.PraFormController.controller
+                && typeof window.PraFormController.controller.autoBackfillPropertyDetailsFromFile === 'function') {
+                window.PraFormController.controller.autoBackfillPropertyDetailsFromFile(fileNo);
+            }
         } else {
             console.error('Property form dialog modal not found in DOM.');
         }

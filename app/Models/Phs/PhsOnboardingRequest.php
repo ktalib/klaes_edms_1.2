@@ -8,11 +8,15 @@ class PhsOnboardingRequest extends Model
 {
     protected $connection = 'sqlsrv';
 
-    const STATUS_PENDING = 'pending';
-    const STATUS_PAYMENT_RECEIVED = 'payment_received';
-    const STATUS_APPROVED = 'approved';
-    const STATUS_REJECTED = 'rejected';
-    const STATUS_ACTIVATED = 'activated';
+    const STATUS_PENDING             = 'pending';
+    const STATUS_DOCUMENTS_APPROVED  = 'documents_approved';
+    const STATUS_PAYMENT_PENDING     = 'payment_pending';
+    const STATUS_PAYMENT_RECEIVED    = 'payment_received';
+    const STATUS_SLA_UPLOADED        = 'sla_uploaded';
+    const STATUS_SLA_APPROVED        = 'sla_approved';
+    const STATUS_APPROVED            = 'approved';
+    const STATUS_REJECTED            = 'rejected';
+    const STATUS_ACTIVATED           = 'activated';
 
     const PAYMENT_NOT_PAID = 'not_paid';
     const PAYMENT_INCOMPLETE = 'incomplete';
@@ -54,6 +58,18 @@ class PhsOnboardingRequest extends Model
         'payment_verified_at',
         'payment_verified_by',
         'payment_verification_notes',
+        'request_letter_path',
+        'lsa_token',
+        'lsa_signed_document_path',
+        'lsa_signed_at',
+        'payment_token',
+        'legal_approved_at',
+        'legal_approved_by',
+        'legal_rejection_reason',
+        'legal_sla_approved_at',
+        'legal_sla_approved_by',
+        'paystack_reference',
+        'paystack_amount',
     ];
 
     protected $casts = [
@@ -67,6 +83,10 @@ class PhsOnboardingRequest extends Model
         'verified_amount' => 'decimal:2',
         'outstanding_amount' => 'decimal:2',
         'payment_verified_at' => 'datetime',
+        'lsa_signed_at' => 'datetime',
+        'legal_approved_at' => 'datetime',
+        'legal_sla_approved_at' => 'datetime',
+        'paystack_amount' => 'decimal:2',
     ];
 
     /** Staff (main app user) who verified the payment. */
@@ -134,7 +154,7 @@ class PhsOnboardingRequest extends Model
 
     public function canRegister(): bool
     {
-        if ($this->status !== self::STATUS_APPROVED) {
+        if ($this->status !== self::STATUS_APPROVED && $this->status !== self::STATUS_ACTIVATED) {
             return false;
         }
 

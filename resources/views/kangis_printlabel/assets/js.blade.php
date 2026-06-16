@@ -541,13 +541,14 @@ document.addEventListener('DOMContentLoaded', function() {
             meta.className = 'label-preview-meta';
             var fn = document.createElement('div');
             fn.className = 'label-preview-file';
-            fn.textContent = entry.primaryFileNumber || entry.fileNumber || '—';
+            fn.textContent = entry.secondaryFileNumber || entry.primaryFileNumber || entry.fileNumber || '—';
             meta.appendChild(fn);
 
-            if (entry.secondaryFileNumber && entry.secondaryFileNumber !== (entry.primaryFileNumber || entry.fileNumber)) {
+            var _primaryText = entry.primaryFileNumber || entry.fileNumber;
+            if (_primaryText && _primaryText !== (entry.secondaryFileNumber || '')) {
                 var sfn = document.createElement('div');
                 sfn.className = 'label-preview-file !text-[10px] !text-gray-500 !font-normal !mt-[-2px]';
-                sfn.textContent = entry.secondaryFileNumber;
+                sfn.textContent = _primaryText;
                 meta.appendChild(sfn);
             }
 
@@ -737,8 +738,9 @@ document.addEventListener('DOMContentLoaded', function() {
             var cn = batch.creator ? batch.creator.name : 'Unknown';
             var fc = batch.batch_items_count || (batch.batch_items?batch.batch_items.length:0) || batch.generated_count || 0;
 
-            html += '<div class="p-3 grid grid-cols-7 gap-4 hover:bg-gray-50">'+
+            html += '<div class="p-3 grid grid-cols-8 gap-4 hover:bg-gray-50">'+
                 '<div class="font-medium">'+batch.batch_number+'</div>'+
+                '<div class="text-sm">'+(batch.sys_batch_no || '—')+'</div>'+
                 '<div class="text-sm">'+dt+'</div>'+
                 '<div class="text-sm">'+fc+'</div>'+
                 '<div class="text-sm">QR Code</div>'+
@@ -1232,6 +1234,31 @@ document.addEventListener('DOMContentLoaded', function() {
             state.batchSearchQuery = '';
             if (batchSearchInput) batchSearchInput.value = '';
             fetchGeneratedBatches('', 1);
+        });
+    }
+
+    var backfillBtn = document.getElementById('backfillSysBatchNoBtn');
+    if (backfillBtn) {
+        backfillBtn.addEventListener('click', function() {
+            if (!confirm('Backfill Registry Batch No for all batches where it is missing? This reads from the source kangis_grouping records.')) return;
+            backfillBtn.disabled = true;
+            showLoading('Backfilling registry batch numbers...');
+            fetch("{{ route('kangis-printlabel.api.batches.backfill') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+            })
+            .then(function(r){ return r.json(); })
+            .then(function(d) {
+                hideLoading();
+                backfillBtn.disabled = false;
+                if (d.success) {
+                    showSuccess('Backfill complete. Remaining without batch no: ' + d.remaining);
+                    fetchGeneratedBatches('', 1);
+                } else {
+                    showError(d.message || 'Backfill failed.');
+                }
+            })
+            .catch(function(e){ hideLoading(); backfillBtn.disabled = false; showError('Backfill error: ' + e.message); });
         });
     }
 

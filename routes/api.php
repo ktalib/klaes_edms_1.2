@@ -432,6 +432,8 @@ Route::middleware('auth:sanctum')->prefix('file-trackers')->controller(\App\Http
     // Basic CRUD operations
     Route::get('/', 'index')->name('api.file-trackers.index');
     Route::post('/', 'store')->name('api.file-trackers.store');
+    // Named static routes must come before the /{id} wildcard
+    Route::get('/check-logout-status', 'checkLogoutStatus')->name('api.file-trackers.check-logout-status');
     Route::get('/{id}', 'show')->name('api.file-trackers.show');
     Route::put('/{id}', 'update')->name('api.file-trackers.update');
     Route::delete('/{id}', 'destroy')->name('api.file-trackers.destroy');

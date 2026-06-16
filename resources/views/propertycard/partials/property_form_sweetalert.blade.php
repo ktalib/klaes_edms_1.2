@@ -46,7 +46,7 @@ function buildDuplicateDetailsHtml(dup, dupType) {
 }
 
 // Disable and grey out every interactive control inside the form, then show a banner
-function lockPropertyRecordForm(form, message, recordId = null) {
+function lockPropertyRecordForm(form, message, recordId = null, sourceType = null) {
     if (!form || form.dataset.duplicateLocked === '1') return;
     form.dataset.duplicateLocked = '1';
 
@@ -107,7 +107,7 @@ function lockPropertyRecordForm(form, message, recordId = null) {
 
         const updateBtn = banner.querySelector('#duplicate-lock-update');
         if (updateBtn && recordId) {
-            updateBtn.addEventListener('click', () => prepareFormForUpdateFromDuplicate(form, recordId));
+            updateBtn.addEventListener('click', () => prepareFormForUpdateFromDuplicate(form, recordId, sourceType));
         }
     }
 }
@@ -122,7 +122,11 @@ function unlockPropertyRecordForm(form, opts = {}) {
     });
     form.classList.remove('opacity-60', 'pointer-events-none');
     form.style.filter = '';
-    if (!silent) form.reset();
+    if (!silent) {
+        form.reset();
+        const sourceInput = form.querySelector('input[name="update_source"]');
+        if (sourceInput) sourceInput.value = '';
+    }
     const banner = document.getElementById('duplicate-lock-banner');
     if (banner) banner.remove();
     if (!silent) {
@@ -141,7 +145,7 @@ function handleDuplicateDetected(errData, form) {
         if (dupType === 'cofo_staging') {
             clearPraDuplicateCard();
             renderCofoDuplicateCard(form, [dup], lock);
-            if (lock) lockPropertyRecordForm(form, errData.message, dup.id);
+            if (lock) lockPropertyRecordForm(form, errData.message, dup.id, 'cofo_staging');
         } else {
             // PRA duplicate: show card then enter update mode directly — do NOT block the form.
             clearCofoDuplicateCard();
@@ -198,7 +202,7 @@ function handleDuplicateDetected(errData, form) {
 /**
  * Transitions the 'Add' form into 'Update' mode using the duplicate record's ID.
  */
-function prepareFormForUpdateFromDuplicate(form, recordId) {
+function prepareFormForUpdateFromDuplicate(form, recordId, sourceType = null) {
     if (!form || !recordId) return;
 
     // 1. Unlock the form but do NOT reset it (keep user's data)
@@ -211,6 +215,22 @@ function prepareFormForUpdateFromDuplicate(form, recordId) {
 
     if (propertyIdInput) propertyIdInput.value = recordId;
     if (formActionInput) formActionInput.value = 'update';
+
+    // 2b. CofO duplicates live in the CofO_staging table, not `pra`. Signal the
+    // target table to the backend `update()` handler via a hidden field so the
+    // edit writes back to the correct row instead of the pra table.
+    let sourceInput = form.querySelector('input[name="update_source"]');
+    if (sourceType === 'cofo_staging') {
+        if (!sourceInput) {
+            sourceInput = document.createElement('input');
+            sourceInput.type = 'hidden';
+            sourceInput.name = 'update_source';
+            form.appendChild(sourceInput);
+        }
+        sourceInput.value = 'cofo_staging';
+    } else if (sourceInput) {
+        sourceInput.value = '';
+    }
 
     // 3. Update form action URL for the specific record
     if (updateBase) {
@@ -236,7 +256,11 @@ function prepareFormForUpdateFromDuplicate(form, recordId) {
     const label = form.querySelector('[data-role="update-label"]');
     if (banner) {
         banner.classList.remove('hidden');
-        if (label) label.textContent = recordId;
+        if (label) {
+            label.textContent = sourceType === 'cofo_staging'
+                ? 'CofO #' + recordId
+                : recordId;
+        }
     }
 
     // 5. Enhance the submit button to reflect update mode
@@ -806,9 +830,14 @@ async function runCofoDuplicatePreCheck(form, { force = false } = {}) {
         if (data.duplicate_type === 'cofo_staging') {
             clearPraDuplicateCard();
             renderCofoDuplicateCard(form, matches, shouldLock);
-            // CofO duplicates retain lock behaviour.
+            // CofO duplicates retain lock behaviour, but expose an "Update Existing
+            // Record" action so the user can edit the matching CofO instead of only
+            // being able to start over. The locking record's id comes back in
+            // `data.duplicate`; fall back to the first match if absent.
+            const cofoDupId = (data.duplicate && data.duplicate.id)
+                || (matches.length > 0 ? matches[0].id : null);
             if (shouldLock && form.dataset.duplicateLocked !== '1') {
-                lockPropertyRecordForm(form, data.message);
+                lockPropertyRecordForm(form, data.message, cofoDupId, 'cofo_staging');
             } else if (!shouldLock && form.dataset.duplicateLocked === '1') {
                 unlockPropertyRecordForm(form, { silent: true });
             }

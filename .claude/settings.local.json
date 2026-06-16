@@ -136,10 +136,27 @@
       "Bash(php -l app/Mail/PhsOnboardingRequestSubmitted.php)",
       "Bash(php --ini)",
       "Bash(php -r \"echo 'curl.cainfo=' . ini_get\\('curl.cainfo'\\) . PHP_EOL . 'openssl.cafile=' . ini_get\\('openssl.cafile'\\) . PHP_EOL;\")",
-      "Read(//c/wamp64/**)"
+      "Read(//c/wamp64/**)",
+      "Bash(node --check public/js/fileindexing/create-indexing-dialog.js)",
+      "Bash(php -l app/Http/Controllers/MlsPlotExtensionController.php)",
+      "Bash(php -l app/Models/PlotExtension.php)",
+      "Bash(php -l app/Http/Controllers/MlsFileNoController.php)",
+      "Bash(php -l database/migrations/2026_06_11_100000_create_plot_extensions_table.php)",
+      "Bash(php -l routes/mls_fileno.php)",
+      "Bash(Select-String -Pattern \"plot-extension\")",
+      "Bash(php -l app/Http/Controllers/FileNumberController.php)",
+      "Bash(php -l app/Http/Controllers/ManualFileLinkageController.php)",
+      "Bash(Get-ChildItem -Path \"c:\\\\wamp64\\\\www\\\\klaes\\\\database\\\\migrations\" -Filter \"*file_tracker*\" -Recurse)",
+      "PowerShell(php artisan migrate --path=database/migrations/2026_06_15_000000_add_cofo_registration_fields_to_title_status_applications.php --force)",
+      "PowerShell(php artisan tinker --execute=\"echo implode\\(', ', array_filter\\(\\\\Illuminate\\\\Support\\\\Facades\\\\Schema::connection\\('sqlsrv'\\)->getColumnListing\\('title_status_applications'\\), fn\\(\\\\$c\\) => in_array\\(\\\\$c, ['cofo_number','title_no','reg_page','reg_volume','date_of_issue']\\)\\)\\);\")",
+      "Bash(cat > *)",
+      "Bash(php -l app/Models/DigitalFileRequest.php)",
+      "Bash(rm -f \"C:\\\\Users\\\\admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--wamp64-www-klaes\\\\2fdda8aa-550e-48ee-9650-68ad48e77d92\\\\tasks\\\\br03tkdkr.output\" 2>/dev/null; echo done)"
     ],
     "additionalDirectories": [
-      "C:\\wamp64\\www\\klaes\\resources\\views\\special_assignment"
+      "C:\\wamp64\\www\\klaes\\resources\\views\\special_assignment",
+      "\\tmp",
+      "C:\\Users\\admin\\AppData\\Local\\Temp\\claude\\c--wamp64-www-klaes\\2fdda8aa-550e-48ee-9650-68ad48e77d92\\tasks"
     ]
   }
 }

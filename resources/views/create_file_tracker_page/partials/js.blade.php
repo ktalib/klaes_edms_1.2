@@ -2264,6 +2264,31 @@
         fileNameField.addClass('metadata-loading metadata-locked').prop('disabled', true);
     }
 
+    function checkFileLogoutStatus(fileNumber) {
+        const banner = document.getElementById('file-logout-warning');
+        if (!banner) return;
+        banner.classList.add('hidden');
+        if (!fileNumber) return;
+        $.ajax({
+            url: '/create-file-tracker/check-logout-status',
+            method: 'GET',
+            data: { file_number: fileNumber },
+            success: function (resp) {
+                if (!resp.is_logged_out) return;
+                const office = resp.current_office
+                    ? ` — currently with <strong>${resp.current_office}</strong>`
+                    : '';
+                const el = document.getElementById('file-logout-warning-text');
+                if (el) el.innerHTML = `File <strong>${fileNumber}</strong> is already logged out${office}.`;
+                banner.classList.remove('hidden');
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            },
+            error: function (xhr) {
+                console.warn('[logout-check] failed', xhr.status, xhr.responseText);
+            },
+        });
+    }
+
     function applyMetadataResult(data, context = {}) {
         const trackingField = $('#tracking-id');
         const fileNameField = $('#file-name');
@@ -2318,6 +2343,8 @@
             $('#file-no').val(resolvedFileNumber);
             $('#sidebar-file-no').text(resolvedFileNumber);
         }
+
+        checkFileLogoutStatus(resolvedFileNumber || '');
 
         $('#sidebar-tracking-id').text(data.tracking_id || '-');
 
@@ -4471,9 +4498,22 @@
                 }
             },
             error: function (xhr) {
+                const resp = xhr.responseJSON || {};
+                if (resp.code === 'file_already_logged_out') {
+                    const trackerId = resp.existing_tracking_id ? ` (Tracker: <strong>${resp.existing_tracking_id}</strong>)` : '';
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'File Already Logged Out',
+                        html: `<p class="text-gray-700">This file is currently logged out to another office${trackerId}.</p>
+                               <p class="mt-3 text-sm text-gray-500">To proceed, the file must first be <strong>logged back in to the registry</strong>, then you can log it out to a new office.</p>`,
+                        confirmButtonText: 'OK, I understand',
+                        confirmButtonColor: '#d97706',
+                    });
+                    return;
+                }
                 let errorMessage = 'Error creating file tracker';
-                if (xhr.responseJSON && xhr.responseJSON.message) {
-                    errorMessage = xhr.responseJSON.message;
+                if (resp.message) {
+                    errorMessage = resp.message;
                 } else if (xhr.responseText) {
                     errorMessage = xhr.responseText;
                 }
@@ -7100,6 +7140,8 @@
 
     // Reset form
     function resetForm() {
+        const logoutBanner = document.getElementById('file-logout-warning');
+        if (logoutBanner) logoutBanner.classList.add('hidden');
         document.getElementById('file-no').value = '';
         document.getElementById('file-name').value = '';
         document.getElementById('file-priority').value = 'MEDIUM';
@@ -7193,6 +7235,11 @@
             $(this).val('').trigger('change');
             openNewOfficerDialog();
         }
+    });
+
+    // Dismiss the file-logout warning banner
+    document.getElementById('file-logout-warning-dismiss')?.addEventListener('click', function () {
+        document.getElementById('file-logout-warning')?.classList.add('hidden');
     });
 
     // Event listeners (form buttons only exist when Create tab is present)

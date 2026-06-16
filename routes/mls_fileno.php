@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\MlsFileNoController;
+use App\Http\Controllers\MlsPlotExtensionController;
 
 // File Number Management Routes (Global Management)
 // NOTE: This /mls-fileno route provides a global view of ALL file numbers (MLS, ST, KANGIS, etc.)
@@ -20,6 +21,7 @@ Route::prefix('/mls-fileno')->middleware(['auth'])->group(function () {
     // New routes for land-use-based serial numbering (MUST come before /{id})
     Route::get('/serial-status', [MlsFileNoController::class, 'getSerialStatus'])->name('mls-fileno.serial-status');
     Route::post('/generate', [MlsFileNoController::class, 'generateMlsFileNumber'])->name('mls-fileno.generate');
+    Route::post('/plot-extension', [MlsPlotExtensionController::class, 'store'])->name('mls-fileno.plot-extension.store');
     Route::post('/generate-batch', [MlsFileNoController::class, 'generateBatch'])->name('mls-fileno.generate-batch');
     Route::post('/initialize-serial', [MlsFileNoController::class, 'initializeSerial'])->name('mls-fileno.initialize-serial');
     Route::post('/batch-records', [MlsFileNoController::class, 'getBatchRecords'])->name('mls-fileno.batch-records');

@@ -36,6 +36,7 @@
                 <table class="w-full min-w-[860px] text-sm">
                     <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                         <tr>
+                            <th class="px-5 py-3 text-left w-10">S/N</th>
                             <th class="px-5 py-3 text-left">Organization</th>
                             <th class="px-5 py-3 text-right">Balance</th>
                             <th class="px-5 py-3 text-right">Allocated</th>
@@ -48,6 +49,7 @@
                     <tbody class="divide-y divide-slate-100">
                         @forelse ($wallets as $w)
                             <tr class="hover:bg-slate-50/60">
+                                <td class="px-5 py-3 text-slate-400 text-xs">{{ $loop->iteration }}</td>
                                 <td class="px-5 py-3 font-semibold text-slate-900">{{ $w['inst']->name }}</td>
                                 <td class="px-5 py-3 text-right font-bold text-slate-900">{{ number_format($w['balance']) }}</td>
                                 <td class="px-5 py-3 text-right text-slate-700">{{ number_format($w['allocated']) }}</td>
@@ -75,7 +77,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="7" class="px-5 py-10 text-center text-slate-500">No organizations yet.</td></tr>
+                            <tr><td colspan="8" class="px-5 py-10 text-center text-slate-500">No organizations yet.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

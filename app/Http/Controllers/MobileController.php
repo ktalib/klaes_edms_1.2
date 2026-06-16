@@ -70,8 +70,9 @@ class MobileController extends Controller
             ->get(['id', 'first_name', 'last_name', 'username']);
 
         $user = Auth::user();
+        $isScbMonitor = ($user->fr_permissions ?? '') === 'SCB';
 
-        return view('mobile.dashboard', compact('offices', 'officers', 'user'));
+        return view('mobile.dashboard', compact('offices', 'officers', 'user', 'isScbMonitor'));
     }
 
     /**
@@ -80,8 +81,10 @@ class MobileController extends Controller
     public function digitalRequest()
     {
         $user = Auth::user();
+        // Super Admins can skip the mandatory destination-office selection.
+        $isSuperAdmin = $user->isSuperAdmin();
 
-        return view('mobile.digital_request', compact('user'));
+        return view('mobile.digital_request', compact('user', 'isSuperAdmin'));
     }
 
     /**

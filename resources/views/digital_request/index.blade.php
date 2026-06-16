@@ -8,6 +8,18 @@
     @include('admin.header')
 
     {{-- ── Module Banner ───────────────────────────────────────────────────── --}}
+    @if(!empty($isKangis))
+    <div class="bg-gradient-to-r from-orange-600 via-orange-500 to-orange-700 px-6 py-3 flex items-center gap-3 shadow-sm">
+        <i data-lucide="send" class="h-5 w-5 text-white shrink-0"></i>
+        <div class="flex items-center gap-2">
+            <span class="text-white font-bold text-sm uppercase tracking-widest">KANGIS</span>
+            <span class="text-orange-100 text-sm">·</span>
+            <span class="text-white text-sm font-medium">Digital File Request</span>
+            <span class="text-orange-100 text-sm">·</span>
+            <span class="text-orange-100 text-sm">Request a Physical File</span>
+        </div>
+    </div>
+    @else
     <div class="bg-gradient-to-r from-[#450a0a] via-[#6b1010] to-[#450a0a] px-6 py-3 flex items-center gap-3 shadow-sm">
         <i data-lucide="send" class="h-5 w-5 text-white shrink-0"></i>
         <div class="flex items-center gap-2">
@@ -18,6 +30,7 @@
             <span class="text-red-200 text-sm">Request a Physical File</span>
         </div>
     </div>
+    @endif
 
     <div class="p-6">
         <div class="container mx-auto py-6 space-y-6">
@@ -500,6 +513,7 @@
         const dateTo   = $('#dr-date-to').value;
 
         const params = new URLSearchParams({ page, per_page: 25, search, status, date_from: dateFrom, date_to: dateTo });
+        @if(!empty($isKangis)) params.set('kangis', '1'); @endif
         const tbody  = $('#dr-table-body');
         tbody.innerHTML = '<tr><td colspan="9" class="px-4 py-10 text-center text-gray-400 text-sm">Loading…</td></tr>';
 

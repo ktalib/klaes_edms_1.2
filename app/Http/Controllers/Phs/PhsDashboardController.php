@@ -70,8 +70,58 @@ class PhsDashboardController extends Controller
             ], 422);
         }
 
-        // Token spend model: super admins draw from the organization pool (they
-        // manage it); regular members spend their own carved-out allocation.
+        // Pre-flight: reject immediately if the member has no tokens at all (avoids
+        // a wasted search query when the balance is already zero).
+        $currentBalance = $member->isSuperAdmin()
+            ? (int) $institution->token_balance
+            : (int) $member->allocated_tokens;
+
+        if ($currentBalance < 1) {
+            return response()->json([
+                'success' => false,
+                'insufficient_tokens' => true,
+                'message' => $member->isSuperAdmin()
+                    ? 'Insufficient organization tokens. Please purchase more to continue.'
+                    : 'You have no tokens left. Please contact your organization administrator for more.',
+                'token_balance' => $currentBalance,
+            ], 422);
+        }
+
+        // Run the search BEFORE deducting — tokens are only spent when results exist.
+        $results = $this->searchService->search(['query' => $query]);
+        $transactions = $results['transactions'] ?? [];
+
+        // No results → return immediately, no charge.
+        if (empty($transactions)) {
+            PhsSearchLog::create([
+                'phs_institution_id' => $institution->id,
+                'phs_member_id' => $member->id,
+                'query' => Str::limit($query, 250),
+                'file_number' => $results['file_index_number'] ?? $query,
+                'result_count' => 0,
+                'reference_no' => null,
+                'tokens_used' => 0,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'reference_no' => null,
+                'token_balance' => $currentBalance,
+                'transactions' => [],
+                'file_title' => $results['file_title'] ?? null,
+                'file_district' => $results['file_district'] ?? null,
+                'file_lga' => $results['file_lga'] ?? null,
+                'file_land_use' => $results['file_land_use'] ?? null,
+                'file_plot_number' => $results['file_plot_number'] ?? null,
+                'file_tp_no' => $results['file_tp_no'] ?? null,
+                'file_size' => $results['file_size'] ?? null,
+                'file_index_number' => $results['file_index_number'] ?? null,
+                'total_count' => 0,
+                'no_charge' => true,
+            ]);
+        }
+
+        // Results found — now deduct 1 token.
         $reference = 'PHS/' . now()->format('Y') . '/' . strtoupper(Str::random(6));
 
         if ($member->isSuperAdmin()) {
@@ -90,27 +140,14 @@ class PhsDashboardController extends Controller
                 ]) > 0;
         }
 
-        if (!$debited) {
-            return response()->json([
-                'success' => false,
-                'insufficient_tokens' => true,
-                'message' => $member->isSuperAdmin()
-                    ? 'Insufficient organization tokens. Please purchase more to continue.'
-                    : 'You have no tokens left. Please contact your organization administrator for more.',
-                'token_balance' => $member->isSuperAdmin()
-                    ? (int) $institution->fresh()->token_balance
-                    : (int) $member->fresh()->allocated_tokens,
-            ], 422);
-        }
-
-        if ($member->isSuperAdmin()) {
+        // Edge case: balance was consumed by a concurrent request between the
+        // pre-flight check and the actual deduction. Return results anyway — the
+        // search already ran and the user should see what they asked for.
+        if ($debited && $member->isSuperAdmin()) {
             $member->increment('tokens_used');
         }
         $member->refresh();
         $institution->refresh();
-
-        $results = $this->searchService->search(['query' => $query]);
-        $transactions = $results['transactions'] ?? [];
 
         PhsSearchLog::create([
             'phs_institution_id' => $institution->id,
@@ -119,7 +156,7 @@ class PhsDashboardController extends Controller
             'file_number' => $results['file_index_number'] ?? $query,
             'result_count' => count($transactions),
             'reference_no' => $reference,
-            'tokens_used' => 1,
+            'tokens_used' => $debited ? 1 : 0,
         ]);
 
         return response()->json([

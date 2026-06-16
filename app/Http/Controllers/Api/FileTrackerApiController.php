@@ -24,6 +24,51 @@ class FileTrackerApiController extends Controller
     ) {
     }
     /**
+     * Check whether a file is currently logged out.
+     * A file is "logged out" when no movement entry has status='active' with an empty log_out_date.
+     * This covers both: (a) fresh trackers where the origin entry has log_out_date set, and
+     * (b) trackers where completeMovement was called and the entry became 'completed'.
+     * GET /api/file-trackers/check-logout-status?file_number=XXX
+     */
+    public function checkLogoutStatus(Request $request): JsonResponse
+    {
+        $fileNumber = trim((string) $request->get('file_number', ''));
+
+        if ($fileNumber === '') {
+            return response()->json(['is_logged_out' => false]);
+        }
+
+        $existingTrackers = FileTracker::where('file_number', $fileNumber)
+            ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(status,'')))) NOT IN ('COMPLETED', 'CANCELLED')")
+            ->get();
+
+        foreach ($existingTrackers as $existing) {
+            $log = $existing->movement_log ?? [];
+            if (empty($log)) {
+                continue;
+            }
+
+            $entries = collect($log);
+
+            // File is "checked in" only if an active entry has no log_out_date yet.
+            $currentlyCheckedIn = $entries->contains(
+                fn($e) => strtolower($e['status'] ?? '') === 'active' && empty($e['log_out_date'])
+            );
+
+            if (!$currentlyCheckedIn) {
+                $lastEntry = $entries->last();
+                return response()->json([
+                    'is_logged_out'  => true,
+                    'tracking_id'    => $existing->tracking_id,
+                    'current_office' => $existing->current_office_name ?? ($lastEntry['office_name'] ?? null),
+                ]);
+            }
+        }
+
+        return response()->json(['is_logged_out' => false]);
+    }
+
+    /**
      * Get all file trackers with optional filtering
      * GET /api/file-trackers
      */
@@ -158,6 +203,37 @@ class FileTrackerApiController extends Controller
                     'message' => 'Validation failed',
                     'errors' => $validator->errors()
                 ], 422);
+            }
+
+            // Check if the file is already logged out (no active movement entry on an existing tracker).
+            // A file is "logged out" when it has been checked out to another office and has not been
+            // logged back in — indicated by at least one 'completed' log entry but no 'active' one.
+            $fileNumber = trim((string) ($request->input('file_number', '')));
+            if ($fileNumber !== '') {
+                $existingTrackers = FileTracker::where('file_number', $fileNumber)
+                    ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(status,'')))) NOT IN ('COMPLETED', 'CANCELLED')")
+                    ->get();
+
+                foreach ($existingTrackers as $existing) {
+                    $log = $existing->movement_log ?? [];
+                    if (empty($log)) {
+                        continue;
+                    }
+
+                    $entries = collect($log);
+                    $currentlyCheckedIn = $entries->contains(
+                        fn($e) => strtolower($e['status'] ?? '') === 'active' && empty($e['log_out_date'])
+                    );
+
+                    if (!$currentlyCheckedIn) {
+                        return response()->json([
+                            'success'              => false,
+                            'message'              => "File \"{$fileNumber}\" is already logged out (Tracker: {$existing->tracking_id}). Please log the file back into the registry before logging it out to a new office.",
+                            'code'                 => 'file_already_logged_out',
+                            'existing_tracking_id' => $existing->tracking_id,
+                        ], 422);
+                    }
+                }
             }
 
             DB::beginTransaction();

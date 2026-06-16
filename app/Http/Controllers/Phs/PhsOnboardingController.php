@@ -5,12 +5,16 @@ namespace App\Http\Controllers\Phs;
 use App\Http\Controllers\Controller;
 use App\Mail\PhsInvoiceIssued;
 use App\Mail\PhsOnboardingRequestSubmitted;
+use App\Mail\PhsPaymentLinkSent;
+use App\Models\Phs\PhsLookup;
 use App\Models\Phs\PhsOnboardingRequest;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class PhsOnboardingController extends Controller
@@ -19,13 +23,46 @@ class PhsOnboardingController extends Controller
     {
         $package = $request->query('package');
         $packages = PhsTokenController::packages();
-        return view('phs.onboarding-request-form', compact('package', 'packages'));
+        $jobTitles = PhsLookup::options(PhsLookup::TYPE_JOB_TITLE);
+        $departments = PhsLookup::options(PhsLookup::TYPE_DEPARTMENT);
+        return view('phs.onboarding-request-form', compact('package', 'packages', 'jobTitles', 'departments'));
     }
 
     public function confirmPayment(Request $request)
     {
-        $packages = PhsTokenController::packages();
-        $packageNames = array_column($packages, 'name');
+        // When a file exceeds the server's upload_max_filesize, PHP silently drops
+        // it (UPLOAD_ERR_INI_SIZE) and Laravel's mimes rule then reports a misleading
+        // "must be a file of type" error for a perfectly valid file. Catch that here
+        // and tell the user the real reason.
+        $tooLarge = [];
+        foreach ($request->allFiles() as $file) {
+            foreach (is_array($file) ? $file : [$file] as $f) {
+                if ($f && $f->getError() === UPLOAD_ERR_INI_SIZE) {
+                    $tooLarge[] = $f->getClientOriginalName();
+                }
+            }
+        }
+        if ($tooLarge) {
+            $limit = ini_get('upload_max_filesize');
+            return back()->withInput()->withErrors([
+                'upload' => 'These file(s) exceed the server upload limit (' . $limit . ') and could not be received: '
+                    . implode(', ', $tooLarge) . '. Please reduce the file size or ask the administrator to raise the limit.',
+            ]);
+        }
+
+        // Job Title / Department are Select2 dropdowns backed by the phs_lookups
+        // table. When the user picks "Other" they type a free value in the
+        // companion *_other input, which overrides the dropdown selection. The
+        // new value is remembered in submitRequest() once the form is actually
+        // submitted, so the abandoned-at-payment case never pollutes the list.
+        $request->merge([
+            'job_title' => $request->input('job_title') === '__other__'
+                ? trim((string) $request->input('job_title_other'))
+                : $request->input('job_title'),
+            'department' => $request->input('department') === '__other__'
+                ? trim((string) $request->input('department_other'))
+                : $request->input('department'),
+        ]);
 
         $validated = $request->validate([
             'organization_name' => ['required', 'string', 'max:255'],
@@ -38,47 +75,35 @@ class PhsOnboardingController extends Controller
             'address' => ['nullable', 'string'],
             'department' => ['nullable', 'string', 'max:255'],
             'job_title' => ['nullable', 'string', 'max:255'],
-            'initial_token_package' => ['required', 'string', Rule::in($packageNames)],
             'additional_notes' => ['nullable', 'string'],
             'cac_registration_number' => ['required', 'string', 'max:100'],
             'cac_document' => ['required', 'file', 'mimes:pdf', 'max:5120'],
-            'additional_documents' => ['nullable', 'array'],
+            'additional_documents' => ['required', 'array', 'min:1'],
             'additional_documents.*' => ['file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
+            'request_letter' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
         ]);
 
-        // Compose a single contact_name for display/storage
         $validated['contact_name'] = trim(($validated['contact_first_name'] ?? '') . ' ' . ($validated['contact_last_name'] ?? ''));
 
-        // Files can't live in the session — store them now and keep their paths.
         $validated['cac_document_path'] = $request->file('cac_document')->store('phs/cac-documents', 'public');
+        $validated['request_letter_path'] = $request->file('request_letter')->store('phs/request-letters', 'public');
 
         $additional = [];
         foreach ((array) $request->file('additional_documents', []) as $file) {
             $additional[] = $file->store('phs/additional-documents', 'public');
         }
-        $validated['additional_documents'] = $additional; // array — model casts to JSON on save
+        $validated['additional_documents'] = $additional;
 
-        // Store request data in session temporarily, dropping the confirmation
-        // field and the raw uploaded file (only its stored path is kept).
         $request->session()->put(
             'onboarding_data',
-            array_diff_key($validated, ['contact_email_confirmation' => true, 'cac_document' => true])
+            array_diff_key($validated, ['contact_email_confirmation' => true, 'cac_document' => true, 'request_letter' => true])
         );
 
-        // Price comes from the single source of truth (PhsTokenController::packages()).
-        $package = $packages[strtolower($validated['initial_token_package'])] ?? null;
-        $amount = $package['price'] ?? 0;
-
-        return view('phs.onboarding-payment', compact('validated', 'amount'));
+        return view('phs.onboarding-payment', compact('validated'));
     }
 
     public function submitRequest(Request $request)
     {
-        $validated = $request->validate([
-            'payment_amount' => ['required', 'numeric', 'min:1'],
-            'payment_reference' => ['required', 'string', 'max:255'],
-        ]);
-
         $onboardingData = $request->session()->get('onboarding_data');
 
         if (!$onboardingData) {
@@ -86,14 +111,12 @@ class PhsOnboardingController extends Controller
                 ->withErrors(['error' => 'Session expired. Please start again.']);
         }
 
-        // Check email not already used
         $emailExists = \DB::connection('sqlsrv')->table('phs_institutions')
             ->where('email', $onboardingData['contact_email'])
             ->exists();
 
         if ($emailExists) {
-            return back()
-                ->withErrors(['contact_email' => 'This email is already registered.']);
+            return back()->withErrors(['contact_email' => 'This email is already registered.']);
         }
 
         $emailExists = \DB::connection('sqlsrv')->table('phs_members')
@@ -101,31 +124,22 @@ class PhsOnboardingController extends Controller
             ->exists();
 
         if ($emailExists) {
-            return back()
-                ->withErrors(['contact_email' => 'This email is already registered.']);
+            return back()->withErrors(['contact_email' => 'This email is already registered.']);
         }
 
         $onboardingRequest = PhsOnboardingRequest::create([
             ...$onboardingData,
-            ...$validated,
-            'status' => PhsOnboardingRequest::STATUS_PAYMENT_RECEIVED,
-            'payment_received_at' => now(),
+            'status' => PhsOnboardingRequest::STATUS_PENDING,
         ]);
 
         $request->session()->forget('onboarding_data');
 
-        // Generate the e-invoice PDF before notifying admins so it can be attached.
-        $this->generateInvoice($onboardingRequest);
+        // Grow the shared lookup lists with any new "Other" values the user
+        // supplied, so they appear in the dropdowns on future forms.
+        PhsLookup::remember(PhsLookup::TYPE_JOB_TITLE, $onboardingRequest->job_title);
+        PhsLookup::remember(PhsLookup::TYPE_DEPARTMENT, $onboardingRequest->department);
 
         $this->notifyAdminRequestSubmitted($onboardingRequest);
-
-        // Email the organization their invoice (best-effort — never block submission).
-        try {
-            Mail::to($onboardingRequest->contact_email)->send(new PhsInvoiceIssued($onboardingRequest));
-            $onboardingRequest->update(['invoice_sent_at' => now()]);
-        } catch (\Throwable $e) {
-            report($e);
-        }
 
         return redirect()->route('phs.request.pending', ['id' => $onboardingRequest->id])
             ->with('success', 'Request submitted successfully! Your application is now under review.');
@@ -228,6 +242,172 @@ class PhsOnboardingController extends Controller
         }
 
         return $this->streamInvoice($onboardingRequest);
+    }
+
+    /** Serve the LSA PDF for download (secured by per-request token in URL). */
+    public function downloadLsa($id, $token)
+    {
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+        abort_if($onboardingRequest->lsa_token !== $token, 403);
+
+        $packages = PhsTokenController::packages();
+        $package = $packages[strtolower((string) $onboardingRequest->initial_token_package)] ?? null;
+
+        $pdf = Pdf::loadView('phs.lsa-template', [
+            'onboardingRequest' => $onboardingRequest,
+            'package' => $package,
+            'date' => now()->format('F j, Y'),
+        ]);
+
+        return $pdf->download('PHSP-SLA-' . $onboardingRequest->id . '.pdf');
+    }
+
+    /** Show the public LSA upload page. */
+    public function showLsaUpload($id, $token)
+    {
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+        abort_if($onboardingRequest->lsa_token !== $token, 403);
+
+        return view('phs.lsa-upload', compact('onboardingRequest', 'token'));
+    }
+
+    /** Handle signed SLA upload from the organization. */
+    public function uploadLsa(Request $request, $id, $token)
+    {
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+        abort_if($onboardingRequest->lsa_token !== $token, 403);
+
+        $request->validate(
+            ['signed_lsa' => ['required', 'file', 'max:10240']],
+            [],
+            ['signed_lsa' => 'SLA document']
+        );
+
+        $file = $request->file('signed_lsa');
+        if (strtolower($file->getClientOriginalExtension()) !== 'pdf') {
+            return back()->withErrors(['signed_lsa' => 'The SLA document must be a PDF file.']);
+        }
+
+        $path = $request->file('signed_lsa')->store('phs/lsa-signed', 'public');
+
+        $onboardingRequest->update([
+            'lsa_signed_document_path' => $path,
+            'lsa_signed_at' => now(),
+            'status' => PhsOnboardingRequest::STATUS_SLA_UPLOADED,
+        ]);
+
+        return redirect()->route('phs.lsa.upload.form', [$id, $token])
+            ->with('success', 'Signed SLA uploaded successfully. Thank you!');
+    }
+
+    /** Show the package selection / payment page (token-secured). */
+    public function showPaymentPage($id, $token)
+    {
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+        abort_if($onboardingRequest->payment_token !== $token, 403);
+        abort_if($onboardingRequest->status !== PhsOnboardingRequest::STATUS_PAYMENT_PENDING, 403);
+
+        $packages = PhsTokenController::packages();
+
+        return view('phs.payment-form', compact('onboardingRequest', 'token', 'packages'));
+    }
+
+    /** Initiate a Paystack transaction for the selected package. */
+    public function initiatePaystackPayment(Request $request, $id, $token)
+    {
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+        abort_if($onboardingRequest->payment_token !== $token, 403);
+        abort_if($onboardingRequest->status !== PhsOnboardingRequest::STATUS_PAYMENT_PENDING, 403);
+
+        $packages = PhsTokenController::packages();
+        $packageNames = array_column($packages, 'name');
+
+        $request->validate(['package' => ['required', 'string', Rule::in($packageNames)]]);
+
+        $packageKey = strtolower($request->input('package'));
+        $package = $packages[$packageKey] ?? null;
+
+        if (!$package) {
+            return back()->withErrors(['package' => 'Invalid package selected.']);
+        }
+
+        $reference = 'PHSP-' . strtoupper(Str::random(12));
+        $amountKobo = (int) round($package['price'] * 100);
+
+        $onboardingRequest->update([
+            'paystack_reference' => $reference,
+            'initial_token_package' => $request->input('package'),
+        ]);
+
+        $response = Http::withToken(config('services.paystack.secret'))
+            ->post(config('services.paystack.base_url') . '/transaction/initialize', [
+                'email' => $onboardingRequest->contact_email,
+                'amount' => $amountKobo,
+                'reference' => $reference,
+                'callback_url' => route('phs.payment.callback', [$id, $token]),
+                'metadata' => [
+                    'onboarding_request_id' => $onboardingRequest->id,
+                    'organization' => $onboardingRequest->organization_name,
+                ],
+            ]);
+
+        if (!$response->successful() || !($response->json('data.authorization_url'))) {
+            return back()->withErrors(['payment' => 'Could not initialize payment. Please try again.']);
+        }
+
+        return redirect($response->json('data.authorization_url'));
+    }
+
+    /** Handle Paystack callback after payment. */
+    public function handlePaystackCallback($id, $token)
+    {
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+        abort_if($onboardingRequest->payment_token !== $token, 403);
+
+        $reference = request('reference') ?: $onboardingRequest->paystack_reference;
+
+        if (!$reference) {
+            return redirect()->route('phs.payment.form', [$id, $token])
+                ->withErrors(['payment' => 'No payment reference found. Please try again.']);
+        }
+
+        $verify = Http::withToken(config('services.paystack.secret'))
+            ->get(config('services.paystack.base_url') . '/transaction/verify/' . $reference);
+
+        if (!$verify->successful() || $verify->json('data.status') !== 'success') {
+            return redirect()->route('phs.payment.form', [$id, $token])
+                ->withErrors(['payment' => 'Payment could not be verified. Please contact support if you were charged.']);
+        }
+
+        $paystackAmount = round($verify->json('data.amount') / 100, 2);
+
+        $packages = PhsTokenController::packages();
+        $package = $packages[strtolower((string) $onboardingRequest->initial_token_package)] ?? null;
+        $packagePrice = $package['price'] ?? $paystackAmount;
+
+        $lsaToken = Str::random(64);
+
+        $onboardingRequest->update([
+            'status' => PhsOnboardingRequest::STATUS_PAYMENT_RECEIVED,
+            'payment_amount' => $packagePrice,
+            'paystack_amount' => $paystackAmount,
+            'payment_status' => PhsOnboardingRequest::PAYMENT_COMPLETED,
+            'payment_received_at' => now(),
+            'lsa_token' => $lsaToken,
+        ]);
+
+        $this->generateInvoice($onboardingRequest->fresh());
+
+        try {
+            $onboardingRequest->refresh();
+            Mail::to($onboardingRequest->contact_email)
+                ->send(new PhsInvoiceIssued($onboardingRequest));
+            $onboardingRequest->update(['invoice_sent_at' => now()]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return redirect()->route('phs.lsa.upload.form', [$id, $lsaToken]);
     }
 
     private function streamInvoice(PhsOnboardingRequest $onboardingRequest)

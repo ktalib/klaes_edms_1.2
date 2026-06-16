@@ -117,6 +117,55 @@ class PraRecordController extends Controller
         ]);
     }
 
+    /**
+     * Return shared property details for a file from the file_indexings table.
+     *
+     * Used by the "Capture Existing Mortgage Now" backfill: the property
+     * attributes (plot, TP, LPKN, district, LGA, land use, etc.) for a file
+     * live in file_indexings, not in the PRA register, so once a file number
+     * is selected we source them here. Matches across every file-number column
+     * a file can be indexed under and returns snake_case keys the PRA form
+     * controller already maps.
+     */
+    public function propertyByFile(Request $request, string $fileNumber): JsonResponse
+    {
+        $value = trim($fileNumber);
+        if ($value === '') {
+            return response()->json(['success' => false, 'data' => null]);
+        }
+
+        $columns = ['file_number', 'temp_file_no', 'mls_file_no', 'kangis_file_no', 'new_kangis_file_no'];
+
+        $row = \Illuminate\Support\Facades\DB::connection('sqlsrv')
+            ->table('file_indexings')
+            ->where(function ($q) use ($columns, $value) {
+                foreach ($columns as $column) {
+                    $q->orWhereRaw("$column = CAST(? AS VARCHAR(255))", [$value]);
+                }
+            })
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$row) {
+            return response()->json(['success' => true, 'data' => null]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'plot_no'              => $row->plot_number ?? null,
+                'tp_no'                => $row->tp_no ?? null,
+                'lpkn_no'              => $row->lpkn_no ?? null,
+                'street_name'          => $row->street_name ?? null,
+                'district'             => $row->district ?? null,
+                'lga'                  => $row->lga ?? null,
+                'location'             => $row->location ?? null,
+                'land_use'             => $row->land_use_type ?? null,
+                'property_description' => $row->property_description ?? null,
+            ],
+        ]);
+    }
+
     public function history(Request $request, string $propId): JsonResponse
     {
         $history = $this->service->getHistory($propId);

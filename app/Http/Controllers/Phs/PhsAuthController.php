@@ -80,7 +80,7 @@ class PhsAuthController extends Controller
         }
 
         $onboardingRequest = PhsOnboardingRequest::where('activation_token', $token)
-            ->where('status', PhsOnboardingRequest::STATUS_APPROVED)
+            ->whereIn('status', [PhsOnboardingRequest::STATUS_APPROVED, PhsOnboardingRequest::STATUS_ACTIVATED])
             ->first();
 
         if (!$onboardingRequest || !$onboardingRequest->canRegister()) {
@@ -121,7 +121,7 @@ class PhsAuthController extends Controller
     public function registerWithToken($token, Request $request)
     {
         $onboardingRequest = PhsOnboardingRequest::where('activation_token', $token)
-            ->where('status', PhsOnboardingRequest::STATUS_APPROVED)
+            ->whereIn('status', [PhsOnboardingRequest::STATUS_APPROVED, PhsOnboardingRequest::STATUS_ACTIVATED])
             ->first();
 
         if (!$onboardingRequest || !$onboardingRequest->canRegister()) {
@@ -166,15 +166,18 @@ class PhsAuthController extends Controller
             ]);
 
             // Credit the token package the institution selected during onboarding.
-            // This writes a completed 'invoice' transaction, which surfaces the
-            // subscription on the staff PHS Subscriptions table and funds the wallet.
+            // Use 'paystack' when paid online (reference present), 'invoice' for
+            // bank-transfer / legacy paths. Either way addTokens() sets status=completed.
             $package = PhsTokenController::packages()[strtolower((string) $onboardingRequest->initial_token_package)] ?? null;
             if ($package) {
+                $paymentMethod = $onboardingRequest->paystack_reference ? 'paystack' : 'invoice';
+                $referenceNo   = $onboardingRequest->paystack_reference ?: $onboardingRequest->payment_reference;
+
                 $institution->addTokens($package['tokens'], 'purchase', [
                     'package_name'   => $package['name'],
                     'amount'         => $onboardingRequest->payment_amount ?? $package['price'],
-                    'payment_method' => 'invoice',
-                    'reference_no'   => $onboardingRequest->payment_reference,
+                    'payment_method' => $paymentMethod,
+                    'reference_no'   => $referenceNo,
                     'approved_at'    => now(),
                     'expires_at'     => now()->addYear(),
                     'notes'          => 'Initial token package from onboarding',

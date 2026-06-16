@@ -611,6 +611,38 @@ $query = KangisPrintLabelBatch::with(['creator'])
     }
 
     /**
+     * Backfill sys_batch_no for batches where it is null/empty,
+     * by joining through batch items → kangis_grouping.registry_batch_no.
+     */
+    public function backfillSysBatchNo()
+    {
+        try {
+            $updated = DB::connection('sqlsrv')->statement("
+                UPDATE b
+                SET b.sys_batch_no = CAST(g.registry_batch_no AS NVARCHAR(100)),
+                    b.updated_at   = GETDATE()
+                FROM kangis_print_label_batches b
+                INNER JOIN kangis_print_label_batch_items bi ON bi.batch_id = b.id
+                INNER JOIN kangis_grouping g ON g.id = bi.kangis_grouping_id
+                WHERE (b.sys_batch_no IS NULL OR LTRIM(RTRIM(b.sys_batch_no)) = '')
+                  AND g.registry_batch_no IS NOT NULL
+            ");
+
+            $remaining = KangisPrintLabelBatch::whereNull('sys_batch_no')
+                ->orWhere('sys_batch_no', '')->count();
+
+            return response()->json([
+                'success'   => true,
+                'message'   => 'Backfill complete.',
+                'remaining' => $remaining,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('kangis-printlabel.backfillSysBatchNo', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Mark a batch as printed.
      */
     public function markBatchAsPrinted($batchId)

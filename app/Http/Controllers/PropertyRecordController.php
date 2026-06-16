@@ -1336,11 +1336,18 @@ class PropertyRecordController extends Controller
         // **PIC/PRA ROUTING FIX**: Determine target table based on record_mode
         $recordMode = $request->input('record_mode', 'property');
         $isIndexMode = $recordMode === 'index';
-        $targetTable = $isIndexMode ? 'pic' : 'pra';
+
+        // **CofO ROUTING**: CofO duplicates surfaced by the Property Record
+        // Assistant live in the CofO_staging table. When the edit form flags the
+        // record as a CofO (via the hidden `update_source` field), route the
+        // update to CofO_staging instead of the pra/pic tables.
+        $isCofOUpdate = $request->input('update_source') === 'cofo_staging';
+        $targetTable = $isCofOUpdate ? self::COFO_TABLE : ($isIndexMode ? 'pic' : 'pra');
 
         \Log::info("Property Record Update Request", [
             'id' => $id,
             'record_mode' => $recordMode,
+            'update_source' => $request->input('update_source'),
             'target_table' => $targetTable
         ]);
 
@@ -1581,22 +1588,22 @@ class PropertyRecordController extends Controller
             if (!$data['temp_fileno'] && $data['mlsFNo'] && strpos($data['mlsFNo'], 'TEMP-') === 0) {
                 $data['temp_fileno'] = $data['mlsFNo'];
             }
-            if (Schema::connection('sqlsrv')->hasColumn('pra', 'location')) {
+            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'location')) {
                 $data['location'] = $request->location;
             }
-            if (Schema::connection('sqlsrv')->hasColumn('pra', 'lgsaOrCity')) {
+            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'lgsaOrCity')) {
                 $data['lgsaOrCity'] = $request->lgsaOrCity;
             }
-            if (Schema::connection('sqlsrv')->hasColumn('pra', 'layout')) {
+            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'layout')) {
                 $data['layout'] = $request->layout;
             }
-            if (Schema::connection('sqlsrv')->hasColumn('pra', 'schedule')) {
+            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'schedule')) {
                 $data['schedule'] = $request->schedule;
             }
-            if (Schema::connection('sqlsrv')->hasColumn('pra', 'related_file_number')) {
+            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'related_file_number')) {
                 $data['related_file_number'] = $relatedFileNumber;
             }
-            if (Schema::connection('sqlsrv')->hasColumn('pra', 'related_fileno')) {
+            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'related_fileno')) {
                 $data['related_fileno'] = $relatedFileNumber;
             }
             if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'op_type')) {
@@ -1605,7 +1612,7 @@ class PropertyRecordController extends Controller
             if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'op_serial_number')) {
                 $data['op_serial_number'] = $request->input('op_serial_number');
             }
-            if (Schema::connection('sqlsrv')->hasColumn('pra', 'land_use')) {
+            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'land_use')) {
                 $landUse = $this->normalizeValue(
                     $request->input(
                         'land_use',
@@ -1619,6 +1626,18 @@ class PropertyRecordController extends Controller
             }
             if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'updated_at')) {
                 $data['updated_at'] = now();
+            }
+
+            // For CofO_staging records, keep the cofo_type aligned with the transaction type.
+            if ($isCofOUpdate && Schema::connection('sqlsrv')->hasColumn($targetTable, 'cofo_type')) {
+                $cofoTypeMap = [
+                    'Certificate of Occupancy' => 'Legacy CofO',
+                    'ST Certificate of Occupancy' => 'ST CofO',
+                    'SLTR Certificate of Occupancy' => 'SLTR CofO',
+                ];
+                if (isset($cofoTypeMap[$request->transactionType])) {
+                    $data['cofo_type'] = $cofoTypeMap[$request->transactionType];
+                }
             }
 
             // Merge party data only if values are not null
@@ -1645,12 +1664,15 @@ class PropertyRecordController extends Controller
                 $data['party_5'] = $derived_party_5_upd;
             }
 
+            // Some base columns above (instrument_type, period, etc.) are assigned
+            // unconditionally for the pra/pic schema. Filter the payload down to
+            // columns that actually exist in the target table so updates to
+            // CofO_staging (which has a slightly different schema) don't error out.
+            $targetColumns = Schema::connection('sqlsrv')->getColumnListing($targetTable);
+            $data = array_intersect_key($data, array_flip($targetColumns));
+
             // Debug: Log what data is being sent to the database
             \Log::info('Data to be sent to database: ', $data);
-            \Log::info('Checking if Assignor column exists: ' . (Schema::connection('sqlsrv')->hasColumn($targetTable, 'Assignor') ? 'YES' : 'NO'));
-            \Log::info('Checking if Assignee column exists: ' . (Schema::connection('sqlsrv')->hasColumn($targetTable, 'Assignee') ? 'YES' : 'NO'));
-            \Log::info('Checking if party_1 column exists: ' . (Schema::connection('sqlsrv')->hasColumn($targetTable, 'party_1') ? 'YES' : 'NO'));
-            \Log::info('Checking if party_2 column exists: ' . (Schema::connection('sqlsrv')->hasColumn($targetTable, 'party_2') ? 'YES' : 'NO'));
 
             // Update the database record in the correct table
             $affectedRows = DB::connection('sqlsrv')->table($targetTable)

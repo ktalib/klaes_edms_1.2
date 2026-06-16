@@ -58,6 +58,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'signature',
         'user_actions',
         'dfr_permissions',
+        'fr_permissions',
     ];
 
     public function sendEmailVerificationNotification()
@@ -127,6 +128,20 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         // Example: Only admins can impersonate others
         return $this->type == 'super admin';
+    }
+
+    /**
+     * Whether this user is a Super Admin — by account type or assigned role
+     * (handles the "supper admin" spelling used across the app).
+     */
+    public function isSuperAdmin(): bool
+    {
+        $type      = strtolower((string) $this->type);
+        $roleNames = array_map('strtolower', $this->assignedRoleNames());
+
+        return in_array($type, ['super admin', 'supper admin'], true)
+            || in_array('super admin', $roleNames, true)
+            || in_array('supper admin', $roleNames, true);
     }
 
     public function totalUser()

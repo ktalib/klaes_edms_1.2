@@ -21,6 +21,7 @@ class LegalSearchLog extends Model
         'receipt_no',
         'printed',
         'direct_link',
+        'search_source',
     ];
 
     public function user()

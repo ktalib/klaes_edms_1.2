@@ -344,9 +344,30 @@ class InstrumentCaptureService
                     ->update(['is_used' => 1, 'updated_at' => now()]);
             }
 
+            // Mirror Certificate of Occupancy captures into CofO_staging so they
+            // surface in the CofO timeline, legal search and property history
+            // alongside CofOs created via the Property Record Assistant.
+            $cofoStagingId = null;
+            if ($this->isCofoInstrument($instrumentType)) {
+                $cofoStagingId = $this->syncCofoStaging($instrumentType, $data, [
+                    'mls' => $mls,
+                    'kangis' => $kangis,
+                    'newKangis' => $newKangis,
+                    'temp_fileno' => $tempFileno,
+                    'fileno' => $allocationPrimary,
+                    'prop_id' => $propId,
+                    'parties' => $parties,
+                    'reg' => $regNumberData,
+                    'reg_date' => $resolvedRegDate,
+                    'reg_time' => $resolvedRegTime,
+                    'insert' => $insertData,
+                ]);
+            }
+
             $finalResult = [
                 'success' => true,
                 'id' => $id,
+                'cofo_staging_id' => $cofoStagingId,
                 'deed_registration_id' => $deedRegId ?? null,
                 'message' => 'Instrument captured successfully',
                 'reg_number' => $insertData['registration_number'],
@@ -479,6 +500,162 @@ class InstrumentCaptureService
             'id_number' => $source["{$prefix}_id_number"] ?? ($source['donorIdNumber'] ?? ($source['doneeIdNumber'] ?? null)),
         ];
     }
+    /**
+     * Whether the given instrument type is a Certificate of Occupancy variant
+     * (regular, ST or SLTR) that should also be mirrored into CofO_staging.
+     */
+    private function isCofoInstrument(?string $type): bool
+    {
+        if (!$type) {
+            return false;
+        }
+
+        return stripos($type, 'Certificate of Occupancy') !== false;
+    }
+
+    /**
+     * Mirror a captured Certificate of Occupancy into the CofO_staging table.
+     *
+     * Mirrors the canonical mapping used by the Property Record Assistant
+     * (PropertyRecordController) so CofOs captured via /instruments/create show
+     * up in the same downstream views (timeline, legal search, property card).
+     * Best-effort: any failure is logged and swallowed so it never blocks the
+     * primary instrument capture. Runs inside the caller's transaction, so a
+     * later rollback also discards this row.
+     *
+     * @param array $ctx Resolved capture context (file numbers, prop_id,
+     *                    parties, registration data, and the instrument_capture
+     *                    insert payload).
+     */
+    private function syncCofoStaging(string $instrumentType, array $data, array $ctx): ?int
+    {
+        try {
+            if (!Schema::connection('sqlsrv')->hasTable('CofO_staging')) {
+                Log::warning('CofO_staging table missing; skipped CofO mirror for instrument capture.');
+                return null;
+            }
+
+            $cofoColumns = Schema::connection('sqlsrv')->getColumnListing('CofO_staging');
+
+            $reg = $ctx['reg'] ?? null;
+            $insert = $ctx['insert'] ?? [];
+            $parties = $ctx['parties'] ?? [];
+
+            $titleTypeMap = [
+                'certificate of occupancy' => 'C of O',
+                'st certificate of occupancy' => 'ST C of O',
+                'sltr certificate of occupancy' => 'SLTR C of O',
+            ];
+            $titleType = $titleTypeMap[strtolower($instrumentType)] ?? 'C of O';
+
+            $serialNo = $reg['serial'] ?? null;
+            $pageNo = $reg['page'] ?? null;
+            $volumeNo = $reg['volume'] ?? null;
+            $regNo = $reg['formatted'] ?? null;
+
+            // Idempotency guard: don't create a second mirror row if this exact
+            // registration already landed in CofO_staging.
+            if ($regNo && in_array('regNo', $cofoColumns, true)) {
+                $exists = DB::connection('sqlsrv')->table('CofO_staging')
+                    ->where('regNo', $regNo)
+                    ->where(function ($q) {
+                        $q->where('is_deleted', 0)->orWhereNull('is_deleted');
+                    })
+                    ->exists();
+
+                if ($exists) {
+                    Log::info('CofO_staging mirror skipped; registration already present.', ['regNo' => $regNo]);
+                    return null;
+                }
+            }
+
+            $grantor = $parties['party_1']['name'] ?? null;
+            $grantee = $parties['party_2']['name'] ?? null;
+
+            $allCofOData = [
+                'np_fileno' => $data['np_fileno'] ?? null,
+                'mlsFNo' => $ctx['mls'] ?: null,
+                'kangisFileNo' => $ctx['kangis'] ?: null,
+                'NewKANGISFileno' => $ctx['newKangis'] ?: null,
+                'temp_fileno' => $ctx['temp_fileno'] ?: null,
+                'fileno' => $ctx['fileno'] ?: null,
+                'prop_id' => $ctx['prop_id'] ?? null,
+                'title_type' => $titleType,
+                'transaction_type' => $instrumentType,
+                'instrument_type' => $instrumentType,
+                'transaction_date' => $ctx['reg_date'] ?? null,
+                'transaction_time' => $ctx['reg_time'] ?: '00:00:00',
+                // CofO_staging has no reg_date/reg_time; deeds_* are the
+                // registration equivalents downstream consumers read.
+                'deeds_date' => $ctx['reg_date'] ?? null,
+                'deeds_time' => $ctx['reg_time'] ?: null,
+                'serialNo' => $serialNo,
+                'pageNo' => $pageNo,
+                'volumeNo' => $volumeNo,
+                'regNo' => $regNo,
+                'cofo_type' => $data['cofo_type'] ?? null,
+                'cofo_date' => $data['cofoDate'] ?? ($data['cofo_date'] ?? null),
+                'period' => isset($data['period']) && $data['period'] !== '' ? (int) $data['period'] : null,
+                'period_unit' => $data['periodUnit'] ?? ($data['period_unit'] ?? null),
+
+                // Parties (CofO is Grantor -> Grantee)
+                'Grantor' => $grantor,
+                'Grantee' => $grantee,
+                'party_1' => $grantor,
+                'party_2' => $grantee,
+                'party_3' => $parties['party_3']['name'] ?? null,
+                'party_4' => $parties['party_4']['name'] ?? null,
+
+                // Property
+                'property_description' => $insert['property_description'] ?? null,
+                'location' => $insert['property_location'] ?? null,
+                'plot_no' => $insert['plot_number'] ?? null,
+                'lgsaOrCity' => $insert['lga'] ?? null,
+                'districtName' => $insert['district'] ?? null,
+                'streetName' => $data['streetName'] ?? ($data['property_street_name'] ?? null),
+                'house_no' => $data['house_no'] ?? ($data['houseNo'] ?? null),
+                'tp_no' => $insert['tp_no'] ?? null,
+                'lpkn_no' => $insert['lpkn_no'] ?? null,
+                'approved_plan_no' => $data['approved_plan_no'] ?? ($data['approvedPlanNo'] ?? null),
+                'plot_size' => $insert['plot_size'] ?? null,
+                'land_use' => $insert['land_use'] ?? null,
+                'related_file_number' => $data['related_file_number'] ?? ($data['relatedFileNumber'] ?? null),
+
+                'source' => 'instrument_capture',
+                'captured_by' => Auth::id(),
+                'created_by' => Auth::id(),
+                'updated_by' => Auth::id(),
+                'created_at' => now(),
+                'updated_at' => now(),
+                'deleted_at' => null,
+                'is_deleted' => 0,
+            ];
+
+            // Keep only keys that exist as columns in CofO_staging.
+            $filteredCofOData = [];
+            foreach ($allCofOData as $key => $value) {
+                if (in_array($key, $cofoColumns, true)) {
+                    $filteredCofOData[$key] = $value;
+                }
+            }
+
+            $id = DB::connection('sqlsrv')->table('CofO_staging')->insertGetId($filteredCofOData);
+
+            Log::info('CofO mirrored into CofO_staging from instrument capture.', [
+                'cofo_staging_id' => $id,
+                'regNo' => $regNo,
+                'prop_id' => $ctx['prop_id'] ?? null,
+                'instrument_type' => $instrumentType,
+            ]);
+
+            return $id;
+        } catch (\Throwable $e) {
+            // Never block the primary instrument capture because of the mirror.
+            Log::error('Failed to mirror CofO into CofO_staging: ' . $e->getMessage());
+            return null;
+        }
+    }
+
     /**
      * Update an existing instrument.
      *

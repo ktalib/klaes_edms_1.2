@@ -137,6 +137,39 @@ class LegalSearchService
                 }
                 return false;
             };
+            
+            // Helper to check if file numbers are truly distinct (not just prefix matches)
+            $isDistinctFile = function (string $rowFileNo) use ($fileNo): bool {
+                $rowFileNo = trim(strtoupper($rowFileNo));
+                $searchFileNo = trim(strtoupper($fileNo));
+                
+                // Exact match is not distinct
+                if ($rowFileNo === $searchFileNo) {
+                    return false;
+                }
+                
+                // Check if rowFileNo contains searchFileNo as a substring but is a completely different file
+                // Example: searching "RES-1992-2508" should exclude "CON-RES-2018-487"
+                // They share "RES" but have different years and numbers
+                if (strpos($rowFileNo, $searchFileNo) === false && strpos($searchFileNo, $rowFileNo) === false) {
+                    return true; // Completely different strings
+                }
+                
+                // Extract the core pattern (PREFIX-YEAR-NUMBER)
+                $extractCore = function($fn) {
+                    // Match patterns like COM-2025-123 or CON-RES-2018-487 or RES-1992-2508
+                    if (preg_match('/((?:CON-)?(?:RES|COM|IND|AG))-(\d{4})-(\d+)/', $fn, $m)) {
+                        return $m[1] . '-' . $m[2] . '-' . $m[3];
+                    }
+                    return $fn;
+                };
+                
+                $rowCore = $extractCore($rowFileNo);
+                $searchCore = $extractCore($searchFileNo);
+                
+                // If cores are different, they're distinct files
+                return $rowCore !== $searchCore;
+            };
 
             $searchedPropIds = [];
             foreach ($all as $row) {
@@ -158,11 +191,27 @@ class LegalSearchService
             // Only filter when the searched file resolves to a definite prop_id; otherwise leave
             // file-number / orphan-only results untouched.
             if (!empty($searchedPropIds)) {
-                $all = array_values(array_filter($all, function ($row) use ($searchedPropIds, $matchesSearchedFile) {
+                $all = array_values(array_filter($all, function ($row) use ($searchedPropIds, $matchesSearchedFile, $isDistinctFile, $fileNo) {
                     // Always keep synthetic recertification rows (contextual markers).
                     if (($row['source_table'] ?? '') === 'Related Fileno') {
                         return true;
                     }
+                    
+                    // Get the row's file number
+                    $rowFileNo = '';
+                    foreach (['fileno', 'file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno'] as $col) {
+                        $v = trim((string) ($row[$col] ?? ''));
+                        if ($v !== '') {
+                            $rowFileNo = $v;
+                            break;
+                        }
+                    }
+                    
+                    // If this row's file number is distinctly different from the searched file, exclude it
+                    if ($rowFileNo !== '' && $isDistinctFile($rowFileNo)) {
+                        return false;
+                    }
+                    
                     $pid = trim((string) ($row['prop_id'] ?? ''));
                     // Keep rows in the searched property's prop_id group.
                     if ($pid !== '' && isset($searchedPropIds[$pid])) {

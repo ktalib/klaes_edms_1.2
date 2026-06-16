@@ -17,6 +17,7 @@
         'PageDescription' => 'Backfill lineage for files already processed manually before Change of Purpose and Parcel Update workflows were built.'
     ])
   
+    @php $viewOnly = request()->query('url') === 'land_view'; @endphp
     <div class="py-10 bg-slate-50 min-h-screen">
         <div class="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
 
@@ -26,10 +27,16 @@
                     <h1 class="text-3xl font-extrabold text-slate-900 mt-1">Legacy Parcel Update</h1>
                     <p class="text-sm text-slate-500 mt-1">Link already-processed legacy files, decommission old sources, and restore Parcel Update history.</p>
                 </div>
-                <button type="button" onclick="openLinkageModal()"
-                    class="inline-flex items-center gap-2 px-6 py-3.5 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition-all transform hover:-translate-y-0.5">
-                    <i data-lucide="plus" class="w-5 h-5"></i> Backfill Linkage
-                </button>
+                @unless($viewOnly)
+                    <button type="button" onclick="openLinkageModal()"
+                        class="inline-flex items-center gap-2 px-6 py-3.5 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition-all transform hover:-translate-y-0.5">
+                        <i data-lucide="plus" class="w-5 h-5"></i> Backfill Linkage
+                    </button>
+                @else
+                    <span class="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-500 border border-slate-200 rounded-xl text-xs font-bold">
+                        <i data-lucide="eye" class="w-4 h-4"></i> View Only
+                    </span>
+                @endunless
             </div>
 
             {{-- Alerts --}}
@@ -68,9 +75,11 @@
                     <table class="w-full text-left border-collapse min-w-[1100px]">
                         <thead>
                             <tr class="bg-slate-50 text-slate-400 font-semibold text-xs border-b border-slate-200">
+                                <th class="px-5 py-4 whitespace-nowrap">S/N</th>
                                 <th class="px-5 py-4 whitespace-nowrap">Workflow</th>
+                                <th class="px-5 py-4 whitespace-nowrap">Supporting File No</th>
+                                <th class="px-5 py-4 whitespace-nowrap">Holding File No</th>
                                 <th class="px-5 py-4 whitespace-nowrap">Old File(s) Decommissioned</th>
-                                <th class="px-5 py-4 whitespace-nowrap">Linked New File</th>
                                 <th class="px-5 py-4 whitespace-nowrap">Applicant / Holder</th>
                                 <th class="px-5 py-4 whitespace-nowrap">Created By</th>
                                 <th class="px-5 py-4 whitespace-nowrap">Date Created</th>
@@ -79,6 +88,9 @@
                         <tbody class="divide-y divide-slate-100 text-sm text-slate-700">
                             @forelse($linkages as $link)
                                 <tr class="hover:bg-slate-50/50 transition">
+                                    <td class="px-5 py-4 text-xs font-semibold text-slate-400 whitespace-nowrap">
+                                        {{ $linkages->firstItem() + $loop->index }}
+                                    </td>
                                     <td class="px-5 py-4">
                                         <span class="px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap
                                             @if($link->workflow_type === 'Subdivision') bg-indigo-50 text-indigo-700
@@ -93,17 +105,37 @@
                                             </span>
                                         @endif
                                     </td>
-                                    <td class="px-5 py-4 text-xs font-mono font-medium max-w-[180px]">
-                                        @php $oldFiles = json_decode($link->old_file_numbers, true) ?: [$link->old_file_numbers]; @endphp
-                                        <div class="flex flex-wrap gap-1">
-                                            @foreach($oldFiles as $oldFile)
-                                                <span class="bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded border border-slate-200 whitespace-nowrap">{{ $oldFile }}</span>
-                                            @endforeach
-                                        </div>
-                                    </td>
                                     <td class="px-5 py-4">
                                         <span class="font-mono font-bold text-slate-900 text-xs block">{{ $link->new_file_number }}</span>
                                         <span class="text-[10px] text-blue-600 font-bold font-mono">Prop: {{ $link->prop_id ?: '—' }}</span>
+                                    </td>
+                                    <td class="px-5 py-4 text-xs font-mono">
+                                        @if(!empty($link->holding_file_no ?? null))
+                                            <span class="bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded whitespace-nowrap">{{ $link->holding_file_no }}</span>
+                                        @else
+                                            <span class="text-slate-300">—</span>
+                                        @endif
+                                    </td>
+                                    <td class="px-5 py-4 text-xs font-mono font-medium max-w-[200px]">
+                                        @php $oldFiles = array_values(array_filter(json_decode($link->old_file_numbers, true) ?: [$link->old_file_numbers])); @endphp
+                                        <div class="flex flex-wrap gap-1 items-center">
+                                            @if(count($oldFiles) === 0)
+                                                <span class="text-slate-300">—</span>
+                                            @else
+                                                <span class="bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded border border-slate-200 whitespace-nowrap">{{ $oldFiles[0] }}</span>
+                                                @if(count($oldFiles) > 1)
+                                                    @foreach(array_slice($oldFiles, 1) as $oldFile)
+                                                        <span class="oldfiles-more-{{ $link->id }} hidden bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded border border-slate-200 whitespace-nowrap">{{ $oldFile }}</span>
+                                                    @endforeach
+                                                    <button type="button" id="oldfiles-btn-{{ $link->id }}"
+                                                            data-count="{{ count($oldFiles) - 1 }}"
+                                                            onclick="toggleOldFiles({{ $link->id }})"
+                                                            class="text-[10px] font-bold text-blue-600 hover:text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 whitespace-nowrap">
+                                                        +{{ count($oldFiles) - 1 }} others
+                                                    </button>
+                                                @endif
+                                            @endif
+                                        </div>
                                     </td>
                                     <td class="px-5 py-4 text-xs">{{ $link->applicant_name ?: '—' }}</td>
                                     <td class="px-5 py-4">
@@ -120,7 +152,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="6" class="px-6 py-12 text-center text-slate-400 italic">
+                                    <td colspan="8" class="px-6 py-12 text-center text-slate-400 italic">
                                         No legacy process linkages recorded yet. Click "Backfill Linkage" to record one.
                                     </td>
                                 </tr>
@@ -140,7 +172,8 @@
     </div>
 </div>
 
-{{-- MODAL --}}
+{{-- MODAL (create/edit) — not rendered in view-only mode --}}
+@unless($viewOnly)
 <div id="linkage-modal" class="fixed inset-0 z-50 flex items-center justify-center hidden">
     <div class="fixed inset-0 modal-backdrop transition-opacity duration-300" onclick="closeLinkageModal()"></div>
 
@@ -223,6 +256,14 @@
                     {{-- Single canonical destination file number (written by every workflow's selector) --}}
                     <input type="hidden" name="new_file_number" id="new_file_number" value="">
 
+                    {{-- Back to workflow selection --}}
+                    <div class="mb-4">
+                        <button type="button" onclick="goBackToStep1()"
+                            class="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-sm font-bold transition flex items-center gap-2">
+                            <i data-lucide="arrow-left" class="w-4 h-4"></i> Back
+                        </button>
+                    </div>
+
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 bg-white border border-slate-200 rounded-3xl p-6 lg:p-8">
 
                         {{-- LEFT: Source / Old Files --}}
@@ -232,13 +273,71 @@
                                 <h3 class="font-bold text-slate-800 text-base" id="old-side-header">Legacy / Source File Details</h3>
                             </div>
 
-                            {{-- Merger: Merged Result File selector (shown only for Merger) --}}
+                            {{-- Temporary Holding File panel --}}
+                            <div class="border border-purple-200 rounded-2xl bg-purple-50/40 p-4 space-y-3">
+                                <label class="flex items-start gap-3 cursor-pointer">
+                                    <input type="checkbox" id="use_holding_file" name="use_holding_file" value="1"
+                                           onchange="onToggleHoldingFile()"
+                                           class="mt-0.5 w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500">
+                                    <span>
+                                        <span class="block text-xs font-bold text-purple-800 uppercase tracking-wider">Activate Supporting FileNo & Temporary Holding FileNo</span>
+                                        <span class="block text-[11px] text-slate-500 mt-0.5">Turn on to keep this chain <strong>open</strong> for more legacy workflows. The supporting file and holding number stay active and the legacy/source files are <strong>not</strong> decommissioned. Leave it <strong>off</strong> on the final workflow — that completes the chain and decommissions this workflow's legacy file(s).</span>
+                                    </span>
+                                </label>
+                                <input type="hidden" name="holding_action" id="holding_action" value="new">
+                                <input type="hidden" name="holding_file_no" id="holding_file_no_hidden" value="">
+
+                                <div id="holding-options" class="hidden space-y-3 pt-1">
+                                    <div class="flex flex-col sm:flex-row gap-2">
+                                        <label class="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border border-purple-200 bg-white cursor-pointer text-xs font-semibold text-slate-700 has-[:checked]:border-purple-500 has-[:checked]:bg-purple-50">
+                                            <input type="radio" name="holding_action_radio" value="new" checked onchange="onHoldingActionChange()" class="text-purple-600 focus:ring-purple-500">
+                                            Start a new holding fileno
+                                        </label>
+                                        <label class="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border border-purple-200 bg-white cursor-pointer text-xs font-semibold text-slate-700 has-[:checked]:border-purple-500 has-[:checked]:bg-purple-50">
+                                            <input type="radio" name="holding_action_radio" value="continue" onchange="onHoldingActionChange()" class="text-purple-600 focus:ring-purple-500">
+                                            Continue an existing chain
+                                        </label>
+                                    </div>
+
+                                    {{-- NEW: auto-generated preview --}}
+                                    <div id="holding-new-block">
+                                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Holding FileNo</label>
+                                        <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-dashed border-purple-300 bg-white">
+                                            <span id="holding-preview" class="text-sm font-mono font-bold text-purple-700">—</span>
+                                            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider bg-purple-50 border border-purple-200 rounded px-1.5 py-0.5">Auto · finalized on save</span>
+                                        </div>
+                                    </div>
+
+                                    {{-- CONTINUE: pick an existing holding number --}}
+                                    <div id="holding-continue-block" class="hidden space-y-2">
+                                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Existing Holding FileNo</label>
+                                        <select id="holding-continue-input" onchange="onHoldingSelectChange()"
+                                                class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-mono">
+                                            <option value="">— SELECT HOLDING FILE —</option>
+                                            @foreach($holdingFiles as $hfn)
+                                                <option value="{{ $hfn }}">{{ $hfn }}</option>
+                                            @endforeach
+                                        </select>
+                                        @if($holdingFiles->isEmpty())
+                                            <p class="text-[11px] text-slate-400 italic">No holding filenos exist yet. Use "Start a new holding fileno" to create the first one.</p>
+                                        @endif
+                                        <div id="holding-chain-summary" class="hidden text-xs bg-white border border-purple-200 rounded-lg p-3"></div>
+                                    </div>
+
+                                    <p class="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 hidden">
+                                        <i data-lucide="info" class="w-3.5 h-3.5 inline-block align-text-bottom"></i>
+                                        The supporting (destination) file selected on the right must already be indexed. If it has no Property ID yet, one is allocated automatically.
+                                    </p>
+                                </div>
+                            </div>
+
+                            {{-- Merger: Merged Supporting File selector (shown only for Merger) --}}
                             <div id="merger-result-panel" class="hidden space-y-5">
                                 <p class="text-[11px] text-slate-500">Select the already-merged destination file using the global file selector. Source plot files are selected individually on each plot card on the right.</p>
                                 <div class="border border-amber-200 rounded-2xl p-4 bg-amber-50/30 space-y-3">
                                     <div class="flex items-center justify-between gap-3">
                                         <div class="flex-1 min-w-0 space-y-1">
-                                            <span class="px-2 py-0.5 bg-amber-600 text-white text-[9px] font-black rounded uppercase tracking-wider">Merged Result File</span>
+                                            <span class="px-2 py-0.5 bg-amber-600 text-white text-[9px] font-black rounded uppercase tracking-wider">Merged Supporting File</span>
                                             <div id="merger-result-file-no" class="text-sm font-bold text-slate-800 font-mono mt-1">NOT SELECTED</div>
                                             <div id="merger-result-title" class="text-xs text-slate-500 truncate">—</div>
                                         </div>
@@ -411,11 +510,7 @@
                     </div>
 
                     {{-- Footer --}}
-                    <div class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <button type="button" onclick="goBackToStep1()"
-                            class="px-6 py-3.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-sm font-bold transition flex items-center gap-2 w-full sm:w-auto justify-center">
-                            <i data-lucide="arrow-left" class="w-4 h-4"></i> Back
-                        </button>
+                    <div class="mt-6 flex flex-col sm:flex-row items-center justify-end gap-4">
                         <button type="submit" id="btn-submit-linkage"
                             class="px-8 py-3.5 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition flex items-center gap-2 w-full sm:w-auto justify-center">
                             <i data-lucide="check-square" class="w-4 h-4"></i> Backfill Linkage and Decommission
@@ -430,6 +525,7 @@
 {{-- Inside the content section so the component's Select2 CDN <script> loads AFTER jQuery (head),
      otherwise loose output renders before <head> and $.fn.select2 is undefined → search breaks. --}}
 @include('components.global-fileno-modal')
+@endunless
 @endsection
 
 @section('footer-scripts')
@@ -454,6 +550,132 @@ const manualStreetOptions   = `<option value="">SELECT STREET</option>@foreach($
 const manualDistrictOptions = `<option value="">SELECT DISTRICT</option>@foreach($districts as $district)<option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>@endforeach`;
 const manualLgaOptions      = `<option value="">SELECT LGA</option>@foreach($lgas as $lga)<option value="{{ $lga->name }}">{{ strtoupper($lga->name) }}</option>@endforeach`;
 const manualStateOptions    = `@foreach($states as $state)<option value="{{ $state->StateName }}" @selected($state->StateName == 'Kano')>{{ strtoupper($state->StateName) }}</option>@endforeach`;
+
+// ─── History table: expand/collapse extra "Old File(s)" chips ────────────────
+function toggleOldFiles(id) {
+    const extras = document.querySelectorAll('.oldfiles-more-' + id);
+    const btn    = document.getElementById('oldfiles-btn-' + id);
+    if (!extras.length || !btn) return;
+    extras.forEach(el => el.classList.toggle('hidden'));
+    const collapsed = extras[0].classList.contains('hidden');
+    btn.textContent = collapsed ? ('+' + btn.dataset.count + ' others') : 'Show less';
+}
+
+// ─── Temporary Holding File ──────────────────────────────────────────────────
+function generateHoldingPreview() {
+    // Preview only — the server generates the authoritative TEMP-##### number on save.
+    return `TEMP-${Math.floor(10000 + Math.random() * 90000)}`;
+}
+
+function onToggleHoldingFile() {
+    const on    = document.getElementById('use_holding_file').checked;
+    const panel = document.getElementById('holding-options');
+    if (panel) panel.classList.toggle('hidden', !on);
+    if (on) {
+        onHoldingActionChange();
+    } else {
+        document.getElementById('holding_action').value = 'new';
+        document.getElementById('holding_file_no_hidden').value = '';
+    }
+    if (window.lucide) window.lucide.createIcons();
+}
+
+function onHoldingActionChange() {
+    const action = document.querySelector('input[name="holding_action_radio"]:checked')?.value || 'new';
+    document.getElementById('holding_action').value = action;
+    const newBlock      = document.getElementById('holding-new-block');
+    const continueBlock = document.getElementById('holding-continue-block');
+    const summary       = document.getElementById('holding-chain-summary');
+
+    if (action === 'new') {
+        const preview = generateHoldingPreview();
+        document.getElementById('holding-preview').textContent = preview;
+        // The server generates the authoritative number; the hidden field stays blank for "new".
+        document.getElementById('holding_file_no_hidden').value = '';
+        if (newBlock) newBlock.classList.remove('hidden');
+        if (continueBlock) continueBlock.classList.add('hidden');
+    } else {
+        if (newBlock) newBlock.classList.add('hidden');
+        if (continueBlock) continueBlock.classList.remove('hidden');
+        if (summary) summary.classList.add('hidden');
+        const input = document.getElementById('holding-continue-input');
+        document.getElementById('holding_file_no_hidden').value = (input?.value || '').trim().toUpperCase();
+    }
+}
+
+function onHoldingSelectChange() {
+    const no = (document.getElementById('holding-continue-input')?.value || '').trim().toUpperCase();
+    document.getElementById('holding_file_no_hidden').value = no;
+    const summary = document.getElementById('holding-chain-summary');
+    if (!no) {
+        if (summary) summary.classList.add('hidden');
+        return;
+    }
+    lookupHoldingFile();
+}
+
+function lookupHoldingFile() {
+    const no = (document.getElementById('holding-continue-input')?.value || '').trim().toUpperCase();
+    const summary = document.getElementById('holding-chain-summary');
+    if (!no) {
+        if (summary) summary.classList.add('hidden');
+        return;
+    }
+    fetch(`{{ route('admin.manual-linkage.search-holding-file') }}?holding_file_no=${encodeURIComponent(no)}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!summary) return;
+            summary.classList.remove('hidden');
+            if (!data.exists) {
+                summary.className = 'text-xs bg-red-50 border border-red-200 text-red-700 rounded-lg p-3';
+                summary.textContent = data.message || 'Holding file not found.';
+                return;
+            }
+            document.getElementById('holding_file_no_hidden').value = data.holding_file_no;
+            const rows = (data.stages || []).map(s =>
+                `<div class="flex justify-between gap-2 py-0.5"><span class="font-semibold text-slate-700">${s.workflow_type}</span><span class="font-mono text-slate-500">${s.new_file_number} · ${s.date}</span></div>`
+            ).join('');
+            summary.className = 'text-xs bg-white border border-purple-200 rounded-lg p-3';
+            summary.innerHTML =
+                `<div class="font-bold text-purple-800 mb-1">Chain found · supporting file ${data.supporting_file} (Prop ${data.prop_id ?? '—'})</div>${rows}`;
+        })
+        .catch(() => {
+            if (summary) { summary.className = 'text-xs bg-red-50 border border-red-200 text-red-700 rounded-lg p-3'; summary.textContent = 'Lookup failed. Try again.'; summary.classList.remove('hidden'); }
+        });
+}
+
+// Finalize-chain = Activation ON + Continue existing chain + a holding number chosen
+// + no legacy file manually added. The server derives & decommissions the chain's
+// legacy files (all except the supporting file).
+function isFinalizeChain() {
+    const active = document.getElementById('use_holding_file')?.checked;
+    const action = document.getElementById('holding_action')?.value;
+    const hfn    = (document.getElementById('holding_file_no_hidden')?.value || '').trim();
+    return !!(active && action === 'continue' && hfn && selectedOldFiles.length === 0);
+}
+
+function resetHoldingFile() {
+    const cb = document.getElementById('use_holding_file');
+    if (cb) cb.checked = false;
+    const panel = document.getElementById('holding-options');
+    if (panel) panel.classList.add('hidden');
+    const newRadio = document.querySelector('input[name="holding_action_radio"][value="new"]');
+    if (newRadio) newRadio.checked = true;
+    const action = document.getElementById('holding_action');
+    if (action) action.value = 'new';
+    const hidden = document.getElementById('holding_file_no_hidden');
+    if (hidden) hidden.value = '';
+    const input = document.getElementById('holding-continue-input');
+    if (input) input.value = '';
+    const summary = document.getElementById('holding-chain-summary');
+    if (summary) summary.classList.add('hidden');
+    const newBlock = document.getElementById('holding-new-block');
+    if (newBlock) newBlock.classList.remove('hidden');
+    const continueBlock = document.getElementById('holding-continue-block');
+    if (continueBlock) continueBlock.classList.add('hidden');
+}
 
 // ─── Modal Open / Close ──────────────────────────────────────────────────────
 function openLinkageModal() {
@@ -510,6 +732,7 @@ function goBackToStep1() {
     if (streetSelect) streetSelect.setAttribute('name', 'street_name');
     const streetOther = document.getElementById('street_other');
     if (streetOther) { streetOther.classList.add('hidden'); streetOther.disabled = true; streetOther.value = ''; }
+    resetHoldingFile();
     renderBadges();
     const form = document.getElementById('linkage-form');
     if (form) form.reset();
@@ -529,7 +752,7 @@ function selectWorkflow(workflow) {
 function tailorLeftForm() {
     const texts = {
         Subdivision:          { header: 'Subdivision Parent File',  label: 'Enter Parent File Number',          help: 'Verify the one parent file to be split. (Exactly 1 required).',         list: 'Parent File to Decommission' },
-        Merger:               { header: 'Merged Result File',       label: '',                                  help: '',                                                                       list: '' },
+        Merger:               { header: 'Merged Supporting File',       label: '',                                  help: '',                                                                       list: '' },
         'Plot Extension':     { header: 'Legacy Plot File',         label: 'Select Legacy Plot File',           help: 'Choose the original plot file. (Exactly 1 required).',                  list: 'Plot File to Decommission'   },
         'Change of Purpose':  { header: 'Legacy Source File',       label: 'Select Legacy File',                help: 'Choose the file to re-purpose. (Exactly 1 required).',                 list: 'Legacy File to Re-Purpose'   },
     };
@@ -551,10 +774,16 @@ function tailorLeftForm() {
         document.getElementById('list-label').textContent      = t.list  || 'Selected Files';
     }
 
-    // Right-side header
+    // Right-side header — workflow-specific destination label
     const newHeader = document.getElementById('new-side-header');
     const newBadge  = document.getElementById('new-side-badge');
-    if (newHeader) newHeader.textContent = isMerger ? 'Source Plot Details' : 'Processed Destination File Details';
+    const destHeaders = {
+        'Subdivision':       'Child Plot Files',
+        'Merger':            'Source Plot Details',
+        'Plot Extension':    'Extended / New File',
+        'Change of Purpose': 'Changed-Purpose / New File',
+    };
+    if (newHeader) newHeader.textContent = destHeaders[selectedWorkflow] || 'Processed Destination File Details';
     if (newBadge) {
         newBadge.className = `w-7 h-7 rounded-full flex items-center justify-center font-bold text-sm ${isMerger ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`;
     }
@@ -746,6 +975,186 @@ function injectUnindexedInputs() {
     } else if (selectedWorkflow === 'Subdivision') {
         subdivisionChildren.forEach(c => { if (c.unindexed && c.new_file_number) add(c.new_file_number); });
     }
+}
+
+// ─── BULK CSV IMPORT (Subdivision children / Merger sources) ─────────────────
+// Reusable card injected into each workflow's right-hand panel by renderTailoredForm().
+function csvImportBlock(mode) {
+    const label = mode === 'merger' ? 'source plot files' : 'child plot files';
+    return `
+        <div class="border border-blue-200 rounded-2xl p-4 bg-blue-50/30 space-y-3">
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="upload" class="w-4 h-4 text-blue-600"></i>
+                    <span class="text-xs font-bold uppercase tracking-wider text-blue-700">Bulk CSV Import</span>
+                </div>
+                <button type="button" onclick="downloadManualCsvTemplate('${mode}')"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-[11px] font-bold transition">
+                    <i data-lucide="download" class="w-3.5 h-3.5"></i> Download Template
+                </button>
+            </div>
+            <p class="text-[11px] text-slate-500">Linking many files? Upload a filled template instead of picking each one. Only <span class="font-mono font-bold">file_number</span> is required — other columns back-fill from the indexed record. This adds to the ${label} grid below for review before you submit.</p>
+            <div class="flex flex-col sm:flex-row gap-2">
+                <input type="file" id="manual-csv-file-input" accept=".csv,text/csv"
+                    class="flex-1 text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200">
+                <button type="button" id="manual-csv-import-btn" onclick="runManualCsvImport('${mode}')"
+                    class="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition whitespace-nowrap">
+                    <i data-lucide="file-up" class="w-3.5 h-3.5"></i> Import CSV
+                </button>
+            </div>
+            <div id="manual-csv-report" class="hidden"></div>
+        </div>
+    `;
+}
+
+function downloadManualCsvTemplate(mode) {
+    window.location.href = `{{ route('admin.manual-linkage.csv-template') }}?mode=${encodeURIComponent(mode)}`;
+}
+
+function runManualCsvImport(mode) {
+    const input = document.getElementById('manual-csv-file-input');
+    const file  = input?.files?.[0];
+    if (!file) {
+        Swal.fire({ icon: 'warning', title: 'No File Selected', text: 'Choose a CSV file to import first.' });
+        return;
+    }
+
+    const btn = document.getElementById('manual-csv-import-btn');
+    const originalHtml = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="animate-pulse">Importing…</span>'; }
+
+    const fd = new FormData();
+    fd.append('csv_file', file);
+    fd.append('mode', mode);
+    fd.append('_token', '{{ csrf_token() }}');
+
+    fetch(`{{ route('admin.manual-linkage.csv-import') }}`, {
+        method: 'POST',
+        body: fd,
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+    })
+        .then(async r => {
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(data.error || (data.errors ? Object.values(data.errors).flat().join(' ') : 'Import failed.'));
+            return data;
+        })
+        .then(data => {
+            const imported = (data.rows || []).filter(row => row.status === 'indexed' || row.status === 'unindexed');
+            if (mode === 'subdivision') applySubdivisionCsv(imported);
+            else                       applyMergerCsv(imported);
+            renderCsvReport(data);
+
+            if (imported.length === 0) {
+                Swal.fire({ icon: 'warning', title: 'Nothing Imported', text: 'No usable file numbers were found. Check the highlighted rows.' });
+            } else {
+                Swal.fire({ icon: 'success', title: 'Import Complete',
+                    html: `<strong>${imported.length}</strong> file(s) added to the grid for review.` +
+                          ((data.summary.invalid + data.summary.duplicates) > 0
+                            ? `<br><span class="text-amber-600 text-sm">${data.summary.invalid} invalid · ${data.summary.duplicates} duplicate row(s) skipped.</span>` : ''),
+                    timer: 2600, showConfirmButton: false });
+            }
+        })
+        .catch(err => {
+            Swal.fire({ icon: 'error', title: 'Import Failed', text: err.message || 'Unable to process the CSV.' });
+        })
+        .finally(() => {
+            if (btn) { btn.disabled = false; btn.innerHTML = originalHtml; }
+            if (input) input.value = '';
+            if (window.lucide) window.lucide.createIcons();
+        });
+}
+
+function applySubdivisionCsv(rows) {
+    rows.forEach(r => {
+        const d = r.details || {};
+        subdivisionChildCounter++;
+        subdivisionChildren.push({
+            index:           subdivisionChildCounter,
+            new_file_number: r.file_number,
+            file_title:      d.file_title || '',
+            plot_number:     d.plot_number || '',
+            location:        d.location || '',
+            plot_size:       d.plot_size || '',
+            survey_plan_no:  d.survey_plan_no || '',
+            unindexed:       !r.indexed,
+        });
+    });
+    renderSubdivisionChildren();
+}
+
+function applyMergerCsv(rows) {
+    // Bulk import replaces the source set so card count matches the CSV exactly.
+    selectedOldFiles       = rows.map(r => r.file_number);
+    selectedOldFileDetails = rows.map(r => ({
+        file_number: r.file_number,
+        file_title:  r.details?.file_title  || '',
+        plot_number: r.details?.plot_number || '',
+        district:    r.details?.district    || '',
+        lga:         r.details?.lga         || '',
+        location:    r.details?.location    || '',
+    }));
+
+    const numPlotsInput = document.getElementById('num_plots');
+    if (numPlotsInput) numPlotsInput.value = rows.length;
+    generateManualMergerSources();
+
+    rows.forEach((r, idx) => {
+        const i = idx + 1;
+        if (!r.indexed) markMergerCardUnindexed(i, r.file_number);
+        applyMergerCsvExtras(i, r.details || {});
+    });
+
+    // Plot sizes from the CSV → size inputs + total
+    const sizeInputs = document.querySelectorAll('.manual-merger-source-input');
+    rows.forEach((r, idx) => {
+        const sz = (r.details?.plot_size || '').toString().replace(/[^0-9.]/g, '');
+        if (sizeInputs[idx] && sz) sizeInputs[idx].value = sz;
+    });
+    calculateManualMergerTotal();
+
+    // Show the first card
+    document.querySelectorAll('.manual-merger-location-card').forEach(c => c.classList.add('hidden'));
+    document.getElementById('manual_merger_location_card_1')?.classList.remove('hidden');
+    const currentLabel = document.getElementById('manual_current_plot_label');
+    if (currentLabel) currentLabel.textContent = rows.length ? '1' : '0';
+    if (window.lucide) window.lucide.createIcons();
+}
+
+function applyMergerCsvExtras(i, details) {
+    const card = document.getElementById(`manual_merger_location_card_${i}`);
+    if (!card) return;
+    const houseInput = card.querySelector(`input[name="location_details[${i}][house_no]"]`);
+    if (houseInput && details.house_no) houseInput.value = details.house_no;
+    if (details.street_name) setManualSelectValue(card.querySelector('.merger-select-street_name'), details.street_name);
+    if (details.state)       setManualSelectValue(card.querySelector(`select[name="location_details[${i}][state]"]`), details.state);
+    updateManualMergerLocationPreview(i);
+}
+
+function renderCsvReport(data) {
+    const box = document.getElementById('manual-csv-report');
+    if (!box) return;
+    const s = data.summary || {};
+    const problems = (data.rows || []).filter(r => r.status === 'invalid' || r.status === 'duplicate');
+
+    let problemHtml = '';
+    if (problems.length) {
+        problemHtml = `<div class="mt-2 max-h-40 overflow-y-auto border border-red-200 rounded-lg divide-y divide-red-100 bg-white">` +
+            problems.map(r => `
+                <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 text-[11px]">
+                    <span class="font-mono font-bold text-red-700 whitespace-nowrap">${r.file_number || '(blank)'}<span class="text-slate-400 font-normal"> · row ${r.row}</span></span>
+                    <span class="text-red-600 text-right">${r.message}</span>
+                </div>`).join('') + `</div>`;
+    }
+
+    box.innerHTML = `
+        <div class="flex flex-wrap gap-1.5 text-[10px] font-bold pt-1">
+            <span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">Imported: ${s.imported || 0}</span>
+            <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-600">Indexed: ${s.indexed || 0}</span>
+            <span class="px-2 py-0.5 rounded bg-amber-100 text-amber-700">Un-indexed: ${s.unindexed || 0}</span>
+            <span class="px-2 py-0.5 rounded bg-orange-100 text-orange-700">Duplicates: ${s.duplicates || 0}</span>
+            <span class="px-2 py-0.5 rounded bg-red-100 text-red-700">Invalid: ${s.invalid || 0}</span>
+        </div>${problemHtml}`;
+    box.classList.remove('hidden');
 }
 
 function renderSubdivisionChildren() {
@@ -1104,7 +1513,7 @@ function searchMergedFile() {
 
     const rawVal = input.value.trim();
     if (!rawVal) {
-        Swal.fire({ icon: 'warning', title: 'Input Required', text: 'Please enter the merged result file number.' });
+        Swal.fire({ icon: 'warning', title: 'Input Required', text: 'Please enter the Merged Supporting File number.' });
         return;
     }
     const fileNo = rawVal.toUpperCase();
@@ -1178,7 +1587,7 @@ function backfillMergerResult(data) {
             icon: 'error',
             title: 'File Not Indexed',
             html: `<strong>${data.fileNumber}</strong> was not found in the File Indexing system.<br><br>
-                   The merged result file must be <strong>indexed first</strong> before it can be linked here.<br><br>Index it first, then return here.`,
+                   The Merged Supporting File must be <strong>indexed first</strong> before it can be linked here.<br><br>Index it first, then return here.`,
         });
         return;
     }
@@ -1490,6 +1899,7 @@ function renderTailoredForm() {
 
     if (selectedWorkflow === 'Subdivision') {
         html = `
+            ${csvImportBlock('subdivision')}
             <div class="border border-indigo-200 rounded-2xl p-4 bg-indigo-50/20 space-y-3">
                 <div class="flex items-center justify-between">
                     <span class="text-xs font-bold uppercase tracking-wider text-indigo-700">Child Plot Files <span class="text-red-500">*</span></span>
@@ -1508,6 +1918,7 @@ function renderTailoredForm() {
         `;
     } else if (selectedWorkflow === 'Merger') {
         html = `
+            ${csvImportBlock('merger')}
             <div>
                 <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Number of Source Plots <span class="text-red-500">*</span></label>
                 <input type="number" name="num_plots" id="num_plots" min="2" max="50" oninput="generateManualMergerSources()"
@@ -1625,6 +2036,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const selectedList   = document.getElementById('selected-files-list');
     const hiddenInputs   = document.getElementById('hidden-inputs-container');
     const linkageForm    = document.getElementById('linkage-form');
+
+    // View-only mode (?url=land_view): the modal/form is not rendered — skip all wiring.
+    if (!linkageForm) return;
 
     // ── Verify Card Detail Elements ───────────────────────────────────────────
     const vTitle         = document.getElementById('v-title');
@@ -1829,7 +2243,7 @@ document.addEventListener('DOMContentLoaded', function () {
             // Validate merged result is selected
             const mergedFileNo = document.getElementById('new_file_number')?.value?.trim();
             if (!mergedFileNo) {
-                Swal.fire({ icon: 'error', title: 'Merged File Missing', text: 'Please select the merged result file using the "Select File" button on the left side.' });
+                Swal.fire({ icon: 'error', title: 'Merged File Missing', text: 'Please select the Merged Supporting File using the "Select File" button on the left side.' });
                 return;
             }
             // Validate num_plots >= 2
@@ -1866,7 +2280,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     text: 'Please use the "Select File" button to choose the parent file to be decommissioned.' });
                 return;
             }
-        } else if (selectedOldFiles.length === 0) {
+        } else if (selectedOldFiles.length === 0 && !isFinalizeChain()) {
             Swal.fire({ icon: 'error', title: 'Legacy Files Missing', text: 'Please verify and add at least one old file number.' });
             return;
         }
@@ -1926,62 +2340,78 @@ document.addEventListener('DOMContentLoaded', function () {
             newFileDisplay = `<strong>${document.getElementById('new_file_number')?.value?.trim() || '(not set)'}</strong>`;
         }
 
+        // Finalize chain: legacy files come from the chain (all except the supporting file)
+        if (isFinalizeChain() && !sourceFilesDisplay) {
+            sourceFilesDisplay = 'All chain files except the supporting file';
+        }
+
         const approvalRef  = document.querySelector('input[name="approval_reference"]')?.value?.trim() || '—';
         const approvalDate = document.querySelector('input[name="approval_date"]')?.value || '—';
 
         // Workflow-specific wording for the confirmation summary
         const wfCopy = {
-            'Subdivision': {
-                title:  'Confirm Subdivision Linkage',
-                source: 'Parent file (to decommission)',
-                dest:   'Subdivided into',
-                action: 'decommission the parent file and link it to its already-created child plots',
-            },
-            'Merger': {
-                title:  'Confirm Merger Linkage',
-                source: 'Plots merged (to decommission)',
-                dest:   'Merged into',
-                action: 'decommission the source plots and link them to the merged file',
-            },
-            'Plot Extension': {
-                title:  'Confirm Plot Extension Linkage',
-                source: 'Original file (to decommission)',
-                dest:   'Extended into',
-                action: 'decommission the original file and link it to the extended file',
-            },
-            'Change of Purpose': {
-                title:  'Confirm Change of Purpose Linkage',
-                source: 'Original file (to decommission)',
-                dest:   'Re-purposed into',
-                action: 'decommission the original file and link it to the re-purposed file',
-            },
+            'Subdivision':       { title: 'Confirm Subdivision Linkage',      source: 'Supporting FileNo', dest: 'Subdivided into' },
+            'Merger':            { title: 'Confirm Merger Linkage',           source: 'Plots merged',  dest: 'Merged into' },
+            'Plot Extension':    { title: 'Confirm Plot Extension Linkage',   source: 'Original file', dest: 'Extended into' },
+            'Change of Purpose': { title: 'Confirm Change of Purpose Linkage', source: 'Legacy file',  dest: 'Re-purposed into' },
         };
-        const copy = wfCopy[selectedWorkflow] || {
-            title: 'Confirm Manual Linkage', source: 'Source file(s)', dest: 'Linked to',
-            action: 'decommission the source file(s) and patch lineage on the destination(s)',
-        };
+        const copy = wfCopy[selectedWorkflow] || { title: 'Confirm Manual Linkage', source: 'Source file(s)', dest: 'Linked to' };
+
+        // Chain / activation context
+        const activated  = !!document.getElementById('use_holding_file')?.checked;
+        const finalizing = isFinalizeChain();
+        const holdAction = document.getElementById('holding_action')?.value;
+        let holdingNo = (document.getElementById('holding_file_no_hidden')?.value || '').trim();
+        if (activated && holdAction === 'new' && !holdingNo) {
+            holdingNo = (document.getElementById('holding-preview')?.textContent || '').trim();
+        }
+        // Supporting (destination) file — the one that stays active. N/A for Subdivision.
+        const supportingFile = selectedWorkflow === 'Subdivision'
+            ? '' : (document.getElementById('new_file_number')?.value?.trim() || '');
 
         // Change of Purpose shows the auto-derived New Purpose
         const copPurpose = selectedWorkflow === 'Change of Purpose'
-            ? (document.getElementById('purpose')?.value?.trim() || '—')
-            : null;
+            ? (document.getElementById('purpose')?.value?.trim() || '—') : null;
+
+        // Fate note: open chain (no decommission) vs finalize/final (decommission)
+        let noteClass, noteText;
+        if (finalizing) {
+            noteClass = 'bg-red-50 border border-red-200 text-red-700';
+            noteText  = `Final step: <strong>${supportingFile}</strong> stays active. <strong>All other files</strong> in chain <strong>${holdingNo}</strong> will be decommissioned. Audited &amp; irreversible.`;
+        } else if (activated) {
+            noteClass = 'bg-emerald-50 border border-emerald-200 text-emerald-700';
+            noteText  = `Chain stays <strong>open</strong> — the supporting &amp; holding files remain active and the legacy/source file(s) are <strong>not</strong> decommissioned. Continue with more workflows when ready.`;
+        } else {
+            noteClass = 'bg-red-50 border border-red-200 text-red-700';
+            noteText  = `This will <strong>decommission</strong> the legacy/source file(s) and keep the destination active. Audited &amp; irreversible.`;
+        }
+
+        const row = (label, value, mono) =>
+            `<div class="flex justify-between items-start gap-4 py-1.5 border-b border-slate-100 last:border-0">
+                <span class="text-slate-400 whitespace-nowrap">${label}</span>
+                <span class="text-right ${mono ? 'font-mono' : ''} font-semibold text-slate-800">${value}</span>
+            </div>`;
+
+        const rows = [
+            row('Workflow', selectedWorkflow),
+            activated ? row('Holding FileNo', holdingNo || '—', true) : '',
+            supportingFile ? row('Supporting FileNo', supportingFile, true) : '',
+            row(finalizing ? 'Files to decommission' : copy.source, sourceFilesDisplay || '—', true),
+            (newFileDisplay && !supportingFile) ? row(copy.dest, newFileDisplay) : '',
+            copPurpose ? row('New purpose', copPurpose) : '',
+        ].join('');
 
         Swal.fire({
             title: copy.title,
-            html: `<div class="text-left space-y-2 text-sm">
-                <div><span class="text-slate-400">Workflow:</span> <strong>${selectedWorkflow}</strong></div>
-                <div><span class="text-slate-400">${copy.source}:</span> <strong class="font-mono">${sourceFilesDisplay}</strong></div>
-                ${newFileDisplay ? `<div><span class="text-slate-400">${copy.dest}:</span><br>${newFileDisplay}</div>` : ''}
-                ${copPurpose ? `<div><span class="text-slate-400">New purpose:</span> <strong>${copPurpose}</strong></div>` : ''}
-                ${selectedWorkflow !== 'Merger' ? `<div><span class="text-slate-400">Approval Ref:</span> ${approvalRef} &nbsp;|&nbsp; <span class="text-slate-400">Date:</span> ${approvalDate}</div>` : ''}
-                <hr class="my-2 border-slate-200">
-                <p class="text-red-600 font-semibold text-xs">This will ${copy.action}. It is audited and irreversible.</p>
+            html: `<div class="text-left text-sm">
+                ${rows}
+                <div class="mt-3 rounded-lg px-3 py-2 text-xs font-medium ${noteClass}">${noteText}</div>
             </div>`,
-            icon:               'warning',
+            icon:               finalizing || !activated ? 'warning' : 'question',
             showCancelButton:   true,
             confirmButtonColor: '#3085d6',
             cancelButtonColor:  '#d33',
-            confirmButtonText:  'Yes, Backfill Linkage',
+            confirmButtonText:  finalizing ? 'Yes, Finalize & Decommission' : 'Yes, Backfill Linkage',
         }).then(result => {
             if (result.isConfirmed) {
                 injectUnindexedInputs();

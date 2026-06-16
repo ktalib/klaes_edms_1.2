@@ -87,34 +87,34 @@
 
       const orgBalance = Number(cfg.institution?.token_balance || 0);
       const tokensCell = isAdmin
-        ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 whitespace-nowrap">
+        ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
              <i data-lucide="infinity" class="w-3.5 h-3.5"></i> Org pool · ${fmt(orgBalance)}
            </span>`
         : `<div class="min-w-[150px]">
              <div class="flex items-baseline justify-between mb-1">
-               <span class="text-sm font-bold text-gray-900">${fmt(avail)}</span>
-               <span class="text-[11px] font-semibold text-gray-500">of ${fmt(allocated)} allocated</span>
+               <span class="text-sm font-bold text-gray-900 dark:text-gray-100">${fmt(avail)}</span>
+               <span class="text-[11px] font-semibold text-gray-500 dark:text-gray-400">of ${fmt(allocated)} allocated</span>
              </div>
-             <div class="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+             <div class="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
                <div class="h-full bg-blue-600 rounded-full" style="width:${usedPct}%"></div>
              </div>
-             <p class="text-[11px] font-semibold text-gray-500 mt-1">${fmt(used)} used</p>
+             <p class="text-[11px] font-semibold text-gray-500 dark:text-gray-400 mt-1">${fmt(used)} used</p>
            </div>`;
 
-      return `<tr class="table-row hover:bg-gray-50/70 transition-colors">
+      return `<tr class="table-row hover:bg-gray-50/70 dark:hover:bg-gray-700/50 transition-colors">
         <td class="py-3 sm:py-4 px-4 sm:px-6">
           <div class="flex items-center gap-3">
             <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-semibold text-sm shadow-sm">${esc((user.name || '?').charAt(0).toUpperCase())}</div>
-            <div><p class="font-medium text-sm sm:text-base text-gray-900">${esc(user.name)}</p><p class="text-xs text-gray-500 md:hidden">${esc(user.email)}</p></div>
+            <div><p class="font-medium text-sm sm:text-base text-gray-900 dark:text-gray-100">${esc(user.name)}</p><p class="text-xs text-gray-500 dark:text-gray-400 md:hidden">${esc(user.email)}</p></div>
           </div>
         </td>
-        <td class="py-3 sm:py-4 px-4 sm:px-6 text-sm text-gray-600">${esc(user.email)}</td>
-        <td class="py-3 sm:py-4 px-4 sm:px-6 text-sm text-gray-600 hidden md:table-cell">${esc(user.job_title || '-')}</td>
-        <td class="py-3 sm:py-4 px-4 sm:px-6"><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}"><span class="w-1.5 h-1.5 rounded-full ${isAdmin ? 'bg-purple-500' : 'bg-blue-500'}"></span>${esc(roleLabel(user.user_type))}</span></td>
+        <td class="py-3 sm:py-4 px-4 sm:px-6 text-sm text-gray-600 dark:text-gray-300"><span>${esc(user.email)}</span>${user.phone ? `<span class="block text-xs text-gray-400 dark:text-gray-500">${esc(user.phone)}</span>` : ''}</td>
+        <td class="py-3 sm:py-4 px-4 sm:px-6 text-sm text-gray-600 dark:text-gray-300 hidden md:table-cell">${esc(user.job_title || '-')}</td>
+        <td class="py-3 sm:py-4 px-4 sm:px-6"><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${isAdmin ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300' : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'}"><span class="w-1.5 h-1.5 rounded-full ${isAdmin ? 'bg-purple-500' : 'bg-blue-500'}"></span>${esc(roleLabel(user.user_type))}</span></td>
         <td class="py-3 sm:py-4 px-4 sm:px-6">${tokensCell}</td>
-        <td class="py-3 sm:py-4 px-4 sm:px-6"><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}"><span class="w-1.5 h-1.5 rounded-full ${user.status === 'active' ? 'bg-green-500' : 'bg-gray-400'}"></span>${esc(roleLabel(user.status))}</span></td>
+        <td class="py-3 sm:py-4 px-4 sm:px-6"><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${user.status === 'active' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}"><span class="w-1.5 h-1.5 rounded-full ${user.status === 'active' ? 'bg-green-500' : 'bg-gray-400'}"></span>${esc(roleLabel(user.status))}</span></td>
         <td class="py-3 sm:py-4 px-4 sm:px-6 text-right">
-          ${isSelf ? '<span class="text-xs text-gray-400">Current user</span>' : `<button class="inline-flex items-center gap-1 text-red-600 hover:text-red-700 hover:bg-red-50 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors" data-delete-user="${user.id}"><i data-lucide="trash-2" class="w-4 h-4"></i>Remove</button>`}
+          ${isSelf ? '<span class="text-xs text-gray-400 dark:text-gray-500">Current user</span>' : `<button class="inline-flex items-center gap-1 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors" data-delete-user="${user.id}"><i data-lucide="trash-2" class="w-4 h-4"></i>Remove</button>`}
         </td>
       </tr>`;
     }).join('');
@@ -144,10 +144,10 @@
       container.innerHTML = '<p class="text-sm text-gray-500">No activity recorded yet.</p>';
       return;
     }
-    container.innerHTML = rows.map((item) => `<div class="bg-white border border-gray-200 rounded-2xl p-4 sm:p-5">
+    container.innerHTML = rows.map((item) => `<div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-4 sm:p-5">
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div class="flex items-start gap-3"><div class="w-9 h-9 rounded-2xl bg-blue-50 flex items-center justify-center"><i data-lucide="activity" class="w-4 h-4 text-blue-600"></i></div><div><p class="font-medium text-gray-900 text-sm sm:text-base">${esc(item.description || '-')}</p><p class="text-xs text-gray-500">${esc(item.member || 'System')}${item.reference ? ' - ' + esc(item.reference) : ''}</p></div></div>
-        <span class="text-xs text-gray-500">${esc(item.at || '')}</span>
+        <div class="flex items-start gap-3"><div class="w-9 h-9 rounded-2xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center"><i data-lucide="activity" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i></div><div><p class="font-medium text-gray-900 dark:text-gray-100 text-sm sm:text-base">${esc(item.description || '-')}</p><p class="text-xs text-gray-500 dark:text-gray-400">${esc(item.member || 'System')}${item.reference ? ' - ' + esc(item.reference) : ''}</p></div></div>
+        <span class="text-xs text-gray-500 dark:text-gray-400">${esc(item.at || '')}</span>
       </div>
     </div>`).join('');
     window.lucide?.createIcons();
@@ -323,14 +323,17 @@
   async function addNewUser() {
     const password = $('temp-password').value;
     if (password !== $('confirm-password').value) return notify('Passwords do not match.', 'error');
+    const accessRoles = Array.from(document.querySelectorAll('input[name="access-role[]"]:checked')).map(el => el.value);
+    if (accessRoles.length === 0) return notify('Please select at least one Access Role.', 'error');
     const payload = {
       name: $('user-fullname').value.trim(),
       email: $('user-email').value.trim(),
+      phone: $('user-phone') ? $('user-phone').value.trim() : '',
       password,
       job_title: $('job-title').value.trim(),
       department: $('department').value.trim(),
       user_type: document.querySelector('input[name="user-type"]:checked')?.value || 'regular_user',
-      access_role: document.querySelector('input[name="access-role"]:checked')?.value || 'search_only',
+      access_role: accessRoles,
       token_allocation: parseInt($('token-allocation')?.value, 10) || 0,
     };
     try {
@@ -347,12 +350,30 @@
 
   function closeModal() {
     $('add-user-modal').classList.add('hidden');
-    ['user-fullname', 'user-email', 'job-title', 'department', 'temp-password', 'confirm-password'].forEach((id) => { if ($(id)) $(id).value = ''; });
+    ['user-fullname', 'user-email', 'user-phone', 'job-title', 'department', 'temp-password', 'confirm-password'].forEach((id) => { if ($(id)) $(id).value = ''; });
     $('token-allocation').value = '250';
+    // Reset access-role checkboxes (first checked, rest unchecked)
+    document.querySelectorAll('input[name="access-role[]"]').forEach((cb, i) => { cb.checked = i === 0; });
+    // Reset user-type to regular_user
+    const regularInput = document.querySelector('input[name="user-type"][value="regular_user"]');
+    if (regularInput) regularInput.checked = true;
+  }
+
+  function openAddMemberModal() {
+    const limits = cfg.limits || {};
+    const currentMembers = members.length;
+
+    // Block opening if total member limit reached
+    if (limits.maxMembers != null && currentMembers >= limits.maxMembers) {
+      notify(`Your subscription allows a maximum of ${limits.maxMembers} team members. Please upgrade your plan to add more.`, 'error');
+      return;
+    }
+
+    $('add-user-modal').classList.remove('hidden');
   }
 
   function setupModal() {
-    $('add-user-btn')?.addEventListener('click', () => $('add-user-modal').classList.remove('hidden'));
+    $('add-user-btn')?.addEventListener('click', openAddMemberModal);
     $('close-modal-btn')?.addEventListener('click', closeModal);
     $('cancel-add-user')?.addEventListener('click', closeModal);
     $('confirm-add-user')?.addEventListener('click', addNewUser);
@@ -391,41 +412,35 @@
     $('topup-minus')?.addEventListener('click', () => { if (qty) { qty.value = Math.max(1, clampQty() - 1); recalc(); } });
     $('topup-plus')?.addEventListener('click', () => { if (qty) { qty.value = Math.min(10, clampQty() + 1); recalc(); } });
 
-    // Step toggling: bundle selection → payment methods.
-    const showMethods = (show) => {
-      $('topup-methods')?.classList.toggle('hidden', !show);
-      $('topup-continue-row')?.classList.toggle('hidden', show);
-    };
-    const resetSteps = () => showMethods(false);
-
-    $('buy-tokens-btn')?.addEventListener('click', () => { resetSteps(); modal.classList.remove('hidden'); });
+    $('buy-tokens-btn')?.addEventListener('click', () => { modal.classList.remove('hidden'); });
     $('close-token-modal')?.addEventListener('click', () => modal.classList.add('hidden'));
     $('cancel-token-purchase')?.addEventListener('click', () => modal.classList.add('hidden'));
-    $('topup-continue')?.addEventListener('click', () => {
-      if (!selectedPackage) return notify('Please select a bundle first.', 'warning');
-      showMethods(true);
-    });
-    $('topup-back')?.addEventListener('click', () => showMethods(false));
 
-    const action = async (url, payload) => {
+    // "Pay with Paystack" — directly initiate without an extra method-selection step.
+    $('topup-continue')?.addEventListener('click', async () => {
       if (!selectedPackage) return notify('Please select a bundle first.', 'warning');
+      const btn = $('topup-continue');
+      const original = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span style="opacity:.6">Redirecting to Paystack…</span>';
       try {
-        const data = await postJson(url, 'POST', payload);
-        await notify(data.message || 'Token request submitted.', 'success');
-        // Reload so the balance, wallet, and ledger refresh.
-        window.location.reload();
+        const data = await postJson(cfg.routes.topupPaystackInitiate, 'POST', {
+          package: selectedPackage,
+          bundle_count: clampQty(),
+        });
+        if (data.authorization_url) {
+          window.location.href = data.authorization_url;
+        } else {
+          notify(data.message || 'Could not initiate payment.', 'error');
+          btn.disabled = false;
+          btn.innerHTML = original;
+        }
       } catch (error) {
-        notify(error.message || Object.values(error.errors || {})[0]?.[0] || 'Token action failed.', 'error');
+        notify(error.message || 'Payment initiation failed.', 'error');
+        btn.disabled = false;
+        btn.innerHTML = original;
       }
-    };
-
-    // Bank transfer: create a pending topup that staff confirm.
-    $('pay-bank-transfer')?.addEventListener('click', () =>
-      action(cfg.routes.topup, { package: selectedPackage, bundle_count: clampQty(), payment_method: 'bank_transfer' }));
-
-    // Auto gateways — not yet integrated.
-    $('pay-interswitch')?.addEventListener('click', () => notify('Interswitch payments are coming soon. Please use Bank Transfer for now.', 'warning'));
-    $('pay-paystack')?.addEventListener('click', () => notify('Paystack payments are coming soon. Please use Bank Transfer for now.', 'warning'));
+    });
   }
 
   function ledgerTypeLabel(type) {
@@ -453,14 +468,14 @@
         const n = Number(t.tokens || 0);
         const credit = n >= 0;
         const date = t.created_at ? new Date(t.created_at).toLocaleString() : '—';
-        const statusCls = t.status === 'completed' ? 'bg-green-100 text-green-700' : (t.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600');
-        return `<tr>
-          <td class="py-3 px-4 text-sm text-gray-700">${esc(date)}</td>
-          <td class="py-3 px-4 text-sm font-medium text-gray-900">${esc(ledgerTypeLabel(t.type))}</td>
-          <td class="py-3 px-4 text-sm text-right font-semibold ${credit ? 'text-green-600' : 'text-red-600'}">${credit ? '+' : ''}${fmt(n)}</td>
-          <td class="py-3 px-4 text-sm text-right text-gray-700">${t.balance_after != null ? fmt(t.balance_after) : '—'}</td>
+        const statusCls = t.status === 'completed' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300' : (t.status === 'pending' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300');
+        return `<tr class="dark:hover:bg-gray-700/30 transition-colors">
+          <td class="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">${esc(date)}</td>
+          <td class="py-3 px-4 text-sm font-medium text-gray-900 dark:text-gray-100">${esc(ledgerTypeLabel(t.type))}</td>
+          <td class="py-3 px-4 text-sm text-right font-semibold ${credit ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">${credit ? '+' : ''}${fmt(n)}</td>
+          <td class="py-3 px-4 text-sm text-right text-gray-700 dark:text-gray-300">${t.balance_after != null ? fmt(t.balance_after) : '—'}</td>
           <td class="py-3 px-4 text-sm"><span class="px-2.5 py-0.5 rounded-full text-xs font-medium ${statusCls}">${esc((t.status || '—').charAt(0).toUpperCase() + (t.status || '').slice(1))}</span></td>
-          <td class="py-3 px-4 text-sm text-gray-500 font-mono text-xs">${esc(t.reference_no || '—')}</td>
+          <td class="py-3 px-4 text-sm text-gray-500 dark:text-gray-400 font-mono text-xs">${esc(t.reference_no || '—')}</td>
         </tr>`;
       }).join('');
     } catch (e) {

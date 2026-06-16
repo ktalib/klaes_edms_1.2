@@ -22,10 +22,10 @@ class PhsPaymentConfirmed extends Mailable
     public function envelope(): Envelope
     {
         $subject = match ($this->request->payment_status) {
-            PhsOnboardingRequest::PAYMENT_INCOMPLETE => 'PHS Payment Received — Balance Outstanding',
-            PhsOnboardingRequest::PAYMENT_OVERPAID => 'PHS Payment Received — Confirmed',
-            PhsOnboardingRequest::PAYMENT_NOT_PAID => 'PHS Payment Outstanding',
-            default => 'PHS Payment Confirmed',
+            PhsOnboardingRequest::PAYMENT_INCOMPLETE => 'PHS Portal Payment Received — Balance Outstanding',
+            PhsOnboardingRequest::PAYMENT_OVERPAID => 'PHS Portal Payment Received — Confirmed',
+            PhsOnboardingRequest::PAYMENT_NOT_PAID => 'PHS Portal Payment Outstanding',
+            default => 'PHS Portal Payment Confirmed',
         };
 
         return new Envelope(subject: $subject);

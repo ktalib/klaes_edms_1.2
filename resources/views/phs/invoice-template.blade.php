@@ -9,8 +9,8 @@
         .wrap { padding: 20px 36px; }
         .head { width: 100%; }
         .head td { vertical-align: middle; }
-        .head .logo-cell { width: 64px; }
-        .head .logo-cell img { height: 50px; width: auto; }
+        .head .logo-cell { width: 100px; }
+        .head .logo-cell img { height: 80px; width: auto; }
         .head .logo-cell.r { text-align: right; }
         .brand { text-align: center; padding: 0 8px; }
         .brand h1 { color: #166534; font-size: 16px; margin: 0; white-space: nowrap; }
@@ -51,8 +51,8 @@
         .status-pending { background: #f3f4f6; color: #4b5563; }
         .foot { width: 100%; margin-top: 16px; border-top: 1px solid #e5e7eb; padding-top: 10px; }
         .foot td { vertical-align: middle; }
-        .foot-logo { width: 70px; text-align: right; }
-        .foot-logo img { height: 50px; width: auto; }
+        .foot-logo { width: 160px; text-align: center; }
+        .foot-logo img { height: 44px; width: auto; margin: 0 6px; }
         .foot-text { color: #9ca3af; font-size: 10px; text-align: center; }
         .watermark { position: fixed; left: 0; top: 300px; width: 100%; text-align: center; z-index: 0; }
         .watermark img { width: 340px; opacity: 0.06; }
@@ -62,8 +62,8 @@
 @php
     $ministryRight = 'http://app.klaes.ng/assets/logo/ministry1.jpg';
     $ministryLeft  = 'http://app.klaes.ng/assets/logo/ministry2.jpeg';
-    $watermarkLogo = 'http://app.klaes.ng/assets/logo/ministry2.jpeg';
-    $footerLogo    = 'http://app.klaes.ng/storage/upload/logo/1.jpeg';
+    $watermarkLogo = 'file://' . public_path('assets/logo/phs-light-logo.jpeg');
+    $footerLogo    = 'file://' . public_path('assets/logo/phs-light-logo.jpeg');
 @endphp
 
 <div class="watermark"><img src="{{ $watermarkLogo }}" alt=""></div>
@@ -142,7 +142,7 @@
             <tr>
                 <td>
                     <strong>Subscription</strong>
-                    @if (!empty($package['description']))<br><span style="color:#6b7280">{{ $package['description'] }}</span>@endif
+                    @if (!empty($package['name']))<br><span style="color:#6b7280">{{ $package['name'] }}</span>@endif
                 </td>
                 <td class="r">&mdash;</td>
                 <td class="r">&mdash;</td>
@@ -191,19 +191,25 @@
     </table>
 
     <div class="pay">
-        <h3>Payment Instructions</h3>
-        <p>Account Name: <strong>Kano State Ministry of Land &amp; Physical Planning</strong></p>
-        <p>Bank: <strong>{{ config('phs.bank_name', 'Zenith Bank Plc') }}</strong></p>
-        <p>Account No: <strong>{{ config('phs.bank_account', '1010101010') }}</strong></p>
-        <p>Use payment reference: <strong>{{ $request->payment_reference ?: $invoice_number }}</strong></p>
+        <h3>Payment Confirmation</h3>
+        <p>Payment Method: <strong>{{ $request->paystack_reference ? 'Paystack (Online)' : 'Bank Transfer' }}</strong></p>
+        <p>Payment Reference: <strong>{{ $request->paystack_reference ?: ($request->payment_reference ?: $invoice_number) }}</strong></p>
+        @if ($request->paystack_reference)
+            <p style="color:#166534">&#10003; Payment processed via Paystack</p>
+        @endif
     </div>
 
     <table class="foot">
         <tr>
-            <td class="foot-text">
-                <p>This invoice was generated electronically by the KLAES PHS Portal. For enquiries contact the ministry's finance office.</p>
+            <td style="width:100px; vertical-align:middle; text-align:left;">
+                <img src="{{ $footerLogo }}" alt="PHS Portal" style="height:60px; width:auto;">
             </td>
-            <td class="foot-logo"><img src="{{ $footerLogo }}" alt=""></td>
+            <td class="foot-text" style="vertical-align:middle; text-align:center;">
+                <p style="margin:0;">This invoice was generated electronically by the KLAES PHS Portal. For enquiries contact the ministry's finance office.</p>
+            </td>
+            <td style="width:100px; vertical-align:middle; text-align:right;">
+                <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="KLAES" style="height:60px; width:auto;">
+            </td>
         </tr>
     </table>
 </div>

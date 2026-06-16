@@ -292,6 +292,9 @@ class GroupingApiController extends Controller
         $startTime = microtime(true);
         // Strip temporary (T) suffix so RES-2026-1(T) resolves to RES-2026-1 in the grouping table
         $originalFileno = trim((string) preg_replace('/\(T\)$/i', '', trim($fileno)));
+        // Strip "AND EXTENSION" suffix so "RES-2026-10 AND EXTENSION" resolves to the base
+        // "RES-2026-10" for tracking-id lookup. The full value is still saved by the form.
+        $originalFileno = trim((string) preg_replace('/\s*AND\s+EXTENSION\s*$/i', '', $originalFileno));
 
         if ($originalFileno === '') {
             return response()->json([

@@ -156,6 +156,16 @@
     <div class="page">
         <!-- SINGLE HALF-PAGE SHEET -->
         <div class="sheet">
+            <!-- Ministry document header -->
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+                <img src="http://app.klaes.ng/assets/logo/ministry2.png" alt="Ministry" style="height:58px; width:58px; object-fit:contain;">
+                <div style="flex:1; text-align:center;">
+                    <div style="font-size:13px; font-weight:bold; text-transform:uppercase; color:#000;">Kano State Government</div>
+                    <div style="font-size:11px; font-weight:bold; color:#000;">Ministry of Land &amp; Physical Planning</div>
+                </div>
+                <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Coat of Arms" style="height:58px; width:58px; object-fit:contain;">
+            </div>
+
             <div class="header">KLAES FILE TRACKING REQUEST SHEET</div>
 
             <table>

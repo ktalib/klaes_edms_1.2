@@ -10,7 +10,8 @@
         .toolbar { margin: 0 auto 16px; max-width: 920px; text-align: right; }
         .toolbar button { background: #14532d; border: 0; border-radius: 6px; color: white; cursor: pointer; font: 700 13px Arial, sans-serif; padding: 10px 14px; }
         .slip { background: white; border: 1px solid #e5e7eb; box-shadow: 0 10px 40px rgba(15, 23, 42, .08); margin: 0 auto; max-width: 920px; position: relative; overflow: hidden; }
-        .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 36px; font-weight: 900; letter-spacing: 2px; color: rgba(22, 101, 52, .12); white-space: nowrap; text-transform: uppercase; text-align: center; line-height: 1.3; pointer-events: none; z-index: 5; }
+        .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 26px; font-weight: 900; letter-spacing: 3px; color: rgba(22, 101, 52, .18); white-space: nowrap; text-transform: uppercase; text-align: center; line-height: 1.3; pointer-events: none; z-index: 5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .bg-watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 55%; max-width: 160px; opacity: .12; pointer-events: none; z-index: 4; mix-blend-mode: multiply; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .header { border-bottom: 3px solid #166534; padding: 20px 30px 16px; }
         .logo-container { align-items: center; display: flex; gap: 20px; justify-content: space-between; }
         .logo-box { align-items: center; border: 1px solid #d1d5db; border-radius: 10px; display: flex; height: 64px; justify-content: center; overflow: hidden; width: 64px; }
@@ -55,6 +56,12 @@
         .sig-line { text-align: center; width: 250px; }
         .sig-img { display: block; height: 55px; max-width: 230px; margin: 0 auto 6px; object-fit: contain; }
         .sig-line hr { border: 0; border-top: 1px solid #111827; margin-bottom: 8px; }
+        .disclaimer-page { margin-top: 32px; }
+        .disclaimer-content { padding: 40px 44px 44px; }
+        .disclaimer-title { border-bottom: 2px solid #166534; color: #166534; font-size: 24px; font-weight: bold; letter-spacing: .5px; margin-bottom: 30px; padding-bottom: 12px; text-align: center; text-transform: uppercase; }
+        .disclaimer-body p { color: #1f2937; font-size: 17px; line-height: 2.05; margin-bottom: 26px; text-align: justify; }
+        .disclaimer-body p:last-child { margin-bottom: 0; }
+        .disclaimer-body strong { color: #7f1d1d; }
         @media print {
             @page { size: A4 portrait; margin: 8mm; }
             html, body { background: white; padding: 0; margin: 0; }
@@ -91,6 +98,32 @@
 
             /* Keep blocks intact across page breaks */
             .timeline-row, .info-box, .note, .footer, .footer-logos, .signature { break-inside: avoid; page-break-inside: avoid; }
+
+            /* Disclaimer always starts on its own page, attached to the result(s) */
+            .disclaimer-page { page-break-before: always; break-before: page; margin-top: 0; }
+            .disclaimer-content { padding: 44px 40px; }
+            .disclaimer-title { font-size: 24px; margin-bottom: 32px; padding-bottom: 12px; }
+            .disclaimer-body p { font-size: 17px; line-height: 2.1; margin-bottom: 28px; }
+
+            /* Watermarks: fixed positioning repeats on every printed page, centered */
+            .bg-watermark {
+                display: block;
+                position: fixed;
+                top: 50%; left: 50%;
+                transform: translate(-50%, -50%);
+                width: 55%; max-width: 400px;
+                opacity: .12;
+                z-index: 4;
+                mix-blend-mode: multiply;
+            }
+            .watermark {
+                position: fixed;
+                top: 50%; left: 50%;
+                transform: translate(-50%, -50%) rotate(-30deg);
+                font-size: 26px;
+                color: rgba(22, 101, 52, .18);
+                z-index: 5;
+            }
         }
         @media screen and (max-width: 760px) {
             body { padding: 12px; }
@@ -106,6 +139,7 @@
     <div class="toolbar"><button type="button" onclick="window.print()">Print Slip</button></div>
 
     <article class="slip">
+        <img class="bg-watermark" src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" alt="" aria-hidden="true">
         <div class="watermark" aria-hidden="true">PROPERTY HISTORY SEARCH (PHS) <br> &nbsp;&bull;&nbsp;  Not For Sale</div>
         <header class="header">
             <div class="logo-container">
@@ -224,15 +258,42 @@
                       
                         {{-- <img src="{{ asset('storage/' . $institution->logo_path) }}" alt="{{ $institution->name }} Logo"> --}}
                     @else
-                        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Organization Logo">
+                        <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="Organization Logo">
                     @endif
                 </div>
                 <div class="org-name" >For {{ $institution->name }} Authorized by Kano State Ministry Of Land and Physical Planning</div>
             </div>
             <div class="klaes-brand">
-                <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="KLAES Logo">
+                <img src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" alt="PHS Portal">
             </div>
         </div>
+    </article>
+
+    <article class="slip disclaimer-page">
+        <img class="bg-watermark" src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" alt="" aria-hidden="true">
+        <div class="watermark" aria-hidden="true">PROPERTY HISTORY SEARCH (PHS) <br> &nbsp;&bull;&nbsp;  Not For Sale</div>
+        <header class="header">
+            <div class="logo-container">
+                <div class="logo-box"><img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Ministry Logo"></div>
+                <div class="title-container">
+                    <h1>KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</h1>
+                    <h3>PROPERTY HISTORY SEARCH (PHS) PORTAL OFFICIAL SEARCH SLIP</h3>
+                </div>
+                <div class="logo-box"><img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Ministry Logo"></div>
+            </div>
+        </header>
+
+        <section class="disclaimer-content">
+            <div class="disclaimer-title">Disclaimer and Legal Notice</div>
+            <div class="disclaimer-body">
+                <p>The Property History Search (PHS) Portal and Online Legal Search results provided by the Kano State Ministry of Land and Physical Planning are generated strictly for informational and preliminary due diligence purposes. The Ministry shall not be held liable or responsible for any loss, damage, or legal consequences arising from the reliance on, alteration, forgery, or misrepresentation of any search report or land document generated through this platform. All genuine reports contain unique verification codes and QR codes; it is the sole responsibility of the user to verify the authenticity of any document via the Ministry&rsquo;s official verification portal before making any financial or legal decisions.</p>
+                <p>Please be strictly advised that any attempt to <strong>alter, forge, tamper with, or misuse</strong> any search result or land document issued by or accessible through the Ministry is a severe criminal offense. Such acts are punishable under the <strong>Criminal Code Act</strong>, the <strong>Cybercrimes (Prohibition, Prevention, etc.) Act 2015</strong>, and the <strong>Land Use Act of 1978</strong>. The Ministry actively monitors system access and will promptly report any suspected fraudulent activities to law enforcement agencies for full prosecution to the maximum extent of the law.</p>
+            </div>
+        </section>
+
+        <footer class="footer">
+            <p>This is an electronically generated official search slip. Verification can be made at www.klaes.gov.ng/verify</p>
+        </footer>
     </article>
 
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>

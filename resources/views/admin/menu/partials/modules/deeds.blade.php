@@ -203,12 +203,12 @@
             <span>Change of Purpose</span>
           </a>
 
-          <!-- ii. Parcel Update -->
+          <!-- ii. Parcel Update - New -->
           <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
             data-section="parcelUpdate-deeds">
             <div class="flex items-center gap-2">
               <i data-lucide="map" class="h-3.5 w-3.5 text-teal-400"></i>
-              <span>Parcel Update</span>
+              <span>Parcel Update - New</span>
             </div>
             <i data-lucide="chevron-right" class="h-3.5 w-3.5 transition-transform duration-200" data-chevron="parcelUpdate-deeds"></i>
           </div>
@@ -235,43 +235,30 @@
               <span>Plot Extension</span>
             </a>
 
-
-        
-
-
-
-              
-
-
-        
-        
-
-
             <!-- 4. Plot Separation -->
             <a href="{{ route('plot-separation.index') }}"
               class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
               <i data-lucide="split-square-vertical" class="h-3.5 w-3.5 text-teal-400"></i>
               <span>Plot Separation</span>
             </a>
-
-                    <a href="{{ route('admin.manual-linkage.index') }}"
-          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('admin.manual-linkage.*') ? 'active' : '' }}">
-          <i data-lucide="link" class="h-4 w-4 text-teal-400"></i>
-          <span>Parcel Update-Legacy</span>
-        </a>
-
-
-        <!-- iii. Title Status -->
-        <a href="{{ route('title-status.index') }}?url=deeds"
-          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('title-status.index') && request('url') === 'deeds' ? 'active' : '' }}">
-          <i data-lucide="file-check" class="h-3.5 w-3.5 text-teal-400"></i>
-          <span>Title Status Update</span>
-        </a>
-
           </div>
+
+          <!-- iii. Parcel Update - Legacy -->
+          <a href="{{ route('admin.manual-linkage.index') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('admin.manual-linkage.*') ? 'active' : '' }}">
+            <i data-lucide="link" class="h-3.5 w-3.5 text-teal-400"></i>
+            <span>Parcel Update - Legacy</span>
+          </a>
+
+          <!-- iv. Title Status Update -->
+          <a href="{{ route('title-status.index') }}?url=deeds"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('title-status.index') && request('url') === 'deeds' ? 'active' : '' }}">
+            <i data-lucide="file-check" class="h-3.5 w-3.5 text-teal-400"></i>
+            <span>Title Status Update</span>
+          </a>
         </div>
 
-       @endif
+      @endif
    
       @if($hasRole('Activity Monitoring') || $hasRole('Supper Admin'))
         <a href="{{ route('activity-monitoring.index') }}?url=deeds"

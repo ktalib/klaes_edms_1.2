@@ -28,7 +28,7 @@
 
             <a class="btn" href="{{ rtrim(config('app.url'), '/') }}/phs/organization?tab=subscription">Top Up Tokens</a>
 
-            <p class="footer">You're receiving this because you administer this organization's PHS account.<br>
+            <p class="footer">You're receiving this because you administer this organization's PHS Portal account.<br>
             Kano State Ministry of Land &amp; Physical Planning — PHS Portal.</p>
         </div>
     </div>

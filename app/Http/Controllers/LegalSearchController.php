@@ -91,9 +91,10 @@ class LegalSearchController extends Controller
                 'result_status' => $resultStatus,
                 'results_count' => $totalCount,
                 'lga' => $request->input('lga'),
-                'receipt_no' => $request->input('token'), // Maybe token is sent? 
+                'receipt_no' => $request->input('token'),
                 'printed' => false,
                 'direct_link' => $directLink,
+                'search_source' => $this->printTemplateRouteName,
             ]);
         }
 
@@ -123,6 +124,44 @@ class LegalSearchController extends Controller
     public function onlineSearch(Request $request)
     {
         $results = $this->searchService->search($request->all());
+
+        $mappings = [
+            'query' => 'File Number',
+            'guarantorName' => 'Party 1',
+            'guaranteeName' => 'Party 2',
+            'lga' => 'LGA',
+            'district' => 'District',
+            'location' => 'Location',
+            'plotNumber' => 'Plot Number',
+            'planNumber' => 'Plan Number',
+            'size' => 'Size',
+            'caveat' => 'Caveat',
+        ];
+
+        $searchParam = null;
+        $searchValue = null;
+        foreach ($mappings as $key => $label) {
+            if ($request->filled($key)) {
+                $searchParam = $label;
+                $searchValue = $request->input($key);
+                break;
+            }
+        }
+
+        if ($searchParam) {
+            $totalCount = $results['total_count'] ?? 0;
+            \App\Models\LegalSearchLog::create([
+                'user_id' => auth()->id(),
+                'search_parameter' => $searchParam,
+                'search_value' => $searchValue,
+                'result_status' => $totalCount > 0 ? 'Found' : 'Not Found',
+                'results_count' => $totalCount,
+                'lga' => $request->input('lga'),
+                'printed' => false,
+                'search_source' => 'legal_search.print.online',
+            ]);
+        }
+
         return response()->json($results);
     }
 

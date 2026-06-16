@@ -1,11 +1,11 @@
 @extends('email.layouts.master')
 
 @section('content')
-    <h2 style="color: #1e3a5f; font-size: 22px; margin-bottom: 20px;">Update on Your PHS Onboarding Request</h2>
-    
+    <h2 style="color: #1e3a5f; font-size: 22px; margin-bottom: 20px;">Update on Your PHS Portal Onboarding Request</h2>
+
     <p>Dear <strong>{{ $request->contact_name }}</strong>,</p>
-    
-    <p>Thank you for submitting your onboarding request for the Property History Search (PHS) portal. We appreciate your interest in our services.</p>
+
+    <p>Thank you for submitting your onboarding request for the PHS Portal. We appreciate your interest in our services.</p>
     
     <div class="danger-box">
         <strong>Request Status: Rejected</strong><br>

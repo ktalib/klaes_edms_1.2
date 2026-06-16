@@ -16,6 +16,7 @@ class PhsMember extends Authenticatable
         'phs_institution_id',
         'name',
         'email',
+        'phone',
         'password',
         'job_title',
         'department',
@@ -53,17 +54,29 @@ class PhsMember extends Authenticatable
         return $this->status === 'active';
     }
 
+    /** Returns the access_role as an array (supports comma-separated storage). */
+    public function accessRoles(): array
+    {
+        return array_filter(array_map('trim', explode(',', $this->access_role ?? '')));
+    }
+
+    public function hasRole(string $role): bool
+    {
+        return in_array($role, $this->accessRoles(), true);
+    }
+
     /** Regular users with search_only or super admins can run searches. */
     public function canSearch(): bool
     {
         if ($this->isSuperAdmin()) {
             return true;
         }
-        return in_array($this->access_role, ['search_only', 'report_viewer', 'analytics_viewer'], true);
+        $roles = $this->accessRoles();
+        return !empty(array_intersect($roles, ['search_only', 'report_viewer', 'analytics_viewer']));
     }
 
     public function canViewReports(): bool
     {
-        return $this->isSuperAdmin() || in_array($this->access_role, ['report_viewer', 'analytics_viewer'], true);
+        return $this->isSuperAdmin() || !empty(array_intersect($this->accessRoles(), ['report_viewer', 'analytics_viewer']));
     }
 }

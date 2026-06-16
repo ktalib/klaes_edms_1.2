@@ -1012,6 +1012,8 @@ $(function() {
         $(saveText).text('Saving…');
         $(saveBtn).prop('disabled', true);
 
+        payload['_method'] = 'PUT';
+
         $.ajax({
             url: '/surrender-release/' + compositeId,
             method: 'POST',
@@ -1020,6 +1022,7 @@ $(function() {
             success: function() {
                 closeAllSrModals();
                 srTable.ajax.reload(null, false);
+                Swal.fire({ icon: 'success', title: 'Updated', text: 'Record updated successfully.', timer: 2500, showConfirmButton: false });
             },
             error: function(xhr) {
                 let msg = 'An error occurred. Please try again.';

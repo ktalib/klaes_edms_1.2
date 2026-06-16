@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\Department;
 use App\Models\DigitalFileAccess;
 use App\Models\DigitalFileRequest;
+use App\Models\FileSearchRequest;
 use App\Models\FileTracker;
 use App\Models\Office;
 use App\Models\User;
 use App\Services\DigitalFileAccessService;
+use App\Services\FileLocationResolver;
 use App\Services\UserNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -31,8 +33,14 @@ class DigitalFileRequestController extends Controller
     {
         $user = Auth::user();
 
+        // KANGIS-scoped view: ?kangis (or ?url=kangis) shows KANGIS files only + KANGIS branding.
+        $isKangis = $request->has('kangis') || strtolower((string) $request->input('url')) === 'kangis';
+
         // Stats for header cards
         $base  = DigitalFileRequest::query();
+        if ($isKangis) {
+            $base->kangisFiles();
+        }
         $stats = [
             'total'    => (clone $base)->count(),
             'pending'  => (clone $base)->pending()->count(),
@@ -52,7 +60,48 @@ class DigitalFileRequestController extends Controller
         // All active offices (used by JS after department filter)
         $offices = Office::active()->orderBy('office_name')->get(['id', 'office_name', 'office_code', 'department']);
 
-        return view('digital_request.index', compact('stats', 'officers', 'offices', 'user'));
+        return view('digital_request.index', compact('stats', 'officers', 'offices', 'user', 'isKangis'));
+    }
+
+    // ── AJAX: file-number typeahead (Select2 source) ───────────────────────
+
+    public function fileNumberSearch(Request $request)
+    {
+        $q = trim((string) $request->get('q', $request->get('term', '')));
+        if (mb_strlen($q) < 2) {
+            return response()->json(['results' => []]);
+        }
+
+        $like = '%' . $q . '%';
+
+        $rows = DB::connection('sqlsrv')->table('file_indexings')
+            ->where(function ($w) use ($like) {
+                $w->where('file_number', 'like', $like)
+                  ->orWhere('new_kangis_file_no', 'like', $like)
+                  ->orWhere('kangis_file_no', 'like', $like)
+                  ->orWhere('mls_file_no', 'like', $like)
+                  ->orWhere('st_fillno', 'like', $like);
+            })
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get(['file_number', 'new_kangis_file_no', 'kangis_file_no', 'mls_file_no', 'st_fillno', 'file_title']);
+
+        $results = [];
+        $seen    = [];
+        foreach ($rows as $r) {
+            $fileNo = trim((string) ($r->file_number ?: $r->new_kangis_file_no ?: $r->kangis_file_no ?: $r->mls_file_no ?: $r->st_fillno));
+            if ($fileNo === '' || isset($seen[$fileNo])) {
+                continue;
+            }
+            $seen[$fileNo] = true;
+            $results[] = [
+                'id'    => $fileNo,
+                'text'  => $fileNo,
+                'title' => $r->file_title,
+            ];
+        }
+
+        return response()->json(['results' => $results]);
     }
 
     // ── AJAX: check file availability before request ───────────────────────
@@ -201,6 +250,12 @@ class DigitalFileRequestController extends Controller
 
             // ── Notifications ─────────────────────────────────────────────
             $this->notifyRequestCreated($req, $user);
+
+            // Physical files routed to the Front-Desk (not an in-transit redirect)
+            // also raise a File Search Request so the SCB searches the file.
+            if ($req->request_type === DigitalFileRequest::TYPE_PHYSICAL && ! $req->is_redirected) {
+                $this->raiseScbSearchRequest($req);
+            }
 
             $typeLabel = $req->request_type === DigitalFileRequest::TYPE_DIGITAL
                 ? 'Digital access request'
@@ -615,6 +670,11 @@ class DigitalFileRequestController extends Controller
         try {
         $query = DigitalFileRequest::query()->orderByDesc('created_at');
 
+        // KANGIS-scoped list: only KANGIS-format file numbers
+        if ($request->has('kangis') || strtolower((string) $request->input('url')) === 'kangis') {
+            $query->kangisFiles();
+        }
+
         // Mobile: only return the current user's own requests
         if ($request->boolean('mine')) {
             $query->where('requester_user_id', Auth::id());
@@ -649,6 +709,12 @@ class DigitalFileRequestController extends Controller
             ? User::whereIn('id', $approverIds)->get(['id','first_name','last_name'])->keyBy('id')
             : collect();
 
+        // Resolve the physical location (Registry / Archive + rack/shelf) per row when
+        // requested (mobile DFR list). Gated by a flag so the web list keeps its perf.
+        $resolveLocation = $request->boolean('with_location')
+            ? $this->buildLocationResolver()
+            : null;
+
         $data = $rows->map(fn ($r) => [
             'id'                      => $r->id,
             'request_no'              => $r->request_no,
@@ -666,6 +732,7 @@ class DigitalFileRequestController extends Controller
             'status_badge_class'      => $r->status_badge_class,
             'is_redirected'           => $r->is_redirected,
             'requested_at'            => $r->requested_at?->format('Y-m-d') ?? $r->created_at?->format('Y-m-d'),
+            'location'                => $resolveLocation ? $resolveLocation($r->file_no) : null,
         ]);
 
         return response()->json([
@@ -683,6 +750,48 @@ class DigitalFileRequestController extends Controller
     }
 
     // ── Private helpers ────────────────────────────────────────────────────
+
+    /**
+     * Build a closure that resolves a file number to a compact location summary
+     * (Registry / Archive label + registry name + rack/shelf). Returns null per
+     * row when the file number is empty or resolution fails.
+     */
+    private function buildLocationResolver(): \Closure
+    {
+        $resolver = app(\App\Services\FileLocationResolver::class);
+
+        $labels = [
+            \App\Services\FileLocationResolver::STATUS_IN_ARCHIVE   => 'Archive',
+            \App\Services\FileLocationResolver::STATUS_IN_POOL      => 'Registry (Pool Office)',
+            \App\Services\FileLocationResolver::STATUS_IN_TRANSIT   => 'In Transit',
+            \App\Services\FileLocationResolver::STATUS_PENDING_FILE => 'Not Indexed',
+            \App\Services\FileLocationResolver::STATUS_REFER        => 'Refer to Original Registry',
+            \App\Services\FileLocationResolver::STATUS_NOT_FOUND    => 'Missing',
+        ];
+
+        return function (?string $fileNo) use ($resolver, $labels): ?array {
+            $fileNo = trim((string) $fileNo);
+            if ($fileNo === '') {
+                return null;
+            }
+            try {
+                $r = $resolver->resolve($fileNo);
+            } catch (\Throwable $e) {
+                return null;
+            }
+            // A file keeps its assigned home shelf even while in transit, so fall
+            // back to a direct shelf lookup when resolve() didn't supply one.
+            $rackShelf = $r['rack_shelf'] ?: $resolver->rackShelfFor($fileNo);
+
+            return [
+                'status'           => $r['status'],
+                'label'            => $labels[$r['status']] ?? 'Registry',
+                'registry'         => $r['registry'],
+                'rack_shelf'       => $rackShelf,
+                'current_location' => $r['current_location'],
+            ];
+        };
+    }
 
     private function resolveUserOffice(User $user): ?Office
     {
@@ -713,8 +822,10 @@ class DigitalFileRequestController extends Controller
             'file_no'    => $req->file_no,
         ], ['module' => 'digital_request']);
 
-        // Notify receiving officer if we have their user record
-        if ($req->receiving_officer) {
+        // Routing:
+        //  • In-transit file → redirected to the last receiving officer currently holding it.
+        //  • Otherwise → sent to the KLAES Front-Desk (DFR approvers) to retrieve the file.
+        if ($req->is_redirected && $req->receiving_officer) {
             $receivingUser = User::where(
                 DB::raw("LTRIM(RTRIM(first_name)) + ' ' + LTRIM(RTRIM(last_name))"),
                 $req->receiving_officer
@@ -722,11 +833,85 @@ class DigitalFileRequestController extends Controller
 
             if ($receivingUser) {
                 $this->notifications->create($receivingUser->id, 'digital_request', $title,
-                    "A file request ({$req->request_no}) for {$req->file_no} has been assigned to your office ({$req->destination_office_name}).",
+                    "A file request ({$req->request_no}) for {$req->file_no} has been redirected to you — our records show this file is currently in your custody ({$req->current_file_location}).",
                     ['request_id' => $req->id],
                     ['module' => 'digital_request']
                 );
             }
+        } else {
+            $this->notifyFrontDesk($req);
+        }
+    }
+
+    /**
+     * Notify the KLAES Front-Desk — users who can approve/fulfil Digital File Requests
+     * (dfr_permissions contains 'approve_request').
+     */
+    private function notifyFrontDesk(DigitalFileRequest $req): void
+    {
+        $frontDesk = User::where('is_active', 1)
+            ->where('dfr_permissions', 'like', '%approve_request%')
+            ->get(['id']);
+
+        $title = "New File Request: {$req->request_no}";
+        $body  = "{$req->sending_officer} has requested file {$req->file_no}. Please retrieve it from the registry and process the request.";
+
+        foreach ($frontDesk as $fd) {
+            $this->notifications->create($fd->id, 'digital_request', $title, $body,
+                ['request_id' => $req->id, 'file_no' => $req->file_no],
+                ['module' => 'digital_request']
+            );
+        }
+    }
+
+    /**
+     * Raise a File Search Request (FSR) to the SCB from a Digital File Request,
+     * so the file also surfaces in the SCB's Quick Search / File Requests inbox.
+     * Tagged with source = DFR. The DFR itself is unaffected.
+     */
+    private function raiseScbSearchRequest(DigitalFileRequest $req): void
+    {
+        try {
+            $resolver = app(FileLocationResolver::class);
+            $resolved = $resolver->resolve($req->file_no);
+
+            $fr = FileSearchRequest::create([
+                'request_no'        => FileSearchRequest::generateRequestNo(),
+                'file_number'       => $req->file_no,
+                'file_title'        => $req->file_title,
+                'requester_user_id' => $req->requester_user_id,
+                'status'            => FileSearchRequest::STATUS_PENDING,
+                'resolved_status'   => $resolved['status'] ?? null,
+                'current_location'  => $resolved['current_location'] ?? null,
+                'source'            => FileSearchRequest::SOURCE_DFR,
+            ]);
+
+            $this->notifyScbMonitors($fr, $req->sending_officer ?: 'A registry user');
+        } catch (\Throwable $e) {
+            // Never block the DFR if the SCB request can't be raised.
+            Log::warning('DFR raiseScbSearchRequest failed', ['dfr_id' => $req->id, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Notify every SCB Monitor (fr_permissions = 'SCB') about a new File Search Request.
+     */
+    private function notifyScbMonitors(FileSearchRequest $fr, string $requesterName): void
+    {
+        $monitors = User::where('fr_permissions', 'SCB')
+            ->where(function ($q) {
+                $q->whereNull('is_active')->orWhere('is_active', 1);
+            })
+            ->get(['id']);
+
+        $title = "File Search Request: {$fr->request_no}";
+        $body  = "{$requesterName} raised a DFR for file {$fr->file_number}. Please physically locate the file and confirm Found / Not Found.";
+
+        foreach ($monitors as $monitor) {
+            $this->notifications->create($monitor->id, 'file_search_request', $title, $body,
+                ['request_id' => $fr->id, 'request_no' => $fr->request_no, 'file_number' => $fr->file_number],
+                ['module' => 'file_search_request']
+            );
         }
     }
 

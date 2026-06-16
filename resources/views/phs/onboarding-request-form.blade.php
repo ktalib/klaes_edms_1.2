@@ -3,39 +3,62 @@
 @section('title', 'PHS Portal - Access Request')
 
  @section('content')
+<div id="preloader" style="position:fixed;inset:0;background:var(--phs-preloader-bg,#fff);display:flex;align-items:center;justify-content:center;z-index:9999;">
+    <img src="http://app.klaes.ng/storage/upload/logo/klas_logo.gif" alt="Loading..." style="width:200px;height:auto;">
+</div>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
 <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'DM Sans', sans-serif; background: #f0f2ff; min-height: 100vh; }
+    body { font-family: 'DM Sans', sans-serif; background: #f0f7f2; min-height: 100vh; }
+    .dark body { background: #0f1117; }
 
-    .blob-1 { position: fixed; top: -120px; left: -120px; width: 480px; height: 480px; border-radius: 50%; background: #6c63ff; opacity: .14; pointer-events: none; z-index: 0; }
+    /* Dark mode overrides */
+    .dark .navbar { background: rgba(17,24,39,.92); border-bottom-color: rgba(26,107,60,.15); }
+    .dark .navbar-brand span { color: #e5e7eb; }
+    .dark .mobile-menu { background: rgba(17,24,39,.97); border-bottom-color: rgba(26,107,60,.15); }
+    .dark .btn-ghost { border-color: #374151; color: #d1d5db; }
+    .dark .btn-ghost:hover { background: #1f2937; }
+    .dark .form-card { background: #1f2937; border-color: rgba(26,107,60,.15); box-shadow: 0 4px 24px rgba(0,0,0,.3); }
+    .dark .section-title { color: #f3f4f6; }
+    .dark .section-title .icon { background: #14532d; }
+    .dark .section-divider { background: #374151; }
+    .dark .field-label { color: #9ca3af; }
+    .dark .field-input, .dark .field-select, .dark .field-textarea { background: #111827; border-color: #374151; color: #f3f4f6; }
+    .dark .field-input:focus, .dark .field-select:focus, .dark .field-textarea:focus { background: #1f2937; border-color: #1a6b3c; }
+    .dark .field-input::placeholder, .dark .field-textarea::placeholder { color: #4b5563; }
+    .dark .error-box { background: #1f0505; border-color: #7f1d1d; }
+    .dark .btn-cancel { background: #1f2937; border-color: #374151; color: #d1d5db; }
+    .dark .btn-cancel:hover { background: #374151; }
+    .dark .step-badge { background: #14532d; color: #86efac; }
+
+    .blob-1 { position: fixed; top: -120px; left: -120px; width: 480px; height: 480px; border-radius: 50%; background: #1a6b3c; opacity: .14; pointer-events: none; z-index: 0; }
     .blob-2 { position: fixed; bottom: -160px; right: -100px; width: 520px; height: 520px; border-radius: 50%; background: #06d6a0; opacity: .11; pointer-events: none; z-index: 0; }
-    .blob-3 { position: fixed; top: 40%; right: 6%; width: 240px; height: 240px; border-radius: 50%; background: #6c63ff; opacity: .06; pointer-events: none; z-index: 0; }
+    .blob-3 { position: fixed; top: 40%; right: 6%; width: 240px; height: 240px; border-radius: 50%; background: #1a6b3c; opacity: .06; pointer-events: none; z-index: 0; }
 
-    .navbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; padding: 14px 32px; background: rgba(255,255,255,.88); backdrop-filter: blur(16px); border-bottom: 1px solid rgba(108,99,255,.10); box-shadow: 0 1px 0 rgba(0,0,0,.04); }
+    .navbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; padding: 10px 32px; background: rgba(255,255,255,.88); backdrop-filter: blur(16px); border-bottom: 1px solid rgba(26,107,60,.10); box-shadow: 0 1px 0 rgba(0,0,0,.04); min-height: 96px; }
     .navbar-brand { display: flex; align-items: center; gap: 10px; }
-    .navbar-brand img { height: 36px; width: auto; }
+    .navbar-brand img { height: 80px; width: auto; }
     .navbar-brand span { font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 600; color: #3d3a4e; letter-spacing: .04em; }
     .navbar-actions { display: flex; align-items: center; gap: 10px; }
     .btn-ghost { padding: 8px 18px; border: 1.5px solid #d0cfe8; border-radius: 8px; background: transparent; font-size: 13px; font-weight: 500; color: #3d3a4e; text-decoration: none; cursor: pointer; transition: background .15s; }
-    .btn-ghost:hover { background: #f4f3ff; }
-    .btn-primary { padding: 8px 18px; border: none; border-radius: 8px; background: #6c63ff; font-size: 13px; font-weight: 500; color: #fff; text-decoration: none; cursor: pointer; transition: background .15s; }
-    .btn-primary:hover { background: #5a52e0; }
+    .btn-ghost:hover { background: #f0f7f2; }
+    .btn-primary { padding: 8px 18px; border: none; border-radius: 8px; background: #1a6b3c; font-size: 13px; font-weight: 500; color: #fff; text-decoration: none; cursor: pointer; transition: background .15s; }
+    .btn-primary:hover { background: #155a32; }
     .mobile-menu-btn { display: none; border: none; background: transparent; padding: 8px; cursor: pointer; border-radius: 8px; }
-    .mobile-menu { display: none; flex-direction: column; gap: 10px; padding: 16px 32px; background: rgba(255,255,255,.96); border-bottom: 1px solid rgba(108,99,255,.10); }
+    .mobile-menu { display: none; flex-direction: column; gap: 10px; padding: 16px 32px; background: rgba(255,255,255,.96); border-bottom: 1px solid rgba(26,107,60,.10); }
     .mobile-menu a { text-align: center; }
     @media (max-width: 768px) { .navbar-actions { display: none; } .mobile-menu-btn { display: flex; align-items: center; justify-content: center; } .mobile-menu.open { display: flex; } }
 
     .page-wrapper { position: relative; z-index: 1; max-width: 1060px; margin: 0 auto; padding: 40px 20px 80px; }
 
-    .step-badge { display: inline-flex; align-items: center; gap: 6px; font-family: 'Sora', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #6c63ff; background: #ededff; border-radius: 20px; padding: 5px 14px; margin-bottom: 28px; }
-    .step-badge::before { content: ''; display: inline-block; width: 6px; height: 6px; background: #6c63ff; border-radius: 50%; }
+    .step-badge { display: inline-flex; align-items: center; gap: 6px; font-family: 'Sora', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #1a6b3c; background: #e8f5ee; border-radius: 20px; padding: 5px 14px; margin-bottom: 28px; }
+    .step-badge::before { content: ''; display: inline-block; width: 6px; height: 6px; background: #1a6b3c; border-radius: 50%; }
 
     .main-grid { display: grid; grid-template-columns: 1fr 1.55fr; gap: 24px; align-items: start; }
     @media (max-width: 820px) { .main-grid { grid-template-columns: 1fr; } }
 
     /* Sidebar */
-    .sidebar-card { background: #6c63ff; border-radius: 20px; padding: 32px 28px; color: #fff; position: sticky; top: 84px; }
+    .sidebar-card { background: #1a6b3c; border-radius: 20px; padding: 32px 28px; color: #fff; position: sticky; top: 84px; }
     .sb-logo { height: 30px; width: auto; margin-bottom: 24px; filter: brightness(0) invert(1); opacity: .85; }
     .sb-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.55); margin-bottom: 10px; }
     .sb-title { font-family: 'Sora', sans-serif; font-size: 22px; font-weight: 700; line-height: 1.25; color: #fff; margin-bottom: 14px; }
@@ -56,11 +79,11 @@
     .pkg-item.active .pk-dot { background: var(--accent, #fff); border-color: var(--accent, #fff); }
 
     /* Form card */
-    .form-card { background: #fff; border-radius: 20px; border: 1px solid rgba(108,99,255,.10); box-shadow: 0 4px 24px rgba(108,99,255,.07); padding: 32px 32px; }
+    .form-card { background: #fff; border-radius: 20px; border: 1px solid rgba(26,107,60,.10); box-shadow: 0 4px 24px rgba(26,107,60,.07); padding: 32px 32px; }
     .section-title { font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 700; color: #1e1b3a; letter-spacing: .04em; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-    .section-title .icon { width: 28px; height: 28px; border-radius: 8px; background: #ededff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-    .section-title .icon svg { width: 14px; height: 14px; stroke: #6c63ff; fill: none; stroke-width: 2; }
-    .section-divider { height: 1px; background: #eeecfa; margin: 24px 0; }
+    .section-title .icon { width: 28px; height: 28px; border-radius: 8px; background: #e8f5ee; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .section-title .icon svg { width: 14px; height: 14px; stroke: #1a6b3c; fill: none; stroke-width: 2; }
+    .section-divider { height: 1px; background: #d1fae5; margin: 24px 0; }
     .wizard-step[hidden] { display: none; }
 
     /* Fields */
@@ -68,9 +91,9 @@
     @media (max-width: 540px) { .field-row { grid-template-columns: 1fr; } }
     .field { display: flex; flex-direction: column; }
     .field-label { font-size: 12px; font-weight: 600; color: #4a4760; margin-bottom: 7px; letter-spacing: .03em; }
-    .field-label .req { color: #6c63ff; margin-left: 2px; }
+    .field-label .req { color: #1a6b3c; margin-left: 2px; }
     .field-input, .field-select, .field-textarea { width: 100%; padding: 11px 16px; background: #fafafa; border: 1.5px solid #e2e0f0; border-radius: 10px; font-family: inherit; font-size: 13px; color: #1e1b3a; outline: none; transition: border-color .2s, box-shadow .2s; appearance: none; }
-    .field-input:focus, .field-select:focus, .field-textarea:focus { border-color: #6c63ff; box-shadow: 0 0 0 3px rgba(108,99,255,.12); background: #fff; }
+    .field-input:focus, .field-select:focus, .field-textarea:focus { border-color: #1a6b3c; box-shadow: 0 0 0 3px rgba(26,107,60,.12); background: #fff; }
     .field-input::placeholder, .field-textarea::placeholder { color: #bcbbcc; }
     .select-wrap { position: relative; }
     .select-wrap::after { content: ''; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #8b88aa; pointer-events: none; }
@@ -86,9 +109,9 @@
     /* Actions */
     .action-row { display: flex; align-items: center; justify-content: space-between; margin-top: 30px; gap: 12px; flex-wrap: wrap; }
     .btn-cancel { display: inline-flex; align-items: center; gap: 7px; padding: 11px 22px; border-radius: 10px; border: 1.5px solid #d6d4ee; background: #fff; font-size: 13px; font-weight: 600; color: #4a4760; text-decoration: none; cursor: pointer; transition: background .15s; }
-    .btn-cancel:hover { background: #f4f3ff; }
-    .btn-submit { display: inline-flex; align-items: center; gap: 8px; padding: 12px 30px; border-radius: 10px; border: none; background: #6c63ff; font-size: 14px; font-weight: 600; color: #fff; cursor: pointer; transition: background .15s, transform .1s; box-shadow: 0 4px 18px rgba(108,99,255,.35); }
-    .btn-submit:hover { background: #5a52e0; }
+    .btn-cancel:hover { background: #f0f7f2; }
+    .btn-submit { display: inline-flex; align-items: center; gap: 8px; padding: 12px 30px; border-radius: 10px; border: none; background: #1a6b3c; font-size: 14px; font-weight: 600; color: #fff; cursor: pointer; transition: background .15s, transform .1s; box-shadow: 0 4px 18px rgba(26,107,60,.35); }
+    .btn-submit:hover { background: #155a32; }
     .btn-submit:active { transform: scale(.98); }
 </style>
  
@@ -100,10 +123,15 @@
 
 <nav class="navbar">
     <div class="navbar-brand">
-        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES">
-        <span>PHS Portal</span>
+        <img src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" alt="PHS" class="dark:hidden">
+        <img src="{{ asset('assets/logo/phs-dark-logo.jpeg') }}" alt="PHS" class="hidden dark:block">
+       
     </div>
     <div class="navbar-actions">
+        <button onclick="phsToggleTheme()" title="Toggle dark mode" class="btn-ghost" style="padding:8px 12px;display:inline-flex;align-items:center;gap:6px;">
+            <svg class="dark:hidden" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg class="hidden dark:block" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
         <a href="{{ route('phs.login') }}" class="btn-ghost">Sign In</a>
         <a href="{{ route('phs.landing') }}" class="btn-primary">Home</a>
     </div>
@@ -112,6 +140,11 @@
     </button>
 </nav>
 <div id="mobile-menu" class="mobile-menu">
+    <button onclick="phsToggleTheme()" class="btn-ghost" style="display:flex;align-items:center;justify-content:center;gap:6px;">
+        <svg class="dark:hidden" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        <svg class="hidden dark:block" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        Toggle Theme
+    </button>
     <a href="{{ route('phs.login') }}" class="btn-ghost">Sign In</a>
     <a href="{{ route('phs.landing') }}" class="btn-primary" style="text-align:center">Home</a>
 </div>
@@ -123,38 +156,19 @@
 
         {{-- Sidebar --}}
         <div class="sidebar-card">
-            <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES" class="sb-logo">
+            <img src="{{ asset('assets/logo/phs-dark-logo.jpeg') }}" alt="PHS" class="sb-logo">
             <div class="sb-eyebrow">Kano State Ministry of Land &amp; Physical Planning</div>
             <div class="sb-title">Property History Search (PHS) Portal</div>
-            <div class="sb-desc">Request institutional access to search official property records. Select a token package to continue.</div>
+            <div class="sb-desc">Request institutional access to search official property records. You will select a subscription package after your documents are reviewed and approved.</div>
 
-            <div class="pkg-list">
-                @php
-                    $pkgColors = [
-                        ['accent' => '#fbbf24', 'bg' => 'rgba(251,191,36,.16)'],   // amber
-                        ['accent' => '#34d399', 'bg' => 'rgba(52,211,153,.16)'],   // emerald
-                        ['accent' => '#38bdf8', 'bg' => 'rgba(56,189,248,.16)'],   // sky
-                        ['accent' => '#f472b6', 'bg' => 'rgba(244,114,182,.16)'],  // pink
-                        ['accent' => '#c4b5fd', 'bg' => 'rgba(196,181,253,.18)'],  // violet
-                    ];
-                @endphp
-                @foreach ($packages as $pkg)
-                @php $c = $pkgColors[$loop->index % count($pkgColors)]; @endphp
-                <div class="pkg-item" data-pkg="{{ $pkg['name'] }}" style="--accent: {{ $c['accent'] }}; --card-bg: {{ $c['bg'] }};">
+              {{-- <div class="pkg-list">
+                <div class="pkg-item" style="--accent: #1a6b3c; --card-bg: rgba(26,107,60,.08); cursor:default;">
                     <div>
-                        <div class="pk-name">{{ $pkg['name'] }}</div>
-                        <div class="pk-tok">{{ number_format($pkg['tokens']) }} tokens</div>
-                        @if (!empty($pkg['team_members']))
-                        <span class="pk-badge">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                            {{ $pkg['team_members'] }} team {{ \Illuminate\Support\Str::plural('member', $pkg['team_members']) }}
-                        </span>
-                        @endif
+                        <div class="pk-name" style="font-size:13px;color:#1a6b3c;">What happens next?</div>
+                        <div class="pk-tok" style="font-size:11px;color:#6b7280;line-height:1.6;">1. Submit documents<br>2. Legal reviews &amp; approves<br>3. Admin approves → payment link<br>4. Select plan &amp; pay<br>5. Sign &amp; upload SLA<br>6. Account activated</div>
                     </div>
-                    <div class="pk-right"><span class="pk-price">₦{{ number_format($pkg['price']) }}</span><span class="pk-dot"></span></div>
                 </div>
-                @endforeach
-            </div>
+            </div>   --}}
         </div>
 
         {{-- Form card --}}
@@ -171,15 +185,6 @@
 
             <form method="POST" action="{{ route('phs.request.confirm') }}" id="requestForm" enctype="multipart/form-data">
                 @csrf
-
-                {{-- Hidden select for token package --}}
-                <select name="initial_token_package" id="tokenPackage" required
-                    style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" aria-hidden="true">
-                    <option value="">Select a package</option>
-                    @foreach ($packages as $pkg)
-                    <option value="{{ $pkg['name'] }}" {{ (old('initial_token_package') ?? $package) === $pkg['name'] ? 'selected' : '' }}>{{ $pkg['name'] }}</option>
-                    @endforeach
-                </select>
 
                 <div class="wizard-step" data-step="1">
                 {{-- Organization --}}
@@ -242,14 +247,39 @@
                         <input type="email" name="contact_email_confirmation" value="{{ old('contact_email_confirmation') }}" required placeholder="Retype your email" class="field-input">
                     </div>
                 </div>
+                @php
+                    $jobTitleOld   = old('job_title');
+                    $departmentOld = old('department');
+                    // Treat a previously-entered value that isn't in the list as a custom "Other" value.
+                    $jobTitleIsOther   = $jobTitleOld !== null && $jobTitleOld !== '' && !in_array($jobTitleOld, $jobTitles, true);
+                    $departmentIsOther = $departmentOld !== null && $departmentOld !== '' && !in_array($departmentOld, $departments, true);
+                @endphp
                 <div class="field-row">
                     <div class="field">
                         <label class="field-label">Job Title</label>
-                        <input type="text" name="job_title" value="{{ old('job_title') }}" placeholder="e.g. Legal Officer" class="field-input">
+                        <select name="job_title" class="field-select phs-lookup-select" data-other-target="job_title_other">
+                            <option value="">Select job title</option>
+                            @foreach($jobTitles as $jt)
+                                <option value="{{ $jt }}" {{ $jobTitleOld === $jt ? 'selected' : '' }}>{{ $jt }}</option>
+                            @endforeach
+                            <option value="__other__" {{ $jobTitleIsOther ? 'selected' : '' }}>Other (specify)</option>
+                        </select>
+                        <input type="text" name="job_title_other" value="{{ $jobTitleIsOther ? $jobTitleOld : '' }}"
+                               placeholder="Enter job title" class="field-input phs-other-input"
+                               style="margin-top:8px;{{ $jobTitleIsOther ? '' : 'display:none;' }}">
                     </div>
                     <div class="field">
                         <label class="field-label">Department</label>
-                        <input type="text" name="department" value="{{ old('department') }}" placeholder="e.g. Compliance" class="field-input">
+                        <select name="department" class="field-select phs-lookup-select" data-other-target="department_other">
+                            <option value="">Select department</option>
+                            @foreach($departments as $dep)
+                                <option value="{{ $dep }}" {{ $departmentOld === $dep ? 'selected' : '' }}>{{ $dep }}</option>
+                            @endforeach
+                            <option value="__other__" {{ $departmentIsOther ? 'selected' : '' }}>Other (specify)</option>
+                        </select>
+                        <input type="text" name="department_other" value="{{ $departmentIsOther ? $departmentOld : '' }}"
+                               placeholder="Enter department" class="field-input phs-other-input"
+                               style="margin-top:8px;{{ $departmentIsOther ? '' : 'display:none;' }}">
                     </div>
                 </div>
                
@@ -274,9 +304,24 @@
                     </div>
                 </div>
                 <div class="field">
-                    <label class="field-label">Additional Documents (optional)</label>
-                    <input type="file" name="additional_documents[]" accept=".pdf,.jpg,.jpeg,.png" multiple class="field-input" style="padding:9px 12px;">
-                    <span style="font-size:11px;color:#8b88aa;margin-top:5px;">Supporting documents (ID, authorization letter, etc.) — PDF/JPG/PNG, max 5MB each.</span>
+                    <label class="field-label">ID Card <span class="req">*</span></label>
+                    <input type="file" name="additional_documents[]" accept=".pdf,.jpg,.jpeg,.png" required class="field-input" style="padding:9px 12px;">
+                    <span style="font-size:11px;color:#8b88aa;margin-top:5px;">Upload a valid government-issued ID card — PDF/JPG/PNG, max 5MB.</span>
+                    @error('additional_documents.0')<span style="font-size:11px;color:#ef4444;margin-top:4px;">{{ $message }}</span>@enderror
+                </div>
+
+                <div class="section-divider"></div>
+
+                {{-- Request Letter --}}
+                <div class="section-title">
+                    <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                    Request Letter
+                </div>
+                <div class="field">
+                    <label class="field-label">Organization Request Letter <span class="req">*</span></label>
+                    <input type="file" name="request_letter" accept=".pdf,.jpg,.jpeg,.png" required class="field-input" style="padding:9px 12px;">
+                    <span style="font-size:11px;color:#8b88aa;margin-top:5px;">Official request letter on your organization's letterhead — PDF/JPG/PNG, max 5MB.</span>
+                    @error('request_letter')<span style="font-size:11px;color:#ef4444;margin-top:4px;">{{ $message }}</span>@enderror
                 </div>
 
                 <div class="section-divider"></div>
@@ -322,20 +367,6 @@
     });
 
     const pkgItems = document.querySelectorAll('.pkg-item');
-    const tokenSel = document.getElementById('tokenPackage');
-    const preselect = tokenSel.value;
-
-    function selectPkg(value) {
-        pkgItems.forEach(i => i.classList.toggle('active', i.dataset.pkg === value));
-        tokenSel.value = value;
-    }
-
-    if (preselect) selectPkg(preselect);
-
-    pkgItems.forEach(item => {
-        item.addEventListener('click', () => selectPkg(item.dataset.pkg));
-    });
-
     /* ---------- Multi-step wizard (steps 1 & 2 of 3) ---------- */
     const step1 = document.querySelector('.wizard-step[data-step="1"]');
     const step2 = document.querySelector('.wizard-step[data-step="2"]');
@@ -364,22 +395,133 @@
         const email = document.querySelector('[name="contact_email"]').value.trim();
         const confirmEmail = document.querySelector('[name="contact_email_confirmation"]').value.trim();
         if (email !== confirmEmail) { alert('Email addresses do not match.'); return; }
-        if (!tokenSel.value) { alert('Please select a token package from the sidebar before continuing.'); return; }
         showStep(2);
     });
 
     btnBack.addEventListener('click', () => showStep(1));
 
-    // Final guard on submit.
-    document.getElementById('requestForm').addEventListener('submit', function (e) {
-        if (!tokenSel.value) {
-            e.preventDefault();
-            alert('Please select a token package from the sidebar before continuing.');
-        }
-    });
-
     // If the server returned validation errors, surface them where the user can
     // act — start on step 1 (the error summary is shown above the form).
     showStep(1);
+</script>
+@endsection
+
+@section('extra_styles')
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+    /* Make Select2 visually match the form's .field-select inputs. */
+    .select2-container { width: 100% !important; }
+    .select2-container--default .select2-selection--single {
+        height: 44px; padding: 5px 6px; background: #fafafa;
+        border: 1.5px solid #e2e0f0; border-radius: 10px;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        line-height: 32px; color: #1e1b3a; font-size: 13px; padding-left: 10px;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__arrow { height: 42px; }
+    .select2-container--default.select2-container--focus .select2-selection--single,
+    .select2-container--default.select2-container--open .select2-selection--single {
+        border-color: #1a6b3c; box-shadow: 0 0 0 3px rgba(26,107,60,.12); background: #fff;
+    }
+    .select2-dropdown { border-color: #e2e0f0; font-size: 13px; }
+    .select2-container--default .select2-results__option--highlighted[aria-selected] { background: #1a6b3c; }
+
+    /* Dark mode */
+    .dark .select2-container--default .select2-selection--single { background: #111827; border-color: #374151; }
+    .dark .select2-container--default .select2-selection--single .select2-selection__rendered { color: #f3f4f6; }
+    .dark .select2-dropdown { background: #111827; border-color: #374151; color: #f3f4f6; }
+    .dark .select2-results__option { color: #f3f4f6; }
+    .dark .select2-search--dropdown .select2-search__field { background: #1f2937; border-color: #374151; color: #f3f4f6; }
+</style>
+@endsection
+
+@section('extra_scripts')
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    $(function () {
+        const $selects = $('.phs-lookup-select');
+
+        if ($.fn.select2) {
+            $selects.select2({ width: '100%', minimumResultsForSearch: 6 });
+        }
+
+        // Reveal/hide the companion "Other (specify)" text input.
+        $selects.each(function () {
+            const $sel = $(this);
+            const $other = $('input[name="' + $sel.data('other-target') + '"]');
+
+            function sync(clearOnHide) {
+                const isOther = $sel.val() === '__other__';
+                $other.css('display', isOther ? '' : 'none');
+                if (isOther) {
+                    $other.attr('required', 'required');
+                } else {
+                    $other.removeAttr('required');
+                    if (clearOnHide) { $other.val(''); }
+                }
+            }
+
+            $sel.on('change', function () { sync(true); });
+            sync(false); // honour server-repopulated state without clearing it
+        });
+    });
+
+    // ---- Prevent the same file being used for more than one upload ----
+    // A user shouldn't attach the identical document to CAC Certificate, ID Card
+    // and Organization Request Letter. We compare each newly picked file against
+    // the others by name + size; on a clash we reject it with a SweetAlert.
+    $(function () {
+        const uploads = [
+            { name: 'cac_document',            label: 'CAC Certificate' },
+            { name: 'additional_documents[]',  label: 'ID Card' },
+            { name: 'request_letter',          label: 'Organization Request Letter' }
+        ];
+
+        // Build a signature unique enough to spot the same file: name + size.
+        const sig = (file) => file ? (file.name + '::' + file.size) : null;
+
+        function inputFor(cfg) {
+            return document.querySelector('input[type="file"][name="' + cfg.name + '"]');
+        }
+
+        function checkDuplicate(changedCfg) {
+            const changedInput = inputFor(changedCfg);
+            const changedFile = changedInput && changedInput.files && changedInput.files[0];
+            if (!changedFile) return;
+
+            const changedSig = sig(changedFile);
+
+            for (const other of uploads) {
+                if (other.name === changedCfg.name) continue;
+                const otherInput = inputFor(other);
+                const otherFile = otherInput && otherInput.files && otherInput.files[0];
+                if (otherFile && sig(otherFile) === changedSig) {
+                    // Clear the just-picked duplicate and warn.
+                    changedInput.value = '';
+                    if (window.Swal) {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: "Can't use the same file",
+                            html: 'You already selected <strong>' + $('<div>').text(changedFile.name).html()
+                                + '</strong> for <strong>' + other.label + '</strong>.<br>'
+                                + 'Please choose a different file for <strong>' + changedCfg.label + '</strong>.',
+                            confirmButtonColor: '#1a6b3c'
+                        });
+                    } else {
+                        alert("Can't use the same file. \"" + changedFile.name + "\" is already used for " + other.label + '.');
+                    }
+                    return;
+                }
+            }
+        }
+
+        uploads.forEach(function (cfg) {
+            const input = inputFor(cfg);
+            if (input) {
+                input.addEventListener('change', function () { checkDuplicate(cfg); });
+            }
+        });
+    });
 </script>
 @endsection

@@ -1602,6 +1602,18 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'create-file-tracker'
     Route::get('/list/export', [App\Http\Controllers\CreateFileTrackerController::class, 'exportPdf'])->name('create-file-tracker.export-pdf');
     Route::get('/list/export-csv', [App\Http\Controllers\CreateFileTrackerController::class, 'exportCsv'])->name('create-file-tracker.export-csv');
     Route::get('/search', [App\Http\Controllers\CreateFileTrackerController::class, 'search'])->name('create-file-tracker.search');
+
+    // Quick Search & File Location module (standalone page)
+    Route::get('/quick-search', [App\Http\Controllers\CreateFileTrackerController::class, 'quickSearch'])->name('create-file-tracker.quick-search');
+    Route::get('/quick-search/resolve', [App\Http\Controllers\CreateFileTrackerController::class, 'quickSearchResolve'])->name('create-file-tracker.quick-search.resolve');
+    Route::post('/quick-search/update-status', [App\Http\Controllers\CreateFileTrackerController::class, 'updateLocationStatus'])->name('create-file-tracker.quick-search.update-status');
+    Route::get('/quick-search/scb-feedback', [App\Http\Controllers\CreateFileTrackerController::class, 'scbFeedback'])->name('create-file-tracker.quick-search.scb-feedback');
+    Route::get('/quick-search/file-request-log', [App\Http\Controllers\CreateFileTrackerController::class, 'fileRequestLog'])->name('create-file-tracker.quick-search.file-request-log');
+    Route::post('/quick-search/file-request/{id}/front-desk-acted', [App\Http\Controllers\CreateFileTrackerController::class, 'markFrontDeskActed'])->name('create-file-tracker.quick-search.front-desk-acted');
+    Route::get('/slip', [App\Http\Controllers\CreateFileTrackerController::class, 'slipFromFileNumber'])->name('create-file-tracker.slip');
+    Route::post('/file-request', [App\Http\Controllers\CreateFileTrackerController::class, 'sendFileRequest'])->name('create-file-tracker.file-request');
+
+    Route::get('/check-logout-status', [App\Http\Controllers\CreateFileTrackerController::class, 'checkFileLogoutStatus'])->name('create-file-tracker.check-logout-status');
     Route::get('/kangis-checkout', [App\Http\Controllers\CreateFileTrackerController::class, 'kangisCheckoutList'])->name('create-file-tracker.kangis-checkout.list');
     Route::post('/kangis-checkout/request', [App\Http\Controllers\CreateFileTrackerController::class, 'kangisCheckoutRequest'])->name('create-file-tracker.kangis-checkout.request');
     Route::post('/kangis-checkout/{id}/approve', [App\Http\Controllers\CreateFileTrackerController::class, 'kangisCheckoutApprove'])->name('create-file-tracker.kangis-checkout.approve');
@@ -1623,6 +1635,7 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'digital-request'], f
     Route::post('/approve/{id}',        [App\Http\Controllers\DigitalFileRequestController::class, 'approve'])->name('digital-request.approve');
     Route::post('/reject/{id}',         [App\Http\Controllers\DigitalFileRequestController::class, 'reject'])->name('digital-request.reject');
     Route::post('/check-availability',  [App\Http\Controllers\DigitalFileRequestController::class, 'checkFileAvailability'])->name('digital-request.check-availability');
+    Route::get('/file-numbers',         [App\Http\Controllers\DigitalFileRequestController::class, 'fileNumberSearch'])->name('digital-request.file-numbers');
     Route::get('/offices-by-department',[App\Http\Controllers\DigitalFileRequestController::class, 'getOfficesByDepartment'])->name('digital-request.offices-by-department');
     Route::get('/pending-count',        [App\Http\Controllers\DigitalFileRequestController::class, 'pendingCount'])->name('digital-request.pending-count');
     Route::post('/send-otp',            [App\Http\Controllers\DigitalFileRequestController::class, 'sendOtp'])->name('digital-request.send-otp');

@@ -247,6 +247,11 @@ class FileNumberController extends Controller
                 $recordsTotal += $tempCount;
             }
 
+            // ── Build Plot Extension rows once (source=New only) ──
+            // Always prepended (not paginated through OFFSET), so use their count for totals.
+            $plotExtRows = $this->formatPlotExtensionRows($source, $search);
+            $recordsTotal += $plotExtRows->count();
+
             // ── Fast filtered count ──
             // Short-circuit when no search: filtered = total (saves a whole SQL round-trip).
             if (empty($search)) {
@@ -291,6 +296,9 @@ class FileNumberController extends Controller
                     );
                     $filteredRecords += (int) ($tempFiltered->cnt ?? 0);
                 }
+
+                // Plot Extension rows are pre-filtered by search in formatPlotExtensionRows().
+                $filteredRecords += $plotExtRows->count();
             }
 
             // ── Main data query (two-phase) ──
@@ -415,7 +423,7 @@ class FileNumberController extends Controller
                     'draw' => intval($draw),
                     'recordsTotal' => $recordsTotal,
                     'recordsFiltered' => $filteredRecords,
-                    'data' => $tempFormattedData2->values(),
+                    'data' => $plotExtRows->concat($tempFormattedData2)->values(),
                 ]);
             }
 
@@ -658,8 +666,8 @@ class FileNumberController extends Controller
                 });
             }
 
-            // Merge: temp files first, then regular records
-            $mergedData = $tempFormattedData->concat($formattedData)->values();
+            // Merge: plot extensions + temp files first, then regular records
+            $mergedData = $plotExtRows->concat($tempFormattedData)->concat($formattedData)->values();
 
             return response()->json([
                 'draw' => intval($draw),
@@ -681,6 +689,80 @@ class FileNumberController extends Controller
                 'error' => 'Error loading data: ' . $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Build formatted Plot Extension rows for the file-numbers DataTable.
+     *
+     * Plot Extensions live in their own isolated `plot_extensions` table and retain
+     * the ORIGINAL file number (no " AND EXTENSION" suffix, no mls_file_no row). They
+     * are prepended to the "New" view just like temporary files.
+     */
+    private function formatPlotExtensionRows(string $source, ?string $search): \Illuminate\Support\Collection
+    {
+        if ($source !== 'New') {
+            return collect();
+        }
+
+        $search = $search ?? '';
+        $searchSql = '';
+        $bindings = [];
+        if (!empty($search)) {
+            $pct = "%{$search}%";
+            $searchSql = "AND (pe.original_file_no LIKE ? OR pe.file_name LIKE ? OR pe.tracking_id LIKE ?
+                OR pe.location LIKE ? OR pe.lga LIKE ? OR pe.plot_no LIKE ? OR pe.tp_no LIKE ?)";
+            $bindings = [$pct, $pct, $pct, $pct, $pct, $pct, $pct];
+        }
+
+        $rows = DB::connection('sqlsrv')->select(
+            "SELECT pe.id, pe.original_file_no, pe.file_name, pe.land_use, pe.customer_type,
+                    pe.plot_no, pe.tp_no, pe.location, pe.lga, pe.tracking_id,
+                    pe.created_by, pe.created_at, p.name AS purpose_name
+             FROM plot_extensions pe
+             LEFT JOIN purposes p ON p.id = pe.purpose_id
+             WHERE (pe.is_deleted IS NULL OR pe.is_deleted = 0)
+               {$searchSql}
+             ORDER BY pe.id DESC",
+            $bindings
+        );
+
+        return collect($rows)->map(function ($row) {
+            $fileNo = trim($row->original_file_no ?? '');
+            $actionHtml = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800" title="Plot Extension transaction">Plot Extension</span>';
+
+            return [
+                'id'                          => (int) $row->id,
+                'primaryFileNo'               => $fileNo ?: 'N/A',
+                'relatedFileNo'               => 'N/A',
+                'mlsfNo'                      => $fileNo ?: 'N/A',
+                'kangisFileNo'                => 'N/A',
+                'NewKANGISFileNo'             => 'N/A',
+                'stFileNo'                    => 'N/A',
+                'FileName'                    => trim($row->file_name ?? '') ?: 'N/A',
+                'land_use'                    => trim($row->land_use ?? '') ?: 'N/A',
+                'customer_type'               => trim($row->customer_type ?? '') ?: 'N/A',
+                'purpose_name'                => trim($row->purpose_name ?? '') ?: 'N/A',
+                'plot_no'                     => trim($row->plot_no ?? '') ?: 'N/A',
+                'tp_no'                       => trim($row->tp_no ?? '') ?: 'N/A',
+                'location'                    => trim($row->location ?? '') ?: 'N/A',
+                'lga'                         => trim($row->lga ?? '') ?: 'N/A',
+                'tracking_id'                 => trim($row->tracking_id ?? '') ?: 'N/A',
+                'type'                        => 'Plot Extension',
+                'created_by'                  => trim($row->created_by ?? '') ?: 'System',
+                'source'                      => 'Plot Extension',
+                'source_instrument_capture_id'=> null,
+                'source_pra_id'               => null,
+                'source_prop_id'              => null,
+                'source_temp_fileno'          => 'N/A',
+                'batch_no'                    => '',
+                'batch_count'                 => 1,
+                'batch_first_file'            => $fileNo,
+                'commissioning_date'          => $row->created_at ? date('Y-m-d', strtotime($row->created_at)) : 'N/A',
+                'has_commissioning_sheet'     => false,
+                'created_at'                  => $row->created_at ? date('Y-m-d H:i:s', strtotime($row->created_at)) : 'N/A',
+                'action'                      => $actionHtml,
+            ];
+        });
     }
 
     /**
@@ -2266,6 +2348,10 @@ class FileNumberController extends Controller
     public function generateConversionApplication(Request $request, $id)
     {
         try {
+            // $id may be a numeric fileNumber.id OR a file number string (plot extensions
+            // are passed by their original file number to avoid id collisions).
+            $isNumeric = is_numeric($id);
+
             $record = DB::connection('sqlsrv')
                 ->table('fileNumber')
                 ->select([
@@ -2276,8 +2362,52 @@ class FileNumberController extends Controller
                     'mls_file_no.batch_no'
                 ])
                 ->leftJoin('mls_file_no', 'fileNumber.mlsfNo', '=', 'mls_file_no.full_file_number')
-                ->where('fileNumber.id', $id)
+                ->where(function ($q) use ($id, $isNumeric) {
+                    if ($isNumeric) {
+                        $q->where('fileNumber.id', (int) $id)->orWhere('fileNumber.mlsfNo', $id);
+                    } else {
+                        $q->where('fileNumber.mlsfNo', $id);
+                    }
+                })
                 ->first();
+
+            // Plot Extension fallback: retains the original file number but lives only in
+            // the isolated plot_extensions table. Resolve the conversion document from it
+            // when the original file row is absent from fileNumber (e.g. on production).
+            $isPlotExtension = false;
+            if (!$record) {
+                $pe = DB::connection('sqlsrv')
+                    ->table('plot_extensions')
+                    ->where(function ($q) use ($id, $isNumeric) {
+                        $q->where('original_file_no', $id);
+                        if ($isNumeric) {
+                            $q->orWhere('id', (int) $id);
+                        }
+                    })
+                    ->where(function ($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    })
+                    ->orderByDesc('id')
+                    ->first();
+
+                if ($pe) {
+                    $isPlotExtension = true;
+                    $record = (object) [
+                        'id'                 => $pe->id,
+                        'mlsfNo'             => $pe->original_file_no,
+                        'tracking_id'        => $pe->tracking_id,
+                        'FileName'           => $pe->file_name,
+                        'plot_no'            => $pe->plot_no,
+                        'tp_no'              => $pe->tp_no,
+                        'location'           => $pe->location,
+                        'lga'                => $pe->lga,
+                        'land_use_derived'   => $pe->land_use,
+                        'lga_derived'        => $pe->lga,
+                        'created_by_derived' => $pe->created_by,
+                        'batch_no'           => null,
+                    ];
+                }
+            }
 
             if (!$record) {
                 return abort(404, 'Record not found');
@@ -2290,10 +2420,14 @@ class FileNumberController extends Controller
             $acquisitionMethod = $request->query('method');
             $specifyOther = $request->query('other');
 
-            // Check for existing Serial Number
+            // Check for existing Serial Number. Plot extensions key off the file number
+            // (no mls_file_no_id), everything else keys off mls_file_no_id as before.
             $existingApp = DB::connection('sqlsrv')
                 ->table('conversion_applications')
-                ->where('mls_file_no_id', $record->id)
+                ->when($isPlotExtension,
+                    fn ($q) => $q->where('full_file_number', $record->mlsfNo),
+                    fn ($q) => $q->where('mls_file_no_id', $record->id)
+                )
                 ->first();
 
             if ($existingApp && $existingApp->serial_no) {
@@ -2307,7 +2441,7 @@ class FileNumberController extends Controller
                 DB::connection('sqlsrv')
                     ->table('conversion_applications')
                     ->insert([
-                        'mls_file_no_id' => $record->id,
+                        'mls_file_no_id' => $isPlotExtension ? null : $record->id,
                         'tracking_id' => $record->tracking_id,
                         'full_file_number' => $record->mlsfNo,
                         'serial_no' => $serialNo,

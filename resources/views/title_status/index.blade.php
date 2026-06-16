@@ -61,7 +61,7 @@
                         @foreach([25, 50, 100, 150, 200] as $option)
                             <option value="{{ $option }}" @selected($limit == $option)>{{ $option }} rows</option>
                         @endforeach
-                    </select>
+                    </select>  
                     {{-- land or dciv --}}
                     @if($url === 'land' || $url === 'dciv')
                     <button type="button" onclick="tsOpenTypeSelect()"
@@ -115,11 +115,17 @@
                                             class="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 transition" title="Actions">
                                             <i data-lucide="more-vertical" class="w-4 h-4"></i>
                                         </button>
-                                        <div class="ts-actions-menu hidden absolute right-0 z-50 mt-1 w-44 origin-top-right rounded-xl bg-white border border-slate-200 shadow-lg ring-1 ring-black/5 overflow-hidden">
+                                        <div class="ts-actions-menu hidden absolute right-0 z-50 mt-1 w-52 origin-top-right rounded-xl bg-white border border-slate-200 shadow-lg ring-1 ring-black/5 overflow-hidden">
                                             <button type="button" onclick="tsView(this); tsCloseAllMenus();"
                                                 class="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition">
                                                 <i data-lucide="eye" class="w-4 h-4 text-blue-600"></i> View
                                             </button>
+                                            @if($record->title_type === 'Revoke (CofO)')
+                                            <button type="button" onclick="window.open('{{ route('title-status.certificate-revocation', $record->id) }}', '_blank'); tsCloseAllMenus();"
+                                                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-red-50 transition">
+                                                <i data-lucide="printer" class="w-4 h-4 text-red-600"></i> Print Certificate
+                                            </button>
+                                            @endif
                                             @if($record->status === 'pending')
                                             <button type="button" onclick="tsOpenEdit(this); tsCloseAllMenus();"
                                                 class="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition">
@@ -280,7 +286,6 @@
                 <input type="hidden" id="ts-id">
                 <input type="hidden" id="ts-file_no"       name="file_no">
                 <input type="hidden" id="ts-file_title"    name="file_title">
-                <input type="hidden" id="ts-applicant_name" name="applicant_name">
                 <input type="hidden" id="ts-plot_no"       name="plot_no">
                 <input type="hidden" id="ts-location"      name="location">
                 <input type="hidden" id="ts-land_use"      name="land_use">
@@ -325,6 +330,64 @@
                             <div><span class="text-slate-400">Location</span><p id="ts-sum-location" class="font-semibold text-slate-700 mt-0.5"></p></div>
                             <div><span class="text-slate-400">Land Use</span><p id="ts-sum-landuse" class="font-semibold text-slate-700 mt-0.5"></p></div>
                             <div><span class="text-slate-400">LGA</span><p id="ts-sum-lga" class="font-semibold text-slate-700 mt-0.5"></p></div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Certificate of Occupancy Details (shown for Revoke / CofO actions; maps to the Certificate of Revocation) --}}
+                <div id="ts-cofo-section" class="hidden border border-slate-200 rounded-xl p-4 bg-slate-50/60 space-y-4">
+                    <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                        <i data-lucide="file-badge" class="w-3.5 h-3.5"></i>
+                        Certificate of Occupancy Details
+                    </p>
+
+                    {{-- Allottee / Holder name (printed on the certificate) --}}
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Allottee / Holder Name</label>
+                        <input type="text" id="ts-applicant_name" name="applicant_name"
+                            placeholder="Name of the certificate holder..."
+                            class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {{-- Certificate of Occupancy No. --}}
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Certificate of Occupancy No.</label>
+                            <input type="text" id="ts-cofo_number" name="cofo_number"
+                                placeholder="e.g. 494 -- RES-2026-2116"
+                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                            <p class="text-[10px] text-slate-400 mt-1">Leave blank to auto-build from Plot No. and File No.</p>
+                        </div>
+
+                        {{-- Dated (date of issue) --}}
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Dated (Date of Issue)</label>
+                            <input type="date" id="ts-date_of_issue" name="date_of_issue"
+                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                        </div>
+
+                        {{-- Registered as No --}}
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Registered as No.</label>
+                            <input type="text" id="ts-title_no" name="title_no"
+                                placeholder="Registration number"
+                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                        </div>
+
+                        {{-- At Page --}}
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">At Page</label>
+                            <input type="text" id="ts-reg_page" name="reg_page"
+                                placeholder="Page"
+                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                        </div>
+
+                        {{-- In Volume --}}
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">In Volume</label>
+                            <input type="text" id="ts-reg_volume" name="reg_volume"
+                                placeholder="Volume"
+                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
                         </div>
                     </div>
                 </div>

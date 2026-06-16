@@ -48,12 +48,6 @@
           <i data-lucide="link" class="h-4 w-4 text-slate-500"></i>
           <span>Manual Linkages</span>
         </a> --}}
-
-        {{-- <a href="{{ route('system-admin.phs.index') }}"
-          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('system-admin.phs.*') ? 'active' : '' }}">
-          <i data-lucide="building-2" class="h-4 w-4 text-slate-500"></i>
-          <span>PHS Administration</span>
-        </a> --}}
       @endif
 
       <!-- New menu items for departments and roles -->

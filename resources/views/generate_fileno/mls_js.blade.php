@@ -1467,9 +1467,11 @@
 
         // Get existing file number from Alpine.js component instead of DOM
         let existingFileNo = '';
+        let extensionType = 'file';
         const modalContainer = document.querySelector('[x-data="fileNumberGenerator()"]');
         if (modalContainer && modalContainer._x_dataStack && modalContainer._x_dataStack[0]) {
             existingFileNo = modalContainer._x_dataStack[0].existingFileNo;
+            extensionType = modalContainer._x_dataStack[0].extensionType || 'file';
         }
 
         const middlePrefix = document.getElementById('middlePrefix')?.value || '';
@@ -1479,7 +1481,8 @@
         let previewText = '-';
 
         if (fileOption === 'extension' && existingFileNo) {
-            previewText = existingFileNo.trim().replace(/-$/, '') + ' AND EXTENSION';
+            const baseExt = existingFileNo.trim().replace(/-$/, '');
+            previewText = extensionType === 'plot' ? baseExt : baseExt + ' AND EXTENSION';
         } else if (fileOption === 'temporary' && existingFileNo) {
             previewText = existingFileNo + '(T)';
         } else if (fileOption === 'miscellaneous' && middlePrefix && serialNo && year) {
@@ -1524,9 +1527,11 @@
 
         // Get existing file number from Alpine.js component instead of DOM
         let existingFileNo = '';
+        let extensionType = 'file';
         const modalContainer = document.querySelector('[x-data="fileNumberGenerator()"]');
         if (modalContainer && modalContainer._x_dataStack && modalContainer._x_dataStack[0]) {
             existingFileNo = modalContainer._x_dataStack[0].existingFileNo;
+            extensionType = modalContainer._x_dataStack[0].extensionType || 'file';
         }
 
         const middlePrefix = document.getElementById('middlePrefix')?.value || '';
@@ -1598,7 +1603,8 @@
         }
 
         if (fileOption === 'extension') {
-            previewText = (existingFileNo || baseFileNumber).trim().replace(/-$/, '') + ' AND EXTENSION';
+            const baseExt = (existingFileNo || baseFileNumber).trim().replace(/-$/, '');
+            previewText = extensionType === 'plot' ? baseExt : baseExt + ' AND EXTENSION';
         } else if (fileOption === 'temporary') {
             previewText = (existingFileNo || baseFileNumber) + '(T)';
         } else if (fileOption === 'miscellaneous' && middlePrefix && serialNo && year) {
@@ -1980,6 +1986,13 @@
             // If batch mode is active, show summary modal instead
             if (alpineData.batchMode) {
                 showBatchSummaryModal(alpineData);
+                return;
+            }
+
+            // Plot Extension: isolated workflow that keeps the original file number.
+            // Routed to its own endpoint instead of the standard generate flow.
+            if (alpineData.fileOption === 'extension' && alpineData.extensionType === 'plot') {
+                submitPlotExtension(event, alpineData);
                 return;
             }
         }
@@ -3639,6 +3652,9 @@
             customerType: '',
             // Default to normal file
             fileOption: 'normal',
+            // Extension category: 'file' (existing AND EXTENSION flow) or 'plot' (keep original number)
+            extensionType: 'file',
+            _lastFileOption: 'normal', // tracks previous fileOption to detect transitions
             existingFileNo: '',
             middlePrefix: 'KN',
             year: new Date().getFullYear(),
@@ -4236,8 +4252,19 @@
                 GlobalFileNoModal.open({
                     callback: function(data) {
                         if (!data || !data.fileNumber) return;
-                        self.relatedFileNo = data.fileNumber;
-                        self.relatedFileTitle = (data.record && (data.record.file_name || data.record.FileName)) || '';
+                        // Legacy KN/KANGIS records store the file number with a trailing dash
+                        // (e.g. "KN 3456-"); strip any trailing dash/whitespace so the related
+                        // file number is clean for any selected file.
+                        self.relatedFileNo = (data.fileNumber || '').toString().replace(/[\s-]+$/, '').trim();
+                        // The modal already resolves the best available title (file_title || file_name)
+                        // and passes it at the top level; fall back to record fields, then leave blank
+                        // so the officer can type it manually for legacy files with no stored title.
+                        self.relatedFileTitle = (
+                            data.file_name
+                            || data.file_title
+                            || (data.record && (data.record.file_name || data.record.FileName || data.record.file_title))
+                            || ''
+                        ).toString().trim();
                         self.relatedFileIndexingId = (data.record && data.record.id) || '';
                     }
                 });
@@ -4760,6 +4787,10 @@
             },
 
             updateFileOption() {
+                // Detect a fresh transition INTO the extension file type so we can
+                // prompt for the extension category (File vs Plot) exactly once.
+                const switchingToExtension = this.fileOption === 'extension' && this._lastFileOption !== 'extension';
+
                 // Clear serial number when changing file option to special types
                 if (this.fileOption === 'miscellaneous' || this.fileOption === 'sltr' || this.fileOption === 'old_mls') {
                     this.serialNo = '';
@@ -4787,6 +4818,10 @@
                     this.address = '';
                     this.rep_phone_no = '';
                     this.rep_address = '';
+                    if (this.fileOption === 'extension') {
+                        // Reset category until the user explicitly picks one in the popup.
+                        this.extensionType = '';
+                    }
                 } else if (this.fileOption === 'normal') {
                     this.isInherited = false;
                     // Reset SIT-specific overrides if switching from SIT
@@ -4818,6 +4853,13 @@
                     this.tpNo = '';
                     this.location = '';
                     this.lga = '';
+                }
+
+                this._lastFileOption = this.fileOption;
+
+                // Prompt for extension category (File vs Plot) on a fresh switch to Extension.
+                if (switchingToExtension && typeof window.openExtensionTypeModal === 'function') {
+                    window.openExtensionTypeModal();
                 }
 
                 this.updatePreview();
@@ -4856,7 +4898,9 @@
                 }
 
                 if (this.fileOption === 'extension') {
-                    previewText = (this.existingFileNo || baseFileNumber).trim().replace(/-$/, '') + ' AND EXTENSION';
+                    const baseExt = (this.existingFileNo || baseFileNumber).trim().replace(/-$/, '');
+                    // Plot Extension retains the original file number unchanged.
+                    previewText = this.extensionType === 'plot' ? baseExt : baseExt + ' AND EXTENSION';
                 } else if (this.fileOption === 'temporary') {
                     // For temporary files, use baseFileNumber (next available) + (T) as per user request
                     previewText = baseFileNumber + '(T)';
@@ -5416,6 +5460,154 @@
             });
         }
     };
+
+    // ----- Extension Type (File vs Plot) helpers -----
+
+    function getGeneratorAlpineData() {
+        const modalEl = document.querySelector('[x-data^="fileNumberGenerator"]');
+        if (modalEl && window.Alpine) {
+            try { return window.Alpine.$data(modalEl); } catch (e) { /* noop */ }
+        }
+        if (modalEl && modalEl._x_dataStack && modalEl._x_dataStack[0]) {
+            return modalEl._x_dataStack[0];
+        }
+        return null;
+    }
+
+    window.openExtensionTypeModal = function () {
+        const modal = document.getElementById('extensionTypeModal');
+        if (modal) {
+            modal.classList.remove('hidden');
+            if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                window.lucide.createIcons();
+            }
+        }
+    };
+
+    function closeExtensionTypeModal() {
+        const modal = document.getElementById('extensionTypeModal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    window.selectExtensionType = function (type) {
+        const data = getGeneratorAlpineData();
+        if (data) {
+            data.extensionType = type;
+            if (typeof data.updatePreview === 'function') data.updatePreview();
+        }
+        closeExtensionTypeModal();
+        // Both kinds require picking an existing file — open the selector for convenience.
+        if (typeof window.openExtensionFileSelector === 'function') {
+            window.openExtensionFileSelector();
+        }
+    };
+
+    // Cancelling the choice reverts the file type back to Normal.
+    window.cancelExtensionTypeSelection = function () {
+        closeExtensionTypeModal();
+        const data = getGeneratorAlpineData();
+        if (data) {
+            data.fileOption = 'normal';
+            data.extensionType = 'file';
+            if (typeof data.updateFileOption === 'function') {
+                data.updateFileOption();
+            } else if (typeof data.updatePreview === 'function') {
+                data.updatePreview();
+            }
+        }
+    };
+
+    // Plot Extension submission: keep the original file number, save an isolated transaction.
+    function submitPlotExtension(event, alpineData) {
+        const originalFileNo = (alpineData.existingFileNo || '').toString().trim();
+        if (!originalFileNo) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Existing File Required',
+                text: 'Please select an existing file number for the Plot Extension.',
+                confirmButtonColor: '#f59e0b'
+            });
+            return;
+        }
+
+        const fileNameValue = (alpineData.fileName || '').toString().trim();
+        if (!fileNameValue) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'File Name Required',
+                text: 'Please enter a File Name for the Plot Extension.',
+                confirmButtonColor: '#f59e0b'
+            });
+            return;
+        }
+
+        const submitBtn = event.submitter || event.target.querySelector('button[type="submit"]');
+        const originalText = submitBtn ? submitBtn.innerHTML : '';
+        if (submitBtn) showLoadingButton(submitBtn, originalText);
+        showGlobalLoading('Saving Plot Extension...');
+
+        const payload = {
+            original_file_no: originalFileNo,
+            tracking_id: (document.getElementById('trackingIdInput')?.value || '').trim(),
+            file_name: fileNameValue,
+            land_use: alpineData.landUse || '',
+            purpose_id: alpineData.purpose || '',
+            location: alpineData.location || '',
+            lga: alpineData.lga || '',
+            district: alpineData.district || '',
+            plot_no: alpineData.plotNo || '',
+            tp_no: alpineData.tpNo || '',
+            customer_type: alpineData.customerType || '',
+            phone_no: alpineData.phone_no || '',
+            address: alpineData.address || '',
+            // isInherited is set when the lookup auto-populated details for an indexed file
+            is_indexed: alpineData.isInherited ? 1 : 0,
+        };
+
+        fetch('{{ route("mls-fileno.plot-extension.store") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            },
+            body: JSON.stringify(payload)
+        })
+            .then(response => response.json())
+            .then(data => {
+                hideGlobalLoading();
+                if (submitBtn) hideLoadingButton(submitBtn, originalText);
+
+                if (data.success) {
+                    if (typeof closeGenerateModal === 'function') closeGenerateModal();
+                    try { table.ajax.reload(); } catch (e) { /* server-rendered fallback */ }
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Plot Extension Saved',
+                        text: data.message || ('Plot Extension saved for ' + originalFileNo + '.'),
+                        confirmButtonColor: '#10b981'
+                    });
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Save Failed',
+                        text: data.message || 'Could not save the Plot Extension.',
+                        confirmButtonColor: '#ef4444'
+                    });
+                }
+            })
+            .catch(err => {
+                hideGlobalLoading();
+                if (submitBtn) hideLoadingButton(submitBtn, originalText);
+                console.error('[PlotExtension] submit failed', err);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Network Error',
+                    text: 'Failed to save the Plot Extension. Please try again.',
+                    confirmButtonColor: '#ef4444'
+                });
+            });
+    }
 
     // Support function to fetch tracking ID and auto-populate fields
     async function fetchTrackingIdForFile(fileNumber) {
@@ -6629,7 +6821,13 @@
         }).then((result) => {
             if (result.isConfirmed) {
                 const { method, other } = result.value;
-                let url = `/file-numbers/conversion-application/${id}?method=${method}`;
+                // Prefer the file number string over the numeric id so the backend can
+                // resolve by fileNumber.mlsfNo and fall back to plot_extensions. This also
+                // avoids loading a different row that shares the same numeric id.
+                const convKey = (fileNo && fileNo !== '--' && fileNo !== 'N/A')
+                    ? encodeURIComponent(fileNo)
+                    : id;
+                let url = `/file-numbers/conversion-application/${convKey}?method=${method}`;
                 if (method === 'e' && other) {
                     url += `&other=${encodeURIComponent(other)}`;
                 }

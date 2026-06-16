@@ -13,6 +13,8 @@ class LandRofoController extends Controller
 {
     public function index(Request $request)
     {
+        $ossViewOnly = $request->query('view') === 'only';
+
         // Show approved recommendations AND OSS-type records (CoN applications ready to print)
         // Select only the columns the view needs — avoids loading large text fields (recommendation, survey_report, etc.)
         $query = LandRecommendation::with('creator')
@@ -22,11 +24,16 @@ class LandRofoController extends Controller
                 'survey_fees', 'development_value', 'development_charge', 'type',
                 'rofo_status', 'status', 'approved_at', 'land_rofo_serial_no',
                 'created_at', 'created_by', 'land_use', 'land_use_id', 'purpose_id',
-            ])
-            ->where(function ($q) {
+            ]);
+
+        if ($ossViewOnly) {
+            $query->whereRaw("UPPER(ISNULL(type, '')) = 'OSS'");
+        } else {
+            $query->where(function ($q) {
                 $q->where('status', LandRecommendation::STATUS_APPROVED)
                   ->orWhereRaw("UPPER(ISNULL(type, '')) = 'OSS'");
             });
+        }
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -39,7 +46,7 @@ class LandRofoController extends Controller
 
         $recommendations = $query->latest()->paginate(20);
 
-        $PageTitle='Land RofO';
+        $PageTitle = $ossViewOnly ? 'OSS RofO' : 'Land RofO';
         $landUses = \App\Models\LandUse::orderBy('landuse')->get();
 
         // Single aggregated query for all stats to avoid multiple full-table scans
@@ -56,14 +63,15 @@ class LandRofoController extends Controller
         // in land_recommendations which may have duplicates or test records.
         $ossColumns = DB::connection('sqlsrv')->getSchemaBuilder()->getColumnListing('oss_applications');
         $ossHasIsDeleted = in_array('is_deleted', array_map('strtolower', $ossColumns));
-        $ossTotal = DB::connection('sqlsrv')->table('oss_applications')
+        $ossBaseQuery = DB::connection('sqlsrv')->table('oss_applications')
             ->where('system_source', 'OSSOPCHANGEOFNAME')
             ->where(function ($q) use ($ossHasIsDeleted) {
                 if ($ossHasIsDeleted) {
                     $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
                 }
-            })
-            ->count();
+            });
+        $ossTotal = (clone $ossBaseQuery)->count();
+        $ossDailyTotal = (clone $ossBaseQuery)->whereDate('created_at', now()->toDateString())->count();
 
         $stats = [
             'total_eligible'    => (int) ($statsRow->total_eligible    ?? 0),
@@ -72,6 +80,7 @@ class LandRofoController extends Controller
             'total_land'        => (int) ($statsRow->total_land         ?? 0),
             'total_dev_charge'  => (float) ($statsRow->total_dev_charge ?? 0),
             'oss_total'         => $ossTotal,
+            'oss_daily'         => $ossDailyTotal,
         ];
 
         // Only fetch the paper_code column — the view only ever reads s.paper_code
@@ -81,7 +90,7 @@ class LandRofoController extends Controller
             ->orderBy('paper_code', 'asc')
             ->get();
 
-        return view('land_rofos.index', compact('recommendations', 'PageTitle', 'landUses', 'stats', 'availableSerials'));
+        return view('land_rofos.index', compact('recommendations', 'PageTitle', 'landUses', 'stats', 'availableSerials', 'ossViewOnly'));
     }
 
     public function assignSecurityPaperCode(Request $request, $id)

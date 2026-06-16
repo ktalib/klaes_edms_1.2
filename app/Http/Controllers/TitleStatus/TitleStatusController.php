@@ -227,6 +227,14 @@ class TitleStatusController extends Controller
         ]);
     }
 
+    public function printCertificate(int $id): \Illuminate\Contracts\View\View
+    {
+        $record = TitleStatusApplication::where('title_type', TitleStatusApplication::TYPE_REVOKE)
+            ->findOrFail($id);
+
+        return view('title_status.certificate_revocation', compact('record'));
+    }
+
     public function generateRemark(Request $request): JsonResponse
     {
         $titleType     = (string) $request->input('title_type', '');
@@ -257,7 +265,10 @@ class TitleStatusController extends Controller
             'state'               => 'nullable|string|max:100',
             'location'            => 'nullable|string|max:2000',
             'land_use'            => 'nullable|string|max:255',
+            'cofo_number'         => 'nullable|string|max:255',
             'title_no'            => 'nullable|string|max:255',
+            'reg_page'            => 'nullable|string|max:100',
+            'reg_volume'          => 'nullable|string|max:100',
             'date_of_issue'       => 'nullable|date',
             'date_of_expiry'      => 'nullable|date',
             'authority'           => 'nullable|string|max:255',

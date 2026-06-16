@@ -57,7 +57,7 @@
                     <i data-lucide="id-card" class="h-6 w-6"></i>
                 </div>
                 <div>
-                    <p class="text-sm text-slate-500 font-medium uppercase tracking-wider">Target: R of O</p>
+                    <p class="text-sm text-slate-500 font-medium uppercase tracking-wider">Target: RofO</p>
                     <h3 class="text-2xl font-bold text-slate-800">Right of Occupancy</h3>
                 </div>
             </div>
@@ -84,7 +84,7 @@
                                 <th class="pb-4 font-semibold whitespace-nowrap">MLS File No</th>
                                 <th class="pb-4 font-semibold whitespace-nowrap">OP Owner (Current)</th>
                                 <th class="pb-4 font-semibold text-center whitespace-nowrap">Status</th>
-                                <th class="pb-4 font-semibold whitespace-nowrap">R of O Owner (Staged)</th>
+                                <th class="pb-4 font-semibold whitespace-nowrap">RofO Owner (Staged)</th>
                                 
                             </tr>
                         </thead>

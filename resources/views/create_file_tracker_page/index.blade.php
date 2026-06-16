@@ -87,6 +87,18 @@
             </div>
         </div>
         @elseif(in_array(strtolower($module ?? ''), ['digital_request', 'digital-request']))
+        @if(request()->has('kangis'))
+        <div class="bg-gradient-to-r from-orange-600 via-orange-500 to-orange-700 px-6 py-3 flex items-center gap-3 shadow-sm">
+            <i data-lucide="send" class="h-5 w-5 text-white shrink-0"></i>
+            <div class="flex items-center gap-2">
+                <span class="text-white font-bold text-sm uppercase tracking-widest">KANGIS</span>
+                <span class="text-orange-100 text-sm">·</span>
+                <span class="text-white text-sm font-medium">Digital File Request</span>
+                <span class="text-orange-100 text-sm">·</span>
+                <span class="text-orange-100 text-sm">Request a Physical File</span>
+            </div>
+        </div>
+        @else
         <div class="bg-gradient-to-r from-[#450a0a] via-[#6b1010] to-[#450a0a] px-6 py-3 flex items-center gap-3 shadow-sm">
             <i data-lucide="send" class="h-5 w-5 text-white shrink-0"></i>
             <div class="flex items-center gap-2">
@@ -97,6 +109,7 @@
                 <span class="text-red-200 text-sm">Request a Physical File</span>
             </div>
         </div>
+        @endif
         @else
         <div class="bg-gradient-to-r from-red-950 via-red-800 to-red-950 px-6 py-3 flex items-center gap-3 shadow-sm">
             <i data-lucide="file-text" class="h-5 w-5 text-white shrink-0"></i>
@@ -123,14 +136,29 @@
 
                     <!-- Page Header  for dg and dg gis -->
 
-                {{-- ── Mode Switcher Card (only on base create-file-tracker + digital_request) ── --}}
-                @php $isDfr = (($module ?? '') === 'digital_request'); @endphp
-                @if(in_array(($module ?? ''), ['', 'digital_request']))
+                {{-- ── Mode Switcher Card (base create-file-tracker + KANGIS + digital_request) ── --}}
+                @php
+                    $isDfr = (($module ?? '') === 'digital_request');
+                    // KANGIS context = on the KANGIS page, or on a KANGIS-flavoured Digital Request (?url=digital_request&kangis).
+                    $isKangisCtx = (($module ?? '') === 'kangis') || ($isDfr && request()->has('kangis'));
+                    // On KANGIS, "Manual Request" returns to the KANGIS page; elsewhere to the base page.
+                    $manualUrl = $isKangisCtx
+                        ? route('create-file-tracker.index', ['url' => 'kangis'])
+                        : route('create-file-tracker.index');
+                    // From KANGIS, Digital Request keeps the KANGIS name + colour via the kangis flag.
+                    $digitalUrl = $isKangisCtx
+                        ? route('create-file-tracker.index', ['url' => 'digital_request', 'kangis' => 1])
+                        : route('create-file-tracker.index', ['url' => 'digital_request']);
+                    $digitalActiveClass = ($isDfr && request()->has('kangis'))
+                        ? 'bg-orange-600 text-white shadow-sm'
+                        : 'bg-[#450a0a] text-white shadow-sm';
+                @endphp
+                @if(in_array(($module ?? ''), ['', 'kangis', 'digital_request']))
                 <div class="bg-white border border-gray-200 rounded-xl px-5 py-3 flex items-center gap-3 shadow-sm">
                     <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Request Mode</span>
                     <div class="w-px h-5 bg-gray-200"></div>
                     <div class="inline-flex items-center rounded-xl border border-gray-200 bg-gray-100 p-0.5 gap-0.5">
-                        <a href="{{ route('create-file-tracker.index') }}"
+                        <a href="{{ $manualUrl }}"
                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs font-semibold transition-all
                                   {{ !$isDfr
                                       ? 'bg-white text-gray-800 shadow-sm border border-gray-200'
@@ -139,15 +167,32 @@
                             <i data-lucide="file-text" class="h-3.5 w-3.5"></i>
                             Manual Request
                         </a>
-                        <a href="{{ route('create-file-tracker.index', ['url' => 'digital_request']) }}"
+                        <a href="{{ $digitalUrl }}"
                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs font-semibold transition-all
                                   {{ $isDfr
-                                      ? 'bg-[#450a0a] text-white shadow-sm'
+                                      ? $digitalActiveClass
                                       : 'text-gray-400 hover:text-gray-600 hover:bg-white/60' }}"
                            title="Digital File Request">
                             <i data-lucide="monitor" class="h-3.5 w-3.5"></i>
                             Digital Request
                         </a>
+                    </div>
+
+                    <div class="ml-auto flex items-center gap-2">
+                        {{-- Quick Search is now a standalone page (Digital Archive → Quick Search). Kept here, commented out.
+                        <button type="button" class="js-qs-open inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 transition-all"
+                            title="Quick Search & File Location">
+                            <i data-lucide="map-pin" class="h-3.5 w-3.5"></i>
+                            Quick Search &amp; Location
+                        </button>
+                        --}}
+                        @unless($isKangisCtx)
+                        <button type="button" class="js-fr-open inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 border border-blue-600 hover:bg-blue-700 transition-all"
+                            title="Send a File Request to SCB Monitors">
+                            <i data-lucide="send" class="h-3.5 w-3.5"></i>
+                            Send File Search Request
+                        </button>
+                        @endunless
                     </div>
                 </div>
                 @endif
@@ -228,7 +273,7 @@
                                 </button>
 
                                 @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
-                                <a href="{{ route('digital-request.index') }}"
+                                <a href="{{ $isKangisCtx ? route('digital-request.index', ['kangis' => 1]) : route('digital-request.index') }}"
                                     class="inline-flex items-center px-4 py-2 border border-[#450a0a] rounded-md shadow-sm text-sm font-medium text-[#450a0a] bg-white hover:bg-red-50 transition-colors">
                                     <i data-lucide="list" class="h-4 w-4 mr-2"></i>
                                     View Requests
@@ -445,7 +490,7 @@
                                                         <p id="dfr-card-subtitle" class="text-xs text-green-600 transition-colors duration-300">Request a physical file to be sent to your office</p>
                                                     </div>
                                                 </div>
-                                                <a href="/digital-request"
+                                                <a href="{{ $isKangisCtx ? '/digital-request?kangis=1' : '/digital-request' }}"
                                                     class="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 border border-green-200 px-3 py-1.5 rounded-full transition">
                                                     <i data-lucide="layout-list" class="h-3.5 w-3.5"></i>
                                                     View All Requests
@@ -567,6 +612,20 @@
                                                             after selecting a file number</p>
                                                     </div>
                                                 </div>
+
+                                                {{-- Logged-out warning — shown by JS when the selected file is already logged out --}}
+                                                <div id="file-logout-warning" class="hidden flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+                                                    <i data-lucide="alert-triangle" class="h-5 w-5 text-amber-500 shrink-0 mt-0.5"></i>
+                                                    <div class="flex-1 min-w-0">
+                                                        <p class="text-sm font-semibold text-amber-800">File Already Logged Out</p>
+                                                        <p id="file-logout-warning-text" class="text-sm text-amber-700 mt-0.5"></p>
+                                                        <p class="text-xs text-amber-600 mt-1">Please log this file back into the registry first, then you can log it out to a new office.</p>
+                                                    </div>
+                                                    <button type="button" id="file-logout-warning-dismiss" class="shrink-0 text-amber-500 hover:text-amber-700 transition-colors" title="Dismiss">
+                                                        <i data-lucide="x" class="h-4 w-4"></i>
+                                                    </button>
+                                                </div>
+
                                                 <div class="space-y-2">
                                                     <label for="file-name"
                                                         class="block text-sm font-medium text-gray-700">File Title *</label>

@@ -26,7 +26,18 @@ class ManualFileLinkageController extends Controller
         $districts  = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
         $streetNames = DB::connection('sqlsrv')->table('street_names')->orderBy('name')->get(['id', 'name']);
 
-        return view('admin.manual_linkage.index', compact('linkages', 'states', 'lgas', 'districts', 'streetNames'));
+        // Distinct holding file numbers already in use — feeds the "Continue an existing chain" dropdown
+        $holdingFiles = Schema::connection('sqlsrv')->hasColumn('manual_file_linkages', 'holding_file_no')
+            ? DB::connection('sqlsrv')->table('manual_file_linkages')
+                ->whereNotNull('holding_file_no')
+                ->where('holding_file_no', '!=', '')
+                ->orderByDesc('created_at')
+                ->pluck('holding_file_no')
+                ->unique()
+                ->values()
+            : collect();
+
+        return view('admin.manual_linkage.index', compact('linkages', 'states', 'lgas', 'districts', 'streetNames', 'holdingFiles'));
     }
 
     /**
@@ -126,8 +137,10 @@ class ManualFileLinkageController extends Controller
         // --- Validation -------------------------------------------------------
         $baseRules = [
             'workflow_type'      => 'required|in:Subdivision,Merger,Plot Extension,Change of Purpose',
-            'old_file_numbers'   => 'required|array|min:1',
-            'old_file_numbers.*' => 'required|string',
+            // Not hard-required: a "finalize chain" save derives its legacy files from the
+            // selected holding chain instead of a manual pick. Enforced manually below.
+            'old_file_numbers'   => 'nullable|array',
+            'old_file_numbers.*' => 'nullable|string',
             'applicant_name'     => 'nullable|string|max:255',
             'file_title'         => 'nullable|string|max:500',
             'approval_reference' => 'nullable|string|max:255',
@@ -151,6 +164,11 @@ class ManualFileLinkageController extends Controller
             // related file numbers only (no decommission, no indexing row created).
             'unindexed_file_numbers'   => 'nullable|array',
             'unindexed_file_numbers.*' => 'nullable|string',
+            // Temporary holding file: a logical container number that ties one transaction
+            // chain (merger → subdivision → change of purpose) to a supporting prop_id.
+            'use_holding_file'   => 'nullable|boolean',
+            'holding_action'     => 'nullable|in:new,continue',
+            'holding_file_no'    => 'nullable|string|max:100',
         ];
 
         if ($workflowType === 'Subdivision') {
@@ -170,7 +188,7 @@ class ManualFileLinkageController extends Controller
         // --- Normalize inputs -------------------------------------------------
         $oldFileNumbers = array_values(array_unique(array_map(
             fn ($f) => strtoupper(trim((string) $f)),
-            $validated['old_file_numbers']
+            $validated['old_file_numbers'] ?? []
         )));
 
         // Un-indexed file numbers: recorded as related only, never decommissioned/indexed
@@ -233,27 +251,123 @@ class ManualFileLinkageController extends Controller
             }
         }
 
+        // Activation flag: when ON, this is an OPEN chain — the legacy/source files stay
+        // active and may recur across multiple workflows, so the "already linked"
+        // duplicate guard below is intentionally skipped.
+        $useHoldingFile = (bool) ($validated['use_holding_file'] ?? false);
+
         // --- Duplicate guard --------------------------------------------------
-        // Reject if any old file is already recorded as a source in manual_file_linkages
-        $alreadyLinked = DB::connection('sqlsrv')
-            ->table('manual_file_linkages')
-            ->where(function ($q) use ($oldFileNumbers) {
-                foreach ($oldFileNumbers as $fn) {
-                    $q->orWhereRaw("old_file_numbers LIKE ?", ['%"' . $fn . '"%']);
+        // Reject if any old file is already recorded as a source in manual_file_linkages.
+        // Only enforced for FINAL (non-activated) workflows — an active chain reuses files.
+        if (!$useHoldingFile) {
+            $alreadyLinked = DB::connection('sqlsrv')
+                ->table('manual_file_linkages')
+                ->where(function ($q) use ($oldFileNumbers) {
+                    foreach ($oldFileNumbers as $fn) {
+                        $q->orWhereRaw("old_file_numbers LIKE ?", ['%"' . $fn . '"%']);
+                    }
+                })
+                ->get(['workflow_type', 'new_file_number', 'old_file_numbers', 'created_at']);
+
+            if ($alreadyLinked->isNotEmpty()) {
+                $conflicts = $alreadyLinked->map(fn ($l) =>
+                    implode(', ', json_decode($l->old_file_numbers, true) ?? [$l->old_file_numbers])
+                    . ' → ' . $l->new_file_number
+                    . ' (' . $l->workflow_type . ' on '
+                    . \Carbon\Carbon::parse($l->created_at)->format('d/m/Y') . ')'
+                )->implode('; ');
+
+                return back()
+                    ->withErrors(['error' => 'One or more source files are already linked: ' . $conflicts])
+                    ->withInput();
+            }
+        }
+
+        // --- Temporary holding file -------------------------------------------
+        // When activation is ON the linkage runs under a temporary holding file number
+        // that ties the whole transaction chain to one supporting prop_id. It is a
+        // logical identifier only (no indexing row).
+        $holdingFileNo  = null;
+
+        if ($useHoldingFile) {
+            // Supporting file must already be indexed. Its prop_id becomes the chain's
+            // master reference — if it doesn't have one yet, it is auto-allocated downstream
+            // (same as the normal linkage flow).
+            if ($workflowType === 'Subdivision') {
+                $supportingFile = $oldFileNumbers[0] ?? null;
+            } else {
+                $supportingFile = $newFileNumber;
+            }
+            $supportingIndexing = $supportingFile
+                ? DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $supportingFile)->first()
+                : null;
+
+            if (!$supportingIndexing) {
+                $label = $workflowType === 'Subdivision' ? 'parent' : 'supporting (destination)';
+                return back()
+                    ->withErrors(['error' =>
+                        "Holding file mode requires the {$label} file ({$supportingFile}) to already be indexed. "
+                        . 'Index that file first, or turn off the holding file option.'])
+                    ->withInput();
+            }
+
+            $holdingAction = $validated['holding_action'] ?? 'new';
+
+            if ($holdingAction === 'continue') {
+                $holdingFileNo = strtoupper(trim($validated['holding_file_no'] ?? ''));
+                if ($holdingFileNo === '') {
+                    return back()
+                        ->withErrors(['error' => 'Select or enter the existing holding file number to continue the transaction chain.'])
+                        ->withInput();
                 }
-            })
-            ->get(['workflow_type', 'new_file_number', 'old_file_numbers', 'created_at']);
+                $chainExists = DB::connection('sqlsrv')->table('manual_file_linkages')
+                    ->where('holding_file_no', $holdingFileNo)->exists();
+                if (!$chainExists) {
+                    return back()
+                        ->withErrors(['error' => "Holding file {$holdingFileNo} was not found in any prior linkage. "
+                            . 'Check the number, or choose "Start a new holding file".'])
+                        ->withInput();
+                }
+            } else {
+                // new: generate a fresh holding number (ignore any submitted value)
+                $holdingFileNo = $this->generateHoldingFileNo();
+            }
+        }
 
-        if ($alreadyLinked->isNotEmpty()) {
-            $conflicts = $alreadyLinked->map(fn ($l) =>
-                implode(', ', json_decode($l->old_file_numbers, true) ?? [$l->old_file_numbers])
-                . ' → ' . $l->new_file_number
-                . ' (' . $l->workflow_type . ' on '
-                . \Carbon\Carbon::parse($l->created_at)->format('d/m/Y') . ')'
-            )->implode('; ');
+        // --- Finalize chain detection -----------------------------------------
+        // Closing step: Activation ON + "Continue existing chain" + a holding number
+        // selected + NO legacy file picked. The legacy files are then derived from the
+        // chain and decommissioned — ALL of them EXCEPT the supporting/destination file,
+        // which stays active. Lets the user finalize without a "missing file" error.
+        $isFinalizeChain = $useHoldingFile
+            && ($validated['holding_action'] ?? '') === 'continue'
+            && $holdingFileNo
+            && empty($oldFileNumbers)
+            && $workflowType !== 'Subdivision';
 
+        if ($isFinalizeChain) {
+            $chainRows = DB::connection('sqlsrv')->table('manual_file_linkages')
+                ->where('holding_file_no', $holdingFileNo)
+                ->get(['new_file_number', 'old_file_numbers']);
+
+            $chainFiles = [];
+            foreach ($chainRows as $r) {
+                if (!empty($r->new_file_number)) {
+                    $chainFiles[] = strtoupper(trim($r->new_file_number));
+                }
+                foreach ((json_decode($r->old_file_numbers, true) ?: []) as $of) {
+                    $of = strtoupper(trim((string) $of));
+                    if ($of !== '') {
+                        $chainFiles[] = $of;
+                    }
+                }
+            }
+            // Everything in the chain EXCEPT the supporting/destination file.
+            $oldFileNumbers = array_values(array_diff(array_unique($chainFiles), [$newFileNumber]));
+        } elseif ($workflowType !== 'Subdivision' && empty($oldFileNumbers)) {
+            // A normal (non-finalize) non-subdivision linkage still needs a legacy file.
             return back()
-                ->withErrors(['error' => 'One or more source files are already linked: ' . $conflicts])
+                ->withErrors(['error' => 'Add at least one legacy/old file number, or finalize an existing chain.'])
                 ->withInput();
         }
 
@@ -264,7 +378,7 @@ class ManualFileLinkageController extends Controller
             $commissionedBy = Auth::user()->first_name . ' ' . Auth::user()->last_name;
             // Prefer an indexed source as the reference file (un-indexed ones have no record)
             $indexedOldFiles = array_values(array_diff($oldFileNumbers, $unindexedFiles));
-            $firstOldFile    = $indexedOldFiles[0] ?? $oldFileNumbers[0];
+            $firstOldFile    = $indexedOldFiles[0] ?? ($oldFileNumbers[0] ?? null);
 
             // Fetch details of the first source file BEFORE decommissioning deletes it
             $oldIndexing = DB::connection('sqlsrv')
@@ -289,12 +403,16 @@ class ManualFileLinkageController extends Controller
 
             // Decommission only the INDEXED source files (un-indexed ones have no
             // record to decommission — they are captured as related file numbers).
+            //
+            // When the Supporting/Holding chain is ACTIVE, the chain is still open: the
+            // legacy/source files must stay active so later workflows can reference them.
+            // Decommissioning only happens on the FINAL workflow (activation OFF).
             $filesToDecommission = array_values(array_diff($oldFileNumbers, $unindexedFiles));
             $workflowService = app(PlotWorkflowService::class);
             $decommReason = $workflowType === 'Subdivision'
                 ? 'Subdivision → ' . implode(', ', array_column($children, 'new_file_number'))
                 : "Manual Linkage: {$workflowType} → {$newFileNumber}";
-            if (!empty($filesToDecommission)) {
+            if (($isFinalizeChain || !$useHoldingFile) && !empty($filesToDecommission)) {
                 $workflowService->decommissionFiles($filesToDecommission, $decommReason, $commissionedBy);
             }
 
@@ -304,6 +422,13 @@ class ManualFileLinkageController extends Controller
             // ----------------------------------------------------------------
             if ($workflowType === 'Subdivision') {
                 $parentPropId = $oldPropIds[0] ?? null;
+                // Parent (subdividing) plot holder — becomes the Grantor on each child's PRA row.
+                $parentHolder = $oldIndexing->current_holder
+                    ?? ($oldIndexing->file_title ?? null);
+                // PRA comment, shared by every child row.
+                // e.g. "Plot Subdivision: 3 Plots Subdivided from RES-RC-1982-731"
+                $subdivisionComment = 'Plot Subdivision: ' . count($children)
+                    . ' Plots Subdivided from ' . $firstOldFile;
 
                 // Un-indexed children are recorded as related file numbers only
                 $unindexedChildNumbers = array_values(array_intersect(
@@ -341,6 +466,12 @@ class ManualFileLinkageController extends Controller
                     $childTitle = $childData['file_title']
                         ?: ($childNewIndexing->file_title ?? ($oldIndexing->file_title ?? 'Manual Linkage Result'));
 
+                    // Resolved property address for this child (used for both file_indexings.location
+                    // and the PRA row's location + property_description).
+                    $childLocation = $childData['location']
+                        ?: ($request->input('location')
+                            ?: ($childNewIndexing->location ?? ($oldIndexing->location ?? null)));
+
                     // file_indexings row for this child
                     $indexingPayload = [
                         'file_number'      => $childFileNumber,
@@ -353,9 +484,7 @@ class ManualFileLinkageController extends Controller
                             ?: ($childNewIndexing->district ?? ($oldIndexing->district ?? null)),
                         'lga'              => $request->input('lga')
                             ?: ($childNewIndexing->lga ?? ($oldIndexing->lga ?? null)),
-                        'location'         => $childData['location']
-                            ?: ($request->input('location')
-                                ?: ($childNewIndexing->location ?? ($oldIndexing->location ?? null))),
+                        'location'         => $childLocation,
                         'plot_size'        => $childData['plot_size']
                             ?: ($childNewIndexing->plot_size ?? null),
                         'tp_no'            => $childNewIndexing->tp_no ?? ($oldIndexing->tp_no ?? null),
@@ -420,14 +549,24 @@ class ManualFileLinkageController extends Controller
                         DB::connection('sqlsrv')->table('fileNumber')->insert($fileNumberPayload);
                     }
 
-                    // PRA transaction for this child
+                    // PRA transaction for this child (carry the holding number so the chain is traceable).
+                    // Grantor = parent (subdividing) holder, Grantee = this child's holder.
+                    // party_1/party_2 mirror Grantor/Grantee for table views that read the generic columns.
+                    $childGrantee = $childTitle ?: null;
                     DB::connection('sqlsrv')->table('pra')->insert([
                         'prop_id'              => $childPropId,
                         'mlsFNo'               => $childFileNumber,
                         'title_type'           => 'Subdivision',
                         'transaction_type'     => 'Plot Subdivision',
-                        'property_description' => $remarks
-                            ?: "Manual Processed: Plot Subdivision from {$firstOldFile}",
+                        'property_description' => $childLocation,
+                        'location'             => $childLocation,
+                        'temp_fileno'          => $holdingFileNo,
+                        'Grantor'              => $parentHolder,
+                        'Grantee'              => $childGrantee,
+                        'party_1'              => $parentHolder,
+                        'party_2'              => $childGrantee,
+                        'parent_prop_id'       => $parentPropId,
+                        'comments'             => $subdivisionComment,
                         'created_at'           => now(),
                         'updated_at'           => now(),
                     ]);
@@ -446,7 +585,8 @@ class ManualFileLinkageController extends Controller
                         $childData['plot_number'] ?: null,
                         $childData['plot_size'] ?: null,
                         $childData['survey_plan_no'] ?: null,
-                        $linkageGroupId
+                        $linkageGroupId,
+                        $holdingFileNo
                     );
                 }
 
@@ -491,12 +631,37 @@ class ManualFileLinkageController extends Controller
                     $newFileNumber,
                     null,
                     null,
-                    ['temp_fileno' => $firstOldFile]
+                    ['temp_fileno' => $useHoldingFile ? $holdingFileNo : $firstOldFile]
                 );
+
+                // Best-effort: stamp the holding number onto the supporting file's PropID_Master
+                // row (backfills temp_fileno only if NULL, so it never clobbers or mints anew).
+                if ($useHoldingFile && $holdingFileNo) {
+                    try {
+                        $allocationService->allocateOrRetrievePropId(
+                            $newFileNumber,
+                            $newFileNumber,
+                            null,
+                            null,
+                            ['temp_fileno' => $holdingFileNo]
+                        );
+                    } catch (\Throwable $e) {
+                        Log::warning('Holding file master-link backfill failed', [
+                            'holding_file_no' => $holdingFileNo,
+                            'file_number'     => $newFileNumber,
+                            'error'           => $e->getMessage(),
+                        ]);
+                    }
+                }
 
                 $parentPropId = !empty($oldPropIds)
                     ? implode(',', $oldPropIds)
                     : ($oldIndexing->prop_id ?? null);
+
+                // Resolved property address for the destination file (used for both
+                // file_indexings.location and the PRA row's location + property_description).
+                $destLocation = $request->input('location')
+                    ?: ($newIndexing->location ?? ($oldIndexing->location ?? null));
 
                 $indexingPayload = [
                     'file_number'      => $newFileNumber,
@@ -510,8 +675,7 @@ class ManualFileLinkageController extends Controller
                         ?: ($newIndexing->district ?? ($oldIndexing->district ?? null)),
                     'lga'              => $request->input('lga')
                         ?: ($newIndexing->lga ?? ($oldIndexing->lga ?? null)),
-                    'location'         => $request->input('location')
-                        ?: ($newIndexing->location ?? ($oldIndexing->location ?? null)),
+                    'location'         => $destLocation,
                     'plot_size'        => $request->input('plot_size')
                         ?: ($newIndexing->plot_size ?? ($oldIndexing->plot_size ?? null)),
                     'tp_no'            => $newIndexing->tp_no ?? ($oldIndexing->tp_no ?? null),
@@ -573,8 +737,32 @@ class ManualFileLinkageController extends Controller
                     DB::connection('sqlsrv')->table('fileNumber')->insert($fileNumberPayload);
                 }
 
-                if (in_array($workflowType, ['Merger', 'Plot Extension', 'Change of Purpose'], true) && !empty($oldPropIds)) {
+                // Only collapse the source prop_ids into the destination on the FINAL
+                // workflow (activation off, or finalizing an open chain). While the chain
+                // is active the sources stay independent.
+                if (($isFinalizeChain || !$useHoldingFile) && in_array($workflowType, ['Merger', 'Plot Extension', 'Change of Purpose'], true) && !empty($oldPropIds)) {
                     $workflowService->updateHistoricalPropId($oldPropIds, (int) $propId);
+                }
+
+                // Grantor = source/parent holder, Grantee = destination (new) holder.
+                // party_1/party_2 mirror Grantor/Grantee for views that read the generic columns.
+                $destGrantor = $oldIndexing->current_holder ?? ($oldIndexing->file_title ?? null);
+                $destGrantee = $applicantName
+                    ?: ($newIndexing->current_holder ?? ($newIndexing->file_title ?? null));
+
+                // PRA comment per workflow type:
+                //  Merger             -> "Plot Merger: A and B; NEW"
+                //  Change of Purpose  -> "Old File Number: OLD New File Number: NEW"
+                //  Plot Extension     -> "Plot Extension: A and B; NEW"
+                if ($workflowType === 'Merger') {
+                    $praComment = 'Plot Merger: ' . implode(' and ', $oldFileNumbers) . '; ' . $newFileNumber;
+                } elseif ($workflowType === 'Change of Purpose') {
+                    $praComment = 'Old File Number: ' . implode(', ', $oldFileNumbers)
+                        . ' New File Number: ' . $newFileNumber;
+                } elseif ($workflowType === 'Plot Extension') {
+                    $praComment = 'Plot Extension: ' . implode(' and ', $oldFileNumbers) . '; ' . $newFileNumber;
+                } else {
+                    $praComment = "Manual Processed: {$workflowType} linkage";
                 }
 
                 DB::connection('sqlsrv')->table('pra')->insert([
@@ -582,7 +770,15 @@ class ManualFileLinkageController extends Controller
                     'mlsFNo'               => $newFileNumber,
                     'title_type'           => $workflowType,
                     'transaction_type'     => $workflowType,
-                    'property_description' => $remarks ?: "Manual Processed: {$workflowType} linkage",
+                    'property_description' => $destLocation,
+                    'location'             => $destLocation,
+                    'temp_fileno'          => $holdingFileNo,
+                    'Grantor'              => $destGrantor,
+                    'Grantee'              => $destGrantee,
+                    'party_1'              => $destGrantor,
+                    'party_2'              => $destGrantee,
+                    'parent_prop_id'       => $parentPropId,
+                    'comments'             => $praComment,
                     'created_at'           => now(),
                     'updated_at'           => now(),
                 ]);
@@ -598,7 +794,8 @@ class ManualFileLinkageController extends Controller
                     $approvalReference,
                     $approvalDate,
                     null, null, null,
-                    $linkageGroupId
+                    $linkageGroupId,
+                    $holdingFileNo
                 );
 
                 app(AuditService::class)->logAction(
@@ -647,7 +844,8 @@ class ManualFileLinkageController extends Controller
         ?string $childPlotNumber,
         ?string $childPlotSize,
         ?string $surveyPlanNo,
-        string  $linkageGroupId
+        string  $linkageGroupId,
+        ?string $holdingFileNo = null
     ): int {
         $row = [
             'workflow_type'    => $workflowType,
@@ -668,6 +866,7 @@ class ManualFileLinkageController extends Controller
             'child_plot_size'    => $childPlotSize,
             'survey_plan_no'     => $surveyPlanNo,
             'linkage_group_id'   => $linkageGroupId,
+            'holding_file_no'    => $holdingFileNo,
         ];
 
         foreach ($optional as $col => $value) {
@@ -677,6 +876,277 @@ class ManualFileLinkageController extends Controller
         }
 
         return (int) DB::connection('sqlsrv')->table('manual_file_linkages')->insertGetId($row);
+    }
+
+    /**
+     * Generate a unique temporary holding file number (TEMP-#####).
+     * Re-rolls if the number already exists in a prior linkage or the PropID_Master.
+     */
+    private function generateHoldingFileNo(): string
+    {
+        do {
+            $candidate = 'TEMP-' . mt_rand(10000, 99999);
+
+            $taken = DB::connection('sqlsrv')->table('manual_file_linkages')
+                ->where('holding_file_no', $candidate)->exists();
+
+            if (!$taken && Schema::connection('sqlsrv')->hasTable('PropID_Master')) {
+                $taken = DB::connection('sqlsrv')->table('PropID_Master')
+                    ->where('temp_fileno', $candidate)->exists();
+            }
+        } while ($taken);
+
+        return $candidate;
+    }
+
+    /**
+     * AJAX: Validate an existing holding file number and return its transaction chain
+     * (supporting file, prop_id, and the workflow stages already recorded under it).
+     * Powers the "Continue existing chain" lookup in the modal.
+     */
+    public function searchHoldingFile(Request $request)
+    {
+        $holdingFileNo = strtoupper(trim((string) $request->input('holding_file_no')));
+
+        if ($holdingFileNo === '') {
+            return response()->json(['error' => 'Holding file number is required.'], 400);
+        }
+
+        $stages = DB::connection('sqlsrv')->table('manual_file_linkages')
+            ->where('holding_file_no', $holdingFileNo)
+            ->orderBy('created_at')
+            ->get(['workflow_type', 'new_file_number', 'prop_id', 'created_at']);
+
+        if ($stages->isEmpty()) {
+            return response()->json([
+                'exists'  => false,
+                'message' => "Holding file {$holdingFileNo} was not found in any prior linkage.",
+            ]);
+        }
+
+        return response()->json([
+            'exists'          => true,
+            'holding_file_no' => $holdingFileNo,
+            'supporting_file' => $stages->first()->new_file_number,
+            'prop_id'         => $stages->first()->prop_id,
+            'stages'          => $stages->map(fn ($s) => [
+                'workflow_type'   => $s->workflow_type,
+                'new_file_number' => $s->new_file_number,
+                'prop_id'         => $s->prop_id,
+                'date'            => \Carbon\Carbon::parse($s->created_at)->format('d/m/Y'),
+            ])->values(),
+        ]);
+    }
+
+    /**
+     * Download a CSV template for bulk file import.
+     *  - subdivision → Child Plot Files columns
+     *  - merger      → Source Plot Files columns
+     * Only `file_number` is required; the rest are optional and back-filled from the
+     * indexed record when left blank (same as the manual selection flow).
+     */
+    public function downloadCsvTemplate(Request $request)
+    {
+        $mode = $request->query('mode') === 'merger' ? 'merger' : 'subdivision';
+
+        if ($mode === 'merger') {
+            $headers = ['file_number', 'plot_no', 'house_no', 'street_name', 'district', 'lga', 'state', 'plot_size'];
+            $sample  = ['RES-RC-2019-123', '45', '12', '', '', '', 'Kano', '0.50'];
+            $fileName = 'merger_source_plots_template.csv';
+        } else {
+            $headers = ['file_number', 'file_title', 'plot_number', 'location', 'plot_size', 'survey_plan_no'];
+            $sample  = ['RES-RC-2019-123', 'JOHN DOE', '45A', '', '', ''];
+            $fileName = 'subdivision_child_plots_template.csv';
+        }
+
+        $callback = function () use ($headers, $sample) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, $headers);
+            fputcsv($out, $sample);
+            fclose($out);
+        };
+
+        return response()->streamDownload($callback, $fileName, [
+            'Content-Type'        => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
+        ]);
+    }
+
+    /**
+     * Bulk-validate an uploaded CSV of child/source plot files and return per-row results.
+     * Mirrors the manual selection validation: indexed files are back-filled from their
+     * record, un-indexed files are still accepted (recorded as related file numbers on
+     * save), decommissioned files are rejected, and duplicate rows are flagged.
+     */
+    public function bulkImportCsv(Request $request)
+    {
+        $request->validate([
+            'csv_file' => 'required|file|mimes:csv,txt|max:5120',
+            'mode'     => 'required|in:subdivision,merger',
+        ]);
+
+        $mode = $request->input('mode');
+        $path = $request->file('csv_file')->getRealPath();
+
+        $handle = @fopen($path, 'r');
+        if ($handle === false) {
+            return response()->json(['error' => 'Unable to read the uploaded file.'], 422);
+        }
+
+        // Header row → normalized column index map (lowercased, spaces/dashes → underscore)
+        $rawHeader = fgetcsv($handle);
+        if ($rawHeader === false) {
+            fclose($handle);
+            return response()->json(['error' => 'The CSV file is empty.'], 422);
+        }
+        $colMap = [];
+        foreach ($rawHeader as $i => $name) {
+            $key = preg_replace('/[\s\-]+/', '_', strtolower(trim((string) $name)));
+            if ($key !== '') {
+                $colMap[$key] = $i;
+            }
+        }
+
+        // Aliases so common header spellings still resolve
+        $col = function (array $row, array $candidates) use ($colMap) {
+            foreach ($candidates as $c) {
+                if (isset($colMap[$c]) && isset($row[$colMap[$c]])) {
+                    $v = trim((string) $row[$colMap[$c]]);
+                    if ($v !== '') {
+                        return $v;
+                    }
+                }
+            }
+            return null;
+        };
+
+        $rows    = [];
+        $seen    = [];
+        $rowNo   = 1; // header was row 1
+        $summary = ['total' => 0, 'imported' => 0, 'indexed' => 0, 'unindexed' => 0, 'duplicates' => 0, 'invalid' => 0];
+
+        while (($data = fgetcsv($handle)) !== false) {
+            $rowNo++;
+            // Skip fully blank lines
+            if (count(array_filter($data, fn ($v) => trim((string) $v) !== '')) === 0) {
+                continue;
+            }
+            $summary['total']++;
+
+            $fileNumber = strtoupper((string) ($col($data, ['file_number', 'fileno', 'file_no', 'mls_file_no', 'mlsfno']) ?? ''));
+
+            if ($fileNumber === '') {
+                $summary['invalid']++;
+                $rows[] = ['row' => $rowNo, 'file_number' => '', 'status' => 'invalid', 'message' => 'Missing file number.'];
+                continue;
+            }
+
+            // Duplicate within this upload
+            if (isset($seen[$fileNumber])) {
+                $summary['duplicates']++;
+                $rows[] = ['row' => $rowNo, 'file_number' => $fileNumber, 'status' => 'duplicate', 'message' => 'Duplicate of row ' . $seen[$fileNumber] . '.'];
+                continue;
+            }
+            $seen[$fileNumber] = $rowNo;
+
+            $indexing     = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $fileNumber)->first();
+            $fileNoRecord = $indexing ? null : DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fileNumber)->first();
+
+            // Reject already-decommissioned files (archived — cannot be reused)
+            if (!$indexing && !$fileNoRecord) {
+                $decommissioned = DB::connection('sqlsrv')->table('decommissioned_files')
+                    ->where('mls_file_no', $fileNumber)
+                    ->orderBy('decommissioning_date', 'desc')
+                    ->first();
+                if ($decommissioned) {
+                    $summary['invalid']++;
+                    $rows[] = [
+                        'row'         => $rowNo,
+                        'file_number' => $fileNumber,
+                        'status'      => 'invalid',
+                        'message'     => 'Already decommissioned'
+                            . ($decommissioned->decommissioning_reason ? ': ' . $decommissioned->decommissioning_reason : '.'),
+                    ];
+                    continue;
+                }
+            }
+
+            // CSV-supplied overrides (fall back to the indexed record when blank)
+            $csvPlotNumber = $col($data, ['plot_number', 'plot_no', 'plot']);
+            $csvFileTitle  = $col($data, ['file_title', 'title', 'holder', 'applicant_name']);
+            $csvPlotSize   = $col($data, ['plot_size', 'size']);
+            $csvSurveyPlan = $col($data, ['survey_plan_no', 'survey_plan', 'plan_no']);
+            $csvHouseNo    = $col($data, ['house_no', 'house']);
+            $csvStreet     = $col($data, ['street_name', 'street']);
+            $csvDistrict   = $col($data, ['district']);
+            $csvLga        = $col($data, ['lga']);
+            $csvState      = $col($data, ['state']);
+            $csvLocation   = $col($data, ['location', 'address']);
+
+            $indexed = (bool) $indexing;
+
+            if ($indexed) {
+                $recordLocation = $indexing->location ?? null;
+                $builtLocation  = $csvLocation
+                    ?: ($recordLocation
+                        ?: implode(', ', array_filter([
+                            $csvPlotNumber ?: ($indexing->plot_number ?? null),
+                            $csvStreet, $csvDistrict ?: ($indexing->district ?? null),
+                            $csvLga ?: ($indexing->lga ?? null), $csvState,
+                        ], fn ($v) => $v && $v !== 'N/A')));
+
+                $details = [
+                    'file_title'     => $csvFileTitle  ?: ($indexing->file_title ?? ''),
+                    'plot_number'    => $csvPlotNumber ?: ($indexing->plot_number ?? ''),
+                    'house_no'       => $csvHouseNo    ?: '',
+                    'street_name'    => $csvStreet     ?: '',
+                    'district'       => $csvDistrict   ?: ($indexing->district ?? ''),
+                    'lga'            => $csvLga         ?: ($indexing->lga ?? ''),
+                    'state'          => $csvState       ?: '',
+                    'location'       => $builtLocation,
+                    'plot_size'      => $csvPlotSize   ?: ($indexing->plot_size ?? ''),
+                    'survey_plan_no' => $csvSurveyPlan ?: '',
+                    'land_use'       => $indexing->land_use_type ?? '',
+                    'prop_id'        => $indexing->prop_id ?? '',
+                ];
+                $summary['indexed']++;
+            } else {
+                // Un-indexed → still accepted, recorded as a related file number on save
+                $details = [
+                    'file_title'     => $csvFileTitle  ?: '',
+                    'plot_number'    => $csvPlotNumber ?: '',
+                    'house_no'       => $csvHouseNo    ?: '',
+                    'street_name'    => $csvStreet     ?: '',
+                    'district'       => $csvDistrict   ?: '',
+                    'lga'            => $csvLga         ?: '',
+                    'state'          => $csvState       ?: '',
+                    'location'       => $csvLocation   ?: implode(', ', array_filter([$csvStreet, $csvDistrict, $csvLga, $csvState])),
+                    'plot_size'      => $csvPlotSize   ?: '',
+                    'survey_plan_no' => $csvSurveyPlan ?: '',
+                    'land_use'       => '',
+                    'prop_id'        => '',
+                ];
+                $summary['unindexed']++;
+            }
+
+            $summary['imported']++;
+            $rows[] = [
+                'row'         => $rowNo,
+                'file_number' => $fileNumber,
+                'status'      => $indexed ? 'indexed' : 'unindexed',
+                'message'     => $indexed ? 'Verified indexed file.' : 'Not indexed — will be saved as a related file number.',
+                'indexed'     => $indexed,
+                'details'     => $details,
+            ];
+        }
+
+        fclose($handle);
+
+        if ($summary['total'] === 0) {
+            return response()->json(['error' => 'No data rows found in the CSV (only a header was detected).'], 422);
+        }
+
+        return response()->json(['mode' => $mode, 'summary' => $summary, 'rows' => $rows]);
     }
 
     /**

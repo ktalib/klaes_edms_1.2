@@ -77,13 +77,13 @@
                             <table width="100%" cellpadding="0" cellspacing="0">
                                 <tr>
                                     <td width="33%" style="text-align: left;">
-                                        <img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Ministry Logo" style="max-width: 90px; height: auto;">
+                                        <img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Ministry Logo" style="max-width: 60px; height: auto;">
                                     </td>
                                     <td width="34%" style="text-align: center;">
                                         <h3 style="margin: 0; color: #1e3a5f; font-size: 14px;">{{ env('APP_NAME') }}</h3>
                                     </td>
                                     <td width="33%" style="text-align: right;">
-                                        <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Ministry Logo" style="max-width: 90px; height: auto;">
+                                        <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Ministry Logo" style="max-width: 60px; height: auto;">
                                     </td>
                                 </tr>
                             </table>
@@ -114,13 +114,22 @@
                     <!-- Footer -->
                     <tr>
                         <td class="footer">
-                            <div class="footer-logos" style="margin-bottom: 15px;">
-                                <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Ministry Logo" style="max-width: 70px; height: auto;">
-                            </div>
-                            <p style="color: white; margin-bottom: 10px; font-size: 12px;">
-                                <strong>Kano State Ministry of Land & Physical Planning</strong><br>
-                                Property History Search Portal
-                            </p>
+                            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 15px;">
+                                <tr>
+                                    <td width="20%" style="text-align: right; vertical-align: middle; padding-right: 12px;">
+                                        <img src="http://app.klaes.ng/assets/logo/phs-light-logo.jpeg" alt="PHS Portal" style="max-width: 45px; height: auto; display: inline-block;">
+                                    </td>
+                                    <td width="60%" style="text-align: center; vertical-align: middle;">
+                                        <p style="color: white; margin: 0; font-size: 12px; line-height: 1.5;">
+                                            <strong>Kano State Ministry of Land &amp; Physical Planning</strong><br>
+                                            Property History Search Portal
+                                        </p>
+                                    </td>
+                                    <td width="20%" style="text-align: left; vertical-align: middle; padding-left: 12px;">
+                                        <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="KLAES" style="max-width: 45px; height: auto; display: inline-block;">
+                                    </td>
+                                </tr>
+                            </table>
                             <p style="color: #d1d5db; margin: 10px 0; font-size: 12px;">
                                 This is an automated email. Please do not reply to this message.
                             </p>

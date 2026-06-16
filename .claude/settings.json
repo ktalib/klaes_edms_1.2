@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -r '$p=\"resources/views/create_file_tracker_page/partials/quick-actions.blade.php\"; $c=file_get_contents\\($p\\); echo \"qs-modal:\".substr_count\\($c,\"id=\\\\\"qs-modal\\\\\"\"\\).\" fr-modal:\".substr_count\\($c,\"id=\\\\\"fr-modal\\\\\"\"\\).\" js-qs-open refs:\".substr_count\\($c,\"js-qs-open\"\\).\" js-fr-open refs:\".substr_count\\($c,\"js-fr-open\"\\).PHP_EOL;')",
+      "Bash(php -l app/Http/Controllers/UserController.php)",
+      "Bash(php -l app/Http/Controllers/Api/Mobile/MobileFileSearchController.php)",
+      "Bash(php -l app/Http/Controllers/MobileController.php)",
+      "Bash(php -l app/Services/FileLocationResolver.php)"
+    ]
+  }
+}

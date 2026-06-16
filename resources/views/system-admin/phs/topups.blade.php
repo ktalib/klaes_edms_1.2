@@ -36,6 +36,7 @@
                 <table class="w-full min-w-[860px] text-sm">
                     <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                         <tr>
+                            <th class="px-5 py-3 text-left w-10">S/N</th>
                             <th class="px-5 py-3 text-left">Organization</th>
                             <th class="px-5 py-3 text-left">Bundle</th>
                             <th class="px-5 py-3 text-right">Bundles</th>
@@ -50,6 +51,7 @@
                     <tbody class="divide-y divide-slate-100">
                         @forelse ($topups as $txn)
                             <tr class="hover:bg-slate-50/60">
+                                <td class="px-5 py-3 text-slate-400 text-xs">{{ $loop->iteration }}</td>
                                 <td class="px-5 py-3 font-semibold text-slate-900">{{ optional($txn->institution)->name ?? '—' }}</td>
                                 <td class="px-5 py-3 text-slate-600">{{ $txn->package_name ?: '—' }}</td>
                                 <td class="px-5 py-3 text-right text-slate-700">{{ $txn->topup_bundle_count ?: '—' }}</td>
@@ -95,7 +97,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="9" class="px-5 py-10 text-center text-slate-500">No token topups yet.</td></tr>
+                            <tr><td colspan="10" class="px-5 py-10 text-center text-slate-500">No token topups yet.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

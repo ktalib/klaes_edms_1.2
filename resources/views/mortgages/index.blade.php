@@ -1290,6 +1290,8 @@ $(function() {
         $(saveText).text('Saving…');
         $(saveBtn).prop('disabled', true);
 
+        payload['_method'] = 'PUT';
+
         $.ajax({
             url: '/mortgages/' + compositeId,
             method: 'POST',
@@ -1298,6 +1300,7 @@ $(function() {
             success: function() {
                 closeAllMortgageModals();
                 table.ajax.reload(null, false);
+                Swal.fire({ icon: 'success', title: 'Updated', text: 'Record updated successfully.', timer: 2500, showConfirmButton: false });
             },
             error: function(xhr) {
                 let msg = 'An error occurred. Please try again.';

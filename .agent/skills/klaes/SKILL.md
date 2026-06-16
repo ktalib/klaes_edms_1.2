@@ -160,7 +160,7 @@ Document logo
 http://app.klaes.ng/assets/logo/ministry1.jpg
 
 header left
-http://app.klaes.ng/assets/logo/ministry2.jpeg
+http://app.klaes.ng/assets/logo/ministry2.png
 
 
 FOOTER LOGOS

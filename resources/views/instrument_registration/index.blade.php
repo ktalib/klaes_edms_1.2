@@ -329,20 +329,6 @@
                         </button>
                         @endif
 
-                        {{-- View toggle: List / Grouped --}}
-                        <div class="flex rounded-lg overflow-hidden border border-gray-300 shadow-sm" role="group">
-                            <button id="toggleListView"
-                                onclick="switchIRView('list')"
-                                class="ir-view-btn px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 bg-blue-600 text-white border-r border-blue-700">
-                                <i class="fas fa-list text-[11px]"></i>List
-                            </button>
-                            <button id="toggleGroupedView"
-                                onclick="switchIRView('grouped')"
-                                class="ir-view-btn px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 bg-white text-gray-600 hover:bg-gray-50"
-                                style="display:none;">
-                                <i class="fas fa-layer-group text-[11px]"></i>ST Groups
-                            </button>
-                        </div>
                     </div>
 
 

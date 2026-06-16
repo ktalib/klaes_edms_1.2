@@ -520,13 +520,21 @@ class FileNumberApiController extends Controller
         }
 
         try {
+            // VARCHAR columns: bind the parameter as VARCHAR so indexes are used and
+            // we avoid the NVARCHAR implicit-conversion full scan. Default CI collation
+            // makes "=" case- and trailing-space-insensitive.
+            $values = array_values(array_unique(array_filter(
+                [$fileNumber, $selectedFileNumber],
+                fn($v) => $v !== ''
+            )));
+
             $row = DB::connection('sqlsrv')
                 ->table('file_indexings')
-                ->where(function ($q) use ($fileNumber, $selectedFileNumber) {
-                    $q->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = UPPER(?)', [$fileNumber])
-                      ->orWhereRaw('UPPER(LTRIM(RTRIM(temp_file_no))) = UPPER(?)', [$fileNumber])
-                      ->orWhereRaw('UPPER(LTRIM(RTRIM(file_number))) = UPPER(?)', [$selectedFileNumber])
-                      ->orWhereRaw('UPPER(LTRIM(RTRIM(temp_file_no))) = UPPER(?)', [$selectedFileNumber]);
+                ->where(function ($q) use ($values) {
+                    foreach ($values as $value) {
+                        $q->orWhereRaw('file_number = CAST(? AS VARCHAR(255))', [$value])
+                          ->orWhereRaw('temp_file_no = CAST(? AS VARCHAR(255))', [$value]);
+                    }
                 })
                 ->orderByDesc('id')
                 ->first();
@@ -597,18 +605,35 @@ class FileNumberApiController extends Controller
                     continue;
                 }
 
+                // Columns are VARCHAR; bind the parameter as VARCHAR so the existing
+                // indexes are used. A plain NVARCHAR bind (PDO default) forces an
+                // implicit column conversion and a full table scan (seconds on the
+                // multi-million-row grouping table). The default CI collation already
+                // makes "=" case- and trailing-space-insensitive, so the previous
+                // UPPER(LTRIM(RTRIM(...))) wrappers were both slow and unnecessary.
+                $values = array_values(array_unique(array_filter(
+                    [$fileNumber, $selectedFileNumber],
+                    fn($v) => $v !== ''
+                )));
+
+                // NOTE: do not add ORDER BY id DESC to this query. With the OR seek on
+                // the file-number columns, the optimizer abandons the index seek in
+                // favour of a descending PK scan of the whole table (seconds vs ~10ms).
+                // We fetch the small matching set and pick the latest row in PHP instead.
                 $row = DB::connection('sqlsrv')
                     ->table($table)
-                    ->select('tracking_id')
+                    ->select('id', 'tracking_id')
                     ->whereNotNull('tracking_id')
-                    ->whereRaw("LTRIM(RTRIM(tracking_id)) <> ''")
-                    ->where(function ($q) use ($columns, $fileNumber, $selectedFileNumber) {
+                    ->where('tracking_id', '<>', '')
+                    ->where(function ($q) use ($columns, $values) {
                         foreach ($columns as $column) {
-                            $q->orWhereRaw("UPPER(LTRIM(RTRIM({$column}))) = UPPER(?)", [$fileNumber])
-                              ->orWhereRaw("UPPER(LTRIM(RTRIM({$column}))) = UPPER(?)", [$selectedFileNumber]);
+                            foreach ($values as $value) {
+                                $q->orWhereRaw("{$column} = CAST(? AS VARCHAR(255))", [$value]);
+                            }
                         }
                     })
-                    ->orderByDesc('id')
+                    ->get()
+                    ->sortByDesc('id')
                     ->first();
 
                 if (!empty($row?->tracking_id)) {

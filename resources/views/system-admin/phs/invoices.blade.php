@@ -10,7 +10,9 @@
             <table class="min-w-full text-left text-sm">
                 <thead class="bg-slate-50 text-xs font-bold uppercase text-slate-500">
                     <tr>
+                        <th class="px-4 py-3 w-10">S/N</th>
                         <th class="px-4 py-3">Organization</th>
+                        <th class="px-4 py-3">Type</th>
                         <th class="px-4 py-3">Amount</th>
                         <th class="px-4 py-3">Tokens</th>
                         <th class="px-4 py-3">Balance</th>
@@ -35,7 +37,15 @@
                             $expired = $expires && $expires->isPast();
                         @endphp
                         <tr>
+                            <td class="px-4 py-3 text-slate-400 text-xs">{{ $loop->iteration }}</td>
                             <td class="px-4 py-3 font-bold">{{ optional($txn->institution)->name }}</td>
+                            <td class="px-4 py-3">
+                                @if ($txn->type === 'topup')
+                                    <span class="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-600/20">Top-up</span>
+                                @else
+                                    <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-400/20">Subscription</span>
+                                @endif
+                            </td>
                             <td class="px-4 py-3">NGN {{ number_format((float) $txn->amount, 2) }}</td>
                             <td class="px-4 py-3">{{ number_format($txn->tokens) }}</td>
                             <td class="px-4 py-3">{{ number_format((int) optional($txn->institution)->token_balance) }}</td>
@@ -81,7 +91,7 @@
                             </td>
                         </tr>
                     @empty
-                        <tr><td colspan="9" class="px-4 py-10 text-center text-slate-400">No subscriptions found.</td></tr>
+                        <tr><td colspan="11" class="px-4 py-10 text-center text-slate-400">No subscriptions found.</td></tr>
                     @endforelse
                 </tbody>
             </table>

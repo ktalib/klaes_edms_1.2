@@ -29,13 +29,34 @@ class PhsOrganizationController extends Controller
             ->orderByDesc('id')
             ->get();
 
+        $members = $institution->members()->orderBy('id')->get();
+
+        // Resolve the member limit from the active subscription package.
+        $memberLimit = null;
+        if ($subscription) {
+            $pkgs = PhsTokenController::packages();
+            $pkgKey = strtolower($subscription->package_name ?? '');
+            $pkg = $pkgs[$pkgKey] ?? null;
+            if (!$pkg) {
+                foreach ($pkgs as $p) {
+                    if (strtolower($p['name'] ?? '') === strtolower($subscription->package_name ?? '')) {
+                        $pkg = $p;
+                        break;
+                    }
+                }
+            }
+            $memberLimit = $pkg ? (int) $pkg['team_members'] : null;
+        }
+
         return view('phs.organization.index', [
             'member' => $member,
             'institution' => $institution,
-            'members' => $institution->members()->orderBy('id')->get(),
+            'members' => $members,
             'subscription' => $subscription,
             'subscriptionHistory' => $subscriptionHistory,
             'packages' => PhsTokenController::packages(),
+            'memberLimit' => $memberLimit,
+            'currentAdminCount' => $members->where('user_type', 'super_admin')->count(),
         ]);
     }
 
@@ -55,15 +76,46 @@ class PhsOrganizationController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:sqlsrv.phs_members,email'],
+            'phone' => ['nullable', 'string', 'max:50'],
             'password' => ['required', 'string', 'min:6'],
             'job_title' => ['nullable', 'string', 'max:150'],
             'department' => ['nullable', 'string', 'max:150'],
             'user_type' => ['required', 'in:super_admin,regular_user'],
-            'access_role' => ['required', 'in:search_only,report_viewer,analytics_viewer'],
+            'access_role' => ['required', 'array', 'min:1'],
+            'access_role.*' => ['required', 'in:search_only,report_viewer,analytics_viewer'],
             'token_allocation' => ['nullable', 'integer', 'min:0'],
         ]);
 
+        // Enforce subscription member limit.
+        $subscription = $institution->transactions()->where('type', 'purchase')->where('status', 'completed')->orderByDesc('id')->first();
+        if ($subscription) {
+            $pkgs = PhsTokenController::packages();
+            $pkgKey = strtolower($subscription->package_name ?? '');
+            $pkg = $pkgs[$pkgKey] ?? null;
+            if (!$pkg) {
+                foreach ($pkgs as $p) {
+                    if (strtolower($p['name'] ?? '') === strtolower($subscription->package_name ?? '')) { $pkg = $p; break; }
+                }
+            }
+            $memberLimit = $pkg ? (int) $pkg['team_members'] : null;
+            if ($memberLimit !== null && $institution->members()->count() >= $memberLimit) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Your {$subscription->package_name} plan allows a maximum of {$memberLimit} team members. Please upgrade to add more.",
+                ], 422);
+            }
+        }
+
+        // Enforce admin limit: max 1 super_admin per institution.
+        if ($data['user_type'] === 'super_admin' && $institution->members()->where('user_type', 'super_admin')->count() >= 1) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Your subscription only includes 1 Administrator slot. You already have an administrator.',
+            ], 422);
+        }
+
         $allocation = (int) ($data['token_allocation'] ?? 0);
+        $accessRole = implode(',', $data['access_role']);
 
         // The allocation is funded from the organization wallet, so it can't exceed the balance.
         if ($allocation > (int) $institution->token_balance) {
@@ -73,15 +125,16 @@ class PhsOrganizationController extends Controller
             ], 422);
         }
 
-        $member = \DB::connection('sqlsrv')->transaction(function () use ($institution, $data, $allocation) {
+        $member = \DB::connection('sqlsrv')->transaction(function () use ($institution, $data, $allocation, $accessRole) {
             $member = $institution->members()->create([
                 'name' => $data['name'],
                 'email' => $data['email'],
+                'phone' => $data['phone'] ?? null,
                 'password' => Hash::make($data['password']),
                 'job_title' => $data['job_title'] ?? null,
                 'department' => $data['department'] ?? null,
                 'user_type' => $data['user_type'],
-                'access_role' => $data['access_role'],
+                'access_role' => $accessRole,
                 'allocated_tokens' => $allocation,
                 'status' => 'active',
             ]);
@@ -103,10 +156,12 @@ class PhsOrganizationController extends Controller
 
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:50'],
             'job_title' => ['nullable', 'string', 'max:150'],
             'department' => ['nullable', 'string', 'max:150'],
             'user_type' => ['sometimes', 'in:super_admin,regular_user'],
-            'access_role' => ['sometimes', 'in:search_only,report_viewer,analytics_viewer'],
+            'access_role' => ['sometimes', 'array', 'min:1'],
+            'access_role.*' => ['sometimes', 'in:search_only,report_viewer,analytics_viewer'],
             'status' => ['sometimes', 'in:active,suspended'],
             'password' => ['nullable', 'string', 'min:6'],
         ]);
@@ -115,6 +170,9 @@ class PhsOrganizationController extends Controller
             $member->password = Hash::make($data['password']);
         }
         unset($data['password']);
+        if (isset($data['access_role']) && is_array($data['access_role'])) {
+            $data['access_role'] = implode(',', $data['access_role']);
+        }
         $member->fill($data)->save();
 
         return response()->json(['success' => true, 'message' => 'Member updated.', 'data' => $member]);

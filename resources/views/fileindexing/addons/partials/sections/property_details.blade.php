@@ -138,35 +138,18 @@
                 <input type="text" :id="'location-' + index" name="location[]" x-model="param.location" 
                     x-effect="
                         let parts = [];
-                        if (param.plot_number) parts.push('PLOT ' + param.plot_number);
-                        
-                        let street = param.street_name;
-                        if ((street === 'Other' || street === 'other') && param.custom_street_name) {
-                            street = param.custom_street_name;
-                        }
-                        
-                        if (street && !['', 'Select Street Name', 'Other', 'other'].includes(street)) {
-                            parts.push(street);
-                        }
-                        
-                        let dist = param.district;
-                        if ((dist === 'Other' || dist === 'other') && param.custom_district) {
-                            dist = param.custom_district;
-                        }
-                        
-                        if (dist && !['', 'Select District', 'Other', 'other'].includes(dist)) {
-                            parts.push(dist);
-                        }
-                        
+                        if (param.plot_number) parts.push('PLOTNO: ' + param.plot_number);
+
                         if (param.lga && !['', 'Select LGA'].includes(param.lga)) {
-                            parts.push(param.lga);
+                            parts.push('LGA: ' + param.lga);
                         }
-                        
+
                         if (parts.length > 0) {
+                            parts.push('STATE: KANO');
                             param.location = parts.join(', ').toUpperCase();
                         }
                     "
-                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-gray-50" readonly placeholder="Auto-generated from Plot Number, Street, District, LGA" style="cursor: default; text-transform: uppercase;">
+                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-gray-50" readonly placeholder="Auto-generated as PLOTNO, LGA, STATE" style="cursor: default; text-transform: uppercase;">
             </div>
             <div class="form-group">
                 <label class="block text-sm font-medium text-gray-700 mb-2">Plot Size</label>

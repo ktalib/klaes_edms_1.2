@@ -8,7 +8,6 @@
         'ORIGINAL'           => '#ff0000',   // Red
         'DUPLICATE'          => '#0000ff',   // Blue
         'TRIPLICATE'         => '#008000',   // Green
-        'CERTIFIED TRUE COPY'=> '#ff0000',   // Red
     ];
     $watermarkColor = $watermarkPalette[$currentWatermark] ?? '#ff0000';
 
@@ -534,7 +533,7 @@
             <div id="first-page">
               <div class="st-rofo-green-frame">
                 <div class="original-placeholder" style="color: {{ $entryWatermarkColor }};">
-                    {{ $entryWatermark }}
+                    @if($entryWatermark !== 'CERTIFIED TRUE COPY'){{ $entryWatermark }}@endif
                     @if(isset($context['securityCode']))
                         @php
                             $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($context['securityCode']->code);

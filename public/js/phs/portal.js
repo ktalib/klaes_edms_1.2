@@ -51,10 +51,12 @@
 
     const logo = $('dashboard-logo');
     if (logo) {
-      logo.style.background = `linear-gradient(135deg, ${primary}, ${secondary})`;
       if (cfg.assets?.organizationLogo) {
-        logo.innerHTML = `<img src="${cfg.assets.organizationLogo}" alt="${esc(name)} Logo" class="w-full h-full object-cover">`;
+        logo.style.background = '';
+        logo.innerHTML = `<img src="${cfg.assets.organizationLogo}" alt="${esc(name)} Logo" style="max-height:56px;width:auto;object-fit:contain;">`;
       } else {
+        logo.style.background = `linear-gradient(135deg, ${primary}, ${secondary})`;
+        logo.style.cssText += ';width:40px;height:40px;border-radius:8px;';
         logo.innerHTML = '<i data-lucide="building" class="h-6 w-6 text-white"></i>';
       }
     }

@@ -127,6 +127,19 @@ class DigitalFileRequest extends Model
 
     // ── Scopes ────────────────────────────────────────────────────────────────
 
+    /**
+     * Restrict to KANGIS files by file-number format
+     * (KN…, KNML, KNGP, MLKN, MNKL — covers New KANGIS + legacy KANGIS formats).
+     */
+    public function scopeKangisFiles($q)
+    {
+        return $q->where(function ($w) {
+            $w->whereRaw("UPPER(LTRIM(file_no)) LIKE 'KN%'")
+              ->orWhereRaw("UPPER(LTRIM(file_no)) LIKE 'MLKN%'")
+              ->orWhereRaw("UPPER(LTRIM(file_no)) LIKE 'MNKL%'");
+        });
+    }
+
     public function scopePending($q)    { return $q->where('request_status', self::STATUS_PENDING); }
     public function scopeApproved($q)   { return $q->where('request_status', self::STATUS_APPROVED); }
     public function scopeRejected($q)   { return $q->where('request_status', self::STATUS_REJECTED); }

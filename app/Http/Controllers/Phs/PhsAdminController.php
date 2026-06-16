@@ -3,13 +3,18 @@
 namespace App\Http\Controllers\Phs;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Phs\Concerns\ResolvesDirectorDeedsSignature;
 use App\Mail\PhsPaymentConfirmed;
+use App\Mail\PhsPaymentLinkSent;
 use App\Mail\PhsRequestApproved;
 use App\Mail\PhsRequestRejected;
 use App\Mail\PhsTopupConfirmed;
+use Illuminate\Support\Str;
 use App\Models\Phs\PhsInstitution;
 use App\Models\Phs\PhsOnboardingRequest;
+use App\Models\Phs\PhsSearchLog;
 use App\Models\Phs\PhsTokenTransaction;
+use App\Services\LegalSearchService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -23,6 +28,8 @@ use Illuminate\Support\Facades\Storage;
  */
 class PhsAdminController extends Controller
 {
+    use ResolvesDirectorDeedsSignature;
+
     public function index()
     {
         $PageTitle = 'PHS Administration — Organizations';
@@ -106,12 +113,12 @@ class PhsAdminController extends Controller
 
     public function invoices()
     {
-        $PageTitle = 'PHS — Pending Invoices';
-        // Treat this page as Subscriptions: show completed invoice transactions
         $PageTitle = 'PHS — Subscriptions';
+        // Subscriptions list: completed invoice purchases plus approved top-ups
+        // (both credit tokens to the organization wallet).
         $pending = PhsTokenTransaction::with('institution')
             ->where('status', 'completed')
-            ->where('payment_method', 'invoice')
+            ->whereIn('type', ['purchase', 'topup'])
             ->orderByDesc('id')
             ->get();
 
@@ -142,19 +149,49 @@ class PhsAdminController extends Controller
     {
         $txn = PhsTokenTransaction::with('institution')->findOrFail($txnId);
 
-        $invoiceNumber = 'PHS-INV-' . optional($txn->created_at)->format('Ymd') . '-' . str_pad((string) $txn->id, 4, '0', STR_PAD_LEFT);
+        $invoiceNumber = 'PHSP-INV-' . optional($txn->created_at)->format('Ymd') . '-' . str_pad((string) $txn->id, 4, '0', STR_PAD_LEFT);
+
+        // Resolve the package (for seat counts / description) from its name.
+        $package = PhsTokenController::packages()[strtolower((string) $txn->package_name)] ?? null;
+
+        // QR encodes the transaction reference so the invoice can be scanned/verified.
+        $qrContent = $txn->reference_no ?: $invoiceNumber;
+        $qrCode = $this->buildQrDataUri($qrContent);
 
         $pdf = Pdf::loadView('phs.transaction-invoice-template', [
             'txn' => $txn,
             'institution' => $txn->institution,
+            'package' => $package,
             'invoice_number' => $invoiceNumber,
             'invoice_date' => $txn->created_at ?? now(),
+            'qr_code' => $qrCode,
+            'qr_content' => $qrContent,
         ]);
 
         return response($pdf->output(), 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . $invoiceNumber . '.pdf"',
         ]);
+    }
+
+    /**
+     * Render a QR code for the given content as an SVG data URI (embeddable in
+     * the DomPDF invoice). Returns null if QR generation fails for any reason.
+     */
+    private function buildQrDataUri(string $content): ?string
+    {
+        try {
+            $renderer = new \BaconQrCode\Renderer\ImageRenderer(
+                new \BaconQrCode\Renderer\RendererStyle\RendererStyle(140, 1),
+                new \BaconQrCode\Renderer\Image\SvgImageBackEnd()
+            );
+            $svg = (new \BaconQrCode\Writer($renderer))->writeString($content);
+
+            return 'data:image/svg+xml;base64,' . base64_encode($svg);
+        } catch (\Throwable $e) {
+            report($e);
+            return null;
+        }
     }
 
     public function approveInvoice(Request $request, $txnId)
@@ -276,6 +313,33 @@ class PhsAdminController extends Controller
         ));
     }
 
+    /**
+     * Re-open (staff-side) the certified search slip for a logged search, exactly
+     * as the organization's member originally generated it. Rebuilds the report
+     * from the search log's file number and renders the same slip view.
+     */
+    public function searchSlip($id, LegalSearchService $searchService)
+    {
+        $log = PhsSearchLog::with(['institution', 'member'])->findOrFail($id);
+
+        $fileNo = trim((string) ($log->file_number ?: $log->query));
+        abort_if($fileNo === '', 404, 'This search has no file number to re-open.');
+
+        $result = $searchService->buildPrintReport(['file_number' => $fileNo]);
+
+        if (($result['status'] ?? 500) !== 200) {
+            abort(404, $result['payload']['message'] ?? 'No records found for this search.');
+        }
+
+        return view('phs.print.slip', [
+            'data' => $result['payload']['data'],
+            'institution' => $log->institution,
+            'member' => $log->member,
+            'reference_no' => (string) $log->reference_no,
+            'authorizedSignatureSrc' => $this->directorDeedsSignature(),
+        ]);
+    }
+
     /** All token topups (auto-credited via the stubbed gateway). */
     public function topups()
     {
@@ -369,15 +433,94 @@ class PhsAdminController extends Controller
 
         $requests = $query->get();
 
-        $statsByStatus = [
-            'pending' => PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_PENDING)->count(),
-            'payment_received' => PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_PAYMENT_RECEIVED)->count(),
-            'approved' => PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_APPROVED)->count(),
-            'activated' => PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_ACTIVATED)->count(),
-            'rejected' => PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_REJECTED)->count(),
+        $allStatuses = [
+            'pending', 'documents_approved', 'payment_pending', 'payment_received',
+            'sla_uploaded', 'sla_approved', 'approved', 'activated', 'rejected',
         ];
 
+        $statsByStatus = collect($allStatuses)
+            ->mapWithKeys(fn ($s) => [$s => PhsOnboardingRequest::where('status', $s)->count()])
+            ->all();
+
         return view('system-admin.phs.onboarding-requests', compact('PageTitle', 'requests', 'statusFilter', 'statsByStatus'));
+    }
+
+    /* ===================== Legal Department ===================== */
+
+    public function legalDashboard()
+    {
+        $PageTitle = 'PHS — Legal Department';
+        $docReview = PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_PENDING)
+            ->orderByDesc('created_at')->get();
+        $slaReview = PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_SLA_UPLOADED)
+            ->orderByDesc('created_at')->get();
+
+        return view('system-admin.phs.legal-dashboard', compact('PageTitle', 'docReview', 'slaReview'));
+    }
+
+    public function legalShowRequest($id)
+    {
+        $request = PhsOnboardingRequest::findOrFail($id);
+        $PageTitle = 'Legal Review — ' . $request->organization_name;
+
+        return view('system-admin.phs.legal-request-show', compact('PageTitle', 'request'));
+    }
+
+    public function legalApproveDocuments(Request $request, $id)
+    {
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+
+        if ($onboardingRequest->status !== PhsOnboardingRequest::STATUS_PENDING) {
+            return back()->with('error', 'This request is not awaiting document review.');
+        }
+
+        $onboardingRequest->update([
+            'status' => PhsOnboardingRequest::STATUS_DOCUMENTS_APPROVED,
+            'legal_approved_at' => now(),
+            'legal_approved_by' => Auth::user()->name ?? Auth::user()->username ?? 'Legal Staff',
+        ]);
+
+        return back()->with('success', 'Documents approved. Admin can now review and proceed.');
+    }
+
+    public function legalApproveSla(Request $request, $id)
+    {
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+
+        if ($onboardingRequest->status !== PhsOnboardingRequest::STATUS_SLA_UPLOADED) {
+            return back()->with('error', 'This request does not have an SLA pending review.');
+        }
+
+        $onboardingRequest->update([
+            'status' => PhsOnboardingRequest::STATUS_SLA_APPROVED,
+            'legal_sla_approved_at' => now(),
+            'legal_sla_approved_by' => Auth::user()->name ?? Auth::user()->username ?? 'Legal Staff',
+        ]);
+
+        return back()->with('success', 'SLA approved. Admin can now issue the registration link.');
+    }
+
+    public function legalRejectRequest(Request $request, $id)
+    {
+        $data = $request->validate([
+            'rejection_reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+
+        $onboardingRequest->update([
+            'status' => PhsOnboardingRequest::STATUS_REJECTED,
+            'rejection_reason' => $data['rejection_reason'],
+            'legal_rejection_reason' => $data['rejection_reason'],
+        ]);
+
+        try {
+            Mail::to($onboardingRequest->contact_email)->send(new PhsRequestRejected($onboardingRequest));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return back()->with('success', 'Request rejected and notification sent to organization.');
     }
 
     public function showRequest($id)
@@ -410,8 +553,11 @@ class PhsAdminController extends Controller
         $filename = 'Invoice-' . ($onboardingRequest->invoice_number ?: $onboardingRequest->id) . '.pdf';
 
         return response(Storage::disk('public')->get($onboardingRequest->invoice_pdf_path), 200, [
-            'Content-Type' => 'application/pdf',
+            'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . $filename . '"',
+            'Cache-Control'       => 'no-store, no-cache, must-revalidate',
+            'Pragma'              => 'no-cache',
+            'Expires'             => '0',
         ]);
     }
 
@@ -419,23 +565,52 @@ class PhsAdminController extends Controller
     {
         $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
 
-        if ($onboardingRequest->status !== PhsOnboardingRequest::STATUS_PENDING &&
-            $onboardingRequest->status !== PhsOnboardingRequest::STATUS_PAYMENT_RECEIVED) {
-            return back()->with('error', 'Request cannot be approved in its current status.');
+        if ($onboardingRequest->status !== PhsOnboardingRequest::STATUS_DOCUMENTS_APPROVED) {
+            return back()->with('error', 'Request must be approved by Legal before admin approval.');
+        }
+
+        $paymentToken = Str::random(64);
+
+        $onboardingRequest->update([
+            'status' => PhsOnboardingRequest::STATUS_PAYMENT_PENDING,
+            'payment_token' => $paymentToken,
+            'approved_at' => now(),
+            'approved_by' => Auth::id(),
+        ]);
+
+        try {
+            Mail::to($onboardingRequest->contact_email)
+                ->send(new PhsPaymentLinkSent($onboardingRequest));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return back()->with('success', 'Request approved. Payment link sent to organization.');
+    }
+
+    public function finalApproveRequest(Request $request, $id)
+    {
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+
+        if ($onboardingRequest->status !== PhsOnboardingRequest::STATUS_SLA_APPROVED) {
+            return back()->with('error', 'SLA must be approved by Legal before final activation.');
         }
 
         $onboardingRequest->generateActivationToken();
 
         $onboardingRequest->update([
-            'status' => PhsOnboardingRequest::STATUS_APPROVED,
+            'status' => PhsOnboardingRequest::STATUS_ACTIVATED,
             'approved_at' => now(),
-            'approved_by' => Auth::id(),
         ]);
 
-        Mail::to($onboardingRequest->contact_email)
-            ->send(new PhsRequestApproved($onboardingRequest));
+        try {
+            Mail::to($onboardingRequest->contact_email)
+                ->send(new PhsRequestApproved($onboardingRequest));
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
-        return back()->with('success', 'Request approved. Activation email sent to organization.');
+        return back()->with('success', 'Final approval complete. Registration link sent to organization.');
     }
 
     /**

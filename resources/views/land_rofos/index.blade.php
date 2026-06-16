@@ -16,11 +16,14 @@
         <div class="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
                 <div>
-                    <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Land RofO Management</h1>
-                    <p class="text-slate-500 text-sm mt-1">Manage Right of Occupancy Offers, generation and printing.</p>
+                    <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">{{ $ossViewOnly ? 'OSS ROFO' : 'Land RofO Management' }}</h1>
+                    <p class="text-slate-500 text-sm mt-1">{{ $ossViewOnly ? 'OSS Right of Occupancy Offers — view only.' : 'Manage Right of Occupancy Offers, generation and printing.' }}</p>
                 </div>
                 <div class="flex items-center gap-3 w-full md:w-auto">
                     <form action="{{ route('land-rofos.index') }}" method="GET" class="relative group flex-1 md:w-80">
+                        @if($ossViewOnly)
+                            <input type="hidden" name="view" value="only">
+                        @endif
                         <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors"></i>
                         <input type="text"
                                name="search"
@@ -28,16 +31,63 @@
                                placeholder="Search file, applicant, or location..."
                                class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm">
                     </form>
+                    @if(!$ossViewOnly)
                     <button type="button" onclick="openBatchPrintModal()"
                         class="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 whitespace-nowrap text-sm">
                         <i data-lucide="printer" class="h-4 w-4"></i> Batch Print RofO
                     </button>
+                    @endif
                 </div>
             </div>
 
             <!-- Statistics Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+            <div class="grid grid-cols-1 md:grid-cols-2 {{ $ossViewOnly ? 'lg:grid-cols-3' : 'lg:grid-cols-4' }} gap-6 mb-10">
+                <!-- Daily OSS (first card, OSS view only) -->
+                @if($ossViewOnly)
+                <div class="bg-white p-6 rounded-3xl border border-emerald-200 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
+                    <div class="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:scale-110 transition-transform duration-500">
+                        <i data-lucide="calendar-check" class="h-32 w-32 text-emerald-600"></i>
+                    </div>
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="p-3 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100 shadow-sm">
+                            <i data-lucide="calendar-check" class="h-6 w-6"></i>
+                        </div>
+                        <div>
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Daily OSS</p>
+                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($stats['oss_daily']) }}</h3>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        <span>Today's applications</span>
+                        <span class="text-emerald-500">{{ now()->format('d M Y') }}</span>
+                    </div>
+                </div>
+                @endif
+
+                <!-- Total ROFO -->
+                @if(!$ossViewOnly)
+                <div class="bg-white p-6 rounded-3xl border border-green-200 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
+                    <div class="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:scale-110 transition-transform duration-500">
+                        <i data-lucide="file-check" class="h-32 w-32 text-green-600"></i>
+                    </div>
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="p-3 bg-green-50 text-green-600 rounded-2xl border border-green-100 shadow-sm">
+                            <i data-lucide="file-check" class="h-6 w-6"></i>
+                        </div>
+                        <div>
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total RofO Geneerated</p>
+                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($stats['total_land'] + $stats['oss_total']) }}</h3>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        <span>Land + OSS</span>
+                        <span class="text-green-500">All Records</span>
+                    </div>
+                </div>
+                @endif
+                
                 <!-- Total Land RoFO -->
+                @if(!$ossViewOnly)
                 <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
                     <div class="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:scale-110 transition-transform duration-500">
                         <i data-lucide="layers-3" class="h-32 w-32 text-blue-600"></i>
@@ -56,6 +106,8 @@
                         <span class="text-blue-500">Total</span>
                     </div>
                 </div>
+                @endif
+
 
                 <!-- OSS Applications -->
                 <div class="bg-white p-6 rounded-3xl border border-purple-200 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
@@ -129,7 +181,9 @@
                                 <th class="px-6 py-4 whitespace-nowrap">Created By</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Security Paper Code</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Date Generated</th>
+                                @if(!$ossViewOnly)
                                 <th class="px-6 py-4 text-right sticky right-0 bg-slate-50 border-l border-slate-200 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">Actions</th>
+                                @endif
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 text-sm">
@@ -193,6 +247,7 @@
                                 <td class="px-4 py-2 text-slate-500 text-xs whitespace-nowrap">
                                     {{ $rec->created_at ? $rec->created_at->format('Y-m-d h:i A') : 'N/A' }}
                                 </td>
+                                @if(!$ossViewOnly)
                                 <td class="px-4 py-2 text-right sticky right-0 bg-white shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] border-l border-slate-100 z-10 whitespace-nowrap">
                                     <div x-data="{
                                         open: false,
@@ -258,6 +313,7 @@
                                         </div>
                                     </div>
                                 </td>
+                                @endif
                             </tr>
                             @empty
                             <tr>

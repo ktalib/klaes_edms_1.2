@@ -444,19 +444,22 @@
         numberGroup.className = 'file-number-group';
 
         const primaryText = (label.primary_number || label.file_number || '—').toString();
-        const primaryNumber = document.createElement('div');
-        primaryNumber.className = 'file-number';
-        primaryNumber.textContent = primaryText;
-        numberGroup.appendChild(primaryNumber);
-
         const secondaryRaw = label.secondary_number || label.secondary_file_number;
         const secondaryText = secondaryRaw === undefined || secondaryRaw === null ? '' : String(secondaryRaw).trim();
 
-        if (secondaryText && (label.is_st || secondaryText !== primaryText)) {
-          const secondaryNumber = document.createElement('div');
-          secondaryNumber.className = 'file-number file-number--secondary';
-          secondaryNumber.textContent = secondaryText;
-          numberGroup.appendChild(secondaryNumber);
+        // Long form (e.g. MLKN 000456) on top — bold/large
+        const topText = secondaryText || primaryText;
+        const topNumber = document.createElement('div');
+        topNumber.className = 'file-number';
+        topNumber.textContent = topText;
+        numberGroup.appendChild(topNumber);
+
+        // Short form (e.g. MLKN 456) below — secondary/small
+        if (primaryText && primaryText !== topText) {
+          const bottomNumber = document.createElement('div');
+          bottomNumber.className = 'file-number file-number--secondary';
+          bottomNumber.textContent = primaryText;
+          numberGroup.appendChild(bottomNumber);
         }
 
         // Display kangis_fileno_placeholder below the file number

@@ -21,7 +21,7 @@ class PhsOnboardingRequestSubmitted extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "New PHS Onboarding Request: {$this->request->organization_name}",
+            subject: "New PHS Portal Onboarding Request: {$this->request->organization_name}",
         );
     }
 

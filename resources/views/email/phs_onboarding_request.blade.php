@@ -1,9 +1,9 @@
 @extends('email.layouts.master')
 
 @section('content')
-    <h2 style="color: #1e3a5f; font-size: 22px; margin-bottom: 20px;">New PHS Onboarding Request Received</h2>
-    
-    <p>A new organization has submitted an onboarding request for the Property History Search portal. Please review the details below:</p>
+    <h2 style="color: #1e3a5f; font-size: 22px; margin-bottom: 20px;">New PHS Portal Onboarding Request Received</h2>
+
+    <p>A new organization has submitted an onboarding request for the PHS Portal. Please review the details below:</p>
     
     <h3 style="margin-top: 30px;">Organization Details</h3>
     <table class="details">
@@ -47,10 +47,7 @@
     
     <h3>Additional Information</h3>
     <table class="details">
-        <tr>
-            <td>Preferred Token Package:</td>
-            <td>{{ $request->initial_token_package ?? 'No preference' }}</td>
-        </tr>
+     
         <tr>
             <td>Additional Notes:</td>
             <td>{{ $request->additional_notes ?? 'None provided' }}</td>
@@ -58,6 +55,50 @@
         <tr>
             <td>Submission Date:</td>
             <td>{{ $request->created_at ? $request->created_at->format('F j, Y \a\t g:i A') : now()->format('F j, Y \a\t g:i A') }}</td>
+        </tr>
+    </table>
+
+    <h3 style="margin-top: 30px;">Required Documents</h3>
+    <table class="details">
+        <tr>
+            <td>CAC Registration Number:</td>
+            <td>
+                @if($request->cac_registration_number)
+                    <strong>{{ $request->cac_registration_number }}</strong>
+                @else
+                    <span style="color: #ef4444;">Not provided</span>
+                @endif
+            </td>
+        </tr>
+        <tr>
+            <td>CAC Certificate:</td>
+            <td>
+                @if($request->cac_document_path)
+                    <span class="badge badge-success">&#10003; Submitted</span>
+                @else
+                    <span class="badge badge-danger">&#10007; Not submitted</span>
+                @endif
+            </td>
+        </tr>
+        <tr>
+            <td>ID Card:</td>
+            <td>
+                @if(!empty($request->additional_documents) && count((array) $request->additional_documents) > 0)
+                    <span class="badge badge-success">&#10003; {{ count((array) $request->additional_documents) }} file(s) submitted</span>
+                @else
+                    <span class="badge badge-danger">&#10007; Not submitted</span>
+                @endif
+            </td>
+        </tr>
+        <tr>
+            <td>Request Letter:</td>
+            <td>
+                @if($request->request_letter_path)
+                    <span class="badge badge-success">&#10003; Submitted</span>
+                @else
+                    <span class="badge badge-danger">&#10007; Not submitted</span>
+                @endif
+            </td>
         </tr>
     </table>
     

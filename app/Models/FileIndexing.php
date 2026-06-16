@@ -93,6 +93,10 @@ class FileIndexing extends Model
         'sub_prefix',
         'suffix',
         'digit_rank',
+        'tracking_status',
+        'current_location',
+        'file_tracker_id',
+        'location_status_manual',
     ];
 
     public static function columnWhitelist(): array
@@ -282,8 +286,14 @@ class FileIndexing extends Model
         return $this->hasMany(\App\Models\CadastralPrintLabelBatchItem::class, 'file_indexing_id');
     }
 
-    public function getTrackingStatusAttribute()
+    public function getTrackingStatusAttribute($value)
     {
+        // Prefer the resolved/persisted Quick Search location status when present
+        // (IN_TRANSIT / IN_ARCHIVE / IN_POOL_OFFICE / FILE_NOT_FOUND / REFER_TO_ORIGINAL_REGISTRY).
+        if (!empty($value)) {
+            return $value;
+        }
+
         $tracking = $this->fileTracking;
         if (!$tracking) {
             return 'Not Tracked';

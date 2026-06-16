@@ -1701,7 +1701,7 @@ class FileIndexingController extends Controller
     protected function fetchFileTransactionsForFileNumber(string $fileNumber, int $limit = 25): array
     {
         try {
-            return DB::connection('sqlsrv')
+            $historyTransactions = DB::connection('sqlsrv')
                 ->table('file_history_staging')
                 ->select([
                     'id',
@@ -1709,10 +1709,7 @@ class FileIndexingController extends Controller
                     'fileno',
                     'transaction_type',
                     'transaction_date',
-                    // 'serialNo', // Deprecated
-                    // 'pageNo', // Deprecated
-                    // 'volumeNo', // Deprecated
-                    'regNo', // Select regNo validation for parsing
+                    'regNo',
                     'reg_date',
                     'reg_time',
                     'period',
@@ -1726,15 +1723,47 @@ class FileIndexingController extends Controller
                     'location',
                     'plot_no',
                     'lgsaOrCity',
+                    DB::raw("'file_history_staging' as source_table"),
                 ])
                 ->where(function ($builder) use ($fileNumber) {
                     $builder->where('mlsFNo', $fileNumber)
                         ->orWhere('fileno', $fileNumber);
                 })
-                ->orderByDesc('updated_at')
-                ->orderByDesc('transaction_date')
-                ->limit($limit)
-                ->get()
+                ->get();
+
+            $praTransactions = DB::connection('sqlsrv')
+                ->table('pra')
+                ->select([
+                    'id',
+                    'mlsFNo',
+                    'fileno',
+                    'transaction_type',
+                    'transaction_date',
+                    DB::raw('NULL as regNo'),
+                    DB::raw('NULL as reg_date'),
+                    DB::raw('NULL as reg_time'),
+                    'period',
+                    'period_unit',
+                    'land_use',
+                    'party_1',
+                    'party_2',
+                    DB::raw('NULL as party_3'),
+                    DB::raw('NULL as party_4'),
+                    DB::raw('NULL as party_5'),
+                    'location',
+                    'plot_no',
+                    'lgsaOrCity',
+                    DB::raw("'pra' as source_table"),
+                ])
+                ->where(function ($builder) use ($fileNumber) {
+                    $builder->where('mlsFNo', $fileNumber)
+                        ->orWhere('fileno', $fileNumber);
+                })
+                ->get();
+
+            $allTransactions = $historyTransactions->merge($praTransactions)
+                ->sortByDesc('transaction_date')
+                ->take($limit)
                 ->map(static function ($row) {
                     $regParts = explode('/', $row->regNo ?? '');
                     return [
@@ -1759,10 +1788,13 @@ class FileIndexingController extends Controller
                         'location' => $row->location,
                         'plot_no' => $row->plot_no,
                         'lgsaOrCity' => $row->lgsaOrCity,
+                        'source_table' => $row->source_table ?? 'unknown',
                     ];
                 })
                 ->values()
                 ->toArray();
+
+            return $allTransactions;
         } catch (\Throwable $exception) {
             Log::warning('FileIndexing::fetchFileTransactionsForFileNumber - failed', [
                 'file_number' => $fileNumber,
@@ -2947,7 +2979,12 @@ class FileIndexingController extends Controller
             }
 
             $normalizedGroupingAwaiting = $this->normalizeFileno($grouping->awaiting_fileno);
-            $normalizedFileNumber = $this->normalizeFileno($validated['file_number']);
+            // Strip an "AND EXTENSION" suffix for the awaiting-file match only. Grouping holds the
+            // base number (e.g. RES-2024-10), while the submitted file number may be the extension
+            // variant (RES-2024-10 AND EXTENSION). The full value is still saved via
+            // $validated['file_number'] — only the comparison key is stripped.
+            $fileNumberForMatch = preg_replace('/\s*AND\s+EXTENSION\s*$/i', '', (string) $validated['file_number']);
+            $normalizedFileNumber = $this->normalizeFileno($fileNumberForMatch);
             $matchesGroupingAwaiting = $this->matchesGroupingAwaitingFileNumber(
                 $normalizedFileNumber,
                 $normalizedGroupingAwaiting,

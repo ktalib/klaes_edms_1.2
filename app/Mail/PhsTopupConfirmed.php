@@ -19,7 +19,7 @@ class PhsTopupConfirmed extends Mailable
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: 'PHS Token Top-up Confirmed');
+        return new Envelope(subject: 'PHS Portal Token Top-up Confirmed');
     }
 
     public function content(): Content

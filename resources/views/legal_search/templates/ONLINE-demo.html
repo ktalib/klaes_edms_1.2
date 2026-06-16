@@ -46,6 +46,20 @@
     .watermark.wm-top { top: 50%; }
     .watermark.wm-bottom { top: 62%;  display:none}
 
+    .bg-watermark {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 45%;
+      max-width: 460px;
+      opacity: 0.06;
+      pointer-events: none;
+      z-index: 0;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
     header {
       width: 100%;
       border-bottom: 2px solid #000;
@@ -338,6 +352,7 @@
 <body>
   <div class="page">
     <!-- Watermarks: two diagonal "Online Legal Search Not For Sale" -->
+    <img class="bg-watermark" src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="" aria-hidden="true">
     <div class="watermark wm-top" aria-hidden="true">Online Legal Search <br> &nbsp;&bull;&nbsp;  Not For Sale</div>
     
 

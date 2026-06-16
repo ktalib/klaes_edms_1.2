@@ -122,7 +122,7 @@
         if (document.getElementById('fileNumber')) {
             document.getElementById('fileNumber').value = queryVal;
         }
-        
+
         // Also map other filters if present
         const otherFilters = ['guarantorName', 'guaranteeName', 'lga', 'district', 'location', 'plotNumber', 'planNumber', 'size', 'caveat'];
         let hasOther = false;
@@ -132,7 +132,7 @@
                     filterSelector.value = f;
                     // Trigger addFilterRow
                     if (typeof addFilterRow === 'function') addFilterRow(f);
-                    
+
                     setTimeout(() => {
                         if (document.getElementById(f)) {
                             document.getElementById(f).value = urlParams.get(f);
@@ -142,7 +142,11 @@
                 hasOther = true;
             }
         });
-        
+
+        // Open the search modal so results are visible when auto-searching
+        const searchModalEl = document.getElementById('search-modal');
+        if (searchModalEl) searchModalEl.classList.remove('hidden');
+
         // Auto trigger search after a small delay
         setTimeout(() => {
             if (typeof performSearch === 'function') {

@@ -3,8 +3,10 @@
 namespace App\Mail;
 
 use App\Models\Phs\PhsOnboardingRequest;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -20,7 +22,7 @@ class PhsRequestApproved extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Your PHS Onboarding Request Approved',
+            subject: 'PHS Portal — Your Onboarding Link to Complete Registration',
         );
     }
 
@@ -34,5 +36,21 @@ class PhsRequestApproved extends Mailable
                 'expiresAt' => $this->request->activation_token_expires_at,
             ],
         );
+    }
+
+    /**
+     * Attach the "Disclaimer for PHS Portal and Online Legal Search" as a
+     * downloadable PDF so every onboarded organization receives it.
+     */
+    public function attachments(): array
+    {
+        $pdf = Pdf::loadView('phs.disclaimer-template', [
+            'date' => now()->format('F j, Y'),
+        ]);
+
+        return [
+            Attachment::fromData(fn () => $pdf->output(), 'PHS-Disclaimer-and-Terms-of-Use.pdf')
+                ->withMime('application/pdf'),
+        ];
     }
 }

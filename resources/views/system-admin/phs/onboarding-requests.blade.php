@@ -15,7 +15,7 @@
                 class="px-4 py-2 border-b-2 font-medium {{ !$statusFilter ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600 hover:text-gray-800' }}">
                 All ({{ array_sum($statsByStatus) }})
             </a>
-            @foreach(['pending', 'payment_received', 'approved', 'activated', 'rejected'] as $status)
+            @foreach(['pending', 'documents_approved', 'payment_pending', 'payment_received', 'sla_uploaded', 'sla_approved', 'approved', 'activated', 'rejected'] as $status)
                 <a href="{{ route('system-admin.phs.requests.index', ['status' => $status]) }}"
                     class="px-4 py-2 border-b-2 font-medium {{ $statusFilter === $status ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600 hover:text-gray-800' }}">
                     {{ ucwords(str_replace('_', ' ', $status)) }} ({{ $statsByStatus[$status] }})
@@ -39,6 +39,7 @@
             <table class="w-full">
                 <thead class="bg-gray-100 border-b">
                     <tr>
+                        <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 w-10">S/N</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Organization</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Contact</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Email</th>
@@ -46,6 +47,7 @@
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Subscription</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Payment</th>
+                        <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">SLA</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Submitted</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Action</th>
                     </tr>
@@ -53,6 +55,7 @@
                 <tbody>
                     @foreach ($requests as $req)
                         <tr class="border-b hover:bg-gray-50">
+                            <td class="px-6 py-4 text-sm text-gray-400">{{ $loop->iteration }}</td>
                             <td class="px-6 py-4 text-sm">
                                 <strong>{{ $req->organization_name }}</strong>
                             </td>
@@ -76,11 +79,15 @@
                             <td class="px-6 py-4 text-sm">
                                 @php
                                     $statusColors = [
-                                        'pending' => 'bg-yellow-100 text-yellow-800',
-                                        'payment_received' => 'bg-blue-100 text-blue-800',
-                                        'approved' => 'bg-purple-100 text-purple-800',
-                                        'activated' => 'bg-green-100 text-green-800',
-                                        'rejected' => 'bg-red-100 text-red-800',
+                                        'pending'            => 'bg-yellow-100 text-yellow-800',
+                                        'documents_approved' => 'bg-teal-100 text-teal-800',
+                                        'payment_pending'    => 'bg-orange-100 text-orange-800',
+                                        'payment_received'   => 'bg-blue-100 text-blue-800',
+                                        'sla_uploaded'       => 'bg-indigo-100 text-indigo-800',
+                                        'sla_approved'       => 'bg-cyan-100 text-cyan-800',
+                                        'approved'           => 'bg-purple-100 text-purple-800',
+                                        'activated'          => 'bg-green-100 text-green-800',
+                                        'rejected'           => 'bg-red-100 text-red-800',
                                     ];
                                 @endphp
                                 <span class="px-3 py-1 rounded-full text-xs font-medium {{ $statusColors[$req->status] ?? 'bg-gray-100 text-gray-800' }}">
@@ -110,6 +117,13 @@
                                     <div class="text-xs text-amber-700 mt-1">₦{{ number_format((float) $req->outstanding_amount) }} outstanding</div>
                                 @endif
                             </td>
+                            <td class="px-6 py-4 text-sm">
+                                @if ($req->lsa_signed_document_path)
+                                    <span class="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">Signed</span>
+                                @else
+                                    <span class="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Pending</span>
+                                @endif
+                            </td>
                             <td class="px-6 py-4 text-sm">{{ $req->created_at->format('M j, Y') }}</td>
                             <td class="px-6 py-4 text-sm relative">
                                 <details class="relative inline-block">
@@ -131,14 +145,29 @@
                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                                             Print Invoice
                                         </a>
-                                        <form action="{{ route('system-admin.phs.requests.approve', ['id' => $req->id]) }}" method="POST" class="m-0 approve-form">
+                                        @php
+                                            $canSendPayment  = $req->status === 'documents_approved';
+                                            $canFinalApprove = $req->status === 'sla_approved';
+                                            $approveDisabled = !$canSendPayment && !$canFinalApprove;
+                                            $approveRoute    = $canFinalApprove
+                                                ? route('system-admin.phs.requests.final-approve', ['id' => $req->id])
+                                                : route('system-admin.phs.requests.approve',       ['id' => $req->id]);
+                                            $approveLabel    = $canFinalApprove ? 'Send Onboarding Link' : 'Approve';
+                                            $approveMsg      = $canFinalApprove
+                                                ? 'Send the onboarding link to ' . $req->organization_name . '?'
+                                                : 'Approve ' . $req->organization_name . ' and send the payment link?';
+                                        @endphp
+                                        <form action="{{ $approveRoute }}" method="POST" class="m-0 approve-form">
                                             @csrf
-                                            @php $isApproved = $req->status === 'approved' || $req->status === App\Models\Phs\PhsOnboardingRequest::STATUS_APPROVED; @endphp
-                                            <button type="button" data-org="{{ $req->organization_name }}" class="approve-btn w-full flex items-center gap-2 text-left px-4 py-2 text-sm {{ $isApproved ? 'text-gray-400 cursor-not-allowed' : 'text-green-700 hover:bg-gray-50' }}" {{ $isApproved ? 'disabled' : '' }}>
+                                            <button type="button"
+                                                data-org="{{ $req->organization_name }}"
+                                                data-msg="{{ $approveMsg }}"
+                                                class="approve-btn w-full flex items-center gap-2 text-left px-4 py-2 text-sm {{ $approveDisabled ? 'text-gray-400 cursor-not-allowed' : 'text-green-700 hover:bg-gray-50' }}"
+                                                {{ $approveDisabled ? 'disabled' : '' }}>
                                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                                                     <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 00-1.414-1.414L8 11.172 4.707 7.879a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8z" clip-rule="evenodd" />
                                                 </svg>
-                                                Approve
+                                                {{ $approveLabel }}
                                             </button>
                                         </form>
                                     </div>
@@ -148,10 +177,10 @@
                                             document.querySelectorAll('.approve-btn').forEach(function (btn) {
                                                 btn.addEventListener('click', function (e) {
                                                     if (btn.disabled) return;
-                                                    var org = btn.getAttribute('data-org') || 'this request';
+                                                    var msg = btn.getAttribute('data-msg') || 'Approve this request?';
                                                     Swal.fire({
                                                         title: 'Approve request?',
-                                                        text: 'Approve ' + org + ' and send activation email?',
+                                                        text: msg,
                                                         icon: 'question',
                                                         showCancelButton: true,
                                                         confirmButtonText: 'Yes, approve',

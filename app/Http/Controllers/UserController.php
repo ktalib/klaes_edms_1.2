@@ -338,6 +338,7 @@ class UserController extends Controller
                 $user->assign_role = isset($request->user_role) ? implode(',', $request->user_role) : null;
                 $user->user_actions = isset($request->user_actions) ? implode(',', $request->user_actions) : null;
                 $user->dfr_permissions = isset($request->dfr_permissions) ? implode(',', $request->dfr_permissions) : null;
+                $user->fr_permissions = $request->input('fr_permissions') === 'SCB' ? 'SCB' : null;
                 $user->save();
 
                 $module = 'user_create';
@@ -536,6 +537,7 @@ class UserController extends Controller
                 $user->assign_role = isset($request->user_role) ? implode(',', $request->user_role) : null;
                 $user->user_actions = isset($request->user_actions) ? implode(',', $request->user_actions) : null;
                 $user->dfr_permissions = isset($request->dfr_permissions) ? implode(',', $request->dfr_permissions) : null;
+                $user->fr_permissions = $request->input('fr_permissions') === 'SCB' ? 'SCB' : null;
                 if ($request->filled('password')) {
                     $user->password = Hash::make($request->password);
                 }

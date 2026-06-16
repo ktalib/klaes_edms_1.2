@@ -1225,6 +1225,180 @@
             }
         }
 
+        /**
+         * Auto-backfill property details from any existing record on the file.
+         *
+         * Used by the "Capture Existing Mortgage Now" flow (No Existing Mortgage
+         * Found! prompt): once a file number is selected we pull the shared
+         * property attributes (location, plot, district, land use, etc.) from the
+         * file's existing records so the user does not have to click a matching
+         * record first. Property details are identical across a file's
+         * instruments, so the first record that actually carries property data
+         * is sufficient.
+         */
+        async autoBackfillPropertyDetailsFromFile(fileno) {
+            const normalized = normalizeText(fileno);
+            if (!normalized) return false;
+
+            // Primary source: the file's indexing record holds the canonical
+            // property attributes (plot, TP, LPKN, district, LGA, land use, etc.).
+            try {
+                const response = await fetch(`/api/pra/v1/records/property-by-file/${encodeURIComponent(normalized)}`, {
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin'
+                });
+
+                const payload = response.ok ? await response.json() : null;
+                const details = payload?.data || null;
+                if (details && Object.values(details).some((v) => normalizeText(v).length > 0)) {
+                    return this.applyIndexedPropertyDetails(details);
+                }
+            } catch (err) {
+                console.warn('Failed to backfill property details from file indexing', err);
+            }
+
+            // Fallback: derive property details from an existing PRA record on the
+            // file when the file has no indexing row.
+            try {
+                const recordModeInput = this.container.querySelector('input[name="record_mode"]');
+                const recordMode = recordModeInput ? recordModeInput.value : '';
+                const queryParams = new URLSearchParams({ record_mode: recordMode });
+
+                const response = await fetch(`/api/pra/v1/records/all-by-file/${encodeURIComponent(normalized)}?${queryParams.toString()}`, {
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin'
+                });
+
+                const payload = response.ok ? await response.json() : null;
+                const records = payload?.data || [];
+                if (records.length === 0) return false;
+
+                const propertyKeys = ['location', 'plot_no', 'plotNo', 'house_no', 'houseNo', 'street_name', 'streetName', 'district', 'land_use', 'landUse', 'property_description', 'propertyDescription'];
+                const hasPropertyData = (rec) => propertyKeys.some((k) => normalizeText(rec[k]).length > 0);
+                const rec = records.find(hasPropertyData) || records[0];
+
+                return this.applyIndexedPropertyDetails({
+                    house_no: rec.house_no ?? rec.houseNo,
+                    plot_no: rec.plot_no ?? rec.plotNo,
+                    tp_no: rec.tp_no ?? rec.tpNo,
+                    lpkn_no: rec.lpkn_no ?? rec.lpknNo,
+                    street_name: rec.street_name ?? rec.streetName,
+                    district: rec.district,
+                    lga: rec.lga,
+                    location: rec.location,
+                    land_use: rec.land_use ?? rec.landUse,
+                    property_description: rec.property_description ?? rec.propertyDescription,
+                });
+            } catch (err) {
+                console.warn('Failed to auto-backfill property details for file', err);
+                return false;
+            }
+        }
+
+        /**
+         * Apply backfilled property details to the form, driving the cascading
+         * Street/District selects (with their "Other" free-text fallback) and the
+         * LGA / Land Use selects — not just plain inputs. Indexed values often do
+         * not exactly match a dropdown option (e.g. "Dan Dinshe Kofar Dawannau"
+         * vs the listed "DAN DINSHE KOFAR DAWANAU"), so unmatched values route
+         * through the component's "Other" input to stay visible and submittable.
+         */
+        applyIndexedPropertyDetails(details) {
+            if (!details) return false;
+            let applied = false;
+
+            const setText = (stateKey, value) => {
+                if (normalizeText(value).length > 0) {
+                    this.setState(stateKey, value);
+                    applied = true;
+                }
+            };
+
+            setText('houseNo', details.house_no);
+            setText('plotNo', details.plot_no);
+            setText('tpNo', details.tp_no);
+            setText('lpknNo', details.lpkn_no);
+
+            if (normalizeText(details.street_name).length > 0) {
+                this.applyComponentSelectValue(this.streetComponent, 'street-select', 'street-other', details.street_name);
+                applied = true;
+            }
+            if (normalizeText(details.district).length > 0) {
+                this.applyComponentSelectValue(this.districtComponent, 'district-select', 'district-other', details.district);
+                applied = true;
+            }
+            if (normalizeText(details.lga).length > 0) {
+                if (this.applyPlainSelectValue('lga', details.lga)) applied = true;
+            }
+            if (normalizeText(details.land_use).length > 0) {
+                if (this.applyPlainSelectValue('landUse', details.land_use)) applied = true;
+            }
+
+            // Rebuild the description from the components just set; only fall back
+            // to the stored/indexed value when nothing could be derived.
+            this.updatePropertyDescription();
+            const derived = normalizeText(this.state.propertyDescription);
+            const stored = normalizeText(details.property_description) || normalizeText(details.location);
+            if (derived.length === 0 && stored.length > 0) {
+                this.setState('propertyDescription', stored);
+                applied = true;
+            }
+
+            return applied;
+        }
+
+        /**
+         * Select a value on a Street/District component: match an existing option
+         * case-insensitively (by value or label); otherwise switch the select to
+         * "Other" and place the value in the free-text input. Dispatches the
+         * native events the component already listens to so state + property
+         * description stay in sync.
+         */
+        applyComponentSelectValue(component, selectRole, otherRole, value) {
+            if (!component) return;
+            const select = component.querySelector(`[data-role="${selectRole}"]`);
+            const otherInput = component.querySelector(`[data-role="${otherRole}"]`);
+            if (!select) return;
+
+            const target = normalizeText(value).toLowerCase();
+            const match = Array.from(select.options).find((o) =>
+                normalizeText(o.value).toLowerCase() === target ||
+                normalizeText(o.textContent).toLowerCase() === target
+            );
+
+            if (match) {
+                select.value = match.value;
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+            } else if (otherInput) {
+                select.value = 'other';
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                otherInput.value = normalizeText(value);
+                otherInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        }
+
+        /**
+         * Select a value on a plain model-bound <select> (LGA, Land Use) by
+         * case-insensitive match on option value or label. Returns whether a
+         * matching option was found and applied.
+         */
+        applyPlainSelectValue(modelKey, value) {
+            const select = this.modelElements.get(modelKey);
+            if (!select || !select.options) return false;
+
+            const target = normalizeText(value).toLowerCase();
+            const match = Array.from(select.options).find((o) =>
+                normalizeText(o.value).toLowerCase() === target ||
+                normalizeText(o.textContent).toLowerCase() === target
+            );
+
+            if (!match) return false;
+
+            select.value = match.value;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        }
+
         renderMatchingRecords(records) {
             this.matchingRecordsResults.innerHTML = '';
 

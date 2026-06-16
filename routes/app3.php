@@ -343,6 +343,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/', [TitleStatusController::class, 'store'])->name('store');
         Route::post('/generate-remark', [TitleStatusController::class, 'generateRemark'])->name('generate-remark');
         Route::get('/file-info', [TitleStatusController::class, 'fileInfo'])->name('file-info');
+        Route::get('/{id}/certificate-revocation', [TitleStatusController::class, 'printCertificate'])->name('certificate-revocation')->where('id', '[0-9]+');
         Route::post('/{id}/approve', [TitleStatusController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
         Route::post('/{id}/reject', [TitleStatusController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
         Route::get('/{id}', [TitleStatusController::class, 'show'])->name('show')->where('id', '[0-9]+');
@@ -401,6 +402,10 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [ManualFileLinkageController::class, 'index'])->name('index');
         Route::post('/', [ManualFileLinkageController::class, 'store'])->name('store');
         Route::get('/search-old-file', [ManualFileLinkageController::class, 'searchOldFile'])->name('search-old-file');
+        Route::get('/search-holding-file', [ManualFileLinkageController::class, 'searchHoldingFile'])->name('search-holding-file');
+        // Bulk CSV import for Subdivision child plots / Merger source plots
+        Route::get('/csv-template', [ManualFileLinkageController::class, 'downloadCsvTemplate'])->name('csv-template');
+        Route::post('/csv-import', [ManualFileLinkageController::class, 'bulkImportCsv'])->name('csv-import');
     });
 
     // Match Existing FileNo (MLSFileNo) Routes
@@ -526,6 +531,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/invoices/{txnId}/print', [PhsAdminController::class, 'transactionInvoice'])->name('invoices.print');
         Route::post('/invoices/{txnId}/approve', [PhsAdminController::class, 'approveInvoice'])->name('invoices.approve');
         Route::get('/usage', [PhsAdminController::class, 'usage'])->name('usage');
+        Route::get('/searches/{id}/slip', [PhsAdminController::class, 'searchSlip'])->name('searches.slip');
         Route::get('/topups', [PhsAdminController::class, 'topups'])->name('topups');
         Route::post('/topups/{txnId}/approve', [PhsAdminController::class, 'approveTopup'])->name('topups.approve');
         Route::post('/topups/{txnId}/reject', [PhsAdminController::class, 'rejectTopup'])->name('topups.reject');
@@ -549,7 +555,17 @@ Route::middleware(['auth'])->group(function () {
             Route::get('{id}/invoice', [PhsAdminController::class, 'requestInvoice'])->name('invoice');
             Route::post('{id}/verify-payment', [PhsAdminController::class, 'verifyRequestPayment'])->name('verify-payment');
             Route::post('{id}/approve', [PhsAdminController::class, 'approveRequest'])->name('approve');
+            Route::post('{id}/final-approve', [PhsAdminController::class, 'finalApproveRequest'])->name('final-approve');
             Route::post('{id}/reject', [PhsAdminController::class, 'rejectRequest'])->name('reject');
+        });
+
+        // Legal department
+        Route::prefix('legal')->name('legal.')->group(function () {
+            Route::get('/', [PhsAdminController::class, 'legalDashboard'])->name('index');
+            Route::get('{id}', [PhsAdminController::class, 'legalShowRequest'])->name('show');
+            Route::post('{id}/approve-docs', [PhsAdminController::class, 'legalApproveDocuments'])->name('approve-docs');
+            Route::post('{id}/approve-sla', [PhsAdminController::class, 'legalApproveSla'])->name('approve-sla');
+            Route::post('{id}/reject', [PhsAdminController::class, 'legalRejectRequest'])->name('reject');
         });
     });
 
@@ -652,6 +668,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/records/search', [PraRecordController::class, 'search'])->name('records.search')->withoutMiddleware(['auth']);
         Route::get('/records/by-file/{fileNumber}', [PraRecordController::class, 'showByFile'])->name('records.by-file')->withoutMiddleware(['auth']);
         Route::get('/records/all-by-file/{fileNumber}', [PraRecordController::class, 'lookupAllByFile'])->name('records.all-by-file')->withoutMiddleware(['auth']);
+        Route::get('/records/property-by-file/{fileNumber}', [PraRecordController::class, 'propertyByFile'])->name('records.property-by-file')->withoutMiddleware(['auth']);
         Route::get('/records/{propId}', [PraRecordController::class, 'show'])->name('records.show')->withoutMiddleware(['auth']);
         Route::get('/records/{propId}/history', [PraRecordController::class, 'history'])->name('records.history')->withoutMiddleware(['auth']);
         Route::get('/records/{propId}/duplicates', [PraRecordController::class, 'duplicates'])->name('records.duplicates')->withoutMiddleware(['auth']);
@@ -1018,6 +1035,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/api/rack-label/status', [KangisPrintLabelController::class, 'getRackLabelStatus'])->name('api.rack-label.status');
         Route::post('/api/batch', [KangisPrintLabelController::class, 'createBatch'])->name('api.batch.store');
         Route::get('/api/batches', [KangisPrintLabelController::class, 'getBatches'])->name('api.batches');
+        Route::post('/api/batches/backfill-sys-batch-no', [KangisPrintLabelController::class, 'backfillSysBatchNo'])->name('api.batches.backfill');
         Route::get('/api/batch/{id}/print', [KangisPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');
         Route::patch('/api/batch/{id}/print', [KangisPrintLabelController::class, 'markBatchAsPrinted'])->name('api.batch.mark-printed');
         Route::delete('/api/batch/{id}', [KangisPrintLabelController::class, 'deleteBatch'])->name('api.batch.delete');

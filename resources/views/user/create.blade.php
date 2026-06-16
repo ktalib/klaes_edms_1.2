@@ -846,6 +846,19 @@
                                                     <span class="block text-xs text-gray-500">Can approve or reject file requests</span>
                                                 </div>
                                             </label>
+
+                                            {{-- File Request (FR) role --}}
+                                            <div class="pt-2 mt-1 border-t border-gray-100">
+                                                <p class="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2">File Request (Mobile)</p>
+                                                <label class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition">
+                                                    <input type="checkbox" name="fr_permissions" value="SCB" id="fr_scb_create"
+                                                        class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-400">
+                                                    <div>
+                                                        <span class="text-sm font-semibold text-gray-800">SCB Monitor (File Searcher)</span>
+                                                        <span class="block text-xs text-gray-500">Receives File Requests on the mobile app &amp; by email</span>
+                                                    </div>
+                                                </label>
+                                            </div>
                                         </div>
                                         {{-- Footer --}}
                                         <div class="px-5 py-3 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">

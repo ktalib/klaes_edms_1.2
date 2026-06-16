@@ -94,8 +94,19 @@ class SurrenderReleaseController extends Controller
                 'party_4_name as party_4',
                 'property_location as location',
                 'created_at as date_captured',
-                DB::raw("TRY_CONVERT(DATETIME, reg_date) as transaction_date"),
-                DB::raw("NULL as deeds_time"),
+                DB::raw("COALESCE(
+                    (SELECT TOP 1 TRY_CONVERT(DATETIME, dr.deeds_date)
+                     FROM deed_registrations dr
+                     WHERE dr.fileno = COALESCE(instrument_capture.mlsFNo, instrument_capture.kangisFileNo, instrument_capture.NewKANGISFileno, instrument_capture.temp_fileno)
+                       AND dr.instrument_type IN ('Deed of Surrender and Release','Deed of Surrender & Release','Deed of Surrender, and Release','Surrender and Release','Surrender & Release')
+                     ORDER BY dr.created_at DESC),
+                    TRY_CONVERT(DATETIME, reg_date)
+                ) as transaction_date"),
+                DB::raw("(SELECT TOP 1 CAST(dr.deeds_time AS NVARCHAR(50))
+                          FROM deed_registrations dr
+                          WHERE dr.fileno = COALESCE(instrument_capture.mlsFNo, instrument_capture.kangisFileNo, instrument_capture.NewKANGISFileno, instrument_capture.temp_fileno)
+                            AND dr.instrument_type IN ('Deed of Surrender and Release','Deed of Surrender & Release','Deed of Surrender, and Release','Surrender and Release','Surrender & Release')
+                          ORDER BY dr.created_at DESC) as deeds_time"),
                 DB::raw("CAST(created_by AS NVARCHAR(100)) as created_by"),
                 DB::raw("'Instrument Capture' as source_table")
             ])
@@ -193,12 +204,17 @@ class SurrenderReleaseController extends Controller
             ->editColumn('transaction_date', function ($row) {
                 try {
                     if (!$row->transaction_date) return '—';
-                    $date    = Carbon::parse($row->transaction_date)->format('Y-m-d');
+                    $parsed  = Carbon::parse($row->transaction_date);
+                    $date    = $parsed->format('Y-m-d');
                     $timeStr = trim((string) ($row->deeds_time ?? ''));
                     if ($timeStr !== '') {
                         try {
                             return $date . ' ' . Carbon::parse($timeStr)->format('h:i A');
                         } catch (\Exception $e) {}
+                    }
+                    // IC records store reg_date as a full datetime — extract time if non-midnight
+                    if ($parsed->format('H:i:s') !== '00:00:00') {
+                        return $date . ' ' . $parsed->format('g:i A');
                     }
                     return $date;
                 } catch (\Exception $e) {

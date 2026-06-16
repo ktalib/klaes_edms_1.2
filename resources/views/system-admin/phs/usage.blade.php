@@ -44,12 +44,29 @@
         </div>
         <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
             <table class="min-w-full text-left text-sm">
-                <thead class="bg-slate-50 text-xs font-bold uppercase text-slate-500"><tr><th class="px-4 py-3">Organization</th><th class="px-4 py-3">Query</th><th class="px-4 py-3">File</th><th class="px-4 py-3">Results</th><th class="px-4 py-3">Reference</th><th class="px-4 py-3">Date</th></tr></thead>
+                <thead class="bg-slate-50 text-xs font-bold uppercase text-slate-500"><tr><th class="px-4 py-3">Organization</th><th class="px-4 py-3">Query</th><th class="px-4 py-3">FileNo</th><th class="px-4 py-3">Results</th><th class="px-4 py-3">Reference</th><th class="px-4 py-3">Date</th><th class="px-4 py-3 text-right">Action</th></tr></thead>
                 <tbody class="divide-y divide-slate-100">
                     @forelse($recentSearches as $row)
-                        <tr><td class="px-4 py-3 font-bold">{{ $row->institution_name }}</td><td class="px-4 py-3">{{ $row->query }}</td><td class="px-4 py-3">{{ $row->file_number }}</td><td class="px-4 py-3">{{ $row->result_count }}</td><td class="px-4 py-3">{{ $row->reference_no }}</td><td class="px-4 py-3">{{ $row->created_at }}</td></tr>
+                        <tr>
+                            <td class="px-4 py-3 font-bold">{{ $row->institution_name }}</td>
+                            <td class="px-4 py-3">{{ $row->query }}</td>
+                            <td class="px-4 py-3">{{ $row->file_number }}</td>
+                            <td class="px-4 py-3">{{ $row->result_count }}</td>
+                            <td class="px-4 py-3">{{ $row->reference_no }}</td>
+                            <td class="px-4 py-3">{{ $row->created_at }}</td>
+                            <td class="px-4 py-3 text-right">
+                                @if($row->file_number || $row->query)
+                                    <a href="{{ route('system-admin.phs.searches.slip', ['id' => $row->id]) }}" target="_blank" rel="noopener"
+                                       class="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                                        <i data-lucide="file-search" class="h-3.5 w-3.5"></i> Open Search
+                                    </a>
+                                @else
+                                    <span class="text-slate-300">—</span>
+                                @endif
+                            </td>
+                        </tr>
                     @empty
-                        <tr><td colspan="6" class="px-4 py-10 text-center text-slate-400">No searches recorded.</td></tr>
+                        <tr><td colspan="7" class="px-4 py-10 text-center text-slate-400">No searches recorded.</td></tr>
                     @endforelse
                 </tbody>
             </table>

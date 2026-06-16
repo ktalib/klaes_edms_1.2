@@ -19,7 +19,7 @@ class PhsLowBalanceReminder extends Mailable
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: 'PHS Token Balance Running Low');
+        return new Envelope(subject: 'PHS Portal Token Balance Running Low');
     }
 
     public function content(): Content

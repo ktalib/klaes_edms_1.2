@@ -4590,8 +4590,15 @@
             field.classList.remove('success-border', 'error-border');
         });
 
-        const awaitingValue = (awaitingField?.value?.trim() || '').replace(/\(\s*T\s*\)\s*$/i, '').trim();
-        const lookupCandidate = (fileNumber || '').trim().replace(/\(\s*T\s*\)\s*$/i, '').trim();
+        // Strip an "AND EXTENSION" suffix for the grouping/tracking lookup only.
+        // Example: "RES-2026-10 AND EXTENSION" looks up the base "RES-2026-10",
+        // but the full value (with the suffix) is re-attached below so it is saved intact.
+        const EXTENSION_SUFFIX_RE = /\s*AND\s+EXTENSION\s*$/i;
+        const stripExtension = (val) => (val || '').replace(EXTENSION_SUFFIX_RE, '').trim();
+        const hasExtensionSuffix = EXTENSION_SUFFIX_RE.test((fileNumber || '').trim());
+
+        const awaitingValue = stripExtension((awaitingField?.value?.trim() || '').replace(/\(\s*T\s*\)\s*$/i, '').trim());
+        const lookupCandidate = stripExtension((fileNumber || '').trim().replace(/\(\s*T\s*\)\s*$/i, '').trim());
         const lookupValue = lookupCandidate || awaitingValue;
 
         if (!lookupValue) {
@@ -4642,12 +4649,20 @@
             const currentFileno = (fileNumberInput?.value || '').trim();
             const hasTempSuffix = /\(\s*T\s*\)\s*$/i.test(currentFileno);
             const normalizedAwaiting = groupingState.normalizedAwaiting;
-            const normalizedFileNumber = normalizeFileno(currentFileno.replace(/\(\s*T\s*\)\s*$/i, '').trim());
+            const normalizedFileNumber = normalizeFileno(stripExtension(currentFileno.replace(/\(\s*T\s*\)\s*$/i, '').trim()));
             const awaitingValueResolved = groupingRecord.awaiting_fileno ?? lookupValue;
 
             if (!fileNumberInput || !currentFileno || normalizedFileNumber !== normalizedAwaiting) {
-                // Preserve (T) suffix if the user typed it and the base matches the awaiting file
-                const valueToSet = hasTempSuffix ? (awaitingValueResolved.replace(/\(\s*T\s*\)\s*$/i, '').trim() + '(T)') : awaitingValueResolved;
+                // Re-attach the suffixes the user typed so the saved file number stays intact:
+                // the grouping record returns the base awaiting_fileno, but we must persist the
+                // full "… AND EXTENSION" (and/or "(T)") value the user entered.
+                let valueToSet = awaitingValueResolved.replace(/\(\s*T\s*\)\s*$/i, '').replace(EXTENSION_SUFFIX_RE, '').trim();
+                if (hasExtensionSuffix) {
+                    valueToSet += ' AND EXTENSION';
+                }
+                if (hasTempSuffix) {
+                    valueToSet += '(T)';
+                }
                 if (fileNumberInput) {
                     fileNumberInput.value = valueToSet;
                 }
@@ -5146,8 +5161,11 @@
         console.log('Form submission - Has Related Files:', hasRelatedFiles);
         console.log('Form submission - File Title:', fileTitle);
 
-        // Strip (T) suffix before normalizing so temp file numbers match the awaiting file number
-        const normalizedFileNumber = normalizeFileno(baseFileNumber);
+        // Strip (T) suffix before normalizing so temp file numbers match the awaiting file number.
+        // Also strip an "AND EXTENSION" suffix for the awaiting-file comparison only — the full
+        // base value (with the extension) is preserved in baseFileNumber and saved intact below.
+        const EXTENSION_SUFFIX_RE = /\s*AND\s+EXTENSION\s*$/i;
+        const normalizedFileNumber = normalizeFileno(baseFileNumber.replace(EXTENSION_SUFFIX_RE, '').trim());
         const shouldEnforcePrimaryMatch = !hasRelatedFiles;
 
         if (!editModeState.isEditing && !groupingState.record && !window.isNewKnMode) {
@@ -7711,6 +7729,12 @@
                     rc_no: section.querySelector('input[name$="][rc_no]"]')?.value || '',
                     country_code: section.querySelector('select[name$="][country_code]"]')?.value || '',
                     residence_address: section.querySelector('textarea[name$="][residence_address]"]')?.value || '',
+                    // Task #22: backfilled indexing metadata (scoped to the related file, never the parent)
+                    current_holder: section.querySelector('input[name$="][current_holder]"]')?.value || '',
+                    original_holder: section.querySelector('input[name$="][original_holder]"]')?.value || '',
+                    no_of_transactions: section.querySelector('input[name$="][no_of_transactions]"]')?.value || '',
+                    prop_id: section.querySelector('input[name$="][prop_id]"]')?.value || '',
+                    is_indexed: section.querySelector('input[name$="][is_indexed]"]')?.value || '',
                 });
             });
         }
@@ -7757,6 +7781,222 @@
         // Initial check
         updateButtonVisibility();
 
+        // ----- Task #22: Related File No. backfill from the KANGIS index -----
+        // Resolve the same endpoint the main form uses to check whether a file is already indexed.
+        const relatedCheckIndexedUrl = (indexedFeedbackState.form
+                || document.getElementById('new-file-form'))?.dataset?.checkIndexedUrl
+            || '/fileindex/check-indexed';
+
+        // Space-sensitive file-number comparison.
+        // The SPACE is significant for KANGIS files: "KN 5217" (old MLS-KN) is a DIFFERENT
+        // file from "KN5217" (new KANGIS format) and must not be treated as the same.
+        // Dashes / slashes / a trailing (T) are NOT significant; land numbers have no spaces,
+        // so they are unaffected by preserving spaces here.
+        function fileNoMatchesStrict(a, b) {
+            const norm = (s) => String(s || '')
+                .toUpperCase().trim()
+                .replace(/\(\s*T\s*\)\s*$/i, '')   // optional temporary suffix
+                .replace(/[\-\/]/g, '')             // dashes & slashes not significant
+                .replace(/\s+/g, ' ')               // collapse internal whitespace, but KEEP it
+                .trim();
+            return norm(a) !== '' && norm(a) === norm(b);
+        }
+
+        // Look up a related file in the index WITHOUT any of the side effects of
+        // checkFileAlreadyIndexed (no edit-mode prompt, no main-form feedback, no redirect).
+        async function lookupRelatedIndexed(fileNo) {
+            const raw = (fileNo || '').trim();
+            if (!raw) return null;
+            const stripped = raw.replace(/\(\s*T\s*\)\s*$/i, '').trim();
+            const registry = document.getElementById('general-registry')?.value || '';
+
+            // Try the RAW value first (e.g. "RES-2026-2124(T)") so temporary files whose
+            // (T) is stored as part of file_number still match; then the stripped base.
+            // checkIndexed's buildFileNumberVariants also expands each into its variants.
+            const candidates = stripped && stripped !== raw ? [raw, stripped] : [raw];
+            for (const candidate of candidates) {
+                const url = relatedCheckIndexedUrl.includes('?')
+                    ? `${relatedCheckIndexedUrl}&fileno=${encodeURIComponent(candidate)}&registry=${encodeURIComponent(registry)}`
+                    : `${relatedCheckIndexedUrl}?fileno=${encodeURIComponent(candidate)}&registry=${encodeURIComponent(registry)}`;
+                try {
+                    const payload = await fetchJson(url);
+                    // Guard: checkIndexed collapses spaces, so "KN 5217" can wrongly return the
+                    // "KN5217" record. Only accept it if the spacing actually matches.
+                    if (payload && payload.exists && payload.record
+                        && fileNoMatchesStrict(raw, payload.record.file_number)) {
+                        return payload.record;
+                    }
+                } catch (e) {
+                    console.error('Related file index lookup failed for', candidate, e);
+                }
+            }
+
+            // Fallback: true temporary records are stored with file_number = NULL and the number
+            // held in temp_file_no, so checkIndexed (which matches file_number) misses them.
+            // check-temp-association matches by temp_file_no and returns the full record.
+            try {
+                const tmp = await fetchJson(
+                    `/fileindexing/api/check-temp-association?file_number=${encodeURIComponent(raw)}`
+                );
+                if (tmp && tmp.has_associated_temp && tmp.temp_record
+                    && fileNoMatchesStrict(raw, tmp.temp_record.temp_file_no || tmp.temp_record.file_number)) {
+                    return tmp.temp_record;
+                }
+            } catch (e) {
+                console.error('Related temp-file lookup failed for', raw, e);
+            }
+            return null;
+        }
+
+        // Pull transaction history for a related file (read-only; does NOT touch the parent prop-id-field).
+        // Tries the raw value first, then the (T)-stripped base, since history is usually keyed
+        // on the base MLS number rather than the temporary form.
+        async function lookupRelatedHistory(fileNo) {
+            const raw = (fileNo || '').trim();
+            if (!raw) return [];
+            const base = raw.replace(/\(\s*T\s*\)\s*$/i, '').trim();
+            const candidates = base && base !== raw ? [raw, base] : [raw];
+            for (const candidate of candidates) {
+                try {
+                    const resp = await fetchJson(`/api/file-history?mlsFNo=${encodeURIComponent(candidate)}`);
+                    if (resp && resp.success === true && Array.isArray(resp.data) && resp.data.length) {
+                        return resp.data;
+                    }
+                } catch (e) {
+                    console.error('Related file history lookup failed for', candidate, e);
+                }
+            }
+            return [];
+        }
+
+        // Original holder = the granting/disposing party on the earliest recorded transaction.
+        function deriveOriginalHolderFromEntry(entry) {
+            if (!entry || !entry.parties || typeof entry.parties !== 'object') return null;
+            const normalize = (v) => {
+                if (v === null || v === undefined) return null;
+                const t = String(v).trim();
+                return (t === '' || t.toLowerCase() === 'null') ? null : t;
+            };
+            const partyEntries = Object.entries(entry.parties)
+                .map(([role, value]) => ({ role, value: normalize(value) }))
+                .filter((i) => i.value !== null);
+            if (!partyEntries.length) return null;
+            const findByRegex = (re) => partyEntries.find((i) => typeof i.role === 'string' && re.test(i.role.trim()));
+            const priority = [/grantor/i, /assignor/i, /transferor/i, /vendor/i, /donor/i, /lessor/i, /surrenderor/i, /mortgagor/i];
+            for (const re of priority) {
+                const match = findByRegex(re);
+                if (match) return match.value;
+            }
+            return partyEntries[0].value;
+        }
+
+        // Set a per-section hidden field (scoped to related_details[index][...]).
+        function setSectionHidden(section, suffix, value) {
+            const el = section.querySelector(`input[name$="][${suffix}]"]`);
+            if (el) el.value = value == null ? '' : String(value);
+        }
+
+        // Backfill a single related-file section from the index + transaction history.
+        // - Fills File Title (Current Holder) + Original Holder + detail fields when empty
+        //   (never overwrites user input).
+        // - Renders the transaction timeline.
+        // - Stores prop_id against THIS related file only — never the parent prop-id-field.
+        async function backfillRelatedSection(section) {
+            if (!section) return;
+            const fileNo = (section.dataset.fileNo || '').trim();
+            if (!fileNo) return;
+
+            const statusEl = section.querySelector('.related-backfill-status');
+            const timelineEl = section.querySelector('.related-file-timeline');
+
+            if (statusEl) {
+                statusEl.innerHTML = '<span class="inline-flex items-center gap-1 text-xs text-gray-500">'
+                    + '<span class="loading-spinner"></span> Checking index…</span>';
+            }
+
+            let record = null;
+            let entries = [];
+            try {
+                [record, entries] = await Promise.all([
+                    lookupRelatedIndexed(fileNo),
+                    lookupRelatedHistory(fileNo),
+                ]);
+            } catch (e) {
+                console.error('Related file backfill failed for', fileNo, e);
+            }
+
+            const indexed = !!record;
+
+            const fillIfEmpty = (suffix, value) => {
+                const el = section.querySelector(`input[name$="][${suffix}]"]`);
+                if (el && !el.value.trim() && value != null && String(value).trim() !== '') {
+                    el.value = String(value).trim();
+                }
+            };
+
+            // Derive holders + transaction count from history.
+            const sortedEntries = sortFileHistoryEntries(entries);
+            const txnCount = sortedEntries.length;
+            const latest = txnCount ? sortedEntries[txnCount - 1] : null;
+            const earliest = txnCount ? sortedEntries[0] : null;
+            const currentHolderObj = latest ? deriveCurrentHolder(latest) : null;
+            const currentHolder = (currentHolderObj && currentHolderObj.name)
+                || (record && record.current_holder) || '';
+            const originalHolder = deriveOriginalHolderFromEntry(earliest)
+                || (record && record.original_holder) || '';
+
+            // Backfill detail fields from the existing indexed record (blank if not indexed).
+            // File Title doubles as Current Holder; only fill empty fields so user edits stay.
+            if (record) {
+                fillIfEmpty('file_title', record.file_title || currentHolder);
+                fillIfEmpty('location', record.location);
+                fillIfEmpty('plot_number', record.plot_number);
+                fillIfEmpty('tp_no', record.tp_no);
+                fillIfEmpty('lpkn_no', record.lpkn_no);
+            }
+            // Original Holder is an editable field — fill only when blank.
+            fillIfEmpty('original_holder', originalHolder);
+
+            // Persist read-only metadata against this related file only.
+            setSectionHidden(section, 'current_holder', currentHolder);
+            setSectionHidden(section, 'no_of_transactions', txnCount);
+            setSectionHidden(section, 'is_indexed', indexed ? '1' : '0');
+            const propIdEntry = sortedEntries.find((en) => en && en.prop_id != null && String(en.prop_id).trim() !== '');
+            setSectionHidden(section, 'prop_id', propIdEntry ? String(propIdEntry.prop_id).trim() : '');
+
+            // Status badge.
+            if (statusEl) {
+                statusEl.innerHTML = indexed
+                    ? '<span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold px-2.5 py-1">'
+                        + '<i data-lucide="check-circle-2" class="h-3.5 w-3.5"></i> Indexed — auto-filled</span>'
+                    : '<span class="inline-flex items-center gap-1 rounded-full bg-gray-100 text-gray-500 text-xs font-medium px-2.5 py-1">'
+                        + '<i data-lucide="circle-dashed" class="h-3.5 w-3.5"></i> Not indexed</span>';
+            }
+
+            // Transaction timeline (always shown, with a count badge / "no transactions" state).
+            if (timelineEl) {
+                const body = timelineEl.querySelector('.related-timeline-body');
+                const countEl = timelineEl.querySelector('.related-timeline-count');
+                if (countEl) {
+                    countEl.textContent = txnCount
+                        ? `${txnCount} transaction${txnCount === 1 ? '' : 's'}`
+                        : 'No transactions found';
+                    countEl.classList.toggle('bg-blue-100', !!txnCount);
+                    countEl.classList.toggle('text-blue-700', !!txnCount);
+                    countEl.classList.toggle('bg-gray-100', !txnCount);
+                    countEl.classList.toggle('text-gray-500', !txnCount);
+                }
+                if (body) {
+                    body.innerHTML = txnCount
+                        ? buildFileHistoryTimelineMarkup(sortedEntries)
+                        : '<p class="text-sm text-gray-500">No transaction(s) found for this file.</p>';
+                }
+                timelineEl.classList.remove('hidden');
+            }
+
+            if (window.lucide) window.lucide.createIcons();
+        }
+
         // Open Modal
         openBtn.addEventListener('click', function () {
             // Sync any currently open fields before regenerating
@@ -7799,6 +8039,10 @@
 
                 const section = document.createElement('div');
                 section.className = 'bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden mb-6 last:mb-0';
+                section.dataset.relatedIndex = index;
+                if (!isBlock) {
+                    section.dataset.fileNo = item.fileNo;
+                }
 
                 const title = isBlock ? `Record for Holder: ${item.name}` : `Related File: ${item.fileNo}`;
                 const icon = isBlock ? 'user' : 'file-text';
@@ -7808,23 +8052,55 @@
                     ? `<input type="hidden" name="related_details[${index}][holder]" value="${item.name}">`
                     : `<input type="hidden" name="related_details[${index}][file_number]" value="${item.fileNo}">`;
 
+                // Task #22: only Related File No. (Regular mode) entries can be backfilled from the index.
+                const statusHtml = isBlock ? '' : `<div class="related-backfill-status text-xs"></div>`;
+                // current_holder is captured implicitly by the File Title field; the rest stay hidden.
+                const indexedHiddenHtml = isBlock ? '' : `
+                            <input type="hidden" name="related_details[${index}][current_holder]" value="${escapeAttribute(cached.current_holder || '')}">
+                            <input type="hidden" name="related_details[${index}][no_of_transactions]" value="${escapeAttribute(cached.no_of_transactions || '')}">
+                            <input type="hidden" name="related_details[${index}][prop_id]" value="${escapeAttribute(cached.prop_id || '')}">
+                            <input type="hidden" name="related_details[${index}][is_indexed]" value="${escapeAttribute(cached.is_indexed || '')}">`;
+                // File Title doubles as the Current Holder label for Regular related files.
+                const fileTitleLabel = isBlock ? 'File Title' : 'File Title <span class="text-gray-400 font-normal">(Current Holder)</span>';
+                // Editable Original Holder field (Regular mode only).
+                const originalHolderFieldHtml = isBlock ? '' : `
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Original Holder</label>
+                                <input type="text" name="related_details[${index}][original_holder]" value="${escapeAttribute(cached.original_holder || '')}"
+                                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white">
+                            </div>`;
+                const displayAndTimelineHtml = isBlock ? '' : `
+                        <details class="related-file-timeline hidden mt-3 rounded-lg border border-blue-100 bg-white">
+                            <summary class="flex items-center justify-between gap-2 px-3 py-2 cursor-pointer list-none select-none text-sm font-semibold text-blue-800">
+                                <span class="flex items-center gap-2">
+                                    <i data-lucide="history" class="h-4 w-4 text-blue-600"></i> Transaction Timeline
+                                    <span class="related-timeline-count inline-flex items-center rounded-full text-[11px] font-semibold px-2 py-0.5"></span>
+                                </span>
+                                <i data-lucide="chevron-down" class="h-4 w-4 text-blue-400"></i>
+                            </summary>
+                            <div class="related-timeline-body px-4 pb-4 pt-2 border-t border-blue-100 max-h-72 overflow-y-auto"></div>
+                        </details>`;
+
                 section.innerHTML = `
-                    <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                    <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-3">
                         <div class="flex items-center gap-2">
                              <div class="bg-blue-100 p-1.5 rounded-full">
                                 <i data-lucide="${icon}" class="w-4 h-4 text-blue-600"></i>
                              </div>
                              <h4 class="font-bold text-gray-800 text-sm">${title}</h4>
                         </div>
+                        ${statusHtml}
                     </div>
                     <div class="p-4 bg-gray-50/50">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             ${fileNoHtml}
+                            ${indexedHiddenHtml}
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">File Title <span class="text-red-500">*</span></label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">${fileTitleLabel} <span class="text-red-500">*</span></label>
                                 <input type="text" name="related_details[${index}][file_title]" value="${cached.file_title || (isBlock ? item.name : '')}"
                                     class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white" required>
                             </div>
+                            ${originalHolderFieldHtml}
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Location <span class="text-red-500">*</span></label>
                                 <input type="text" name="related_details[${index}][location]" value="${cached.location || ''}"
@@ -7846,6 +8122,7 @@
                                     class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white">
                             </div>
                         </div>
+                        ${displayAndTimelineHtml}
                     </div>
                 `;
                 container.appendChild(section);
@@ -7853,6 +8130,13 @@
 
             if (window.lucide) window.lucide.createIcons();
             modal.classList.remove('hidden');
+
+            // Task #22: backfill each indexed Related File No. (Regular mode) on open.
+            if (!isBlock) {
+                container.querySelectorAll('[data-file-no]').forEach((sec) => {
+                    backfillRelatedSection(sec);
+                });
+            }
         });
 
         // Close Modal
@@ -7864,7 +8148,23 @@
         cancelBtn.addEventListener('click', closeModal);
 
         // Save Details
-        saveBtn.addEventListener('click', function () {
+        saveBtn.addEventListener('click', async function () {
+            // Task #22: backfill executes on save — re-check the index for every Related File No.
+            // (catches files typed/changed since the modal opened) and auto-fill empty fields.
+            const indexedSections = Array.from(container.querySelectorAll('[data-file-no]'));
+            if (indexedSections.length) {
+                const originalSaveText = saveBtn.textContent;
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Checking index…';
+                try {
+                    await Promise.all(indexedSections.map((sec) => backfillRelatedSection(sec)));
+                } catch (e) {
+                    console.error('Related file backfill on save failed:', e);
+                }
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalSaveText;
+            }
+
             let isValid = true;
             container.querySelectorAll('input[required]').forEach(input => {
                 if (!input.value.trim()) {

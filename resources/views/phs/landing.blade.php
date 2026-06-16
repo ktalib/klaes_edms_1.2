@@ -3,7 +3,10 @@
 @section('title', 'KLAES - Property History Search Portal')
 
 @section('content')
-<div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
+<div id="preloader" style="position:fixed;inset:0;background:var(--phs-preloader-bg,#fff);display:flex;align-items:center;justify-content:center;z-index:9999;">
+    <img src="http://app.klaes.ng/storage/upload/logo/klas_logo.gif" alt="Loading..." style="width:200px;height:auto;">
+</div>
+<div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
     <!-- Responsive Navigation -->
     @include('phs.partials.landing-header')
 
@@ -43,14 +46,14 @@
     <!-- Hero Section -->
     <div class="relative mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 md:py-16">
         <div class="text-center">
-            <div class="mb-6 inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
+            <div class="mb-6 inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/40 px-3 py-1 text-xs font-medium text-blue-700 dark:text-blue-300">
                 <i data-lucide="crown" class="mr-2 h-4 w-4"></i> Official Government Platform
             </div>
-            <h1 class="mb-6 text-3xl font-extrabold leading-tight text-gray-900 sm:text-5xl md:text-6xl lg:text-7xl">
+            <h1 class="mb-6 text-3xl font-extrabold leading-tight text-gray-900 dark:text-gray-100 sm:text-5xl md:text-6xl lg:text-7xl">
                 Kano State Ministry of Land
                 <span class="bg-gradient-to-r from-blue-600 to-green-600 bg-clip-text text-transparent">and Physical Planning Property History Search (PHS) Portal</span>
             </h1>
-            <p class="mx-auto mb-10 max-w-3xl text-base text-gray-600 sm:text-lg md:text-xl">
+            <p class="mx-auto mb-10 max-w-3xl text-base text-gray-600 dark:text-gray-400 sm:text-lg md:text-xl">
                 Secure, token-based legal search for banks, law firms, and corporate institutions.
             </p>
             <div class="flex flex-col justify-center gap-4 sm:flex-row">
@@ -63,38 +66,38 @@
     </div>
 
     <!-- Features Section -->
-    <div class="bg-white py-12 sm:py-20">
+    <div class="bg-white dark:bg-gray-800 py-12 sm:py-20">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div class="mb-8 text-center sm:mb-12">
-                <h2 class="mb-4 text-2xl font-bold text-gray-900 sm:text-3xl md:text-4xl">
+                <h2 class="mb-4 text-2xl font-bold text-gray-900 dark:text-gray-100 sm:text-3xl md:text-4xl">
                     Why Choose KLAES Enterprise?
                 </h2>
             </div>
             <div class="grid gap-6 sm:grid-cols-2 md:grid-cols-3 sm:gap-8">
                 <div class="p-4 text-center sm:p-6">
-                    <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 sm:mb-5 sm:h-20 sm:w-20">
-                        <i data-lucide="coins" class="h-8 w-8 text-blue-600 sm:h-10 sm:w-10"></i>
+                    <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 dark:bg-blue-900/30 sm:mb-5 sm:h-20 sm:w-20">
+                        <i data-lucide="coins" class="h-8 w-8 text-blue-600 dark:text-blue-400 sm:h-10 sm:w-10"></i>
                     </div>
-                    <h3 class="mb-2 text-lg font-semibold sm:mb-3 sm:text-xl">Token-Based System</h3>
-                    <p class="text-sm text-gray-600 sm:text-base">
+                    <h3 class="mb-2 text-lg font-semibold dark:text-gray-100 sm:mb-3 sm:text-xl">Token-Based System</h3>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 sm:text-base">
                         Pay-as-you-go with flexible token packages. Each search consumes 1 token.
                     </p>
                 </div>
                 <div class="p-4 text-center sm:p-6">
-                    <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-green-100 sm:mb-5 sm:h-20 sm:w-20">
-                        <i data-lucide="shield" class="h-8 w-8 text-green-600 sm:h-10 sm:w-10"></i>
+                    <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-green-100 dark:bg-green-900/30 sm:mb-5 sm:h-20 sm:w-20">
+                        <i data-lucide="shield" class="h-8 w-8 text-green-600 dark:text-green-400 sm:h-10 sm:w-10"></i>
                     </div>
-                    <h3 class="mb-2 text-lg font-semibold sm:mb-3 sm:text-xl">Official & Secure</h3>
-                    <p class="text-sm text-gray-600 sm:text-base">
+                    <h3 class="mb-2 text-lg font-semibold dark:text-gray-100 sm:mb-3 sm:text-xl">Official & Secure</h3>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 sm:text-base">
                         Government-verified records with official search slips.
                     </p>
                 </div>
                 <div class="p-4 text-center sm:p-6">
-                    <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-100 sm:mb-5 sm:h-20 sm:w-20">
-                        <i data-lucide="clock" class="h-8 w-8 text-purple-600 sm:h-10 sm:w-10"></i>
+                    <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-100 dark:bg-purple-900/30 sm:mb-5 sm:h-20 sm:w-20">
+                        <i data-lucide="clock" class="h-8 w-8 text-purple-600 dark:text-purple-400 sm:h-10 sm:w-10"></i>
                     </div>
-                    <h3 class="mb-2 text-lg font-semibold sm:mb-3 sm:text-xl">Instant Results</h3>
-                    <p class="text-sm text-gray-600 sm:text-base">
+                    <h3 class="mb-2 text-lg font-semibold dark:text-gray-100 sm:mb-3 sm:text-xl">Instant Results</h3>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 sm:text-base">
                         Real-time searches with downloadable official slips.
                     </p>
                 </div>
@@ -103,42 +106,42 @@
     </div>
 
     <!-- Pricing Section -->
-    <div class="bg-gradient-to-br from-gray-50 to-blue-50 py-12 sm:py-20">
+    <div class="bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-900 dark:to-gray-800 py-12 sm:py-20">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div class="mb-8 text-center sm:mb-12">
-                <h2 class="mb-4 text-2xl font-bold text-gray-900 sm:text-3xl md:text-4xl">
+                <h2 class="mb-4 text-2xl font-bold text-gray-900 dark:text-gray-100 sm:text-3xl md:text-4xl">
                     Flexible Token Packages
                 </h2>
             </div>
             <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 sm:gap-8">
                 <!-- Starter Package -->
-                <div class="rounded-2xl bg-white p-6 shadow-lg sm:p-8">
-                    <h3 class="mb-2 text-xl font-bold text-green-600 sm:text-2xl">Starter</h3>
-                    <div class="mb-2 text-3xl font-bold sm:text-4xl">₦50,000</div>
-                    <p class="mb-4 text-gray-500">2,000 Tokens</p>
+                <div class="rounded-2xl bg-white dark:bg-gray-800 dark:border dark:border-gray-700 p-6 shadow-lg sm:p-8">
+                    <h3 class="mb-2 text-xl font-bold text-green-600 dark:text-green-400 sm:text-2xl">Starter</h3>
+                    <div class="mb-2 text-3xl font-bold dark:text-gray-100 sm:text-4xl">₦50,000</div>
+                    <p class="mb-4 text-gray-500 dark:text-gray-400">2,000 Tokens</p>
                     <button class="landing-package-btn w-full rounded-lg bg-green-600 py-3 text-white transition hover:bg-green-700" data-tokens="2000" data-price="50000" data-name="Starter">
                         Get Started
                     </button>
                 </div>
-                
+
                 <!-- Professional Package -->
-                <div class="relative rounded-2xl border-2 border-blue-500 bg-white p-6 shadow-lg sm:p-8">
+                <div class="relative rounded-2xl border-2 border-blue-500 bg-white dark:bg-gray-800 p-6 shadow-lg sm:p-8">
                     <div class="absolute -top-3 left-1/2 -translate-x-1/2 transform whitespace-nowrap rounded-full bg-gradient-to-r from-blue-500 to-pink-500 px-4 py-1 text-xs font-semibold text-white">
                         POPULAR
                     </div>
-                    <h3 class="mb-2 text-xl font-bold text-blue-600 sm:text-2xl">Professional</h3>
-                    <div class="mb-2 text-3xl font-bold sm:text-4xl">₦100,000</div>
-                    <p class="mb-4 text-gray-500">5,000 Tokens</p>
+                    <h3 class="mb-2 text-xl font-bold text-blue-600 dark:text-blue-400 sm:text-2xl">Professional</h3>
+                    <div class="mb-2 text-3xl font-bold dark:text-gray-100 sm:text-4xl">₦100,000</div>
+                    <p class="mb-4 text-gray-500 dark:text-gray-400">5,000 Tokens</p>
                     <button class="landing-package-btn w-full rounded-lg bg-blue-600 py-3 text-white transition hover:bg-blue-700" data-tokens="5000" data-price="100000" data-name="Professional">
                         Get Started
                     </button>
                 </div>
-                
+
                 <!-- Enterprise Package -->
-                <div class="rounded-2xl bg-white p-6 shadow-lg sm:col-span-2 lg:col-span-1 sm:p-8">
-                    <h3 class="mb-2 text-xl font-bold text-purple-600 sm:text-2xl">Enterprise</h3>
-                    <div class="mb-2 text-3xl font-bold sm:text-4xl">₦180,000</div>
-                    <p class="mb-4 text-gray-500">10,000 Tokens</p>
+                <div class="rounded-2xl bg-white dark:bg-gray-800 dark:border dark:border-gray-700 p-6 shadow-lg sm:col-span-2 lg:col-span-1 sm:p-8">
+                    <h3 class="mb-2 text-xl font-bold text-purple-600 dark:text-purple-400 sm:text-2xl">Enterprise</h3>
+                    <div class="mb-2 text-3xl font-bold dark:text-gray-100 sm:text-4xl">₦180,000</div>
+                    <p class="mb-4 text-gray-500 dark:text-gray-400">10,000 Tokens</p>
                     <button class="landing-package-btn w-full rounded-lg bg-purple-600 py-3 text-white transition hover:bg-purple-700" data-tokens="10000" data-price="180000" data-name="Enterprise">
                         Get Started
                     </button>

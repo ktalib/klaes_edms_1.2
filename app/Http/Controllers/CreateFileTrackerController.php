@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\FileIndexing;
+use App\Models\FileSearchRequest;
 use App\Models\FileTracker;
 use App\Models\User;
+use App\Mail\FileSearchRequestIssued;
 use App\Models\OtherReceivingOfficer;
 use App\Models\Notification;
 use App\Services\EBulkSmsService;
 use App\Services\BulkSmsNigeriaService;
+use App\Services\FileLocationResolver;
 use App\Services\UserNotificationService;
 use Exception;
 use Illuminate\Http\Request;
@@ -17,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class CreateFileTrackerController extends Controller
 {
@@ -1249,6 +1253,363 @@ HTML;
     }
 
     /**
+     * Quick Search & File Location — standalone page.
+     */
+    public function quickSearch()
+    {
+        $PageTitle = 'Quick Search & File Location';
+        $PageDescription = 'Instantly locate a file and its current status.';
+
+        return view('create_file_tracker_page.quick_search', compact('PageTitle', 'PageDescription'));
+    }
+
+    /**
+     * Resolve a file number to a definitive location + status + next action.
+     * Always returns an outcome (never a 404) and writes the snapshot through
+     * to the matching file_indexings row.
+     */
+    public function quickSearchResolve(Request $request, FileLocationResolver $resolver)
+    {
+        $fileNumber = trim((string) $request->get('query', $request->get('file_number', '')));
+
+        if ($fileNumber === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please provide a file number to search.',
+            ], 422);
+        }
+
+        $result = $resolver->resolve($fileNumber);
+        $resolver->persist($result);
+
+        return response()->json([
+            'success' => true,
+            'data'    => $this->presentLocationResult($result),
+            'message' => 'File location resolved.',
+        ]);
+    }
+
+    /**
+     * Manually set / override a file's location status from the Quick Search
+     * interface. Persists onto the matching file_indexings row and marks it as
+     * a manual override so the resolver stops re-deriving it.
+     * POST /create-file-tracker/quick-search/update-status
+     */
+    public function updateLocationStatus(Request $request, FileLocationResolver $resolver)
+    {
+        $allowed = [
+            FileLocationResolver::STATUS_IN_TRANSIT,
+            FileLocationResolver::STATUS_IN_ARCHIVE,
+            FileLocationResolver::STATUS_IN_POOL,
+            FileLocationResolver::STATUS_NOT_FOUND,
+            FileLocationResolver::STATUS_REFER,
+        ];
+
+        $validator = Validator::make($request->all(), [
+            'file_number'      => 'required|string|max:255',
+            'status'           => ['required', 'string', Rule::in($allowed)],
+            'current_location' => 'nullable|string|max:255',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        $result   = $resolver->resolve($request->file_number);
+        $indexing = $result['indexing'];
+
+        if (!$indexing) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No indexed file record found for this file number, so the status cannot be stored.',
+            ], 404);
+        }
+
+        $indexing->forceFill([
+            'tracking_status'        => $request->status,
+            'current_location'       => $request->input('current_location') ?: $indexing->current_location,
+            'location_status_manual' => now(),
+        ])->save();
+
+        // Return the freshly resolved (now manual) outcome for the UI.
+        $fresh = $resolver->resolve($request->file_number);
+
+        return response()->json([
+            'success' => true,
+            'data'    => $this->presentLocationResult($fresh),
+            'message' => 'File location status updated.',
+        ]);
+    }
+
+    /**
+     * SCB Feedback queue: File Search Requests the current Front Desk user raised
+     * that the SCB has responded to (Found / Not Found) but the Front Desk has NOT
+     * acted on yet. Once the Front Desk logs/refers the file it leaves this queue
+     * and lives only in the File Request Log.
+     * GET /create-file-tracker/quick-search/scb-feedback
+     */
+    public function scbFeedback()
+    {
+        $rows = FileSearchRequest::where('requester_user_id', Auth::id())
+            ->whereIn('status', [FileSearchRequest::STATUS_FOUND, FileSearchRequest::STATUS_NOT_FOUND])
+            ->whereNull('front_desk_acted_at')
+            ->orderByDesc('responded_at')
+            ->limit(50)
+            ->get();
+
+        $locType = fn ($rs) => match ($rs) {
+            FileLocationResolver::STATUS_IN_POOL       => 'Pool Office',
+            FileLocationResolver::STATUS_PENDING_FILE  => 'Blind / Not Indexed',
+            default                                    => 'Archive',
+        };
+
+        return response()->json([
+            'success' => true,
+            'data' => $rows->map(function ($r) use ($locType) {
+                $found = $r->status === FileSearchRequest::STATUS_FOUND;
+                $isDfr = ($r->source ?? null) === FileSearchRequest::SOURCE_DFR;
+                $isBlind = ! $isDfr && in_array($r->resolved_status, [FileLocationResolver::STATUS_PENDING_FILE, FileLocationResolver::STATUS_BLIND_REQUEST_SENT], true);
+
+                return [
+                    'id'               => $r->id,
+                    'request_no'       => $r->request_no,
+                    'file_number'      => $r->file_number,
+                    'file_title'       => $r->file_title,
+                    'location_type'    => $locType($r->resolved_status),
+                    'current_location' => $r->current_location,
+                    'scb_response'     => $found ? 'Found' : 'Not Found',
+                    'found'            => $found,
+                    'not_found'        => ! $found,
+                    'request_type'     => $isDfr ? 'DFR' : ($isBlind ? 'Blind Request' : 'Open Request'),
+                    'is_dfr'           => $isDfr,
+                    'is_blind'         => $isBlind,
+                    'note'             => $r->feedback_note,
+                    'requested_at'     => optional($r->created_at)->format('Y-m-d H:i'),
+                    'responded_at'     => optional($r->responded_at)->format('Y-m-d H:i'),
+                ];
+            }),
+        ]);
+    }
+
+    /**
+     * Front Desk acts on an SCB-responded request (after logging or referring the
+     * file). Marks it acted so it drops out of the SCB Feedback queue.
+     * POST /create-file-tracker/quick-search/file-request/{id}/front-desk-acted
+     */
+    public function markFrontDeskActed($id)
+    {
+        $fr = FileSearchRequest::where('requester_user_id', Auth::id())->find($id);
+        if (! $fr) {
+            return response()->json(['success' => false, 'message' => 'File request not found.'], 404);
+        }
+
+        $fr->forceFill([
+            'front_desk_acted_at' => now(),
+            'front_desk_acted_by' => Auth::id(),
+        ])->save();
+
+        return response()->json(['success' => true]);
+    }
+
+    /**
+     * File Request Log: every File Search Request the current Front Desk user has
+     * raised — including those still awaiting an SCB response. Powers the web
+     * Quick Search "File Request Log" panel. Optional ?status= filter.
+     * GET /create-file-tracker/quick-search/file-request-log
+     */
+    public function fileRequestLog(Request $request)
+    {
+        $userId       = Auth::id();
+        $statusFilter = $request->get('status'); // PENDING | FOUND | NOT_FOUND
+
+        $query = FileSearchRequest::where('requester_user_id', $userId)
+            ->with('responder:id,first_name,last_name');
+
+        if ($statusFilter === 'PENDING') {
+            $query->whereIn('status', [FileSearchRequest::STATUS_PENDING, FileSearchRequest::STATUS_SEARCHING]);
+        } elseif ($statusFilter) {
+            $query->where('status', $statusFilter);
+        }
+
+        $rows = $query->orderByDesc('id')->limit(100)->get();
+
+        $locType = fn ($rs) => match ($rs) {
+            FileLocationResolver::STATUS_IN_POOL       => 'Pool Office',
+            FileLocationResolver::STATUS_PENDING_FILE  => 'Blind / Not Indexed',
+            default                                    => 'Archive',
+        };
+
+        // Counts for the filter chips (across all of this user's requests).
+        $counts       = FileSearchRequest::where('requester_user_id', $userId)
+            ->selectRaw('status, COUNT(*) as c')->groupBy('status')->pluck('c', 'status');
+        $pendingCount = (int) ($counts[FileSearchRequest::STATUS_PENDING] ?? 0)
+                      + (int) ($counts[FileSearchRequest::STATUS_SEARCHING] ?? 0);
+
+        return response()->json([
+            'success' => true,
+            'counts'  => [
+                'all'       => (int) $counts->sum(),
+                'pending'   => $pendingCount,
+                'found'     => (int) ($counts[FileSearchRequest::STATUS_FOUND] ?? 0),
+                'not_found' => (int) ($counts[FileSearchRequest::STATUS_NOT_FOUND] ?? 0),
+            ],
+            'data' => $rows->map(function ($r) use ($locType) {
+                $resp      = $r->responder;
+                $isPending = in_array($r->status, [FileSearchRequest::STATUS_PENDING, FileSearchRequest::STATUS_SEARCHING], true);
+                $isDfr     = ($r->source ?? null) === FileSearchRequest::SOURCE_DFR;
+                $isBlind   = ! $isDfr && in_array($r->resolved_status, [FileLocationResolver::STATUS_PENDING_FILE, FileLocationResolver::STATUS_BLIND_REQUEST_SENT], true);
+
+                return [
+                    'id'               => $r->id,
+                    'request_no'       => $r->request_no,
+                    'file_number'      => $r->file_number,
+                    'file_title'       => $r->file_title,
+                    'request_type'     => $isDfr ? 'DFR' : ($isBlind ? 'Blind Request' : 'Open Request'),
+                    'is_blind'         => $isBlind,
+                    'is_dfr'           => $isDfr,
+                    'location_type'    => $locType($r->resolved_status),
+                    'current_location' => $r->current_location,
+                    'status'           => $r->status,
+                    'is_pending'       => $isPending,
+                    'found'            => $r->status === FileSearchRequest::STATUS_FOUND,
+                    'not_found'        => $r->status === FileSearchRequest::STATUS_NOT_FOUND,
+                    'scb_response'     => $isPending ? 'Awaiting' : ($r->status === FileSearchRequest::STATUS_FOUND ? 'Found' : 'Not Found'),
+                    'front_desk_acted' => ! is_null($r->front_desk_acted_at),
+                    'note'             => $r->feedback_note,
+                    'responder'        => $resp ? trim($resp->first_name . ' ' . $resp->last_name) : null,
+                    'requested_at'     => optional($r->created_at)->format('Y-m-d H:i'),
+                    'responded_at'     => optional($r->responded_at)->format('Y-m-d H:i'),
+                ];
+            }),
+        ]);
+    }
+
+    /**
+     * Shape a FileLocationResolver result for JSON (strip Eloquent models).
+     */
+    protected function presentLocationResult(array $result): array
+    {
+        /** @var \App\Models\FileTracker|null $tracker */
+        $tracker = $result['tracker'] ?? null;
+        /** @var \App\Models\FileIndexing|null $indexing */
+        $indexing = $result['indexing'] ?? null;
+
+        return [
+            'file_number'      => $result['file_number'],
+            'status'           => $result['status'],
+            'registry'         => $result['registry'],
+            'zone'             => $result['zone'],
+            'current_location' => $result['current_location'],
+            'rack_shelf'       => $result['rack_shelf'],
+            'next_action'      => $result['next_action'],
+            'slip_variant'     => $result['slip_variant'],
+            'can_send_fr'      => (bool) ($result['can_send_fr'] ?? false),
+            'can_log'          => (bool) ($result['can_log'] ?? false),
+            'is_blind'         => (bool) ($result['is_blind'] ?? false),
+            'manual'           => (bool) ($result['manual'] ?? false),
+            'file_tracker_id'  => $result['file_tracker_id'],
+            'file_title'       => $tracker->file_title ?? $indexing->file_title ?? null,
+            'receiving_officer_name' => $tracker->receiving_officer_name ?? null,
+            'tracking_id'      => $tracker->tracking_id ?? null,
+        ];
+    }
+
+    /**
+     * Create a File Request (FR) from web Quick Search and route it to the
+     * SCB Monitors (the mobile-only file searchers) via in-app notification
+     * + email.
+     * POST /create-file-tracker/file-request
+     */
+    public function sendFileRequest(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'file_number'      => 'required|string|max:255',
+            'file_title'       => 'nullable|string|max:255',
+            'current_location' => 'nullable|string|max:255',
+            'resolved_status'  => 'nullable|string|max:50',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            $user = Auth::user();
+
+            $fr = FileSearchRequest::create([
+                'request_no'        => FileSearchRequest::generateRequestNo(),
+                'file_number'       => $request->file_number,
+                'file_title'        => $request->file_title,
+                'requester_user_id' => $user->id ?? null,
+                'status'            => FileSearchRequest::STATUS_PENDING,
+                'resolved_status'   => $request->input('resolved_status', FileLocationResolver::STATUS_IN_POOL),
+                'current_location'  => $request->current_location,
+            ]);
+
+            $requesterName = $user->name ?? 'A registry user';
+            $this->notifyScbMonitors($fr, $requesterName);
+
+            return response()->json([
+                'success' => true,
+                'data'    => ['request_no' => $fr->request_no, 'id' => $fr->id],
+                'message' => 'File Request sent to SCB Monitors.',
+            ], 201);
+        } catch (Exception $e) {
+            Log::error('sendFileRequest failed', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not send the File Request: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Notify every SCB Monitor (in-app + email) about a new File Request.
+     */
+    protected function notifyScbMonitors(FileSearchRequest $fr, string $requesterName): void
+    {
+        // SCB Monitors are users flagged with fr_permissions = 'SCB'
+        // (set via the Digital File Request Permissions section on the user form).
+        $monitors = User::where('fr_permissions', 'SCB')
+            ->where(function ($q) {
+                $q->whereNull('is_active')->orWhere('is_active', 1);
+            })
+            ->get();
+
+        foreach ($monitors as $monitor) {
+            try {
+                $this->notificationService->create(
+                    $monitor->id,
+                    'file_search_request',
+                    "File Request: {$fr->request_no}",
+                    "{$requesterName} requested a physical search for file {$fr->file_number}" .
+                        ($fr->current_location ? " (expected at {$fr->current_location})." : '.'),
+                    [
+                        'request_id'   => $fr->id,
+                        'request_no'   => $fr->request_no,
+                        'file_number'  => $fr->file_number,
+                        'location'     => $fr->current_location,
+                    ],
+                    ['module' => 'file_search_request', 'enabled_email' => true]
+                );
+
+                if (!empty($monitor->email)) {
+                    \Illuminate\Support\Facades\Mail::to($monitor->email)
+                        ->send(new FileSearchRequestIssued($fr, $requesterName));
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Failed to notify SCB Monitor of File Request', [
+                    'fr_id' => $fr->id, 'monitor_id' => $monitor->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
      * Get dashboard statistics for file trackers
      */
     public function dashboard()
@@ -2458,5 +2819,89 @@ HTML;
         }
 
         return view('create_file_tracker_page.file_request_sheet', compact('tracker', 'officerRank'));
+    }
+
+    /**
+     * Render a location slip directly from a file number for the outcomes that
+     * have no tracker (Archive Tracking Sheet, Missing File Confirmation, or
+     * Refer to Original Registry). In-Transit keeps using requestSheet().
+     * GET /create-file-tracker/slip?file_number=XXX&variant=missing
+     */
+    public function slipFromFileNumber(Request $request, FileLocationResolver $resolver)
+    {
+        $fileNumber = trim((string) $request->get('file_number', ''));
+        if ($fileNumber === '') {
+            abort(404, 'A file number is required.');
+        }
+
+        $result  = $resolver->resolve($fileNumber);
+        $variant = $request->get('variant', $result['slip_variant'] ?? 'tracking_sheet');
+
+        $headings = [
+            'tracking_sheet'        => 'KLAES FILE TRACKING SHEET',
+            'tracking_confirmation' => 'KLAES FILE TRACKING REQUEST SHEET',
+            'missing'               => 'KLAES MISSING FILE CONFIRMATION SLIP',
+            'refer_registry'        => 'KLAES — REFER TO ORIGINAL REGISTRY',
+        ];
+
+        $heading   = $headings[$variant] ?? $headings['tracking_sheet'];
+        $fileTitle = $result['indexing']->file_title ?? ($result['tracker']->file_title ?? '—');
+        $reason    = trim((string) $request->get('reason', ''));
+
+        return view('create_file_tracker_page.location_slip', [
+            'variant'     => $variant,
+            'heading'     => $heading,
+            'fileNumber'  => $fileNumber,
+            'fileTitle'   => $fileTitle,
+            'registry'    => $result['registry'] ?? '—',
+            'location'    => $result['current_location'] ?? '—',
+            'statusLabel' => $result['status'],
+            'nextAction'  => $result['next_action'],
+            'reason'      => $reason,
+        ]);
+    }
+
+    /**
+     * Check whether a file number is currently logged out.
+     * A file is "logged out" when every movement log entry either has log_out_date set
+     * or is not in 'active' status — meaning no office currently holds it.
+     * GET /create-file-tracker/check-logout-status?file_number=XXX
+     */
+    public function checkFileLogoutStatus(\Illuminate\Http\Request $request)
+    {
+        $fileNumber = trim((string) $request->get('file_number', ''));
+
+        if ($fileNumber === '') {
+            return response()->json(['is_logged_out' => false]);
+        }
+
+        $existingTrackers = FileTracker::where('file_number', $fileNumber)
+            ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(status,'')))) NOT IN ('COMPLETED', 'CANCELLED')")
+            ->get();
+
+        foreach ($existingTrackers as $existing) {
+            $log = $existing->movement_log ?? [];
+            if (empty($log)) {
+                continue;
+            }
+
+            $entries = collect($log);
+
+            // File is "checked in" only when an active entry has no log_out_date yet.
+            $currentlyCheckedIn = $entries->contains(
+                fn($e) => strtolower($e['status'] ?? '') === 'active' && empty($e['log_out_date'])
+            );
+
+            if (!$currentlyCheckedIn) {
+                $lastEntry = $entries->last();
+                return response()->json([
+                    'is_logged_out'  => true,
+                    'tracking_id'    => $existing->tracking_id,
+                    'current_office' => $existing->current_office_name ?? ($lastEntry['office_name'] ?? null),
+                ]);
+            }
+        }
+
+        return response()->json(['is_logged_out' => false]);
     }
 }

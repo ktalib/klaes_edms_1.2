@@ -22,6 +22,8 @@ class PhsTokenTransaction extends Model
         'reference_no',
         'notes',
         'approved_by',
+        'approved_at',
+        'expires_at',
         // Token topup
         'topup_bundle_count',
         'topup_unit_price',
@@ -48,6 +50,8 @@ class PhsTokenTransaction extends Model
         'payment_variance' => 'decimal:2',
         'payment_date' => 'date',
         'validated_at' => 'datetime',
+        'approved_at' => 'datetime',
+        'expires_at' => 'datetime',
         'topup_bundle_count' => 'integer',
         'topup_unit_price' => 'decimal:2',
         'payment_confirmed_at' => 'datetime',
