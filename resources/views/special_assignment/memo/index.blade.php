@@ -24,7 +24,7 @@
             </div>
             <div class="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
                 <div class="p-3 rounded-full bg-amber-50"><i data-lucide="clock" class="h-5 w-5 text-amber-500"></i></div>
-                <div><p class="text-xs text-gray-500">Awaiting Decision</p><p class="text-xl font-bold text-gray-800">{{ $stats['pending'] }}</p></div>
+                <div><p class="text-xs text-gray-500">Pending</p><p class="text-xl font-bold text-gray-800">{{ $stats['pending'] }}</p></div>
             </div>
             <div class="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
                 <div class="p-3 rounded-full bg-green-50"><i data-lucide="check-circle" class="h-5 w-5 text-green-600"></i></div>
@@ -48,8 +48,8 @@
                             <th class="px-3 py-2">File No</th>
                             <th class="px-3 py-2">Forwarded To</th>
                             <th class="px-3 py-2">Forwarded Date</th>
-                            <th class="px-3 py-2">Decision</th>
-                            <th class="px-3 py-2">Decided</th>
+                            <th class="px-3 py-2">Status</th>
+                            <th class="px-3 py-2">Date Approved</th>
                             <th class="px-3 py-2">Action</th>
                         </tr>
                     </thead>
@@ -80,11 +80,7 @@
                         @endforeach
                     </select>
                 </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Forward To <span class="text-red-500">*</span></label>
-                    <input type="text" name="forwarded_to" required placeholder="e.g. The Honourable Commissioner for Lands"
-                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
-                </div>
+                <input type="hidden" name="forwarded_to" value="Honourable Commissioner">
             </div>
             <div class="flex justify-end gap-3 pt-2">
                 <button type="button" class="modal-close px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>

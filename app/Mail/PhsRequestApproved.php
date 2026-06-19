@@ -28,11 +28,19 @@ class PhsRequestApproved extends Mailable
 
     public function content(): Content
     {
+        // Suggest a username up front so the organization knows their login
+        // identifier and the registration form can pre-fill it from the URL.
+        $suggestedUsername = \App\Models\Phs\PhsInstitution::suggestUsername($this->request->organization_name);
+
         return new Content(
             view: 'email.phs_request_approved',
             with: [
                 'request' => $this->request,
-                'registrationUrl' => route('phs.register.token', ['token' => $this->request->activation_token]),
+                'suggestedUsername' => $suggestedUsername,
+                'registrationUrl' => route('phs.register.token', [
+                    'token' => $this->request->activation_token,
+                    'username' => $suggestedUsername,
+                ]),
                 'expiresAt' => $this->request->activation_token_expires_at,
             ],
         );

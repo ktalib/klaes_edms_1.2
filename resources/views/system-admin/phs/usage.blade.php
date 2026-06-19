@@ -32,7 +32,7 @@
                     @php $max = max(1, (int) $topOrgs->max('searches')); $pct = round(((int) $org->searches / $max) * 100); @endphp
                     <div class="mb-3">
                         <div class="flex items-center justify-between text-sm">
-                            <span class="font-medium text-slate-700 truncate">{{ $org->name ?: 'Unknown' }}</span>
+                            <span class="font-medium text-slate-700 truncate">{{ \Illuminate\Support\Str::title($org->name) ?: 'Unknown' }}</span>
                             <span class="font-semibold text-slate-900">{{ number_format($org->searches) }}</span>
                         </div>
                         <div class="mt-1 h-1.5 rounded-full bg-slate-100"><div class="h-full rounded-full bg-blue-600" style="width: {{ $pct }}%"></div></div>
@@ -48,7 +48,7 @@
                 <tbody class="divide-y divide-slate-100">
                     @forelse($recentSearches as $row)
                         <tr>
-                            <td class="px-4 py-3 font-bold">{{ $row->institution_name }}</td>
+                            <td class="px-4 py-3 font-bold">{{ \Illuminate\Support\Str::title($row->institution_name) }}</td>
                             <td class="px-4 py-3">{{ $row->query }}</td>
                             <td class="px-4 py-3">{{ $row->file_number }}</td>
                             <td class="px-4 py-3">{{ $row->result_count }}</td>

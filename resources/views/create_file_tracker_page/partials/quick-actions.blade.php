@@ -324,7 +324,7 @@
         finally { btn.disabled = false; }
     }
 
-    async function sendFR(d, frBtn) {
+    async function sendFR(d, frBtn, force = false) {
         frBtn.disabled = true;
         frBtn.innerHTML = '<i data-lucide="loader" class="h-4 w-4 animate-spin"></i> Sending…';
         if (window.lucide) lucide.createIcons();
@@ -332,12 +332,23 @@
             const res = await fetch(FR_URL, {
                 method:'POST',
                 headers:{ 'Content-Type':'application/json', 'X-CSRF-TOKEN':CSRF, 'Accept':'application/json' },
-                body: JSON.stringify({ file_number:d.file_number, file_title:d.file_title, current_location:d.current_location, resolved_status:d.status }),
+                body: JSON.stringify({ file_number:d.file_number, file_title:d.file_title, current_location:d.current_location, resolved_status:d.status, force: force ? 1 : 0 }),
             });
             const json = await res.json();
             if (json.success) {
                 frBtn.outerHTML = `<span class="inline-flex items-center gap-2 rounded-lg bg-green-100 px-4 py-2 text-sm font-semibold text-green-800">
                     <i data-lucide="check" class="h-4 w-4"></i> File Request ${esc(json.data?.request_no || '')} sent to SCB Monitors</span>`;
+            } else if (json.duplicate) {
+                const ex = json.existing || {};
+                frBtn.disabled = false; frBtn.innerHTML = '<i data-lucide="send" class="h-4 w-4"></i> Send File Search Request to SCB Monitor';
+                const ok = confirm(
+                    'This file has already been requested.\n\n' +
+                    'Requested by: ' + (ex.requester_name || '—') +
+                    (ex.request_no ? '\nRequest: ' + ex.request_no : '') +
+                    '\nStatus: ' + (ex.status || '') + (ex.requested_at ? ' (' + ex.requested_at + ')' : '') +
+                    '\n\nIt has already been sent to SCB and is awaiting a response.\n\nDo you want to request it anyway?'
+                );
+                if (ok) { sendFR(d, frBtn, true); return; }
             } else {
                 frBtn.disabled = false; frBtn.innerHTML = '<i data-lucide="send" class="h-4 w-4"></i> Retry Send';
                 alert(json.message || 'Could not send the request.');

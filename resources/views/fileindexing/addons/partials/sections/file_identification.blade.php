@@ -167,6 +167,49 @@
             <p id="kangis-placeholder-preview" class="mt-1 text-xs text-gray-400 hidden">
                 Value: <strong id="kangis-placeholder-preview-value" class="font-mono text-gray-600"></strong>
             </p>
+
+            {{-- Has New KANGIS FileNo — distinct from the legacy KANGIS FileNo above.
+                 A New KANGIS FileNo is the KN-series number (prefix fixed to "KN").
+                 When ticked, the KN-series number below is required. Rendered only in
+                 normal mode (new_kn mode has its own dedicated KN section below). --}}
+            @unless($isNewKnMode ?? false)
+            <div class="mt-4 pt-4 border-t border-gray-100">
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="has-new-kangis-fileno" name="has_new_kangis_fileno" value="1"
+                        class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                    <label for="has-new-kangis-fileno" class="text-sm font-medium text-gray-700 cursor-pointer">
+                        Has New KANGIS FileNo <span class="text-gray-400 font-normal">(KN Series)</span>
+                    </label>
+                </div>
+
+                <div id="has-new-kangis-fields" class="hidden mt-3">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        New KANGIS File No <span class="text-red-500">*</span>
+                    </label>
+                    <div class="flex gap-2">
+                        <input type="text" id="new_kangis_file_no_display" readonly
+                            class="flex-grow block w-full px-4 py-3 border border-purple-400 rounded-md shadow-sm placeholder-gray-400 focus:outline-none sm:text-sm font-mono font-bold text-purple-900 bg-purple-50 uppercase cursor-pointer"
+                            placeholder="Click Select to choose a New KANGIS file">
+                        <button type="button" id="new_kangis_file_no_select_btn"
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+                            style="white-space: nowrap;">
+                            Select
+                        </button>
+                        <button type="button" id="new_kangis_file_no_clear_btn"
+                            class="inline-flex items-center px-4 py-2 border border-gray-200 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300"
+                            style="white-space: nowrap;">
+                            Clear
+                        </button>
+                    </div>
+                    <input type="hidden" name="new_kangis_file_no" id="new_kangis_file_no_hidden" value="">
+                    <p id="has-new-kangis-error" class="hidden mt-1.5 text-xs text-red-600 flex items-center gap-1">
+                        <i data-lucide="alert-circle" class="h-3.5 w-3.5 shrink-0"></i>
+                        <span>Please select the New KANGIS File No.</span>
+                    </p>
+                    <p id="kn-fileno-status" class="mt-1 text-xs text-gray-500"></p>
+                </div>
+            </div>
+            @endunless
         </div>
 
         <!-- New KANGIS File Section — visible ONLY when arriving from Track New File (?url=new_kn) -->

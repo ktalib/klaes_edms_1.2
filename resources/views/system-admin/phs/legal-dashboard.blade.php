@@ -57,9 +57,9 @@
                             <tbody>
                                 @foreach ($docReview as $req)
                                     <tr class="border-b hover:bg-gray-50">
-                                        <td class="px-6 py-4 text-sm font-semibold">{{ $req->organization_name }}</td>
+                                        <td class="px-6 py-4 text-sm font-semibold">{{ \Illuminate\Support\Str::title($req->organization_name) }}</td>
                                         <td class="px-6 py-4 text-sm capitalize">{{ str_replace('_', ' ', $req->organization_type) }}</td>
-                                        <td class="px-6 py-4 text-sm">{{ $req->contact_name }}<br><span class="text-xs text-gray-500">{{ $req->contact_email }}</span></td>
+                                        <td class="px-6 py-4 text-sm">{{ \Illuminate\Support\Str::title($req->contact_name) }}<br><span class="text-xs text-gray-500">{{ $req->contact_email }}</span></td>
                                         <td class="px-6 py-4 text-sm">{{ $req->created_at->format('M j, Y') }}</td>
                                         <td class="px-6 py-4 text-sm">
                                             <a href="{{ route('system-admin.phs.legal.show', $req->id) }}"
@@ -93,7 +93,7 @@
                             <tbody>
                                 @foreach ($slaReview as $req)
                                     <tr class="border-b hover:bg-gray-50">
-                                        <td class="px-6 py-4 text-sm font-semibold">{{ $req->organization_name }}</td>
+                                        <td class="px-6 py-4 text-sm font-semibold">{{ \Illuminate\Support\Str::title($req->organization_name) }}</td>
                                         <td class="px-6 py-4 text-sm">{{ $req->initial_token_package ?? '—' }}</td>
                                         <td class="px-6 py-4 text-sm">{{ $req->lsa_signed_at?->format('M j, Y') ?? '—' }}</td>
                                         <td class="px-6 py-4 text-sm">

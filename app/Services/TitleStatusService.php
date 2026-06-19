@@ -24,6 +24,13 @@ class TitleStatusService
         TitleStatusApplication::TYPE_LITIGATION    => 'litigation',
         TitleStatusApplication::TYPE_AMENDMENT     => 'amendment',
         TitleStatusApplication::TYPE_SURRENDER     => 'surrendered',
+        TitleStatusApplication::TYPE_REGRANT       => 'regranted',
+        TitleStatusApplication::TYPE_SUBDIVISION   => 'subdivision',
+        TitleStatusApplication::TYPE_MERGER        => 'merger',
+        TitleStatusApplication::TYPE_PURPOSE       => 'change_of_purpose',
+        TitleStatusApplication::TYPE_EXTENSION     => 'extension',
+        TitleStatusApplication::TYPE_CHANGE_NAME   => 'change_of_name',
+        TitleStatusApplication::TYPE_SEPARATION    => 'separation',
     ];
 
     private const TYPE_VERB = [
@@ -33,6 +40,13 @@ class TitleStatusService
         TitleStatusApplication::TYPE_LITIGATION    => 'Litigation',
         TitleStatusApplication::TYPE_AMENDMENT     => 'Amendment/Reconsideration',
         TitleStatusApplication::TYPE_SURRENDER     => 'Surrender',
+        TitleStatusApplication::TYPE_REGRANT       => 'Re-grant',
+        TitleStatusApplication::TYPE_SUBDIVISION   => 'Subdivision',
+        TitleStatusApplication::TYPE_MERGER        => 'Merger',
+        TitleStatusApplication::TYPE_PURPOSE       => 'Change of Purpose',
+        TitleStatusApplication::TYPE_EXTENSION     => 'Extension',
+        TitleStatusApplication::TYPE_CHANGE_NAME   => 'Change of Name',
+        TitleStatusApplication::TYPE_SEPARATION    => 'Separation',
     ];
 
     private const SOURCE_TABLES = [
@@ -85,8 +99,14 @@ class TitleStatusService
 
     /**
      * Flag the file across all source tables and copy to archive tables.
+     *
+     * @param bool $falseDecommissioning When true the file is NOT actually decommissioned
+     *        (e.g. a Title Status update raised from File Indexing). The title-status flags
+     *        are still recorded and the row is archived to decommissioned_files with
+     *        false_decommissioning = 1, but the real "is_decommissioned" side effects
+     *        (flagging the source file + deprecated_records) are skipped.
      */
-    public function flagAndDecommission(TitleStatusApplication $record): void
+    public function flagAndDecommission(TitleStatusApplication $record, bool $falseDecommissioning = false): void
     {
         $fileNo   = $record->file_no;
         $slug     = $this->typeSlug($record->title_type);
@@ -107,8 +127,8 @@ class TitleStatusService
 
                 $updates = ['title_status' => 1, 'title_status_type' => $slug, 'title_status_remark' => $remark];
 
-                // Also set is_decommissioned if column exists
-                if (DB::connection('sqlsrv')->getSchemaBuilder()->hasColumn($table, 'is_decommissioned')) {
+                // Only mark the source file as decommissioned for a REAL decommissioning.
+                if (!$falseDecommissioning && DB::connection('sqlsrv')->getSchemaBuilder()->hasColumn($table, 'is_decommissioned')) {
                     $updates['is_decommissioned'] = 1;
                 }
 
@@ -123,27 +143,39 @@ class TitleStatusService
             $fileRecord    = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fileNo)->first();
             $indexRecord   = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $fileNo)->first();
 
-            DB::connection('sqlsrv')->table('decommissioned_files')->insertOrIgnore([
-                'file_number_id'       => (int) ($fileRecord->id ?? ($indexRecord->id ?? 0)),
-                'file_no'              => $fileNo,
-                'mls_file_no'          => $fileNo,
-                'kangis_file_no'       => $fileRecord->kangisFileNo ?? ($indexRecord->kangis_file_no ?? null),
-                'new_kangis_file_no'   => $fileRecord->NewKANGISFileNo ?? ($indexRecord->new_kangis_file_no ?? null),
-                'file_name'            => $fileRecord->FileName ?? ($indexRecord->file_title ?? $record->file_title ?? 'N/A'),
-                'commissioning_date'   => $fileRecord->commissioning_date ?? null,
-                'decommissioning_date' => now(),
-                'decommissioning_reason' => "Title Status: {$slug} — " . ($remark ?? ''),
-                'decommissioned_by'    => $userName,
-                'created_at'           => now(),
-                'updated_at'           => now(),
-            ]);
+            // NOTE: do not use insertOrIgnore() here — SQL Server does not support it
+            // (Laravel throws "This database engine does not support inserting while
+            // ignoring errors."). Guard against duplicates manually instead.
+            $alreadyArchived = DB::connection('sqlsrv')->table('decommissioned_files')
+                ->where('file_no', $fileNo)
+                ->where('false_decommissioning', $falseDecommissioning ? 1 : 0)
+                ->exists();
+
+            if (!$alreadyArchived) {
+                DB::connection('sqlsrv')->table('decommissioned_files')->insert([
+                    'file_number_id'       => (int) ($fileRecord->id ?? ($indexRecord->id ?? 0)),
+                    'file_no'              => $fileNo,
+                    'mls_file_no'          => $fileNo,
+                    'kangis_file_no'       => $fileRecord->kangisFileNo ?? ($indexRecord->kangis_file_no ?? null),
+                    'new_kangis_file_no'   => $fileRecord->NewKANGISFileNo ?? ($indexRecord->new_kangis_file_no ?? null),
+                    'file_name'            => $fileRecord->FileName ?? ($indexRecord->file_title ?? $record->file_title ?? 'N/A'),
+                    'commissioning_date'   => $fileRecord->commissioning_date ?? null,
+                    'decommissioning_date' => now(),
+                    'decommissioning_reason' => "Title Status: {$slug} — " . ($remark ?? ''),
+                    'decommissioned_by'    => $userName,
+                    'false_decommissioning' => $falseDecommissioning ? 1 : 0,
+                    'created_at'           => now(),
+                    'updated_at'           => now(),
+                ]);
+            }
         } catch (\Exception $e) {
             Log::warning("TitleStatus: decommissioned_files insert failed for {$fileNo}: " . $e->getMessage());
         }
 
-        // Archive to deprecated_records
+        // Archive to deprecated_records — only for a REAL decommissioning. A false
+        // decommissioning (Title Status from File Indexing) does not deprecate the record.
         try {
-            if ($indexRecord ?? false) {
+            if (!$falseDecommissioning && ($indexRecord ?? false)) {
                 DB::connection('sqlsrv')->table('deprecated_records')->insert([
                     'file_indexing_id'   => (int) ($indexRecord->id ?? 0),
                     'file_number'        => $indexRecord->file_number ?? $fileNo,

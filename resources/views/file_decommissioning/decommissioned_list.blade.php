@@ -106,8 +106,24 @@
                         <p class="text-gray-500 max-w-md mx-auto">There are no decommissioned files matching your search criteria.</p>
                     </div>
 
-                    <!-- Files Table -->
-                    <div id="files-container">
+                    <!-- Tab Navigation -->
+                    <div class="border-b border-gray-200 mb-6">
+                        <nav class="flex space-x-6" aria-label="Tabs">
+                            <button type="button" data-decom-tab="real"
+                                class="decom-tab whitespace-nowrap border-b-2 border-blue-600 py-3 px-1 text-sm font-semibold text-blue-600 flex items-center gap-2">
+                                <i data-lucide="archive" class="w-4 h-4"></i>
+                                Decommissioned Files
+                            </button>
+                            <button type="button" data-decom-tab="false"
+                                class="decom-tab whitespace-nowrap border-b-2 border-transparent py-3 px-1 text-sm font-semibold text-gray-500 hover:text-gray-700 hover:border-gray-300 flex items-center gap-2">
+                                <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+                                False Decommissioning Records
+                            </button>
+                        </nav>
+                    </div>
+
+                    <!-- Tab: Decommissioned Files -->
+                    <div id="files-container" class="decom-pane" data-decom-pane="real">
                         <div class="mb-4">
                             <h3 class="text-lg font-semibold text-gray-900 mb-2">Decommissioned Files List</h3>
                             <p class="text-sm text-gray-600">Click the view button next to any file to see detailed information</p>
@@ -123,6 +139,32 @@
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Commissioning Date</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Decommissioning Date</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Decommissioned By</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <!-- Data will be loaded via DataTables -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Tab: False Decommissioning -->
+                    <div id="false-files-container" class="decom-pane hidden" data-decom-pane="false">
+                        <div class="mb-4">
+                            <p class="text-sm text-gray-600">Title Status updates raised from File Indexing.  
+                        </div>
+
+                        <div class="overflow-x-auto overflow-y-auto max-h-96 shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                            <table class="min-w-full divide-y divide-gray-300" id="falseDecommissionedFilesTable">
+                                <thead class="bg-amber-50 sticky top-0">
+                                    <tr>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MLS File No</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kangis File No</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File Name</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">By</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
                                     </tr>
@@ -287,9 +329,60 @@
                 }
             });
 
-            // Custom search functionality
+            // Initialize DataTable for FALSE decommissioned files (Title Status from File Indexing)
+            const falseDecommissionedFilesTable = $('#falseDecommissionedFilesTable').DataTable({
+                processing: true,
+                serverSide: true,
+                ajax: {
+                    url: '{{ route("file-decommissioning.false-decommissioned-files-data") }}',
+                    type: 'GET'
+                },
+                columns: [
+                    { data: 'mls_file_no', name: 'mls_file_no' },
+                    { data: 'kangis_file_no', name: 'kangis_file_no' },
+                    { data: 'file_name', name: 'file_name' },
+                    { data: 'decommissioning_date', name: 'decommissioning_date' },
+                    { data: 'decommissioned_by', name: 'decommissioned_by' },
+                    { data: 'decommissioning_reason', name: 'decommissioning_reason' },
+                    { data: 'action', name: 'action', orderable: false, searchable: false }
+                ],
+                order: [[3, 'desc']],
+                pageLength: 10,
+                responsive: true,
+                drawCallback: function() {
+                    lucide.createIcons();
+                }
+            });
+
+            // Custom search functionality (drives both tables)
             $('#searchDecommissioned').on('keyup', function() {
                 decommissionedFilesTable.search(this.value).draw();
+                falseDecommissionedFilesTable.search(this.value).draw();
+            });
+
+            // Tab switching between Decommissioned and False Decommissioning tables
+            $('.decom-tab').on('click', function () {
+                const tab = $(this).data('decom-tab');
+
+                // Toggle active styling
+                $('.decom-tab')
+                    .removeClass('border-blue-600 text-blue-600')
+                    .addClass('border-transparent text-gray-500');
+                $(this)
+                    .removeClass('border-transparent text-gray-500')
+                    .addClass('border-blue-600 text-blue-600');
+
+                // Toggle panes
+                $('.decom-pane').addClass('hidden');
+                $(`.decom-pane[data-decom-pane="${tab}"]`).removeClass('hidden');
+
+                // DataTables initialised while hidden need their columns recalculated
+                if (tab === 'false') {
+                    falseDecommissionedFilesTable.columns.adjust();
+                } else {
+                    decommissionedFilesTable.columns.adjust();
+                }
+                lucide.createIcons();
             });
 
             // Load additional statistics
@@ -370,6 +463,44 @@
                         text: 'Error loading file details',
                         confirmButtonColor: '#ef4444'
                     });
+                }
+            });
+        }
+
+        // Global function to view FALSE decommissioned file details (Title Status from File Indexing)
+        function viewFalseDecommissionedFile(fileId) {
+            Swal.fire({
+                title: 'Loading...',
+                text: 'Fetching record details...',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); }
+            });
+
+            $.ajax({
+                url: `/file-decommissioning/false-decommissioned-details/${fileId}`,
+                type: 'GET',
+                success: function(response) {
+                    Swal.close();
+                    if (response.success) {
+                        const file = response.data;
+                        $('#detailMlsfNo').text(file.mls_file_no || 'N/A');
+                        $('#detailKangisFileNo').text(file.kangis_file_no || 'N/A');
+                        $('#detailNewKangisFileNo').text(file.new_kangis_file_no || 'N/A');
+                        $('#detailFileName').text(file.file_name || 'N/A');
+                        $('#detailFileNumberId').text(file.file_number_id || 'N/A');
+                        $('#detailCommissioningDate').text(file.commissioning_date || 'N/A');
+                        $('#detailDecommissioningDate').text(file.decommissioning_date || 'N/A');
+                        $('#detailDecommissionedBy').text(file.decommissioned_by || 'N/A');
+                        $('#detailCreatedAt').text(file.created_at || 'N/A');
+                        $('#detailDecommissioningReason').text(file.decommissioning_reason || 'N/A');
+                        showDetailsModal();
+                    } else {
+                        Swal.fire({ icon: 'error', title: 'Error!', text: 'Error loading record details: ' + response.message, confirmButtonColor: '#ef4444' });
+                    }
+                },
+                error: function() {
+                    Swal.close();
+                    Swal.fire({ icon: 'error', title: 'Error!', text: 'Error loading record details', confirmButtonColor: '#ef4444' });
                 }
             });
         }

@@ -10,6 +10,7 @@ use App\Mail\PhsRequestApproved;
 use App\Mail\PhsRequestRejected;
 use App\Mail\PhsTopupConfirmed;
 use Illuminate\Support\Str;
+use App\Models\Phs\PhsFeedback;
 use App\Models\Phs\PhsInstitution;
 use App\Models\Phs\PhsOnboardingRequest;
 use App\Models\Phs\PhsSearchLog;
@@ -443,6 +444,57 @@ class PhsAdminController extends Controller
             ->all();
 
         return view('system-admin.phs.onboarding-requests', compact('PageTitle', 'requests', 'statusFilter', 'statsByStatus'));
+    }
+
+    /* ===================== Feedback / Complaints ===================== */
+
+    /**
+     * List member-submitted complaints about incomplete or wrong transactions.
+     */
+    public function feedback(Request $request)
+    {
+        $PageTitle = 'PHS — Feedback & Complaints';
+        $statusFilter = $request->query('status');
+
+        $query = PhsFeedback::with(['institution', 'member'])->orderByDesc('id');
+        if ($statusFilter) {
+            $query->where('status', $statusFilter);
+        }
+        $items = $query->get();
+
+        $statsByStatus = collect(['open', 'in_review', 'resolved', 'closed'])
+            ->mapWithKeys(fn ($s) => [$s => PhsFeedback::where('status', $s)->count()])
+            ->all();
+
+        return view('system-admin.phs.feedback', compact('PageTitle', 'items', 'statusFilter', 'statsByStatus'));
+    }
+
+    /**
+     * Update a complaint's status and optionally record a response to the member.
+     */
+    public function updateFeedback(Request $request, $id)
+    {
+        $data = $request->validate([
+            'status' => ['required', 'in:open,in_review,resolved,closed'],
+            'admin_response' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $feedback = PhsFeedback::findOrFail($id);
+
+        $feedback->status = $data['status'];
+        $feedback->admin_response = $data['admin_response'] ?? $feedback->admin_response;
+
+        if (in_array($data['status'], ['resolved', 'closed'], true)) {
+            $feedback->resolved_by = Auth::id();
+            $feedback->resolved_at = now();
+        } else {
+            $feedback->resolved_by = null;
+            $feedback->resolved_at = null;
+        }
+
+        $feedback->save();
+
+        return back()->with('success', 'Feedback updated.');
     }
 
     /* ===================== Legal Department ===================== */

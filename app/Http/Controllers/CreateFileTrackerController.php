@@ -244,6 +244,16 @@ class CreateFileTrackerController extends Controller
                 $workflowStep = 2;
             }
 
+            // Classification-only backfill: a KN-prefixed legacy KANGIS file (e.g. "KNML 6794")
+            // always belongs to the kangis module so it stays visible in the KANGIS view,
+            // even when this create flow did not pass module=kangis. This intentionally does
+            // NOT touch $resolvedModule above, so it never forces the KANGIS approval workflow
+            // for files arriving from non-KANGIS entry points.
+            $storedModule = $resolvedModule;
+            if ($storedModule === null && $this->isLegacyKangisFileNumber($request->file_number)) {
+                $storedModule = 'kangis';
+            }
+
             // Create file tracker
             $tracker = FileTracker::create([
                 'tracking_id' => $trackingId,
@@ -268,7 +278,7 @@ class CreateFileTrackerController extends Controller
                 'receiving_officer_name' => $request->input('receiving_officer_name') ?: $receivingOfficeName,
                 'assignment_status' => $assignmentStatus,
                 'assignment_accepted_at' => $isReceivingOfficerTable ? now() : null,
-                'module' => $resolvedModule,
+                'module' => $storedModule,
                 'workflow_type' => $workflowType,
                 'workflow_step' => $workflowStep,
                 'workflow_config' => $workflowConfig,
@@ -341,6 +351,20 @@ class CreateFileTrackerController extends Controller
             }
 
             DB::commit();
+
+            // Logging the file resolves any open "Found" SCB request for it — mark them
+            // acted so they drop out of the SCB Feedback queue. This covers logging via
+            // the Quick Search result card, which doesn't hit the front-desk-acted endpoint.
+            $loggedFileNumber = trim((string) $tracker->file_number);
+            if ($loggedFileNumber !== '') {
+                FileSearchRequest::where('status', FileSearchRequest::STATUS_FOUND)
+                    ->whereNull('front_desk_acted_at')
+                    ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [strtoupper($loggedFileNumber)])
+                    ->update([
+                        'front_desk_acted_at' => now(),
+                        'front_desk_acted_by' => Auth::id(),
+                    ]);
+            }
 
             // ── Digital Request module: auto-create approval record + notify ──
             if ($resolvedModule === 'digital_request') {
@@ -546,6 +570,10 @@ class CreateFileTrackerController extends Controller
                           ->where('status', '!=', FileTracker::STATUS_COMPLETED);
                 } elseif ($status === 'completed') {
                     $query->where('status', FileTracker::STATUS_COMPLETED);
+                } elseif ($status === 'not-completed') {
+                    // Active tab on the File Log Table — everything except files that
+                    // have been logged back in (COMPLETED).
+                    $query->where('status', '!=', FileTracker::STATUS_COMPLETED);
                 } elseif ($status !== 'all') {
                     $query->where('status', $status);
                 }
@@ -575,6 +603,7 @@ class CreateFileTrackerController extends Controller
                 'others' => (clone $statsBase)->where('receiving_officer_id', '!=', $userId)
                                 ->where('status', '!=', FileTracker::STATUS_COMPLETED)->count(),
                 'completed' => (clone $statsBase)->where('status', FileTracker::STATUS_COMPLETED)->count(),
+                'active' => (clone $statsBase)->where('status', '!=', FileTracker::STATUS_COMPLETED)->count(),
             ];
 
             // Extra new_kangis dashboard metrics:
@@ -1105,6 +1134,22 @@ HTML;
         return $normalized !== '' && (bool) preg_match('/^KN\d+$/', $normalized);
     }
 
+    /**
+     * Legacy KANGIS file numbers are KN-prefixed but are NOT the pure "KN + digits"
+     * New KANGIS pattern (e.g. "KNML 6794"). Such files belong to the kangis module
+     * even when the creating flow forgot to pass module=kangis, so we use this to
+     * backfill the stored module and keep them visible in the KANGIS view.
+     */
+    protected function isLegacyKangisFileNumber(?string $value): bool
+    {
+        $normalized = strtoupper(trim((string) $value));
+
+        return $normalized !== ''
+            && str_starts_with($normalized, 'KN')
+            && strlen($normalized) > 2
+            && !$this->isValidNewKangisFileNumber($normalized);
+    }
+
     protected function sendNewKangisTrackerSms(FileTracker $tracker, ?FileIndexing $linkedIndexing, ?string $officeName): array
     {
         $phone = $linkedIndexing?->phone;
@@ -1260,7 +1305,42 @@ HTML;
         $PageTitle = 'Quick Search & File Location';
         $PageDescription = 'Instantly locate a file and its current status.';
 
-        return view('create_file_tracker_page.quick_search', compact('PageTitle', 'PageDescription'));
+        // Cascade data for the Requester section (mirrors the Create File Tracker form):
+        // Requester Office (Departments) → Requester Office → Requester Officer.
+        $receivingOfficers = DB::connection('sqlsrv')
+            ->table('users')
+            ->where('is_active', 1)
+            ->where('staff_type_category', 'MLPP')
+            ->select('id', 'first_name', 'last_name', 'department_id', 'rank')
+            ->orderBy('first_name')
+            ->get();
+
+        $offices = DB::connection('sqlsrv')
+            ->table('offices')
+            ->where('is_active', 1)
+            ->select('id', 'office_code', 'office_name', 'department')
+            ->orderBy('office_name')
+            ->get();
+
+        $departments = DB::connection('sqlsrv')
+            ->table('offices')
+            ->where('is_active', 1)
+            ->whereNotNull('department')
+            ->select('department')
+            ->distinct()
+            ->orderBy('department')
+            ->pluck('department');
+
+        // Map department NAME → id (officers are linked to departments.id) so the
+        // officer dropdown can be filtered by the chosen department.
+        $departmentIds = DB::connection('sqlsrv')
+            ->table('departments')
+            ->select('id', 'name')
+            ->get();
+
+        return view('create_file_tracker_page.quick_search', compact(
+            'PageTitle', 'PageDescription', 'receivingOfficers', 'offices', 'departments', 'departmentIds'
+        ));
     }
 
     /**
@@ -1282,9 +1362,22 @@ HTML;
         $result = $resolver->resolve($fileNumber);
         $resolver->persist($result);
 
+        $data = $this->presentLocationResult($result);
+
+        // Surface any existing active request for this file so the Quick Search card can
+        // warn about a duplicate the moment the file is selected — rather than waiting for
+        // the user to fill the requester form and click Send to discover it.
+        $existing = FileSearchRequest::activeForFile($fileNumber)
+            ->with('requester:id,first_name,last_name')
+            ->orderByDesc('id')
+            ->first();
+        if ($existing) {
+            $data['existing_request'] = $this->frDuplicatePayload($existing);
+        }
+
         return response()->json([
             'success' => true,
-            'data'    => $this->presentLocationResult($result),
+            'data'    => $data,
             'message' => 'File location resolved.',
         ]);
     }
@@ -1350,9 +1443,22 @@ HTML;
      */
     public function scbFeedback()
     {
-        $rows = FileSearchRequest::where('requester_user_id', Auth::id())
-            ->whereIn('status', [FileSearchRequest::STATUS_FOUND, FileSearchRequest::STATUS_NOT_FOUND])
+        // Full SCB Feedback queue — every responded request awaiting front-desk action
+        // (not scoped to the current user, so the shared front desk sees them all).
+        $rows = FileSearchRequest::whereIn('status', [FileSearchRequest::STATUS_FOUND, FileSearchRequest::STATUS_NOT_FOUND])
             ->whereNull('front_desk_acted_at')
+            // A "Found" request is done once the file is logged in response to it: i.e. a
+            // tracker for the same file was created at/after the request was responded to.
+            // (NOT_FOUND requests lead to a refer slip, not logging, so they stay.)
+            ->where(function ($q) {
+                $q->where('status', '!=', FileSearchRequest::STATUS_FOUND)
+                    ->orWhereNotExists(function ($sub) {
+                        $sub->select(DB::raw(1))
+                            ->from('file_tracker')
+                            ->whereRaw('UPPER(LTRIM(RTRIM(file_tracker.file_number))) = UPPER(LTRIM(RTRIM(file_search_requests.file_number)))')
+                            ->whereColumn('file_tracker.created_at', '>=', 'file_search_requests.responded_at');
+                    });
+            })
             ->orderByDesc('responded_at')
             ->limit(50)
             ->get();
@@ -1384,8 +1490,14 @@ HTML;
                     'is_dfr'           => $isDfr,
                     'is_blind'         => $isBlind,
                     'note'             => $r->feedback_note,
-                    'requested_at'     => optional($r->created_at)->format('Y-m-d H:i'),
-                    'responded_at'     => optional($r->responded_at)->format('Y-m-d H:i'),
+                    'receiving_officer'=> $r->receiving_officer,
+                    'requester_office' => $r->requester_office,
+                    'requester_department' => $r->requester_department,
+                    'requested_at'     => optional($r->created_at)->format('Y-m-d g:i A'),
+                    'responded_at'     => optional($r->responded_at)->format('Y-m-d g:i A'),
+                    // Raw timestamps (epoch ms) so the client can sort reliably.
+                    'responded_ts'     => optional($r->responded_at)->valueOf(),
+                    'requested_ts'     => optional($r->created_at)->valueOf(),
                 ];
             }),
         ]);
@@ -1398,7 +1510,8 @@ HTML;
      */
     public function markFrontDeskActed($id)
     {
-        $fr = FileSearchRequest::where('requester_user_id', Auth::id())->find($id);
+        // Shared front-desk queue: any front-desk user may act on a responded request.
+        $fr = FileSearchRequest::find($id);
         if (! $fr) {
             return response()->json(['success' => false, 'message' => 'File request not found.'], 404);
         }
@@ -1412,6 +1525,26 @@ HTML;
     }
 
     /**
+     * Delete a File Search Request. Super Admins only.
+     * DELETE /create-file-tracker/quick-search/file-request/{id}
+     */
+    public function deleteFileRequest($id)
+    {
+        if (! Auth::user()->isSuperAdmin()) {
+            return response()->json(['success' => false, 'message' => 'Not authorized — Super Admins only.'], 403);
+        }
+
+        $fr = FileSearchRequest::find($id);
+        if (! $fr) {
+            return response()->json(['success' => false, 'message' => 'File request not found.'], 404);
+        }
+
+        $fr->delete();
+
+        return response()->json(['success' => true, 'message' => 'File request deleted.']);
+    }
+
+    /**
      * File Request Log: every File Search Request the current Front Desk user has
      * raised — including those still awaiting an SCB response. Powers the web
      * Quick Search "File Request Log" panel. Optional ?status= filter.
@@ -1419,14 +1552,37 @@ HTML;
      */
     public function fileRequestLog(Request $request)
     {
-        $userId       = Auth::id();
-        $statusFilter = $request->get('status'); // PENDING | FOUND | NOT_FOUND
+        $statusFilter = $request->get('status'); // PENDING | FOUND | NOT_FOUND | MISSING | BLIND
 
-        $query = FileSearchRequest::where('requester_user_id', $userId)
-            ->with('responder:id,first_name,last_name');
+        // "Missing" = a NOT_FOUND on a blind / not-indexed file (the file has no
+        // archive record, so it is genuinely unaccounted for). "Not Found" = a
+        // NOT_FOUND on an indexed file (SCB searched a known location and it wasn't there).
+        $blindStatuses = [
+            FileLocationResolver::STATUS_PENDING_FILE,
+            FileLocationResolver::STATUS_BLIND_REQUEST_SENT,
+        ];
+
+        // Indexed (non-blind) resolved_status filter — NULL counts as indexed.
+        $indexedScope = function ($q) use ($blindStatuses) {
+            $q->whereNotIn('resolved_status', $blindStatuses)
+              ->orWhereNull('resolved_status');
+        };
+
+        // Full File Search History — everyone's requests (no per-user scoping).
+        $query = FileSearchRequest::query()
+            ->with(['responder:id,first_name,last_name', 'requester:id,first_name,last_name']);
 
         if ($statusFilter === 'PENDING') {
             $query->whereIn('status', [FileSearchRequest::STATUS_PENDING, FileSearchRequest::STATUS_SEARCHING]);
+        } elseif ($statusFilter === 'MISSING') {
+            $query->where('status', FileSearchRequest::STATUS_NOT_FOUND)
+                  ->whereIn('resolved_status', $blindStatuses);
+        } elseif ($statusFilter === 'NOT_FOUND') {
+            $query->where('status', FileSearchRequest::STATUS_NOT_FOUND)->where($indexedScope);
+        } elseif ($statusFilter === 'BLIND') {
+            $query->where(function ($q) {
+                $q->whereNull('source')->orWhere('source', '!=', FileSearchRequest::SOURCE_DFR);
+            });
         } elseif ($statusFilter) {
             $query->where('status', $statusFilter);
         }
@@ -1439,22 +1595,49 @@ HTML;
             default                                    => 'Archive',
         };
 
-        // Counts for the filter chips (across all of this user's requests).
-        $counts       = FileSearchRequest::where('requester_user_id', $userId)
+        // Counts for the filter chips (across all requests).
+        $counts       = FileSearchRequest::query()
             ->selectRaw('status, COUNT(*) as c')->groupBy('status')->pluck('c', 'status');
         $pendingCount = (int) ($counts[FileSearchRequest::STATUS_PENDING] ?? 0)
                       + (int) ($counts[FileSearchRequest::STATUS_SEARCHING] ?? 0);
 
+        $missingCount = (int) FileSearchRequest::where('status', FileSearchRequest::STATUS_NOT_FOUND)
+            ->whereIn('resolved_status', $blindStatuses)->count();
+        $notFoundCount = (int) FileSearchRequest::where('status', FileSearchRequest::STATUS_NOT_FOUND)
+            ->where($indexedScope)->count();
+        $blindOpenCount = (int) FileSearchRequest::where(function ($q) {
+            $q->whereNull('source')->orWhere('source', '!=', FileSearchRequest::SOURCE_DFR);
+        })->count();
+
+        // ── Reporting summary ──
+        $report = [
+            'date'            => now()->format('M j, Y'),
+            // a. Requests submitted today
+            'submitted_today' => (int) FileSearchRequest::whereDate('created_at', now()->toDateString())->count(),
+            // b. Blind / Open requests (everything raised from Quick Search — i.e. not a DFR)
+            'blind_open'      => $blindOpenCount,
+            // c. Found
+            'found'           => (int) ($counts[FileSearchRequest::STATUS_FOUND] ?? 0),
+            // d. Not Found (indexed file, SCB couldn't locate it)
+            'not_found'       => $notFoundCount,
+            // e. Missing (blind / not-indexed file, not located)
+            'missing'         => $missingCount,
+        ];
+
         return response()->json([
             'success' => true,
+            'report'  => $report,
             'counts'  => [
-                'all'       => (int) $counts->sum(),
-                'pending'   => $pendingCount,
-                'found'     => (int) ($counts[FileSearchRequest::STATUS_FOUND] ?? 0),
-                'not_found' => (int) ($counts[FileSearchRequest::STATUS_NOT_FOUND] ?? 0),
+                'all'        => (int) $counts->sum(),
+                'pending'    => $pendingCount,
+                'found'      => (int) ($counts[FileSearchRequest::STATUS_FOUND] ?? 0),
+                'not_found'  => $notFoundCount,
+                'missing'    => $missingCount,
+                'blind_open' => $blindOpenCount,
             ],
             'data' => $rows->map(function ($r) use ($locType) {
                 $resp      = $r->responder;
+                $reqUser   = $r->requester;
                 $isPending = in_array($r->status, [FileSearchRequest::STATUS_PENDING, FileSearchRequest::STATUS_SEARCHING], true);
                 $isDfr     = ($r->source ?? null) === FileSearchRequest::SOURCE_DFR;
                 $isBlind   = ! $isDfr && in_array($r->resolved_status, [FileLocationResolver::STATUS_PENDING_FILE, FileLocationResolver::STATUS_BLIND_REQUEST_SENT], true);
@@ -1477,8 +1660,12 @@ HTML;
                     'front_desk_acted' => ! is_null($r->front_desk_acted_at),
                     'note'             => $r->feedback_note,
                     'responder'        => $resp ? trim($resp->first_name . ' ' . $resp->last_name) : null,
-                    'requested_at'     => optional($r->created_at)->format('Y-m-d H:i'),
-                    'responded_at'     => optional($r->responded_at)->format('Y-m-d H:i'),
+                    'requested_by'     => $reqUser ? trim($reqUser->first_name . ' ' . $reqUser->last_name) : null,
+                    'receiving_officer'=> $r->receiving_officer,
+                    'requester_office' => $r->requester_office,
+                    'requester_department' => $r->requester_department,
+                    'requested_at'     => optional($r->created_at)->format('Y-m-d g:i A'),
+                    'responded_at'     => optional($r->responded_at)->format('Y-m-d g:i A'),
                 ];
             }),
         ]);
@@ -1494,7 +1681,35 @@ HTML;
         /** @var \App\Models\FileIndexing|null $indexing */
         $indexing = $result['indexing'] ?? null;
 
+        // When the file is in transit (logged out), surface the logout date + time
+        // taken from the current active movement (fallback to the tracker timestamps).
+        $loggedOutAt = null;
+        if ($result['status'] === FileLocationResolver::STATUS_IN_TRANSIT && $tracker) {
+            $current = $tracker->getCurrentMovement();
+            $raw = $current
+                ? trim(($current['log_in_date'] ?? '') . ' ' . ($current['log_in_time'] ?? ''))
+                : '';
+            if ($raw !== '') {
+                try { $loggedOutAt = \Carbon\Carbon::parse($raw)->format('Y-m-d g:i A'); }
+                catch (\Throwable $e) { $loggedOutAt = $raw; }
+            } elseif ($current && !empty($current['timestamp'])) {
+                try { $loggedOutAt = \Carbon\Carbon::parse($current['timestamp'])->format('Y-m-d g:i A'); }
+                catch (\Throwable $e) { $loggedOutAt = null; }
+            }
+            if (!$loggedOutAt) {
+                $loggedOutAt = optional($tracker->date_requested ?? $tracker->updated_at)?->format('Y-m-d g:i A');
+            }
+        }
+
+        // If a File Search Request is already open for this file, surface when it was sent.
+        $openFr = \App\Models\FileSearchRequest::openForFile($result['file_number'])
+            ->orderByDesc('created_at')
+            ->first();
+
         return [
+            'logged_out_at'    => $loggedOutAt,
+            'fr_sent_at'       => optional($openFr?->created_at)?->format('Y-m-d g:i A'),
+            'fr_request_no'    => $openFr?->request_no,
             'file_number'      => $result['file_number'],
             'status'           => $result['status'],
             'registry'         => $result['registry'],
@@ -1523,10 +1738,14 @@ HTML;
     public function sendFileRequest(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'file_number'      => 'required|string|max:255',
-            'file_title'       => 'nullable|string|max:255',
-            'current_location' => 'nullable|string|max:255',
-            'resolved_status'  => 'nullable|string|max:50',
+            'file_number'       => 'required|string|max:255',
+            'file_title'        => 'nullable|string|max:255',
+            'current_location'  => 'nullable|string|max:255',
+            'resolved_status'   => 'nullable|string|max:50',
+            'receiving_officer' => 'nullable|string|max:255',
+            'requester_office'  => 'nullable|string|max:255',
+            'requester_department' => 'nullable|string|max:255',
+            'update_existing_id' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -1540,6 +1759,62 @@ HTML;
         try {
             $user = Auth::user();
 
+            // Update-existing mode: the user chose to refresh the requester details on
+            // an existing active request rather than raise a duplicate. No new row and no
+            // fresh SCB notification — just update who is asking and re-prioritise.
+            if ($updateId = $request->input('update_existing_id')) {
+                $existing = FileSearchRequest::activeForFile($request->file_number)
+                    ->where('id', $updateId)
+                    ->first();
+
+                if (! $existing) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'The original request could not be found — it may have already been actioned or removed.',
+                    ], 404);
+                }
+
+                $receivingOfficer = $request->input('receiving_officer');
+                $officerRank      = $this->resolveOfficerRank($receivingOfficer);
+
+                $existing->update([
+                    'receiving_officer'    => $receivingOfficer,
+                    'requester_office'     => $request->input('requester_office'),
+                    'requester_department' => $request->input('requester_department'),
+                    'priority'             => FileSearchRequest::priorityFor($officerRank ?: $receivingOfficer),
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'updated' => true,
+                    'data'    => ['request_no' => $existing->request_no, 'id' => $existing->id],
+                    'message' => 'Requester details updated on the existing request.',
+                ], 200);
+            }
+
+            // Duplicate guard: if the file already has an active request to SCB (open, or
+            // responded but not yet front-desk-acted), prompt the user — who raised it —
+            // instead of silently creating another row. They then update the requester
+            // details on that existing request rather than duplicating it.
+            $existing = FileSearchRequest::activeForFile($request->file_number)
+                ->with('requester:id,first_name,last_name')
+                ->orderByDesc('id')
+                ->first();
+
+            if ($existing) {
+                return response()->json([
+                    'success'   => false,
+                    'duplicate' => true,
+                    'message'   => 'This file has already been requested and sent to SCB.',
+                    'existing'  => $this->frDuplicatePayload($existing),
+                ], 200);
+            }
+
+            // Seniority is taken from the chosen Receiving Officer (the requester); fall
+            // back to the officer name when their rank can't be resolved.
+            $receivingOfficer = $request->input('receiving_officer');
+            $officerRank      = $this->resolveOfficerRank($receivingOfficer);
+
             $fr = FileSearchRequest::create([
                 'request_no'        => FileSearchRequest::generateRequestNo(),
                 'file_number'       => $request->file_number,
@@ -1548,6 +1823,10 @@ HTML;
                 'status'            => FileSearchRequest::STATUS_PENDING,
                 'resolved_status'   => $request->input('resolved_status', FileLocationResolver::STATUS_IN_POOL),
                 'current_location'  => $request->current_location,
+                'receiving_officer' => $receivingOfficer,
+                'requester_office'  => $request->input('requester_office'),
+                'requester_department' => $request->input('requester_department'),
+                'priority'          => FileSearchRequest::priorityFor($officerRank ?: $receivingOfficer),
             ]);
 
             $requesterName = $user->name ?? 'A registry user';
@@ -1565,6 +1844,86 @@ HTML;
                 'message' => 'Could not send the File Request: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Resolve a receiving officer's rank from their "First Last" name, so seniority can
+     * be derived. Returns null when no matching active user / rank is found.
+     */
+    protected function resolveOfficerRank(?string $officerName): ?string
+    {
+        $officerName = trim((string) $officerName);
+        if ($officerName === '') {
+            return null;
+        }
+
+        $rank = DB::connection('sqlsrv')
+            ->table('users')
+            ->where('is_active', 1)
+            ->whereRaw("LTRIM(RTRIM(CONCAT(first_name, ' ', last_name))) = ?", [$officerName])
+            ->value('rank');
+
+        return $rank ?: null;
+    }
+
+    /** Compact summary of an existing open FSR, for the duplicate-request prompt. */
+    protected function frDuplicatePayload(FileSearchRequest $fr): array
+    {
+        $req = $fr->relationLoaded('requester') ? $fr->requester : $fr->requester()->first();
+        $createdBy = $req ? trim($req->first_name . ' ' . $req->last_name) : '';
+
+        // "Requested by" is the selected Requester Officer — not the user account that
+        // raised the request. Fall back to office/department, then the creating user.
+        $requesterName = $fr->receiving_officer
+            ?: ($fr->requester_office ?: ($fr->requester_department ?: ($createdBy ?: '—')));
+
+        return [
+            'id'                   => $fr->id,
+            'request_no'           => $fr->request_no,
+            'requester_name'       => $requesterName,
+            'receiving_officer'    => $fr->receiving_officer,
+            'requester_office'     => $fr->requester_office,
+            'requester_department' => $fr->requester_department,
+            'created_by'           => $createdBy ?: '—',
+            'status'               => $fr->status,
+            'requested_at'         => optional($fr->created_at)->format('Y-m-d g:i A'),
+        ];
+    }
+
+    /**
+     * GET /create-file-tracker/file-requesters?file_number=
+     * Open File Search Requests for a file, ordered by requester seniority so the
+     * front desk honors the most senior at the log step. Read-only — never alters
+     * the requests. The top (most senior) row is flagged is_top.
+     */
+    public function fileRequesters(Request $request)
+    {
+        $fileNumber = trim((string) $request->get('file_number', ''));
+        if ($fileNumber === '') {
+            return response()->json(['success' => true, 'data' => []]);
+        }
+
+        $rows = FileSearchRequest::openForFile($fileNumber)
+            ->with('requester:id,first_name,last_name')
+            ->orderByDesc('priority')
+            ->orderBy('created_at')
+            ->get();
+
+        $data = $rows->values()->map(function (FileSearchRequest $fr, int $i) {
+            $req = $fr->requester;
+            return [
+                'request_no'        => $fr->request_no,
+                'requester_name'    => $req ? trim($req->first_name . ' ' . $req->last_name) : '—',
+                'receiving_officer' => $fr->receiving_officer,
+                'priority'          => (int) $fr->priority,
+                'source'            => $fr->source,
+                'status'            => $fr->status,
+                'requested_at'      => optional($fr->created_at)->format('Y-m-d g:i A'),
+                'is_top'            => $i === 0,
+            ];
+        });
+
+        return response()->json(['success' => true, 'data' => $data]);
     }
 
     /**

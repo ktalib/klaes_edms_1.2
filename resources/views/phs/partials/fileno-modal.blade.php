@@ -764,6 +764,55 @@
         #phs-fileno-modal {
             z-index: 2000000 !important;
         }
+
+        /*
+         * The file-number selector is intentionally a light-themed modal. When the
+         * portal is in dark mode the global `dark:text-gray-100` body colour is
+         * inherited by Select2's generated markup (and native option lists),
+         * leaving faint light-grey text on the white dropdown. Force readable
+         * colours for every control inside the modal + its Select2 dropdown.
+         */
+        #phs-fileno-modal select,
+        #phs-fileno-modal option,
+        #phs-fileno-modal optgroup {
+            color: #1f2937;          /* gray-800 */
+            background-color: #ffffff;
+        }
+        /* Select2 dropdowns are appended inside #phs-fileno-modal (dropdownParent),
+           so these stay scoped to this modal and don't affect Select2 elsewhere. */
+        #phs-fileno-modal .select2-dropdown,
+        #phs-fileno-modal .select2-results__option {
+            background-color: #ffffff;
+            color: #1f2937;          /* gray-800 */
+        }
+        #phs-fileno-modal .select2-results__option[aria-disabled="true"] {
+            color: #9ca3af;          /* gray-400 — muted, e.g. "Searching…" */
+        }
+        #phs-fileno-modal .select2-results__option--highlighted[aria-selected],
+        #phs-fileno-modal .select2-results__option--highlighted {
+            background-color: #2563eb !important;  /* blue-600 */
+            color: #ffffff !important;
+        }
+        #phs-fileno-modal .select2-results__option[aria-selected="true"] {
+            background-color: #eff6ff;  /* blue-50 */
+            color: #1e3a8a;             /* blue-900 */
+        }
+        #phs-fileno-modal .select2-container--default .select2-selection--single,
+        #phs-fileno-modal .select2-container--default .select2-selection--multiple {
+            background-color: #ffffff;
+            border-color: #d1d5db;      /* gray-300 */
+        }
+        #phs-fileno-modal .select2-container--default .select2-selection__rendered {
+            color: #1f2937 !important;
+        }
+        #phs-fileno-modal .select2-container--default .select2-selection__placeholder {
+            color: #6b7280;             /* gray-500 */
+        }
+        #phs-fileno-modal .select2-search--dropdown .select2-search__field {
+            background-color: #ffffff;
+            color: #1f2937;
+            border-color: #d1d5db;
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script>

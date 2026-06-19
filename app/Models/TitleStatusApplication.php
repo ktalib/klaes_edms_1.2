@@ -19,6 +19,13 @@ class TitleStatusApplication extends Model
     public const TYPE_LITIGATION   = 'Litigation';
     public const TYPE_AMENDMENT    = 'Amendment/Reconsideration (Application/RofO/CofO)';
     public const TYPE_SURRENDER    = 'Surrender';
+    public const TYPE_REGRANT      = 'Re-grant';
+    public const TYPE_SUBDIVISION  = 'Subdivision';
+    public const TYPE_MERGER       = 'Merger';
+    public const TYPE_PURPOSE      = 'Change of Purpose';
+    public const TYPE_EXTENSION    = 'Extension';
+    public const TYPE_CHANGE_NAME  = 'Change of Name';
+    public const TYPE_SEPARATION   = 'Separation';
 
     public const AUTHORITY_OPTIONS = [
         "Governor's Directive",
@@ -44,6 +51,13 @@ class TitleStatusApplication extends Model
         self::TYPE_LITIGATION   => ['Court Order'],
         self::TYPE_AMENDMENT    => ['Ministry', 'Allottee'],
         self::TYPE_SURRENDER    => ['Applicant'],
+        self::TYPE_REGRANT      => ['Ministry'],
+        self::TYPE_SUBDIVISION  => ['Applicant', 'Ministry'],
+        self::TYPE_MERGER       => ['Applicant', 'Ministry'],
+        self::TYPE_PURPOSE      => ['Applicant', 'Ministry'],
+        self::TYPE_EXTENSION    => ['Applicant', 'Ministry'],
+        self::TYPE_CHANGE_NAME  => ['Applicant', 'Ministry'],
+        self::TYPE_SEPARATION   => ['Applicant', 'Ministry'],
     ];
 
     protected $fillable = [
@@ -52,6 +66,7 @@ class TitleStatusApplication extends Model
         'source_table',
         'source_id',
         'file_no',
+        'see_fileno',
         'file_title',
         'applicant_name',
         'plot_no',

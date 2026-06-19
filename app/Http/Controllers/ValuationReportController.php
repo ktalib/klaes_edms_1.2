@@ -19,8 +19,16 @@ class ValuationReportController extends Controller
      */
     public function index()
     {
-        $reports = ValuationReport::orderBy('created_at', 'desc')->get();
-        $todayCount = ValuationReport::whereDate('created_at', \Carbon\Carbon::today())->count();
+        $reports = ValuationReport::where(function ($q) {
+                $q->where('re_evaluate', 0)->orWhereNull('re_evaluate');
+            })
+            ->orderBy('created_at', 'desc')
+            ->get();
+        $todayCount = ValuationReport::whereDate('created_at', \Carbon\Carbon::today())
+            ->where(function ($q) {
+                $q->where('re_evaluate', 0)->orWhereNull('re_evaluate');
+            })
+            ->count();
         $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
         $lgas = DB::connection('sqlsrv')->table('StatLGAs')
             ->join('States', 'StatLGAs.StateID', '=', 'States.StateID')
@@ -258,6 +266,116 @@ class ValuationReportController extends Controller
             'message' => 'Valuation report updated successfully.',
             'id' => $report->id
         ]);
+    }
+
+    /**
+     * Re-evaluate a printed report.
+     *
+     * Creates a new (editable, unprinted) row carrying the updated values and
+     * marks the original printed row with re_evaluate = 1 so it drops off the
+     * listing while the freshly created row takes its place.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function reEvaluate(Request $request, $id)
+    {
+        $original = ValuationReport::findOrFail($id);
+
+        $data = $request->validate([
+            'file_number' => 'required|string',
+            'use' => 'nullable|string',
+            'property_desc' => 'nullable|string',
+            'inspection_date' => 'required|date',
+            'land_use_purpose' => 'nullable|string',
+            'valuation_purpose' => 'required|string',
+            'valuation_type' => 'nullable|string',
+            'full_name' => 'nullable|string',
+            'address' => 'required|string',
+            'property_no' => 'nullable|string',
+            'street_name' => 'nullable|string',
+            'estate_quarters' => 'nullable|string',
+            'neighborhood_characteristics' => 'nullable|string',
+            'town_city' => 'nullable|string',
+            'lga' => 'nullable|string',
+            'property_type' => 'nullable|string',
+            'num_blocks' => 'nullable|string',
+            'units_per_block' => 'nullable|string',
+            'storey_height' => 'nullable|string',
+            'bedroom_units' => 'nullable|string',
+            'ancillary_bldgs' => 'nullable|string',
+            'current_use' => 'nullable|string',
+            'foundation_type' => 'nullable|string',
+            'foundation_stage' => 'nullable|string',
+            'floor_type' => 'nullable|string',
+            'floor_finish' => 'nullable|string',
+            'walls_type' => 'nullable|string',
+            'walls_stage' => 'nullable|string',
+            'walls_finish' => 'nullable|string',
+            'boundary_wall_type' => 'nullable|string',
+            'boundary_wall_height' => 'nullable|string',
+            'boundary_wall_finish' => 'nullable|string',
+            'roof_type' => 'nullable|string',
+            'roof_material' => 'nullable|string',
+            'ceiling_detail' => 'nullable|string',
+            'ext_doors' => 'nullable|string',
+            'window_type' => 'nullable|string',
+            'gate_type' => 'nullable|string',
+            'int_doors' => 'nullable|string',
+            'door_security_proof' => 'nullable|string',
+            'burglary_proof' => 'nullable|string',
+            'toilet_bath' => 'nullable|string',
+            'water_supply' => 'nullable|string',
+            'electricity' => 'nullable|string',
+            'drainage' => 'nullable|string',
+            'fittings_sitting' => 'nullable|string',
+            'fittings_dining' => 'nullable|string',
+            'fittings_bedroom' => 'nullable|string',
+            'fittings_toilet' => 'nullable|string',
+            'fittings_bath' => 'nullable|string',
+            'fittings_kitchen' => 'nullable|string',
+            'fittings_store' => 'nullable|string',
+            'fittings_bq' => 'nullable|string',
+            'fittings_summary' => 'nullable|string',
+            'other_info' => 'nullable|string',
+            'remarks' => 'nullable|string',
+            'valuation_basis' => 'required|string',
+            'value_words' => 'required|string',
+            'value_figures' => 'required|string',
+            'surveyor_name' => 'required|string',
+            'surveyor_rank' => 'nullable|string',
+            'chief_valuer' => 'nullable|string',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            // Create the new (re-evaluated) row with the updated values.
+            $data['user_id'] = Auth::id();
+            $data['status'] = 'Re-Evaluated';
+            $data['print_count'] = 0;
+            $data['re_evaluate'] = 0;
+            $data['parent_id'] = $original->id;
+
+            $newReport = ValuationReport::create($data);
+
+            // Retire the original printed row so it drops off the listing.
+            $original->update(['re_evaluate' => 1]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Valuation report re-evaluated successfully. A new editable report has been created.',
+                'id' => $newReport->id
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Error re-evaluating report: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

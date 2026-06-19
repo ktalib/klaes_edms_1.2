@@ -45,11 +45,12 @@
                     @csrf
 
                     <div>
-                        <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email Address</label>
+                        <label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
                         <input
-                            id="email" type="email" name="email" value="{{ old('email') }}" required
+                            id="username" type="text" name="username" value="{{ old('username') }}" required autofocus
+                            autocapitalize="none" autocomplete="username" spellcheck="false"
                             class="mt-2 block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-700"
-                            placeholder="your@email.com"
+                            placeholder="your_organization_username"
                         >
                     </div>
 

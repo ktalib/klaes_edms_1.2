@@ -209,9 +209,9 @@
         </div>
 
         @php
-            $pageApp      = $recommendation->page_application ?? 1;
-            $pageSurvey   = $recommendation->page_survey      ?? 9;
-            $pagePlanning = $recommendation->page_planning     ?? 17;
+            $pageApp      = $recommendation->page_application ?? '-';
+            $pageSurvey   = $recommendation->page_survey      ?? '-';
+            $pagePlanning = $recommendation->page_planning     ?? '-';
         @endphp
 
         <div class="content-grid">

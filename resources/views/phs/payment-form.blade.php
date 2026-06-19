@@ -51,7 +51,7 @@
             <img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="">
             <div class="ministry-title">
                 <h2>Ministry of Land &amp; Physical Planning</h2>
-                <h3>Department of Land</h3>
+                <h3>to Department of Deeds</h3>
                 <p>PHS Portal &mdash; Subscription Payment</p>
             </div>
             <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="">

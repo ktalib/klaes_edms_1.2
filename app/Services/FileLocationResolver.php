@@ -14,11 +14,12 @@ use Illuminate\Support\Facades\DB;
  * Search and the SCB Monitor mobile endpoints.
  *
  * Precedence:
- *   1. Tracker exists?
- *        - file_tracker.status = ACTIVE    -> logged out  -> IN_TRANSIT
- *        - file_tracker.status = COMPLETED -> logged in    -> IN_ARCHIVE
+ *   1. file_tracker.status = ACTIVE -> logged out -> IN_TRANSIT (ground truth:
+ *      a physically logged-out file wins over a stale SCB found/not-found override).
+ *   2. Manual override (location_status_manual + tracking_status on the indexing row).
+ *   3. file_tracker.status = COMPLETED -> logged in -> IN_ARCHIVE
  *        - file_tracker.status = CANCELLED -> ignore, fall through
- *   2. No active tracker -> parse prefix + year, match config/file_ranges.php
+ *   4. No active tracker -> parse prefix + year, match config/file_ranges.php
  *        - zone=archive + scanned/indexed -> IN_ARCHIVE
  *        - zone=archive + not scanned      -> FILE_NOT_FOUND (archive-missing)
  *        - zone=pool                        -> IN_POOL_OFFICE
@@ -63,19 +64,10 @@ class FileLocationResolver
         $indexing = $this->findIndexing($variants);
         $tracker  = $this->findTracker($variants);
 
-        // ── 0. Manual override set from the File Quick Search interface wins ──
-        if ($indexing && !empty($indexing->location_status_manual) && !empty($indexing->tracking_status)) {
-            $meta = $this->actionMetaFor($indexing->tracking_status);
-            return $this->result($fileNumber, $indexing->tracking_status, array_merge([
-                'current_location' => $indexing->current_location,
-                'file_tracker_id'  => $indexing->file_tracker_id,
-                'indexing'         => $indexing,
-                'tracker'          => $tracker,
-                'manual'           => true,
-            ], $meta));
-        }
-
-        // ── 1. Tracker drives status (status is the source of truth) ──
+        // ── 1. An ACTIVE tracker means the file is physically logged out -> IN_TRANSIT.
+        //        This is the ground truth: once the file has been logged, it wins over
+        //        any stale SCB found/not-found override left on the indexing row (which
+        //        was set while the file was still in the archive awaiting collection).
         if ($tracker && strtoupper((string) $tracker->status) === FileTracker::STATUS_ACTIVE) {
             $location = $tracker->current_office_name
                 ?: $tracker->receiving_office_name
@@ -92,6 +84,19 @@ class FileLocationResolver
             ]);
         }
 
+        // ── 0. Manual override set from the File Quick Search interface ──
+        if ($indexing && !empty($indexing->location_status_manual) && !empty($indexing->tracking_status)) {
+            $meta = $this->actionMetaFor($indexing->tracking_status);
+            return $this->result($fileNumber, $indexing->tracking_status, array_merge([
+                'current_location' => $indexing->current_location,
+                'file_tracker_id'  => $indexing->file_tracker_id,
+                'indexing'         => $indexing,
+                'tracker'          => $tracker,
+                'manual'           => true,
+            ], $meta));
+        }
+
+        // ── 2. Tracker logged back in -> Archive ──
         if ($tracker && strtoupper((string) $tracker->status) === FileTracker::STATUS_COMPLETED) {
             // Logged back in / with us -> Archive (must be confirmed by SCB before logging out).
             $rackShelf = $this->getRackShelf($fileNumber, $indexing);
@@ -109,14 +114,14 @@ class FileLocationResolver
             ], $this->actionMetaFor(self::STATUS_IN_ARCHIVE)));
         }
 
-        // ── 2. Not indexed at all -> Pending File (blind request) ──
+        // ── 3. Not indexed at all -> Pending File (blind request) ──
         if ($indexing === null) {
             return $this->result($fileNumber, self::STATUS_PENDING_FILE, array_merge([
                 'current_location' => 'Not indexed',
             ], $this->actionMetaFor(self::STATUS_PENDING_FILE)));
         }
 
-        // ── 3. Indexed -> registry range lookup ──
+        // ── 4. Indexed -> registry range lookup ──
         $range = $this->matchRange($fileNumber);
 
         if ($range === null) {
@@ -286,8 +291,12 @@ class FileLocationResolver
 
             self::STATUS_NOT_FOUND =>
                 ['next_action' => 'Print Missing File Confirmation Slip', 'slip_variant' => 'missing'],
+
+            // Indexed but outside any known registry range — send it to the SCB to
+            // physically search first. Only if the SCB reports Not Found does the
+            // outcome (IN_ARCHIVE_NOT_FOUND) offer the Refer-to-Original-Registry slip.
             self::STATUS_REFER =>
-                ['next_action' => 'Refer to Original Registry', 'slip_variant' => 'refer_registry'],
+                ['next_action' => 'Send File Search Request to SCB Monitor', 'can_send_fr' => true],
 
             default => [],
         });

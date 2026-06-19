@@ -509,16 +509,29 @@
       <button class="icon-circle" id="frRefreshBtn" title="Refresh"><i class="fas fa-rotate-right"></i></button>
     </div>
     <div class="fr-seg">
-      <button type="button" class="fr-seg-btn active" data-frview="open" onclick="setFrView('open')">Open</button>
-      <button type="button" class="fr-seg-btn" data-frview="log" onclick="setFrView('log')">FSR History</button>
+      <button type="button" class="fr-seg-btn active" data-frview="open" onclick="setFrView('open')">Open <span class="fr-count" id="frCountOpen">0</span></button>
+      <button type="button" class="fr-seg-btn" data-frview="log" onclick="setFrView('log')">FSR History <span class="fr-count" id="frCountLog">0</span></button>
+    </div>
+    <div class="fr-search">
+      <i class="fas fa-search"></i>
+      <input type="text" id="frSearch" placeholder="Search file no, title, requester…" oninput="onFrSearch()" autocomplete="off">
+      <button type="button" id="frSearchClear" onclick="clearFrSearch()" title="Clear"><i class="fas fa-times"></i></button>
     </div>
     <div id="frListContainer"></div>
     <div id="frLogContainer" style="display:none;"></div>
   </div>
   <style>
-    .fr-seg { display:flex; gap:6px; background:var(--primary-soft); padding:4px; border-radius:12px; margin-bottom:14px; }
-    .fr-seg-btn { flex:1; border:none; background:transparent; padding:9px; border-radius:9px; font-size:12px; font-weight:700; color:var(--muted); cursor:pointer; }
+    .fr-seg { display:flex; gap:6px; background:var(--primary-soft); padding:4px; border-radius:12px; margin-bottom:12px; }
+    .fr-seg-btn { flex:1; border:none; background:transparent; padding:9px; border-radius:9px; font-size:12px; font-weight:700; color:var(--muted); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
     .fr-seg-btn.active { background:var(--primary); color:#fff; }
+    .fr-count { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; border-radius:30px; font-size:10px; font-weight:800; background:rgba(0,0,0,0.12); color:inherit; }
+    .fr-seg-btn.active .fr-count { background:rgba(255,255,255,0.28); color:#fff; }
+    .fr-search { position:relative; margin-bottom:14px; }
+    .fr-search > .fa-search { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--faint); font-size:12px; }
+    .fr-search input { width:100%; padding:11px 34px 11px 32px; border:1px solid var(--border,#2a2f3a); border-radius:12px; background:var(--card,#1b1f29); color:inherit; font-size:13px; }
+    .fr-search input:focus { outline:none; border-color:var(--primary); }
+    #frSearchClear { position:absolute; right:8px; top:50%; transform:translateY(-50%); border:none; background:transparent; color:var(--faint); cursor:pointer; padding:4px 6px; display:none; }
+    #frSearchClear.show { display:inline-flex; }
   </style>
   @endif
 
@@ -579,6 +592,7 @@ const CURRENT_USER = {
   username: '{{ auth()->user()->username }}',
 };
 const IS_SCB_MONITOR = {{ $isScbMonitor ? 'true' : 'false' }};
+const IS_SUPER_ADMIN = {{ auth()->user()->isSuperAdmin() ? 'true' : 'false' }};
 
 // Quick Search / File Location outcome styling
 const LOC_STATUS_META = {
@@ -590,7 +604,7 @@ const LOC_STATUS_META = {
   IN_POOL_OFFICE_FOUND:       { label:'In Pool Office — Found',     color:'#10b981', icon:'fa-circle-check' },
   IN_POOL_OFFICE_NOT_FOUND:   { label:'In Pool Office — Not Found', color:'#ef4444', icon:'fa-triangle-exclamation' },
   PENDING_FILE:               { label:'Pending (Not Indexed)',      color:'#6b7185', icon:'fa-circle-question' },
-  BLIND_REQUEST_SENT:         { label:'Blind Request Sent',         color:'#6366f1', icon:'fa-paper-plane' },
+  BLIND_REQUEST_SENT:         { label:'Blind Request Sent',         color:'#dc2626', icon:'fa-paper-plane' },
   FILE_NOT_FOUND:             { label:'File Not Found',             color:'#ef4444', icon:'fa-triangle-exclamation' },
   REFER_TO_ORIGINAL_REGISTRY: { label:'Refer to Original Registry', color:'#6b7185', icon:'fa-share-from-square' },
 };
@@ -986,7 +1000,7 @@ function setActiveTab(tabId) {
   if (tabId==='files')     $('#fileSearchSelect').select2('open');
   if (tabId==='scanner')   updateScanStatus('Click Start to begin scanning','info');
   if (tabId==='create')    initCreateForm();
-  if (tabId==='requests')  setFrView(frView);
+  if (tabId==='requests')  { setFrView(frView); frView === 'open' ? loadFsrLog() : loadFileRequests(); }
 }
 
 // ─── Log a File: init defaults when screen opens ───────────────────────────
@@ -1097,19 +1111,58 @@ function setFrView(view) {
   else loadFsrLog();
 }
 
+// Filter a File Request list by the search box term (file no, title, request no, requester).
+function frMatches(fr) {
+  const q = (document.getElementById('frSearch')?.value || '').trim().toLowerCase();
+  if (!q) return true;
+  return [fr.file_number, fr.file_title, fr.request_no, fr.requester, fr.receiving_officer, fr.current_location]
+    .some(v => (v || '').toString().toLowerCase().includes(q));
+}
+
+function updateFrCounts() {
+  const openEl = document.getElementById('frCountOpen');
+  const logEl  = document.getElementById('frCountLog');
+  if (openEl) openEl.textContent = (frOpenList || []).length;
+  if (logEl)  logEl.textContent  = (frLogList  || []).length;
+}
+
+// Re-render whichever tab is active (used by the search box).
+function onFrSearch() {
+  const clearBtn = document.getElementById('frSearchClear');
+  if (clearBtn) clearBtn.classList.toggle('show', !!(document.getElementById('frSearch')?.value || '').trim());
+  if (frView === 'log') renderFsrLog(); else renderFileRequests();
+}
+function clearFrSearch() {
+  const input = document.getElementById('frSearch');
+  if (input) input.value = '';
+  onFrSearch();
+}
+
 // Full FSR History — every request routed to this SCB Monitor, by whom, where, status.
+let frLogList = [];
 async function loadFsrLog() {
   const container = document.getElementById('frLogContainer');
   if (!container) return;
   container.innerHTML = '<div class="card" style="padding:30px;text-align:center;color:var(--faint);"><i class="fas fa-spinner fa-spin fa-lg"></i></div>';
   try {
     const res = await api(`${MOB_BASE}/file-requests/log`);
-    const list = (res && res.success) ? (res.data || []) : [];
-    if (!list.length) {
-      container.innerHTML = '<div class="card" style="padding:40px;text-align:center;color:var(--faint);"><i class="fas fa-clipboard-list fa-2x"></i><p style="margin-top:12px;">No file requests yet</p></div>';
-      return;
-    }
-    container.innerHTML = list.map(fr => {
+    frLogList = (res && res.success) ? (res.data || []) : [];
+    updateFrCounts();
+    renderFsrLog();
+  } catch(e) {
+    container.innerHTML = `<p style="color:#ef4444;font-size:12px;">Error loading FSR History: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderFsrLog() {
+  const container = document.getElementById('frLogContainer');
+  if (!container) return;
+  const list = (frLogList || []).filter(frMatches);
+  if (!list.length) {
+    container.innerHTML = '<div class="card" style="padding:40px;text-align:center;color:var(--faint);"><i class="fas fa-clipboard-list fa-2x"></i><p style="margin-top:12px;">No file requests yet</p></div>';
+    return;
+  }
+  container.innerHTML = list.map(fr => {
       const meta = FSR_STATUS_META[fr.status] || FSR_STATUS_META.PENDING;
       return `
       <div class="result-card" style="margin-bottom:12px;">
@@ -1131,9 +1184,6 @@ async function loadFsrLog() {
         </div>
       </div>`;
     }).join('');
-  } catch(e) {
-    container.innerHTML = `<p style="color:#ef4444;font-size:12px;">Error loading FSR History: ${esc(e.message)}</p>`;
-  }
 }
 
 // ─── SCB Monitor: File Requests inbox ──────────────────────────────────────
@@ -1148,38 +1198,70 @@ async function getOpenFileRequests() {
   return openFileRequests;
 }
 
+let frOpenList = [];
 async function loadFileRequests() {
   const container = document.getElementById('frListContainer');
   if (!container) return;
   container.innerHTML = '<div class="card" style="padding:30px;text-align:center;color:var(--faint);"><i class="fas fa-spinner fa-spin fa-lg"></i></div>';
   try {
-    const res = await api(`${MOB_BASE}/file-requests`);
-    const list = (res && res.success) ? (res.data || []) : [];
-    openFileRequests = list;  // keep the search shortcut in sync
-    if (!list.length) {
-      container.innerHTML = '<div class="card" style="padding:40px;text-align:center;color:var(--faint);"><i class="fas fa-clipboard-check fa-2x"></i><p style="margin-top:12px;">No open file requests</p></div>';
-      return;
-    }
-    container.innerHTML = list.map(fr => `
-      <div class="result-card" style="margin-bottom:12px;" data-fr="${fr.id}">
-        <div style="padding:14px 16px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-            <div style="font-size:15px;font-weight:800;">${esc(fr.file_number)}</div>
-            <span style="font-size:10px;font-weight:700;color:var(--primary);background:var(--primary-soft);padding:3px 9px;border-radius:30px;">${esc(fr.request_no)}</span>
-          </div>
-          <div style="font-size:12px;color:var(--muted);margin-top:4px;">${esc(fr.file_title||'—')}</div>
-          <div style="margin-top:6px;"><span style="display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:30px;background:${fr.is_dfr ? '#e5e7eb' : (fr.is_blind ? '#ede9fe' : '#e0f2fe')};color:${fr.is_dfr ? '#374151' : (fr.is_blind ? '#6d28d9' : '#0369a1')};"><i class="fas ${fr.is_dfr ? 'fa-file-lines' : (fr.is_blind ? 'fa-eye-slash' : 'fa-folder-open')}"></i> ${esc(fr.request_type || 'Open Request')}</span></div>
-          ${fr.current_location ? `<div style="font-size:11px;color:var(--faint);margin-top:6px;"><i class="fas fa-map-marker-alt" style="margin-right:4px;color:var(--primary);"></i>${esc(fr.current_location)}</div>` : ''}
-          <div style="display:flex;gap:8px;margin-top:14px;align-items:stretch;">
-            <button class="btn" style="flex:1;width:auto;min-width:0;padding:12px;font-size:13px;box-shadow:none;background:linear-gradient(135deg,#10b981,#059669);" onclick="respondFr(${fr.id}, 'found', this)"><i class="fas fa-check"></i> Found</button>
-            <button class="btn ghost-btn" style="flex:1;width:auto;min-width:0;padding:12px;font-size:13px;box-shadow:none;" onclick="respondFr(${fr.id}, 'not_found', this)"><i class="fas fa-xmark"></i> Not&nbsp;Found</button>
-            <button class="btn" style="flex:0 0 auto;width:auto;padding:12px 15px;box-shadow:none;background:#fee2e2;color:#991b1b;" onclick="deleteFr(${fr.id}, this)" title="Delete request"><i class="fas fa-trash"></i></button>
-          </div>
-        </div>
-      </div>`).join('');
+    // Load the History alongside the Open inbox so we can flag any request that
+    // wrongly shows up in BOTH tabs at once (green dot — see renderFileRequests).
+    const [res, logRes] = await Promise.all([
+      api(`${MOB_BASE}/file-requests`),
+      api(`${MOB_BASE}/file-requests/log`),
+    ]);
+    frOpenList = (res && res.success) ? (res.data || []) : [];
+    frLogList  = (logRes && logRes.success) ? (logRes.data || []) : [];
+    openFileRequests = frOpenList;  // keep the search shortcut in sync
+    updateFrCounts();
+    renderFileRequests();
   } catch(e) {
     container.innerHTML = `<p style="color:#ef4444;font-size:12px;">Error loading requests: ${esc(e.message)}</p>`;
   }
+}
+
+// Compact "who is asking" block — the requester details selected in Quick Search.
+function frRequesterDetails(fr) {
+  const rows = [
+    ['fa-user',           fr.receiving_officer,    'Requested by'],
+    ['fa-building',       fr.requester_office,     'Office'],
+    ['fa-sitemap',        fr.requester_department, 'Department'],
+  ].filter(([, val]) => val && String(val).trim() && String(val).trim() !== '—');
+  if (!rows.length) return '';
+  return `<div style="margin-top:8px;display:flex;flex-direction:column;gap:3px;">` + rows.map(([icon, val, label]) =>
+    `<div style="font-size:11px;color:var(--muted);"><i class="fas ${icon}" style="width:13px;margin-right:5px;color:var(--primary);"></i><span style="color:var(--faint);">${label}:</span> ${esc(val)}</div>`
+  ).join('') + `</div>`;
+}
+
+function renderFileRequests() {
+  const container = document.getElementById('frListContainer');
+  if (!container) return;
+  const list = (frOpenList || []).filter(frMatches);
+  if (!list.length) {
+    container.innerHTML = '<div class="card" style="padding:40px;text-align:center;color:var(--faint);"><i class="fas fa-clipboard-check fa-2x"></i><p style="margin-top:12px;">No open file requests</p></div>';
+    return;
+  }
+  // IDs present in FSR History — a request here AND in Open is a mix-up (flagged with a green dot).
+  const histIds = new Set((frLogList || []).map(r => r.id));
+  container.innerHTML = list.map(fr => `
+      <div class="result-card" style="margin-bottom:12px;" data-fr="${fr.id}">
+        <div style="padding:14px 16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <div style="font-size:15px;font-weight:800;">${histIds.has(fr.id) ? `<span title="Also in FSR History — this request is in both tabs at once" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;margin-right:7px;vertical-align:middle;box-shadow:0 0 0 3px rgba(16,185,129,0.25);"></span>` : ''}${esc(fr.file_number)}</div>
+            <span style="font-size:10px;font-weight:700;color:var(--primary);background:var(--primary-soft);padding:3px 9px;border-radius:30px;">${esc(fr.request_no)}</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">${esc(fr.file_title||'—')}</div>
+          <div style="margin-top:6px;"><span style="display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:30px;background:${fr.is_dfr ? '#e5e7eb' : (fr.is_blind ? '#fee2e2' : '#e0f2fe')};color:${fr.is_dfr ? '#374151' : (fr.is_blind ? '#b91c1c' : '#0369a1')};"><i class="fas ${fr.is_dfr ? 'fa-file-lines' : (fr.is_blind ? 'fa-eye-slash' : 'fa-folder-open')}"></i> ${esc(fr.request_type || 'Open Request')}</span></div>
+          ${frRequesterDetails(fr)}
+          ${fr.current_location ? `<div style="font-size:11px;color:var(--faint);margin-top:6px;"><i class="fas fa-map-marker-alt" style="margin-right:4px;color:var(--primary);"></i>${esc(fr.current_location)}</div>` : ''}
+          ${fr.created_at ? `<div style="font-size:11px;color:var(--faint);margin-top:6px;"><i class="fas fa-clock" style="margin-right:4px;color:var(--primary);"></i>Sent ${esc(fr.created_at)}</div>` : ''}
+          <div style="display:flex;gap:8px;margin-top:14px;align-items:stretch;">
+            <button class="btn" style="flex:1;width:auto;min-width:0;padding:12px;font-size:13px;box-shadow:none;background:linear-gradient(135deg,#10b981,#059669);" onclick="respondFr(${fr.id}, 'found', this)"><i class="fas fa-check"></i> Found</button>
+            <button class="btn ghost-btn" style="flex:1;width:auto;min-width:0;padding:12px;font-size:13px;box-shadow:none;" onclick="respondFr(${fr.id}, 'not_found', this)"><i class="fas fa-xmark"></i> Not&nbsp;Found</button>
+            ${IS_SUPER_ADMIN ? `<button class="btn" style="flex:0 0 auto;width:auto;padding:12px 15px;box-shadow:none;background:#fee2e2;color:#991b1b;" onclick="deleteFr(${fr.id}, this)" title="Delete request"><i class="fas fa-trash"></i></button>` : ''}
+          </div>
+        </div>
+      </div>`).join('');
 }
 
 async function respondFr(id, result, btn) {
@@ -1198,7 +1280,10 @@ async function respondFr(id, result, btn) {
       else if (sc === 'print_missing_slip') toast('Not found — print Missing File slip', 'error');
       else if (sc === 'do_second_physical_search') toast('Not found — file is scanned; do a 2nd physical search', 'error');
       else toast('Feedback recorded');
+      // Responded → the request leaves Open; refresh the Open count and move the
+      // user to the FSR History tab (which reloads its list + count).
       loadFileRequests();
+      setFrView('log');
     } else {
       toast(res.message || 'Could not record feedback', 'error');
       if (card) card.querySelectorAll('button').forEach(b=>b.disabled=false);

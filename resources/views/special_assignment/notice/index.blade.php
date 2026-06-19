@@ -91,16 +91,18 @@
         <form id="form-notice" class="p-6 space-y-4">
             @csrf
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Application</label>
-                    <select name="spa_application_id" id="notice-app-select" required
-                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none">
-                        <option value="">Select…</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">File No</label>
-                    <input type="text" name="file_number" id="notice-file-no" readonly class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 outline-none">
+                <div class="sm:col-span-2">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">File No <span class="text-red-500">*</span></label>
+                    <div class="flex gap-2">
+                        <input type="text" name="file_number" id="notice-file-no" required readonly autocomplete="off"
+                            placeholder="Use the selector to choose a file…"
+                            class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 outline-none cursor-pointer focus:border-[rgb(186,191,12)]">
+                        <button type="button" id="notice-select-file-btn" title="File number selector"
+                            class="shrink-0 inline-flex items-center gap-1 px-3 py-2 text-sm text-blue-600 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100">
+                            <i data-lucide="search" class="h-4 w-4"></i> Select
+                        </button>
+                    </div>
+                    <p id="notice-file-hint" class="text-[11px] text-gray-400 mt-1">Indexed files auto-fill the recipient; otherwise enter it manually.</p>
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-600 mb-1">Recipient Name <span class="text-red-500">*</span></label>
@@ -123,6 +125,9 @@
     </div>
 </div>
 
+{{-- Shared global file-number selector --}}
+@include('components.global-fileno-modal')
+
 <style>
     .tab-btn.active { background:white; color:#1f2937; box-shadow:0 1px 3px rgba(0,0,0,.1); }
     table.dataTable thead th { background:#f9fafb; font-weight:600; }
@@ -130,11 +135,12 @@
     .dataTables_wrapper .dataTables_length select { border:1px solid #e5e7eb; border-radius:.5rem; padding:.25rem .5rem; }
 </style>
 
+<script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script>
 const CSRF         = '{{ csrf_token() }}';
 const STORE_NOTICE = '{{ route("special-assignment.notice.store") }}';
 const SECOND_BASE  = '{{ url("special-assignment/notice") }}';
-const APP_AJAX     = '{{ route("special-assignment.land-records") }}';
+const CHECK_FILE   = '{{ route("special-assignment.check-file") }}';
 
 $(document).ready(function () {
     // ── Tab switching ───────────────────────────────────────────────────────
@@ -199,44 +205,107 @@ $(document).ready(function () {
     document.getElementById('btn-issue-notice').addEventListener('click', () => { modal.classList.remove('hidden'); modal.classList.add('flex'); });
     document.querySelectorAll('.modal-close').forEach(b => b.addEventListener('click', () => { modal.classList.add('hidden'); modal.classList.remove('flex'); }));
 
-    // Pre-fill recipient/phone on app selection
-    fetch(APP_AJAX + '?ajax=1&length=500&start=0', { headers:{'X-Requested-With':'XMLHttpRequest'} })
-        .then(r => r.json())
-        .then(d => {
-            const sel = document.getElementById('notice-app-select');
-            sel.innerHTML = '<option value="">Select…</option>';
-            (d.data || []).forEach(a => {
-                sel.innerHTML += `<option value="${a.id}" data-file="${a.file_number}" data-owner="${a.owner_name}" data-phone="${a.phone||''}">${a.file_number} – ${a.owner_name}</option>`;
-            });
-            if (!d.data || d.data.length === 0) sel.innerHTML = '<option value="">No applications found</option>';
-            sel.addEventListener('change', function() {
-                const opt = this.options[this.selectedIndex];
-                document.getElementById('notice-file-no').value   = opt.dataset.file  || '';
-                document.getElementById('notice-recipient').value = opt.dataset.owner || '';
-                document.getElementById('notice-phone').value     = opt.dataset.phone || '';
-            });
-        })
-        .catch(() => {
-            document.getElementById('notice-app-select').innerHTML = '<option value="">Failed to load</option>';
+    // ── File No: global file-number selector (free-style entry also allowed) ──
+    const fileInput = document.getElementById('notice-file-no');
+    const fileHint  = document.getElementById('notice-file-hint');
+    const recipientInput = document.getElementById('notice-recipient');
+    const phoneInput     = document.getElementById('notice-phone');
+
+    // ── Issue first serve straight from a Field Data row (prefilled) ─────────
+    $('#first-serve-table').on('click', '.btn-issue-first', function () {
+        fileInput.value      = $(this).data('file')  || '';
+        recipientInput.value = $(this).data('owner') || '';
+        phoneInput.value     = $(this).data('phone') || '';
+        lastLookup = fileInput.value.trim();
+        fileHint.textContent = 'From Field Data — recipient pre-filled. You can edit it.';
+        fileHint.className = 'text-[11px] text-green-600 mt-1';
+        modal.classList.remove('hidden'); modal.classList.add('flex');
+    });
+
+    // On entry/selection of a file number, backfill recipient + phone when the
+    // file is indexed; leave them for manual entry when it isn't.
+    let lastLookup = '';
+    async function lookupFile() {
+        const fno = fileInput.value.trim();
+        if (!fno || fno === lastLookup) return;
+        lastLookup = fno;
+        try {
+            const res = await fetch(`${CHECK_FILE}?file_number=${encodeURIComponent(fno)}`, { headers:{'X-Requested-With':'XMLHttpRequest'} });
+            const data = await res.json();
+            if (data && data.found) {
+                if (data.owner_name) recipientInput.value = data.owner_name;
+                if (data.phone)      phoneInput.value     = data.phone;
+                fileHint.textContent = 'Indexed file — recipient auto-filled. You can edit it.';
+                fileHint.className = 'text-[11px] text-green-600 mt-1';
+            } else {
+                fileHint.textContent = 'File not indexed — enter the recipient name and phone manually.';
+                fileHint.className = 'text-[11px] text-amber-600 mt-1';
+            }
+        } catch (_) { /* network issue — allow manual entry */ }
+    }
+    fileInput.addEventListener('change', lookupFile);
+    fileInput.addEventListener('blur', lookupFile);
+
+    // Open the shared global file-number modal; its selection fills the input,
+    // then we run the same indexed-file lookup to backfill the recipient.
+    // The File No input is read-only — it can only be set through this selector.
+    function openFileSelector() {
+        if (!window.GlobalFileNoModal) return;
+        GlobalFileNoModal.open({
+            callback: function (data) {
+                if (!data || !data.fileNumber) return;
+                fileInput.value = data.fileNumber.toUpperCase();
+                // Prefer details already returned by the modal, else fall back to lookup.
+                const rec = data.record || {};
+                const owner = rec.FileName || rec.file_name || rec.file_title || data.file_title || '';
+                if (owner) recipientInput.value = owner;
+                if (rec.phone) phoneInput.value = rec.phone;
+                lastLookup = '';
+                lookupFile();
+            }
         });
+    }
+    document.getElementById('notice-select-file-btn').addEventListener('click', openFileSelector);
+    fileInput.addEventListener('click', openFileSelector);
 
     // ── Form submit ─────────────────────────────────────────────────────────
     document.getElementById('form-notice').addEventListener('submit', async function(e) {
         e.preventDefault();
         const btn = this.querySelector('[type=submit]');
-        btn.disabled = true; btn.textContent = 'Saving…';
         const body = Object.fromEntries(new FormData(this));
-        const res  = await fetch(STORE_NOTICE, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json'}, body: JSON.stringify(body) });
-        const data = await res.json();
-        if (data.success) {
-            modal.classList.add('hidden'); modal.classList.remove('flex'); this.reset();
-            firstTable.ajax.reload();
-            const msg = data.sms_sent ? 'Notice issued & SMS sent.' : 'Notice issued. SMS could not be sent.';
-            Swal.fire({ icon: data.sms_sent ? 'success' : 'warning', title: 'Done', text: msg, timer:3000, showConfirmButton:false });
-        } else {
-            Swal.fire({ icon:'error', title:'Error', text: data.message||'Save failed.' });
+
+        // Guard: must have a file number (indexed or not)
+        if (!body.file_number || !body.file_number.trim()) {
+            Swal.fire({ icon:'warning', title:'Enter a file number', text:'Please type or select a file number before issuing a notice.' });
+            return;
         }
-        btn.disabled=false; btn.textContent='Issue & Send SMS';
+
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+            const res  = await fetch(STORE_NOTICE, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json','Accept':'application/json'}, body: JSON.stringify(body) });
+            let data = {};
+            try { data = await res.json(); } catch (_) { data = {}; }
+
+            if (res.ok && data.success) {
+                modal.classList.add('hidden'); modal.classList.remove('flex'); this.reset();
+                lastLookup = '';
+                fileHint.textContent = 'Indexed files auto-fill the recipient; otherwise enter it manually.';
+                fileHint.className = 'text-[11px] text-gray-400 mt-1';
+                firstTable.ajax.reload();
+                const msg = data.sms_sent ? 'Notice issued & SMS sent.' : 'Notice issued. SMS could not be sent.';
+                Swal.fire({ icon: data.sms_sent ? 'success' : 'warning', title: 'Done', text: msg, timer:3000, showConfirmButton:false });
+            } else {
+                // Surface Laravel validation messages (422) or a generic failure
+                const errMsg = data.message
+                    || (data.errors ? Object.values(data.errors).flat().join('\n') : '')
+                    || 'Save failed.';
+                Swal.fire({ icon:'error', title:'Error', text: errMsg });
+            }
+        } catch (err) {
+            Swal.fire({ icon:'error', title:'Error', text:'Network error. Please try again.' });
+        } finally {
+            btn.disabled = false; btn.textContent = 'Issue & Send SMS';
+        }
     });
 });
 </script>

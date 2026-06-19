@@ -114,6 +114,21 @@ class DigitalFileRequestController extends Controller
             return response()->json(['available' => false, 'message' => 'File number is required.'], 422);
         }
 
+        // Any open File Search Request already raised for this file (so the form can
+        // warn that it has already been sent to SCB before a duplicate is submitted).
+        $openRequest = FileSearchRequest::openForFile($fileNo)
+            ->with('requester:id,first_name,last_name')
+            ->orderBy('id')
+            ->first();
+        $openRequestPayload = $openRequest ? [
+            'request_no'     => $openRequest->request_no,
+            'requester_name' => $openRequest->requester
+                ? trim($openRequest->requester->first_name . ' ' . $openRequest->requester->last_name)
+                : '—',
+            'status'         => $openRequest->status,
+            'requested_at'   => optional($openRequest->created_at)->format('Y-m-d H:i'),
+        ] : null;
+
         // Find the most recent tracker entry for this file number
         $tracker = FileTracker::where('file_number', $fileNo)
             ->orderByDesc('created_at')
@@ -121,9 +136,10 @@ class DigitalFileRequestController extends Controller
 
         if (! $tracker) {
             return response()->json([
-                'found'     => false,
-                'available' => false,
-                'message'   => 'No tracker record found for this file number.',
+                'found'        => false,
+                'available'    => false,
+                'open_request' => $openRequestPayload,
+                'message'      => 'No tracker record found for this file number.',
             ]);
         }
 
@@ -162,6 +178,7 @@ class DigitalFileRequestController extends Controller
             'receiving_officer_id'    => $tracker->receiving_officer_id ?? null,
             'status'                  => $displayStatus,
             'tracker_status'          => $trackerStatus,
+            'open_request'            => $openRequestPayload,
         ];
 
         if (! $available) {
@@ -223,6 +240,31 @@ class DigitalFileRequestController extends Controller
         $requestType = $validated['request_type'] ?? DigitalFileRequest::TYPE_PHYSICAL;
 
         $user = Auth::user();
+
+        // Duplicate guard: if the file already has an open request to SCB, warn (with who
+        // raised it) before creating another. The requester may proceed by re-submitting
+        // with force=1 — earlier requests are never cancelled.
+        if (! $request->boolean('force')) {
+            $existing = FileSearchRequest::openForFile($validated['file_no'])
+                ->with('requester:id,first_name,last_name')
+                ->orderBy('id')
+                ->first();
+
+            if ($existing) {
+                $req = $existing->requester;
+                return response()->json([
+                    'success'   => false,
+                    'duplicate' => true,
+                    'message'   => 'This file has already been requested and sent to SCB.',
+                    'existing'  => [
+                        'request_no'     => $existing->request_no,
+                        'requester_name' => $req ? trim($req->first_name . ' ' . $req->last_name) : '—',
+                        'status'         => $existing->status,
+                        'requested_at'   => optional($existing->created_at)->format('Y-m-d H:i'),
+                    ],
+                ], 200);
+            }
+        }
 
         // Source office: derive from user's department
         $sourceOffice = $this->resolveUserOffice($user);
@@ -793,6 +835,27 @@ class DigitalFileRequestController extends Controller
         };
     }
 
+    /**
+     * Resolve a receiving officer's rank from their "First Last" name (the value stored
+     * by the DFR Receiving Officer dropdown), so seniority can be derived. Returns null
+     * when no matching active user / rank is found.
+     */
+    private function resolveOfficerRank(?string $officerName): ?string
+    {
+        $officerName = trim((string) $officerName);
+        if ($officerName === '') {
+            return null;
+        }
+
+        $rank = DB::connection('sqlsrv')
+            ->table('users')
+            ->where('is_active', 1)
+            ->whereRaw("LTRIM(RTRIM(CONCAT(first_name, ' ', last_name))) = ?", [$officerName])
+            ->value('rank');
+
+        return $rank ?: null;
+    }
+
     private function resolveUserOffice(User $user): ?Office
     {
         if (! $user->department_id) return null;
@@ -875,6 +938,10 @@ class DigitalFileRequestController extends Controller
             $resolver = app(FileLocationResolver::class);
             $resolved = $resolver->resolve($req->file_no);
 
+            // Seniority is derived from the Receiving Officer (the senior person the file
+            // is requested FOR). Prefer their users.rank; fall back to the officer name.
+            $officerRank = $this->resolveOfficerRank($req->receiving_officer);
+
             $fr = FileSearchRequest::create([
                 'request_no'        => FileSearchRequest::generateRequestNo(),
                 'file_number'       => $req->file_no,
@@ -884,6 +951,8 @@ class DigitalFileRequestController extends Controller
                 'resolved_status'   => $resolved['status'] ?? null,
                 'current_location'  => $resolved['current_location'] ?? null,
                 'source'            => FileSearchRequest::SOURCE_DFR,
+                'receiving_officer' => $req->receiving_officer,
+                'priority'          => FileSearchRequest::priorityFor($officerRank ?: $req->receiving_officer),
             ]);
 
             $this->notifyScbMonitors($fr, $req->sending_officer ?: 'A registry user');

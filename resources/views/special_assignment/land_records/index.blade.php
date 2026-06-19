@@ -57,7 +57,6 @@
                             <th class="px-3 py-2">Contravention</th>
                             <th class="px-3 py-2">SPA Status</th>
                             <th class="px-3 py-2">Date</th>
-                            <th class="px-3 py-2">Action</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -226,7 +225,6 @@ $(document).ready(function () {
             }},
             { data: 'status', orderable: false },
             { data: 'created_at'   },
-            { data: 'action', orderable: false, searchable: false },
         ],
     });
 

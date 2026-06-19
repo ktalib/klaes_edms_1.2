@@ -136,10 +136,11 @@
                                                                 <span>Edit Report</span>
                                                             </button>
                                                         @else
-                                                            <div class="flex items-center gap-3 w-full px-4 py-2.5 text-xs text-slate-300 cursor-not-allowed font-bold" title="Cannot edit after printing">
-                                                                <i data-lucide="lock" class="h-4 w-4"></i>
-                                                                <span>Edit</span>
-                                                            </div>
+                                                            <button type="button" @click="$dispatch('open-valuation-modal', {{ json_encode($report->toArray() + ['_mode' => 'reevaluate']) }}); open = false"
+                                                                class="flex items-center gap-3 w-full px-4 py-2.5 text-xs text-purple-600 hover:bg-purple-50 transition font-bold">
+                                                                <i data-lucide="refresh-cw" class="h-4 w-4"></i>
+                                                                <span>Need to Re-Evaluate</span>
+                                                            </button>
                                                         @endif
 
 

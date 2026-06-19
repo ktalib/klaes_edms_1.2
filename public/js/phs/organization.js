@@ -9,6 +9,8 @@
   const $ = (id) => document.getElementById(id);
   const fmt = (n) => new Intl.NumberFormat().format(Number(n || 0));
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
+  // Normalise free-text names to Title Case so neither ALL CAPS nor all lowercase source data leaks into the UI.
+  const titleCase = (v) => String(v ?? '').toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 
   // SweetAlert toast/dialog with a graceful fallback to the native alert().
   const notify = (message, icon = 'success') => {
@@ -105,7 +107,7 @@
         <td class="py-3 sm:py-4 px-4 sm:px-6">
           <div class="flex items-center gap-3">
             <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-semibold text-sm shadow-sm">${esc((user.name || '?').charAt(0).toUpperCase())}</div>
-            <div><p class="font-medium text-sm sm:text-base text-gray-900 dark:text-gray-100">${esc(user.name)}</p><p class="text-xs text-gray-500 dark:text-gray-400 md:hidden">${esc(user.email)}</p></div>
+            <div><p class="font-medium text-sm sm:text-base text-gray-900 dark:text-gray-100">${esc(titleCase(user.name))}</p><p class="text-xs text-gray-500 dark:text-gray-400 md:hidden">${esc(user.email)}</p></div>
           </div>
         </td>
         <td class="py-3 sm:py-4 px-4 sm:px-6 text-sm text-gray-600 dark:text-gray-300"><span>${esc(user.email)}</span>${user.phone ? `<span class="block text-xs text-gray-400 dark:text-gray-500">${esc(user.phone)}</span>` : ''}</td>
@@ -146,7 +148,7 @@
     }
     container.innerHTML = rows.map((item) => `<div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-4 sm:p-5">
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div class="flex items-start gap-3"><div class="w-9 h-9 rounded-2xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center"><i data-lucide="activity" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i></div><div><p class="font-medium text-gray-900 dark:text-gray-100 text-sm sm:text-base">${esc(item.description || '-')}</p><p class="text-xs text-gray-500 dark:text-gray-400">${esc(item.member || 'System')}${item.reference ? ' - ' + esc(item.reference) : ''}</p></div></div>
+        <div class="flex items-start gap-3"><div class="w-9 h-9 rounded-2xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center"><i data-lucide="activity" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i></div><div><p class="font-medium text-gray-900 dark:text-gray-100 text-sm sm:text-base">${esc(item.description || '-')}</p><p class="text-xs text-gray-500 dark:text-gray-400">${esc(titleCase(item.member) || 'System')}${item.reference ? ' - ' + esc(item.reference) : ''}</p></div></div>
         <span class="text-xs text-gray-500 dark:text-gray-400">${esc(item.at || '')}</span>
       </div>
     </div>`).join('');

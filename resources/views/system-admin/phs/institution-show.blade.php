@@ -21,7 +21,7 @@
                     </div>
                     <div>
                         <div class="flex flex-wrap items-center gap-2">
-                            <h2 class="text-xl font-extrabold text-slate-900">{{ $institution->name }}</h2>
+                            <h2 class="text-xl font-extrabold text-slate-900">{{ \Illuminate\Support\Str::title($institution->name) }}</h2>
                             @if($isActive)
                                 <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-100">
                                     <i data-lucide="check-circle-2" class="h-3.5 w-3.5"></i>
@@ -110,7 +110,7 @@
                                         <i data-lucide="{{ $member->isSuperAdmin() ? 'crown' : 'user' }}" class="h-4 w-4"></i>
                                     </div>
                                     <div class="min-w-0">
-                                        <p class="font-bold text-slate-900">{{ $member->name }}</p>
+                                        <p class="font-bold text-slate-900">{{ \Illuminate\Support\Str::title($member->name) }}</p>
                                         <p class="truncate text-xs text-slate-500">{{ $member->email }}</p>
                                         @if($member->phone)
                                             <p class="mt-0.5 flex items-center gap-1 text-xs text-slate-500"><i data-lucide="phone" class="h-3 w-3"></i>{{ $member->phone }}</p>

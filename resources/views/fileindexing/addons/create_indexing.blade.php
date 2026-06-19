@@ -94,15 +94,40 @@
                                     <i data-lucide="layers" class="h-4 w-4 text-indigo-600"></i>
                                     Indexing Type
                                 </h4>
-                                <div class="form-group">
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Indexing Type <span class="text-red-500">*</span></label>
-                                    <select id="indexing-type" name="indexing_type"
-                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                                        x-model="indexing_type"
-                                        required>
-                                        <option value="Regular" {{ (isset($record) && $record->indexing_type == 'Regular') ? 'selected' : '' }}>Regular Indexing</option>
-                                        <option value="Block" {{ (isset($record) && $record->indexing_type == 'Block') ? 'selected' : '' }}>Block Indexing</option>
-                                    </select>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div class="form-group">
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">Indexing Type <span class="text-red-500">*</span></label>
+                                        <select id="indexing-type" name="indexing_type"
+                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                            x-model="indexing_type"
+                                            required>
+                                            <option value="Regular" {{ (isset($record) && $record->indexing_type == 'Regular') ? 'selected' : '' }}>Regular Indexing</option>
+                                            <option value="Block" {{ (isset($record) && $record->indexing_type == 'Block') ? 'selected' : '' }}>Block Indexing</option>
+                                        </select>
+                                    </div>
+
+                                    {{-- Title Status (optional) — mirrors the standalone Title Status module --}}
+                                    <div class="form-group">
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">Title Status <span class="text-red-500">*</span></label>
+                                        <select id="ts-title-type" required
+                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                            <option value="" selected disabled>Select Title Status</option>
+                                            <option value="Normal">Normal</option>
+                                            <option value="Withdrawal (Application)">Withdrawal (Application)</option>
+                                            <option value="Cancellation (RofO)">Cancellation (RofO)</option>
+                                            <option value="Revoke (CofO)">Revocation (CofO)</option>
+                                            <option value="Litigation">Litigation</option>
+                                            <option value="Amendment/Reconsideration (Application/RofO/CofO)">Amendment / Reconsideration</option>
+                                            <option value="Surrender">Surrender</option>
+                                            <option value="Re-grant">Re-grant</option>
+                                            <option value="Subdivision">Subdivision</option>
+                                            <option value="Merger">Merger</option>
+                                            <option value="Change of Purpose">Change of Purpose</option>
+                                            <option value="Extension">Extension</option>
+                                            <option value="Change of Name">Change of Name</option>
+                                            <option value="Separation">Separation</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
 
@@ -138,6 +163,45 @@
                                         class="block w-full px-3 py-2 border border-red-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-red-500 focus:border-red-500 sm:text-sm bg-red-50"
                                         placeholder="Enter reason for investigation" value="{{ isset($record) ? $record->dciv_reason : '' }}">
                                 </div>
+                            </div>
+                        </div>
+
+                        {{-- Title Status details (shown when a Title Status is selected) --}}
+                        <div id="ts-status-fields" class="hidden mt-6 rounded-lg border border-teal-200 bg-teal-50/40 p-6 space-y-5">
+                            <h4 class="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-teal-700">
+                                <i data-lucide="badge-check" class="h-4 w-4 text-teal-600"></i>
+                                Title Status Details
+                            </h4>
+
+                            {{-- See (Additional File No.) — Re-grant only --}}
+                            <div id="ts-see-row" class="form-group hidden">
+                                <input type="hidden" id="ts-see-fileno">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Initial FileNo</label>
+                                <div class="flex items-stretch gap-2">
+                                    <input type="text" id="ts-see-fileno-display" readonly
+                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm"
+                                        placeholder="Click Select to choose the additional file number...">
+                                    <button type="button" id="ts-see-select-btn"
+                                        class="px-4 py-2 rounded-md bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 transition">Select</button>
+                                    <button type="button" id="ts-see-clear-btn"
+                                        class="px-3 py-2 rounded-md border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition">Clear</button>
+                                </div>
+                                <p class="text-[11px] text-gray-400 mt-1">The related file number written as "See ..." on the physical file.</p>
+                            </div>
+
+                            {{-- Reason --}}
+                            <div class="form-group">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Reason</label>
+                                <textarea id="ts-reason" rows="2"
+                                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm"
+                                    placeholder="Reason for this title status action..."></textarea>
+                            </div>
+
+                            {{-- Remark / Comment --}}
+                            <div class="form-group">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Remark / Comment</label>
+                                <textarea id="ts-remark" rows="3"
+                                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm"></textarea>
                             </div>
                         </div>
 
@@ -759,5 +823,157 @@
 
             }));
         });
+    </script>
+
+    {{-- Title Status integration (reuses the standalone title-status backend) --}}
+    <script>
+        (function () {
+            const TS_STORE_URL = '{{ route('title-status.store') }}';
+            const TS_INITIATED_BY_BY_TYPE = @json(\App\Models\TitleStatusApplication::INITIATED_BY_BY_TYPE);
+            const TS_TYPE_VERB = {
+                'Withdrawal (Application)':                            'Withdrawal',
+                'Cancellation (RofO)':                                'Cancellation',
+                'Revoke (CofO)':                                      'Revocation',
+                'Litigation':                                         'Litigation',
+                'Amendment/Reconsideration (Application/RofO/CofO)':  'Amendment/Reconsideration',
+                'Surrender':                                          'Surrender',
+                'Re-grant':                                           'Re-grant',
+                'Subdivision':                                        'Subdivision',
+                'Merger':                                             'Merger',
+                'Change of Purpose':                                  'Change of Purpose',
+                'Extension':                                          'Extension',
+                'Change of Name':                                     'Change of Name',
+                'Separation':                                         'Separation',
+            };
+
+            const typeSelect   = document.getElementById('ts-title-type');
+            const statusBlock  = document.getElementById('ts-status-fields');
+            const seeRow       = document.getElementById('ts-see-row');
+            const seeHidden    = document.getElementById('ts-see-fileno');
+            const seeDisplay   = document.getElementById('ts-see-fileno-display');
+            const reasonEl     = document.getElementById('ts-reason');
+            const remarkEl     = document.getElementById('ts-remark');
+
+            if (!typeSelect) return;
+
+            const getFileNo = () =>
+                ((document.getElementById('fileno')?.value
+                    || document.getElementById('file-number-display')?.value
+                    || '').trim()).replace(/\(\s*T\s*\)\s*$/i, '').trim();
+
+            const initiatedByFor = (type) => {
+                const opts = TS_INITIATED_BY_BY_TYPE[type] || ['Ministry'];
+                return opts[0] || 'Ministry';
+            };
+
+            // Treat empty default and "Normal" as "no title status action".
+            const isActionableType = (t) => t !== '' && t !== 'Normal';
+
+            function buildRemark() {
+                const type   = typeSelect.value;
+                if (!isActionableType(type)) return '';
+                const verb   = TS_TYPE_VERB[type] || type;
+                const fileNo = getFileNo();
+                const reason = (reasonEl?.value || '').trim() || '[Reason]';
+                const initiator = initiatedByFor(type);
+                const now = new Date();
+                const pad = n => String(n).padStart(2, '0');
+                const dt  = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                const fileRef = fileNo ? ` FileNo ${fileNo}` : '';
+                return `${verb}${fileRef} was initiated by ${initiator} on ${dt} due to ${reason}`;
+            }
+
+            function refreshRemark() {
+                if (remarkEl) remarkEl.value = buildRemark();
+            }
+
+            function toggleStatusFields() {
+                const hasType   = isActionableType(typeSelect.value);
+                const isRegrant = typeSelect.value === 'Re-grant';
+                statusBlock?.classList.toggle('hidden', !hasType);
+                seeRow?.classList.toggle('hidden', !isRegrant);
+                if (!isRegrant && seeHidden) { seeHidden.value = ''; if (seeDisplay) seeDisplay.value = ''; }
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+
+            typeSelect.addEventListener('change', function () {
+                toggleStatusFields();
+                refreshRemark();
+            });
+            reasonEl?.addEventListener('input', refreshRemark);
+
+            // See (Additional File No.) picker
+            document.getElementById('ts-see-select-btn')?.addEventListener('click', function () {
+                if (!window.GlobalFileNoModal) return;
+                GlobalFileNoModal.open({
+                    // Do NOT write into the main #fileno / file_number inputs — the See file
+                    // is a separate reference and must not overwrite the main file number.
+                    autoPopulateGenericFields: false,
+                    callback: function (data) {
+                        if (!data || !data.fileNumber) return;
+                        seeHidden.value = data.fileNumber;
+                        seeDisplay.value = data.fileNumber;
+                        refreshRemark();
+                    }
+                });
+            });
+            document.getElementById('ts-see-clear-btn')?.addEventListener('click', function () {
+                seeHidden.value = '';
+                seeDisplay.value = '';
+            });
+
+            // Called by create-indexing-dialog.js after a file index is created/updated.
+            window.tsAfterFileIndexCreated = function (data, formData) {
+                const type = typeSelect.value;
+                if (!isActionableType(type)) return; // "Normal" or unselected → no title status
+
+                formData = formData || {};
+                const pick = (v) => Array.isArray(v) ? (v[0] || '') : (v || '');
+                const reg  = (formData.general_registry || '').toString().toLowerCase();
+                const url  = reg.includes('dciv') ? 'dciv' : 'land';
+
+                const payload = {
+                    url,
+                    title_type:     type,
+                    file_no:        getFileNo() || pick(formData.file_number),
+                    see_fileno:     (seeHidden?.value || '').trim(),
+                    file_title:     pick(formData.file_title),
+                    applicant_name: pick(formData.current_holder) || pick(formData.file_title),
+                    plot_no:        pick(formData.plot_number),
+                    location:       pick(formData.location),
+                    land_use:       pick(formData.land_use_type),
+                    district:       pick(formData.district) || pick(formData.custom_district),
+                    lga:            pick(formData.lga),
+                    initiated_by:   initiatedByFor(type),
+                    reason:         (reasonEl?.value || '').trim(),
+                    remark:         (remarkEl?.value || '').trim() || buildRemark(),
+                    // Title Status raised from File Indexing = false decommissioning
+                    // (the file is flagged but NOT actually decommissioned).
+                    false_decommissioning: 1,
+                };
+
+                if (!payload.file_no) return;
+
+                fetch(TS_STORE_URL, {
+                    method: 'POST',
+                    keepalive: true,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                    },
+                    body: JSON.stringify(payload),
+                })
+                .then(r => r.json())
+                .then(res => {
+                    if (!res.success) {
+                        console.warn('Title status not recorded:', res.message || res.errors);
+                    } else {
+                        console.log('Title status recorded:', res.data?.remark || '');
+                    }
+                })
+                .catch(err => console.warn('Title status request failed:', err));
+            };
+        })();
     </script>
 @endsection

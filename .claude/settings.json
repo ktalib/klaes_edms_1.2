@@ -5,7 +5,17 @@
       "Bash(php -l app/Http/Controllers/UserController.php)",
       "Bash(php -l app/Http/Controllers/Api/Mobile/MobileFileSearchController.php)",
       "Bash(php -l app/Http/Controllers/MobileController.php)",
-      "Bash(php -l app/Services/FileLocationResolver.php)"
+      "Bash(php -l app/Services/FileLocationResolver.php)",
+      "Bash(php -r ' *)",
+      "Bash(php -l app/Models/FileSearchRequest.php)",
+      "Bash(rm -f storage/framework/views/*.php 2>/dev/null; echo done)",
+      "Bash(php -l app/Http/Controllers/CreateFileTrackerController.php 2>&1 | tail -3; rm -f storage/framework/views/*.php 2>/dev/null; echo \"views cleared\")",
+      "Bash(php -l c:/wamp64/www/klaes/app/Http/Controllers/CreateFileTrackerController.php)",
+      "Bash(php -l \"c:/wamp64/www/klaes/app/Services/LegalSearchService.php\")"
+    ],
+    "additionalDirectories": [
+      "c:\\wamp64\\www\\klaes\\storage\\framework\\views",
+      "C:\\wamp64\\www\\klaes\\storage\\framework\\views"
     ]
   }
 }

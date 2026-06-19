@@ -244,7 +244,7 @@
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="md:col-span-2">
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">File Number</label>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">File Number <span class="text-red-500">*</span></label>
                             <div class="flex items-center gap-2">
                                 <input type="text" id="f-sltr_number-display" readonly
                                     placeholder="Click 'Select File Number' to choose"
@@ -600,9 +600,13 @@ function sltrClearFileNumber() {
     sltrHideDuplicateWarning();
 }
 
+// Tracks whether the currently selected file number is a duplicate (blocks save).
+window.sltrFileNumberIsDuplicate = false;
+
 function sltrHideDuplicateWarning() {
     var w = document.getElementById('file-number-duplicate-warning');
     if (w) w.classList.add('hidden');
+    window.sltrFileNumberIsDuplicate = false;
 }
 
 function sltrCheckDuplicateFileNumber(fileNo) {
@@ -617,6 +621,7 @@ function sltrCheckDuplicateFileNumber(fileNo) {
         timeout: 6000
     }).done(function(res) {
         if (res.exists && res.record) {
+            window.sltrFileNumberIsDuplicate = true;
             var msg = 'This file number is already used by: <strong>' + (res.record.applicant_name || 'Unknown') + '</strong>'
                     + ' (Status: ' + (res.record.status || '—') + '). Saving will be blocked.';
             document.getElementById('file-number-duplicate-msg').innerHTML = msg;
@@ -762,11 +767,11 @@ function openCreateModal() {
     document.getElementById('f-sltr-clear-btn').classList.add('hidden');
     sltrHideDuplicateWarning();
     // Reset page number defaults
-    var pageDefaults = { 'page_application': 1, 'page_survey': 9, 'page_planning': 17 };
-    Object.keys(pageDefaults).forEach(function(k) {
-        var el = document.getElementById('f-' + k);
-        if (el) el.value = pageDefaults[k];
-    });
+    // var pageDefaults = { 'page_application': 1, 'page_survey': 9, 'page_planning': 17 };
+    // Object.keys(pageDefaults).forEach(function(k) {
+    //     var el = document.getElementById('f-' + k);
+    //     if (el) el.value = pageDefaults[k];
+    // });
     // Reset land use
     const luSel = document.getElementById('f-land_use_id');
     if (luSel) luSel.selectedIndex = 0;
@@ -853,10 +858,23 @@ function closeModal() {
     document.getElementById('rec-modal').classList.add('hidden');
 }
 
-document.getElementById('rec-modal-backdrop').addEventListener('click', closeModal);
+// Modal stays open until the user explicitly closes it (no close on backdrop click).
 
 document.getElementById('rec-form').addEventListener('submit', async function(e) {
     e.preventDefault();
+
+    // ── File number validation ──────────────────────────────────────
+    const fileNo = (document.getElementById('f-sltr_number').value || '').trim();
+    if (!fileNo) {
+        Swal.fire({ icon: 'warning', title: 'File Number Required', text: 'Please select a File Number before saving.' });
+        document.getElementById('f-sltr_number-display').focus();
+        return;
+    }
+    if (window.sltrFileNumberIsDuplicate) {
+        Swal.fire({ icon: 'error', title: 'Duplicate File Number', text: 'This file number is already used by another recommendation. Please select a different file number.' });
+        return;
+    }
+
     const id = document.getElementById('rec-id').value;
     const url = id ? `/sltr-recommendations/${id}` : '/sltr-recommendations';
     const method = id ? 'PUT' : 'POST';
@@ -895,19 +913,33 @@ document.getElementById('rec-form').addEventListener('submit', async function(e)
         const data = await res.json();
         if (data.success) {
             closeModal();
-            window.location.reload();
+            Swal.fire({
+                icon: 'success',
+                title: 'Saved',
+                text: data.message || 'Recommendation saved successfully.',
+                timer: 1500,
+                showConfirmButton: false
+            }).then(() => window.location.reload());
         } else {
-            alert(data.message || 'Error saving recommendation.');
+            Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Error saving recommendation.' });
         }
     } catch (err) {
-        alert('Network error. Please try again.');
+        Swal.fire({ icon: 'error', title: 'Network Error', text: 'Network error. Please try again.' });
     } finally {
         btn.disabled = false;
     }
 });
 
 async function approveRecord(id, label) {
-    if (!confirm(`Approve recommendation: ${label}?`)) return;
+    const confirmed = await Swal.fire({
+        icon: 'question',
+        title: 'Approve Recommendation?',
+        text: label,
+        showCancelButton: true,
+        confirmButtonText: 'Yes, approve',
+        confirmButtonColor: '#059669'
+    });
+    if (!confirmed.isConfirmed) return;
     const res = await fetch(`/sltr-recommendations/${id}/approve`, {
         method: 'POST',
         headers: {
@@ -916,19 +948,35 @@ async function approveRecord(id, label) {
         }
     });
     const data = await res.json();
-    if (data.success) { window.location.reload(); }
-    else { alert(data.message || 'Error approving.'); }
+    if (data.success) {
+        Swal.fire({ icon: 'success', title: 'Approved', timer: 1500, showConfirmButton: false })
+            .then(() => window.location.reload());
+    } else {
+        Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Error approving.' });
+    }
 }
 
 async function deleteRecord(id, label) {
-    if (!confirm(`Delete recommendation: ${label}? This cannot be undone.`)) return;
+    const confirmed = await Swal.fire({
+        icon: 'warning',
+        title: 'Delete Recommendation?',
+        html: `<strong>${label}</strong><br>This cannot be undone.`,
+        showCancelButton: true,
+        confirmButtonText: 'Yes, delete',
+        confirmButtonColor: '#dc2626'
+    });
+    if (!confirmed.isConfirmed) return;
     const res = await fetch(`/sltr-recommendations/${id}`, {
         method: 'DELETE',
         headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content }
     });
     const data = await res.json();
-    if (data.success) { window.location.reload(); }
-    else { alert(data.message || 'Error deleting.'); }
+    if (data.success) {
+        Swal.fire({ icon: 'success', title: 'Deleted', timer: 1500, showConfirmButton: false })
+            .then(() => window.location.reload());
+    } else {
+        Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Error deleting.' });
+    }
 }
 </script>
 @endpush

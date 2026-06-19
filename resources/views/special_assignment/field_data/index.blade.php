@@ -5,9 +5,16 @@
 <div class="flex-1 overflow-auto">
     @include('admin.header')
     <div class="p-6">
-        <div class="mb-6">
-            <h1 class="text-2xl font-bold text-gray-800">Field Data</h1>
-            <p class="text-sm text-gray-500 mt-1">{{ $PageDescription ?? '' }}</p>
+        <div class="mb-6 flex items-start justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800">Field Data</h1>
+                <p class="text-sm text-gray-500 mt-1">{{ $PageDescription ?? '' }}</p>
+            </div>
+            <button id="btn-add-spa"
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg hover:opacity-90 transition-opacity whitespace-nowrap"
+                style="background:rgb(186,191,12)">
+                <i data-lucide="plus" class="h-4 w-4"></i> Add to SPA
+            </button>
         </div>
 
         {{-- Tabs --}}
@@ -245,8 +252,126 @@
     </div>
 </div>
 
+{{-- Add Record (Add to SPA) Modal --}}
+<div id="modal-add-record" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 overflow-hidden">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+            <h3 class="text-base font-semibold text-gray-800">Add Land Record</h3>
+            <button id="btn-close-modal" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="h-5 w-5"></i></button>
+        </div>
+        <form id="form-add-record" class="p-6 space-y-4" enctype="multipart/form-data">
+            @csrf
+
+            {{-- File Number picker --}}
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">File Number <span class="text-red-500">*</span></label>
+                <div class="flex gap-2">
+                    <input type="text" id="display-file-number" readonly placeholder="No file number selected"
+                        class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 cursor-default outline-none">
+                    <button type="button" id="btn-pick-fileno"
+                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-[rgb(186,191,12)] hover:opacity-90 text-white text-sm font-medium rounded-lg transition-opacity">
+                        <i data-lucide="search" class="h-4 w-4"></i> Select
+                    </button>
+                </div>
+                <p id="lookup-msg" class="text-xs mt-1 hidden"></p>
+            </div>
+
+            {{-- Owner / File Title – readonly, filled from file_title --}}
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Owner / File Title <span class="text-red-500">*</span></label>
+                <input type="text" name="owner_name" id="f-owner_name" readonly required
+                    placeholder="Auto-filled from file number"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 outline-none cursor-default">
+            </div>
+
+            {{-- Location badge (shown after file lookup) --}}
+            <div id="location-badge-wrap" class="hidden">
+                <div class="flex items-start gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800">
+                    <i data-lucide="map-pin" class="h-3.5 w-3.5 mt-0.5 shrink-0 text-blue-500"></i>
+                    <span id="location-badge-text" class="leading-relaxed"></span>
+                </div>
+            </div>
+
+            {{-- Hidden fields --}}
+            <input type="hidden" name="file_number"      id="h-file_number">
+            <input type="hidden" name="file_indexing_id" id="h-file_indexing_id">
+            <input type="hidden" name="tracking_id"      id="h-tracking_id">
+            <input type="hidden" name="is_indexed"       id="h-is_indexed" value="0">
+            <input type="hidden" name="location"         id="h-location">
+            <input type="hidden" name="lga"              id="h-lga">
+            {{-- proposed_use is required server-side; mirror the applied land use --}}
+            <input type="hidden" name="proposed_use"     id="h-proposed_use">
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {{-- Applied Land Use – readonly auto-fill --}}
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Applied Land Use</label>
+                    <input type="text" name="land_use_type" id="f-land_use_type" readonly
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 outline-none"
+                        placeholder="Auto-filled from file">
+                </div>
+
+                {{-- Phone --}}
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                    <input type="text" name="phone" id="f-phone"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Prevailing Land Use <span class="text-red-500">*</span></label>
+                    <select name="existing_use" id="f-existing_use" required
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                        <option value="">Select…</option>
+                        @foreach($landUseTypes as $lut)
+                            <option value="{{ $lut }}">{{ $lut }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                {{-- Contravention badge – same row as Prevailing Land Use --}}
+                <div class="flex items-end justify-center">
+                    <div id="contravention-badge" class="hidden items-center gap-2 px-6 py-2 rounded-lg bg-red-100 text-red-700 border-2 border-red-400" style="font-size:15px;font-weight:900;letter-spacing:.07em;animation:contraventionPulse 1.2s ease-in-out infinite;">
+                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+                         CONTRAVENTION
+                    </div>
+                </div>
+            </div>
+
+            {{-- Property Photos --}}
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Property Photos</label>
+                <label for="f-photos" class="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-[rgb(186,191,12)] hover:bg-[rgba(186,191,12,0.03)] transition-colors">
+                    <div class="flex flex-col items-center gap-1 pointer-events-none">
+                        <i data-lucide="image-plus" class="h-6 w-6 text-gray-400"></i>
+                        <span class="text-xs text-gray-400">Click to upload photos <span class="text-gray-300">(JPG, PNG — multiple allowed)</span></span>
+                    </div>
+                    <input type="file" id="f-photos" name="photos[]" multiple accept="image/*" class="hidden">
+                </label>
+                <div id="photo-preview" class="flex flex-wrap gap-2 mt-2"></div>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" id="btn-cancel-modal" class="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+                <button type="submit" id="btn-save-record" class="px-5 py-2 text-sm text-white bg-[rgb(186,191,12)] rounded-lg hover:opacity-90">Save Record</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{{-- Global File Number Modal --}}
+@include('components.global-fileno-modal')
+
+<style>
+    @keyframes contraventionPulse {
+        0%, 100% { background-color:#fee2e2; border-color:#fca5a5; transform:scale(1);   box-shadow:none; }
+        50%       { background-color:#fecaca; border-color:#ef4444; transform:scale(1.04); box-shadow:0 0 10px rgba(239,68,68,.35); }
+    }
+</style>
+
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 
 <style>
     .tab-btn.active { background:white; color:#1f2937; box-shadow:0 1px 3px rgba(0,0,0,.1); }
@@ -635,6 +760,194 @@ $(document).ready(function () {
             }
         } catch(err) { Swal.fire({ icon:'error', title:'Error', text:'Unexpected error.' }); }
         btn.disabled=false; btn.textContent='Save Inspection';
+    });
+});
+</script>
+
+{{-- ── Add to SPA flow (file selector card → Add Land Record modal) ──────────── --}}
+<script>
+const LR_STORE = '{{ route("special-assignment.land-records.store") }}';
+const LR_LOOKUP = '{{ route("special-assignment.check-file") }}';
+
+$(document).ready(function () {
+    const spaModal = document.getElementById('modal-add-record');
+
+    function openSpaModal() {
+        spaModal.classList.remove('hidden');
+        spaModal.classList.add('flex');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+    function closeSpaModal() {
+        spaModal.classList.add('hidden');
+        spaModal.classList.remove('flex');
+        const badge = document.getElementById('contravention-badge');
+        badge.classList.add('hidden');
+        badge.style.display = 'none';
+    }
+    ['btn-close-modal', 'btn-cancel-modal'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('click', closeSpaModal);
+    });
+
+    // Reset the form to a clean state before showing the picker
+    function resetSpaForm() {
+        document.getElementById('form-add-record').reset();
+        document.getElementById('display-file-number').value = '';
+        document.getElementById('h-file_number').value       = '';
+        document.getElementById('h-file_indexing_id').value  = '';
+        document.getElementById('h-tracking_id').value       = '';
+        document.getElementById('h-is_indexed').value        = '0';
+        document.getElementById('h-location').value          = '';
+        document.getElementById('h-lga').value               = '';
+        document.getElementById('h-proposed_use').value      = '';
+        document.getElementById('f-owner_name').value        = '';
+        document.getElementById('f-land_use_type').value     = '';
+        document.getElementById('f-phone').value             = '';
+        document.getElementById('photo-preview').innerHTML   = '';
+        document.getElementById('lookup-msg').classList.add('hidden');
+        document.getElementById('location-badge-wrap').classList.add('hidden');
+    }
+
+    // Pull details from file indexing and pre-fill the modal
+    async function prefillFromFile(fileNo) {
+        const msg = document.getElementById('lookup-msg');
+        msg.className   = 'text-xs mt-1 text-gray-400';
+        msg.textContent = 'Loading file details…';
+        msg.classList.remove('hidden');
+
+        document.getElementById('display-file-number').value = fileNo;
+        document.getElementById('h-file_number').value       = fileNo;
+
+        try {
+            const ctrl  = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 8000);
+            const res   = await fetch(`${LR_LOOKUP}?file_number=${encodeURIComponent(fileNo)}`, { signal: ctrl.signal });
+            clearTimeout(timer);
+            const d = await res.json();
+
+            if (d.found) {
+                const owner = (d.file_title || d.owner_name || '').trim();
+                document.getElementById('f-owner_name').value       = owner;
+                document.getElementById('f-phone').value            = d.phone || '';
+                document.getElementById('f-land_use_type').value    = d.land_use_type || '';
+                document.getElementById('h-proposed_use').value     = d.land_use_type || '';
+                document.getElementById('h-file_indexing_id').value = d.file_indexing_id || '';
+                document.getElementById('h-tracking_id').value      = d.tracking_id || '';
+                document.getElementById('h-location').value         = d.location || '';
+                document.getElementById('h-lga').value              = d.lga || '';
+                document.getElementById('h-is_indexed').value       = '1';
+
+                const loc = [d.location, d.district, d.lga].filter(Boolean).join(', ');
+                if (loc) {
+                    document.getElementById('location-badge-text').textContent = loc;
+                    document.getElementById('location-badge-wrap').classList.remove('hidden');
+                } else {
+                    document.getElementById('location-badge-wrap').classList.add('hidden');
+                }
+                msg.className   = 'text-xs mt-1 text-green-600';
+                msg.textContent = '✓ File found — details pre-filled.';
+            } else {
+                document.getElementById('h-is_indexed').value = '0';
+                document.getElementById('location-badge-wrap').classList.add('hidden');
+                msg.className   = 'text-xs mt-1 text-amber-600';
+                msg.textContent = 'File not in index — please fill in details manually.';
+            }
+        } catch (err) {
+            msg.className   = 'text-xs mt-1 text-red-500';
+            msg.textContent = err.name === 'AbortError'
+                ? 'Lookup timed out — please fill in details manually.'
+                : 'Could not load file details. Please fill in manually.';
+        }
+    }
+
+    // Open the Add Land Record card; the user picks the file via the in-modal "Select" button
+    function startAddToSpa() {
+        resetSpaForm();
+        openSpaModal();
+    }
+
+    // Page button: open the Add Land Record modal
+    document.getElementById('btn-add-spa').addEventListener('click', startAddToSpa);
+
+    // In-modal "Select" button: re-open the file-selector card
+    document.getElementById('btn-pick-fileno').addEventListener('click', function () {
+        if (!window.GlobalFileNoModal) {
+            Swal.fire({ icon:'error', title:'Unavailable', text:'File number selector not loaded. Please refresh the page.' });
+            return;
+        }
+        window.GlobalFileNoModal.open({
+            callback: function (data) {
+                if (!data || !data.fileNumber) return;
+                prefillFromFile(data.fileNumber);
+            }
+        });
+    });
+
+    // Contravention check (Applied vs Prevailing)
+    function checkContravention() {
+        const approved   = (document.getElementById('f-land_use_type').value || '').trim().toUpperCase();
+        const prevailing = (document.getElementById('f-existing_use').value   || '').trim().toUpperCase();
+        const badge      = document.getElementById('contravention-badge');
+        if (approved && prevailing && approved !== prevailing) {
+            badge.classList.remove('hidden');
+            badge.style.display = 'flex';
+        } else {
+            badge.classList.add('hidden');
+            badge.style.display = 'none';
+        }
+    }
+    document.getElementById('f-existing_use').addEventListener('change', checkContravention);
+
+    // Photo preview
+    document.getElementById('f-photos').addEventListener('change', function () {
+        const preview = document.getElementById('photo-preview');
+        preview.innerHTML = '';
+        Array.from(this.files).forEach(file => {
+            const url = URL.createObjectURL(file);
+            preview.innerHTML += `
+                <div class="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0">
+                    <img src="${url}" class="w-full h-full object-cover">
+                </div>`;
+        });
+    });
+
+    // Form submit → create SPA application
+    document.getElementById('form-add-record').addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        if (!document.getElementById('h-file_number').value.trim()) {
+            Swal.fire({ icon:'warning', title:'Required', text:'Please select a file number first.' });
+            return;
+        }
+
+        const btn = document.getElementById('btn-save-record');
+        btn.disabled = true; btn.textContent = 'Saving…';
+
+        // proposed_use (Approved use) defaults to the applied use, then prevailing — server requires it
+        const proposedEl = document.getElementById('h-proposed_use');
+        if (!proposedEl.value.trim()) {
+            proposedEl.value = (document.getElementById('f-land_use_type').value
+                || document.getElementById('f-existing_use').value || '').trim();
+        }
+
+        try {
+            const fd  = new FormData(this);
+            const res = await fetch(LR_STORE, { method:'POST', headers:{ 'X-CSRF-TOKEN': CSRF }, body: fd });
+            const data = await res.json();
+
+            if (data.success) {
+                closeSpaModal();
+                resetSpaForm();
+                $('#field-records-table').DataTable().ajax.reload(null, false);
+                Swal.fire({ icon:'success', title:'Added to SPA', text:data.message, timer:2000, showConfirmButton:false });
+            } else {
+                Swal.fire({ icon:'error', title:'Error', text:data.message || 'Save failed.' });
+            }
+        } catch (err) {
+            Swal.fire({ icon:'error', title:'Error', text:'An unexpected error occurred.' });
+        }
+
+        btn.disabled = false; btn.textContent = 'Save Record';
     });
 });
 </script>

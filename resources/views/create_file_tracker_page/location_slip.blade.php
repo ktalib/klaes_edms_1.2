@@ -156,7 +156,13 @@
             <div class="header">KLAES FILE TRACKING REQUEST SHEET</div>
 
             @php
-                $remarkLabel = trim(str_replace('_', ' ', $statusLabel));
+                // The remark should reflect the action the slip represents, not the raw
+                // lookup status. A "refer_registry" slip means SCB could not find the file
+                // in archive/pool, so the front desk is told to refer to the original registry.
+                $variantRemarks = [
+                    'refer_registry' => 'Refer to Original Registry',
+                ];
+                $remarkLabel = $variantRemarks[$variant] ?? trim(str_replace('_', ' ', $statusLabel));
                 $remark = $reason ? ($remarkLabel . ' — ' . $reason) : $remarkLabel;
             @endphp
 

@@ -68,7 +68,7 @@
                                             <i data-lucide="landmark" class="h-5 w-5"></i>
                                         </div>
                                         <div>
-                                            <p class="font-extrabold text-slate-900">{{ $institution->name }}</p>
+                                            <p class="font-extrabold text-slate-900">{{ \Illuminate\Support\Str::title($institution->name) }}</p>
                                             <p class="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
                                                 <i data-lucide="mail" class="h-3.5 w-3.5"></i>
                                                 {{ $institution->email }}

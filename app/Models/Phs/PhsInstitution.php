@@ -50,6 +50,30 @@ class PhsInstitution extends Model
     }
 
     /**
+     * Build a unique username suggestion derived from the organization name.
+     * Shared by the onboarding email, the registration form, and any other
+     * place that needs to propose/validate an organization username.
+     */
+    public static function suggestUsername(?string $organizationName): string
+    {
+        $base = \Str::slug((string) $organizationName, '_');
+
+        if ($base === '') {
+            $base = 'org';
+        }
+
+        $username = $base;
+        $suffix = 1;
+
+        while (static::where('username', $username)->exists()) {
+            $username = $base . $suffix;
+            $suffix++;
+        }
+
+        return $username;
+    }
+
+    /**
      * Credit tokens to the wallet and write a ledger row (atomic).
      *
      * @param string $type purchase | bonus | adjustment

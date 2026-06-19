@@ -2397,6 +2397,66 @@ class MlsFileNoController extends Controller
                                 'file_number' => $fullFileNumber,
                             ]);
                         }
+                    } elseif (!$skipAutoPra && str_contains(strtoupper((string) $landUse), '-RC') && !empty($validated['related_fileno'])) {
+                        // Recertification (-RC): mirror the original file into PRA so it
+                        // surfaces in the Related File Numbers register. Classify the same
+                        // way the register rebuild does — Old MLS "KN <digit>" files under an
+                        // -RC parent are Land & Physical Planning recertifications; everything
+                        // else (KNML/MLKN/KNGP legacy or modern files) is KANGIS.
+                        try {
+                            $relatedFileNo = trim((string) $validated['related_fileno']);
+                            $isOldMlsKn = (bool) preg_match('/^KN[\s-]?\d/i', $relatedFileNo);
+                            $recertType = $isOldMlsKn
+                                ? 'Land & Physical Planning Recertification'
+                                : 'KANGIS Recertification';
+
+                            $propId = app(\App\Services\PropertyIdAllocationService::class)->allocateOrRetrievePropId(
+                                $fullFileNumber,
+                                $fullFileNumber,
+                                null,
+                                null,
+                                []
+                            );
+
+                            $praService = app(\App\Services\Pra\PraRecordService::class);
+                            $praService->createRecord([
+                                'mlsFNo' => $fullFileNumber,
+                                'fileno' => $fullFileNumber,
+                                'temp_fileno' => null,
+                                'related_file_number' => $relatedFileNo,
+                                'transaction_type' => $recertType,
+                                'instrument_type' => $recertType,
+                                'transaction_date' => now()->toDateString(),
+                                'reg_date' => now()->toDateString(),
+                                'system_source' => 'MLS_RECERTIFICATION',
+                                'land_use' => $landUse,
+                                'plot_no' => (string) ($validated['plot_no'] ?? ''),
+                                'lgsaOrCity' => (string) ($validated['lga'] ?? ''),
+                                'location' => (string) ($validated['location'] ?? ''),
+                                'property_description' => (string) ($validated['location'] ?? ''),
+                                'Grantor' => (string) ($validated['related_file_title'] ?? ''),
+                                'Grantee' => (string) ($validated['file_name'] ?? ''),
+                                'party_1' => (string) ($validated['related_file_title'] ?? ''),
+                                'party_2' => (string) ($validated['file_name'] ?? ''),
+                                'prop_id' => $propId,
+                                'parent_prop_id' => $parentPropId,
+                                'tracking_id' => $trackingId,
+                                'comments' => $recertType . ' of ' . $relatedFileNo . ' into ' . $fullFileNumber,
+                                'remarks' => 'Commissioned via Recertification workflow',
+                            ], Auth::id());
+
+                            Log::info('MLS generate recertification PRA record created', [
+                                'file_number' => $fullFileNumber,
+                                'related_fileno' => $relatedFileNo,
+                                'transaction_type' => $recertType,
+                                'prop_id' => $propId,
+                            ]);
+                        } catch (\Exception $praError) {
+                            Log::error('MLS generate recertification PRA creation failed (non-critical)', [
+                                'error' => $praError->getMessage(),
+                                'file_number' => $fullFileNumber,
+                            ]);
+                        }
                     } elseif (!$skipAutoPra) {
                         Log::info('MLS generate basic PRA creation skipped for non-OP source', [
                             'file_number' => $fullFileNumber,
@@ -2937,6 +2997,16 @@ class MlsFileNoController extends Controller
                 // Generate a single batch number for all files in this batch (format: BATCH-YYYYMMDD-TIMESTAMP)
                 $batchNo = 'BATCH-' . date('Ymd') . '-' . time();
 
+                Log::channel('mls_batch')->info('Batch MLS generation started', [
+                    'batch_no' => $batchNo,
+                    'batch_size' => $batchQuantity,
+                    'land_use' => $validated['land_use'] ?? null,
+                    'file_option' => $validated['file_option'] ?? null,
+                    'year' => $validated['year'] ?? null,
+                    'serial_start' => $validated['serial_start'] ?? null,
+                    'user' => Auth::user()->name ?? 'Unknown',
+                ]);
+
                 // Prepare arrays for bulk insertion
                 $mlsData = [];
                 $fileNumberData = [];
@@ -3290,9 +3360,17 @@ class MlsFileNoController extends Controller
                 }
 
                 // Bulk Inserts
-                DB::connection('sqlsrv')->table('mls_file_no')->insert($mlsData);
-                DB::connection('sqlsrv')->table('fileNumber')->insert($fileNumberData);
-                DB::connection('sqlsrv')->table('file_indexings')->insert($indexingData);
+                // SQL Server caps a single statement at 2100 parameters, so chunk the rows
+                // to keep (columns * rows) under that limit (21/14/20 columns respectively).
+                foreach (array_chunk($mlsData, 90) as $chunk) {
+                    DB::connection('sqlsrv')->table('mls_file_no')->insert($chunk);
+                }
+                foreach (array_chunk($fileNumberData, 140) as $chunk) {
+                    DB::connection('sqlsrv')->table('fileNumber')->insert($chunk);
+                }
+                foreach (array_chunk($indexingData, 90) as $chunk) {
+                    DB::connection('sqlsrv')->table('file_indexings')->insert($chunk);
+                }
 
                 // Create lineage links for batch records (Subdivision/Merger/Extension)
                 if (!empty($relatedFileNumbers) && !empty($generatedFiles)) {
@@ -3760,7 +3838,8 @@ class MlsFileNoController extends Controller
                     $this->ensureEdmsBlindScanFolder($generatedFileNumber);
                 }
 
-                Log::info('Batch MLS File Numbers Generated', [
+                Log::channel('mls_batch')->info('Batch MLS File Numbers Generated', [
+                    'batch_no' => $batchNo,
                     'batch_size' => $batchQuantity,
                     'land_use' => $landUse,
                     'serial_range' => "{$startSerial} to {$endSerial}",
@@ -3798,7 +3877,7 @@ class MlsFileNoController extends Controller
                 'errors' => $e->errors()
             ], 422);
         } catch (\Exception $e) {
-            Log::error('Error generating batch MLS file numbers', [
+            Log::channel('mls_batch')->error('Error generating batch MLS file numbers', [
                 'error' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),

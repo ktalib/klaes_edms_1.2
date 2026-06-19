@@ -778,7 +778,7 @@
   <div id="dashboard-page" class="page lg:pl-64">
     <aside class="hidden lg:flex fixed inset-y-0 left-0 z-50 w-64 flex-col border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 no-print">
       <div class="h-16 px-5 flex items-center gap-3 border-b border-gray-100 dark:border-gray-700">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 flex items-center justify-center overflow-hidden shadow-sm">
+        <div id="dashboard-logo" class="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 flex items-center justify-center overflow-hidden shadow-sm">
           <img src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" class="w-full h-full object-cover dark:hidden" alt="PHS">
           <img src="{{ asset('assets/logo/phs-dark-logo.jpeg') }}" class="w-full h-full object-cover hidden dark:block" alt="PHS">
         </div>
@@ -803,8 +803,13 @@
             <i data-lucide="chevron-down" id="dash-search-chevron" class="w-4 h-4 transition-transform duration-200"></i>
           </button>
           <div id="dash-search-submenu" class="hidden pl-4 mt-0.5 space-y-0.5">
-            <a href="#" id="sidebar-search-link" data-view="search"
+            <a href="#" id="sidebar-search-now-link" data-view="search"
               class="phs-nav-link flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100">
+              <i data-lucide="search" class="w-3.5 h-3.5"></i>
+              Search Now
+            </a>
+            <a href="#" id="sidebar-search-history-link"
+              class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100">
               <i data-lucide="history" class="w-3.5 h-3.5"></i>
               Search History
             </a>
@@ -857,10 +862,9 @@
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center h-16">
           <div class="flex items-center space-x-4">
-            <div id="dashboard-logo"
-              class="flex items-center justify-center">
-              <img src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" alt="Organization Logo" class="max-h-14 w-auto object-contain dark:hidden" />
-              <img src="{{ asset('assets/logo/phs-dark-logo.jpeg') }}" alt="Organization Logo" class="max-h-14 w-auto object-contain hidden dark:block" />
+            <div class="flex items-center justify-center">
+              <img src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" alt="PHS Logo" class="max-h-14 w-auto object-contain dark:hidden" />
+              <img src="{{ asset('assets/logo/phs-dark-logo.jpeg') }}" alt="PHS Logo" class="max-h-14 w-auto object-contain hidden dark:block" />
             </div>
             <div>
               <h1 id="dashboard-org-name" class="text-lg sm:text-xl font-bold text-gray-900 dark:text-gray-100">KLAES</h1>
@@ -1016,7 +1020,7 @@
           </section>
 
           <!-- Quick action + Recent searches -->
-          <section class="pb-8">
+          <section id="recent-searches-section" class="pb-8 scroll-mt-24">
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div class="flex items-center justify-between p-4 sm:p-6 border-b border-gray-100 dark:border-gray-700">
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Searches</h2>
@@ -1066,8 +1070,9 @@
                 <div class="flex-1 relative w-full">
                   <i data-lucide="search"
                     class="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5"></i>
-                  <input type="text" id="search-query" placeholder="File number, KANGIS No., Owner, Plot No..."
-                    class="w-full pl-10 sm:pl-11 pr-4 py-2 sm:py-3 text-sm sm:text-base h-10 sm:h-12 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20" />
+                  <input type="text" id="search-query" readonly placeholder="Click to select a file number..."
+                    title="Click to open the file number selector"
+                    class="w-full cursor-pointer pl-10 sm:pl-11 pr-4 py-2 sm:py-3 text-sm sm:text-base h-10 sm:h-12 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20" />
                 </div>
                 <button id="search-btn"
                   class="inline-flex items-center justify-center rounded-lg font-medium px-5 sm:px-7 py-2 sm:py-3 h-10 sm:h-12 bg-blue-600 text-white hover:bg-blue-700 transition text-sm sm:text-base w-full sm:w-auto">
@@ -1274,7 +1279,236 @@
         </div>
       </div>
     </footer>
+
+    <!-- ==================== FEEDBACK SIDEBAR (complaints) ==================== -->
+    <!-- Floating launcher -->
+    <button id="phs-feedback-fab" type="button"
+      class="no-print fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg hover:bg-blue-700 transition focus:outline-none focus:ring-4 focus:ring-blue-600/30"
+      aria-haspopup="dialog" aria-controls="phs-feedback-panel">
+      <i data-lucide="message-square-warning" class="w-5 h-5"></i>
+      <span class="hidden sm:inline">Feedback</span>
+    </button>
+
+    <!-- Backdrop -->
+    <div id="phs-feedback-backdrop"
+      class="no-print fixed inset-0 z-[60] bg-black/40 opacity-0 invisible transition-opacity duration-300"></div>
+
+    <!-- Slide-in panel -->
+    <aside id="phs-feedback-panel" role="dialog" aria-modal="true" aria-labelledby="phs-feedback-title"
+      class="no-print fixed top-0 right-0 z-[70] h-full w-full max-w-md translate-x-full transition-transform duration-300 ease-in-out bg-white dark:bg-gray-900 shadow-2xl flex flex-col">
+      <header class="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+            <i data-lucide="message-square-warning" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+          </div>
+          <div>
+            <h2 id="phs-feedback-title" class="text-base font-bold text-gray-900 dark:text-gray-100">Report a Transaction Issue</h2>
+            <p class="text-xs text-gray-500 dark:text-gray-400">Tell us about an incomplete or wrong transaction.</p>
+          </div>
+        </div>
+        <button id="phs-feedback-close" type="button"
+          class="rounded-md p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </header>
+
+      <div class="flex-1 overflow-y-auto px-5 py-4">
+        <!-- Success state -->
+        <div id="phs-feedback-success" class="hidden text-center py-10">
+          <div class="w-14 h-14 rounded-full bg-green-50 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-4">
+            <i data-lucide="check-circle-2" class="w-8 h-8 text-green-600 dark:text-green-400"></i>
+          </div>
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Feedback Submitted</h3>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mb-5" id="phs-feedback-success-msg">Thank you. Your feedback has been received.</p>
+          <button type="button" id="phs-feedback-another"
+            class="inline-flex items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+            <i data-lucide="plus" class="w-4 h-4"></i> Submit another
+          </button>
+        </div>
+
+        <form id="phs-feedback-form" class="space-y-4">
+          <div id="phs-feedback-error"
+            class="hidden rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-700 dark:text-red-300"></div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type of issue *</label>
+            <select id="phs-feedback-category" name="category" required
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="incomplete_transaction">Incomplete transaction</option>
+              <option value="wrong_transaction">Wrong / incorrect transaction</option>
+              <option value="missing_record">Missing record</option>
+              <option value="other">Other</option>
+            </select>
+            <div id="phs-feedback-other-wrap" class="hidden mt-2">
+              <input type="text" id="phs-feedback-category-other" name="category_other" maxlength="150"
+                placeholder="Please specify the type of issue *"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">File number</label>
+            <input type="text" id="phs-feedback-fileno" name="file_number" placeholder="e.g. COM-RES-2021-78"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Auto-filled from the slip you're viewing, if any.</p>
+          </div>
+
+          <input type="hidden" id="phs-feedback-reference" name="reference_no" />
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
+            <input type="text" id="phs-feedback-subject" name="subject" maxlength="255" placeholder="Short summary (optional)"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Describe the problem *</label>
+            <textarea id="phs-feedback-message" name="message" rows="5" required maxlength="2000"
+              placeholder="Which transaction is wrong or missing, and what should it say?"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"></textarea>
+          </div>
+
+          <button type="submit" id="phs-feedback-submit"
+            class="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition disabled:opacity-60 disabled:cursor-not-allowed">
+            <i data-lucide="send" class="w-4 h-4"></i>
+            <span id="phs-feedback-submit-label">Submit Feedback</span>
+          </button>
+        </form>
+      </div>
+    </aside>
   </div>
+
+  <script>
+    (function () {
+      var fab      = document.getElementById('phs-feedback-fab');
+      var panel    = document.getElementById('phs-feedback-panel');
+      var backdrop = document.getElementById('phs-feedback-backdrop');
+      var closeBtn = document.getElementById('phs-feedback-close');
+      var form     = document.getElementById('phs-feedback-form');
+      var errorBox = document.getElementById('phs-feedback-error');
+      var success  = document.getElementById('phs-feedback-success');
+      var another  = document.getElementById('phs-feedback-another');
+      var submitBtn = document.getElementById('phs-feedback-submit');
+      var submitLbl = document.getElementById('phs-feedback-submit-label');
+      var categorySel = document.getElementById('phs-feedback-category');
+      var otherWrap   = document.getElementById('phs-feedback-other-wrap');
+      var otherInput  = document.getElementById('phs-feedback-category-other');
+      if (!fab || !panel) return;
+
+      // Show the "Please specify" box only when "Other" is the chosen issue type,
+      // and make it required while visible (a hidden required field can't submit).
+      function syncOther() {
+        var isOther = categorySel.value === 'other';
+        otherWrap.classList.toggle('hidden', !isOther);
+        if (isOther) {
+          otherInput.setAttribute('required', 'required');
+        } else {
+          otherInput.removeAttribute('required');
+          otherInput.value = '';
+        }
+      }
+      categorySel.addEventListener('change', syncOther);
+
+      // Resolve at call time: window.PHS_PORTAL is defined in a later <script>, so
+      // reading it here at parse time would yield an empty endpoint (which would
+      // make fetch() POST back to the current page — phs/dashboard).
+      function feedbackEndpoint() {
+        return (window.PHS_PORTAL && window.PHS_PORTAL.routes && window.PHS_PORTAL.routes.feedback) || '';
+      }
+      var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
+      function textOf(id) {
+        var el = document.getElementById(id);
+        if (!el) return '';
+        var v = (el.textContent || '').trim();
+        return (v === '--' || v === '') ? '' : v;
+      }
+
+      function open() {
+        // Pre-fill from the slip currently on screen (if a search was run).
+        document.getElementById('phs-feedback-fileno').value = textOf('file-number-value');
+        document.getElementById('phs-feedback-reference').value = textOf('reference-no');
+        syncOther();
+        backdrop.classList.remove('invisible');
+        backdrop.classList.add('opacity-100');
+        panel.classList.remove('translate-x-full');
+        document.body.style.overflow = 'hidden';
+        if (window.lucide) window.lucide.createIcons();
+      }
+      function close() {
+        backdrop.classList.add('invisible');
+        backdrop.classList.remove('opacity-100');
+        panel.classList.add('translate-x-full');
+        document.body.style.overflow = '';
+      }
+      function resetForm() {
+        success.classList.add('hidden');
+        form.classList.remove('hidden');
+        errorBox.classList.add('hidden');
+        form.reset();
+        syncOther();
+      }
+
+      fab.addEventListener('click', open);
+      closeBtn.addEventListener('click', close);
+      backdrop.addEventListener('click', close);
+      another.addEventListener('click', resetForm);
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !panel.classList.contains('translate-x-full')) close();
+      });
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        errorBox.classList.add('hidden');
+        submitBtn.disabled = true;
+        submitLbl.textContent = 'Submitting...';
+
+        var payload = {
+          category:       document.getElementById('phs-feedback-category').value,
+          category_other: otherInput.value,
+          file_number:  document.getElementById('phs-feedback-fileno').value,
+          reference_no: document.getElementById('phs-feedback-reference').value,
+          subject:      document.getElementById('phs-feedback-subject').value,
+          message:      document.getElementById('phs-feedback-message').value
+        };
+
+        fetch(feedbackEndpoint(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrf
+          },
+          body: JSON.stringify(payload)
+        })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (res) {
+          if (res.ok && res.data && res.data.success) {
+            document.getElementById('phs-feedback-success-msg').textContent =
+              res.data.message || 'Thank you. Your feedback has been received.';
+            form.classList.add('hidden');
+            success.classList.remove('hidden');
+            if (window.lucide) window.lucide.createIcons();
+          } else {
+            var msg = (res.data && (res.data.message)) || 'Could not submit your feedback. Please try again.';
+            if (res.data && res.data.errors) {
+              msg = Object.keys(res.data.errors).map(function (k) { return res.data.errors[k][0]; }).join(' ');
+            }
+            errorBox.textContent = msg;
+            errorBox.classList.remove('hidden');
+          }
+        })
+        .catch(function () {
+          errorBox.textContent = 'Network error. Please check your connection and try again.';
+          errorBox.classList.remove('hidden');
+        })
+        .finally(function () {
+          submitBtn.disabled = false;
+          submitLbl.textContent = 'Submit Feedback';
+        });
+      });
+    })();
+  </script>
 
   <script>
     window.PHS_PORTAL = {
@@ -1288,7 +1522,8 @@
         payOnline: "{{ route('phs.tokens.payOnline') }}",
         requestInvoice: "{{ route('phs.tokens.requestInvoice') }}",
         transactions: "{{ route('phs.tokens.transactions') }}",
-        print: "{{ route('phs.slip.print') }}"
+        print: "{{ route('phs.slip.print') }}",
+        feedback: "{{ route('phs.feedback.store') }}"
       },
       assets: {
         logo: "{{ asset('assets/logo/logo.png') }}",
@@ -1328,17 +1563,26 @@
         }
       }
 
-      document.addEventListener('DOMContentLoaded', function () {
-        var btn = document.getElementById('phs-build-fileno-btn');
-        if (!btn) return;
-        btn.addEventListener('click', function () {
-          if (!window.PhsFileNoModal) return;
-          PhsFileNoModal.open({
-            initialTab: 'mls',
-            autoPopulateGenericFields: false, // PHS dashboard has no registry/fileno fields to auto-fill
-            callback: fillSearch
-          });
+      function openFileNoModal() {
+        if (!window.PhsFileNoModal) return;
+        PhsFileNoModal.open({
+          initialTab: 'mls',
+          autoPopulateGenericFields: false, // PHS dashboard has no registry/fileno fields to auto-fill
+          callback: fillSearch
         });
+      }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        // The "Build / select a file number" link opens the selector.
+        document.getElementById('phs-build-fileno-btn')?.addEventListener('click', openFileNoModal);
+
+        // The search box is read-only: clicking (or focusing) it opens the
+        // selector instead of letting the user type a file number by hand.
+        var box = document.getElementById('search-query');
+        if (box) {
+          box.addEventListener('click', openFileNoModal);
+          box.addEventListener('focus', openFileNoModal);
+        }
         if (window.lucide) window.lucide.createIcons();
       });
     })();

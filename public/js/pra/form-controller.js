@@ -503,6 +503,15 @@
                     const fileno = normalizeText(value);
                     if (fileno.length > 0) {
                         this.fetchAndDisplayMatchingRecords(fileno);
+                        // Backfill the shared property details (location, plot,
+                        // district, land use, etc.) from any existing record on
+                        // this file so selecting a file number prefills the form
+                        // here just like it does on the instrument-capture page.
+                        // Skip in update mode so a loaded record is not clobbered,
+                        // and skip the silent re-dispatch used while populating.
+                        if (!this.state.isUpdateMode && !options.silent) {
+                            this.autoBackfillPropertyDetailsFromFile(fileno);
+                        }
                     } else {
                         if (this.matchingRecordsContainer) {
                             this.matchingRecordsContainer.classList.add('hidden');

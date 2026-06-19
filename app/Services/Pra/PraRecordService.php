@@ -393,6 +393,7 @@ class PraRecordService
 
         $fields = [
             'transaction_type',
+            'related_file_number',
             'transaction_date',
             'reg_date',
             'reg_time',
@@ -415,6 +416,8 @@ class PraRecordService
             'source',
             'instrument_type',
             'system_source',
+            'comments',
+            'remarks',
             'deeds_date',
             'deeds_time',
             'rofo_number',

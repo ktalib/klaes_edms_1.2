@@ -27,27 +27,31 @@ class PhsAuthController extends Controller
     public function login(Request $request)
     {
         $credentials = $request->validate([
-            'email' => ['required', 'email'],
+            'username' => ['required', 'string'],
             'password' => ['required', 'string'],
         ]);
 
-        $member = PhsMember::where('email', $credentials['email'])->first();
+        $institution = PhsInstitution::where('username', $credentials['username'])->first();
+
+        $member = $institution
+            ? $institution->members()->where('user_type', 'super_admin')->first()
+            : null;
 
         if (!$member || !Hash::check($credentials['password'], $member->password)) {
             throw ValidationException::withMessages([
-                'email' => 'These credentials do not match our records.',
+                'username' => 'These credentials do not match our records.',
             ]);
         }
 
         if (!$member->isActive()) {
             throw ValidationException::withMessages([
-                'email' => 'This account has been suspended. Please contact your administrator.',
+                'username' => 'This account has been suspended. Please contact your administrator.',
             ]);
         }
 
         if (!$member->institution || !$member->institution->isActive()) {
             throw ValidationException::withMessages([
-                'email' => 'Your organization account is suspended. Please contact KLAES support.',
+                'username' => 'Your organization account is suspended. Please contact KLAES support.',
             ]);
         }
 
@@ -73,7 +77,7 @@ class PhsAuthController extends Controller
             ->with('info', 'Please submit an onboarding request to get started.');
     }
 
-    public function showRegisterWithToken($token)
+    public function showRegisterWithToken($token, Request $request)
     {
         if (Auth::guard('phs')->check()) {
             return redirect()->route('phs.dashboard');
@@ -88,34 +92,19 @@ class PhsAuthController extends Controller
                 ->withErrors(['token' => 'Invalid or expired registration link. Please submit a new onboarding request.']);
         }
 
+        // Prefer the username carried in the onboarding email link so it
+        // backfills the form input; fall back to a freshly suggested one.
+        $urlUsername = $request->query('username');
+        $suggestedUsername = (is_string($urlUsername) && preg_match('/^[a-z0-9_]{3,100}$/', $urlUsername)
+            && !PhsInstitution::where('username', $urlUsername)->exists())
+                ? $urlUsername
+                : PhsInstitution::suggestUsername($onboardingRequest->organization_name);
+
         return view('phs.auth.register-with-token', [
             'onboardingRequest' => $onboardingRequest,
             'token' => $token,
-            'suggestedUsername' => $this->suggestUsername($onboardingRequest->organization_name),
+            'suggestedUsername' => $suggestedUsername,
         ]);
-    }
-
-    /**
-     * Build a unique username suggestion derived from the organization name.
-     * The user may override it on the registration form.
-     */
-    private function suggestUsername(?string $organizationName): string
-    {
-        $base = \Str::slug((string) $organizationName, '_');
-
-        if ($base === '') {
-            $base = 'org';
-        }
-
-        $username = $base;
-        $suffix = 1;
-
-        while (PhsInstitution::where('username', $username)->exists()) {
-            $username = $base . $suffix;
-            $suffix++;
-        }
-
-        return $username;
     }
 
     public function registerWithToken($token, Request $request)

@@ -11,7 +11,7 @@ class SpaCertificate extends Model
     protected $table      = 'spa_certificates';
 
     protected $fillable = [
-        'spa_application_id', 'cert_number', 'file_number',
+        'spa_application_id', 'cert_number', 'file_number', 'new_file_number',
         'holder_name', 'from_use', 'to_use',
         'issue_date', 'expiry_date', 'issued_by', 'status', 'created_by',
     ];

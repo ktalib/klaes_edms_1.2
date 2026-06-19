@@ -38,7 +38,7 @@
                         @endphp
                         <tr>
                             <td class="px-4 py-3 text-slate-400 text-xs">{{ $loop->iteration }}</td>
-                            <td class="px-4 py-3 font-bold">{{ optional($txn->institution)->name }}</td>
+                            <td class="px-4 py-3 font-bold">{{ \Illuminate\Support\Str::title(optional($txn->institution)->name) }}</td>
                             <td class="px-4 py-3">
                                 @if ($txn->type === 'topup')
                                     <span class="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-600/20">Top-up</span>

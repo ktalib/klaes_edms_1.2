@@ -1610,8 +1610,10 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'create-file-tracker'
     Route::get('/quick-search/scb-feedback', [App\Http\Controllers\CreateFileTrackerController::class, 'scbFeedback'])->name('create-file-tracker.quick-search.scb-feedback');
     Route::get('/quick-search/file-request-log', [App\Http\Controllers\CreateFileTrackerController::class, 'fileRequestLog'])->name('create-file-tracker.quick-search.file-request-log');
     Route::post('/quick-search/file-request/{id}/front-desk-acted', [App\Http\Controllers\CreateFileTrackerController::class, 'markFrontDeskActed'])->name('create-file-tracker.quick-search.front-desk-acted');
+    Route::delete('/quick-search/file-request/{id}', [App\Http\Controllers\CreateFileTrackerController::class, 'deleteFileRequest'])->name('create-file-tracker.quick-search.file-request.delete');
     Route::get('/slip', [App\Http\Controllers\CreateFileTrackerController::class, 'slipFromFileNumber'])->name('create-file-tracker.slip');
     Route::post('/file-request', [App\Http\Controllers\CreateFileTrackerController::class, 'sendFileRequest'])->name('create-file-tracker.file-request');
+    Route::get('/file-requesters', [App\Http\Controllers\CreateFileTrackerController::class, 'fileRequesters'])->name('create-file-tracker.file-requesters');
 
     Route::get('/check-logout-status', [App\Http\Controllers\CreateFileTrackerController::class, 'checkFileLogoutStatus'])->name('create-file-tracker.check-logout-status');
     Route::get('/kangis-checkout', [App\Http\Controllers\CreateFileTrackerController::class, 'kangisCheckoutList'])->name('create-file-tracker.kangis-checkout.list');

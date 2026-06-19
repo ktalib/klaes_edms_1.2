@@ -285,27 +285,30 @@
                                         statusSpan.addClass('bg-gray-100 text-gray-800');
                                 }
 
-                                $('#modal-status-update, #modal-status-notes').prop('disabled', false);
+                                // Enable status, notes and the Registry (Origin) dropdown so the
+                                // user can pick the registry (auto-selected when we can resolve it).
+                                $('#modal-status-update, #modal-status-notes, #modal-registry-office').prop('disabled', false);
                                 $('#modal-update-status-btn').data('database-id', data.id);
                                 $('#modal-update-status-btn').data('table', data.table || 'file_tracker');
 
-                                // Auto-populate origin registry name and code
+                                // Auto-select the origin registry when known; otherwise leave it on
+                                // "Select Registry (Origin)" for the user to choose.
                                 const originCode = data.origin_office_code || data.origin_registry_code || data.originOfficeCode;
                                 const originName = data.origin_office_name || data.origin_registry || data.originOfficeName;
-                                
-                                if (originCode && originName) {
-                                    $('#modal-registry-office-display').val(originName);
-                                    $('#modal-registry-office').val(originCode);
+                                const $registrySelect = $('#modal-registry-office');
+
+                                if (originCode && $registrySelect.find(`option[value="${originCode}"]`).length) {
+                                    $registrySelect.val(originCode);
+                                } else if (originName && $registrySelect.find(`option[data-name="${originName}"]`).length) {
+                                    $registrySelect.val($registrySelect.find(`option[data-name="${originName}"]`).val());
                                 } else {
-                                    $('#modal-registry-office-display').val('Origin Registry not found');
-                                    $('#modal-registry-office').val('');
+                                    $registrySelect.val('');
                                 }
                             } else {
                                 $('#preview-file-name').text('File not found');
                                 $('#preview-file-number, #preview-location, #preview-handler').text('N/A');
                                 $('#preview-status').text('N/A').removeClass().addClass('px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800');
-                                $('#modal-status-update, #modal-status-notes').prop('disabled', true);
-                                $('#modal-registry-office-display').val('');
+                                $('#modal-status-update, #modal-status-notes, #modal-registry-office').prop('disabled', true);
                                 $('#modal-registry-office').val('');
                             }
                             checkStatusUpdateModalForm();
@@ -314,8 +317,7 @@
                             $('#preview-file-name').text('Error loading file information');
                             $('#preview-file-number, #preview-location, #preview-handler').text('N/A');
                             $('#preview-status').text('Error').removeClass().addClass('px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800');
-                            $('#modal-status-update, #modal-status-notes').prop('disabled', true);
-                            $('#modal-registry-office-display').val('');
+                            $('#modal-status-update, #modal-status-notes, #modal-registry-office').prop('disabled', true);
                             $('#modal-registry-office').val('');
                             checkStatusUpdateModalForm();
                         }
@@ -329,8 +331,7 @@
                         trackingLookupTimer = setTimeout(() => fetchFileInfo(trackingId), 500);
                     } else {
                         $('#modal-file-preview').addClass('hidden');
-                        $('#modal-status-update, #modal-status-notes').prop('disabled', true);
-                        $('#modal-registry-office-display').val('');
+                        $('#modal-status-update, #modal-status-notes, #modal-registry-office').prop('disabled', true);
                         $('#modal-registry-office').val('');
                     }
                     checkStatusUpdateModalForm();
@@ -352,7 +353,7 @@
                     const status = $('#modal-status-update').val();
                     const notes = $('#modal-status-notes').val().trim();
                     const registryOfficeCode = $('#modal-registry-office').val();
-                    const registryOfficeName = $('#modal-registry-office-display').val();
+                    const registryOfficeName = $('#modal-registry-office option:selected').data('name') || $('#modal-registry-office option:selected').text();
                     const databaseId = btn.data('database-id');
                     const table = btn.data('table') || 'file_tracker';
 
@@ -390,6 +391,7 @@
                                 $('#modal-update-tracking-id').val('');
                                 $('#modal-status-update').val('');
                                 $('#modal-status-notes').val('');
+                                $('#modal-registry-office').val('');
                                 $('#modal-file-preview').addClass('hidden');
                                 $('#modal-status-update, #modal-status-notes, #modal-registry-office').prop('disabled', true);
                                 checkStatusUpdateModalForm();
@@ -2069,10 +2071,16 @@
                         </div>
                         
                         <div class="space-y-2">
-                            <label for="modal-registry-office-display" class="block text-sm font-medium text-gray-700">Registry *</label>
-                            <input type="text" id="modal-registry-office-display" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 cursor-not-allowed text-gray-600 focus:outline-none" readonly placeholder="Waiting for file lookup...">
-                            <input type="hidden" id="modal-registry-office">
-                            <p class="text-xs text-gray-500">The file will be logged back to its origin Registry</p>
+                            <label for="modal-registry-office" class="block text-sm font-medium text-gray-700">Registry (Origin) *</label>
+                            <select id="modal-registry-office" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" disabled>
+                                <option value="">Select Registry (Origin)</option>
+                                @isset($registries)
+                                    @foreach($registries as $registry)
+                                        <option value="{{ $registry->registry_code }}" data-name="{{ $registry->name }}">{{ $registry->name }}</option>
+                                    @endforeach
+                                @endisset
+                            </select>
+                            <p class="text-xs text-gray-500">The file will be logged back to the selected origin Registry</p>
                         </div>
                         
                         <div class="space-y-2">

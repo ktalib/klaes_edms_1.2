@@ -517,6 +517,8 @@ class LegalSearchService
                 'regNo',
                 'prop_id',
                 'comments',
+                'title_status',
+                'title_status_remark',
                 DB::raw("plot_size AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
                 'caveat_id',
@@ -576,6 +578,8 @@ class LegalSearchService
                 'regNo',
                 'prop_id',
                 'comments',
+                'title_status',
+                'title_status_remark',
                 DB::raw("NULL AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
                 'caveat_id',
@@ -637,6 +641,8 @@ class LegalSearchService
                 'prop_id',
                 'parent_prop_id',
                 'comments',
+                'title_status',
+                'title_status_remark',
                 DB::raw("plot_size AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
                 'caveat_id',
@@ -697,6 +703,8 @@ class LegalSearchService
                 DB::raw("registration_number AS regNo"),
                 'prop_id',
                 DB::raw("property_description AS comments"),
+                'title_status',
+                'title_status_remark',
                 'size',
                 DB::raw("NULL AS caveat"),
                 DB::raw("NULL AS caveat_id"),
@@ -715,7 +723,26 @@ class LegalSearchService
 
         $this->applySoftDeleteFilter($query, 'deed_registrations');
 
+        // Certificate of Occupancy instruments are mirrored into CofO_staging
+        // (the CofO tab). Exclude them here so the same CofO does not also show
+        // up under Deeds Registration as a duplicate.
+        $this->excludeCofoFromDeedRegistrations($query);
+
         return $query->get()->map(fn($r) => $this->normalizeRow($r, 'Deed Registration'))->toArray();
+    }
+
+    /**
+     * Drop Certificate of Occupancy rows from a deed_registrations query.
+     * CofOs live in CofO_staging now; keeping them here would duplicate the
+     * record across the Deeds Registration and CofO tabs. Null instrument
+     * types are kept (they are not CofO).
+     */
+    private function excludeCofoFromDeedRegistrations($query): void
+    {
+        $query->where(function ($q) {
+            $q->whereNull('instrument_type')
+              ->orWhere('instrument_type', 'NOT LIKE', '%Certificate of Occupancy%');
+        });
     }
 
     // --- Shared filter logic -----------------------------------------
@@ -882,6 +909,16 @@ class LegalSearchService
             $registration = trim(($serialNo ?: '0') . '/' . ($pageNo ?: '0') . '/' . ($volumeNo ?: '0'));
         }
 
+        // When the file has been decommissioned via Title Status Update
+        // (Withdrawal/Cancellation/Revocation/etc.), surface the status remark
+        // as the row comment so it appears in the Legal Search timeline.
+        $titleStatus       = $row->title_status ?? 0;
+        $titleStatusRemark = $row->title_status_remark ?? null;
+        $comments          = $row->comments ?? '-';
+        if ((int) $titleStatus === 1 && trim((string) $titleStatusRemark) !== '') {
+            $comments = $titleStatusRemark;
+        }
+
         return [
             'id' => $row->id,
             'file_number' => $row->file_number,
@@ -911,7 +948,9 @@ class LegalSearchService
             'caveated_comment' => $row->caveated_comment ?? null,
             'is_caveated' => $row->is_caveated ?? 0,
             'plot_no' => $row->plot_no ?? '-',
-            'comments' => $row->comments ?? '-',
+            'comments' => $comments,
+            'title_status' => (int) $titleStatus,
+            'title_status_remark' => $titleStatusRemark,
             'cofo_comment' => $row->cofo_comment ?? null,
             'prop_id' => $row->prop_id ?? null,
             'parent_prop_id' => $row->parent_prop_id ?? null,
@@ -1006,6 +1045,8 @@ class LegalSearchService
                 'regNo',
                 'prop_id',
                 'comments',
+                'title_status',
+                'title_status_remark',
                 DB::raw("plot_size AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
                 'plot_no',
@@ -1043,6 +1084,8 @@ class LegalSearchService
                 'regNo',
                 'prop_id',
                 'comments',
+                'title_status',
+                'title_status_remark',
                 DB::raw("NULL AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
                 'plot_no',
@@ -1082,6 +1125,8 @@ class LegalSearchService
                 'prop_id',
                 'parent_prop_id',
                 'comments',
+                'title_status',
+                'title_status_remark',
                 DB::raw("plot_size AS size"),
                 DB::raw("CASE WHEN is_caveated = 1 THEN 'Yes' ELSE 'No' END AS caveat"),
                 'plot_no',
@@ -1120,6 +1165,8 @@ class LegalSearchService
                 DB::raw("registration_number AS regNo"),
                 'prop_id',
                 DB::raw("property_description AS comments"),
+                'title_status',
+                'title_status_remark',
                 'size',
                 DB::raw("NULL AS caveat"),
                 DB::raw("plot_number AS plot_no"),
@@ -1145,6 +1192,13 @@ class LegalSearchService
         if (!empty($excludeIds)) {
             // Cast exclude IDs to int to match the INT primary key column.
             $query->whereNotIn('id', array_map('intval', array_filter($excludeIds, 'is_numeric')));
+        }
+
+        // CofOs are surfaced from CofO_staging; never from deed_registrations,
+        // to avoid the same record appearing in both the Deeds Registration and
+        // CofO tabs.
+        if ($tableName === 'deed_registrations') {
+            $this->excludeCofoFromDeedRegistrations($query);
         }
 
         $this->applySoftDeleteFilter($query, $tableName);
@@ -2401,6 +2455,11 @@ class LegalSearchService
                 'size' => $t['size'] ?: '-',
                 'caveat' => $t['caveat'] ?: '-',
                 'comments' => $t['is_caveated'] ? $tc($t['caveated_comment'] ?: ($t['comments'] ?: '-')) : $tc($t['comments'] ?: '-'),
+                // Extra metadata (ignored by the print slip) so consumers that render
+                // the same LS-weighed timeline on-screen — e.g. the PHS portal —
+                // can show source badges and location identically to the slip.
+                'source_table' => $labelToDb[$t['source_table'] ?? ''] ?? ($t['source_table'] ?? ''),
+                'location' => $t['location'] ?? '',
             ];
         }
 

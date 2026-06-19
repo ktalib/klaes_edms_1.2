@@ -1036,21 +1036,42 @@
                                             </div>
                                         </div>
 
-                                        <!-- Related File Section (Recertification -RC file numbers) -->
-                                        <div x-show="isRecertificationPrefix" x-transition class="mb-4">
-                                            <div class="bg-amber-50 p-4 rounded-lg border border-amber-200 shadow-sm">
+                                        <!-- Related File Section (Available for all file types) -->
+                                        <div class="mb-4">
+                                            <!-- Checkbox to enable Related File (hidden for RC prefix since it's mandatory) -->
+                                            <div x-show="!isRecertificationPrefix" class="mb-3">
+                                                <label class="flex items-center cursor-pointer">
+                                                    <input type="checkbox" 
+                                                           x-model="hasRelatedFile" 
+                                                           @change="if(!hasRelatedFile) { relatedFileNo = ''; relatedFileTitle = ''; relatedFileIndexingId = ''; }"
+                                                           class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                                    <span class="ml-2 text-sm font-medium text-gray-700">
+                                                        <i data-lucide="link-2" class="w-4 h-4 inline mr-1 text-gray-500"></i>
+                                                        This file has a Related File Number
+                                                    </span>
+                                                </label>
+                                                <p class="text-xs text-gray-500 mt-1 ml-6">Check this if this file is related to an existing file (e.g., conversion, extension, recertification)</p>
+                                            </div>
+
+                                            <!-- Related File Input Section (shown when checked OR when RC prefix) -->
+                                            <div x-show="hasRelatedFile || isRecertificationPrefix" x-transition class="bg-amber-50 p-4 rounded-lg border border-amber-200 shadow-sm">
                                                 <label class="block text-sm font-semibold text-gray-700 mb-3">
                                                     <i data-lucide="link-2" class="w-4 h-4 inline mr-1 text-amber-600"></i>
-                                                    Related File (Original File for Recertification)
+                                                    <span x-text="isRecertificationPrefix ? 'Related File (Original File for Recertification)' : 'Related File'"></span>
+                                                    <span x-show="isRecertificationPrefix" class="text-red-500 ml-1">*</span>
                                                 </label>
                                                 <div class="grid grid-cols-1 gap-4">
                                                     <div>
-                                                        <label class="block text-xs font-medium text-gray-600 mb-1">Related File Number</label>
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                            Related File Number
+                                                            <span x-show="isRecertificationPrefix" class="text-red-500">*</span>
+                                                        </label>
                                                         <div class="flex items-center gap-2">
                                                             <input type="text" readonly
                                                                 x-model="relatedFileNo"
                                                                 class="flex-1 px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-mono cursor-not-allowed"
-                                                                placeholder="No file selected">
+                                                                placeholder="No file selected"
+                                                                :required="isRecertificationPrefix">
                                                             <button type="button" @click="openRelatedFileModal()"
                                                                     class="px-3 py-2 bg-amber-600 text-white text-xs font-semibold rounded-md hover:bg-amber-700 transition-colors flex items-center gap-1.5 whitespace-nowrap">
                                                                 <i data-lucide="search" class="w-3.5 h-3.5"></i>
@@ -1061,12 +1082,13 @@
                                                     <div x-show="relatedFileNo">
                                                         <label class="block text-xs font-medium text-gray-600 mb-1">
                                                             Related File Title
-                                                            <span class="text-red-500">*</span>
+                                                            <span x-show="isRecertificationPrefix" class="text-red-500">*</span>
                                                         </label>
                                                         <input type="text"
                                                             x-model="relatedFileTitle"
                                                             class="w-full px-3 py-2 border border-gray-200 rounded-md text-gray-700"
-                                                            placeholder="Enter the original file title">
+                                                            placeholder="Enter the original file title"
+                                                            :required="isRecertificationPrefix && relatedFileNo">
                                                         <p class="text-[11px] text-gray-500 mt-1">Auto-filled from the selected file. If empty (e.g. legacy files), please type the original file title.</p>
                                                     </div>
                                                 </div>

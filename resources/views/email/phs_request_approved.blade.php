@@ -21,7 +21,19 @@
             <td>Primary Contact:</td>
             <td>{{ $request->contact_name }}</td>
         </tr>
+        @isset($suggestedUsername)
+        <tr>
+            <td>Organization Username:</td>
+            <td><strong>{{ $suggestedUsername }}</strong></td>
+        </tr>
+        @endisset
     </table>
+
+    @isset($suggestedUsername)
+    <div class="info-box">
+        <strong>🔑 Your Organization Username:</strong> <strong>{{ $suggestedUsername }}</strong> — this is auto-assigned from your organization name and will be pre-filled on the registration form. You can update it later under <em>Organization &rsaquo; Branding</em>.
+    </div>
+    @endisset
     
     <h3>Complete Your Registration</h3>
     <p>Click the button below to complete your registration and create your account password:</p>

@@ -270,7 +270,7 @@
     </article>
 
     <article class="slip disclaimer-page">
-        <img class="bg-watermark" src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" alt="" aria-hidden="true">
+        {{-- <img class="bg-watermark" src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" alt="" aria-hidden="true">
         <div class="watermark" aria-hidden="true">PROPERTY HISTORY SEARCH (PHS) <br> &nbsp;&bull;&nbsp;  Not For Sale</div>
         <header class="header">
             <div class="logo-container">
@@ -281,7 +281,7 @@
                 </div>
                 <div class="logo-box"><img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Ministry Logo"></div>
             </div>
-        </header>
+        </header> --}}
 
         <section class="disclaimer-content">
             <div class="disclaimer-title">Disclaimer and Legal Notice</div>

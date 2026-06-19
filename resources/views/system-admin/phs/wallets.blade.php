@@ -50,7 +50,7 @@
                         @forelse ($wallets as $w)
                             <tr class="hover:bg-slate-50/60">
                                 <td class="px-5 py-3 text-slate-400 text-xs">{{ $loop->iteration }}</td>
-                                <td class="px-5 py-3 font-semibold text-slate-900">{{ $w['inst']->name }}</td>
+                                <td class="px-5 py-3 font-semibold text-slate-900">{{ \Illuminate\Support\Str::title($w['inst']->name) }}</td>
                                 <td class="px-5 py-3 text-right font-bold text-slate-900">{{ number_format($w['balance']) }}</td>
                                 <td class="px-5 py-3 text-right text-slate-700">{{ number_format($w['allocated']) }}</td>
                                 <td class="px-5 py-3 text-right text-slate-700">{{ number_format($w['used']) }}</td>

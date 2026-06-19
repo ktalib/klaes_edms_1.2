@@ -248,7 +248,8 @@ class FileNumberController extends Controller
             }
 
             // ── Build Plot Extension rows once (source=New only) ──
-            // Always prepended (not paginated through OFFSET), so use their count for totals.
+            // These now interleave by date through the unified phase-1 query; the full
+            // formatted set is kept here so phase-2 can pick the rows on the current page.
             $plotExtRows = $this->formatPlotExtensionRows($source, $search);
             $recordsTotal += $plotExtRows->count();
 
@@ -303,20 +304,22 @@ class FileNumberController extends Controller
 
             // ── Main data query (two-phase) ──
             //
-            // PHASE 1 – Paginate cheaply.
-            // Only the mls_file_no OUTER APPLY is needed here (for batch_no grouping).
-            // We intentionally exclude the expensive pra / instrument_capture /
-            // file_commissioning_sheets lookups so they don't fire for every row
-            // in the full result set (~1,540+).  Window functions still need to see
-            // all matching rows to compute correct PARTITION values, but the row
-            // data carried through is minimal.
-            $phaseSql = "
-                SELECT id, mlsfNo, derived_batch_no, batch_count, batch_first_file
+            // PHASE 1 – Paginate cheaply. Only the mls_file_no OUTER APPLY is needed
+            // here (for batch_no grouping); expensive per-row lookups are deferred to
+            // phase 2 so they fire at most page-size times.
+            //
+            // Three row-source branches are paginated TOGETHER, ordered by date, so plot
+            // extensions / temp files interleave chronologically instead of being pinned
+            // to the top. F = fileNumber (batch-grouped), T = temporary files,
+            // P = plot extensions. T/P only exist in the "New" view.
+            $includeExtras = ($source === 'New');
+
+            $fileBranch = "
+                SELECT CAST('F' AS CHAR(1)) AS source_type, w.id,
+                       w.derived_batch_no, w.batch_count, w.batch_first_file, w.sort_date
                 FROM (
                     SELECT
                         fn.id,
-                        fn.mlsfNo,
-                        COALESCE(NULLIF(mls.batch_no,''), CAST(fn.id AS VARCHAR(20))) AS batch_key,
                         mls.batch_no AS derived_batch_no,
                         ROW_NUMBER() OVER (
                             PARTITION BY COALESCE(NULLIF(mls.batch_no,''), CAST(fn.id AS VARCHAR(20)))
@@ -329,7 +332,8 @@ class FileNumberController extends Controller
                             PARTITION BY COALESCE(NULLIF(mls.batch_no,''), CAST(fn.id AS VARCHAR(20)))
                             ORDER BY fn.id ASC
                             ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-                        ) AS batch_first_file
+                        ) AS batch_first_file,
+                        fn.created_at AS sort_date
                     FROM fileNumber fn
                     OUTER APPLY (
                         SELECT TOP 1 m.batch_no
@@ -340,90 +344,101 @@ class FileNumberController extends Controller
                     WHERE (fn.is_deleted IS NULL OR fn.is_deleted = 0)
                       AND {$sourceWhere}
                       {$searchSql}
-                ) AS windowed
-                WHERE group_rn = 1
-                ORDER BY id DESC
+                ) AS w
+                WHERE w.group_rn = 1
+            ";
+
+            $unionBranches = [$fileBranch];
+            $unionBindings = $searchBindings;
+
+            if ($includeExtras) {
+                $tempSrch = !empty($search)
+                    ? "AND (m.full_file_number LIKE ? OR m.file_name LIKE ? OR m.tracking_id LIKE ?
+                            OR m.location LIKE ? OR m.lga LIKE ? OR m.plot_no LIKE ? OR m.tp_no LIKE ?)"
+                    : '';
+                $unionBranches[] = "
+                    SELECT CAST('T' AS CHAR(1)) AS source_type, m.id,
+                           CAST(NULL AS VARCHAR(50)) AS derived_batch_no, 1 AS batch_count,
+                           m.full_file_number AS batch_first_file, m.created_at AS sort_date
+                    FROM mls_file_no m
+                    WHERE m.file_option = 'temporary'
+                      AND (m.is_deleted IS NULL OR m.is_deleted = 0)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fileNumber fn2
+                          WHERE fn2.mlsfNo = m.full_file_number
+                            AND (fn2.is_deleted IS NULL OR fn2.is_deleted = 0)
+                      )
+                      {$tempSrch}
+                ";
+
+                $plotSrch = !empty($search)
+                    ? "AND (pe.original_file_no LIKE ? OR pe.file_name LIKE ? OR pe.tracking_id LIKE ?
+                            OR pe.location LIKE ? OR pe.lga LIKE ? OR pe.plot_no LIKE ? OR pe.tp_no LIKE ?)"
+                    : '';
+                $unionBranches[] = "
+                    SELECT CAST('P' AS CHAR(1)) AS source_type, pe.id,
+                           CAST(NULL AS VARCHAR(50)) AS derived_batch_no, 1 AS batch_count,
+                           pe.original_file_no AS batch_first_file, pe.created_at AS sort_date
+                    FROM plot_extensions pe
+                    WHERE (pe.is_deleted IS NULL OR pe.is_deleted = 0)
+                      {$plotSrch}
+                ";
+
+                if (!empty($search)) {
+                    $pct = "%{$search}%";
+                    // temp branch (7) then plot branch (7)
+                    $unionBindings = array_merge(
+                        $unionBindings,
+                        [$pct, $pct, $pct, $pct, $pct, $pct, $pct],
+                        [$pct, $pct, $pct, $pct, $pct, $pct, $pct]
+                    );
+                }
+            }
+
+            $phaseSql = "
+                SELECT source_type, id, derived_batch_no, batch_count, batch_first_file
+                FROM (
+                    " . implode("\n                    UNION ALL\n", $unionBranches) . "
+                ) AS unified
+                ORDER BY sort_date DESC, id DESC
                 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
             ";
 
             $pagedRows = DB::connection('sqlsrv')->select(
                 $phaseSql,
-                array_merge($searchBindings, [$start, $length])
+                array_merge($unionBindings, [$start, $length])
             );
 
-            // Build lookup maps from phase-1 results
-            $batchMeta = [];   // id => [batch_no, batch_count, batch_first_file]
-            $pageIds = [];
+            // Phase-1 order + per-source id buckets + batch meta (F rows only).
+            $pageOrder = [];   // ordered list of [source_type, id]
+            $fileIds   = [];
+            $tempIds   = [];
+            $plotIds   = [];
+            $batchMeta = [];   // F id => [batch_no, batch_count, batch_first_file]
             foreach ($pagedRows as $r) {
-                $pageIds[] = (int) $r->id;
-                $batchMeta[$r->id] = [
-                    'batch_no' => $r->derived_batch_no,
-                    'batch_count' => (int) $r->batch_count,
-                    'batch_first_file' => $r->batch_first_file,
-                ];
+                $sid = (int) $r->id;
+                $pageOrder[] = [$r->source_type, $sid];
+                if ($r->source_type === 'F') {
+                    $fileIds[] = $sid;
+                    $batchMeta[$sid] = [
+                        'batch_no' => $r->derived_batch_no,
+                        'batch_count' => (int) $r->batch_count,
+                        'batch_first_file' => $r->batch_first_file,
+                    ];
+                } elseif ($r->source_type === 'T') {
+                    $tempIds[] = $sid;
+                } else {
+                    $plotIds[] = $sid;
+                }
             }
 
-            // Nothing in fileNumber – but we may still have temporary files to show
-            if (empty($pageIds)) {
-                $tempFormattedData2 = collect();
-                if ($source === 'New') {
-                    $tmpSrchSql = '';
-                    $tmpSrchBindings = [];
-                    if (!empty($search)) {
-                        $pct = "%{$search}%";
-                        $tmpSrchSql = "AND (m.full_file_number LIKE ? OR m.file_name LIKE ? OR m.tracking_id LIKE ?
-                            OR m.location LIKE ? OR m.lga LIKE ? OR m.plot_no LIKE ? OR m.tp_no LIKE ?)";
-                        $tmpSrchBindings = [$pct, $pct, $pct, $pct, $pct, $pct, $pct];
-                    }
-                    $tmpRows = DB::connection('sqlsrv')->select(
-                        "SELECT m.id, m.full_file_number, m.file_name, m.land_use, m.customer_type,
-                                m.plot_no, m.tp_no, m.location, m.lga, m.tracking_id,
-                                m.created_by, m.commissioning_date, m.created_at, m.source,
-                                m.batch_no, p.name AS purpose_name
-                         FROM mls_file_no m
-                         LEFT JOIN purposes p ON p.id = m.purpose_id
-                         WHERE m.file_option = 'temporary'
-                           AND (m.is_deleted IS NULL OR m.is_deleted = 0)
-                           AND NOT EXISTS (
-                               SELECT 1 FROM fileNumber fn2
-                               WHERE fn2.mlsfNo = m.full_file_number
-                                 AND (fn2.is_deleted IS NULL OR fn2.is_deleted = 0)
-                           )
-                           {$tmpSrchSql}
-                         ORDER BY m.id DESC",
-                        $tmpSrchBindings
-                    );
-                    $tempFormattedData2 = collect($tmpRows)->map(function ($row) {
-                        $fileNo = trim($row->full_file_number ?? '');
-                        $id = (int) $row->id;
-                        $actionHtml = '<div class="relative action-dropdown"><button type="button" class="p-1 rounded-full hover:bg-slate-100 transition-colors"><i data-lucide="more-horizontal" class="w-5 h-5 text-slate-500"></i></button><div class="action-dropdown-menu"><div class="py-1"><button onclick="editRecord(' . $id . ')" class="w-full text-left px-4 py-2.5 text-sm flex items-center space-x-3 text-slate-700 hover:bg-slate-50"><i data-lucide="pencil" class="w-4 h-4 text-slate-500"></i><span class="font-medium">Edit Record</span></button></div></div></div>';
-                        return [
-                            'id' => $id, 'primaryFileNo' => $fileNo ?: 'N/A', 'relatedFileNo' => 'N/A',
-                            'mlsfNo' => $fileNo ?: 'N/A', 'kangisFileNo' => 'N/A', 'NewKANGISFileNo' => 'N/A', 'stFileNo' => 'N/A',
-                            'FileName' => trim($row->file_name ?? '') ?: 'N/A',
-                            'land_use' => trim($row->land_use ?? '') ?: 'N/A',
-                            'customer_type' => trim($row->customer_type ?? '') ?: 'N/A',
-                            'purpose_name' => trim($row->purpose_name ?? '') ?: 'N/A',
-                            'plot_no' => trim($row->plot_no ?? '') ?: 'N/A', 'tp_no' => trim($row->tp_no ?? '') ?: 'N/A',
-                            'location' => trim($row->location ?? '') ?: 'N/A', 'lga' => trim($row->lga ?? '') ?: 'N/A',
-                            'tracking_id' => trim($row->tracking_id ?? '') ?: 'N/A', 'type' => 'Temporary',
-                            'created_by' => trim($row->created_by ?? '') ?: 'System',
-                            'source' => trim($row->source ?? '') ?: 'Temporary File',
-                            'source_instrument_capture_id' => null, 'source_pra_id' => null, 'source_prop_id' => null,
-                            'source_temp_fileno' => 'N/A', 'batch_no' => trim($row->batch_no ?? ''), 'batch_count' => 1,
-                            'batch_first_file' => $fileNo,
-                            'commissioning_date' => $row->commissioning_date ? date('Y-m-d', strtotime($row->commissioning_date)) : 'N/A',
-                            'has_commissioning_sheet' => false,
-                            'created_at' => $row->created_at ? date('Y-m-d H:i:s', strtotime($row->created_at)) : 'N/A',
-                            'action' => $actionHtml,
-                        ];
-                    });
-                }
+            // Nothing on this page at all
+            if (empty($pageOrder)) {
                 return response()->json([
                     'draw' => intval($draw),
                     'recordsTotal' => $recordsTotal,
                     'recordsFiltered' => $filteredRecords,
-                    'data' => $plotExtRows->concat($tempFormattedData2)->values(),
+                    'data' => [],
                 ]);
             }
 
@@ -431,7 +446,7 @@ class FileNumberController extends Controller
             // All expensive OUTER APPLYs (pra, instrument_capture,
             // file_commissioning_sheets, dciv_link, file_indexing_links)
             // now fire at most 20 times per request.
-            $inList = implode(',', $pageIds);   // safe: all are cast to int above
+            $inList = implode(',', $fileIds ?: [0]);   // F rows only — safe: all cast to int
             $enrichSql = "
                 SELECT
                     fn.id, fn.kangisFileNo, fn.mlsfNo, fn.NewKANGISFileNo, fn.FileName,
@@ -502,27 +517,27 @@ class FileNumberController extends Controller
                 WHERE fn.id IN ({$inList})
             ";
 
-            // Re-sort to match the order from phase 1  
-            $enrichedMap = [];
-            foreach (DB::connection('sqlsrv')->select($enrichSql) as $r) {
-                $enrichedMap[$r->id] = $r;
+            // Enrich F (regular fileNumber) rows only.
+            $fileRows = [];
+            if (!empty($fileIds)) {
+                $enrichedMap = [];
+                foreach (DB::connection('sqlsrv')->select($enrichSql) as $r) {
+                    $enrichedMap[$r->id] = $r;
+                }
+                foreach ($fileIds as $id) {
+                    if (!isset($enrichedMap[$id]))
+                        continue;
+                    $row = $enrichedMap[$id];
+                    // Overlay correct batch aggregates from phase 1
+                    $row->derived_batch_no = $batchMeta[$id]['batch_no'] ?? '';
+                    $row->batch_count = $batchMeta[$id]['batch_count'] ?? 1;
+                    $row->batch_first_file = $batchMeta[$id]['batch_first_file'] ?? $row->mlsfNo;
+                    $fileRows[$id] = $row;
+                }
             }
 
-            // Merge phase-2 enrichment + phase-1 batch meta, preserving phase-1 order
-            $data = [];
-            foreach ($pageIds as $id) {
-                if (!isset($enrichedMap[$id]))
-                    continue;
-                $row = $enrichedMap[$id];
-                // Overlay correct batch aggregates from phase 1
-                $row->derived_batch_no = $batchMeta[$id]['batch_no'] ?? '';
-                $row->batch_count = $batchMeta[$id]['batch_count'] ?? 1;
-                $row->batch_first_file = $batchMeta[$id]['batch_first_file'] ?? $row->mlsfNo;
-                $data[] = $row;
-            }
-
-            // ── Format response ──
-            $formattedData = collect($data)->map(function ($row) {
+            // ── Format F rows into a map keyed by fileNumber.id ──
+            $fileMap = collect($fileRows)->map(function ($row) {
                 // Build primaryFileNo: first non-empty of mlsfNo, kangisFileNo, NewKANGISFileNo, st_file_no
                 $primaryFileNo = collect([
                     $row->mlsfNo ?? '',
@@ -579,22 +594,12 @@ class FileNumberController extends Controller
                     'created_at' => $row->created_at ? date('Y-m-d H:i:s', strtotime($row->created_at)) : 'N/A',
                     'action' => $this->buildCaptureActionColumn($row, $row->SOURCE),
                 ];
-            });
+            })->all();
 
-            // ── Prepend temporary files from mls_file_no (source=New only) ──
-            $tempFormattedData = collect();
-            if ($source === 'New') {
-                $tempSearchSql = '';
-                $tempBindings = [];
-                if (!empty($search)) {
-                    $pct = "%{$search}%";
-                    $tempSearchSql = "AND (
-                        m.full_file_number LIKE ? OR m.file_name LIKE ? OR m.tracking_id LIKE ?
-                        OR m.location LIKE ? OR m.lga LIKE ? OR m.plot_no LIKE ? OR m.tp_no LIKE ?
-                    )";
-                    $tempBindings = [$pct, $pct, $pct, $pct, $pct, $pct, $pct];
-                }
-
+            // ── Build temp-file map for this page's T rows (source=New only) ──
+            $tempMap = [];
+            if ($includeExtras && !empty($tempIds)) {
+                $tempInList = implode(',', $tempIds);
                 $tempRows = DB::connection('sqlsrv')->select(
                     "SELECT m.id, m.full_file_number, m.file_name, m.land_use, m.customer_type,
                             m.plot_no, m.tp_no, m.location, m.lga, m.tracking_id,
@@ -602,19 +607,10 @@ class FileNumberController extends Controller
                             m.batch_no, p.name AS purpose_name
                      FROM mls_file_no m
                      LEFT JOIN purposes p ON p.id = m.purpose_id
-                     WHERE m.file_option = 'temporary'
-                       AND (m.is_deleted IS NULL OR m.is_deleted = 0)
-                       AND NOT EXISTS (
-                           SELECT 1 FROM fileNumber fn2
-                           WHERE fn2.mlsfNo = m.full_file_number
-                             AND (fn2.is_deleted IS NULL OR fn2.is_deleted = 0)
-                       )
-                       {$tempSearchSql}
-                     ORDER BY m.id DESC",
-                    $tempBindings
+                     WHERE m.id IN ({$tempInList})"
                 );
 
-                $tempFormattedData = collect($tempRows)->map(function ($row) {
+                foreach ($tempRows as $row) {
                     $fileNo = trim($row->full_file_number ?? '');
                     // Build a fake action column for temp files (view only, no batch)
                     $id = (int) $row->id;
@@ -631,7 +627,7 @@ class FileNumberController extends Controller
                         </div></div>
                     </div>';
 
-                    return [
+                    $tempMap[$id] = [
                         'id'                          => $id,
                         'primaryFileNo'               => $fileNo ?: 'N/A',
                         'relatedFileNo'               => 'N/A',
@@ -663,11 +659,24 @@ class FileNumberController extends Controller
                         'created_at'                  => $row->created_at ? date('Y-m-d H:i:s', strtotime($row->created_at)) : 'N/A',
                         'action'                      => $actionHtml,
                     ];
-                });
+                }
             }
 
-            // Merge: plot extensions + temp files first, then regular records
-            $mergedData = $plotExtRows->concat($tempFormattedData)->concat($formattedData)->values();
+            // Plot-extension rows for this page (already formatted in $plotExtRows), keyed by id.
+            $plotMap = $plotExtRows->keyBy('id');
+
+            // Assemble the page in phase-1 (date) order, interleaving all three sources.
+            $mergedData = [];
+            foreach ($pageOrder as [$stype, $sid]) {
+                if ($stype === 'F' && isset($fileMap[$sid])) {
+                    $mergedData[] = $fileMap[$sid];
+                } elseif ($stype === 'T' && isset($tempMap[$sid])) {
+                    $mergedData[] = $tempMap[$sid];
+                } elseif ($stype === 'P' && isset($plotMap[$sid])) {
+                    $mergedData[] = $plotMap[$sid];
+                }
+            }
+            $mergedData = array_values($mergedData);
 
             return response()->json([
                 'draw' => intval($draw),

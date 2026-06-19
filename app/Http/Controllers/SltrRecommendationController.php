@@ -85,7 +85,7 @@ class SltrRecommendationController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'sltr_number'      => ['nullable', 'string', 'max:100', Rule::unique('sltr_recommendations', 'sltr_number')->whereNull('deleted_at')],
+            'sltr_number'      => ['nullable', 'string', 'max:100', Rule::unique('sqlsrv.sltr_recommendations', 'sltr_number')->whereNull('deleted_at')],
             'applicant_name'   => 'required|string|max:300',
             'applicant_address'=> 'nullable|string|max:500',
             'application_date' => 'nullable|date',
@@ -117,7 +117,7 @@ class SltrRecommendationController extends Controller
         $rec = SltrRecommendation::findOrFail($id);
 
         $validated = $request->validate([
-            'sltr_number'      => ['nullable', 'string', 'max:100', Rule::unique('sltr_recommendations', 'sltr_number')->ignore($rec->id)->whereNull('deleted_at')],
+            'sltr_number'      => ['nullable', 'string', 'max:100', Rule::unique('sqlsrv.sltr_recommendations', 'sltr_number')->ignore($rec->id)->whereNull('deleted_at')],
             'applicant_name'   => 'required|string|max:300',
             'applicant_address'=> 'nullable|string|max:500',
             'application_date' => 'nullable|date',

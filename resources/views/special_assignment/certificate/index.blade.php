@@ -87,6 +87,14 @@
                     <input type="text" name="holder_name" id="cert-holder" required
                         class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
                 </div>
+                <div class="sm:col-span-2">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">New File No <span class="text-red-500">*</span></label>
+                    <select name="new_file_number" id="cert-new-file" required
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)] bg-white">
+                        <option value="">Select new file number…</option>
+                    </select>
+                    <p class="text-[11px] text-gray-400 mt-1">The file number assigned after the change of purpose.</p>
+                </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-600 mb-1">Issue Date <span class="text-red-500">*</span></label>
                     <input type="date" name="issue_date" required
@@ -99,8 +107,13 @@
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-600 mb-1">To Use (New Purpose) <span class="text-red-500">*</span></label>
-                    <input type="text" name="to_use" required
-                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                    <select name="to_use" required
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)] bg-white">
+                        <option value="">Select new purpose…</option>
+                        @foreach($landUseTypes as $lu)
+                            <option value="{{ $lu }}">{{ $lu }}</option>
+                        @endforeach
+                    </select>
                 </div>
                 <div class="sm:col-span-2">
                     <label class="block text-xs font-medium text-gray-600 mb-1">Expiry Date (optional)</label>
@@ -126,6 +139,7 @@
 const CSRF      = '{{ csrf_token() }}';
 const STORE_CERT= '{{ route("special-assignment.certificate.issue") }}';
 const APP_AJAX  = '{{ route("special-assignment.land-records") }}';
+const MLS_FILES = '{{ route("api.get-existing-mls-files") }}';
 const PRINT_BASE= '{{ url("special-assignment/certificate") }}';
 
 const STATUS_COLORS = {
@@ -152,8 +166,18 @@ $(document).ready(function () {
         ],
     });
 
+    // Action menu toggle (delegated)
+    $('#certificate-table').on('click', '.btn-cert-toggle', function (e) {
+        e.stopPropagation();
+        const dd = $(this).next('.cert-dropdown');
+        $('.cert-dropdown').not(dd).addClass('hidden');
+        dd.toggleClass('hidden');
+    });
+    $(document).on('click', () => $('.cert-dropdown').addClass('hidden'));
+
     // Print button (delegated)
     $('#certificate-table').on('click', '.btn-print-cert', function () {
+        $('.cert-dropdown').addClass('hidden');
         window.open(`${PRINT_BASE}/${$(this).data('id')}/print`, '_blank');
     });
 
@@ -165,7 +189,9 @@ $(document).ready(function () {
     // Load approved applications into select
     fetch(APP_AJAX + '?ajax=1&length=500&start=0&status=approved').then(r=>r.json()).then(d=>{
         const sel = document.getElementById('cert-app-select');
-        (d.data||[]).forEach(a => {
+        // Only files that already have a Special Assignment application (numeric id)
+        // can receive a certificate — skip rows whose id is null/"null".
+        (d.data||[]).filter(a => a.id != null && String(a.id) !== 'null' && String(a.id) !== '').forEach(a => {
             const opt = document.createElement('option');
             opt.value = a.id;
             opt.dataset.owner = a.owner_name;
@@ -181,22 +207,53 @@ $(document).ready(function () {
         });
     }).catch(()=>{});
 
+    // Load existing MLS file numbers into the New File No select
+    fetch(MLS_FILES).then(r=>r.json()).then(d=>{
+        const sel = document.getElementById('cert-new-file');
+        (d.files||[]).forEach(f => {
+            const fno = f.file_number || f.mlsFNo;
+            if (!fno) return;
+            const opt = document.createElement('option');
+            opt.value = fno;
+            opt.textContent = fno;
+            sel.appendChild(opt);
+        });
+    }).catch(()=>{});
+
     // Form submit
     document.getElementById('form-issue-cert').addEventListener('submit', async function(e) {
         e.preventDefault();
         const btn = this.querySelector('[type=submit]');
-        btn.disabled = true; btn.textContent = 'Issuing…';
-        const res  = await fetch(STORE_CERT, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json'}, body: JSON.stringify(Object.fromEntries(new FormData(this))) });
-        const data = await res.json();
-        if (data.success) {
-            modal.classList.add('hidden'); modal.classList.remove('flex');
-            this.reset();
-            table.ajax.reload();
-            Swal.fire({ icon:'success', title:'Certificate Issued', text:`${data.cert_number} has been issued.`, timer:3000, showConfirmButton:false });
-        } else {
-            Swal.fire({ icon:'error', title:'Error', text:data.message||'Could not issue certificate.' });
+        const body = Object.fromEntries(new FormData(this));
+
+        // Guard: must have a real (numeric) SPA application selected
+        if (!body.spa_application_id || body.spa_application_id === 'null') {
+            Swal.fire({ icon:'warning', title:'Select an application', text:'Please choose an approved Special Assignment application before issuing a certificate.' });
+            return;
         }
-        btn.disabled=false; btn.textContent='Issue Certificate';
+
+        btn.disabled = true; btn.textContent = 'Issuing…';
+        try {
+            const res  = await fetch(STORE_CERT, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json','Accept':'application/json'}, body: JSON.stringify(body) });
+            let data = {};
+            try { data = await res.json(); } catch (_) { data = {}; }
+
+            if (res.ok && data.success) {
+                modal.classList.add('hidden'); modal.classList.remove('flex');
+                this.reset();
+                table.ajax.reload();
+                Swal.fire({ icon:'success', title:'Certificate Issued', text:`${data.cert_number} has been issued.`, timer:3000, showConfirmButton:false });
+            } else {
+                const errMsg = data.message
+                    || (data.errors ? Object.values(data.errors).flat().join('\n') : '')
+                    || 'Could not issue certificate.';
+                Swal.fire({ icon:'error', title:'Error', text: errMsg });
+            }
+        } catch (err) {
+            Swal.fire({ icon:'error', title:'Error', text:'Network error. Please try again.' });
+        } finally {
+            btn.disabled = false; btn.textContent = 'Issue Certificate';
+        }
     });
 });
 </script>

@@ -91,11 +91,20 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
+                            @php
+                                // Normalize free-text display: strip stray wrapping quotes/whitespace
+                                // and present consistent Title Case regardless of how it was stored.
+                                $tsName = function ($v) {
+                                    $v = trim((string) $v);
+                                    $v = trim($v, "\"'“”‘’ \t");
+                                    return $v === '' ? '—' : \Illuminate\Support\Str::title($v);
+                                };
+                            @endphp
                             @forelse($records as $index => $record)
                             <tr class="hover:bg-slate-50/60 transition-colors" data-record='@json($record)'>
                                 <td class="px-4 py-3 text-slate-500 text-xs">{{ $records->firstItem() + $index }}</td>
                                 <td class="px-4 py-3 font-semibold text-slate-800">{{ $record->file_no }}</td>
-                                <td class="px-4 py-3 text-slate-700">{{ $record->applicant_name ?? '—' }}</td>
+                                <td class="px-4 py-3 text-slate-700">{{ $tsName($record->applicant_name) }}</td>
                                 <td class="px-4 py-3 text-slate-600 text-xs">{{ $record->title_type }}</td>
                                 <td class="px-4 py-3 text-slate-600 text-xs">{{ $record->initiated_by ?? $record->authority ?? '—' }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ $record->plot_no ?? '—' }}</td>
@@ -249,6 +258,16 @@
                             <p class="text-xs text-slate-500 mt-0.5">Voluntary relinquishment</p>
                         </div>
                     </button>
+                    <button type="button" onclick="tsSelectType('Re-grant')"
+                        class="ts-type-card text-left flex items-start gap-4 p-4 rounded-xl border-2 border-slate-100 hover:border-teal-400 hover:bg-teal-50/40 transition group">
+                        <div class="w-11 h-11 shrink-0 rounded-xl bg-teal-100 flex items-center justify-center group-hover:bg-teal-200 transition">
+                            <i data-lucide="refresh-cw" class="w-5 h-5 text-teal-600"></i>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-slate-800 text-sm">Re-grant</p>
+                            <p class="text-xs text-slate-500 mt-0.5">Links to an additional file</p>
+                        </div>
+                    </button>
                 </div>
             </div>
         </div>
@@ -332,6 +351,33 @@
                             <div><span class="text-slate-400">LGA</span><p id="ts-sum-lga" class="font-semibold text-slate-700 mt-0.5"></p></div>
                         </div>
                     </div>
+                </div>
+
+                {{-- See / Additional File Number (shown for Re-grant). Name is provisional and can be relabeled later. --}}
+                <div id="ts-see-section" class="hidden">
+                    <input type="hidden" id="ts-see_fileno" name="see_fileno">
+                    <label class="block text-xs font-semibold text-slate-600 mb-2">
+                        Initial FileNo
+                    </label>
+                    <div id="ts-see-card" class="ts-file-card" onclick="tsOpenSeeFileSearch()">
+                        <div id="ts-see-placeholder" class="flex items-center gap-3 text-slate-400">
+                            <i data-lucide="search" class="w-5 h-5 shrink-0"></i>
+                            <span class="text-sm">Click to search and select the additional file number...</span>
+                        </div>
+                        <div id="ts-see-selected" class="hidden">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="file-symlink" class="w-4 h-4 text-teal-600 shrink-0"></i>
+                                    <span id="ts-see-no-display" class="font-bold text-slate-800 text-sm"></span>
+                                </div>
+                                <button type="button" onclick="tsClearSeeSelection(event)"
+                                    class="shrink-0 text-slate-400 hover:text-red-500 transition">
+                                    <i data-lucide="x" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">The related file number written as "See ..." on the physical file.</p>
                 </div>
 
                 {{-- Certificate of Occupancy Details (shown for Revoke / CofO actions; maps to the Certificate of Revocation) --}}

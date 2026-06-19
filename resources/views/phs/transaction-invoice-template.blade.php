@@ -84,7 +84,9 @@
             <td class="logo-cell"><img src="{{ $ministryLeft }}" alt=""></td>
             <td class="brand">
                 <h1>Kano State Ministry of Land &amp; Physical Planning</h1>
-                <p>Property History Search (PHS) Portal Payment Invoice</p>
+                 <p>Department of Admin and General Services</p>
+                <h2>Property History Search (PHS) Portal Payment Invoice</h2>
+               
             </td>
             <td class="logo-cell r"><img src="{{ $ministryRight }}" alt=""></td>
         </tr>

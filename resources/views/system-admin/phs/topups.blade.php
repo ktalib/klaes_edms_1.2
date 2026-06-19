@@ -52,7 +52,7 @@
                         @forelse ($topups as $txn)
                             <tr class="hover:bg-slate-50/60">
                                 <td class="px-5 py-3 text-slate-400 text-xs">{{ $loop->iteration }}</td>
-                                <td class="px-5 py-3 font-semibold text-slate-900">{{ optional($txn->institution)->name ?? '—' }}</td>
+                                <td class="px-5 py-3 font-semibold text-slate-900">{{ \Illuminate\Support\Str::title(optional($txn->institution)->name) ?: '—' }}</td>
                                 <td class="px-5 py-3 text-slate-600">{{ $txn->package_name ?: '—' }}</td>
                                 <td class="px-5 py-3 text-right text-slate-700">{{ $txn->topup_bundle_count ?: '—' }}</td>
                                 <td class="px-5 py-3 text-right font-semibold text-emerald-700">+{{ number_format(abs((int) $txn->tokens)) }}</td>

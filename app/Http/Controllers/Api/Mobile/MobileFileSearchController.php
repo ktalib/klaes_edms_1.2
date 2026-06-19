@@ -67,25 +67,35 @@ class MobileFileSearchController extends Controller
             return response()->json(['success' => false, 'message' => 'Not authorized — SCB Monitors only.'], 403);
         }
 
-        $userId = $request->user()->id;
+        $userId  = $request->user()->id;
+        $isAdmin = $this->isAdmin($request);
 
         $requests = FileSearchRequest::open()
-            ->where(function ($q) use ($userId) {
-                $q->whereNull('assigned_monitor_id')
-                    ->orWhere('assigned_monitor_id', $userId);
+            ->with('requester:id,first_name,last_name')
+            ->when(! $isAdmin, function ($q) use ($userId) {
+                $q->where(function ($q2) use ($userId) {
+                    $q2->whereNull('assigned_monitor_id')
+                        ->orWhere('assigned_monitor_id', $userId);
+                });
             })
             ->orderByDesc('id')
             ->limit(100)
-            ->get(['id', 'request_no', 'file_number', 'file_title', 'current_location', 'status', 'resolved_status', 'source', 'created_at']);
+            ->get(['id', 'request_no', 'file_number', 'file_title', 'current_location', 'status', 'resolved_status', 'source', 'requester_user_id', 'receiving_officer', 'requester_office', 'requester_department', 'created_at']);
 
         $data = $requests->map(function (FileSearchRequest $fr) {
+            $req = $fr->requester;
             return array_merge([
-                'id'               => $fr->id,
-                'request_no'       => $fr->request_no,
-                'file_number'      => $fr->file_number,
-                'file_title'       => $fr->file_title,
-                'current_location' => $fr->current_location,
-                'status'           => $fr->status,
+                'id'                  => $fr->id,
+                'request_no'          => $fr->request_no,
+                'file_number'         => $fr->file_number,
+                'file_title'          => $fr->file_title,
+                'requester'           => $req ? trim($req->first_name . ' ' . $req->last_name) : '—',
+                'receiving_officer'   => $fr->receiving_officer,
+                'requester_office'    => $fr->requester_office,
+                'requester_department'=> $fr->requester_department,
+                'current_location'    => $fr->current_location,
+                'status'              => $fr->status,
+                'created_at'          => optional($fr->created_at)->format('Y-m-d g:i A'),
             ], $this->requestTypeMeta($fr));
         });
 
@@ -94,9 +104,11 @@ class MobileFileSearchController extends Controller
 
     /**
      * GET /api/mobile/file-requests/log
-     * Full FSR log for the authenticated SCB Monitor — every File Search Request
-     * routed to them (assigned or broadcast), regardless of status, with the
-     * requester, file location, status and outcome. Optional ?status= filter.
+     * FSR History for the authenticated SCB Monitor — every File Search Request
+     * routed to them (assigned or broadcast) that has been handled (FOUND/
+     * NOT_FOUND/CLOSED), with the requester, file location, status and outcome.
+     * Still-open requests (PENDING/SEARCHING) live in the Open inbox, not here.
+     * Optional ?status= filter.
      */
     public function log(Request $request): JsonResponse
     {
@@ -104,16 +116,27 @@ class MobileFileSearchController extends Controller
             return response()->json(['success' => false, 'message' => 'Not authorized — SCB Monitors only.'], 403);
         }
 
-        $userId = $request->user()->id;
+        $userId  = $request->user()->id;
+        $isAdmin = $this->isAdmin($request);
 
         $query = FileSearchRequest::with([
                 'requester:id,first_name,last_name',
                 'responder:id,first_name,last_name',
             ])
-            ->where(function ($q) use ($userId) {
-                $q->whereNull('assigned_monitor_id')
-                    ->orWhere('assigned_monitor_id', $userId);
+            ->when(! $isAdmin, function ($q) use ($userId) {
+                $q->where(function ($q2) use ($userId) {
+                    $q2->whereNull('assigned_monitor_id')
+                        ->orWhere('assigned_monitor_id', $userId);
+                });
             });
+
+        // FSR History is the record of handled requests — exclude the still-open
+        // ones (PENDING/SEARCHING) which live in the Open inbox, so a request the
+        // SCB hasn't acted on yet doesn't appear in both tabs at once.
+        $query->whereNotIn('status', [
+            FileSearchRequest::STATUS_PENDING,
+            FileSearchRequest::STATUS_SEARCHING,
+        ]);
 
         if ($status = $request->get('status')) {
             $query->where('status', $status);
@@ -125,18 +148,29 @@ class MobileFileSearchController extends Controller
             $req  = $fr->requester;
             $resp = $fr->responder;
 
+            // "Requested by" is the selected Requester Officer — not the user
+            // account that raised the request. Fall back to office/department,
+            // then the creating user (mirrors the web frDuplicatePayload logic).
+            $createdBy = $req ? trim($req->first_name . ' ' . $req->last_name) : '';
+            $requester = $fr->receiving_officer
+                ?: ($fr->requester_office ?: ($fr->requester_department ?: ($createdBy ?: '—')));
+
             return array_merge($this->requestTypeMeta($fr), [
                 'id'               => $fr->id,
                 'request_no'       => $fr->request_no,
                 'file_number'      => $fr->file_number,
                 'file_title'       => $fr->file_title,
-                'requester'        => $req ? trim($req->first_name . ' ' . $req->last_name) : '—',
+                'requester'        => $requester,
+                'receiving_officer'    => $fr->receiving_officer,
+                'requester_office'     => $fr->requester_office,
+                'requester_department' => $fr->requester_department,
+                'created_by'           => $createdBy ?: null,
                 'current_location' => $fr->current_location,
                 'status'           => $fr->status,
                 'feedback_note'    => $fr->feedback_note,
                 'responder'        => $resp ? trim($resp->first_name . ' ' . $resp->last_name) : null,
-                'created_at'       => optional($fr->created_at)->format('Y-m-d H:i'),
-                'responded_at'     => optional($fr->responded_at)->format('Y-m-d H:i'),
+                'created_at'       => optional($fr->created_at)->format('Y-m-d g:i A'),
+                'responded_at'     => optional($fr->responded_at)->format('Y-m-d g:i A'),
             ]);
         });
 
@@ -145,12 +179,12 @@ class MobileFileSearchController extends Controller
 
     /**
      * DELETE /api/mobile/file-requests/{id}
-     * Remove a File Search Request from the SCB Monitor's open inbox.
+     * Remove a File Search Request. Super Admins only.
      */
     public function destroy(Request $request, int $id): JsonResponse
     {
-        if (!$this->isScbMonitor($request)) {
-            return response()->json(['success' => false, 'message' => 'Not authorized — SCB Monitors only.'], 403);
+        if (! $request->user()->isSuperAdmin()) {
+            return response()->json(['success' => false, 'message' => 'Not authorized — Super Admins only.'], 403);
         }
 
         $fr = FileSearchRequest::find($id);
@@ -187,10 +221,17 @@ class MobileFileSearchController extends Controller
         ];
     }
 
-    /** A user is an SCB Monitor when users.fr_permissions = 'SCB'. */
+    /** A user is an SCB Monitor when users.fr_permissions = 'SCB' (Super Admins included). */
     protected function isScbMonitor(Request $request): bool
     {
-        return ($request->user()->fr_permissions ?? '') === 'SCB';
+        return $this->isAdmin($request) || ($request->user()->fr_permissions ?? '') === 'SCB';
+    }
+
+    /** Super Admins see every File Search Request, not just those assigned/broadcast to them. */
+    protected function isAdmin(Request $request): bool
+    {
+        $user = $request->user();
+        return $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
     }
 
     /**

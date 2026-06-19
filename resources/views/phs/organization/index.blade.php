@@ -175,7 +175,7 @@
           <img src="{{ asset('assets/logo/phs-dark-logo.jpeg') }}" class="w-full h-full object-cover hidden dark:block" alt="PHS">
         </div>
         <div class="min-w-0">
-          <p class="text-sm font-bold text-gray-900 dark:text-gray-100 truncate" id="sidebar-org-name">{{ $institution->name ?? 'Organization' }}</p>
+          <p class="text-sm font-bold text-gray-900 dark:text-gray-100 truncate" id="sidebar-org-name">{{ \Illuminate\Support\Str::title($institution->name) ?: 'Organization' }}</p>
           <p class="text-xs text-gray-500 dark:text-gray-400 truncate">Manage workspace</p>
         </div>
       </div>
@@ -195,6 +195,11 @@
             <i data-lucide="chevron-down" id="org-search-chevron" class="w-4 h-4 transition-transform duration-200"></i>
           </button>
           <div id="org-search-submenu" class="hidden pl-4 mt-0.5 space-y-0.5">
+            <a href="{{ route('phs.dashboard') }}#search"
+              class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100">
+              <i data-lucide="search" class="w-3.5 h-3.5"></i>
+              Search Now
+            </a>
             <a href="{{ route('phs.dashboard') }}"
               class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100">
               <i data-lucide="history" class="w-3.5 h-3.5"></i>
@@ -202,13 +207,14 @@
             </a>
           </div>
         </div>
+        @if($member->isSuperAdmin() ?? false)
         <button type="button" data-sidebar-tab="users" class="w-full flex items-center gap-3 rounded-xl bg-blue-50 dark:bg-blue-900/30 px-3 py-2.5 text-sm font-semibold text-blue-700 dark:text-blue-300">
           <i data-lucide="users" class="w-4 h-4"></i>
           Team Members
         </button>
         <button type="button" data-sidebar-tab="roles" class="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100">
           <i data-lucide="shield" class="w-4 h-4"></i>
-          Roles & Permissions
+          Roles &amp; Permissions
         </button>
         <button type="button" data-sidebar-tab="activity" class="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100">
           <i data-lucide="activity" class="w-4 h-4"></i>
@@ -218,7 +224,6 @@
           <i data-lucide="palette" class="w-4 h-4"></i>
           Branding
         </button>
-        @if($member->isSuperAdmin() ?? false)
         <button type="button" data-sidebar-tab="subscription" class="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100">
           <i data-lucide="credit-card" class="w-4 h-4"></i>
           Subscription
@@ -226,7 +231,7 @@
         @endif
       </nav>
       <div class="border-t border-gray-100 dark:border-gray-700 p-4 space-y-3">
-        <div class="rounded-xl bg-gray-50 dark:bg-gray-800 px-3 py-3">
+        <div class="rounded-xl bg-gray-50 dark:bg-gray-800 px-3 py-3" style="display:none">
           <p class="text-xs text-gray-500 dark:text-gray-400">Org Tokens</p>
           <p class="text-2xl font-bold text-blue-600 dark:text-blue-400" id="sidebar-org-tokens-display">0</p>
         </div>

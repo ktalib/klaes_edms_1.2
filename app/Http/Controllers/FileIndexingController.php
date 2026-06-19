@@ -987,9 +987,21 @@ class FileIndexingController extends Controller
                     'string',
                     'max:100',
                 ],
+                // New KANGIS FileNo (KN-series) — distinct from the legacy KANGIS placeholder.
+                // Required only when the "Has New KANGIS FileNo" checkbox is ticked.
+                'has_new_kangis_fileno' => 'nullable|boolean',
+                'new_kangis_file_no' => [
+                    Rule::requiredIf(function () use ($request) {
+                        return $request->boolean('has_new_kangis_fileno');
+                    }),
+                    'nullable',
+                    'string',
+                    'max:255',
+                ],
             ], [
                 'land_use_type.required' => 'Please select a Land Use Type.',
                 'kangis_fileno_placeholder.required' => 'KANGIS FileNo Placeholder is required when KANGIS Registry is selected.',
+                'new_kangis_file_no.required' => 'New KANGIS File No is required when "Has New KANGIS FileNo" is checked.',
             ]);
 
             // Handle DCIV Registry specific logic for file_title the  and complainant
@@ -2838,9 +2850,21 @@ class FileIndexingController extends Controller
                     'string',
                     'max:100',
                 ],
+                // New KANGIS FileNo (KN-series) — distinct from the legacy KANGIS placeholder.
+                // Required only when the "Has New KANGIS FileNo" checkbox is ticked.
+                'has_new_kangis_fileno' => 'nullable|boolean',
+                'new_kangis_file_no' => [
+                    Rule::requiredIf(function () use ($request) {
+                        return $request->boolean('has_new_kangis_fileno');
+                    }),
+                    'nullable',
+                    'string',
+                    'max:255',
+                ],
             ], [
                 'land_use_type.required' => 'Please select a Land Use Type.',
                 'kangis_fileno_placeholder.required' => 'KANGIS FileNo Placeholder is required when KANGIS Registry is selected.',
+                'new_kangis_file_no.required' => 'New KANGIS File No is required when "Has New KANGIS FileNo" is checked.',
             ]);
 
             // Transform current_holder if it's an array (Block indexing)

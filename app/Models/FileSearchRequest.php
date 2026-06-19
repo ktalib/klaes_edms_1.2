@@ -39,6 +39,10 @@ class FileSearchRequest extends Model
         'source',
         'front_desk_acted_at',
         'front_desk_acted_by',
+        'priority',
+        'receiving_officer',
+        'requester_office',
+        'requester_department',
     ];
 
     protected $casts = [
@@ -81,4 +85,46 @@ class FileSearchRequest extends Model
 
     public function scopePending($q)   { return $q->where('status', self::STATUS_PENDING); }
     public function scopeOpen($q)      { return $q->whereIn('status', [self::STATUS_PENDING, self::STATUS_SEARCHING]); }
+
+    /** Open (pending/searching) requests for a given file number. */
+    public function scopeOpenForFile($q, ?string $fileNumber)
+    {
+        return $q->open()->where('file_number', $fileNumber);
+    }
+
+    /**
+     * Active requests for a file: still in the live queue — i.e. open, or already
+     * responded by SCB (FOUND/NOT_FOUND) but not yet acted on by the Front Desk and
+     * not closed. Used to catch a re-send so the user updates the existing request
+     * instead of raising a duplicate row.
+     */
+    public function scopeActiveForFile($q, ?string $fileNumber)
+    {
+        return $q->where('file_number', $fileNumber)
+                 ->whereNull('front_desk_acted_at')
+                 ->where('status', '!=', self::STATUS_CLOSED);
+    }
+
+    /**
+     * Resolve a requester's seniority weight from config/file_request_priority.php.
+     * Matches the given officer string (a name and/or rank) case-insensitively
+     * against the configured rank keys; returns the configured default otherwise.
+     */
+    public static function priorityFor(?string $officer): int
+    {
+        $officer = trim((string) $officer);
+        $default = (int) config('file_request_priority.default', 0);
+        if ($officer === '') {
+            return $default;
+        }
+
+        $haystack = mb_strtolower($officer);
+        foreach ((array) config('file_request_priority.ranks', []) as $rank => $weight) {
+            if (mb_strpos($haystack, mb_strtolower((string) $rank)) !== false) {
+                return (int) $weight;
+            }
+        }
+
+        return $default;
+    }
 }

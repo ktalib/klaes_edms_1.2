@@ -186,6 +186,7 @@
                             Quick Search &amp; Location
                         </button>
                         --}}
+                        {{-- Hidden: Send File Search Request is now handled elsewhere (Quick Search / SCB flow).
                         @unless($isKangisCtx)
                         <button type="button" class="js-fr-open inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 border border-blue-600 hover:bg-blue-700 transition-all"
                             title="Send a File Request to SCB Monitors">
@@ -193,6 +194,7 @@
                             Send File Search Request
                         </button>
                         @endunless
+                        --}}
                     </div>
                 </div>
                 @endif
@@ -569,6 +571,16 @@
                                 <div class="grid grid-cols-1 xl:grid-cols-[1fr,320px] gap-6">
                                     <!-- Main Form -->
                                     <div class="space-y-6">
+                                        <!-- Requesters for this file (shown when logging a file that has open requests) -->
+                                        <div id="file-requesters-panel" class="hidden bg-white rounded-lg border border-indigo-200 shadow-sm overflow-hidden">
+                                            <div class="px-5 py-3 border-b border-indigo-100 bg-indigo-50 flex items-center gap-2">
+                                                <i data-lucide="users" class="h-4 w-4 text-indigo-600"></i>
+                                                <h3 class="text-sm font-bold text-indigo-900">Requesters for this file</h3>
+                                                <span class="text-xs text-indigo-500">Honor the most senior first</span>
+                                            </div>
+                                            <div id="file-requesters-list" class="divide-y divide-gray-100"></div>
+                                        </div>
+
                                         <!-- File Details Card -->
                                         <div class="bg-white rounded-lg border border-gray-200 shadow-sm">
                                             <div class="px-6 py-4 border-b border-gray-200">
@@ -1759,6 +1771,21 @@
                                                 <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">Completed</span>
                                             </div>
                                         </div>
+                                    </div>
+                                    <!-- Sub-tabs: Active vs Completed (logged back in) files -->
+                                    <div class="px-6 pt-4 border-b border-gray-200">
+                                        <nav class="-mb-px flex gap-6" aria-label="File log views">
+                                            <button type="button" id="file-log-view-active" data-log-view="active"
+                                                class="file-log-view-tab whitespace-nowrap border-b-2 border-blue-600 px-1 pb-3 text-sm font-semibold text-blue-600">
+                                                Active Files
+                                                <span id="file-log-active-count" class="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">0</span>
+                                            </button>
+                                            <button type="button" id="file-log-view-completed" data-log-view="completed"
+                                                class="file-log-view-tab whitespace-nowrap border-b-2 border-transparent px-1 pb-3 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                                                Completed Files
+                                                <span id="file-log-completed-count" class="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">0</span>
+                                            </button>
+                                        </nav>
                                     </div>
                                     <div id="trackers-container" class="p-6 space-y-6">
                                         <!-- File trackers will be dynamically injected here -->

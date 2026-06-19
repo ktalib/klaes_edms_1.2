@@ -249,6 +249,8 @@ class SpecialAssignmentController extends Controller
         $PageTitle       = 'Special Assignment – Field Data';
         $PageDescription = 'Field maps and collected field records for special assignment.';
 
+        $landUseTypes = DB::connection('sqlsrv')->table('klas.dbo.land_uses')->orderBy('landuse')->pluck('landuse');
+
         $mapPoints = SpaFieldData::with('application')
             ->whereNotNull('coordinates')
             ->orderByDesc('created_at')
@@ -276,13 +278,72 @@ class SpecialAssignmentController extends Controller
                 ];
             });
 
-        return view('special_assignment.field_data.index', compact('PageTitle', 'PageDescription', 'mapPoints'));
+        return view('special_assignment.field_data.index', compact('PageTitle', 'PageDescription', 'mapPoints', 'landUseTypes'));
     }
 
     public function notice(Request $request)
     {
         if ($request->ajax()) {
             $type  = $request->input('type', 'first');
+
+            // ── First Serve: driven automatically by Field Data (inspected) records ──
+            // Every application that has a field-inspection appears here; the row shows
+            // whether a first-serve notice has already been issued for it.
+            if ($type === 'first') {
+                $query = SpaApplication::whereIn('id', SpaFieldData::pluck('spa_application_id'))
+                                       ->orderByDesc('created_at');
+                $total = $query->count();
+                $data  = $query->skip($request->input('start', 0))
+                               ->take($request->input('length', 10))
+                               ->get()
+                               ->map(function ($a, $i) use ($request) {
+                                   $notice = SpaNotice::where('notice_type', 'first')
+                                       ->where(fn($q) => $q->where('spa_application_id', $a->id)
+                                                           ->orWhere('file_number', $a->file_number))
+                                       ->orderByDesc('created_at')->first();
+
+                                   $served    = $notice !== null;
+                                   $recipient = $notice->recipient_name ?? $a->owner_name ?? '—';
+                                   $phone     = $notice->phone ?? $a->phone ?? '—';
+                                   $daysAgo   = ($served && $notice->served_date) ? now()->diffInDays($notice->served_date) : null;
+
+                                   $hasSecond = $served
+                                       ? SpaNotice::where('notice_type', 'second')
+                                              ->when($notice->spa_application_id,
+                                                  fn($q) => $q->where('spa_application_id', $notice->spa_application_id),
+                                                  fn($q) => $q->whereNull('spa_application_id')->where('file_number', $notice->file_number))
+                                              ->exists()
+                                       : false;
+
+                                   if (!$served) {
+                                       $action = '<button data-file="'.e($a->file_number).'" data-owner="'.e($a->owner_name).'" data-phone="'.e($a->phone).'" class="btn-issue-first inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-[rgb(186,191,12)] text-white hover:opacity-90"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Issue 1st Serve</button>';
+                                   } elseif ($hasSecond) {
+                                       $action = '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Served</span>';
+                                   } else {
+                                       $action = '<button data-id="'.$notice->id.'" data-app="'.$notice->spa_application_id.'" class="btn-trigger-second inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Not Served</button>';
+                                   }
+
+                                   return [
+                                       'DT_RowIndex' => $request->input('start', 0) + $i + 1,
+                                       'file_number' => $a->file_number ?? '—',
+                                       'recipient'   => $recipient,
+                                       'phone'       => $phone,
+                                       'served_date' => $served ? ($notice->served_date?->format('d/m/Y') ?? '—') : '—',
+                                       'sms_sent'    => ($served && $notice->sms_sent) ? '<span class="text-green-600 text-xs">✓ Sent</span>' : '<span class="text-gray-400 text-xs">—</span>',
+                                       'status'      => $served ? $notice->status : 'pending',
+                                       'days_ago'    => $daysAgo,
+                                       'action'      => $action,
+                                   ];
+                               });
+
+                return response()->json([
+                    'draw'            => intval($request->input('draw')),
+                    'recordsTotal'    => $total,
+                    'recordsFiltered' => $total,
+                    'data'            => $data,
+                ]);
+            }
+
             $query = SpaNotice::where('notice_type', $type)->orderByDesc('created_at');
             $total = $query->count();
             $data  = $query->skip($request->input('start', 0))
@@ -291,8 +352,11 @@ class SpecialAssignmentController extends Controller
                            ->map(function ($n, $i) use ($request) {
                                $daysAgo  = $n->served_date ? now()->diffInDays($n->served_date) : null;
                                $hasSecond = ($n->notice_type === 'first')
-                                   ? SpaNotice::where('spa_application_id', $n->spa_application_id)
-                                              ->where('notice_type', 'second')->exists()
+                                   ? SpaNotice::where('notice_type', 'second')
+                                              ->when($n->spa_application_id,
+                                                  fn($q) => $q->where('spa_application_id', $n->spa_application_id),
+                                                  fn($q) => $q->whereNull('spa_application_id')->where('file_number', $n->file_number))
+                                              ->exists()
                                    : null;
 
                                return [
@@ -429,7 +493,11 @@ class SpecialAssignmentController extends Controller
                                    'to_use'      => $c->to_use ?? '—',
                                    'issue_date'  => $c->issue_date?->format('d/m/Y') ?? '—',
                                    'status'      => $c->status,
-                                   'action'      => '<button data-id="'.$c->id.'" class="btn-print-cert text-xs px-3 py-1 rounded bg-[rgb(186,191,12)] text-white">Print</button>',
+                                   'action'      => '<div class="relative inline-block">'
+                                       .'<button class="btn-cert-toggle p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent hover:border-gray-200 transition-colors"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>'
+                                       .'<div class="cert-dropdown hidden absolute right-0 top-full z-50 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">'
+                                       .'<button class="btn-print-cert w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2" data-id="'.$c->id.'"><svg class="w-3.5 h-3.5 text-[rgb(186,191,12)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Print Certificate</button>'
+                                       .'</div></div>',
                                ];
                            });
 
@@ -450,7 +518,9 @@ class SpecialAssignmentController extends Controller
             'revoked'   => SpaCertificate::where('status', 'revoked')->count(),
         ];
 
-        return view('special_assignment.certificate.index', compact('PageTitle', 'PageDescription', 'stats'));
+        $landUseTypes = DB::connection('sqlsrv')->table('klas.dbo.land_uses')->orderBy('landuse')->pluck('landuse');
+
+        return view('special_assignment.certificate.index', compact('PageTitle', 'PageDescription', 'stats', 'landUseTypes'));
     }
 
     public function memo(Request $request)
@@ -471,7 +541,7 @@ class SpecialAssignmentController extends Controller
                                    'decision'      => $m->commissioner_decision,
                                    'decided_at'    => $m->decided_at?->format('d/m/Y') ?? '—',
                                    'action'        => $m->commissioner_decision === 'pending'
-                                       ? '<button data-id="'.$m->id.'" data-memo="'.e($m->memo_no).'" class="btn-decide text-xs px-3 py-1 rounded bg-[rgb(186,191,12)] text-white">Decide</button>'
+                                       ? '<button data-id="'.$m->id.'" data-memo="'.e($m->memo_no).'" class="btn-decide text-xs px-3 py-1 rounded bg-[rgb(186,191,12)] text-white">Approve</button>'
                                        : '<span class="text-xs text-gray-400">'.ucfirst($m->commissioner_decision).'</span>',
                                ];
                            });
@@ -772,14 +842,20 @@ class SpecialAssignmentController extends Controller
     public function storeNotice(Request $request)
     {
         $request->validate([
-            'spa_application_id' => 'required|exists:sqlsrv.spa_applications,id',
+            // Notices are now keyed off the file number directly — the file may or
+            // may not be indexed, and need not have a Special Assignment application.
+            'file_number'        => 'required|string|max:255',
             'recipient_name'     => 'required|string|max:255',
             'phone'              => 'required|string|max:20',
             'served_date'        => 'required|date',
         ]);
 
+        // Link to a Special Assignment application when one exists for this file,
+        // otherwise leave it null (free-style / non-indexed file).
+        $spaApplicationId = SpaApplication::where('file_number', $request->file_number)->value('id');
+
         $notice = SpaNotice::create([
-            'spa_application_id' => $request->spa_application_id,
+            'spa_application_id' => $spaApplicationId,
             'file_number'        => $request->file_number,
             'notice_type'        => 'first',
             'recipient_name'     => $request->recipient_name,
@@ -802,8 +878,11 @@ class SpecialAssignmentController extends Controller
     {
         $first = SpaNotice::findOrFail($id);
 
-        $alreadyExists = SpaNotice::where('spa_application_id', $first->spa_application_id)
-            ->where('notice_type', 'second')
+        // Dedup by SPA application when linked, otherwise by file number (free-style files).
+        $alreadyExists = SpaNotice::where('notice_type', 'second')
+            ->when($first->spa_application_id,
+                fn($q) => $q->where('spa_application_id', $first->spa_application_id),
+                fn($q) => $q->whereNull('spa_application_id')->where('file_number', $first->file_number))
             ->exists();
 
         if ($alreadyExists) {
@@ -911,28 +990,45 @@ class SpecialAssignmentController extends Controller
     public function issueCertificate(Request $request)
     {
         $request->validate([
-            'spa_application_id' => 'required|exists:sqlsrv.spa_applications,id',
+            // `integer` before `exists` so a non-numeric value (e.g. the string "null"
+            // from an SPA-less file) fails with a clean 422 instead of crashing SQL
+            // Server's nvarchar→bigint conversion inside the exists query.
+            'spa_application_id' => 'required|integer|exists:sqlsrv.spa_applications,id',
             'holder_name'        => 'required|string|max:255',
+            'new_file_number'    => 'required|string|max:255',
             'from_use'           => 'required|string|max:255',
             'to_use'             => 'required|string|max:255',
             'issue_date'         => 'required|date',
+        ], [
+            'spa_application_id.integer' => 'Please select a valid Special Assignment application.',
+            'spa_application_id.exists'  => 'The selected file does not have a Special Assignment application yet.',
         ]);
 
-        // Require approved memo
-        $approved = SpaMemo::where('spa_application_id', $request->spa_application_id)
-            ->where('commissioner_decision', 'approved')
+        $app = SpaApplication::findOrFail($request->spa_application_id);
+
+        // Require approved memo. Match by spa_application_id OR by file number — when a
+        // file is removed and re-added to SPA it gets a fresh application id, which would
+        // orphan an already-approved memo that still points at the old id.
+        $approved = SpaMemo::where('commissioner_decision', 'approved')
+            ->where(function ($q) use ($request, $app) {
+                $q->where('spa_application_id', $request->spa_application_id)
+                  ->orWhereIn('spa_application_id', function ($sub) use ($app) {
+                      $sub->select('id')
+                          ->from('spa_applications')
+                          ->where('file_number', $app->file_number);
+                  });
+            })
             ->exists();
 
         if (!$approved) {
             return response()->json(['success' => false, 'message' => 'Cannot issue certificate without an approved Commissioner memo.'], 422);
         }
 
-        $app = SpaApplication::findOrFail($request->spa_application_id);
-
         $cert = SpaCertificate::create([
             'spa_application_id' => $request->spa_application_id,
             'cert_number'        => SpaCertificate::generateCertNumber(),
             'file_number'        => $app->file_number,
+            'new_file_number'    => $request->new_file_number,
             'holder_name'        => $request->holder_name,
             'from_use'           => $request->from_use,
             'to_use'             => $request->to_use,

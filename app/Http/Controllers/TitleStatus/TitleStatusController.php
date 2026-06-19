@@ -79,8 +79,10 @@ class TitleStatusController extends Controller
 
         $record = TitleStatusApplication::create($data);
 
-        // Flag source files and push to archive tables
-        $this->titleStatusService->flagAndDecommission($record);
+        // Flag source files and push to archive tables. A Title Status update raised from
+        // File Indexing is a "false decommissioning" — the file is not actually decommissioned.
+        $falseDecommissioning = $request->boolean('false_decommissioning');
+        $this->titleStatusService->flagAndDecommission($record, $falseDecommissioning);
 
         return response()->json([
             'success' => true,
@@ -253,6 +255,7 @@ class TitleStatusController extends Controller
         return [
             'title_type'          => 'required|string|max:100',
             'file_no'             => 'required|string|max:255',
+            'see_fileno'          => 'nullable|string|max:255',
             'file_title'          => 'nullable|string|max:500',
             'applicant_name'      => 'nullable|string|max:255',
             'source_table'        => 'nullable|string|max:100',

@@ -53,7 +53,7 @@
     if (logo) {
       if (cfg.assets?.organizationLogo) {
         logo.style.background = '';
-        logo.innerHTML = `<img src="${cfg.assets.organizationLogo}" alt="${esc(name)} Logo" style="max-height:56px;width:auto;object-fit:contain;">`;
+        logo.innerHTML = `<img src="${cfg.assets.organizationLogo}" alt="${esc(name)} Logo" style="width:100%;height:100%;object-fit:contain;">`;
       } else {
         logo.style.background = `linear-gradient(135deg, ${primary}, ${secondary})`;
         logo.style.cssText += ';width:40px;height:40px;border-radius:8px;';
@@ -163,8 +163,11 @@
       const date = row.transaction_date || row.reg_date || row.deeds_date || row.sort_date || '-';
       const party1 = row.party_1 || row.grantor || '-';
       const party2 = row.party_2 || row.grantee || '-';
-      const party3 = row.party_3 || '';
-      const reg = row.registration || row.reg_no || row.regNo || row.registration_particulars || '';
+      const party3raw = row.party_3 || '';
+      const party3 = (party3raw && party3raw !== '-') ? party3raw : '';
+      const regRaw = row.registration || row.reg_no || row.regNo || row.registration_particulars || '';
+      // The LS-weighed slip rows use "0/0/0" as the no-registration placeholder.
+      const reg = (regRaw && regRaw !== '-' && regRaw !== '0/0/0') ? regRaw : '';
       const location = row.location || row.property_location || [result.file_district, result.file_lga].filter(Boolean).join(', ') || '';
       return `<div class="timeline-item ${index === rows.length - 1 ? '' : 'completed'}">
         <div class="bg-white rounded-xl p-3 sm:p-4 border border-gray-100 shadow-sm">
@@ -294,8 +297,17 @@
     }
 
     $('sidebar-dashboard-link')?.addEventListener('click', (e) => { e.preventDefault(); setView('dashboard'); });
-    $('sidebar-search-link')?.addEventListener('click', (e) => { e.preventDefault(); setView('search'); });
+    $('sidebar-search-now-link')?.addEventListener('click', (e) => { e.preventDefault(); setView('search'); });
+    $('sidebar-search-history-link')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      // Search history lives in the "Recent Searches" panel on the dashboard view.
+      setView('dashboard');
+      $('recent-searches-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     $('dashboard-new-search-btn')?.addEventListener('click', () => setView('search'));
+    // Deep-link: open the Search view when arriving with #search (e.g. from the
+    // "Search Now" link on the Organization page).
+    if (window.location.hash === '#search') setView('search');
     $('sidebar-buy-tokens-btn')?.addEventListener('click', () => show($('token-modal')));
     $('try-new-search')?.addEventListener('click', () => { $('search-query').value = ''; hide($('results-section')); $('search-query').focus(); });
     $('back-to-dashboard-btn')?.addEventListener('click', () => { hide($('file-details-section')); show($('results-section')); });

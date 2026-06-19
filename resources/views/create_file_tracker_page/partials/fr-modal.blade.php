@@ -102,7 +102,29 @@
         });
     }
 
-    async function send() {
+    // Render the duplicate warning with a "Request Anyway" action.
+    function noteDuplicate(fileNumber, ex) {
+        feedback.className = 'rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm';
+        feedback.innerHTML = `
+            <div class="flex items-start gap-2 text-amber-800">
+                <i data-lucide="alert-triangle" class="h-4 w-4 mt-0.5 shrink-0"></i>
+                <div>
+                    <div class="font-semibold">This file has already been requested.</div>
+                    <div class="text-xs mt-0.5">Requested by <span class="font-semibold">${esc(ex.requester_name || '—')}</span>
+                        ${ex.request_no ? '· ' + esc(ex.request_no) : ''} · ${esc(ex.status || '')}${ex.requested_at ? ' · ' + esc(ex.requested_at) : ''}.
+                        It has already been sent to SCB and is awaiting a response.</div>
+                </div>
+            </div>
+            <div class="mt-2">
+                <button type="button" id="fr-anyway" class="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">
+                    <i data-lucide="send" class="h-3.5 w-3.5"></i> Request Anyway</button>
+            </div>`;
+        feedback.classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+        document.getElementById('fr-anyway').addEventListener('click', () => send(true));
+    }
+
+    async function send(force = false) {
         const fileNumber = fno.value.trim();
         if (!fileNumber) { note('err', 'Please select a file number first.'); return; }
         sendBtn.disabled = true;
@@ -118,12 +140,15 @@
                     file_title: ftitle.value.trim(),
                     current_location: resolved.current_location || '',
                     resolved_status: resolved.status || 'MANUAL',
+                    force: force ? 1 : 0,
                 }),
             });
             const json = await res.json();
             if (json.success) {
                 note('ok', `File Request ${json.data?.request_no || ''} sent to SCB Monitors.`);
                 fno.value=''; ftitle.value=''; resolved = { current_location:null, status:null };
+            } else if (json.duplicate) {
+                noteDuplicate(fileNumber, json.existing || {});
             } else {
                 note('err', json.message || 'Could not send the request.');
             }
@@ -138,7 +163,7 @@
     triggers.forEach(el => el.addEventListener('click', openModal));
     pickBtn.addEventListener('click', pickFileNumber);
     fno.addEventListener('click', pickFileNumber);
-    sendBtn.addEventListener('click', send);
+    sendBtn.addEventListener('click', () => send());
     modal.querySelectorAll('[data-fr-close]').forEach(el => el.addEventListener('click', closeModal));
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal(); });
 })();

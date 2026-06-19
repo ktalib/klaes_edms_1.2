@@ -37,6 +37,11 @@ const TS_TYPE_THEMES = {
         icon:     'flag',
         label:    'Surrender · Voluntary Relinquishment',
     },
+    'Re-grant': {
+        gradient: 'linear-gradient(135deg,#134e4a 0%,#0d9488 60%,#2dd4bf 100%)',
+        icon:     'refresh-cw',
+        label:    'Re-grant',
+    },
 };
 
 /* ── Verbs used in the unified remark template ── */
@@ -47,6 +52,7 @@ const TS_TYPE_VERB = {
     'Litigation':                                          'Litigation',
     'Amendment/Reconsideration (Application/RofO/CofO)':   'Amendment/Reconsideration',
     'Surrender':                                           'Surrender',
+    'Re-grant':                                            'Re-grant',
 };
 
 /* ────────────────────────────── Init ────────────────────────────── */
@@ -88,6 +94,7 @@ function tsSelectType(type) {
     tsSelectedType = type;
     tsApplyTheme(type);
     tsToggleCofoSection(type);
+    tsToggleSeeSection(type);
     const defaultInitiator = (typeof TS_INITIATED_BY_DEFAULT !== 'undefined' && TS_INITIATED_BY_DEFAULT[type]) || null;
     tsApplyInitiatedByOptions(type, defaultInitiator);
     tsRefreshRemark();
@@ -144,6 +151,44 @@ function tsToggleCofoSection(type) {
     } else {
         section.classList.add('hidden');
     }
+}
+
+/* Show the "See / Additional File Number" selector only for Re-grant. */
+function tsToggleSeeSection(type) {
+    const section = document.getElementById('ts-see-section');
+    if (!section) return;
+    if (type === 'Re-grant') {
+        section.classList.remove('hidden');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    } else {
+        section.classList.add('hidden');
+    }
+}
+
+/* Open the global file-number picker for the additional ("See") file. */
+function tsOpenSeeFileSearch() {
+    if (!window.GlobalFileNoModal) return;
+    GlobalFileNoModal.open({
+        callback: function (data) {
+            if (!data.fileNumber) return;
+            document.getElementById('ts-see_fileno').value = data.fileNumber;
+            document.getElementById('ts-see-no-display').textContent = data.fileNumber;
+            document.getElementById('ts-see-placeholder').classList.add('hidden');
+            document.getElementById('ts-see-selected').classList.remove('hidden');
+            document.getElementById('ts-see-card').classList.add('selected');
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+    });
+}
+
+function tsClearSeeSelection(event) {
+    event.stopPropagation();
+    const el = document.getElementById('ts-see_fileno');
+    if (el) el.value = '';
+    document.getElementById('ts-see-no-display').textContent = '';
+    document.getElementById('ts-see-placeholder').classList.remove('hidden');
+    document.getElementById('ts-see-selected').classList.add('hidden');
+    document.getElementById('ts-see-card').classList.remove('selected');
 }
 
 function tsApplyTheme(type) {
@@ -281,7 +326,18 @@ function tsOpenEdit(btn) {
 
     tsApplyTheme(tsSelectedType);
     tsToggleCofoSection(tsSelectedType);
+    tsToggleSeeSection(tsSelectedType);
     tsApplyInitiatedByOptions(tsSelectedType, record.initiated_by);
+
+    // Additional ("See") file number
+    const seeInput = document.getElementById('ts-see_fileno');
+    if (seeInput) seeInput.value = record.see_fileno ?? '';
+    if (record.see_fileno) {
+        document.getElementById('ts-see-no-display').textContent = record.see_fileno;
+        document.getElementById('ts-see-placeholder').classList.add('hidden');
+        document.getElementById('ts-see-selected').classList.remove('hidden');
+        document.getElementById('ts-see-card').classList.add('selected');
+    }
 
     // File card
     document.getElementById('ts-file_no').value          = record.file_no ?? '';
@@ -327,6 +383,7 @@ function tsView(btn) {
 
     body.innerHTML = [
         row('File No',           record.file_no),
+        row('See (Add. File No)', record.see_fileno),
         row('File Title',        record.file_title),
         row('Applicant',         record.applicant_name),
         row('Title Type',        record.title_type),
@@ -382,6 +439,7 @@ function tsSubmit() {
         url:             TS_URL,
         title_type:      tsSelectedType,
         file_no:         fileNo,
+        see_fileno:      g('ts-see_fileno'),
         source_table:    g('ts-source_table'),
         source_id:       g('ts-source_id'),
         file_title:      g('ts-file_title'),
@@ -530,7 +588,7 @@ function tsCloseModal() {
 }
 
 function tsClearForm() {
-    ['ts-file_no','ts-file_title','ts-applicant_name','ts-plot_no','ts-location',
+    ['ts-file_no','ts-see_fileno','ts-file_title','ts-applicant_name','ts-plot_no','ts-location',
      'ts-land_use','ts-district','ts-lga','ts-source_table','ts-source_id',
      'ts-cofo_number','ts-title_no','ts-reg_page','ts-reg_volume','ts-date_of_issue',
      'ts-initiated_by','ts-reason','ts-remark']
@@ -540,7 +598,9 @@ function tsClearForm() {
     document.getElementById('ts-file-selected').classList.add('hidden');
     document.getElementById('ts-file-card').classList.remove('selected');
     document.getElementById('ts-file-summary').classList.add('hidden');
+    tsClearSeeSelection({ stopPropagation() {} });
     tsToggleCofoSection('');
+    tsToggleSeeSection('');
 
     tsEditId       = null;
     tsSelectedType = '';

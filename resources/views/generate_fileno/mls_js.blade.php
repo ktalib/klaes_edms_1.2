@@ -3691,6 +3691,7 @@
             subSource: '',
 
             // Related File Properties (Recertification -RC)
+            hasRelatedFile: false,
             relatedFileNo: '',
             relatedFileTitle: '',
             relatedFileIndexingId: '',

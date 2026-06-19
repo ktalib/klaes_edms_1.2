@@ -14,7 +14,11 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'file-decommissioning
     // Data endpoints for DataTables
     Route::get('/active-files-data', [FileDecommissioningController::class, 'getActiveFilesData'])->name('file-decommissioning.active-files-data');
     Route::get('/decommissioned-files-data', [FileDecommissioningController::class, 'getDecommissionedFilesData'])->name('file-decommissioning.decommissioned-files-data');
-    
+
+    // False decommissioning (Title Status updates from File Indexing)
+    Route::get('/false-decommissioned-files-data', [FileDecommissioningController::class, 'getFalseDecommissionedFilesData'])->name('file-decommissioning.false-decommissioned-files-data');
+    Route::get('/false-decommissioned-details/{id}', [FileDecommissioningController::class, 'getFalseDecommissionedFileDetails'])->name('file-decommissioning.false-decommissioned-details');
+
     // File operations
     Route::get('/file-details/{id}', [FileDecommissioningController::class, 'getFileDetails'])->name('file-decommissioning.file-details');
     Route::get('/decommissioned-details/{id}', [FileDecommissioningController::class, 'getDecommissionedFileDetails'])->name('file-decommissioning.decommissioned-details');

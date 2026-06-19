@@ -57,9 +57,9 @@
                         <tr class="border-b hover:bg-gray-50">
                             <td class="px-6 py-4 text-sm text-gray-400">{{ $loop->iteration }}</td>
                             <td class="px-6 py-4 text-sm">
-                                <strong>{{ $req->organization_name }}</strong>
+                                <strong>{{ \Illuminate\Support\Str::title($req->organization_name) }}</strong>
                             </td>
-                            <td class="px-6 py-4 text-sm">{{ $req->contact_name }}</td>
+                            <td class="px-6 py-4 text-sm">{{ \Illuminate\Support\Str::title($req->contact_name) }}</td>
                             <td class="px-6 py-4 text-sm">{{ $req->contact_email }}</td>
                             <td class="px-6 py-4 text-sm capitalize">{{ str_replace('_', ' ', $req->organization_type) }}</td>
                             <td class="px-6 py-4 text-sm">
@@ -133,7 +133,19 @@
                                                                                     <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
                                                                                 </svg>
                                                                         </summary>
-                                    <div class="absolute mt-2 right-0 bg-white border rounded shadow-lg z-50 w-40">
+                                    @php
+                                        // Action availability gates (greyed-out when false):
+                                        //  b. Print Invoice — only once the org has actually paid (invoice exists).
+                                        //  c. Approve Request — only after legal approves the documents (sends payment link).
+                                        //  d. Send Onboarding Link — only after the signed SLA is approved.
+                                        $canPrintInvoice   = $req->isPaymentComplete()
+                                                                || !empty($req->invoice_generated_at)
+                                                                || !empty($req->invoice_pdf_path);
+                                        $canApprove        = $req->status === 'documents_approved';
+                                        $canSendOnboarding = $req->status === 'sla_approved';
+                                    @endphp
+                                    <div class="absolute mt-2 right-0 bg-white border rounded shadow-lg z-50 w-56">
+                                        {{-- a. View — always available --}}
                                         <a href="{{ route('system-admin.phs.requests.show', ['id' => $req->id]) }}" class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                                                 <path d="M2.94 10.94a10.97 10.97 0 0114.12 0 1 1 0 01-1.28 1.54 8.97 8.97 0 00-11.56 0 1 1 0 01-1.28-1.54z" opacity=".2" />
@@ -141,53 +153,78 @@
                                             </svg>
                                             View
                                         </a>
-                                        <a href="{{ route('system-admin.phs.requests.invoice', ['id' => $req->id]) }}" target="_blank" rel="noopener" class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-                                            Print Invoice
-                                        </a>
-                                        @php
-                                            $canSendPayment  = $req->status === 'documents_approved';
-                                            $canFinalApprove = $req->status === 'sla_approved';
-                                            $approveDisabled = !$canSendPayment && !$canFinalApprove;
-                                            $approveRoute    = $canFinalApprove
-                                                ? route('system-admin.phs.requests.final-approve', ['id' => $req->id])
-                                                : route('system-admin.phs.requests.approve',       ['id' => $req->id]);
-                                            $approveLabel    = $canFinalApprove ? 'Send Onboarding Link' : 'Approve';
-                                            $approveMsg      = $canFinalApprove
-                                                ? 'Send the onboarding link to ' . $req->organization_name . '?'
-                                                : 'Approve ' . $req->organization_name . ' and send the payment link?';
-                                        @endphp
-                                        <form action="{{ $approveRoute }}" method="POST" class="m-0 approve-form">
-                                            @csrf
-                                            <button type="button"
-                                                data-org="{{ $req->organization_name }}"
-                                                data-msg="{{ $approveMsg }}"
-                                                class="approve-btn w-full flex items-center gap-2 text-left px-4 py-2 text-sm {{ $approveDisabled ? 'text-gray-400 cursor-not-allowed' : 'text-green-700 hover:bg-gray-50' }}"
-                                                {{ $approveDisabled ? 'disabled' : '' }}>
-                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+
+                                        {{-- b. Print Invoice — disabled until payment is done --}}
+                                        @if ($canPrintInvoice)
+                                            <a href="{{ route('system-admin.phs.requests.invoice', ['id' => $req->id]) }}" target="_blank" rel="noopener" class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                                                Print Invoice
+                                            </a>
+                                        @else
+                                            <span class="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 cursor-not-allowed" title="Available after payment is completed">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                                                Print Invoice
+                                            </span>
+                                        @endif
+
+                                        {{-- c. Approve Request — disabled until documents are approved --}}
+                                        @if ($canApprove)
+                                            <form action="{{ route('system-admin.phs.requests.approve', ['id' => $req->id]) }}" method="POST" class="m-0">
+                                                @csrf
+                                                <button type="button"
+                                                    class="approve-btn w-full flex items-center gap-2 text-left px-4 py-2 text-sm text-green-700 hover:bg-gray-50"
+                                                    data-title="Approve request?"
+                                                    data-msg="Approve {{ $req->organization_name }} and send the payment link?"
+                                                    data-confirm="Yes, approve">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 00-1.414-1.414L8 11.172 4.707 7.879a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8z" clip-rule="evenodd" />
+                                                    </svg>
+                                                    Approve Request
+                                                </button>
+                                            </form>
+                                        @else
+                                            <span class="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 cursor-not-allowed" title="Available once the documents are approved">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-300" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                                                     <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 00-1.414-1.414L8 11.172 4.707 7.879a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8z" clip-rule="evenodd" />
                                                 </svg>
-                                                {{ $approveLabel }}
-                                            </button>
-                                        </form>
+                                                Approve Request
+                                            </span>
+                                        @endif
+
+                                        {{-- d. Send Onboarding Link — disabled until the SLA is approved --}}
+                                        @if ($canSendOnboarding)
+                                            <form action="{{ route('system-admin.phs.requests.final-approve', ['id' => $req->id]) }}" method="POST" class="m-0">
+                                                @csrf
+                                                <button type="button"
+                                                    class="approve-btn w-full flex items-center gap-2 text-left px-4 py-2 text-sm text-green-700 hover:bg-gray-50"
+                                                    data-title="Send onboarding link?"
+                                                    data-msg="Send the onboarding link to {{ $req->organization_name }}?"
+                                                    data-confirm="Yes, send">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
+                                                    Send Onboarding Link
+                                                </button>
+                                            </form>
+                                        @else
+                                            <span class="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 cursor-not-allowed" title="Available once the signed SLA is approved">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
+                                                Send Onboarding Link
+                                            </span>
+                                        @endif
                                     </div>
                                     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
                                     <script>
                                         document.addEventListener('DOMContentLoaded', function () {
                                             document.querySelectorAll('.approve-btn').forEach(function (btn) {
-                                                btn.addEventListener('click', function (e) {
-                                                    if (btn.disabled) return;
-                                                    var msg = btn.getAttribute('data-msg') || 'Approve this request?';
+                                                btn.addEventListener('click', function () {
                                                     Swal.fire({
-                                                        title: 'Approve request?',
-                                                        text: msg,
+                                                        title: btn.getAttribute('data-title') || 'Confirm?',
+                                                        text: btn.getAttribute('data-msg') || 'Proceed with this action?',
                                                         icon: 'question',
                                                         showCancelButton: true,
-                                                        confirmButtonText: 'Yes, approve',
+                                                        confirmButtonText: btn.getAttribute('data-confirm') || 'Yes',
                                                         cancelButtonText: 'No'
                                                     }).then(function (result) {
                                                         if (result.isConfirmed) {
-                                                            // submit the enclosing form
                                                             var form = btn.closest('form');
                                                             if (form) form.submit();
                                                         }

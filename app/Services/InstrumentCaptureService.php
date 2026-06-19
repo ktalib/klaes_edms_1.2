@@ -553,6 +553,10 @@ class InstrumentCaptureService
             $volumeNo = $reg['volume'] ?? null;
             $regNo = $reg['formatted'] ?? null;
 
+            // instrument_capture has no reg_time; fall back to the capture time
+            // so deeds_time / transaction_time are never blank.
+            $regTime = !empty($ctx['reg_time']) ? $ctx['reg_time'] : now()->format('H:i:s');
+
             // Idempotency guard: don't create a second mirror row if this exact
             // registration already landed in CofO_staging.
             if ($regNo && in_array('regNo', $cofoColumns, true)) {
@@ -584,11 +588,11 @@ class InstrumentCaptureService
                 'transaction_type' => $instrumentType,
                 'instrument_type' => $instrumentType,
                 'transaction_date' => $ctx['reg_date'] ?? null,
-                'transaction_time' => $ctx['reg_time'] ?: '00:00:00',
+                'transaction_time' => $regTime,
                 // CofO_staging has no reg_date/reg_time; deeds_* are the
                 // registration equivalents downstream consumers read.
                 'deeds_date' => $ctx['reg_date'] ?? null,
-                'deeds_time' => $ctx['reg_time'] ?: null,
+                'deeds_time' => $regTime,
                 'serialNo' => $serialNo,
                 'pageNo' => $pageNo,
                 'volumeNo' => $volumeNo,

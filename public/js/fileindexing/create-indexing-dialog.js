@@ -5435,6 +5435,7 @@
             mls_file_no: document.getElementById('mls_file_no_hidden')?.value || null,
             kangis_file_no: document.getElementById('kangis_file_no_hidden')?.value || null,
             new_kangis_file_no: document.getElementById('new_kangis_file_no_hidden')?.value || null,
+            has_new_kangis_fileno: document.getElementById('has-new-kangis-fileno')?.checked ? 1 : 0,
         };
 
         // Add related file numbers and details to formData
@@ -5598,6 +5599,49 @@
             }
         }
 
+        // "Has New KANGIS FileNo" gate — if ticked, the KN-series number must be entered.
+        if (typeof window.validateHasNewKangisFileno === 'function' && !window.validateHasNewKangisFileno()) {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    title: 'New KANGIS FileNo Required',
+                    text: 'You ticked "Has New KANGIS FileNo". Please enter the New KANGIS File No (KN Series) before submitting.',
+                    icon: 'warning',
+                    confirmButtonColor: '#9333ea',
+                });
+            } else {
+                alert('Please enter the New KANGIS File No (KN Series) before submitting.');
+            }
+            return;
+        }
+
+        // Title Status is required — the placeholder "Select Title Status" must not be submitted.
+        const titleStatusSelect = document.getElementById('ts-title-type');
+        if (titleStatusSelect && !titleStatusSelect.value.trim()) {
+            const focusTitleStatus = () => {
+                titleStatusSelect.focus();
+                titleStatusSelect.classList.add('error-border');
+                titleStatusSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const clearError = () => {
+                    titleStatusSelect.classList.remove('error-border');
+                    titleStatusSelect.removeEventListener('change', clearError);
+                };
+                titleStatusSelect.addEventListener('change', clearError);
+            };
+
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    title: 'Title Status Required',
+                    text: 'Please select a Title Status before submitting.',
+                    icon: 'warning',
+                    confirmButtonColor: '#f59e0b',
+                }).then(focusTitleStatus);
+            } else {
+                alert('Please select a Title Status before submitting.');
+                focusTitleStatus();
+            }
+            return;
+        }
+
         const isEditingExisting = editModeState.isEditing && editModeState.recordId;
 
         // Check if there is an existing associated temporary record before proceeding
@@ -5726,6 +5770,12 @@
                 console.log('Server response:', data);
 
                 if (data.success) {
+                    // Record a Title Status application if one was selected on the form
+                    // (reuses the standalone title-status backend; defined in the blade).
+                    if (typeof window.tsAfterFileIndexCreated === 'function') {
+                        try { window.tsAfterFileIndexCreated(data, formData); } catch (_) { }
+                    }
+
                     const propertyModalPayload = buildPropertyTransactionPayload(data, formData);
                     if (Array.isArray(data.file_transactions)) {
                         propertyModalPayload.existing_records = data.file_transactions;
@@ -7140,6 +7190,21 @@
                     if (kangisPlaceholderInput) kangisPlaceholderInput.value = '';
                     if (kangisPlaceholderPreview) kangisPlaceholderPreview.classList.add('hidden');
                     hidekangisPlaceholderFeedback();
+
+                    // Reset the "Has New KANGIS FileNo" gate when leaving KANGIS registry
+                    const hasNewKangisChk = document.getElementById('has-new-kangis-fileno');
+                    const hasNewKangisFields = document.getElementById('has-new-kangis-fields');
+                    if (hasNewKangisChk && hasNewKangisChk.checked) {
+                        hasNewKangisChk.checked = false;
+                        hasNewKangisFields?.classList.add('hidden');
+                        const knDisp = document.getElementById('new_kangis_file_no_display');
+                        const knHid = document.getElementById('new_kangis_file_no_hidden');
+                        if (knDisp) { knDisp.value = ''; knDisp.classList.remove('error-border'); }
+                        if (knHid) knHid.value = '';
+                        document.getElementById('has-new-kangis-error')?.classList.add('hidden');
+                        const knStat = document.getElementById('kn-fileno-status');
+                        if (knStat) knStat.textContent = '';
+                    }
                 }
             }
         }
@@ -8197,6 +8262,103 @@
         });
     }
 
+    /** "Has New KANGIS FileNo" gate (normal mode only). A New KANGIS FileNo is the
+     *  KN-series number — distinct from the legacy KANGIS FileNo Placeholder. When the
+     *  checkbox is ticked the KN-series input is revealed and becomes required; its value
+     *  feeds the existing `new_kangis_file_no` payload field. */
+    function initializeHasNewKangisFileno() {
+        const chk = document.getElementById('has-new-kangis-fileno');
+        const fields = document.getElementById('has-new-kangis-fields');
+        const knDisplay = document.getElementById('new_kangis_file_no_display');
+        const knHidden = document.getElementById('new_kangis_file_no_hidden');
+        const knStatus = document.getElementById('kn-fileno-status');
+        const errorEl = document.getElementById('has-new-kangis-error');
+        const selectBtn = document.getElementById('new_kangis_file_no_select_btn');
+        const clearBtn = document.getElementById('new_kangis_file_no_clear_btn');
+
+        // These only render in normal (non-new_kn) mode.
+        if (!chk || !fields || !knDisplay || !knHidden) return;
+
+        function clearKnFields() {
+            knDisplay.value = '';
+            knHidden.value = '';
+            if (knStatus) knStatus.textContent = '';
+            if (errorEl) errorEl.classList.add('hidden');
+            knDisplay.classList.remove('error-border');
+        }
+
+        chk.addEventListener('change', function () {
+            if (this.checked) {
+                fields.classList.remove('hidden');
+                if (window.lucide) window.lucide.createIcons({ nodes: [fields] });
+            } else {
+                fields.classList.add('hidden');
+                clearKnFields();
+            }
+        });
+
+        // Pick a New KANGIS file via the global file number modal (New KANGIS tab).
+        function openNewKangisPicker() {
+            if (!window.GlobalFileNoModal) {
+                console.warn('GlobalFileNoModal not available');
+                return;
+            }
+            GlobalFileNoModal.open({
+                initialTab: 'newkangis',
+                // Do NOT overwrite the main #fileno / file_number inputs — this is a
+                // separate New KANGIS reference attached to the current file.
+                autoPopulateGenericFields: false,
+                callback: function (data) {
+                    if (!data || !data.fileNumber) return;
+                    const val = String(data.fileNumber).trim();
+                    knDisplay.value = val;
+                    knHidden.value = val;
+                    knDisplay.classList.remove('error-border');
+                    if (errorEl) errorEl.classList.add('hidden');
+                    if (knStatus) {
+                        knStatus.textContent = `✓ Selected: ${val}`;
+                        knStatus.className = 'mt-1 text-xs text-purple-700 font-semibold';
+                    }
+                }
+            });
+        }
+
+        if (selectBtn) selectBtn.addEventListener('click', openNewKangisPicker);
+        if (knDisplay) knDisplay.addEventListener('click', openNewKangisPicker);
+        if (clearBtn) clearBtn.addEventListener('click', clearKnFields);
+    }
+
+    /** Validate the "Has New KANGIS FileNo" gate at submit time.
+     *  Returns true when valid, false (and shows error) when checked but empty. */
+    function validateHasNewKangisFileno() {
+        const chk = document.getElementById('has-new-kangis-fileno');
+        const fields = document.getElementById('has-new-kangis-fields');
+        // Only enforce when the gate is ticked AND actually visible
+        // (offsetParent is null when an ancestor — e.g. the KANGIS wrapper — is hidden).
+        if (!chk || !chk.checked || chk.offsetParent === null) return true;
+        if (!fields || fields.classList.contains('hidden')) return true;
+
+        const knDisplay = document.getElementById('new_kangis_file_no_display');
+        const knHidden = document.getElementById('new_kangis_file_no_hidden');
+        const errorEl = document.getElementById('has-new-kangis-error');
+        const value = (knHidden?.value || '').trim();
+
+        if (!value) {
+            if (errorEl) {
+                errorEl.classList.remove('hidden');
+                if (window.lucide) window.lucide.createIcons({ nodes: [errorEl] });
+            }
+            if (knDisplay) {
+                knDisplay.classList.add('error-border');
+                knDisplay.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            return false;
+        }
+        return true;
+    }
+    // Expose for the submit handler
+    window.validateHasNewKangisFileno = validateHasNewKangisFileno;
+
     document.addEventListener('DOMContentLoaded', function () {
         const init = (fn, name) => {
             try {
@@ -8210,6 +8372,7 @@
         init(initializeCreateIndexingForm, 'CreateIndexingForm');
         init(handleRegistryFieldToggling, 'RegistryFieldToggling');
         init(initializeNewKangisFields, 'NewKangisFields');
+        init(initializeHasNewKangisFileno, 'HasNewKangisFileno');
         init(initializeDynamicRelatedFiles, 'DynamicRelatedFiles');
         init(initializeBlockIndexingUI, 'BlockIndexingUI');
         init(initializeRelatedFilesDetails, 'RelatedFilesDetails');

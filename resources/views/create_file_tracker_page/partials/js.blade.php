@@ -2685,10 +2685,16 @@
                     }
 
                     const upperTarget = normalizedKey.toUpperCase();
+                    const stripSeparators = (value) => value.replace(/[\s\-\/.]/g, '');
+                    const upperTargetStripped = stripSeparators(upperTarget);
+                    // Require an exact (separator-insensitive) file-number match. The tracker
+                    // endpoint is a partial LIKE search, so falling back to collection[0] would
+                    // apply an unrelated file (e.g. "KNML 325" matching "KNML 3255") and silently
+                    // overwrite the correct metadata the user actually selected.
                     const matchedTracker = collection.find((record) => {
                         const candidate = normalizeFileNumberForLookup(record?.file_number || '').toUpperCase();
-                        return candidate === upperTarget;
-                    }) || collection[0];
+                        return candidate === upperTarget || stripSeparators(candidate) === upperTargetStripped;
+                    });
 
                     if (!matchedTracker || !matchedTracker.tracking_id) {
                         trackerMetadataFallbackCache.set(normalizedKey, null);
@@ -4668,6 +4674,15 @@
                 statusBadge = displayMeta.badgeClass;
             }
 
+            // The file is back home once any movement is a Log-in / Completed entry.
+            // Every per-row action is then disabled (only Print Complete Log Sheet
+            // stays available); otherwise Complete Log-out remains available so the
+            // file can be logged back in (covers custom workflow statuses too).
+            const fileLoggedBackIn = movements.some(e => {
+                const lbl = (resolveStatusDisplay(e, (e.status || '')).label || '').toLowerCase();
+                return lbl === 'log-in' || lbl === 'completed';
+            });
+
             const lastMovement = physicalMovements[physicalMovements.length - 1] || null;
             const lastMovementDate = lastMovement ? `${lastMovement.logInDate || ''} ${lastMovement.logInTime || ''}`.trim() || '—' : '—';
             const lastMovementDuration = lastMovement
@@ -4805,9 +4820,20 @@
                     const entryStatus = (entry.status || 'completed').toLowerCase();
                     const entryOwnedByViewer = entryBelongsToCurrentUser(entry, tracker);
                     const canUpdateEntry = entryStatus === 'pending_acceptance';
-                    const canCompleteLog = entryStatus === 'active';
                     const statusMeta = resolveStatusDisplay(entry, entryStatus);
                     const entryStatusLabel = statusMeta.label;
+                    // Once the file is logged back in, every action on this entry is
+                    // disabled (Generate / Print / Complete Log-out / Update / Delete).
+                    const isLoginEntry = entryStatusLabel === 'Log-in';
+                    // Once the file is logged back into its Registry, the whole record is
+                    // closed: every action on every row is disabled.
+                    const actionsDisabled = fileLoggedBackIn || isLoginEntry;
+                    // Complete Log-out logs the file back to origin — available for any
+                    // out-state row while the file is still out (not yet logged back in,
+                    // not cancelled/rejected). It opens the tracker-level registry modal.
+                    const canCompleteLog = !fileLoggedBackIn
+                        && entryStatusLabel !== 'Cancelled'
+                        && entryStatusLabel !== 'Rejected';
                     const statusClass = statusMeta.badgeClass;
                     const statusDotClass = statusMeta.dotClass;
                     const officeLabel = entry.officeName
@@ -4816,11 +4842,15 @@
                         || entry.officeId
                         || '—';
                     const safeNotes = sanitize(entry.notes);
-                    const updateButtonAttrs = canUpdateEntry ? '' : 'data-disabled="true" aria-disabled="true" tabindex="-1"';
-                    const updateButtonClasses = canUpdateEntry
+                    // Update is available only for a pending-acceptance row AND only while
+                    // the file is still out — once it is logged back in / completed every
+                    // action (Update included) is disabled, leaving only Print Complete Log Sheet.
+                    const canUpdate = canUpdateEntry && !actionsDisabled;
+                    const updateButtonAttrs = canUpdate ? '' : 'data-disabled="true" aria-disabled="true" tabindex="-1"';
+                    const updateButtonClasses = canUpdate
                         ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100'
                         : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-60';
-                    const updateButtonIconTone = canUpdateEntry ? 'text-gray-600' : 'text-gray-400';
+                    const updateButtonIconTone = canUpdate ? 'text-gray-600' : 'text-gray-400';
                     const updateButton = `
                         <button class="${updateButtonClasses}" data-action="update-log" ${updateButtonAttrs}>
                             <i data-lucide="edit-3" class="mr-2 h-4 w-4 ${updateButtonIconTone}"></i>
@@ -4834,7 +4864,7 @@
                     const completeLogButton = `
                         <button class="${completeLogClasses}" data-action="log-out" ${completeLogAttrs}>
                             <i data-lucide="log-out" class="mr-2 h-4 w-4"></i>
-                            <span>Complete Log-out</span>
+                            <span>Complete Log</span>
                         </button>
                     `;
                     return `
@@ -4842,7 +4872,7 @@
                             <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-gray-700">${sanitize(entry.logId)}</td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
                                 <div class="flex items-center gap-2">
-                                    <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">${sanitize(entry.officeId)}</span>
+                                    ${isLoginEntry ? '' : `<span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">${sanitize(entry.officeId)}</span>`}
                                     <span>${sanitize(officeLabel)}</span>
                                 </div>
                             </td>
@@ -4856,8 +4886,10 @@
                                 })()}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
+                                ${isLoginEntry ? `
                                 <div>${sanitize(entry.logInDate || '—')}</div>
                                 <div class="text-xs text-gray-500">${sanitize(entry.logInTime || '—')}</div>
+                                ` : '<div class="text-gray-400">—</div>'}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
                                 <div>${sanitize(entry.logOutDate || '—')}</div>
@@ -4877,24 +4909,29 @@
                                     <button type="button" class="dropdown-trigger inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                                         data-tracker-id="${sanitize(tracker.trackingId)}"
                                         data-log-id="${sanitize(entry.logId)}"
-                                        data-status="${entryStatus}">
+                                        data-status="${entryStatus}"
+                                        ${actionsDisabled ? 'title="File is logged back in — only Print Complete Log Sheet is available"' : ''}>
                                         <i data-lucide="more-horizontal" class="h-4 w-4 text-gray-500"></i>
                                     </button>
                                     <div class="dropdown-menu hidden absolute right-0 bottom-full z-50 mb-2 w-56 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5">
                                         <div class="py-1">
-                                            <button class="dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100" data-action="generate-log">
+                                            <button class="${actionsDisabled ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-60' : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100'}" data-action="generate-log" ${actionsDisabled ? 'data-disabled="true" aria-disabled="true" tabindex="-1"' : ''}>
                                                 <i data-lucide="file-down" class="mr-2 h-4 w-4"></i>
                                                 <span>Generate Log Sheet</span>
                                             </button>
-                                            <button class="dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100" data-action="print-log">
+                                            <button class="${actionsDisabled ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-60' : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100'}" data-action="print-log" ${actionsDisabled ? 'data-disabled="true" aria-disabled="true" tabindex="-1"' : ''}>
                                                 <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
                                                 <span>Print Log Sheet</span>
                                             </button>
                                              ${completeLogButton}
+                                            <button class="dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100" data-action="print-complete-log">
+                                                <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
+                                                <span>Print Complete Log Sheet</span>
+                                            </button>
                                             ${updateButton}
                                             ${canDelete ? `
                                             <hr class="my-1 border-gray-200">
-                                            <button class="dropdown-item flex w-full items-center px-4 py-2 text-sm text-red-600 transition hover:bg-gray-100" data-action="delete-log">
+                                            <button class="${actionsDisabled ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-60' : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-red-600 transition hover:bg-gray-100'}" data-action="delete-log" ${actionsDisabled ? 'data-disabled="true" aria-disabled="true" tabindex="-1"' : ''}>
                                                 <i data-lucide="trash-2" class="mr-2 h-4 w-4"></i>
                                                 <span>Delete Log Entry</span>
                                             </button>
@@ -4913,6 +4950,49 @@
                             </td>
                     </tr>
                 `;
+
+            // Default "home location" row — shows the file's permanent registry / Archive
+            // centre and the corresponding shelf/rack location it is stored at. Always shown
+            // at the top of the standard log table (not the KANGIS aggregated view).
+            const homeRegistryName = sanitize(
+                tracker.originOffice?.name
+                || tracker.originRegistry
+                || tracker.originOfficeName
+                || 'Registry / Archive'
+            );
+            const homeShelfLocation = sanitize(
+                tracker.rackShelfLocation
+                || tracker.rackShelf
+                || tracker.shelf_location
+                || ''
+            );
+            // Origin/initial log entry — the file's first tracking entry (oldest movement).
+            const homeLogId = sanitize(lastMovement?.logId || '');
+            // Combined registry + rack/shelf label, e.g. "DCIV Registry — Rack/Shelf A1"
+            // (falls back to "… — Rack/Shelf -" when no shelf/rack is recorded).
+            const homeRegistryDisplay = `${homeRegistryName} — Rack/Shelf ${homeShelfLocation || '-'}`;
+            const homeLocationRow = isKangisView ? '' : `
+                        <tr class="bg-indigo-50/40">
+                            <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-gray-700">
+                                <div class="flex items-center gap-2">
+                                    <span class="inline-block h-2.5 w-2.5 rounded-full bg-green-500" title="Home — Registry / Archive location"></span>
+                                    ${homeLogId ? `<span>${homeLogId}</span>` : ''}
+                                </div>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="archive" class="h-4 w-4 text-indigo-500"></i>
+                                    <span class="font-medium text-gray-800">${homeRegistryDisplay}</span>
+                                </div>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
+                            <td class="px-4 py-3 text-sm text-gray-400">—</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-400">—</td>
+                        </tr>
+                    `;
 
             const currentModuleCode = (window.currentModule || '').toLowerCase();
             const isWorkflowGateModuleView = ['kangis', 'dgis', 'dg'].includes(currentModuleCode);
@@ -5204,7 +5284,7 @@
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    ${rows}
+                                    ${homeLocationRow}${rows}
                                 </tbody>
                             </table>
                         </div>
@@ -6633,6 +6713,21 @@
                                     </tr>
                                 </thead>
                                 <tbody>
+                                    ${(() => {
+                                        // Default "home location" row — the file's permanent
+                                        // Registry / Archive, mirroring the on-screen table.
+                                        const homeRegistryName = escapeHtml(tracker.originOffice?.name || tracker.originRegistry || tracker.originOfficeName || 'Registry / Archive');
+                                        const homeShelf = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '');
+                                        return '<tr>'
+                                            + '<td>-</td>'
+                                            + '<td>' + homeRegistryName + '</td>'
+                                            + '<td>-</td>'
+                                            + '<td>-</td>'
+                                            + '<td>-</td>'
+                                            + '<td>-</td>'
+                                            + '<td>' + (homeShelf ? ('Shelf/Rack: ' + homeShelf) : 'Shelf/Rack -') + '</td>'
+                                            + '</tr>';
+                                    })()}
                                     ${tracker.logEntries && tracker.logEntries.length > 0 ? tracker.logEntries.map(entry => {
                                         const formatDateTime = (value) => {
                                             if (!value) return '-';
@@ -6668,7 +6763,7 @@
                                             + '<td>' + (entry.officeName || '-') + '</td>'
                                             + '<td>' + (entry.receivingOfficerName || tracker.receivingOfficer?.name || 'N/A') + '</td>'
                                             + '<td>' + logOut + '</td>'
-                                            + '<td>' + logIn + '</td>'
+                                            + '<td>' + (statusLabel === 'Log-in' ? logIn : '-') + '</td>'
                                             + '<td><span class="' + statusClass + '">' + statusLabel + '</span></td>'
                                             + '<td>' + (entry.notes || '-') + '</td>'
                                             + '</tr>';
@@ -7475,6 +7570,10 @@
                         showNotification(`Generating log sheet for ${logId}`, 'info');
                         break;
                     case 'print-log':
+                    case 'print-complete-log':
+                        // Print Complete Log Sheet — prints the full tracking record
+                        // (home/registry row + every logged movement). Stays available
+                        // even after the file is logged back in.
                         {
                             const trackerToPrint = (window.fileTrackers || []).find(t => t.trackingId === trackerId);
                             if (trackerToPrint) {
@@ -7498,7 +7597,9 @@
                         }
                         break;
                     case 'log-out':
-                        handleLogOut(trackerId, logId);
+                        // "Complete Log-out" logs the file back into its origin Registry:
+                        // opens the Registry log-in card (origin + current location, status = Log-in).
+                        openRegistryStatusModal(trackerId);
                         break;
                     case 'delete-log':
                         handleDeleteLogEntry(trackerId, logId);
@@ -7544,10 +7645,11 @@
             return;
         }
 
-        if (!entryBelongsToCurrentUser(activeEntry, tracker) && !trackerOwnedByViewer) {
-            Swal.fire({ icon: 'error', title: 'Not Allowed', text: 'You are not allowed to log out this movement.' });
-            return;
-        }
+        // Temporarily disabled: allow any user to complete the logout for now.
+        // if (!entryBelongsToCurrentUser(activeEntry, tracker) && !trackerOwnedByViewer) {
+        //     Swal.fire({ icon: 'error', title: 'Not Allowed', text: 'You are not allowed to log out this movement.' });
+        //     return;
+        // }
 
         if (window.AssignmentWorkflow && typeof window.AssignmentWorkflow.openForLogOut === 'function') {
             const handled = window.AssignmentWorkflow.openForLogOut({
@@ -7845,7 +7947,17 @@
         const searchTerm = searchInput ? searchInput.value.trim() : '';
 
         const statusFilterEl = document.getElementById('status-filter');
-        const statusFilter = statusFilterEl ? statusFilterEl.value : 'all';
+        let statusFilter = statusFilterEl ? statusFilterEl.value : 'all';
+
+        // File Log Table sub-tab: "active" (default) hides files logged back in;
+        // "completed" shows only those. The sub-tab takes precedence over the
+        // status dropdown when the dropdown is on its default "All Files".
+        const fileLogView = window._fileLogView || 'active';
+        if (fileLogView === 'completed') {
+            statusFilter = 'completed';
+        } else if (fileLogView === 'active' && (statusFilter === 'all' || statusFilter === 'completed')) {
+            statusFilter = 'not-completed';
+        }
 
         const activePriorityBtn = document.querySelector('.filter-btn[data-priority].ring-2');
         const priorityFilter = activePriorityBtn ? activePriorityBtn.getAttribute('data-priority') : 'all';
@@ -7915,6 +8027,12 @@
         if (activeEl) activeEl.textContent = stats.awaiting || 0;
         if (highEl) highEl.textContent = stats.others || 0;
         if (movementEl) movementEl.textContent = stats.completed || 0;
+
+        // File Log Table sub-tab counts (Active vs Completed/logged-back-in)
+        const fileLogActiveCountEl = document.getElementById('file-log-active-count');
+        const fileLogCompletedCountEl = document.getElementById('file-log-completed-count');
+        if (fileLogActiveCountEl) fileLogActiveCountEl.textContent = stats.active ?? 0;
+        if (fileLogCompletedCountEl) fileLogCompletedCountEl.textContent = stats.completed ?? 0;
 
         // New KANGIS extra metrics (only present in new_kangis module response)
         const knTodayEl     = document.getElementById('kn-tracked-today');
@@ -8453,6 +8571,32 @@
                 currentPage = 1;
                 updateFileTrackersTable();
             });
+        }
+
+        // Set up File Log Table sub-tabs (Active vs Completed/logged-back-in)
+        window._fileLogView = window._fileLogView || 'active';
+        const fileLogViewTabs = document.querySelectorAll('.file-log-view-tab');
+        if (fileLogViewTabs.length) {
+            const activeTabClasses = ['border-blue-600', 'text-blue-600', 'font-semibold'];
+            const idleTabClasses = ['border-transparent', 'text-gray-500', 'font-medium', 'hover:text-gray-700', 'hover:border-gray-300'];
+            const paintFileLogTabs = () => {
+                fileLogViewTabs.forEach(tab => {
+                    const isActive = tab.getAttribute('data-log-view') === window._fileLogView;
+                    tab.classList.remove(...activeTabClasses, ...idleTabClasses);
+                    tab.classList.add(...(isActive ? activeTabClasses : idleTabClasses));
+                });
+            };
+            fileLogViewTabs.forEach(tab => {
+                tab.addEventListener('click', function () {
+                    const view = this.getAttribute('data-log-view') || 'active';
+                    if (window._fileLogView === view) return;
+                    window._fileLogView = view;
+                    paintFileLogTabs();
+                    currentPage = 1;
+                    updateFileTrackersTable();
+                });
+            });
+            paintFileLogTabs();
         }
 
         // Set up priority filter buttons
@@ -9039,21 +9183,86 @@
         }, 250);
     })();
 
+    // Load + render the open File Search Requesters for a file (honoring panel).
+    function loadFileRequesters(fileNumber) {
+        const panel = document.getElementById('file-requesters-panel');
+        const list  = document.getElementById('file-requesters-list');
+        if (!panel || !list || !fileNumber) return;
+
+        const escHtml = s => (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+        fetch('{{ route('create-file-tracker.file-requesters') }}?file_number=' + encodeURIComponent(fileNumber), { headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(json => {
+                const rows = (json && json.data) || [];
+                if (!rows.length) { panel.classList.add('hidden'); return; }
+                list.innerHTML = rows.map(r => `
+                    <div class="px-5 py-3 flex items-center justify-between gap-3 ${r.is_top ? 'bg-amber-50' : ''}">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="font-semibold text-gray-800 truncate">${escHtml(r.requester_name)}</span>
+                                ${r.is_top ? '<span class="inline-flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white"><i data-lucide="star" class="h-2.5 w-2.5"></i> HONOR FIRST</span>' : ''}
+                            </div>
+                            <div class="text-[11px] text-gray-500 mt-0.5">
+                                ${escHtml(r.request_no || '')}${r.receiving_officer ? ' · for ' + escHtml(r.receiving_officer) : ''}${r.requested_at ? ' · ' + escHtml(r.requested_at) : ''}
+                            </div>
+                        </div>
+                        <span class="shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${r.source === 'DFR' ? 'bg-gray-200 text-gray-600' : 'bg-sky-100 text-sky-700'}">${escHtml(r.source === 'DFR' ? 'DFR' : 'Request')}${r.priority ? ' · P' + r.priority : ''}</span>
+                    </div>`).join('');
+                panel.classList.remove('hidden');
+                if (window.lucide) window.lucide.createIcons();
+            })
+            .catch(() => { panel.classList.add('hidden'); });
+    }
+
     // Restore state when returning from /fileindexing/create via return_to redirect
     (function restoreFromIndexingReturn() {
         const urlParams = new URLSearchParams(window.location.search);
         const returnFileNo   = urlParams.get('file_number');
         const returnTracking = urlParams.get('tracking_id');
         const returnTitle    = urlParams.get('file_title');
+        // Requester details backfilled from a Quick Search file request.
+        const reqOfficer     = urlParams.get('req_officer');
+        const reqOffice      = urlParams.get('req_office');
+        const reqOfficeCode  = urlParams.get('req_office_code');
+        const reqDepartment  = urlParams.get('req_department');
 
         if (!returnFileNo && !returnTracking) return;
 
+        // Show the open requesters for this file (the "Log File" path), ordered by
+        // seniority, so the front desk honors the most senior requester.
+        if (returnFileNo) loadFileRequesters(returnFileNo);
+
         // Clean the URL immediately so a refresh doesn't re-apply
         const cleanUrl = new URL(window.location.href);
-        cleanUrl.searchParams.delete('file_number');
-        cleanUrl.searchParams.delete('tracking_id');
-        cleanUrl.searchParams.delete('file_title');
+        ['file_number','tracking_id','file_title','req_officer','req_office','req_office_code','req_department']
+            .forEach(p => cleanUrl.searchParams.delete(p));
         window.history.replaceState({}, '', cleanUrl.toString());
+
+        // Backfill the Destination Office (Departments) → Receiving Office → Receiving
+        // Officer from the requester details captured at request time (best-effort,
+        // staggered so each cascade level can populate before the next is set).
+        function backfillRequesterDetails() {
+            if (!reqOfficer && !reqOffice && !reqDepartment) return;
+            const setSel = ($el, val, byText) => {
+                if (!$el || !$el.length || !val) return false;
+                let match = null;
+                $el.find('option').each(function () {
+                    const opt = $(this);
+                    const candidate = byText ? opt.text().trim() : (opt.attr('value') || '');
+                    if (candidate.toLowerCase() === String(val).toLowerCase()) match = opt.attr('value');
+                });
+                if (match !== null) { $el.val(match).trigger('change'); return true; }
+                return false;
+            };
+            if (reqDepartment) setSel($('#current-office'), reqDepartment, false);
+            setTimeout(() => {
+                if (reqOfficeCode) { if (!setSel($('#receiving-office'), reqOfficeCode, false)) setSel($('#receiving-office'), reqOffice, true); }
+                else if (reqOffice) setSel($('#receiving-office'), reqOffice, true);
+                setTimeout(() => { if (reqOfficer) setSel($('#receiving-officer'), reqOfficer, true); }, 400);
+            }, 400);
+        }
+        setTimeout(backfillRequesterDetails, 800);
 
         // If we have a tracking ID in new_kangis mode, open the Scan QR modal pre-filled.
         // Use a poll loop so we don't race against QuickActions initialization.

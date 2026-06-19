@@ -1147,10 +1147,12 @@
     // ── Create form submit ─────────────────────────────────────────────────────
     $('#form-create-request').addEventListener('submit', async function (e) {
         e.preventDefault();
+        const form      = this;
         const btn       = $('#btn-submit-request');
         const labelEl   = document.getElementById('btn-submit-label');
         const reqType   = document.getElementById('cr-request-type')?.value || 'Physical';
         const isDigital = reqType === 'Digital';
+        const resetLabel = () => { btn.disabled = false; if (labelEl) labelEl.textContent = isDigital ? 'Request Digital Access' : 'Submit Request'; };
 
         btn.disabled = true;
         if (labelEl) labelEl.textContent = 'Submitting…';
@@ -1166,26 +1168,40 @@
             is_redirected:           !isDigital && ($('#cr-is-redirected')?.value === '1'),
             current_file_location:   $('#cr-current-file-location')?.value || null,
             current_file_holder:     $('#cr-current-file-holder')?.value || null,
+            force:                   0,
         };
 
         if (!body.file_no) {
             toast('warning', 'File number is required.');
-            btn.disabled = false;
-            if (labelEl) labelEl.textContent = isDigital ? 'Request Digital Access' : 'Submit Request';
+            resetLabel();
             return;
         }
         if (!isDigital && !body.destination_office_id) {
             toast('warning', 'Destination office is required for physical file requests.');
-            btn.disabled = false;
-            if (labelEl) labelEl.textContent = 'Submit Request';
+            resetLabel();
             return;
         }
 
-        const res  = await apiFetch('/digital-request/store', { method: 'POST', body: JSON.stringify(body) });
-        const json = await res.json();
+        let res  = await apiFetch('/digital-request/store', { method: 'POST', body: JSON.stringify(body) });
+        let json = await res.json();
 
-        btn.disabled = false;
-        if (labelEl) labelEl.textContent = isDigital ? 'Request Digital Access' : 'Submit Request';
+        // Duplicate guard: file already requested & sent to SCB. Warn, but allow proceeding.
+        if (!json.success && json.duplicate) {
+            const ex = json.existing || {};
+            const ok = confirm(
+                'This file has already been requested.\n\n' +
+                'Requested by: ' + (ex.requester_name || '—') +
+                (ex.request_no ? '\nRequest: ' + ex.request_no : '') +
+                '\nStatus: ' + (ex.status || '') + (ex.requested_at ? ' (' + ex.requested_at + ')' : '') +
+                '\n\nIt has already been sent to SCB and is awaiting a response.\n\nDo you want to request it anyway?'
+            );
+            if (!ok) { resetLabel(); return; }
+            body.force = 1;
+            res  = await apiFetch('/digital-request/store', { method: 'POST', body: JSON.stringify(body) });
+            json = await res.json();
+        }
+
+        resetLabel();
 
         if (json.success) {
             hideModal('modal-create');

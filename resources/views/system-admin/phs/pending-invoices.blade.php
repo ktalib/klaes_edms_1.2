@@ -57,7 +57,7 @@
                         @forelse ($pending as $request)
                             <tr class="hover:bg-slate-50/60">
                                 <td class="px-5 py-3 text-slate-400 text-xs">{{ $loop->iteration }}</td>
-                                <td class="px-5 py-3 font-semibold text-slate-900">{{ $request->organization_name ?: '—' }}</td>
+                                <td class="px-5 py-3 font-semibold text-slate-900">{{ \Illuminate\Support\Str::title($request->organization_name) ?: '—' }}</td>
                                 <td class="px-5 py-3 text-slate-600">{{ $request->initial_token_package ?: '—' }}</td>
                                 <td class="px-5 py-3 text-right font-semibold text-slate-900">₦{{ number_format((float) ($request->expected_amount ?? $request->payment_amount ?? 0), 2) }}</td>
                                 <td class="px-5 py-3 text-right text-slate-700">

@@ -8,6 +8,7 @@ use App\Http\Controllers\Phs\PhsSlipController;
 use App\Http\Controllers\Phs\PhsTokenController;
 use App\Http\Controllers\Phs\PhsOrganizationController;
 use App\Http\Controllers\Phs\PhsOnboardingController;
+use App\Http\Controllers\Phs\PhsFeedbackController;
 
 /*
 |--------------------------------------------------------------------------
@@ -69,6 +70,9 @@ Route::prefix('phs')->name('phs.')->group(function () {
 
         Route::get('slip/data', [PhsSlipController::class, 'data'])->name('slip.data');
         Route::get('slip/print', [PhsSlipController::class, 'print'])->name('slip.print');
+
+        // Feedback / complaints about incomplete or wrong transactions in a slip.
+        Route::post('feedback', [PhsFeedbackController::class, 'store'])->name('feedback.store');
 
         Route::get('tokens/transactions', [PhsTokenController::class, 'transactions'])->name('tokens.transactions');
         Route::post('tokens/pay-online', [PhsTokenController::class, 'payOnline'])->name('tokens.payOnline');

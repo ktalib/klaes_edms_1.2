@@ -537,6 +537,10 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/topups/{txnId}/reject', [PhsAdminController::class, 'rejectTopup'])->name('topups.reject');
         Route::get('/wallets', [PhsAdminController::class, 'wallets'])->name('wallets');
 
+        // Feedback / complaints about incomplete or wrong transactions
+        Route::get('/feedback', [PhsAdminController::class, 'feedback'])->name('feedback');
+        Route::post('/feedback/{id}', [PhsAdminController::class, 'updateFeedback'])->name('feedback.update');
+
         // Token package management (CRUD)
         Route::get('/packages', [PhsAdminController::class, 'packages'])->name('packages.index');
         Route::post('/packages', [PhsAdminController::class, 'storePackage'])->name('packages.store');
@@ -849,6 +853,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/', [ValuationReportController::class, 'store'])->name('store');
         Route::get('/{id}/edit', [ValuationReportController::class, 'edit'])->name('edit');
         Route::put('/{id}', [ValuationReportController::class, 'update'])->name('update');
+        Route::post('/re-evaluate/{id}', [ValuationReportController::class, 'reEvaluate'])->name('re-evaluate');
         Route::get('/{id}', [ValuationReportController::class, 'show'])->name('show');
         Route::post('/log-print/{id}', [ValuationReportController::class, 'logPrint'])->name('log-print');
     });

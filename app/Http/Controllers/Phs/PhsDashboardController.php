@@ -149,12 +149,27 @@ class PhsDashboardController extends Controller
         $member->refresh();
         $institution->refresh();
 
+        // Build the certified-slip report so the on-screen Property Timeline shows
+        // the exact same LS-weighed set the printed slip will (deduplicated,
+        // scored, and ordered). Falls back to the raw transactions if the report
+        // engine can't produce rows for any reason.
+        $resolvedFileNo = $results['file_index_number'] ?? $query;
+        $timeline = $transactions;
+        try {
+            $report = $this->searchService->buildPrintReport(['file_number' => $resolvedFileNo]);
+            if (($report['status'] ?? null) === 200 && !empty($report['payload']['data']['rows'])) {
+                $timeline = $report['payload']['data']['rows'];
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         PhsSearchLog::create([
             'phs_institution_id' => $institution->id,
             'phs_member_id' => $member->id,
             'query' => Str::limit($query, 250),
-            'file_number' => $results['file_index_number'] ?? $query,
-            'result_count' => count($transactions),
+            'file_number' => $resolvedFileNo,
+            'result_count' => count($timeline),
             'reference_no' => $reference,
             'tokens_used' => $debited ? 1 : 0,
         ]);
@@ -163,7 +178,7 @@ class PhsDashboardController extends Controller
             'success' => true,
             'reference_no' => $reference,
             'token_balance' => $member->isSuperAdmin() ? (int) $institution->token_balance : (int) $member->allocated_tokens,
-            'transactions' => $transactions,
+            'transactions' => $timeline,
             'file_title' => $results['file_title'] ?? null,
             'file_district' => $results['file_district'] ?? null,
             'file_lga' => $results['file_lga'] ?? null,
@@ -172,7 +187,7 @@ class PhsDashboardController extends Controller
             'file_tp_no' => $results['file_tp_no'] ?? null,
             'file_size' => $results['file_size'] ?? null,
             'file_index_number' => $results['file_index_number'] ?? null,
-            'total_count' => $results['total_count'] ?? count($transactions),
+            'total_count' => count($timeline),
         ]);
     }
 }
