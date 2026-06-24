@@ -126,8 +126,8 @@ class RofoStagingDashboardController extends Controller
         return DataTables::of($query)
             ->orderColumn('mlsFNo',             fn($q, $d) => $q->orderBy('mlsFNo', $d))
             ->orderColumn('instrument_type',    fn($q, $d) => $q->orderBy('instrument_type', $d))
-            ->orderColumn('party_2',            fn($q, $d) => $q->orderBy('Grantee', $d))
-            ->orderColumn('reg_no',             fn($q, $d) => $q->orderBy('regNo', $d))
+            ->orderColumn('party_2',            fn($q, $d) => $q->orderBy('party_2', $d))
+            ->orderColumn('reg_no',             fn($q, $d) => $q->orderBy('reg_no', $d))
             ->orderColumn('land_use',           fn($q, $d) => $q->orderBy('land_use', $d))
             ->orderColumn('lgsaOrCity',         fn($q, $d) => $q->orderBy('lgsaOrCity', $d))
             ->orderColumn('property_description', fn($q, $d) => $q->orderBy('property_description', $d))
@@ -139,8 +139,8 @@ class RofoStagingDashboardController extends Controller
                     ->orWhere('NewKANGISFileno', 'like', "%{$kw}%")
                     ->orWhere('fileno', 'like', "%{$kw}%");
             }))
-            ->filterColumn('party_2',           fn($q, $kw) => $q->where('Grantee', 'like', "%{$kw}%"))
-            ->filterColumn('reg_no',            fn($q, $kw) => $q->where('regNo', 'like', "%{$kw}%"))
+            ->filterColumn('party_2',           fn($q, $kw) => $q->where('party_2', 'like', "%{$kw}%"))
+            ->filterColumn('reg_no',            fn($q, $kw) => $q->where('reg_no', 'like', "%{$kw}%"))
             ->filterColumn('lgsaOrCity',        fn($q, $kw) => $q->where('lgsaOrCity', 'like', "%{$kw}%"))
             ->filterColumn('property_description', fn($q, $kw) => $q->where('property_description', 'like', "%{$kw}%"))
             ->editColumn('transaction_date', function ($row) {

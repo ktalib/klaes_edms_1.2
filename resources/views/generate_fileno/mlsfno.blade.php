@@ -11,7 +11,7 @@
             .select2-container .select2-selection--single {
                 height: 42px !important;
                 display: flex;
-                align-items: center;
+                align-items: center;  
                 border-color: #d1d5db !important;
             }
             .select2-container--default .select2-selection--single .select2-selection__arrow {

@@ -349,9 +349,9 @@
                                 <div class="grid grid-cols-9 gap-4 text-sm font-medium">
                                     <div>Batch Number</div>
                                     <div>Registry Batch No</div>
+                                    <div>Shelf/Rack</div>
                                     <div>Created Date</div>
                                     <div>Files Count</div>
-                                    <div>Shelf/Rack</div>
                                     <div>Format</div>
                                     <div>Status</div>
                                     <div>Created By</div>

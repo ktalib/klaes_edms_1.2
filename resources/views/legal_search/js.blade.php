@@ -1101,19 +1101,26 @@ const executeSearchAjax = (filters, searchData) => {
       btn.addEventListener('click', () => {
         const index = parseInt(btn.getAttribute('data-index'));
         console.log('View button clicked for index:', index);
-        
+
         selectedFile = searchResults[index];
         console.log('Selected file:', selectedFile);
-        
-        // Close search modal
-        searchModal.classList.add('hidden');
-        
-        // Show file history view directly instead of file details
-        dashboardView.classList.add('hidden');
-        fileHistoryView.classList.remove('hidden');
-        
-        // Populate file details
-        renderFileHistory();
+
+        const openRecords = () => {
+          searchModal.classList.add('hidden');
+          dashboardView.classList.add('hidden');
+          fileHistoryView.classList.remove('hidden');
+          renderFileHistory();
+        };
+
+        // Payment gate: online portal requires ₦1,000 before viewing
+        if (window.LEGAL_SEARCH_CONTEXT?.requiresPayment && !window._lsOnlinePaid) {
+          if (typeof window.lsOnlineRequestPayment === 'function') {
+            window.lsOnlineRequestPayment(openRecords);
+          }
+          return;
+        }
+
+        openRecords();
       });
     });
   };
@@ -4653,6 +4660,15 @@ const executeSearchAjax = (filters, searchData) => {
   if (printReportBtn) {
     printReportBtn.addEventListener('click', (ev) => {
       ev.preventDefault();
+
+      // Payment gate: online portal requires ₦1,000 before printing
+      if (window.LEGAL_SEARCH_CONTEXT?.requiresPayment && !window._lsOnlinePaid) {
+        if (typeof window.lsOnlineRequestPayment === 'function') {
+          window.lsOnlineRequestPayment(() => printReportBtn.click());
+        }
+        return;
+      }
+
       const tplUrl = window.LEGAL_SEARCH_CONTEXT?.printTemplateUrl;
       if (tplUrl) {
         const q = new URLSearchParams();

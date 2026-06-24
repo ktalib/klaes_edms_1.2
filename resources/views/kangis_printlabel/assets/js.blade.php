@@ -744,9 +744,9 @@ document.addEventListener('DOMContentLoaded', function() {
             html += '<div class="p-3 grid grid-cols-9 gap-4 hover:bg-gray-50">'+
                 '<div class="font-medium">'+batch.batch_number+'</div>'+
                 '<div class="text-sm">'+(batch.sys_batch_no || '—')+'</div>'+
+                '<div class="text-sm">'+shelfRack+'</div>'+
                 '<div class="text-sm">'+dt+'</div>'+
                 '<div class="text-sm">'+fc+'</div>'+
-                '<div class="text-sm">'+shelfRack+'</div>'+
                 '<div class="text-sm">QR Code</div>'+
                 '<div><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium '+sc+'">'+(batch.status.charAt(0).toUpperCase()+batch.status.slice(1))+'</span></div>'+
                 '<div class="text-sm">'+cn+'</div>'+

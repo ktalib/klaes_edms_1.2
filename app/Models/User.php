@@ -404,6 +404,33 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * SCB Monitor (mobile file searcher) — receives File Search Requests.
+     */
+    public function isScbMonitor(): bool
+    {
+        return ($this->fr_permissions ?? '') === 'SCB';
+    }
+
+    /**
+     * Office Priority Search (OFS) requester — a ranked officer whose users.rank
+     * matches the hierarchy in config/file_request_priority.php. OFS requests are
+     * prioritised, colour-coded on the SCB Feedback table, and floated to the top
+     * of the SCB Monitor's mobile list.
+     */
+    public function isOfs(): bool
+    {
+        return \App\Models\FileSearchRequest::priorityFor($this->rank) > 0;
+    }
+
+    /**
+     * The user's rank when it qualifies them as an OFS requester, else null.
+     */
+    public function ofsRank(): ?string
+    {
+        return $this->isOfs() ? ($this->rank ?: null) : null;
+    }
+
+    /**
      * Lightweight permission lookup compatible with Spatie tables.
      */
     protected function hasDatabasePermission(string $ability): bool

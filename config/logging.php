@@ -98,6 +98,13 @@ return [
             'days' => 90,
         ],
 
+        'mls_batch_errors' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/mls_batch_errors.log'),
+            'level' => 'error',
+            'days' => 90,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

@@ -862,10 +862,6 @@
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center h-16">
           <div class="flex items-center space-x-4">
-            <div class="flex items-center justify-center">
-              <img src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" alt="PHS Logo" class="max-h-14 w-auto object-contain dark:hidden" />
-              <img src="{{ asset('assets/logo/phs-dark-logo.jpeg') }}" alt="PHS Logo" class="max-h-14 w-auto object-contain hidden dark:block" />
-            </div>
             <div>
               <h1 id="dashboard-org-name" class="text-lg sm:text-xl font-bold text-gray-900 dark:text-gray-100">KLAES</h1>
               <p class="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Organizational Search History Platform</p>
@@ -1066,28 +1062,110 @@
               <h2 class="text-lg sm:text-xl font-semibold mb-4 dark:text-gray-100">
                 Property History Search
               </h2>
-              <div class="flex flex-col sm:flex-row items-center gap-3">
-                <div class="flex-1 relative w-full">
+              <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <div class="relative w-full sm:max-w-xs">
                   <i data-lucide="search"
                     class="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5"></i>
                   <input type="text" id="search-query" readonly placeholder="Click to select a file number..."
                     title="Click to open the file number selector"
                     class="w-full cursor-pointer pl-10 sm:pl-11 pr-4 py-2 sm:py-3 text-sm sm:text-base h-10 sm:h-12 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20" />
                 </div>
+                <button type="button" id="phs-build-fileno-btn"
+                  class="inline-flex items-center justify-center gap-1.5 rounded-lg font-medium px-4 sm:px-5 py-2 sm:py-3 h-10 sm:h-12 bg-blue-600 text-white hover:bg-blue-700 transition text-sm sm:text-base w-full sm:w-auto whitespace-nowrap">
+                  <i data-lucide="file-text" class="w-4 h-4 sm:w-5 sm:h-5"></i>Select File Number
+                </button>
                 <button id="search-btn"
                   class="inline-flex items-center justify-center rounded-lg font-medium px-5 sm:px-7 py-2 sm:py-3 h-10 sm:h-12 bg-blue-600 text-white hover:bg-blue-700 transition text-sm sm:text-base w-full sm:w-auto">
                   <i data-lucide="search" class="w-4 h-4 sm:w-5 sm:h-5 mr-2"></i>1 Token per Search
                 </button>
               </div>
+
+              {{-- ── Additional Filters (dropdown-based, mirrors /onpremise) ──── --}}
+              <div class="border-t border-gray-100 dark:border-gray-700 mt-3 pt-3">
+                <button type="button" id="phs-toggle-filters-btn" class="flex items-center gap-2 cursor-pointer group">
+                  <i data-lucide="chevron-right" id="phs-filters-chevron"
+                    class="w-4 h-4 text-gray-400 transition-transform duration-200"></i>
+                  <span class="text-sm font-medium text-gray-600 dark:text-gray-300 group-hover:text-gray-800 dark:group-hover:text-gray-100">Additional Filters</span>
+                  <span id="phs-active-filter-count"
+                    class="hidden inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-bold">0</span>
+                </button>
+
+                {{-- Filter selector dropdown (hidden by default) --}}
+                <div id="phs-filters-panel" class="hidden mt-3">
+                  <select id="phs-filter-selector"
+                    class="w-full md:w-64 px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 mb-3">
+                    <option value="">— Select a filter to add —</option>
+                    <option value="guarantorName">Party 1</option>
+                    <option value="guaranteeName">Party 2</option>
+                    <option value="lga">LGA</option>
+                    <option value="district">District</option>
+                    <option value="location">Location</option>
+                    <option value="plotNumber">Plot Number</option>
+                    <option value="planNumber">Plan Number</option>
+                    <option value="size">Size</option>
+                    <option value="caveat">Caveat</option>
+                  </select>
+
+                  {{-- Active filters container --}}
+                  <div id="phs-filters-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3"></div>
+
+                  {{-- Hidden filter templates (used by JS to build the input rows) --}}
+                  <template id="phs-tpl-guarantorName">
+                    <input type="text" data-filter-key="guarantorName" placeholder="Enter party 1 name"
+                      class="phs-filter-input flex-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                  </template>
+                  <template id="phs-tpl-guaranteeName">
+                    <input type="text" data-filter-key="guaranteeName" placeholder="Enter party 2 name"
+                      class="phs-filter-input flex-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                  </template>
+                  <template id="phs-tpl-lga">
+                    <select data-filter-key="lga"
+                      class="phs-filter-input flex-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                      <option value="">All LGAs</option>
+                      <option value="Dala">Dala</option>
+                      <option value="Fagge">Fagge</option>
+                      <option value="Gwale">Gwale</option>
+                      <option value="Kano Municipal">Kano Municipal</option>
+                      <option value="Nassarawa">Nassarawa</option>
+                      <option value="Tarauni">Tarauni</option>
+                      <option value="Ungogo">Ungogo</option>
+                    </select>
+                  </template>
+                  <template id="phs-tpl-district">
+                    <input type="text" data-filter-key="district" placeholder="Enter district"
+                      class="phs-filter-input flex-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                  </template>
+                  <template id="phs-tpl-location">
+                    <input type="text" data-filter-key="location" placeholder="Enter location"
+                      class="phs-filter-input flex-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                  </template>
+                  <template id="phs-tpl-plotNumber">
+                    <input type="text" data-filter-key="plotNumber" placeholder="Enter plot number"
+                      class="phs-filter-input flex-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                  </template>
+                  <template id="phs-tpl-planNumber">
+                    <input type="text" data-filter-key="planNumber" placeholder="Enter plan number"
+                      class="phs-filter-input flex-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                  </template>
+                  <template id="phs-tpl-size">
+                    <input type="text" data-filter-key="size" placeholder="Enter size"
+                      class="phs-filter-input flex-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                  </template>
+                  <template id="phs-tpl-caveat">
+                    <select data-filter-key="caveat"
+                      class="phs-filter-input flex-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                      <option value="">Any</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
+                  </template>
+                </div>
+              </div>
+
               <div class="flex items-center justify-between mt-2.5 gap-3 flex-wrap">
                 <p class="text-xs text-gray-500 dark:text-gray-400">
                   Examples: "COM-RES-2021-78", "KN12345", "John Doe"
                 </p>
-                <button type="button" id="phs-build-fileno-btn"
-                  class="inline-flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300">
-                  <i data-lucide="wand-2" class="w-4 h-4"></i>
-                  Build / select a file number
-                </button>
               </div>
             </div>
           </div>
@@ -1258,17 +1336,23 @@
             <h3 class="text-base font-semibold uppercase tracking-wider text-gray-300 mb-4">
               Contact Us
             </h3>
-            <div class="space-y-3 text-sm">
-              <div class="flex items-center space-x-2.5 text-gray-400">
-                <i data-lucide="mail" class="w-4 h-4 flex-shrink-0"></i><a href="mailto:support@klas.gov.ng"
-                  class="hover:text-white transition-colors">support@klas.gov.ng</a>
+            <div class="flex items-start gap-4">
+              <div class="space-y-3 text-sm">
+                <div class="flex items-center space-x-2.5 text-gray-400">
+                  <i data-lucide="mail" class="w-4 h-4 flex-shrink-0"></i><a href="mailto:support@klas.gov.ng"
+                    class="hover:text-white transition-colors">support@klas.gov.ng</a>
+                </div>
+                <div class="flex items-center space-x-2.5 text-gray-400">
+                  <i data-lucide="phone" class="w-4 h-4 flex-shrink-0"></i><a href="tel:+23491234567"
+                    class="hover:text-white transition-colors">+234 (0) 9 123 4567</a>
+                </div>
+                <div class="flex items-start space-x-2.5 text-gray-400">
+                  <i data-lucide="map-pin" class="w-4 h-4 flex-shrink-0 mt-0.5"></i><span>KLAES Headquarters, Kano, Nigeria</span>
+                </div>
               </div>
-              <div class="flex items-center space-x-2.5 text-gray-400">
-                <i data-lucide="phone" class="w-4 h-4 flex-shrink-0"></i><a href="tel:+23491234567"
-                  class="hover:text-white transition-colors">+234 (0) 9 123 4567</a>
-              </div>
-              <div class="flex items-start space-x-2.5 text-gray-400">
-                <i data-lucide="map-pin" class="w-4 h-4 flex-shrink-0 mt-0.5"></i><span>KLAES Headquarters, Kano, Nigeria</span>
+              <div class="w-14 h-14 flex-shrink-0 rounded-xl bg-white/10 flex items-center justify-center overflow-hidden shadow-sm">
+                <img src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" class="w-full h-full object-cover dark:hidden" alt="PHS" />
+                <img src="{{ asset('assets/logo/phs-dark-logo.jpeg') }}" class="w-full h-full object-cover hidden dark:block" alt="PHS" />
               </div>
             </div>
           </div>
@@ -1583,8 +1667,85 @@
           box.addEventListener('click', openFileNoModal);
           box.addEventListener('focus', openFileNoModal);
         }
+
+        initAdditionalFilters();
         if (window.lucide) window.lucide.createIcons();
       });
+
+      // ── Additional Filters (mirrors the /onpremise Search Land Records card) ──
+      var FILTER_LABELS = {
+        guarantorName: 'Party 1', guaranteeName: 'Party 2', lga: 'LGA',
+        district: 'District', location: 'Location', plotNumber: 'Plot Number',
+        planNumber: 'Plan Number', size: 'Size', caveat: 'Caveat'
+      };
+
+      function updateActiveFilterCount() {
+        var container = document.getElementById('phs-filters-container');
+        var badge = document.getElementById('phs-active-filter-count');
+        if (!container || !badge) return;
+        var count = container.querySelectorAll('[data-filter-cell]').length;
+        badge.textContent = count;
+        badge.classList.toggle('hidden', count === 0);
+      }
+
+      function addFilter(key) {
+        var container = document.getElementById('phs-filters-container');
+        var tpl = document.getElementById('phs-tpl-' + key);
+        if (!container || !tpl || container.querySelector('[data-filter-cell="' + key + '"]')) return;
+
+        var cell = document.createElement('div');
+        cell.setAttribute('data-filter-cell', key);
+        cell.className = 'flex flex-col gap-1';
+        cell.innerHTML =
+          '<div class="flex items-center justify-between">' +
+            '<label class="text-xs font-medium text-gray-600 dark:text-gray-400">' + (FILTER_LABELS[key] || key) + '</label>' +
+            '<button type="button" data-remove-filter="' + key + '" class="text-gray-400 hover:text-red-500" title="Remove filter">' +
+              '<i data-lucide="x" class="w-3.5 h-3.5"></i>' +
+            '</button>' +
+          '</div>' +
+          '<div class="flex items-center"></div>';
+        cell.querySelector('div.flex.items-center').appendChild(tpl.content.cloneNode(true));
+        container.appendChild(cell);
+        updateActiveFilterCount();
+        if (window.lucide) window.lucide.createIcons();
+      }
+
+      function initAdditionalFilters() {
+        var toggle = document.getElementById('phs-toggle-filters-btn');
+        var panel = document.getElementById('phs-filters-panel');
+        var chevron = document.getElementById('phs-filters-chevron');
+        var selector = document.getElementById('phs-filter-selector');
+        var container = document.getElementById('phs-filters-container');
+        if (!toggle || !panel || !selector || !container) return;
+
+        toggle.addEventListener('click', function () {
+          panel.classList.toggle('hidden');
+          if (chevron) chevron.classList.toggle('rotate-90');
+        });
+
+        selector.addEventListener('change', function () {
+          if (this.value) { addFilter(this.value); this.value = ''; }
+        });
+
+        container.addEventListener('click', function (e) {
+          var btn = e.target.closest('[data-remove-filter]');
+          if (!btn) return;
+          var cell = container.querySelector('[data-filter-cell="' + btn.getAttribute('data-remove-filter') + '"]');
+          if (cell) cell.remove();
+          updateActiveFilterCount();
+        });
+      }
+
+      // Exposed for portal.js performSearch() to merge into the search payload.
+      window.phsGetActiveFilters = function () {
+        var filters = {};
+        document.querySelectorAll('#phs-filters-container .phs-filter-input').forEach(function (el) {
+          var key = el.getAttribute('data-filter-key');
+          var val = (el.value || '').trim();
+          if (key && val) filters[key] = val;
+        });
+        return filters;
+      };
     })();
   </script>
 </body>

@@ -77,17 +77,35 @@ class TitleStatusController extends Controller
         $data['captured_by'] = Auth::id();
         $data['status']      = TitleStatusApplication::STATUS_PENDING;
 
-        $record = TitleStatusApplication::create($data);
+        // Support selecting several title statuses for the same file in one request.
+        // `title_types` (and the parallel `remarks`) take precedence; fall back to the
+        // single `title_type`/`remark` for backward compatibility with the standalone module.
+        $types   = $request->input('title_types');
+        $remarks = $request->input('remarks');
+        if (!is_array($types) || empty($types)) {
+            $types   = [$data['title_type']];
+            $remarks = [$data['remark'] ?? null];
+        }
+
+        $records = [];
+        foreach (array_values($types) as $i => $type) {
+            $rowData                = $data;
+            $rowData['title_type']  = $type;
+            if (is_array($remarks) && array_key_exists($i, $remarks)) {
+                $rowData['remark'] = $remarks[$i];
+            }
+            $records[] = TitleStatusApplication::create($rowData);
+        }
 
         // Flag source files and push to archive tables. A Title Status update raised from
         // File Indexing is a "false decommissioning" — the file is not actually decommissioned.
         $falseDecommissioning = $request->boolean('false_decommissioning');
-        $this->titleStatusService->flagAndDecommission($record, $falseDecommissioning);
+        $this->titleStatusService->flagAndDecommission($records, $falseDecommissioning);
 
         return response()->json([
             'success' => true,
             'message' => 'Title Status application created successfully.',
-            'data'    => $record,
+            'data'    => count($records) === 1 ? $records[0] : $records,
         ]);
     }
 

@@ -11,6 +11,8 @@
             body { width: 100% !important; min-width: 100% !important; }
             .mobile-hide { display: none !important; }
             .mobile-center { text-align: center !important; }
+            .header-logo { max-width: 36px !important; width: 36px !important; }
+            .header-title { font-size: 11px !important; }
         }
         * { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; margin: 0; padding: 0; }
         html, body { height: 100% !important; width: 100% !important; }
@@ -73,17 +75,17 @@
                 <table class="container" width="100%" cellpadding="0" cellspacing="0" style="max-width: 700px; margin: 0 auto;">
                     <!-- Header with Ministry Logos -->
                     <tr>
-                        <td style="padding: 15px 20px; background: white; border-bottom: 1px solid #e5e7eb;">
+                        <td style="padding: 10px 12px; background: white; border-bottom: 1px solid #e5e7eb;">
                             <table width="100%" cellpadding="0" cellspacing="0">
                                 <tr>
-                                    <td width="33%" style="text-align: left;">
-                                        <img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Ministry Logo" style="max-width: 60px; height: auto;">
+                                    <td width="12%" style="text-align: left; vertical-align: middle; padding-right: 6px; overflow: hidden;">
+                                        <img class="header-logo" src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Ministry Logo" width="52" height="52" style="max-width: 52px; width: 52px; height: auto; display: block; object-fit: contain;">
                                     </td>
-                                    <td width="34%" style="text-align: center;">
-                                        <h3 style="margin: 0; color: #1e3a5f; font-size: 14px;">{{ env('APP_NAME') }}</h3>
+                                    <td width="76%" style="text-align: center; vertical-align: middle; padding: 0 6px;">
+                                        <h3 class="header-title" style="margin: 0; color: #1e3a5f; font-size: 14px; font-weight: 700; line-height: 1.3; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ env('APP_NAME') }}</h3>
                                     </td>
-                                    <td width="33%" style="text-align: right;">
-                                        <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Ministry Logo" style="max-width: 60px; height: auto;">
+                                    <td width="12%" style="text-align: right; vertical-align: middle; padding-left: 6px; overflow: hidden;">
+                                        <img class="header-logo" src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Ministry Logo" width="52" height="52" style="max-width: 52px; width: 52px; height: auto; display: block; object-fit: contain; margin-left: auto;">
                                     </td>
                                 </tr>
                             </table>

@@ -14,12 +14,23 @@
  * (e.g. front-desk / Quick Search requests with no receiving officer).
  */
 return [
+    // Office Priority Search (OFS) hierarchy. A logged-in user is an OFS requester
+    // when their users.rank matches one of these titles; the matched weight sets how
+    // their File Search Request is prioritised (higher = honored first).
+    //
+    // ORDER MATTERS: FileSearchRequest::priorityFor() returns the FIRST substring
+    // match, so the more specific titles ("Assistant/Deputy Director") MUST be listed
+    // before the broader "Director", or e.g. "Deputy Director Deeds" would wrongly
+    // match "Director".
     'ranks' => [
-        'Commissioner' => 100,
-        'Permanent Secretary' => 90,
-        'Director'            => 70,
-        'Deputy Director'     => 60,
-        'Assistant Director'  => 50,
+        'Honorable Commissioner' => 100,   // HC
+        'Hon. Commissioner'      => 100,
+        'Commissioner'           => 100,
+        'Permanent Secretary'    => 90,    // PS
+        'Assistant Director'     => 60,    // before "Director"
+        'Deputy Director'        => 70,    // before "Director"
+        'Director'               => 80,    // Directors
+        'Officer'                => 10,    // Officers
     ],
 
     'default' => 0,

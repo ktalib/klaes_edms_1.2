@@ -3507,6 +3507,7 @@ class ApplicationController extends Controller
     {
         return [
             'passport_photo.required_if' => 'A passport photograph is required for residential applications.',
+            'op_serial_number.required_if' => 'OP Serial Number is required for Change of Name applications.',
             'passport_photo.image' => 'The passport photograph must be an image file.',
             'passport_photo.mimes' => 'The passport photograph must be a JPEG or PNG file.',
             'passport_photo.max' => 'The passport photograph may not be larger than 2MB.',
@@ -3636,8 +3637,9 @@ class ApplicationController extends Controller
             'passport_photo' => 'required_if:application_type,residential|image|mimes:jpeg,jpg,png|max:2048|dimensions:min_width=150,min_height=150,max_width=2000,max_height=2000',
             // System source (for Change of Name filtering)
             'system_source' => 'nullable|string|max:50',
-            // OP Serial Number (for manual capture when not found in record)
-            'op_serial_number' => 'nullable|string|max:100',
+            // OP Serial Number (for manual capture when not found in record).
+            // Mandatory for Change of Name applications so no row is saved without one.
+            'op_serial_number' => 'required_if:system_source,OSSOPCHANGEOFNAME|nullable|string|max:100',
         ];
     }
 }

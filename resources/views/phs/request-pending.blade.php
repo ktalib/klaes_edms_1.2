@@ -45,15 +45,15 @@
                 <ol class="space-y-3 text-blue-800">
                     <li class="flex items-start">
                         <span class="font-bold mr-3">1.</span>
-                        <span>Our team will review your request and contact you if we need any additional information.</span>
+                        <span>Our team reviews your documents and contacts you if any additional information is needed.</span>
                     </li>
                     <li class="flex items-start">
                         <span class="font-bold mr-3">2.</span>
-                        <span>Once your payment is confirmed, your request will be approved.</span>
+                        <span>Once approved, you'll receive a link to select your subscription package, then download, sign, and upload your Service Level Agreement (SLA) — no payment at this stage.</span>
                     </li>
                     <li class="flex items-start">
                         <span class="font-bold mr-3">3.</span>
-                        <span>You'll receive an approval email with a registration link to complete your account setup.</span>
+                        <span>After our Legal team approves your signed SLA, you'll receive a payment &amp; onboarding link to complete payment and register your account.</span>
                     </li>
                     <li class="flex items-start">
                         <span class="font-bold mr-3">4.</span>

@@ -155,8 +155,8 @@
                                          <th class="text-left">Reg Time/Date</th>
                                         <th class="text-left">Time/Date Captured</th>
                                        
-                                        <th class="text-left">Property Description</th>
-                                        <th class="text-left">Registered By</th>
+                                        <th class="text-left whitespace-nowrap">Property Description</th>
+                                        <th class="text-left whitespace-nowrap">Registered By</th>
                                         <th class="text-left">Actions</th>
                                     </tr>
                                 </thead>
@@ -228,20 +228,14 @@
                                         <td class="align-top text-proper">{{ $instrument->party_1_name ? ucwords(strtolower($instrument->party_1_name)) : '' }}</td>
                                         <td class="align-top text-proper">{{ $instrument->party_2_name ? ucwords(strtolower($instrument->party_2_name)) : '' }}</td>
                                         <td class="align-top text-proper">{{ $instrument->party_3_name ? ucwords(strtolower($instrument->party_3_name)) : '' }}</td>
-                                        <td class="align-top">
-                                            <div class="flex flex-col" style="max-width: 180px;" x-data="{ expanded: false }">
-                                                <div :class="expanded ? 'whitespace-normal' : 'truncate block'" class="font-bold text-gray-800 text-proper leading-tight w-full" :title="expanded ? '' : '{{ addslashes($instrument->solicitor_name) }}'">
+                                        <td class="align-top expandable">
+                                            <div class="flex flex-col">
+                                                <div class="font-bold text-gray-800 text-proper leading-tight w-full whitespace-normal">
                                                     {{ $instrument->solicitor_name ? ucwords(strtolower($instrument->solicitor_name)) : '' }}
                                                 </div>
-                                                <div :class="expanded ? 'whitespace-normal' : 'truncate block'" class="text-xs text-gray-500 text-proper mt-0.5 w-full" style="font-size: 11px;" :title="expanded ? '' : '{{ addslashes($instrument->solicitor_address) }}'">
+                                                <div class="text-xs text-gray-500 text-proper mt-0.5 w-full whitespace-normal" style="font-size: 11px;">
                                                     {{ $instrument->solicitor_address ? ucwords(strtolower($instrument->solicitor_address)) : '' }}
                                                 </div>
-                                                @if((strlen($instrument->solicitor_name ?? '') > 25) || (strlen($instrument->solicitor_address ?? '') > 35))
-                                                    <button type="button" @click.stop="expanded = !expanded" class="text-xs text-blue-600 font-bold hover:underline mt-1 self-start flex items-center bg-blue-50/50 px-1.5 py-0.5 rounded border border-blue-100/50" style="font-size: 10px;">
-                                                        <span x-text="expanded ? 'View Less' : 'View More'"></span>
-                                                        <i :data-lucide="expanded ? 'chevron-up' : 'chevron-down'" class="ml-1" style="width: 12px; height: 12px;"></i>
-                                                    </button>
-                                                @endif
                                             </div>
                                         </td>
                                     
@@ -331,22 +325,10 @@
                                             </div>
                                         </td>
                                   
-                                        <td class="align-top">
+                                        <td class="align-top expandable">
                                             @if($instrument->property_description)
-                                                <div x-data="{ expanded: false }" class="flex flex-col" style="max-width: 180px;">
-                                                    <div :class="expanded ? 'whitespace-normal' : 'truncate block'" 
-                                                         class="text-gray-600 text-sm leading-tight text-proper w-full"
-                                                         :title="expanded ? '' : '{{ addslashes($instrument->property_description) }}'">
-                                                        {{ ucwords(strtolower($instrument->property_description)) }}
-                                                    </div>
-                                                    @if(strlen($instrument->property_description) > 30)
-                                                        <button type="button" @click.stop="expanded = !expanded" 
-                                                                class="text-xs text-blue-600 font-bold hover:underline mt-1 self-start flex items-center bg-blue-50/50 px-1.5 py-0.5 rounded border border-blue-100/50" 
-                                                                style="font-size: 10px;">
-                                                            <span x-text="expanded ? 'View Less' : 'View More'"></span>
-                                                            <i :data-lucide="expanded ? 'chevron-up' : 'chevron-down'" class="ml-1" style="width: 12px; height: 12px;"></i>
-                                                        </button>
-                                                    @endif
+                                                <div class="text-gray-600 text-sm leading-tight text-proper whitespace-normal">
+                                                    {{ ucwords(strtolower($instrument->property_description)) }}
                                                 </div>
                                             @else
                                                 <span class="text-gray-300 text-xs">—</span>

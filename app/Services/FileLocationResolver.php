@@ -68,7 +68,10 @@ class FileLocationResolver
         //        This is the ground truth: once the file has been logged, it wins over
         //        any stale SCB found/not-found override left on the indexing row (which
         //        was set while the file was still in the archive awaiting collection).
-        if ($tracker && strtoupper((string) $tracker->status) === FileTracker::STATUS_ACTIVE) {
+        if ($tracker
+            && strtoupper((string) $tracker->status) === FileTracker::STATUS_ACTIVE
+            && !empty($tracker->movement_log)   // guard against a stuck ACTIVE tracker whose movements were all deleted
+        ) {                                     // (a movement still "pending_acceptance" at its destination is still in transit)
             $location = $tracker->current_office_name
                 ?: $tracker->receiving_office_name
                 ?: $tracker->destination;

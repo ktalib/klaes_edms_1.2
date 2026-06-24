@@ -1,10 +1,10 @@
 @extends('email.layouts.master')
 
 @section('content')
-    <h2 style="color: #1e3a5f; font-size: 22px; margin-bottom: 20px;">Your PHS Portal Onboarding Request Has Been Approved!</h2>
+    <h2 style="color: #1e3a5f; font-size: 22px; margin-bottom: 20px;">Your Onboarding Link to Complete Registration</h2>
 
     <div class="success-box">
-        <strong>Great news!</strong> Your onboarding request for the PHS Portal has been reviewed and approved. Please activate your account to proceed.
+        <strong>Great news!</strong> Your signed SLA has been approved. This is the final step: complete your payment and you'll be taken straight to register your account.
     </div>
 
     <h3>Organization Information</h3>
@@ -21,26 +21,36 @@
             <td>Email:</td>
             <td>{{ $request->contact_email }}</td>
         </tr>
+        @isset($suggestedUsername)
+        <tr>
+            <td>Organization Username:</td>
+            <td><strong>{{ $suggestedUsername }}</strong></td>
+        </tr>
+        @endisset
     </table>
 
-    <h3>Activate Your Account</h3>
-    <p>Click the button below to select your subscription package and activate your account securely via Paystack:</p>
+    @isset($suggestedUsername)
+    <div class="info-box">
+        <strong>🔑 Your Organization Username:</strong> <strong>{{ $suggestedUsername }}</strong> — this is auto-assigned from your organization name and will be pre-filled on the registration form after payment. You can update it later under <em>Organization &rsaquo; Branding</em>.
+    </div>
+    @endisset
+
+    <h3>Pay &amp; Complete Your Organization Registration</h3>
+    <p>Click the button below to confirm your subscription package and pay securely via Paystack. Once payment is confirmed, you'll be taken straight to register your account:</p>
 
     <div style="text-align: center; margin: 30px 0;">
         <a href="{{ $paymentUrl }}"
            style="display: inline-block; background: linear-gradient(135deg, #166534 0%, #14532d 100%); color: white; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 15px;">
-            Activate Your Account
+           Pay &amp; Complete Your Organization Registration
         </a>
     </div>
 
     <div class="info-box">
         <strong>What happens next?</strong>
         <ul class="list" style="margin-top: 8px;">
-            <li>Select your preferred subscription package</li>
+            <li>Confirm your subscription package</li>
             <li>Complete payment securely via Paystack</li>
-            <li>Download, sign, and upload the Service Level Agreement (SLA)</li>
-            <li>Legal team reviews your SLA</li>
-            <li>You will receive a registration link to activate your account</li>
+            <li>You'll be taken directly to register and activate your account</li>
         </ul>
     </div>
 

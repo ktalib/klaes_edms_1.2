@@ -172,6 +172,9 @@ class IndexedFileTableController extends Controller
                 'file_indexings.kangis_file_no',
                 'file_indexings.new_kangis_file_no',
                 'file_indexings.related_fileno',
+                'file_indexings.dciv_status',
+                'file_indexings.dciv_fileno',
+                'file_indexings.dciv_reason',
             ]);
 
         $isCorrespondingFile = filter_var($request->input('is_corresponding_file', false), FILTER_VALIDATE_BOOLEAN);
@@ -398,6 +401,12 @@ class IndexedFileTableController extends Controller
 
             // Flags whether scanned files exist in any EDMS registry folder
             $rowData['has_edms_files'] = (bool) ($edmsFolderMap[$displayFileNo] ?? false);
+
+            // DCIV investigation flag: 1 when this file is referenced as a related
+            // file by a DCIV record. Reason + DCIV file number are shown when set.
+            $rowData['dciv_status'] = (int) ($item->dciv_status ?? 0);
+            $rowData['dciv_fileno'] = $item->dciv_fileno ?? null;
+            $rowData['dciv_reason'] = $item->dciv_reason ?? null;
 
             return $rowData;
         });

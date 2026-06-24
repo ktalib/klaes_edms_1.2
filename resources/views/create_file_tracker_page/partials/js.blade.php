@@ -64,11 +64,24 @@
     let receivingOfficerOptionsCache = [];
     const originOfficeSelect = $('#origin-office');
 
+    // Mirror the selected registry's code into the disabled Registry Code field
+    // (in File Details) and its hidden companion that is actually submitted.
+    function updateOriginRegistryCodeBadge() {
+        const field = document.getElementById('registry-code');
+        const hidden = document.getElementById('registry-code-real');
+        const code = originOfficeSelect.find('option:selected').data('registry-code') || '';
+        if (field) field.value = code;
+        if (hidden) hidden.value = code;
+    }
+    updateOriginRegistryCodeBadge();
+
     // Registry (Origin) change → toast + tracking ID preview update
     originOfficeSelect.on('change', function () {
         const $selected = $(this).find('option:selected');
         const registryCode = $selected.data('registry-code') || null;
         const registryName = $selected.val() || '';
+
+        updateOriginRegistryCodeBadge();
 
         console.log('[Registry Change] selected:', registryName, '| registry_code:', registryCode);
 
@@ -1654,11 +1667,6 @@
             return;
         }
 
-        if ((logEntry.status || '').toLowerCase() !== 'pending_acceptance') {
-            Swal.fire({ icon: 'info', title: 'Already Processed', text: 'This log entry has already been processed and can no longer be updated.' });
-            return;
-        }
-
         const sessionKey = `${tracker.id}-${logId}-${Date.now()}`;
 
         updateLogContext = {
@@ -2187,6 +2195,17 @@
     }
 
     function resolveFileNumberFromMetadata(data, fallback = '') {
+        // The file number the user explicitly selected/typed (fallback) must win.
+        // The lookup endpoint matches across many columns (mlsfNo, temp_file_no,
+        // tracking_id, …) and returns the latest row, so a look-alike record can
+        // come back whose mlsf_no differs from what the user picked (e.g. selecting
+        // CON-RES-2024-1845 but the matched row's mlsf_no is CON-RES-2024-1846).
+        // Echoing the user's own selection back keeps the displayed file number
+        // exact while metadata (name, tracking_id) still loads from the record.
+        if (typeof fallback === 'string' && fallback.trim() !== '') {
+            return fallback.trim();
+        }
+
         const candidates = [
             data?.file_number,
             data?.fileNumber,
@@ -2272,7 +2291,7 @@
         $.ajax({
             url: '/create-file-tracker/check-logout-status',
             method: 'GET',
-            data: { file_number: fileNumber },
+            data: { file_number: fileNumber, module: window.currentModule || '' },
             success: function (resp) {
                 if (!resp.is_logged_out) return;
                 const office = resp.current_office
@@ -3352,6 +3371,7 @@
             logEntries: convertedEntries,
             notes: tracker.notes,
             createdAt: tracker.created_at,
+            fileIndexingCreatedAt: tracker.file_indexing_created_at || null,
             department: tracker.department,
             description: tracker.description,
             totalOffices: tracker.total_offices,
@@ -4815,11 +4835,18 @@
                                 </td>
                             </tr>
                         `;
-                })() : movements.map(entry => {
+                })() : [...movements].sort((a, b) => {
+                    // Keep Completed / Log-in (file-back-home) rows at the bottom of the
+                    // table; everything else retains its original order (stable sort).
+                    const isDone = (e) => {
+                        const lbl = (resolveStatusDisplay(e, (e.status || '')).label || '').toLowerCase();
+                        return lbl === 'log-in' || lbl === 'completed';
+                    };
+                    return (isDone(a) ? 1 : 0) - (isDone(b) ? 1 : 0);
+                }).map(entry => {
                     // General view: one row per log entry
                     const entryStatus = (entry.status || 'completed').toLowerCase();
                     const entryOwnedByViewer = entryBelongsToCurrentUser(entry, tracker);
-                    const canUpdateEntry = entryStatus === 'pending_acceptance';
                     const statusMeta = resolveStatusDisplay(entry, entryStatus);
                     const entryStatusLabel = statusMeta.label;
                     // Once the file is logged back in, every action on this entry is
@@ -4842,10 +4869,10 @@
                         || entry.officeId
                         || '—';
                     const safeNotes = sanitize(entry.notes);
-                    // Update is available only for a pending-acceptance row AND only while
-                    // the file is still out — once it is logged back in / completed every
-                    // action (Update included) is disabled, leaving only Print Complete Log Sheet.
-                    const canUpdate = canUpdateEntry && !actionsDisabled;
+                    // Update is available for any movement row while the file is still out.
+                    // Once it is logged back in (or this is a Log-in row) every action —
+                    // Update included — is disabled, leaving only Print Complete Log Sheet.
+                    const canUpdate = !actionsDisabled;
                     const updateButtonAttrs = canUpdate ? '' : 'data-disabled="true" aria-disabled="true" tabindex="-1"';
                     const updateButtonClasses = canUpdate
                         ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100'
@@ -4886,7 +4913,7 @@
                                 })()}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
-                                ${isLoginEntry ? `
+                                ${(isLoginEntry || entryStatusLabel === 'Completed') ? `
                                 <div>${sanitize(entry.logInDate || '—')}</div>
                                 <div class="text-xs text-gray-500">${sanitize(entry.logInTime || '—')}</div>
                                 ` : '<div class="text-gray-400">—</div>'}
@@ -4971,6 +4998,14 @@
             // Combined registry + rack/shelf label, e.g. "DCIV Registry — Rack/Shelf A1"
             // (falls back to "… — Rack/Shelf -" when no shelf/rack is recorded).
             const homeRegistryDisplay = `${homeRegistryName} — Rack/Shelf ${homeShelfLocation || '-'}`;
+            // Log In for the home row mirrors the file's original file_indexings.created_at.
+            const homeCreatedAt = tracker.fileIndexingCreatedAt ? (() => {
+                const d = new Date(tracker.fileIndexingCreatedAt);
+                return Number.isNaN(d.getTime()) ? null : d;
+            })() : null;
+            const homeLogInCell = homeCreatedAt
+                ? `<div>${sanitize(homeCreatedAt.toLocaleDateString())}</div><div class="text-xs text-gray-500">${sanitize(homeCreatedAt.toLocaleTimeString())}</div>`
+                : '—';
             const homeLocationRow = isKangisView ? '' : `
                         <tr class="bg-indigo-50/40">
                             <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-gray-700">
@@ -4986,9 +5021,14 @@
                                 </div>
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">${homeLogInCell}</td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
-                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
-                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm">
+                                <span class="inline-flex items-center rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+                                    <span class="mr-1 inline-flex h-2 w-2 rounded-full bg-indigo-500"></span>
+                                    In Archive
+                                </span>
+                            </td>
                             <td class="px-4 py-3 text-sm text-gray-400">—</td>
                             <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-400">—</td>
                         </tr>
@@ -6718,17 +6758,31 @@
                                         // Registry / Archive, mirroring the on-screen table.
                                         const homeRegistryName = escapeHtml(tracker.originOffice?.name || tracker.originRegistry || tracker.originOfficeName || 'Registry / Archive');
                                         const homeShelf = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '');
+                                        // Date & Time / Log In mirror the file's original file_indexings.created_at.
+                                        const homeCreated = tracker.fileIndexingCreatedAt
+                                            ? (() => {
+                                                const d = new Date(tracker.fileIndexingCreatedAt);
+                                                return Number.isNaN(d.getTime()) ? '-' : d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+                                            })()
+                                            : '-';
                                         return '<tr>'
-                                            + '<td>-</td>'
+                                            + '<td>' + homeCreated + '</td>'
                                             + '<td>' + homeRegistryName + '</td>'
                                             + '<td>-</td>'
                                             + '<td>-</td>'
-                                            + '<td>-</td>'
-                                            + '<td>-</td>'
+                                            + '<td>' + homeCreated + '</td>'
+                                            + '<td><span class="status-archive">In Archive</span></td>'
                                             + '<td>' + (homeShelf ? ('Shelf/Rack: ' + homeShelf) : 'Shelf/Rack -') + '</td>'
                                             + '</tr>';
                                     })()}
-                                    ${tracker.logEntries && tracker.logEntries.length > 0 ? tracker.logEntries.map(entry => {
+                                    ${tracker.logEntries && tracker.logEntries.length > 0 ? [...tracker.logEntries].sort((a, b) => {
+                                        // Keep Completed / Log-in (file-back-home) rows at the bottom.
+                                        const isDone = (e) => {
+                                            const lbl = (resolveStatusDisplay(e, (e.status || '')).label || '').toLowerCase();
+                                            return lbl === 'log-in' || lbl === 'completed';
+                                        };
+                                        return (isDone(a) ? 1 : 0) - (isDone(b) ? 1 : 0);
+                                    }).map(entry => {
                                         const formatDateTime = (value) => {
                                             if (!value) return '-';
                                             const date = new Date(value);
@@ -6763,7 +6817,7 @@
                                             + '<td>' + (entry.officeName || '-') + '</td>'
                                             + '<td>' + (entry.receivingOfficerName || tracker.receivingOfficer?.name || 'N/A') + '</td>'
                                             + '<td>' + logOut + '</td>'
-                                            + '<td>' + (statusLabel === 'Log-in' ? logIn : '-') + '</td>'
+                                            + '<td>' + ((statusLabel === 'Log-in' || statusLabel === 'Completed') ? logIn : '-') + '</td>'
                                             + '<td><span class="' + statusClass + '">' + statusLabel + '</span></td>'
                                             + '<td>' + (entry.notes || '-') + '</td>'
                                             + '</tr>';
@@ -6774,7 +6828,7 @@
 
                         <div class="footer">
                             <div class="signatories">
-                                <div class="signatory"><div class="line">${(window.currentModule || '').toLowerCase() === 'st' ? 'Director Sectional Titling' : 'Director Deeds'}</div></div>
+                                <div class="signatory"><div class="line">${(() => { const m = (window.currentModule || '').toLowerCase(); if (m === 'st') return 'Director Sectional Titling'; if (m === 'cadastral') return 'Director Cadastral'; return 'Director Deeds'; })()}</div></div>
                                 <div class="signatory"><div class="line">Permanent Secretary</div></div>
                                 <div class="signatory"><div class="line">Honorable Commissioner</div></div>
                             </div>
@@ -7816,6 +7870,13 @@
             })
                 .done(function (response) {
                     if (response && response.success) {
+                        if (response.tracker_deleted) {
+                            // Last entry removed — the whole tracker is gone; drop its card.
+                            window.fileTrackers = (window.fileTrackers || []).filter(t => t.trackingId !== trackerId);
+                            updateFileTrackersTable();
+                            showNotification('Last log entry removed — file tracker deleted.', 'success');
+                            return;
+                        }
                         if (response.data) {
                             const normalized = transformApiTracker(response.data);
                             upsertLocalTracker(normalized);

@@ -20,9 +20,17 @@
 </div>
 
 <div class="h-screen flex overflow-hidden">
-    <!-- LEFT — Login Form -->
-    <div class="w-full md:w-1/2 flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-green-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 px-6 py-10 overflow-y-auto">
-        <div class="w-full max-w-md">
+    <!-- LEFT — Login Form (flyer sits in the background) -->
+    <div class="w-full md:w-1/2 relative flex flex-col items-center justify-center px-6 py-10 overflow-y-auto">
+
+        <!-- Flyer — background -->
+        <img src="{{ asset('assets/logo/PHS-P Flyer.png') }}" alt="PHS Portal Flyer"
+             class="absolute inset-0 w-full h-full object-cover object-top">
+
+        <!-- Readability tint so the flyer shows through faintly behind the form -->
+        <div class="absolute inset-0 bg-gradient-to-br from-blue-50/90 via-white/90 to-green-50/90 dark:from-gray-900/90 dark:via-gray-900/90 dark:to-gray-800/90 backdrop-blur-[1px]"></div>
+
+        <div class="relative z-10 w-full max-w-md">
             <!-- Logo & Header -->
             <div class="mb-8 text-center">
                 <img src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" alt="PHS Portal" class="mx-auto mb-4 h-24 w-auto object-contain dark:hidden">
@@ -105,33 +113,23 @@
         </div>
     </div>
 
-    <!-- RIGHT — Flyer + collapsible Disclaimer Panel (hidden on mobile) -->
-    <div id="phsDisclaimerPanel" class="hidden md:flex md:w-1/2 flex-col h-screen bg-[#f0f7f2] border-l border-green-200">
+    <!-- RIGHT — Full Disclaimer panel (hidden on mobile) -->
+    <div class="hidden md:block md:w-1/2 h-screen bg-[#f0f7f2] border-l border-green-200 overflow-hidden">
 
-        <!-- Flyer — fills remaining space above the disclaimer bar -->
-        <div class="flex-1 overflow-hidden">
-            <img src="{{ asset('assets/logo/PHS-P Flyer.png') }}" alt="PHS Portal Flyer" class="w-full h-full object-cover object-top">
-        </div>
+        <!-- Disclaimer (always fully shown, scrollable) -->
+        <div class="flex flex-col h-full">
 
-        <!-- Disclaimer toggle bar (always visible) -->
-        <div id="phsDisclaimerToggle"
-             class="flex-none px-8 py-4 bg-[#1a6b3c] flex items-center justify-between gap-3 cursor-pointer select-none hover:bg-[#155a32] transition-colors"
-             onclick="phsToggleDisclaimer()">
-            <div class="flex items-center gap-3">
+            <!-- Header bar -->
+            <div class="flex-none px-8 py-4 bg-[#1a6b3c] flex items-center gap-3">
                 <i data-lucide="shield-alert" class="h-5 w-5 text-white flex-shrink-0"></i>
                 <div>
                     <h2 class="text-sm font-extrabold uppercase tracking-widest text-white">Disclaimer &amp; Legal Notice</h2>
                     <p class="text-[11px] text-green-200">Kano State Ministry of Land &amp; Physical Planning — PHS Portal</p>
                 </div>
             </div>
-            <i data-lucide="chevron-up" id="phsDisclaimerChevron" class="h-5 w-5 text-white flex-shrink-0 transition-transform duration-300 rotate-180"></i>
-        </div>
 
-        <!-- Disclaimer content (hidden by default, slides open on click) -->
-        <div id="phsDisclaimerContent"
-             class="flex-none overflow-hidden transition-all duration-300 ease-in-out"
-             style="max-height:0;">
-            <div class="phs-right-panel overflow-y-auto px-8 py-6" style="max-height:55vh;">
+            <!-- Content -->
+            <div class="phs-right-panel flex-1 overflow-y-auto px-8 py-6">
                 @foreach($phsDisclaimer as $para)
                     <p class="mb-5 text-[13px] leading-7 text-green-950/90 text-justify">{!! $para !!}</p>
                 @endforeach
@@ -162,20 +160,4 @@
         </div>
     </div>
 </div>
-
-<script>
-function phsToggleDisclaimer() {
-    var content  = document.getElementById('phsDisclaimerContent');
-    var chevron  = document.getElementById('phsDisclaimerChevron');
-    var isOpen   = content.style.maxHeight !== '0px' && content.style.maxHeight !== '';
-
-    if (isOpen) {
-        content.style.maxHeight = '0';
-        chevron.style.transform = 'rotate(180deg)';
-    } else {
-        content.style.maxHeight = content.scrollHeight + 'px';
-        chevron.style.transform = 'rotate(0deg)';
-    }
-}
-</script>
 @endsection

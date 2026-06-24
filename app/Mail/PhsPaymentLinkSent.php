@@ -20,7 +20,7 @@ class PhsPaymentLinkSent extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'PHS Portal — Your Request Has Been Approved. Please Activate Your Account.',
+            subject: 'PHS Portal — Your Onboarding Link to Complete Registration',
         );
     }
 
@@ -31,6 +31,7 @@ class PhsPaymentLinkSent extends Mailable
             with: [
                 'request' => $this->request,
                 'paymentUrl' => route('phs.payment.form', [$this->request->id, $this->request->payment_token]),
+                'suggestedUsername' => \App\Models\Phs\PhsInstitution::suggestUsername($this->request->organization_name),
             ],
         );
     }

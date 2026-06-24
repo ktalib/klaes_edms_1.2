@@ -699,6 +699,16 @@ function _ossCollectPayload() {
         if (!payload.plot_no) payload.plot_no = (_ossLinkedPraData.plot_no || '').toString().trim();
         if (!payload.plan_no) payload.plan_no = (_ossLinkedPraData.plan_no || _ossLinkedPraData.tp_no || '').toString().trim();
         if (!payload.location) payload.location = (_ossLinkedPraData.location || _ossLinkedPraData.property_description || '').toString().trim();
+        // OP Serial No: prefer the manual entry, otherwise inherit the serial that
+        // was found on the looked-up record so it is always carried on the payload.
+        if (!(payload.op_serial_number || '').toString().trim()) {
+            payload.op_serial_number = (
+                _ossLinkedPraData.op_serial_number
+                || _ossLinkedPraData.ic_op_serial_number
+                || _ossLinkedPraData.pra_op_serial_number
+                || ''
+            ).toString().trim();
+        }
     }
 
     // For residential: collect previous allocation details as JSON
@@ -1336,11 +1346,18 @@ function _ossValidatePayload(payload) {
     var errors = [];
     var type = payload.application_type || 'residential';
 
-    if (_ossIsChangeOfNamePage() && _ossLinkedPraData && !_ossLinkedPraData.has_transfer_of_title) {
-        // Only block if manual OP serial is also missing
+    // OP Serial Number is mandatory for every Change of Name application. The
+    // payload already inherits the serial from the looked-up record when present,
+    // so this only blocks records that genuinely have none and were not entered
+    // manually in the "Manual OP Serial Entry" box.
+    if (_ossIsChangeOfNamePage()) {
         var manualOp = (payload.op_serial_number || '').trim();
         if (!manualOp) {
-            errors.push('The selected file number has no Transfer of Title (OP) record in PRA. Please enter the OP Serial Number manually below the file lookup.');
+            if (_ossLinkedPraData && !_ossLinkedPraData.has_transfer_of_title) {
+                errors.push('The selected file number has no Transfer of Title (OP) record in PRA. Please enter the OP Serial Number manually below the file lookup.');
+            } else {
+                errors.push('OP Serial Number is required. Please enter it in the "Manual OP Serial Entry" box below the file lookup.');
+            }
         }
     }
 

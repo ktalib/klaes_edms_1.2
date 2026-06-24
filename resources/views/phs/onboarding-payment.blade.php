@@ -187,11 +187,11 @@
                 </h4>
                 <ol>
                     <li>Legal Department reviews your submitted documents</li>
-                    <li>Admin approves the request &amp; sends you a payment link</li>
-                    <li>You select a subscription package and pay online via Paystack</li>
-                    <li>You download, sign, and upload the Service Level Agreement (SLA)</li>
+                    <li>Admin approves the request &amp; sends you a secure link</li>
+                    <li>You select a subscription package, then download, sign, and upload the Service Level Agreement (SLA) — no payment yet</li>
                     <li>Legal Department approves the signed SLA</li>
-                    <li>You receive your registration link to activate your account</li>
+                    <li>Admin sends a payment &amp; onboarding link — you pay online via Paystack</li>
+                    <li>You complete registration and your account is activated</li>
                 </ol>
             </div>
 

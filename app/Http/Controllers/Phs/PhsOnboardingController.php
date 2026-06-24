@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\PhsInvoiceIssued;
 use App\Mail\PhsOnboardingRequestSubmitted;
 use App\Mail\PhsPaymentLinkSent;
+use App\Models\Phs\PhsInstitution;
 use App\Models\Phs\PhsLookup;
 use App\Models\Phs\PhsOnboardingRequest;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -251,6 +252,14 @@ class PhsOnboardingController extends Controller
         abort_if($onboardingRequest->lsa_token !== $token, 403);
 
         $packages = PhsTokenController::packages();
+
+        // Persist the package the org picked on the SLA page (if provided & valid)
+        // so the SLA reflects it and it carries through to the final payment step.
+        $picked = request('package');
+        if ($picked && isset($packages[strtolower((string) $picked)]) && $onboardingRequest->initial_token_package !== $picked) {
+            $onboardingRequest->update(['initial_token_package' => $picked]);
+        }
+
         $package = $packages[strtolower((string) $onboardingRequest->initial_token_package)] ?? null;
 
         $pdf = Pdf::loadView('phs.lsa-template', [
@@ -262,13 +271,15 @@ class PhsOnboardingController extends Controller
         return $pdf->download('PHSP-SLA-' . $onboardingRequest->id . '.pdf');
     }
 
-    /** Show the public LSA upload page. */
+    /** Show the public LSA upload page (with package selection). */
     public function showLsaUpload($id, $token)
     {
         $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
         abort_if($onboardingRequest->lsa_token !== $token, 403);
 
-        return view('phs.lsa-upload', compact('onboardingRequest', 'token'));
+        $packages = PhsTokenController::packages();
+
+        return view('phs.lsa-upload', compact('onboardingRequest', 'token', 'packages'));
     }
 
     /** Handle signed SLA upload from the organization. */
@@ -276,6 +287,14 @@ class PhsOnboardingController extends Controller
     {
         $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
         abort_if($onboardingRequest->lsa_token !== $token, 403);
+
+        // The org chooses a subscription package on this page; it is required and
+        // is the source of truth for the SLA and the later payment step.
+        $packages = PhsTokenController::packages();
+        $picked = $request->input('package');
+        if (!$picked || !isset($packages[strtolower((string) $picked)])) {
+            return back()->withErrors(['package' => 'Please select a subscription package before uploading your signed SLA.']);
+        }
 
         $request->validate(
             ['signed_lsa' => ['required', 'file', 'max:10240']],
@@ -291,6 +310,7 @@ class PhsOnboardingController extends Controller
         $path = $request->file('signed_lsa')->store('phs/lsa-signed', 'public');
 
         $onboardingRequest->update([
+            'initial_token_package' => $picked,
             'lsa_signed_document_path' => $path,
             'lsa_signed_at' => now(),
             'status' => PhsOnboardingRequest::STATUS_SLA_UPLOADED,
@@ -385,16 +405,16 @@ class PhsOnboardingController extends Controller
         $package = $packages[strtolower((string) $onboardingRequest->initial_token_package)] ?? null;
         $packagePrice = $package['price'] ?? $paystackAmount;
 
-        $lsaToken = Str::random(64);
-
         $onboardingRequest->update([
-            'status' => PhsOnboardingRequest::STATUS_PAYMENT_RECEIVED,
+            'status' => PhsOnboardingRequest::STATUS_APPROVED,
             'payment_amount' => $packagePrice,
             'paystack_amount' => $paystackAmount,
             'payment_status' => PhsOnboardingRequest::PAYMENT_COMPLETED,
             'payment_received_at' => now(),
-            'lsa_token' => $lsaToken,
         ]);
+
+        // Mint the registration link so the org can complete sign-up after payment.
+        $onboardingRequest->generateActivationToken();
 
         $this->generateInvoice($onboardingRequest->fresh());
 
@@ -407,7 +427,11 @@ class PhsOnboardingController extends Controller
             report($e);
         }
 
-        return redirect()->route('phs.lsa.upload.form', [$id, $lsaToken]);
+        $username = PhsInstitution::suggestUsername($onboardingRequest->organization_name);
+
+        return redirect()->to(
+            route('phs.register.token', $onboardingRequest->activation_token) . '?username=' . $username
+        );
     }
 
     private function streamInvoice(PhsOnboardingRequest $onboardingRequest)

@@ -1502,6 +1502,7 @@ class MlsFileNoController extends Controller
             $landUse = $validated['land_use'] ?? null;
             $fileOption = $validated['file_option'] ?? 'normal';
             $year = date('Y');
+            $skippedSerials = []; // serials skipped because their file number was already taken
 
             Log::info('MLS generate: Land Use check', [
                 'received_land_use' => $landUse,
@@ -1870,32 +1871,22 @@ class MlsFileNoController extends Controller
                             'user' => Auth::user()->name ?? Auth::user()->email ?? 'Unknown',
                         ]);
                     } else {
-                        $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
-                        $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial);
+                        // Allocate the next free serial, automatically skipping any number already
+                        // taken in mls_file_no, fileNumber, or file_indexings, instead of failing.
+                        $allocation = $this->allocateNextFreeSerial($landUse, $year);
+                        $serial = $allocation['serial'];
+                        $fullFileNumber = $allocation['file_number'];
+                        $skippedSerials = array_merge($skippedSerials, $allocation['skipped']);
 
-                        // Final safety check for duplicates across both modern and legacy systems
-                        if (
-                            \App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists() ||
-                            DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fullFileNumber)->exists()
-                        ) {
-                            $suggested = $this->findNextAvailableFileNumber($landUse, $year, $serial);
-                            DB::connection('sqlsrv')->rollBack();
-                            \Log::channel('fileno_duplicates')->warning('Normal: duplicate detected', [
-                                'conflicting_file_number' => $fullFileNumber,
-                                'suggested_file_number' => $suggested,
+                        if (!empty($allocation['skipped'])) {
+                            \Log::channel('fileno_duplicates')->info('Normal: serials skipped, advanced to next free', [
+                                'allocated_file_number' => $fullFileNumber,
+                                'skipped' => $allocation['skipped'],
                                 'land_use' => $landUse,
                                 'year' => $year,
-                                'serial' => $serial,
                                 'file_option' => $fileOption,
                                 'user_id' => Auth::id(),
                                 'user' => Auth::user()->name ?? Auth::user()->email ?? 'Unknown',
-                            ]);
-                            return response()->json([
-                                'success' => false,
-                                'duplicate' => true,
-                                'conflicting_file_number' => $fullFileNumber,
-                                'suggested_file_number' => $suggested,
-                                'message' => "File number {$fullFileNumber} already exists.",
                             ]);
                         }
                     }
@@ -2846,11 +2837,20 @@ class MlsFileNoController extends Controller
                     'user' => Auth::user()->name ?? 'Unknown'
                 ]);
 
+                $skipNotice = null;
+                if (!empty($skippedSerials)) {
+                    $skippedFileNos = array_column($skippedSerials, 'file_number');
+                    $skipNotice = count($skippedSerials) . ' file number(s) were already in use and skipped ('
+                        . implode(', ', $skippedFileNos) . '); ' . $fullFileNumber . ' was assigned instead.';
+                }
+
                 return response()->json([
                     'success' => true,
                     'message' => 'File number generated successfully',
                     'mirror_created' => $shouldMirror,
                     'decommission_summary' => $decommissionSummary,
+                    'skipped_serials' => $skippedSerials,
+                    'notice' => $skipNotice,
                     'data' => [
                         'file_number' => $fullFileNumber,
                         'file_name' => $validated['file_name'] ?? ($mlsRecord->file_name ?? null),
@@ -2910,6 +2910,41 @@ class MlsFileNoController extends Controller
                 'message' => 'Error generating file number: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Allocate the next FREE serial for single-file generation, skipping any serial whose
+     * file number is already taken in mls_file_no, fileNumber, or file_indexings
+     * (UX_file_indexings_file_number). Consumes serials via MlsSerialControl as it advances,
+     * so taken serials are burned rather than retried later. Returns the free serial, its
+     * file number, and the list of skipped serials so the UI can point out what was replaced.
+     */
+    private function allocateNextFreeSerial(string $landUse, int $year, string $suffix = '', int $maxTries = 200): array
+    {
+        $skipped = [];
+        $tries = 0;
+        $serial = null;
+        $candidate = null;
+
+        do {
+            $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
+            $candidate = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial) . $suffix;
+
+            $taken = \App\Models\MlsFileNo::where('full_file_number', $candidate)->exists()
+                || DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $candidate)->exists()
+                || DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $candidate)->exists();
+
+            if ($taken) {
+                $skipped[] = ['serial' => $serial, 'file_number' => $candidate];
+            }
+            $tries++;
+        } while ($taken && $tries < $maxTries);
+
+        if ($taken) {
+            throw new \RuntimeException("Could not find a free file number for {$landUse}-{$year} after {$maxTries} attempts. Too many consecutive serials are already in use.");
+        }
+
+        return ['serial' => $serial, 'file_number' => $candidate, 'skipped' => $skipped];
     }
 
     private function findNextAvailableFileNumber(string $landUse, int $year, int $currentSerial, string $suffix = ''): string
@@ -2976,22 +3011,90 @@ class MlsFileNoController extends Controller
                 $generatedFiles = [];
                 $mlsRecords = [];
 
-                // Verify serial range availability
-                $endSerial = $startSerial + $batchQuantity - 1;
+                // Allocate free serials, skipping any already taken across mls_file_no,
+                // file_indexings (UX_file_indexings_file_number) and fileNumber. Instead of
+                // failing the whole batch on a conflict, advance past taken serials and still
+                // produce the requested quantity, recording what was skipped.
+                $allocatedSerials = [];
+                $skippedSerials = [];
+                $probeStart = $startSerial;
+                $maxSerial = $startSerial + max($batchQuantity * 20, 1000); // safety cap
 
-                // Check if any serial in the range already exists
-                $existingSerials = \App\Models\MlsFileNo::where('land_use', $landUse)
-                    ->where('year', $year)
-                    ->whereBetween('serial_number', [$startSerial, $endSerial])
-                    ->pluck('serial_number')
-                    ->toArray();
+                while (count($allocatedSerials) < $batchQuantity && $probeStart <= $maxSerial) {
+                    // Probe a window wide enough to likely cover the remaining need plus collisions
+                    $remaining = $batchQuantity - count($allocatedSerials);
+                    $probeEnd = min($probeStart + ($remaining * 3) + 10, $maxSerial);
 
-                if (!empty($existingSerials)) {
+                    // Build candidate serials + file numbers for this window
+                    $windowSerials = range($probeStart, $probeEnd);
+                    $candidateNumbers = [];
+                    foreach ($windowSerials as $s) {
+                        $candidateNumbers[$s] = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $s);
+                    }
+
+                    // Pre-fetch taken values in index-friendly bulk queries
+                    $takenSerials = \App\Models\MlsFileNo::where('land_use', $landUse)
+                        ->where('year', $year)
+                        ->whereBetween('serial_number', [$probeStart, $probeEnd])
+                        ->pluck('serial_number')
+                        ->all();
+                    $takenSerials = array_flip($takenSerials);
+
+                    // Also probe mls_file_no by full_file_number directly. The UNIQUE
+                    // constraint (UQ_mls_file_no) is enforced on full_file_number, so a
+                    // serial-only check can miss rows whose land_use/year/serial_number
+                    // columns don't decompose to the same string (legacy/manual inserts,
+                    // casing differences, NULL serials). Matching the exact key the DB
+                    // constraint enforces prevents the duplicate-key failure.
+                    $takenMlsFull = \App\Models\MlsFileNo::whereIn('full_file_number', array_values($candidateNumbers))
+                        ->pluck('full_file_number')
+                        ->all();
+                    $takenMlsFull = array_flip($takenMlsFull);
+
+                    $takenIndexing = DB::connection('sqlsrv')->table('file_indexings')
+                        ->whereIn('file_number', array_values($candidateNumbers))
+                        ->pluck('file_number')
+                        ->all();
+                    $takenIndexing = array_flip($takenIndexing);
+
+                    $takenFileNumber = DB::connection('sqlsrv')->table('fileNumber')
+                        ->whereIn('mlsfNo', array_values($candidateNumbers))
+                        ->pluck('mlsfNo')
+                        ->all();
+                    $takenFileNumber = array_flip($takenFileNumber);
+
+                    foreach ($windowSerials as $s) {
+                        if (count($allocatedSerials) >= $batchQuantity) {
+                            break;
+                        }
+                        $fileNo = $candidateNumbers[$s];
+                        $isTaken = isset($takenSerials[$s]) || isset($takenMlsFull[$fileNo]) || isset($takenIndexing[$fileNo]) || isset($takenFileNumber[$fileNo]);
+                        if ($isTaken) {
+                            $skippedSerials[] = ['serial' => $s, 'file_number' => $fileNo];
+                        } else {
+                            $allocatedSerials[] = $s;
+                        }
+                    }
+
+                    $probeStart = $probeEnd + 1;
+                }
+
+                if (count($allocatedSerials) < $batchQuantity) {
                     DB::connection('sqlsrv')->rollBack();
                     return response()->json([
                         'success' => false,
-                        'message' => 'Serial number range conflict. Serials already in use: ' . implode(', ', $existingSerials)
+                        'message' => 'Could not find ' . $batchQuantity . ' free serial numbers near ' . $startSerial . '. Too many consecutive serials are already in use — please choose a different starting serial.'
                     ], 409);
+                }
+
+                if (!empty($skippedSerials)) {
+                    Log::channel('mls_batch')->info('Batch generation skipped taken serials', [
+                        'land_use' => $landUse,
+                        'year' => $year,
+                        'requested_start' => $startSerial,
+                        'skipped' => $skippedSerials,
+                        'allocated' => $allocatedSerials,
+                    ]);
                 }
 
                 // Generate a single batch number for all files in this batch (format: BATCH-YYYYMMDD-TIMESTAMP)
@@ -3031,38 +3134,62 @@ class MlsFileNoController extends Controller
                     $validated['file_option'] ?? 'normal'
                 );
 
-                // 1. Generate all full file numbers first
+                // 1. Generate all full file numbers first (from the allocated free serials)
                 $allFileNumbers = [];
                 for ($i = 0; $i < $batchQuantity; $i++) {
-                    $allFileNumbers[] = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $startSerial + $i);
+                    $allFileNumbers[] = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $allocatedSerials[$i]);
                 }
 
 
 
-                // 2. Pre-fetch ALL grouping data in ONE query (Saves massive time on 7M row table)
-                $groupingCache = []; // key: normalized(fileNumber) -> {id, tracking_id, mls_fileno, mapping}
+                // 2. Pre-fetch grouping data efficiently:
+                //    - First attempt fast exact matches using WHERE IN (index-friendly).
+                //    - For any remaining items, fall back to the normalized REPLACE lookup
+                //      but only for the small remainder to avoid scanning the whole table.
+                $groupingCache = [];
+                $groupingLookupStart = microtime(true);
                 try {
                     $groupingService = app(\App\Services\GroupingFileNumberService::class);
                     $tableName = $groupingService->getTableName('Lands Registry', $allFileNumbers[0]);
                     $fileNoColumn = $groupingService->getFileNoColumnName('Lands Registry');
 
-                    // Normalize search terms for a more robust lookup
-                    $normalizedSearchTerms = array_map(function ($f) {
-                        return strtoupper(preg_replace('/[^A-Z0-9]/i', '', $f));
-                    }, $allFileNumbers);
-
-                    $existingGroupings = DB::connection('sqlsrv')->table($tableName)
-                        ->whereRaw("REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER({$fileNoColumn}), '-', ''), '/', ''), ' ', ''), '\\', ''), '.', '') IN ('" . implode("','", $normalizedSearchTerms) . "')")
+                    // Fast exact matches first (index-friendly)
+                    $exactMatches = DB::connection('sqlsrv')->table($tableName)
+                        ->whereIn($fileNoColumn, $allFileNumbers)
                         ->select(['id', $fileNoColumn, 'tracking_id', 'mls_fileno', 'mapping'])
                         ->get();
 
-                    foreach ($existingGroupings as $grouping) {
+                    foreach ($exactMatches as $grouping) {
                         $key = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $grouping->$fileNoColumn));
                         $groupingCache[$key] = $grouping;
+                    }
+
+                    // Compute remaining file numbers that were not found by exact match
+                    $foundRaw = $exactMatches->pluck($fileNoColumn)->map(function ($v) { return (string)$v; })->all();
+                    $remaining = array_values(array_diff($allFileNumbers, $foundRaw));
+
+                    if (!empty($remaining)) {
+                        // Normalize search terms only for remaining items
+                        $normalizedSearchTerms = array_map(function ($f) {
+                            return strtoupper(preg_replace('/[^A-Z0-9]/i', '', $f));
+                        }, $remaining);
+
+                        // Run the expensive normalized lookup only for the small remainder
+                        $existingGroupings = DB::connection('sqlsrv')->table($tableName)
+                            ->whereRaw("REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER({$fileNoColumn}), '-', ''), '/', ''), ' ', ''), '\\', ''), '.', '') IN ('" . implode("','", $normalizedSearchTerms) . "')")
+                            ->select(['id', $fileNoColumn, 'tracking_id', 'mls_fileno', 'mapping'])
+                            ->get();
+
+                        foreach ($existingGroupings as $grouping) {
+                            $key = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $grouping->$fileNoColumn));
+                            $groupingCache[$key] = $grouping;
+                        }
                     }
                 } catch (\Exception $e) {
                     $this->logPlotsWorkflow('warning', 'Bulk grouping lookup failed', ['error' => $e->getMessage()]);
                 }
+                $groupingLookupMs = round((microtime(true) - $groupingLookupStart) * 1000, 1);
+                Log::info('Batch grouping lookup completed', ['ms' => $groupingLookupMs, 'found' => count($groupingCache), 'batch_size' => $batchQuantity]);
 
                 // Pre-fetch corresponding file matches for the batch
                 $correspondingCache = [];
@@ -3228,7 +3355,7 @@ class MlsFileNoController extends Controller
 
                 $groupingUpdates = [];
                 foreach ($validated['location_entries'] as $index => $entry) {
-                    $serial = $startSerial + $index;
+                    $serial = $allocatedSerials[$index];
                     $fullFileNumber = $allFileNumbers[$index];
                     $normalizedKey = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $fullFileNumber));
                     $cached = $groupingCache[$normalizedKey] ?? null;
@@ -3661,14 +3788,14 @@ class MlsFileNoController extends Controller
                 }
 
 
-                // Update serial control to reserve the entire range
+                // Update serial control to reserve up to the highest allocated serial
                 \App\Models\MlsSerialControl::updateOrCreate(
                     [
                         'land_use' => $landUse,
                         'year' => $year
                     ],
                     [
-                        'last_serial' => $endSerial
+                        'last_serial' => max($allocatedSerials)
                     ]
                 );
 
@@ -3838,20 +3965,32 @@ class MlsFileNoController extends Controller
                     $this->ensureEdmsBlindScanFolder($generatedFileNumber);
                 }
 
+                $serialRange = $allocatedSerials[0] . ' to ' . end($allocatedSerials);
+
                 Log::channel('mls_batch')->info('Batch MLS File Numbers Generated', [
                     'batch_no' => $batchNo,
                     'batch_size' => $batchQuantity,
                     'land_use' => $landUse,
-                    'serial_range' => "{$startSerial} to {$endSerial}",
+                    'serial_range' => $serialRange,
                     'files' => $generatedFiles,
                     'user' => Auth::user()->name ?? 'Unknown'
                 ]);
+
+                // Build a human-readable notice when serials were skipped
+                $skipNotice = null;
+                if (!empty($skippedSerials)) {
+                    $skippedFileNos = array_column($skippedSerials, 'file_number');
+                    $skipNotice = count($skippedSerials) . ' file number(s) were already in use and skipped ('
+                        . implode(', ', $skippedFileNos) . '); the next free numbers were assigned instead.';
+                }
 
                 return response()->json([
                     'success' => true,
                     'message' => "Successfully generated {$batchQuantity} file numbers",
                     'files' => $generatedFiles,
                     'decommission_summary' => $decommissionSummary,
+                    'skipped_serials' => $skippedSerials,
+                    'notice' => $skipNotice,
                     'data' => [
                         'batch_size' => $batchQuantity,
                         'land_use' => $landUse,
@@ -3859,7 +3998,7 @@ class MlsFileNoController extends Controller
                             ? $validated['file_option']
                             : ($validated['application_type'] ?? 'new'),
                         'year' => $year,
-                        'serial_range' => "{$startSerial} to {$endSerial}",
+                        'serial_range' => $serialRange,
                         'mother_file_no' => $motherFileNo ?? $validated['existing_file_no'] ?? null,
                         'source_files' => $sourceFiles ?? []
                     ]

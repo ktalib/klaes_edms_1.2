@@ -73,10 +73,13 @@
         <form method="POST" action="{{ route('phs.payment.initiate', [$onboardingRequest->id, $token]) }}" id="payment-form">
             @csrf
 
+            @php $selectedPkg = strtolower((string) $onboardingRequest->initial_token_package); @endphp
             <div class="packages">
                 @foreach ($packages as $key => $pkg)
-                    <label class="pkg-card" data-key="{{ $key }}" for="pkg_{{ $key }}">
+                    @php $isSel = $selectedPkg === strtolower($key); @endphp
+                    <label class="pkg-card {{ $isSel ? 'selected' : '' }}" data-key="{{ $key }}" for="pkg_{{ $key }}">
                         <input type="radio" name="package" id="pkg_{{ $key }}" value="{{ $pkg['name'] }}"
+                               {{ $isSel ? 'checked' : '' }}
                                onchange="selectPackage('{{ $key }}')">
                         <div class="check-badge"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
                         <div class="pkg-name">{{ $pkg['name'] }}</div>
@@ -87,7 +90,7 @@
                 @endforeach
             </div>
 
-            <button type="submit" class="btn-pay" id="pay-btn" disabled>
+            <button type="submit" class="btn-pay" id="pay-btn" {{ $selectedPkg ? '' : 'disabled' }}>
                 <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
                 Proceed to Payment
             </button>

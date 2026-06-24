@@ -49,6 +49,22 @@
     .step-label { font-size:10px; color:#6b7280; margin-top:5px; }
     .step.done .step-label { color:#166534; font-weight:700; }
     .step.active .step-label { color:#d97706; font-weight:700; }
+    .section-title { font-family: 'Sora', sans-serif; font-size: 15px; color: #1e1b3a; margin: 26px 0 4px; }
+    .section-sub { color: #6b7280; font-size: 12.5px; margin-bottom: 14px; }
+    .packages { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 8px; }
+    .pkg-card { border: 2px solid #e5e7eb; border-radius: 14px; padding: 16px 12px; cursor: pointer; transition: border-color .15s, box-shadow .15s; background: #fff; text-align: center; position: relative; }
+    .pkg-card:hover { border-color: #6c63ff; box-shadow: 0 2px 12px rgba(108,99,255,.12); }
+    .pkg-card.selected { border-color: #6c63ff; background: #f5f3ff; box-shadow: 0 2px 12px rgba(108,99,255,.15); }
+    .pkg-card input[type=radio] { position: absolute; opacity: 0; width: 0; height: 0; }
+    .pkg-name { font-family: 'Sora', sans-serif; font-size: 14px; font-weight: 700; color: #1e1b3a; margin-bottom: 5px; }
+    .pkg-tokens { font-size: 12px; color: #6c63ff; font-weight: 600; margin-bottom: 3px; }
+    .pkg-members { font-size: 10.5px; color: #9ca3af; margin-bottom: 8px; }
+    .pkg-price { font-family: 'Sora', sans-serif; font-size: 17px; font-weight: 700; color: #166534; }
+    .pkg-price span { font-size: 11px; font-weight: 400; color: #6b7280; }
+    .check-badge { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%; background: #6c63ff; display: none; align-items: center; justify-content: center; }
+    .check-badge svg { width: 11px; height: 11px; stroke: #fff; fill: none; stroke-width: 2.5; }
+    .pkg-card.selected .check-badge { display: flex; }
+    .btn-download.disabled { background: #9ca3af; pointer-events: none; opacity: .7; }
 </style>
 
 <div class="page-wrapper">
@@ -80,8 +96,8 @@
             </div>
         </div>
 
-        <h1>Service Level Agreement</h1>
-        <p class="subtitle">Download the SLA, sign it, then upload the signed copy to proceed with your onboarding.</p>
+        <h1>Select Your Package &amp; Sign/Upload the SLA</h1>
+        <p class="subtitle">Choose your subscription package, then download the SLA, sign it, and upload the signed copy. No payment is required at this stage.</p>
 
         @if ($errors->any())
             <div class="alert alert-error">{{ $errors->first() }}</div>
@@ -91,19 +107,46 @@
         <div class="meta-box">
             <div><span class="lbl">Organization:</span><span class="val">{{ $onboardingRequest->organization_name }}</span></div>
             <div><span class="lbl">Ref:</span><span class="val">PHS-SLA-{{ str_pad($onboardingRequest->id, 6, '0', STR_PAD_LEFT) }}</span></div>
-            <div><span class="lbl">Package:</span><span class="val">{{ $onboardingRequest->initial_token_package }}</span></div>
         </div>
 
-        {{-- Download button --}}
-        <a href="{{ route('phs.lsa.download', [$onboardingRequest->id, $token]) }}" class="btn-download">
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Download SLA (PDF)
-        </a>
+        @if (session('success') || $onboardingRequest->lsa_signed_document_path)
+            {{-- Already signed: skip package/download, show success state below --}}
+        @else
+            @php $selectedPkg = strtolower((string) $onboardingRequest->initial_token_package); @endphp
 
-        {{-- Upload section --}}
+            {{-- 1. Package selection --}}
+            <h2 class="section-title">1. Select Your Subscription Package</h2>
+            <p class="section-sub">Pick the package that fits your organization. You'll pay for it at the final step, after your SLA is approved.</p>
+            <div class="packages">
+                @foreach ($packages as $key => $pkg)
+                    <label class="pkg-card {{ $selectedPkg === strtolower($key) ? 'selected' : '' }}" data-name="{{ $pkg['name'] }}">
+                        <input type="radio" name="package_pick" value="{{ $pkg['name'] }}"
+                               {{ $selectedPkg === strtolower($key) ? 'checked' : '' }}
+                               onchange="selectPkg('{{ $pkg['name'] }}')">
+                        <div class="check-badge"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+                        <div class="pkg-name">{{ $pkg['name'] }}</div>
+                        <div class="pkg-tokens">{{ number_format($pkg['tokens']) }} tokens</div>
+                        <div class="pkg-members">Up to {{ $pkg['team_members'] }} users</div>
+                        <div class="pkg-price">₦{{ number_format($pkg['price']) }}<span>/year</span></div>
+                    </label>
+                @endforeach
+            </div>
+
+            {{-- 2. Download SLA (enabled once a package is chosen) --}}
+            <h2 class="section-title">2. Download &amp; Sign the SLA</h2>
+          
+            <a id="dl-btn"
+               href="{{ route('phs.lsa.download', [$onboardingRequest->id, $token]) }}"
+               class="btn-download {{ $selectedPkg ? '' : 'disabled' }}">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download SLA (PDF)
+            </a>
+        @endif
+
+        {{-- 3. Upload section --}}
         <div class="upload-section">
             @if (session('success') || $onboardingRequest->lsa_signed_document_path)
-                {{-- Success state — closes page --}}
+                {{-- Success state --}}
                 <div style="margin-top:24px;background:#f0fdf4;border:2px solid #86efac;border-radius:14px;padding:36px 24px;text-align:center;">
                     <div style="display:inline-flex;align-items:center;justify-content:center;width:64px;height:64px;background:#166534;border-radius:50%;margin-bottom:16px;">
                         <svg width="28" height="28" fill="none" stroke="#fff" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
@@ -111,29 +154,41 @@
                     <h2 style="font-family:'Sora',sans-serif;font-size:20px;color:#14532d;margin-bottom:8px;">Signed SLA Received!</h2>
                     <p style="font-size:13px;color:#166534;margin-bottom:4px;">Thank you. Your signed SLA was uploaded on {{ $onboardingRequest->lsa_signed_at?->format('M j, Y \a\t g:i A') ?? now()->format('M j, Y') }}.</p>
                     <p style="font-size:12px;color:#4b7c5a;margin-top:10px;">The Legal Department will review your SLA. You will receive an email with next steps once the review is complete.</p>
-                    <p style="font-size:12px;color:#6b7280;margin-top:20px;">This page will close in <strong id="close-countdown">5</strong> seconds&hellip;</p>
-                    <button onclick="window.close()" style="margin-top:16px;padding:10px 28px;background:#166534;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
+                    <p style="font-size:12px;color:#6b7280;margin-top:20px;">You can now safely close this tab.</p>
+                    <button onclick="phsCloseTab()" style="margin-top:16px;padding:10px 28px;background:#166534;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
                         Close Tab
                     </button>
                 </div>
                 <script>
-                    (function () {
-                        var n = 5;
-                        var el = document.getElementById('close-countdown');
-                        var t = setInterval(function () {
-                            n--;
-                            if (el) el.textContent = n;
-                            if (n <= 0) { clearInterval(t); window.close(); }
-                        }, 1000);
-                    })();
+                    // window.close() only works on tabs opened by script; for a tab the
+                    // user navigated to directly the browser blocks it.
+                    function phsTryClose() {
+                        window.open('', '_self');
+                        window.close();
+                    }
+
+                    // Auto-attempt to close the tab on load. If the browser refuses
+                    // (direct navigation), the success message + button remain as a fallback.
+                    window.addEventListener('load', function () {
+                        setTimeout(phsTryClose, 1200);
+                    });
+
+                    // Explicit button click: try to close, and if still open, tell the user.
+                    function phsCloseTab() {
+                        phsTryClose();
+                        setTimeout(function () {
+                            alert('Please close this tab manually — your browser does not allow this page to close itself.');
+                        }, 300);
+                    }
                 </script>
             @else
-                <h2>Upload Signed SLA</h2>
-                <p>Print the downloaded SLA, sign and stamp it, scan it, then upload the PDF below.</p>
+                <h2 class="section-title" style="margin-top:0;">3. Upload Signed SLA</h2>
+                <p class="section-sub">Print the downloaded SLA, sign and stamp it, scan it, then upload the PDF below.</p>
                 <form method="POST" action="{{ route('phs.lsa.upload', [$onboardingRequest->id, $token]) }}" enctype="multipart/form-data">
                     @csrf
-                    <div class="file-drop" onclick="document.getElementById('signed_lsa_input').click()">
-                        <label>
+                    <input type="hidden" name="package" id="pkg-hidden" value="{{ $onboardingRequest->initial_token_package }}">
+                    <div class="file-drop">
+                        <label style="display:block;">
                             <div class="icon">📄</div>
                             <div style="font-size:13px;color:#4a4760;font-weight:600;">Click to select signed SLA</div>
                             <div class="hint">PDF only · max 10 MB</div>
@@ -151,4 +206,20 @@
         </div>
     </div>
 </div>
+
+<script>
+    var dlBase = @json(route('phs.lsa.download', [$onboardingRequest->id, $token]));
+    function selectPkg(name) {
+        document.querySelectorAll('.pkg-card').forEach(function (c) {
+            c.classList.toggle('selected', c.dataset.name === name);
+        });
+        var dl = document.getElementById('dl-btn');
+        if (dl) {
+            dl.classList.remove('disabled');
+            dl.href = dlBase + '?package=' + encodeURIComponent(name);
+        }
+        var hidden = document.getElementById('pkg-hidden');
+        if (hidden) hidden.value = name;
+    }
+</script>
 @endsection

@@ -201,6 +201,18 @@
                         class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
                 </div>
             </div>
+
+            {{-- Map picker — click the map or drag the pin to capture coordinates --}}
+            <div>
+                <div class="flex items-center justify-between mb-1">
+                    <label class="block text-xs font-medium text-gray-600">Pin Location on Map</label>
+                    <button type="button" id="li-locate" class="inline-flex items-center gap-1 text-xs text-[rgb(140,144,8)] hover:underline">
+                        <i data-lucide="locate-fixed" class="h-3.5 w-3.5"></i> Use my location
+                    </button>
+                </div>
+                <div id="li-map" class="rounded-lg overflow-hidden border border-gray-200" style="height:260px;width:100%;"></div>
+                <p id="li-map-status" class="text-[11px] text-gray-400 mt-1">Click the map or drag the pin to set coordinates. You can also type them above.</p>
+            </div>
             <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">Findings <span class="text-red-500">*</span></label>
                 <textarea name="findings" rows="3" required
@@ -292,6 +304,25 @@
                 </div>
             </div>
 
+            {{-- DCIV Investigation Banner (shown when file has dciv_status = 1) --}}
+            <div id="dciv-banner-wrap" class="hidden">
+                <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 space-y-2">
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-300">
+                            <i data-lucide="alert-triangle" class="h-3 w-3"></i> Under Investigation
+                        </span>
+                        <span id="dciv-banner-fileno" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white text-rose-700 border border-rose-200"></span>
+                    </div>
+                    <div class="flex items-start gap-2 text-xs text-rose-800">
+                        <i data-lucide="file-text" class="h-3.5 w-3.5 mt-0.5 shrink-0 text-rose-400"></i>
+                        <div>
+                            <span class="font-semibold uppercase tracking-wide text-rose-500 text-[10px]">Reason&nbsp;</span>
+                            <span id="dciv-banner-reason" class="leading-relaxed"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {{-- Hidden fields --}}
             <input type="hidden" name="file_number"      id="h-file_number">
             <input type="hidden" name="file_indexing_id" id="h-file_indexing_id">
@@ -371,6 +402,8 @@
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{{-- Google Maps JS — used only to geocode the file location for the inspection map pin (same key as File Indexing). --}}
+<script src="https://maps.googleapis.com/maps/api/js?key={{ config('services.google_maps.key') }}" defer></script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 
 <style>
@@ -671,6 +704,114 @@ $(document).ready(function () {
     const modal = document.getElementById('modal-log-inspection');
     let _currentApp = null;
 
+    // ── Inspection map picker (Leaflet) ────────────────────────────────────
+    let liMap = null, liMarker = null;
+    const LI_CENTER = KANO_CENTER, LI_ZOOM = 12;
+
+    function liPinIcon() {
+        return L.divIcon({
+            className: '',
+            html: `<svg width="30" height="40" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg"><path d="M15 0C7 0 1 6 1 14c0 10 14 26 14 26s14-16 14-26C29 6 23 0 15 0z" fill="rgb(186,191,12)" stroke="#fff" stroke-width="2"/><circle cx="15" cy="14" r="5.5" fill="#fff"/></svg>`,
+            iconSize:   [30, 40],
+            iconAnchor: [15, 40],
+        });
+    }
+
+    function liSyncCoordsField(lat, lng) {
+        const la = Math.round(lat * 1e6) / 1e6;
+        const ln = Math.round(lng * 1e6) / 1e6;
+        document.getElementById('f-coords').value = `${la}, ${ln}`;
+    }
+
+    function liPlaceMarker(lat, lng, recenter = true) {
+        const pos = [lat, lng];
+        if (!liMarker) {
+            liMarker = L.marker(pos, { icon: liPinIcon(), draggable: true }).addTo(liMap);
+            liMarker.on('dragend', e => { const p = e.target.getLatLng(); liSyncCoordsField(p.lat, p.lng); });
+        } else {
+            liMarker.setLatLng(pos);
+        }
+        if (recenter) liMap.setView(pos, Math.max(liMap.getZoom(), 16));
+        liSyncCoordsField(lat, lng);
+    }
+
+    function setMapStatus(type, msg) {
+        const el = document.getElementById('li-map-status');
+        if (!el) return;
+        const colors = { loading: 'text-gray-400', ok: 'text-green-600', warn: 'text-amber-600' };
+        el.className = 'text-[11px] mt-1 ' + (colors[type] || 'text-gray-400');
+        el.textContent = msg || 'Click the map or drag the pin to set coordinates. You can also type them above.';
+    }
+
+    // Auto-pin from the file's stored location, then advise the surveyor to adjust.
+    // Uses the client-side Google geocoder (the API key is referer-restricted, so it
+    // only works in the browser) — same approach/key as Create File Indexing.
+    function geocodeInspectionLocation(location) {
+        if (!location || !location.trim() || location.trim() === '—') { setMapStatus('', ''); return; }
+        // Never overwrite coordinates the surveyor has already picked / typed.
+        if (document.getElementById('f-coords').value.trim()) { setMapStatus('', ''); return; }
+
+        if (typeof google === 'undefined' || !google.maps) {
+            setMapStatus('warn', 'Map service still loading — click the map to drop the pin manually.');
+            return;
+        }
+
+        setMapStatus('loading', 'Locating the file address on the map…');
+        // Bias toward Kano State; stored locations rarely name it.
+        const address = location.trim() + ', Kano, Nigeria';
+        new google.maps.Geocoder().geocode({ address, region: 'NG' }, (results, status) => {
+            if (status === 'OK' && results[0]) {
+                const pos = results[0].geometry.location;
+                liPlaceMarker(pos.lat(), pos.lng(), true);
+                setMapStatus('ok', '📍 Pin auto-placed from the file location — drag the pin or click the map to adjust if it’s off.');
+            } else if (status === 'ZERO_RESULTS') {
+                setMapStatus('warn', 'Couldn’t auto-locate this address — click the map to drop the pin manually.');
+            } else {
+                setMapStatus('warn', 'Auto-locate unavailable — click the map to drop the pin manually.');
+            }
+        });
+    }
+
+    function initInspectionMap(location) {
+        if (!liMap) {
+            liMap = L.map('li-map', { zoomControl: true }).setView(LI_CENTER, LI_ZOOM);
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                { attribution: '© Esri', maxZoom: 19 }).addTo(liMap);
+            // Click anywhere to drop / move the pin.
+            liMap.on('click', e => liPlaceMarker(e.latlng.lat, e.latlng.lng, false));
+        }
+        // Container was display:none while the modal was hidden — recalc size & reset,
+        // then attempt to auto-pin from the file's location.
+        setTimeout(() => {
+            liMap.invalidateSize();
+            if (liMarker) { liMap.removeLayer(liMarker); liMarker = null; }
+            liMap.setView(LI_CENTER, LI_ZOOM);
+            geocodeInspectionLocation(location);
+        }, 150);
+    }
+
+    // Two-way sync: typing coordinates moves the pin.
+    document.getElementById('f-coords').addEventListener('change', function () {
+        const parts = this.value.split(',');
+        if (parts.length !== 2 || !liMap) return;
+        const lat = parseFloat(parts[0]), lng = parseFloat(parts[1]);
+        if (!isNaN(lat) && !isNaN(lng)) liPlaceMarker(lat, lng, true);
+    });
+
+    // "Use my location" — capture the surveyor's current GPS position.
+    document.getElementById('li-locate').addEventListener('click', function () {
+        if (!navigator.geolocation) {
+            Swal.fire({ icon: 'warning', title: 'Not supported', text: 'Geolocation is not available in this browser.' });
+            return;
+        }
+        this.disabled = true;
+        navigator.geolocation.getCurrentPosition(
+            pos => { if (liMap) liPlaceMarker(pos.coords.latitude, pos.coords.longitude, true); this.disabled = false; },
+            err => { Swal.fire({ icon: 'error', title: 'Location unavailable', text: err.message }); this.disabled = false; },
+            { enableHighAccuracy: true, timeout: 10000 }
+        );
+    });
+
     function openInspectionModal(app) {
         _currentApp = app;
         document.getElementById('li-app-id').value  = app.id;
@@ -703,6 +844,7 @@ $(document).ready(function () {
             photosWrap.classList.add('hidden');
         }
         modal.classList.remove('hidden'); modal.classList.add('flex');
+        initInspectionMap(app.location);
         lucide.createIcons();
     }
     function closeModal() { modal.classList.add('hidden'); modal.classList.remove('flex'); }
@@ -806,6 +948,7 @@ $(document).ready(function () {
         document.getElementById('photo-preview').innerHTML   = '';
         document.getElementById('lookup-msg').classList.add('hidden');
         document.getElementById('location-badge-wrap').classList.add('hidden');
+        document.getElementById('dciv-banner-wrap').classList.add('hidden');
     }
 
     // Pull details from file indexing and pre-fill the modal
@@ -844,11 +987,25 @@ $(document).ready(function () {
                 } else {
                     document.getElementById('location-badge-wrap').classList.add('hidden');
                 }
+                // DCIV investigation banner
+                const dcivWrap   = document.getElementById('dciv-banner-wrap');
+                const dcivFileNo = document.getElementById('dciv-banner-fileno');
+                const dcivReason = document.getElementById('dciv-banner-reason');
+                if (d.dciv_status === 1 && d.dciv_fileno) {
+                    dcivFileNo.textContent = d.dciv_fileno;
+                    dcivReason.textContent = d.dciv_reason || 'Not specified';
+                    dcivWrap.classList.remove('hidden');
+                    if (window.lucide) lucide.createIcons();
+                } else {
+                    dcivWrap.classList.add('hidden');
+                }
+
                 msg.className   = 'text-xs mt-1 text-green-600';
                 msg.textContent = '✓ File found — details pre-filled.';
             } else {
                 document.getElementById('h-is_indexed').value = '0';
                 document.getElementById('location-badge-wrap').classList.add('hidden');
+                document.getElementById('dciv-banner-wrap').classList.add('hidden');
                 msg.className   = 'text-xs mt-1 text-amber-600';
                 msg.textContent = 'File not in index — please fill in details manually.';
             }

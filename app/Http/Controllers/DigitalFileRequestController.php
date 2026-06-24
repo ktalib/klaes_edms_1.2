@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Department;
 use App\Models\DigitalFileAccess;
 use App\Models\DigitalFileRequest;
+use App\Models\FileIndexing;
 use App\Models\FileSearchRequest;
 use App\Models\FileTracker;
 use App\Models\Office;
@@ -135,11 +136,21 @@ class DigitalFileRequestController extends Controller
             ->first();
 
         if (! $tracker) {
+            // No tracking record yet — fall back to the range-based location engine
+            // (config/file_ranges.php) so the file still resolves to its Pool Office /
+            // Archive instead of a blank "no record" message.
+            $resolved = app(FileLocationResolver::class)->resolve($fileNo);
+
             return response()->json([
-                'found'        => false,
-                'available'    => false,
-                'open_request' => $openRequestPayload,
-                'message'      => 'No tracker record found for this file number.',
+                'found'           => true,
+                'available'       => true,   // not in transit → Front-Desk can retrieve it
+                'file_no'         => $fileNo,
+                'file_title'      => optional($resolved['indexing'])->file_title,
+                'current_office'  => $resolved['current_location'],
+                'location_status' => $resolved['status'],
+                'location_label'  => $this->locationLabel($resolved['status']),
+                'status'          => $this->locationLabel($resolved['status']),
+                'open_request'    => $openRequestPayload,
             ]);
         }
 
@@ -192,6 +203,151 @@ class DigitalFileRequestController extends Controller
         return response()->json($response);
     }
 
+    /**
+     * Human-readable location label for a FileLocationResolver status.
+     */
+    private function locationLabel(string $status): string
+    {
+        return match ($status) {
+            FileLocationResolver::STATUS_IN_POOL      => 'In Pool Office',
+            FileLocationResolver::STATUS_IN_ARCHIVE   => 'In Archive',
+            FileLocationResolver::STATUS_IN_TRANSIT   => 'In Transit',
+            FileLocationResolver::STATUS_REFER        => 'Refer to Original Registry',
+            FileLocationResolver::STATUS_PENDING_FILE => 'Not Indexed',
+            default                                   => 'Available at Registry',
+        };
+    }
+
+    // ── AJAX: inline digital-file preview for a searched file ──────────────
+
+    /**
+     * List the digital pages for a file number, sourced from the same data behind the
+     * File Digital Archive (/filearchive) and Scan Uploads: the page-typings and the
+     * raw scannings. URLs are built straight from the stored paths (no on-disk folder
+     * validation) so the preview works even when the local copy is empty.
+     */
+    public function digitalFiles(Request $request)
+    {
+        $fileNo = trim((string) $request->input('file_no', ''));
+        if ($fileNo === '') {
+            return response()->json(['available' => false, 'files' => []]);
+        }
+
+        // The DFR dropdown may pass any of the file-number variants — match the same
+        // columns fileNumberSearch() searches.
+        $indexing = FileIndexing::query()
+            ->where('file_number', $fileNo)
+            ->orWhere('new_kangis_file_no', $fileNo)
+            ->orWhere('kangis_file_no', $fileNo)
+            ->orWhere('mls_file_no', $fileNo)
+            ->orWhere('st_fillno', $fileNo)
+            ->with([
+                'pagetypings' => function ($q) {
+                    $q->select(['id', 'file_indexing_id', 'page_number', 'page_code', 'definition', 'file_path', 'scanning_id'])
+                      ->with('scanning:id,document_path,display_order,original_filename');
+                },
+                'scannings' => function ($q) {
+                    $q->select(['id', 'file_indexing_id', 'document_path', 'display_order', 'original_filename']);
+                },
+            ])
+            ->first();
+
+        if (! $indexing) {
+            return response()->json(['available' => false, 'files' => []]);
+        }
+
+        // Deterministic page order (done in PHP to avoid duplicate ORDER BY columns
+        // from the relations' default ordering).
+        $pagetypings = $indexing->pagetypings->sortBy('page_number')->values();
+        $scannings   = $indexing->scannings
+            ->sortBy(fn ($s) => [$s->display_order ?? 999999, $s->id])
+            ->values();
+
+        // Build a public URL from a stored relative path (mirrors /filearchive's
+        // prefix normalisation) WITHOUT checking that the file exists on disk.
+        $toUrl = function (?string $rawPath): ?string {
+            if (! $rawPath) {
+                return null;
+            }
+            $p = ltrim(str_replace('\\', '/', $rawPath), '/');
+            foreach (['storage/app/public/', 'app/public/', 'public/', 'storage/'] as $prefix) {
+                if (stripos($p, $prefix) === 0) {
+                    $p = substr($p, strlen($prefix));
+                    break;
+                }
+            }
+            $p = ltrim($p, '/');
+            if ($p === '') {
+                return null;
+            }
+            // Collapse accidental double slashes (e.g. host//storage) without
+            // touching the scheme's "://".
+            return preg_replace('#(?<!:)//+#', '/', Storage::disk('public')->url($p));
+        };
+
+        $toFile = function (?string $rawPath, ?string $label) use ($toUrl) {
+            $url = $toUrl($rawPath);
+            if (! $url) {
+                return null;
+            }
+            $name = $label ?: basename(str_replace('\\', '/', $rawPath));
+            return [
+                'name' => $name,
+                'ext'  => strtolower(pathinfo((string) parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION)),
+                'url'  => $url,
+            ];
+        };
+
+        // Prefer the page-typed pages (Digital Archive); fall back to raw Scan Uploads.
+        $files = collect();
+        foreach ($pagetypings as $pt) {
+            $raw  = optional($pt->scanning)->document_path ?: $pt->file_path;
+            $name = optional($pt->scanning)->original_filename ?: ($pt->page_code ?: null);
+            if ($f = $toFile($raw, $name)) {
+                $files->push($f);
+            }
+        }
+        if ($files->isEmpty()) {
+            foreach ($scannings as $sc) {
+                if ($f = $toFile($sc->document_path, $sc->original_filename)) {
+                    $files->push($f);
+                }
+            }
+        }
+
+        return response()->json([
+            'available' => $files->isNotEmpty(),
+            'count'     => $files->count(),
+            'files'     => $files->values(),
+        ]);
+    }
+
+    // ── AJAX: registry folder digital preview (raw on-disk source) ─────────
+
+    /**
+     * Resolve a file number (scoped to the selected Registry) to the scanned
+     * images/documents stored in that registry's on-disk folder, imported by
+     * `php artisan registry:sync` into the registry_* tables.
+     *
+     * This is the folder-based source for the SLTR / Cadastral / KANGIS /
+     * Physical Planning registries. The Land registries keep using the
+     * FileIndexing-based source above (digitalFiles).
+     */
+    public function registryFiles(Request $request)
+    {
+        $fileNo   = trim((string) $request->input('file_no', ''));
+        $registry = trim((string) ($request->input('registry') ?? $request->input('registry_code') ?? ''));
+
+        if ($fileNo === '') {
+            return response()->json(['available' => false, 'count' => 0, 'files' => []]);
+        }
+
+        $result = app(\App\Services\RegistrySourceService::class)
+            ->digitalFilesFor($fileNo, $registry !== '' ? $registry : null);
+
+        return response()->json($result);
+    }
+
     // ── AJAX: offices filtered by the logged-in user's department ──────────
 
     public function getOfficesByDepartment()
@@ -217,7 +373,46 @@ class DigitalFileRequestController extends Controller
             ->orderBy('office_name')
             ->get(['id', 'office_name', 'office_code', 'department']);
 
-        return response()->json($offices);
+        // Mark the office that should be pre-selected for this user (their own office),
+        // so the mobile form can auto-pick a sensible destination on login.
+        $defaultId = $this->pickDefaultOfficeId($user, $offices);
+
+        return response()->json($offices->map(fn ($o) => [
+            'id'          => $o->id,
+            'office_name' => $o->office_name,
+            'office_code' => $o->office_code,
+            'department'  => $o->department,
+            'is_default'  => $o->id === $defaultId,
+        ]));
+    }
+
+    /**
+     * Pick the destination office to default to for a user: the one whose name best
+     * matches their work station or rank (e.g. "Director Deeds"), else the first
+     * office in their department.
+     */
+    private function pickDefaultOfficeId(User $user, $offices): ?int
+    {
+        if ($offices->isEmpty()) {
+            return null;
+        }
+
+        $needles = array_filter([
+            trim((string) ($user->work_station ?? '')),
+            trim((string) ($user->rank ?? '')),
+        ]);
+
+        foreach ($needles as $needle) {
+            // Exact name match first, then a loose contains-match either way.
+            $match = $offices->first(fn ($o) => mb_strtolower(trim($o->office_name)) === mb_strtolower($needle))
+                ?? $offices->first(fn ($o) => $o->office_name
+                    && (mb_stripos($o->office_name, $needle) !== false || mb_stripos($needle, $o->office_name) !== false));
+            if ($match) {
+                return $match->id;
+            }
+        }
+
+        return $offices->first()->id;
     }
 
     // ── Store new request ──────────────────────────────────────────────────
@@ -938,9 +1133,23 @@ class DigitalFileRequestController extends Controller
             $resolver = app(FileLocationResolver::class);
             $resolved = $resolver->resolve($req->file_no);
 
-            // Seniority is derived from the Receiving Officer (the senior person the file
-            // is requested FOR). Prefer their users.rank; fall back to the officer name.
-            $officerRank = $this->resolveOfficerRank($req->receiving_officer);
+            // Seniority follows the Requester seniority hierarchy. Consider BOTH the
+            // Receiving Officer (the senior person the file is requested FOR) and the
+            // user who raised the DFR (who may themselves be a ranked/OFS officer), and
+            // honour whichever is more senior.
+            $officerRank   = $this->resolveOfficerRank($req->receiving_officer);
+            $officerBasis  = $officerRank ?: $req->receiving_officer;
+            $requesterRank = $req->requester_user_id
+                ? \App\Models\User::whereKey($req->requester_user_id)->value('rank')
+                : null;
+
+            $pOfficer   = FileSearchRequest::priorityFor($officerBasis);
+            $pRequester = FileSearchRequest::priorityFor($requesterRank);
+            $priority   = max($pOfficer, $pRequester);
+            // OFS when either side resolves to a ranked officer; label with the rank that
+            // drove it (prefer the requester on a tie — they are the acting officer).
+            $isOfs   = $priority > 0;
+            $ofsRank = ! $isOfs ? null : ($pRequester >= $pOfficer ? $requesterRank : $officerBasis);
 
             $fr = FileSearchRequest::create([
                 'request_no'        => FileSearchRequest::generateRequestNo(),
@@ -952,7 +1161,9 @@ class DigitalFileRequestController extends Controller
                 'current_location'  => $resolved['current_location'] ?? null,
                 'source'            => FileSearchRequest::SOURCE_DFR,
                 'receiving_officer' => $req->receiving_officer,
-                'priority'          => FileSearchRequest::priorityFor($officerRank ?: $req->receiving_officer),
+                'is_ofs'            => $isOfs,
+                'ofs_rank'          => $ofsRank,
+                'priority'          => $priority,
             ]);
 
             $this->notifyScbMonitors($fr, $req->sending_officer ?: 'A registry user');

@@ -43,6 +43,10 @@ class FileSearchRequest extends Model
         'receiving_officer',
         'requester_office',
         'requester_department',
+        'registry',
+        'registry_code',
+        'is_ofs',
+        'ofs_rank',
     ];
 
     protected $casts = [
@@ -50,6 +54,7 @@ class FileSearchRequest extends Model
         'front_desk_acted_at' => 'datetime',
         'created_at'          => 'datetime',
         'updated_at'          => 'datetime',
+        'is_ofs'              => 'boolean',
     ];
 
     public function requester(): BelongsTo

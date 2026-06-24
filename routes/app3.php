@@ -35,6 +35,7 @@ use App\Http\Controllers\LegalsearchreportsController;
 use App\Http\Controllers\ForInformationController;
 use App\Http\Controllers\GknGenerationController;
 use App\Http\Controllers\DcivGenerationController;
+use App\Http\Controllers\MasterDcivLinkController;
 use App\Http\Controllers\MlsFileNoMatchingController;
 use App\Http\Controllers\LandsFileNoMatchingController;
 use App\Http\Controllers\StFileNoMatchingController;
@@ -73,6 +74,11 @@ use App\Http\Controllers\Phs\PhsAdminController;
 | Additional application routes for Final Conveyance and other features
 |
 */
+
+// ── Legal Search Online Portal (public-facing, no auth required) ─────────
+Route::get('/legal-search/online', [\App\Http\Controllers\LegalSearchOnlineController::class, 'index'])->name('legal_search.online');
+Route::post('/legal-search/online/search', [\App\Http\Controllers\LegalSearchOnlineController::class, 'publicSearch'])->name('legalsearch.online.search');
+Route::post('/legal-search/online/payment/verify', [\App\Http\Controllers\LegalSearchOnlineController::class, 'verifyPayment'])->name('legal_search.online.payment.verify');
 
 Route::middleware(['auth'])->group(function () {
 
@@ -222,6 +228,11 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/initialize-serial', [DcivGenerationController::class, 'initializeSerial'])->name('initialize-serial');
         Route::get('/related-files/{fileNumber}', [DcivGenerationController::class, 'getRelatedFiles'])->name('related-files');
         Route::get('/edms-files/{fileNumber}', [DcivGenerationController::class, 'getEdmsFiles'])->name('edms-files');
+    });
+
+    Route::prefix('dciv/master-links')->name('master-dciv-links.')->group(function () {
+        Route::get('/', [MasterDcivLinkController::class, 'index'])->name('index');
+        Route::get('/data', [MasterDcivLinkController::class, 'data'])->name('data');
     });
 
     Route::prefix('lands-one-stop-shop')->name('lands-one-stop-shop.')->group(function () {
@@ -985,9 +996,15 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/timeline', [\App\Http\Controllers\PropertySearchController::class, 'timeline'])->name('timeline');
     });
 
-    // Legal Search - Official (for filing purpose)
-    Route::get('/legal-search/online', [LegalSearchController::class, 'online'])->name('legal_search.online');
-    Route::post('/legal-search/online/search', [LegalSearchController::class, 'onlineSearch'])->name('legalsearch.online.search');
+    // Online Legal Search Admin & Feedback
+    Route::prefix('legal-search/online/admin')->name('legal-search-online.admin.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'admin'])->name('index');
+        Route::get('/feedback', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'feedbackIndex'])->name('feedback');
+        Route::post('/feedback', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'feedbackStore'])->name('feedback.store');
+        Route::put('/feedback/{id}', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'feedbackUpdate'])->name('feedback.update');
+    });
+
+    // Legal Search - Print templates
     Route::get('/legal-search/print-template/official', [LegalSearchController::class, 'printTemplateOfficial'])->name('legal_search.print.official');
     Route::get('/legal-search/print-template/onpremise', [LegalSearchController::class, 'printTemplateOnpremise'])->name('legal_search.print.onpremise');
     Route::get('/legal-search/print-template/online', [LegalSearchController::class, 'printTemplateOnline'])->name('legal_search.print.online');

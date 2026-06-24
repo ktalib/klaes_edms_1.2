@@ -15,7 +15,7 @@
                 class="px-4 py-2 border-b-2 font-medium {{ !$statusFilter ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600 hover:text-gray-800' }}">
                 All ({{ array_sum($statsByStatus) }})
             </a>
-            @foreach(['pending', 'documents_approved', 'payment_pending', 'payment_received', 'sla_uploaded', 'sla_approved', 'approved', 'activated', 'rejected'] as $status)
+            @foreach(['pending', 'documents_approved', 'awaiting_sla', 'sla_uploaded', 'sla_approved', 'payment_pending', 'payment_received', 'approved', 'activated', 'rejected'] as $status)
                 <a href="{{ route('system-admin.phs.requests.index', ['status' => $status]) }}"
                     class="px-4 py-2 border-b-2 font-medium {{ $statusFilter === $status ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600 hover:text-gray-800' }}">
                     {{ ucwords(str_replace('_', ' ', $status)) }} ({{ $statsByStatus[$status] }})
@@ -81,6 +81,7 @@
                                     $statusColors = [
                                         'pending'            => 'bg-yellow-100 text-yellow-800',
                                         'documents_approved' => 'bg-teal-100 text-teal-800',
+                                        'awaiting_sla'       => 'bg-violet-100 text-violet-800',
                                         'payment_pending'    => 'bg-orange-100 text-orange-800',
                                         'payment_received'   => 'bg-blue-100 text-blue-800',
                                         'sla_uploaded'       => 'bg-indigo-100 text-indigo-800',

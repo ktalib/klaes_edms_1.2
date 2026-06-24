@@ -98,8 +98,8 @@
           </a>
 
           <!-- vii. File Decommissioning -->
-          <a href="{{ route('file-decommissioning.index') }}"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-decommissioning.index') ? 'active' : '' }}">
+          <a href="{{ route('file-decommissioning.decommissioned') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-decommissioning.decommissioned') ? 'active' : '' }}">
             <i data-lucide="archive" class="h-3.5 w-3.5 text-orange-400"></i>
             <span>File Decommissioning</span>
           </a>
@@ -301,6 +301,54 @@
               </a>
             </div>
           @endif
+
+          <!-- iv. Digital Archive -->
+          <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+            data-section="digitalArchive-lands">
+            <div class="flex items-center gap-2">
+              <i data-lucide="archive" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>Digital Archive</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-3.5 w-3.5 transition-transform duration-200"
+              data-chevron="digitalArchive-lands"></i>
+          </div>
+
+          <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="digitalArchive-lands">
+            <!-- 1. File Tracker Dashboard -->
+            <a href="{{ route('file-tracker.dashboard', ['url' => 'land']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-tracker.dashboard') && request('url') === 'land' ? 'active' : '' }}">
+              <i data-lucide="bar-chart-2" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>File Tracker Dashboard</span>
+            </a>
+
+            <!-- 2. File Tracker (Archive) -->
+            <a href="{{ route('track-file-archive.index', ['url' => 'land']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('track-file-archive.index') && request('url') === 'land' ? 'active' : '' }}">
+              <i data-lucide="archive" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>File Tracker (Archive)</span>
+            </a>
+
+            <!-- 3. Quick Search -->
+            <a href="{{ route('create-file-tracker.quick-search', ['url' => 'land']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.quick-search') && request('url') === 'land' ? 'active' : '' }}">
+              <i data-lucide="search" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>Quick Search</span>
+            </a>
+
+            <!-- 4. Log a File -->
+            <a href="{{ route('create-file-tracker.index', ['url' => 'land']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.index') && request('url') === 'land' ? 'active' : '' }}">
+              <i data-lucide="file-plus" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>Log a File</span>
+            </a>
+
+            <!-- 5. File Digital Library – Doc-WARE -->
+            <a href="{{ route('filearchive.index', ['url' => 'land']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('filearchive.index') && request('url') === 'land' ? 'active' : '' }}">
+              <i data-lucide="library" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>File Digital Library – Doc-WARE</span>
+            </a>
+          </div>
         </div>
       @endif
 

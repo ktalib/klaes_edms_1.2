@@ -35,6 +35,12 @@ return [
         'url' => env('AI_FOLDER_SEARCH_URL', 'http://10.50.1.2:7000/'),
     ],
 
+    'google_maps' => [
+        // Used by the File Indexing "Apply & Pin on Map" geocoder. Override in
+        // .env with GOOGLE_MAPS_API_KEY once billing/API-restrictions are set up.
+        'key' => env('GOOGLE_MAPS_API_KEY', 'AIzaSyCFb7XF_3_LCPlK-O5Yp4IZEO1w0ccgQJM'),
+    ],
+
     'paystack' => [
         'secret'   => env('PAYSTACK_SECRET_KEY'),
         'public'   => env('PAYSTACK_PUBLIC_KEY'),

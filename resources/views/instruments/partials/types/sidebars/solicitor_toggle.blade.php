@@ -15,9 +15,6 @@
         value="{{ $record->solicitor_name ?? '' }}" />
 
     <div class="grid grid-cols-1 gap-3">
-        <x-instrument-textarea id="solicitorAddress" label="Office Address" icon="map-pin" placeholder="Full office address"
-            rows="2" value="{{ $record->solicitor_address ?? '' }}" />
-
         <div>
             <label for="solicitorDistrict" class="block text-sm font-medium text-gray-700 mb-1">District</label>
             <div class="relative">
@@ -48,32 +45,14 @@
                 <input type="hidden" id="solicitorDistrictCustom" name="solicitorDistrictCustom">
             </div>
         </div>
-        <script>
-            function handleSolicitorDistrictChange(select) {
-                const wrapper = document.getElementById('solicitorDistrictOtherWrapper');
-                if (select.value === 'Other') {
-                    wrapper.classList.remove('hidden');
-                    document.getElementById('solicitorDistrictOther').focus();
-                } else {
-                    wrapper.classList.add('hidden');
-                    document.getElementById('solicitorDistrictOther').value = '';
-                }
-            }
-            // On page load, show the text field if "Other" is pre-selected
-            document.addEventListener('DOMContentLoaded', function () {
-                const sel = document.getElementById('solicitorDistrict');
-                if (sel && sel.value === 'Other') {
-                    document.getElementById('solicitorDistrictOtherWrapper').classList.remove('hidden');
-                }
-            });
-        </script>
-    </div>
-
-    <div class="grid grid-cols-1 gap-2">
         <x-instrument-select id="solicitorState" label="State" icon="map-pin" :options="$states"
             placeholder="Select State" value="{{ $record->solicitor_state ?? 'Kano' }}" />
 
         <x-instrument-select id="solicitorLga" label="LGA" icon="map" :options="[]" placeholder="Select LGA"
             value="{{ $record->solicitor_lga ?? $record->solicitor_city ?? '' }}" />
+
+        <x-instrument-textarea id="solicitorAddress" label="Office Address" icon="map-pin"
+            placeholder="Auto-generated from selected district, LGA and state" rows="2"
+            value="{{ $record->solicitor_address ?? '' }}" readonly />
     </div>
 </div>

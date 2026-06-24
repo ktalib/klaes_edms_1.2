@@ -129,10 +129,11 @@
                             <p class="text-sm text-gray-600">Click the view button next to any file to see detailed information</p>
                         </div>
 
-                        <div class="overflow-x-auto overflow-y-auto max-h-96 shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                        <div class="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
                             <table class="min-w-full divide-y divide-gray-300" id="decommissionedFilesTable">
                                 <thead class="bg-gray-50 sticky top-0">
                                     <tr>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">S/N</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MLS File No</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kangis File No</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File Name</th>
@@ -156,10 +157,11 @@
                             <p class="text-sm text-gray-600">Title Status updates raised from File Indexing.  
                         </div>
 
-                        <div class="overflow-x-auto overflow-y-auto max-h-96 shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                        <div class="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
                             <table class="min-w-full divide-y divide-gray-300" id="falseDecommissionedFilesTable">
                                 <thead class="bg-amber-50 sticky top-0">
                                     <tr>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">S/N</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MLS File No</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kangis File No</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File Name</th>
@@ -312,6 +314,9 @@
                     type: 'GET'
                 },
                 columns: [
+                    { data: null, name: 'sn', orderable: false, searchable: false, render: function (data, type, row, meta) {
+                        return meta.row + meta.settings._iDisplayStart + 1;
+                    } },
                     { data: 'mls_file_no', name: 'mls_file_no' },
                     { data: 'kangis_file_no', name: 'kangis_file_no' },
                     { data: 'file_name', name: 'file_name' },
@@ -321,7 +326,7 @@
                     { data: 'decommissioning_reason', name: 'decommissioning_reason' },
                     { data: 'action', name: 'action', orderable: false, searchable: false }
                 ],
-                order: [[3, 'desc']], // Order by decommissioning_date desc
+                order: [[4, 'desc']], // Order by decommissioning_date desc
                 pageLength: 25,
                 responsive: true,
                 drawCallback: function() {
@@ -338,6 +343,9 @@
                     type: 'GET'
                 },
                 columns: [
+                    { data: null, name: 'sn', orderable: false, searchable: false, render: function (data, type, row, meta) {
+                        return meta.row + meta.settings._iDisplayStart + 1;
+                    } },
                     { data: 'mls_file_no', name: 'mls_file_no' },
                     { data: 'kangis_file_no', name: 'kangis_file_no' },
                     { data: 'file_name', name: 'file_name' },
@@ -346,7 +354,7 @@
                     { data: 'decommissioning_reason', name: 'decommissioning_reason' },
                     { data: 'action', name: 'action', orderable: false, searchable: false }
                 ],
-                order: [[3, 'desc']],
+                order: [[4, 'desc']],
                 pageLength: 10,
                 responsive: true,
                 drawCallback: function() {

@@ -72,6 +72,8 @@ class TitleStatusService
         return self::TYPE_SLUG[$titleType] ?? 'flagged';
     }
 
+ 
+
     /**
      * Template: "[Status type] was initiated by [initiator] for File [file_no] on [Time/Date] due to [Reason]"
      * Applicant/Allottee get the holder name with role suffix; Ministry/Court Order render literally.
@@ -106,11 +108,36 @@ class TitleStatusService
      *        false_decommissioning = 1, but the real "is_decommissioned" side effects
      *        (flagging the source file + deprecated_records) are skipped.
      */
-    public function flagAndDecommission(TitleStatusApplication $record, bool $falseDecommissioning = false): void
+    /**
+     * @param TitleStatusApplication|TitleStatusApplication[] $records One record, or several
+     *        when multiple title statuses were selected at once for the same file. The flag
+     *        columns (title_status_type / title_status_remark) are then written as a combined
+     *        value reflecting every selected status.
+     */
+    public function flagAndDecommission($records, bool $falseDecommissioning = false): void
     {
+        $records = is_array($records) ? array_values($records) : [$records];
+        $records = array_filter($records);
+        if (empty($records)) {
+            return;
+        }
+
+        $record   = $records[0];
         $fileNo   = $record->file_no;
-        $slug     = $this->typeSlug($record->title_type);
-        $remark   = $record->remark;
+
+        // Combine slugs and remarks across every selected status for the flag columns.
+        $slugs    = [];
+        $remarks  = [];
+        foreach ($records as $r) {
+            $slugs[]   = $this->typeSlug($r->title_type);
+            $rRemark   = trim((string) ($r->remark ?? ''));
+            if ($rRemark !== '') {
+                $remarks[] = $rRemark;
+            }
+        }
+        $slug     = implode(', ', array_values(array_unique($slugs)));
+        $remark   = implode("\n", $remarks);
+
         $user     = Auth::user();
         $userName = $user ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? $user->name ?? '')) : 'System';
 

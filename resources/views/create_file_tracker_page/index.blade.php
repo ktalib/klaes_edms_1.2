@@ -75,6 +75,17 @@
                 <span class="text-emerald-100 text-sm">Log a File</span>
             </div>
         </div>
+        @elseif(($module ?? '') === 'survey')
+        <div class="bg-gradient-to-r from-pink-600 via-pink-500 to-pink-700 px-6 py-3 flex items-center gap-3 shadow-sm" style="background-image: linear-gradient(to right, #db2777, #ec4899, #be185d);">
+            <i data-lucide="compass" class="h-5 w-5 text-white shrink-0"></i>
+            <div class="flex items-center gap-2">
+                <span class="text-white font-bold text-sm uppercase tracking-widest">Survey</span>
+                <span class="text-pink-100 text-sm">·</span>
+                <span class="text-white text-sm font-medium">Digital Archive</span>
+                <span class="text-pink-100 text-sm">·</span>
+                <span class="text-pink-100 text-sm">Log a File</span>
+            </div>
+        </div>
         @elseif(in_array(strtolower($module ?? ''), ['cadastral']))
         <div class="bg-gradient-to-r from-[#6f4e37] via-[#8B4513] to-[#5c4033] px-6 py-3 flex items-center gap-3 shadow-sm">
             <i data-lucide="compass" class="h-5 w-5 text-white shrink-0"></i>
@@ -591,7 +602,7 @@
                                                 <p class="text-sm text-gray-600 mt-1">Enter the basic file information</p>
                                             </div>
                                             <div class="p-6 space-y-4">
-                                                <div class="grid grid-cols-2 gap-4">
+                                                <div class="grid grid-cols-3 gap-4">
                                                     <div class="space-y-2">
                                                         <label for="file-no"
                                                             class="block text-sm font-medium text-gray-700">File No
@@ -622,6 +633,18 @@
                                                         <input type="hidden" id="tracking-id-real">
                                                         <p class="text-xs text-gray-500">Auto-fetched from File Indexing
                                                             after selecting a file number</p>
+                                                    </div>
+                                                    <div class="space-y-2">
+                                                        <label for="registry-code"
+                                                            class="block text-sm font-medium text-gray-700">Registry
+                                                            Code</label>
+                                                        <input type="text" id="registry-code" name="origin_registry_code"
+                                                            readonly disabled placeholder="—"
+                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 font-mono text-sm tracking-wide text-gray-700 cursor-not-allowed">
+                                                        {{-- Disabled fields are not submitted; mirror value here for the backend --}}
+                                                        <input type="hidden" id="registry-code-real" name="origin_registry_code_hidden">
+                                                        <p class="text-xs text-gray-500">Derived from the selected Registry
+                                                            (Origin)</p>
                                                     </div>
                                                 </div>
 
@@ -854,8 +877,9 @@
                                                                         ($currentModule === 'st'   && $registry->name === 'ST Registry')
                                                                     );
                                                                 @endphp
+                                                                {{-- Cadastral module shows only its own registries; every other
+                                                                     context (incl. the default page) lists all registries. --}}
                                                                 @continue($currentModule === 'cadastral' && !$isCadastral)
-                                                                @continue($currentModule !== 'cadastral' && $isCadastral)
                                                                 <option value="{{ $registry->name }}"
                                                                     data-registry-code="{{ $registry->registry_code }}"
                                                                     {{ $isSelected ? 'selected' : '' }}>{{ $registryDisplay }}</option>

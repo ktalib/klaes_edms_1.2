@@ -32,7 +32,7 @@
                 class="bg-gradient-to-r from-slate-50 to-white border-b border-slate-100 px-8 py-5 flex items-center justify-between sticky top-0 z-10 transition-all">
                 <div>
                     <h3 class="text-xl font-black text-slate-900 tracking-tight" id="modal-title"
-                        x-text="isReEvaluate ? 'Re-Evaluate Valuation Report' : (isEdit ? 'Edit Valuation Report' : 'Generate New Valuation Report')"></h3>
+                        x-text="isEdit ? 'Edit Valuation Report' : 'Generate New Valuation Report'"></h3>
                     <div class="flex items-center gap-2 mt-1">
                         <span
                             class="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-black rounded-lg uppercase tracking-wider">Step
@@ -703,7 +703,7 @@
                         <template x-if="!submitting">
                             <span class="flex items-center gap-2">
                                 <i data-lucide="check-circle" class="h-5 w-5"></i>
-                                <span x-text="isReEvaluate ? 'Re-Evaluate Report' : (isEdit ? 'Update Report' : 'Generate Report')"></span>
+                                <span x-text="isEdit ? 'Update Report' : 'Generate Report'"></span>
                             </span>
                         </template>
                         <template x-if="submitting">
@@ -726,7 +726,6 @@
             open: false,
             step: 1,
             isEdit: false,
-            isReEvaluate: false,
             submitting: false,
             getToday() {
                 const d = new Date();
@@ -835,10 +834,8 @@
             openModal(data = null) {
                 this.step = 1;
                 if (data && data.id) {
-                    this.isReEvaluate = data._mode === 'reevaluate';
                     this.isEdit = true;
                     this.formData = { ...data };
-                    delete this.formData._mode;
                     // Format date if exists, otherwise default to today
                     if (this.formData.inspection_date) {
                         const d = new Date(this.formData.inspection_date);
@@ -851,7 +848,6 @@
                     this.parseAddress(this.formData.address);
                 } else {
                     this.isEdit = false;
-                    this.isReEvaluate = false;
                     this.resetForm();
                     this.formData.inspection_date = this.getToday();
                 }
@@ -1109,17 +1105,8 @@
                 }
 
                 this.submitting = true;
-                let url, method;
-                if (this.isReEvaluate) {
-                    url = `/valuation-reports/re-evaluate/${this.formData.id}`;
-                    method = 'POST';
-                } else if (this.isEdit) {
-                    url = `/valuation-reports/${this.formData.id}`;
-                    method = 'PUT';
-                } else {
-                    url = '/valuation-reports';
-                    method = 'POST';
-                }
+                const url = this.isEdit ? `/valuation-reports/${this.formData.id}` : '/valuation-reports';
+                const method = this.isEdit ? 'PUT' : 'POST';
 
                 try {
                     const response = await fetch(url, {
@@ -1141,7 +1128,7 @@
                     if (result.success) {
                         Swal.fire({
                             icon: 'success',
-                            title: this.isReEvaluate ? 'Re-Evaluated!' : (this.isEdit ? 'Updated!' : 'Generated!'),
+                            title: this.isEdit ? 'Updated!' : 'Generated!',
                             text: result.message,
                             timer: 1500,
                             showConfirmButton: false

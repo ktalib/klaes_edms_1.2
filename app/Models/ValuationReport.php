@@ -56,8 +56,8 @@ class ValuationReport extends Model
         'chief_valuer',
         'status',
         'print_count',
-        're_evaluate',
-        'parent_id',
+        're_value_words',
+        're_value_figures',
         'user_id',
         'neighborhood_characteristics',
         'units_per_block',
@@ -81,8 +81,7 @@ class ValuationReport extends Model
 
     protected $casts = [
         'inspection_date' => 'date',
-        'print_count' => 'integer',
-        're_evaluate' => 'integer'
+        'print_count' => 'integer'
     ];
 
     /**

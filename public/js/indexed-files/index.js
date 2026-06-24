@@ -153,6 +153,10 @@ function renderRows(rows) {
               return `<td class="${standardCellClass}">${escapeHtml(row.indexed_by)}</td>`;
             case 'indexed_date':
               return `<td class="${standardCellClass}">${escapeHtml(row.indexed_at ?? '')}</td>`;
+            case 'dciv_fileno':
+              return `<td class="p-3">${Number(row.dciv_status) === 1 && row.dciv_fileno ? `<div class="flex flex-col gap-1"><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">${escapeHtml(row.dciv_fileno)}</span><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap"><i data-lucide="alert-triangle" class="w-3 h-3"></i>Under Investigation</span></div>` : '<span class="text-gray-400">-</span>'}</td>`;
+            case 'dciv_reason':
+              return `<td class="p-3 text-gray-600 max-w-xs whitespace-normal break-words">${Number(row.dciv_status) === 1 && row.dciv_reason ? escapeHtml(row.dciv_reason) : '<span class="text-gray-400">-</span>'}</td>`;
             case 'status':
               return `<td class="p-3 whitespace-nowrap">${statusBadge}</td>`;
             default:
@@ -233,6 +237,7 @@ function renderRows(rows) {
                 </button>
               ` : '<span class="text-gray-400 font-medium text-[10px] uppercase">None</span>'}
             </td>`)}
+            ${col('dciv_fileno', `<td class="p-3">${Number(row.dciv_status) === 1 && row.dciv_fileno ? `<div class="flex flex-col gap-1"><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">${escapeHtml(row.dciv_fileno)}</span><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap"><i data-lucide="alert-triangle" class="w-3 h-3"></i>Under Investigation</span></div>` : '<span class="text-gray-400">-</span>'}</td>`)}
             ${col('file_title', `<td class="p-3 whitespace-nowrap text-gray-700">${escapeHtml(row.file_title)}</td>`)}
             ${col('land_use_type', `<td class="p-3 whitespace-nowrap">${landUseBadge}</td>`)}
             ${col('plot_number', `<td class="${standardCellClass}">${escapeHtml(row.plot_number)}</td>`)}
@@ -242,6 +247,7 @@ function renderRows(rows) {
             ${col('lga', `<td class="${standardCellClass}">${escapeHtml(lgaValue)}</td>`)}
             ${col('indexed_by', `<td class="${standardCellClass}">${escapeHtml(row.indexed_by)}</td>`)}
             ${col('indexed_date', `<td class="${standardCellClass}">${escapeHtml(row.indexed_at ?? '')}</td>`)}
+            ${col('dciv_reason', `<td class="p-3 text-gray-600 max-w-xs whitespace-normal break-words">${Number(row.dciv_status) === 1 && row.dciv_reason ? escapeHtml(row.dciv_reason) : '<span class="text-gray-400">-</span>'}</td>`)}
             ${col('status', `<td class="p-3 whitespace-nowrap">${statusBadge}</td>`)}
           `;
       })()
@@ -280,6 +286,7 @@ function renderRows(rows) {
             </button>
           ` : '<span class="text-gray-400 font-medium text-[10px] uppercase">None</span>'}
         </td>`)}
+        ${col('dciv_fileno', `<td class="p-3">${Number(row.dciv_status) === 1 && row.dciv_fileno ? `<div class="flex flex-col gap-1"><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">${escapeHtml(row.dciv_fileno)}</span><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap"><i data-lucide="alert-triangle" class="w-3 h-3"></i>Under Investigation</span></div>` : '<span class="text-gray-400">-</span>'}</td>`)}
         ${col('file_title', `<td class="p-3 whitespace-nowrap text-gray-700">${escapeHtml(row.file_title)}</td>`)}
         ${col('plot_number', `<td class="${standardCellClass}">${escapeHtml(row.plot_number)}</td>`)}
         ${col('indexed_date', `<td class="${standardCellClass}">${escapeHtml(row.indexed_at ?? '')}</td>`)}
@@ -290,6 +297,7 @@ function renderRows(rows) {
         ${col('district', `<td class="${standardCellClass}">${escapeHtml(row.district)}</td>`)}
         ${col('lga', `<td class="${standardCellClass}">${escapeHtml(lgaValue)}</td>`)}
         ${col('registry_batch_no', `<td class="${standardCellClass}">${escapeHtml(row.registry_batch_no)}</td>`)}
+        ${col('dciv_reason', `<td class="p-3 text-gray-600 max-w-xs whitespace-normal break-words">${Number(row.dciv_status) === 1 && row.dciv_reason ? escapeHtml(row.dciv_reason) : '<span class="text-gray-400">-</span>'}</td>`)}
         ${col('status', `<td class="p-3 whitespace-nowrap">${statusBadge}</td>`)}
       `;
 
@@ -336,6 +344,13 @@ function buildStatusBadge(status) {
   const className = styles[normalized] || 'bg-slate-100 text-slate-700';
 
   return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${className}">${escapeHtml(label)}</span>`;
+}
+
+function buildDcivStatusBadge(status) {
+  if (Number(status) === 1) {
+    return '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-700 border border-rose-200"><i data-lucide="alert-triangle" class="w-3 h-3"></i>DCIV</span>';
+  }
+  return '<span class="text-gray-400">-</span>';
 }
 
 function buildFileNumberBadge(fileNumber, isTempFallback = false) {

@@ -8,6 +8,7 @@ use App\Mail\PhsPaymentConfirmed;
 use App\Mail\PhsPaymentLinkSent;
 use App\Mail\PhsRequestApproved;
 use App\Mail\PhsRequestRejected;
+use App\Mail\PhsSlaRequestLink;
 use App\Mail\PhsTopupConfirmed;
 use Illuminate\Support\Str;
 use App\Models\Phs\PhsFeedback;
@@ -435,8 +436,8 @@ class PhsAdminController extends Controller
         $requests = $query->get();
 
         $allStatuses = [
-            'pending', 'documents_approved', 'payment_pending', 'payment_received',
-            'sla_uploaded', 'sla_approved', 'approved', 'activated', 'rejected',
+            'pending', 'documents_approved', 'awaiting_sla', 'sla_uploaded', 'sla_approved',
+            'payment_pending', 'payment_received', 'approved', 'activated', 'rejected',
         ];
 
         $statsByStatus = collect($allStatuses)
@@ -621,23 +622,21 @@ class PhsAdminController extends Controller
             return back()->with('error', 'Request must be approved by Legal before admin approval.');
         }
 
-        $paymentToken = Str::random(64);
-
         $onboardingRequest->update([
-            'status' => PhsOnboardingRequest::STATUS_PAYMENT_PENDING,
-            'payment_token' => $paymentToken,
+            'status' => PhsOnboardingRequest::STATUS_AWAITING_SLA,
+            'lsa_token' => Str::random(64),
             'approved_at' => now(),
             'approved_by' => Auth::id(),
         ]);
 
         try {
             Mail::to($onboardingRequest->contact_email)
-                ->send(new PhsPaymentLinkSent($onboardingRequest));
+                ->send(new PhsSlaRequestLink($onboardingRequest->fresh()));
         } catch (\Throwable $e) {
             report($e);
         }
 
-        return back()->with('success', 'Request approved. Payment link sent to organization.');
+        return back()->with('success', 'Approved. SLA download & upload link sent to organization.');
     }
 
     public function finalApproveRequest(Request $request, $id)
@@ -648,21 +647,20 @@ class PhsAdminController extends Controller
             return back()->with('error', 'SLA must be approved by Legal before final activation.');
         }
 
-        $onboardingRequest->generateActivationToken();
-
         $onboardingRequest->update([
-            'status' => PhsOnboardingRequest::STATUS_ACTIVATED,
+            'status' => PhsOnboardingRequest::STATUS_PAYMENT_PENDING,
+            'payment_token' => Str::random(64),
             'approved_at' => now(),
         ]);
 
         try {
             Mail::to($onboardingRequest->contact_email)
-                ->send(new PhsRequestApproved($onboardingRequest));
+                ->send(new PhsPaymentLinkSent($onboardingRequest->fresh()));
         } catch (\Throwable $e) {
             report($e);
         }
 
-        return back()->with('success', 'Final approval complete. Registration link sent to organization.');
+        return back()->with('success', 'Final approval complete. Payment & onboarding link sent to organization.');
     }
 
     /**

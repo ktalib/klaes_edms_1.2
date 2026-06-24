@@ -356,7 +356,62 @@
         </div>
       @endif
 
-      <!-- e. PP Reports -->
+      {{-- e. Digital Archive --}}
+      <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+        data-section="digitalArchive-pp">
+        <div class="flex items-center gap-2">
+          <i data-lucide="archive" class="h-4 w-4 text-red-500"></i>
+          <span>Digital Archive</span>
+        </div>
+        <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200"
+          data-chevron="digitalArchive-pp"></i>
+      </div>
+
+      <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="digitalArchive-pp">
+        {{-- i. File Tracker Dashboard --}}
+        <a href="{{ route('file-tracker.dashboard', ['url' => 'pp']) }}"
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-tracker.dashboard') && request('url') === 'pp' ? 'active' : '' }}">
+          <i data-lucide="bar-chart-2" class="h-3.5 w-3.5 text-red-400"></i>
+          <span>File Tracker Dashboard</span>
+        </a>
+
+        {{-- ii. File Tracker (Archive) --}}
+        <a href="{{ route('track-file-archive.index', ['url' => 'pp']) }}"
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('track-file-archive.index') && request('url') === 'pp' ? 'active' : '' }}">
+          <i data-lucide="archive" class="h-3.5 w-3.5 text-red-400"></i>
+          <span>File Tracker (Archive)</span>
+        </a>
+
+        {{-- iii. Quick Search --}}
+        <a href="{{ route('create-file-tracker.quick-search', ['url' => 'pp']) }}"
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.quick-search') && request('url') === 'pp' ? 'active' : '' }}">
+          <i data-lucide="search" class="h-3.5 w-3.5 text-red-400"></i>
+          <span>Quick Search</span>
+        </a>
+
+        {{-- iv. Log a File --}}
+        <a href="{{ route('create-file-tracker.index', ['url' => 'pp']) }}"
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.index') && request('url') === 'pp' ? 'active' : '' }}">
+          <i data-lucide="file-plus" class="h-3.5 w-3.5 text-red-400"></i>
+          <span>Log a File</span>
+        </a>
+
+        {{-- v. File Digital Library – Doc-WARE --}}
+        <a href="{{ route('filearchive.index', ['url' => 'pp']) }}"
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('filearchive.index') && request('url') === 'pp' ? 'active' : '' }}">
+          <i data-lucide="library" class="h-3.5 w-3.5 text-red-400"></i>
+          <span>File Digital Library – Doc-WARE</span>
+        </a>
+
+        {{-- vi. EDMS Update --}}
+        <a href="#"
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
+          <i data-lucide="refresh-cw" class="h-3.5 w-3.5 text-red-400"></i>
+          <span>EDMS Update</span>
+        </a>
+      </div>
+
+      <!-- f. PP Reports -->
       @if($hasRole('PP Reports'))
         <a href="/physical-planning/reports"
           class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">

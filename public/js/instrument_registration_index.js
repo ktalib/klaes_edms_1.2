@@ -1596,7 +1596,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         } else if (typeKey === 'primary') {
                             badgeClass = 'bg-orange-100 text-orange-800 border-orange-200';
                         } else if (typeKey === 'mother_st') {
-                            return '';
+                            return `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide border bg-blue-100 text-blue-800 border-blue-200">PUA</span>`;
                         } else {
                             displayType = 'Deeds';
                         }

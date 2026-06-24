@@ -28,7 +28,8 @@
     :root {
       --bg: #f4f5fb;
       --bg-grad-1: #eef0fb;
-      --bg-grad-2: #f7f4fb;
+
+        --bg-grad-2: #f7f4fb;
       --surface: #ffffff;
       --surface-2: #f7f8fc;
       --surface-3: #eef0f6;
@@ -170,7 +171,7 @@
     .activity-icon { width:38px; height:38px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
     .activity-content { flex:1; min-width:0; }
     .activity-title { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .activity-time { font-size:10px; color:var(--faint); margin-top:2px; }
+    .activity-time { font-size:11px; color:var(--text); margin-top:2px; }
 
     /* ─── Page header (sub screens) ─────────────────────────────── */
     .page-header h1 { font-size:23px; font-weight:800; letter-spacing:-.5px; }
@@ -268,11 +269,71 @@
   </style>
 </head>
 <body>
+@include('mobile.partials.splash')
 @include('mobile.partials.preloader')
 
 {{-- Toast messages --}}
 <div id="successToast" class="success-toast"></div>
 <div id="errorToast"   class="error-toast"></div>
+
+{{-- File Digital Library: inline cover card + fullscreen gallery (shared with DFR) --}}
+<style>
+  .dig-empty { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px; font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 7px; }
+  .dig-cover { display: flex; align-items: center; gap: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 12px; cursor: pointer; transition: border-color .15s, transform .05s; }
+  .dig-cover:active { transform: scale(.99); }
+  .dig-cover-stack { position: relative; width: 56px; height: 72px; flex-shrink: 0; }
+  .dig-cover-stack::before, .dig-cover-stack::after { content: ''; position: absolute; inset: 0; border-radius: 9px; background: var(--surface); border: 1px solid var(--border-strong); }
+  .dig-cover-stack::before { transform: translate(6px, 6px); opacity: .55; }
+  .dig-cover-stack::after  { transform: translate(3px, 3px); opacity: .8; }
+  .dig-cover-page { position: absolute; inset: 0; border-radius: 9px; overflow: hidden; background: var(--surface); border: 1px solid var(--border-strong); display: flex; align-items: center; justify-content: center; z-index: 1; }
+  .dig-cover-page img { width: 100%; height: 100%; object-fit: cover; }
+  .dig-cover-page i { font-size: 24px; color: var(--primary); }
+  .dig-cover-meta { flex: 1; min-width: 0; }
+  .dig-cover-title { font-size: 13px; font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 6px; }
+  .dig-cover-title i { color: var(--primary); }
+  .dig-cover-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .dig-cover-cta { font-size: 10.5px; font-weight: 700; color: var(--primary); margin-top: 7px; display: inline-flex; align-items: center; gap: 5px; }
+  .dig-cover-chev { color: var(--muted); font-size: 16px; flex-shrink: 0; }
+
+  .dig-viewer { position: fixed; inset: 0; z-index: 10001; background: #0b0b0f; display: none; flex-direction: column; }
+  .dig-viewer.open { display: flex; }
+  .dig-viewer-bar { display: flex; align-items: center; gap: 10px; padding: 14px; color: #fff; flex-shrink: 0; background: linear-gradient(to bottom, rgba(0,0,0,.6), transparent); }
+  .dig-viewer-bar .dig-vtitle { flex: 1; min-width: 0; }
+  .dig-viewer-bar .dig-vname { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dig-viewer-bar .dig-vcount { font-size: 11px; opacity: .7; margin-top: 1px; }
+  .dig-viewer-bar button { background: rgba(255,255,255,0.14); border: none; color: #fff; width: 38px; height: 38px; border-radius: 50%; font-size: 15px; cursor: pointer; flex-shrink: 0; }
+  .dig-stage { flex: 1; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: pan-y; }
+  .dig-stage img { max-width: 100%; max-height: 100%; object-fit: contain; -webkit-user-drag: none; }
+  .dig-stage iframe { width: 100%; height: 100%; border: none; background: #fff; }
+  .dig-stage .dig-spin { position: absolute; color: rgba(255,255,255,.8); font-size: 26px; }
+  .dig-nav { position: absolute; top: 0; bottom: 0; width: 26%; display: flex; align-items: center; z-index: 2; border: none; background: transparent; color: rgba(255,255,255,.85); font-size: 20px; cursor: pointer; }
+  .dig-nav:disabled { opacity: 0; pointer-events: none; }
+  .dig-nav .dig-nav-ic { width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; }
+  .dig-nav.prev { left: 0; justify-content: flex-start; padding-left: 10px; }
+  .dig-nav.next { right: 0; justify-content: flex-end; padding-right: 10px; }
+  .dig-strip { flex-shrink: 0; display: flex; gap: 6px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); overflow-x: auto; background: rgba(0,0,0,.55); -webkit-overflow-scrolling: touch; }
+  .dig-strip::-webkit-scrollbar { height: 0; }
+  .dig-strip-item { position: relative; flex: 0 0 auto; width: 46px; height: 60px; border-radius: 6px; overflow: hidden; border: 2px solid transparent; background: #1b1f29; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .dig-strip-item.active { border-color: #818cf8; }
+  .dig-strip-item img { width: 100%; height: 100%; object-fit: cover; }
+  .dig-strip-item i { color: rgba(255,255,255,.5); font-size: 14px; }
+  .dig-strip-item .dig-strip-n { position: absolute; bottom: 0; left: 0; right: 0; font-size: 8px; font-weight: 700; text-align: center; background: rgba(0,0,0,.6); color: #fff; }
+</style>
+<div class="dig-viewer" id="digViewer">
+  <div class="dig-viewer-bar">
+    <div class="dig-vtitle">
+      <div class="dig-vname" id="digVName">—</div>
+      <div class="dig-vcount" id="digVCount">—</div>
+    </div>
+    <button onclick="closeDigViewer()" title="Close"><i class="fas fa-times"></i></button>
+  </div>
+  <div class="dig-stage" id="digStage">
+    <button class="dig-nav prev" id="digNavPrev" onclick="digPrev()" title="Previous"><span class="dig-nav-ic"><i class="fas fa-chevron-left"></i></span></button>
+    <div class="dig-spin" id="digStageInner"></div>
+    <button class="dig-nav next" id="digNavNext" onclick="digNext()" title="Next"><span class="dig-nav-ic"><i class="fas fa-chevron-right"></i></span></button>
+  </div>
+  <div class="dig-strip" id="digStrip"></div>
+</div>
 
 <div id="app">
   <!-- ═══ DASHBOARD SCREEN ═══ -->
@@ -323,7 +384,7 @@
     </div>
 
     <div class="card panel">
-      <div class="panel-title"><i class="fas fa-clock-rotate-left"></i> Recent Activity</div>
+      <div class="panel-title"><i class="fas fa-clock-rotate-left"></i> {{ $isScbMonitor ? 'Recent File Search Activity' : 'Recent Activity' }}</div>
       <div id="recentActivityList" class="activity-list"></div>
     </div>
   </div>
@@ -456,11 +517,16 @@
       <div class="field-wrap">
         <label>File No / Tracking ID</label>
         <div style="display:flex;gap:8px;align-items:center;">
-          <select id="fileSearchSelect" style="flex:1;"></select>
-          <button id="fileSearchBtn" class="btn" style="width:auto;padding:0 18px;flex-shrink:0;">
+          <select id="fileSearchSelect" style="flex:1;min-width:0;"></select>
+          <input id="fileSearchManual" type="text" placeholder="Type file number…" autocomplete="off" style="display:none;flex:1;min-width:0;height:46px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:14px;padding:0 14px;font-size:14px;color:var(--text);text-transform:uppercase;">
+          <button id="fileSearchBtn" type="button" class="btn" style="width:auto;height:46px;padding:0 18px;flex-shrink:0;border-radius:14px;font-size:16px;">
             <i class="fas fa-search"></i>
           </button>
         </div>
+        <label for="fsBlindToggle" style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted);cursor:pointer;font-weight:500;">
+          <input id="fsBlindToggle" type="checkbox" onchange="toggleBlindSearch()" style="width:16px;height:16px;flex-shrink:0;accent-color:var(--primary);cursor:pointer;">
+          Blind request — file not yet indexed (type the file number manually)
+        </label>
       </div>
     </div>
 
@@ -500,6 +566,17 @@
       <div id="manualScanResult"></div>
     </div>
   </div>
+
+  @if($isOfs)
+  <!-- ═══ OFS — MY FILE REQUESTS SCREEN ═══ -->
+  <div id="myreq-screen" class="screen">
+    <div class="page-header" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end;">
+      <div><h1>My File Requests</h1><p>What you sent, SCB status & where the file is</p></div>
+      <button class="icon-circle" id="myReqRefreshBtn" title="Refresh" onclick="loadMyRequests()"><i class="fas fa-rotate-right"></i></button>
+    </div>
+    <div id="myReqContainer"></div>
+  </div>
+  @endif
 
   @if($isScbMonitor)
   <!-- ═══ SCB MONITOR — FILE REQUESTS SCREEN ═══ -->
@@ -571,6 +648,9 @@
     <button class="tab-item" data-tab="dashboard"><i class="fas fa-house"></i><span>Home</span></button>
 
     <button class="tab-item" data-tab="files"><i class="fas fa-magnifying-glass"></i><span>Search</span></button>
+  @if($isOfs)
+    <button class="tab-item" data-tab="myreq"><i class="fas fa-list-check"></i><span>My FRs</span></button>
+    @endif
   @if($isScbMonitor)
     <button class="tab-item" data-tab="requests"><i class="fas fa-clipboard-list"></i><span>FSR</span></button>
     @endif
@@ -592,7 +672,31 @@ const CURRENT_USER = {
   username: '{{ auth()->user()->username }}',
 };
 const IS_SCB_MONITOR = {{ $isScbMonitor ? 'true' : 'false' }};
+// OFS (Office Priority Search) ranked officer — may raise prioritised File/Blind
+// Requests to the SCB Monitor straight from File Search.
+const IS_OFS = {{ ($isOfs ?? false) ? 'true' : 'false' }};
 const IS_SUPER_ADMIN = {{ auth()->user()->isSuperAdmin() ? 'true' : 'false' }};
+// Origin registries (+ short codes) for the File Search request dropdown.
+const REGISTRIES = @json($registries ?? []);
+// Requester cascade (mirrors Quick Search): Department → Office → Officer.
+@php
+    $reqOffices = ($offices ?? collect())->map(fn ($o) => [
+        'code'       => $o->office_code,
+        'name'       => $o->office_name,
+        'department' => $o->department,
+    ])->values();
+    $reqOfficers = ($officers ?? collect())->map(fn ($o) => [
+        'name'          => trim(($o->first_name ?? '') . ' ' . ($o->last_name ?? '')) ?: $o->username,
+        'department_id' => $o->department_id,
+    ])->filter(fn ($o) => $o['name'] !== '')->values();
+    $reqDeptNameToId = ($departmentIds ?? collect())->mapWithKeys(fn ($d) => [$d->name => $d->id]);
+@endphp
+const REQ_DEPARTMENTS = @json($departments ?? []);
+const REQ_OFFICES     = @json($reqOffices);
+const REQ_OFFICERS    = @json($reqOfficers);
+const REQ_DEPT_NAME_TO_ID = @json($reqDeptNameToId);
+const FS_DEPT_OTHER   = '__DEPT_OTHER__';
+const FS_OFFICE_OTHER = '__OFFICE_OTHER__';
 
 // Quick Search / File Location outcome styling
 const LOC_STATUS_META = {
@@ -696,6 +800,14 @@ async function loadNotifications() {
 
 // ─── Utilities ────────────────────────────────────────────────────────────
 function esc(s) { return String(s||'').replace(/[&<>]/g,m=>m==='&'?'&amp;':m==='<'?'&lt;':'&gt;'); }
+// Darken a #rrggbb colour by pct (0..1) — used to build matching button gradients.
+function shade(hex, pct) {
+  const n = parseInt(String(hex||'').replace('#',''), 16);
+  if (isNaN(n)) return hex;
+  let r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+  r=Math.round(r*(1-pct)); g=Math.round(g*(1-pct)); b=Math.round(b*(1-pct));
+  return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+}
 function getPrioCls(p) { p=(p||'').toLowerCase(); return p==='high'?'priority-high':p==='medium'?'priority-medium':'priority-low'; }
 function relTime(d) {
   if (!d) return '';
@@ -736,16 +848,69 @@ async function renderDashboard() {
         <div class="priority-item"><span class="priority-label">High</span><div class="priority-bar"><div class="priority-bar-fill fill-high" style="width:${(h/tot)*100}%"></div></div><span class="priority-value">${h}</span></div>
         <div class="priority-item"><span class="priority-label">Medium</span><div class="priority-bar"><div class="priority-bar-fill fill-medium" style="width:${(m/tot)*100}%"></div></div><span class="priority-value">${m}</span></div>
         <div class="priority-item"><span class="priority-label">Low</span><div class="priority-bar"><div class="priority-bar-fill fill-low" style="width:${(l/tot)*100}%"></div></div><span class="priority-value">${l}</span></div>`;
-    const recent = s.recent_activity||[];
-    document.getElementById('recentActivityList').innerHTML = recent.length
-      ? recent.map(f=>`<div class="activity-item"><div class="activity-icon" style="background:${f.status==='ACTIVE'?'rgba(16,185,129,.14)':'rgba(245,158,11,.14)'};color:${f.status==='ACTIVE'?'#10b981':'#f59e0b'};"><i class="fas ${f.status==='ACTIVE'?'fa-play-circle':'fa-clock'}"></i></div><div class="activity-content"><div class="activity-title">${esc(f.file_title)}</div><div class="activity-time">${relTime(f.updated_at)}</div></div></div>`).join('')
-      : '<p style="text-align:center;color:var(--faint);font-size:12px;padding:20px;">No recent activity</p>';
+    // Recent Activity: SCB Monitors see their 5 most recent File Search Requests;
+    // everyone else gets an empty placeholder (file-tracker activity is not shown here).
+    renderRecentActivity();
     const wl = s.weekly_labels||['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
     const wd = s.weekly_activity||[0,0,0,0,0,0,0];
     const cc = chartColors();
     if (weeklyChart) weeklyChart.destroy();
     weeklyChart = new Chart(document.getElementById('weeklyChart').getContext('2d'), { type:'line', data:{ labels:wl, datasets:[{ label:'Files', data:wd, borderColor:'#8b5cf6', backgroundColor:'rgba(139,92,246,0.12)', borderWidth:2.5, fill:true, tension:0.4, pointBackgroundColor:'#8b5cf6', pointRadius:4 }]}, options:{ responsive:true, maintainAspectRatio:true, plugins:{ legend:{ display:false }}, scales:{ y:{ beginAtZero:true, grid:{ color:cc.grid }, ticks:{ color:cc.tick, font:{ size:9 }}}, x:{ grid:{ display:false }, ticks:{ color:cc.tick, font:{ size:9 }}}}}});
   } catch(e) { console.error(e); }
+}
+
+// Recent Activity panel — only SCB Monitors have File Search Requests to show.
+const FSR_ACTIVITY_META = {
+  PENDING:   { color:'#f59e0b', icon:'fa-clock' },
+  SEARCHING: { color:'#0ea5e9', icon:'fa-magnifying-glass' },
+  FOUND:     { color:'#10b981', icon:'fa-circle-check' },
+  NOT_FOUND: { color:'#ef4444', icon:'fa-triangle-exclamation' },
+  CLOSED:    { color:'#6b7185', icon:'fa-circle-xmark' },
+};
+async function renderRecentActivity() {
+  const el = document.getElementById('recentActivityList');
+  if (!el) return;
+  if (!IS_SCB_MONITOR) {
+    el.innerHTML = '<p style="text-align:center;color:var(--faint);font-size:12px;padding:20px;">No recent activity</p>';
+    return;
+  }
+  try {
+    // Merge the Open inbox and the FSR History, then take the 5 most recent
+    // (highest id = newest) so the panel reflects the latest requests regardless
+    // of whether they are still open or already handled.
+    const [openRes, logRes] = await Promise.all([
+      api(`${MOB_BASE}/file-requests`),
+      api(`${MOB_BASE}/file-requests/log`),
+    ]);
+    const all = []
+      .concat((openRes && openRes.success) ? (openRes.data || []) : [])
+      .concat((logRes && logRes.success) ? (logRes.data || []) : []);
+    const seen = new Set();
+    const recent = all
+      .filter(fr => !seen.has(fr.id) && seen.add(fr.id))
+      .sort((a, b) => (b.id || 0) - (a.id || 0))
+      .slice(0, 5);
+    el.innerHTML = recent.length
+      ? recent.map(fr => {
+          const m = FSR_ACTIVITY_META[fr.status] || FSR_ACTIVITY_META.PENDING;
+          const title = fr.file_number || fr.file_title || fr.request_no || '—';
+          // "Requested by" is the selected Requester Officer, falling back to
+          // office/department; "Created by" is the user account that raised it.
+          const requester = fr.receiving_officer || fr.requester || fr.requester_office || fr.requester_department || '';
+          const details = [
+            ['fa-user',     requester,      'Requested by'],
+            ['fa-building', fr.requester_office, 'Office'],
+            ['fa-user-pen', fr.created_by,  'Created by'],
+          ].filter(([, val]) => val && String(val).trim() && String(val).trim() !== '—')
+           .map(([icon, val, label]) =>
+             `<div style="font-size:12px;color:var(--text);"><i class="fas ${icon}" style="width:12px;margin-right:5px;color:var(--primary);"></i><span style="color:var(--text);">${label}:</span> ${esc(val)}</div>`
+           ).join('');
+          return `<div class="activity-item"><div class="activity-icon" style="background:${m.color}22;color:${m.color};"><i class="fas ${m.icon}"></i></div><div class="activity-content"><div class="activity-title">${esc(title)}</div><div class="activity-time">${esc(fr.request_no||'')}${fr.created_at ? ' · '+esc(fr.created_at) : ''}</div>${details ? `<div style="margin-top:5px;display:flex;flex-direction:column;gap:3px;">${details}</div>` : ''}</div></div>`;
+        }).join('')
+      : '<p style="text-align:center;color:var(--faint);font-size:12px;padding:20px;">No recent file search requests</p>';
+  } catch(e) {
+    el.innerHTML = '<p style="text-align:center;color:var(--faint);font-size:12px;padding:20px;">No recent file search requests</p>';
+  }
 }
 
 // ─── Files ────────────────────────────────────────────────────────────────
@@ -1001,6 +1166,7 @@ function setActiveTab(tabId) {
   if (tabId==='scanner')   updateScanStatus('Click Start to begin scanning','info');
   if (tabId==='create')    initCreateForm();
   if (tabId==='requests')  { setFrView(frView); frView === 'open' ? loadFsrLog() : loadFileRequests(); }
+  if (tabId==='myreq')     loadMyRequests();
 }
 
 // ─── Log a File: init defaults when screen opens ───────────────────────────
@@ -1013,11 +1179,30 @@ function initCreateForm() {
 }
 
 // ─── File Search (5-outcome locator) ───────────────────────────────────────
+let lastFileSearch = null;   // most recent resolved file (for the OFS send shortcut)
+
+// Blind request: a not-yet-indexed file can't be picked from the Select2 list
+// (it only serves indexed files), so swap the picker for a free-text input.
+function toggleBlindSearch() {
+  const on        = document.getElementById('fsBlindToggle')?.checked;
+  const manual    = document.getElementById('fileSearchManual');
+  const container = $('#fileSearchSelect').next('.select2-container');
+  if (on) {
+    container.hide();
+    if (manual) { manual.style.display = ''; manual.focus(); }
+  } else {
+    container.show();
+    if (manual) { manual.style.display = 'none'; manual.value = ''; }
+  }
+}
+
 async function searchFile() {
   const sel    = document.getElementById('fileSearchSelect');
+  const manual = document.getElementById('fileSearchManual');
+  const blind  = document.getElementById('fsBlindToggle')?.checked;
   const result = document.getElementById('fileSearchResult');
-  const val    = (sel.value || '').trim();
-  if (!val) { result.innerHTML = '<p style="color:#ef4444;font-size:12px;margin-top:4px;">Please select a file number.</p>'; return; }
+  const val    = blind ? (manual?.value || '').trim().toUpperCase() : (sel.value || '').trim();
+  if (!val) { result.innerHTML = `<p style="color:#ef4444;font-size:12px;margin-top:4px;">Please ${blind ? 'type' : 'select'} a file number.</p>`; return; }
 
   const btn = document.getElementById('fileSearchBtn');
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
@@ -1030,9 +1215,102 @@ async function searchFile() {
       const meta = LOC_STATUS_META[d.status] || { label:d.status, color:'#6b7185', icon:'fa-file' };
       const rowsHtml = [
         ['Registry', d.registry],
-        ['Current Location', d.current_location],
+        ['Current Location (Expected)', d.current_location],
         ['Rack / Shelf', d.rack_shelf],
+        // In-transit timeline — only populated (and shown) for IN_TRANSIT files.
+        ['Date Requested', d.date_requested],
+        ['Date Collected', d.date_collected],
       ].filter(r=>r[1]).map(r=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);"><span style="font-size:11px;color:var(--muted);">${esc(r[0])}</span><span style="font-size:13px;font-weight:600;text-align:right;">${esc(r[1])}</span></div>`).join('');
+
+      // OFS (ranked officer): raise a prioritised File/Blind Request to the SCB
+      // Monitor straight from the locator. Hidden for SCB Monitors (they receive,
+      // not raise). Only when the file's status allows a request (can_send_fr).
+      lastFileSearch = d;
+
+      // Any located outcome (Archive, Pool Office, Refer-to-Registry, Pending/blind,
+      // incl. their Found / Not-Found variants) warrants a physical check — some files
+      // were missing from the start of the digitization exercise. The only case it does
+      // NOT apply to is a file actively in transit (already being tracked/redirected).
+      const physicalNote = (d.status && !/^IN_TRANSIT/.test(d.status))
+        ? `<p style="margin-top:8px;font-size:13px;font-style:italic;color:#ef4444;line-height:1.6;">The SCBs would have to do a Physical Check to ascertain the availability of the File as some files were missing even from the beginning of the Digitization Exercise</p>`
+        : '';
+
+      // OFS send block is split into two parts so the File Digital Library can sit
+      // between the Registry (Origin) selector and the Send button.
+      let ofsRegistry = '', ofsButton = '';
+      if (IS_OFS && d.can_send_fr) {
+        const label = d.is_blind ? 'Send Blind Request to SCB Monitor' : 'Send File Search Request to SCB Monitor';
+        // Button colour matches the status label (e.g. In Pool Office = sky, In Archive = green).
+        const grad  = `linear-gradient(135deg, ${meta.color}, ${shade(meta.color, 0.18)})`;
+        // Origin Registry selector (mirrors Create File Tracker). The chosen registry's
+        // short code is carried via the option's data attribute and shown live below.
+        const regOpts = REGISTRIES.map(r =>
+          `<option value="${esc(r.name)}" data-code="${esc(r.registry_code || '')}">${esc(r.name)}</option>`
+        ).join('');
+        // Requester cascade options (Department → Office → Officer; mirrors Quick Search).
+        const fieldSelCss = 'width:100%;height:42px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:0 12px;font-size:13px;color:var(--text);';
+        const fieldInpCss = 'width:100%;height:42px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:0 12px;font-size:13px;color:var(--text);margin-top:8px;';
+        const fieldLblCss = 'display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;';
+        const deptOpts = REQ_DEPARTMENTS.map(dn => `<option value="${esc(dn)}">${esc(dn)}</option>`).join('');
+        ofsRegistry = `
+          <div class="grid-2" style="margin-top:12px;">
+            <div>
+              <label style="${fieldLblCss}"><i class="fas fa-building-columns" style="margin-right:5px;color:var(--primary);"></i>Registry (Origin) <span style="color:#ef4444;">*</span></label>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <select id="fsRegistry" onchange="onFsRegistryChange()" style="flex:1;height:42px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:0 12px;font-size:13px;color:var(--text);">
+                  <option value="">Select Registry (Origin)</option>
+                  ${regOpts}
+                </select>
+                <span id="fsRegistryCode" style="flex-shrink:0;min-width:54px;text-align:center;font-size:12px;font-weight:800;color:var(--primary);background:var(--primary-soft);border:1px solid var(--primary);border-radius:10px;padding:9px 8px;">—</span>
+              </div>
+            </div>
+            <div>
+              <label style="${fieldLblCss}"><i class="fas fa-building" style="margin-right:5px;color:var(--primary);"></i>Requester Office (Departments) <span style="color:#ef4444;">*</span></label>
+              <select id="fsDept" onchange="onFsDeptChange()" style="${fieldSelCss}">
+                <option value="">Select Department</option>
+                ${deptOpts}
+                <option value="${FS_DEPT_OTHER}">Other…</option>
+              </select>
+              <input id="fsDeptOther" type="text" placeholder="Specify department *" style="${fieldInpCss}display:none;">
+            </div>
+          </div>
+          <div class="grid-2" style="margin-top:12px;">
+            <div>
+              <label style="${fieldLblCss}"><i class="fas fa-briefcase" style="margin-right:5px;color:var(--primary);"></i>Requester Office <span style="color:#ef4444;">*</span></label>
+              <select id="fsOffice" onchange="onFsOfficeChange()" disabled style="${fieldSelCss}">
+                <option value="">Select Office</option>
+              </select>
+              <input id="fsOfficeOther" type="text" placeholder="Specify office *" style="${fieldInpCss}display:none;">
+            </div>
+            <div>
+              <label style="${fieldLblCss}"><i class="fas fa-user-tie" style="margin-right:5px;color:var(--primary);"></i>Requester Officer <span style="color:#ef4444;">*</span></label>
+              <input id="fsOfficer" type="text" readonly value="${esc(CURRENT_USER.name)}" title="The logged-in officer raising this request" style="${fieldSelCss}opacity:.85;cursor:not-allowed;">
+            </div>
+          </div>`;
+        // Send button is disabled until an origin Registry is chosen.
+        ofsButton = `<button id="fsSendBtn" class="btn" disabled style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};opacity:.5;cursor:not-allowed;" onclick="sendFrFromSearch(this)"><i class="fas fa-paper-plane"></i> ${label}</button>`;
+      }
+
+      // In-transit files: re-direct the request straight to the office currently holding
+      // the file (its last receiving officer) instead of routing it to the SCB Monitor.
+      let redirectSend = '';
+      if (IS_OFS && d.can_redirect) {
+        const office = d.current_location || 'Current Office';
+        const grad   = 'linear-gradient(135deg,#f59e0b,#d97706)';
+        // Button names the office/location (the "where"); the line below names the
+        // Receiving Officer holding it (the "who") and their office when both differ.
+        const officer = d.receiving_officer_name || '';
+        let dept = d.receiving_department || '';
+        if (dept && !/department$/i.test(dept.trim())) dept = dept.trim() + ' Department';
+        let subline = '';
+        if (officer) {
+          const deptPart = (dept && esc(dept) !== esc(officer)) ? ` (${esc(dept)})` : '';
+          subline = `<p style="margin-top:6px;font-size:12px;color:var(--muted);text-align:center;">Receiving Officer: <strong>${esc(officer)}</strong>${deptPart} &middot; currently holding the file.</p>`;
+        } else if (office) {
+          subline = `<p style="margin-top:6px;font-size:12px;color:var(--muted);text-align:center;">This request will be sent to <strong>${esc(office)}</strong>, which currently holds the file.</p>`;
+        }
+        redirectSend = `<button class="btn" style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};" onclick="redirectFromSearch(this)"><i class="fas fa-user-tag"></i> Re-direct Request to ${esc(office)}</button>` + subline;
+      }
 
       // Mobile File Search is a read-only locator. But if this file has an OPEN
       // File Request waiting on this SCB Monitor, offer a Found/Not-Found shortcut.
@@ -1052,20 +1330,120 @@ async function searchFile() {
         }
       }
 
+      // Holders + latest Deeds Bill Balance — collapsed by default, sits right under
+      // the file-number header. Always shown; the bill section falls back to "—".
+      let holderBill = '';
+      {
+        // Every row is always rendered; a missing value falls back to "—" throughout.
+        const DASH = '<span style="color:var(--muted);">—</span>';
+        const has  = v => !(v === null || v === undefined || v === '');
+        const dRow = (l, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--border);"><span style="font-size:11px;color:var(--muted);">${esc(l)}</span><span style="font-size:12px;font-weight:600;text-align:right;">${has(v) ? esc(v) : DASH}</span></div>`;
+        const dMoney = (l, v) => dRow(l, has(v) ? '₦' + Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null);
+        const bb   = d.bill_balance || {};
+        const fees = bb.fees || {};
+        // A bold money row used for the Total / Balance Due summary lines.
+        const dTotal = (l, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;"><span style="font-size:12px;font-weight:800;">${esc(l)}</span><span style="font-size:13px;font-weight:800;text-align:right;">${has(v) ? '₦' + Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : DASH}</span></div>`;
+        // Fee labels mirror the "Generate Bill Balance" wizard (Fees & Charges step).
+        const FEE_KEYS = ['Registration Fees', 'Survey Fees', 'Preparation Fees', 'Compensation Fees', 'Development Charges'];
+        const billHtml = `
+          <details style="margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;">
+            <summary style="cursor:pointer;list-style:none;padding:8px 10px;font-size:11px;font-weight:800;color:var(--text);"><i class="fas fa-file-invoice-dollar" style="margin-right:6px;color:var(--primary);"></i>Bill Balance Details</summary>
+            <div style="padding:0 10px 8px;">
+              <div style="margin-bottom:4px;">
+                <span style="font-size:11px;font-weight:800;">Bill Ref ID: ${bb.reference ? `<span style="color:#dc2626;">${esc(bb.reference)}</span>` : DASH}</span>
+              </div>
+              ${dRow('Area (sqm)', has(bb.area) ? Number(bb.area).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null)}
+              ${dMoney('Unit Cost', bb.unit_cost)}
+              ${dMoney('Rent / Annum', bb.amount)}
+              ${dRow('Rent Period', [bb.rent_from_year, bb.rent_to_year].filter(Boolean).join(' – '))}
+              ${dMoney('Cumulative Annual', bb.cumulative_annual)}
+              ${FEE_KEYS.map(k => dMoney(k, fees[k])).join('')}
+              ${dRow('Date of Expiry', bb.expiry)}
+              <div style="margin-top:6px;padding-top:4px;border-top:1px dashed var(--border);">
+                ${dTotal('Total Amount', bb.total_amount)}
+              </div>
+            </div>
+          </details>`;
+        // Ownership history — a vertical timeline of holders derived from the
+        // cross-table property timeline. Falls back to the two flat indexing
+        // rows when the file has no transaction chain.
+        const holderHistoryHtml = (() => {
+          const hist = Array.isArray(d.holder_history) ? d.holder_history : [];
+          if (!hist.length) {
+            return dRow('Original Holder', d.original_holder) + dRow('Current Holder', d.current_holder);
+          }
+          // Render a single holder node. `last` controls the connecting rail.
+          const buildNode = (h, isFirst, isLast) => {
+            const dot = isFirst ? '#059669' : (isLast ? 'var(--primary)' : 'var(--surface-3)');
+            const dotIcon = (isFirst || isLast) ? '#fff' : 'var(--muted)';
+            const line = !isLast ? `<span style="position:absolute;left:6px;top:17px;bottom:-2px;width:2px;background:var(--border);"></span>` : '';
+            const tag = isFirst
+              ? `<span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#059669;background:#05966915;border:1px solid #05966944;padding:1px 6px;border-radius:20px;white-space:nowrap;">Original</span>`
+              : (isLast ? `<span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--primary);background:var(--primary-soft);border:1px solid var(--primary);padding:1px 6px;border-radius:20px;white-space:nowrap;">Current</span>` : '');
+            const toLine = h.to ? `<div style="font-size:11px;font-weight:600;color:var(--text);margin-top:2px;"><i class="fas fa-arrow-right-long" style="font-size:9px;margin-right:4px;color:var(--primary);"></i>${esc(h.to)}</div>` : '';
+            return `
+              <div style="position:relative;padding-left:24px;padding-bottom:${isLast ? '0' : '14px'};">
+                ${line}
+                <span style="position:absolute;left:0;top:1px;width:15px;height:15px;border-radius:50%;background:${dot};border:2px solid var(--border);display:flex;align-items:center;justify-content:center;">
+                  <i class="fas fa-user" style="font-size:7px;color:${dotIcon};"></i>
+                </span>
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap;">
+                  <span style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;">${esc(h.holder)}</span>
+                  ${tag}
+                </div>
+                ${toLine}
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+                  <span style="font-size:10px;font-weight:700;color:var(--text);background:var(--surface-2);border:1px solid var(--border);padding:1px 7px;border-radius:20px;">${esc(h.transaction_type)}</span>
+                  ${h.date ? `<span style="font-size:10px;color:var(--muted);"><i class="far fa-calendar" style="margin-right:3px;"></i>${esc(h.date)}</span>` : ''}
+                </div>
+              </div>`;
+          };
+
+          const nodes = hist.map((h, i) => buildNode(h, i === 0, i === hist.length - 1)).join('');
+          return `
+            <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:2px 0 10px;">Ownership</div>
+            <div style="padding:0 2px 2px;">${nodes}</div>`;
+        })();
+        holderBill = `
+          <details style="margin-bottom:12px;border:1px solid var(--border);border-radius:10px;">
+            <summary style="cursor:pointer;list-style:none;padding:9px 12px;font-size:12px;font-weight:700;color:var(--text);"><i class="fas fa-user-tag" style="margin-right:6px;color:var(--primary);"></i>Holders &amp; Bill Balance Details</summary>
+            <div style="padding:2px 12px 10px;">
+              ${holderHistoryHtml}
+              ${billHtml}
+            </div>
+          </details>`;
+      }
+
       result.innerHTML = `
         <div class="result-card">
           <div style="background:var(--surface-2);padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;">
             <div>
               <div style="font-size:15px;font-weight:800;">${esc(d.file_number)}</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:3px;">${esc(d.file_title||'—')}</div>
+              <div style="font-size:12px;font-weight:600;color:var(--text);opacity:.82;margin-top:3px;">${esc(d.file_title||'—')}</div>
             </div>
             <span style="white-space:nowrap;font-size:11px;font-weight:700;color:${meta.color};background:${meta.color}1a;border:1px solid ${meta.color}55;padding:5px 10px;border-radius:30px;"><i class="fas ${meta.icon}" style="margin-right:4px;"></i>${esc(meta.label)}</span>
           </div>
           <div style="padding:12px 16px;">
+            ${Number(d.dciv_status) === 1 ? `
+            <div style="margin-bottom:12px;background:#fff1f2;border:1px solid #fecdd3;border-radius:12px;padding:10px 12px;">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="font-size:13px;font-weight:800;color:#be123c;"><i class="fas fa-triangle-exclamation" style="margin-right:5px;"></i>Under Investigation</span>
+                ${d.dciv_fileno ? `<span style="font-size:11px;font-weight:700;color:#be123c;background:#ffe4e6;border:1px solid #fecdd3;padding:3px 9px;border-radius:30px;white-space:nowrap;">${esc(d.dciv_fileno)}</span>` : ''}
+              </div>
+              ${d.dciv_reason ? `<div style="font-size:11px;color:#9f1239;margin-top:6px;line-height:1.5;">${esc(d.dciv_reason)}</div>` : ''}
+            </div>` : ''}
+            ${holderBill}
             ${rowsHtml}
+            ${ofsRegistry}
+            <div id="fsDigital" style="margin-top:12px;"></div>
+            ${ofsButton}
+            ${redirectSend}
+            ${physicalNote}
             ${frShortcut}
           </div>
         </div>`;
+      // Load the File Digital Library (same source as the DFR preview) inline.
+      loadFsDigital(d.file_number);
     } else {
       result.innerHTML = `<p style="color:#ef4444;font-size:12px;margin-top:6px;"><i class="fas fa-times-circle"></i> Could not resolve "<strong>${esc(val)}</strong>".</p>`;
     }
@@ -1074,6 +1452,378 @@ async function searchFile() {
   }
 
   btn.disabled = false; btn.innerHTML = '<i class="fas fa-search"></i>';
+}
+
+// ─── File Digital Library (cover card + gallery; shared source with DFR) ────
+const DIG_DIGITAL_URL  = '{{ route('digital-request.digital-files') }}';
+const DIG_REGISTRY_URL = '{{ route('digital-request.registry-files') }}';
+const DIG_IMG = ['jpg','jpeg','png','tif','tiff','gif','webp'];
+let digFiles = [], digIndex = 0, digStripBuilt = false;
+
+// Load the digital copy for a file. When a Registry (Origin) is selected, the
+// registry folder source (SLTR / Cadastral / KANGIS / Physical Planning) is
+// tried first; otherwise (and as a fallback) the FileIndexing-based library
+// (Land registries) is used.
+async function loadFsDigital(fileNo, registry = null) {
+  const box = document.getElementById('fsDigital');
+  if (!box) return;
+  box.innerHTML = `<div class="dig-empty"><i class="fas fa-spinner fa-spin"></i> Checking the digital library…</div>`;
+  try {
+    let files = [];
+    if (registry) {
+      const r = await api(DIG_REGISTRY_URL, { method: 'POST', body: JSON.stringify({ file_no: fileNo, registry }) });
+      if (r && r.available && Array.isArray(r.files)) files = r.files;
+    }
+    if (!files.length) {
+      const d = await api(DIG_DIGITAL_URL, { method: 'POST', body: JSON.stringify({ file_no: fileNo }) });
+      files = (d && d.available && Array.isArray(d.files)) ? d.files : [];
+    }
+    if (files.length) files = await pruneMissing(files);
+    digFiles = files;
+    renderFsDigital();
+  } catch (e) {
+    digFiles = [];
+    box.innerHTML = `<div class="dig-empty"><i class="fas fa-exclamation-circle"></i> Could not load the digital file.</div>`;
+  }
+}
+
+// Drop pages whose soft copy is missing — only on a definitive 404 (fail open).
+async function pruneMissing(files) {
+  const present = new Array(files.length).fill(true);
+  let i = 0;
+  const worker = async () => {
+    while (i < files.length) {
+      const idx = i++;
+      try { const r = await fetch(files[idx].url, { method: 'HEAD' }); if (r.status === 404) present[idx] = false; }
+      catch (e) {}
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(8, files.length) }, worker));
+  return files.filter((_, idx) => present[idx]);
+}
+
+const isImgFile = f => DIG_IMG.includes((f.ext || '').toLowerCase());
+
+function renderFsDigital() {
+  digStripBuilt = false;
+  const box = document.getElementById('fsDigital');
+  if (!box) return;
+  if (!digFiles.length) {
+    box.innerHTML = `<div class="dig-empty"><i class="fas fa-folder-open"></i> No digital copy found in the library for this file.</div>`;
+    return;
+  }
+  const cover = digFiles[0];
+  const n = digFiles.length;
+  const coverInner = isImgFile(cover)
+    ? `<img src="${esc(cover.url)}" alt="cover" loading="lazy" onerror="this.parentNode.innerHTML='<i class=\\'fas fa-images\\'></i>'">`
+    : `<i class="fas fa-file-${cover.ext === 'pdf' ? 'pdf' : 'alt'}"></i>`;
+  box.innerHTML =
+    `<div class="dig-cover" onclick="openDigViewer(0)">
+       <div class="dig-cover-stack"><div class="dig-cover-page">${coverInner}</div></div>
+       <div class="dig-cover-meta">
+         <div class="dig-cover-title"><i class="fas fa-images"></i> File Digital Library</div>
+         <div class="dig-cover-sub">${n} page${n > 1 ? 's' : ''} in the digital library</div>
+         <div class="dig-cover-cta"><i class="fas fa-expand"></i> Tap to open gallery</div>
+       </div>
+       <i class="fas fa-chevron-right dig-cover-chev"></i>
+     </div>`;
+}
+
+function openDigViewer(i) {
+  if (!digFiles.length) return;
+  digIndex = Math.max(0, Math.min(i, digFiles.length - 1));
+  document.getElementById('digViewer').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  buildDigStrip();
+  renderDigViewer();
+}
+function closeDigViewer() {
+  document.getElementById('digViewer').classList.remove('open');
+  document.getElementById('digStageInner').innerHTML = '';
+  document.body.style.overflow = '';
+}
+function digNext() { if (digIndex < digFiles.length - 1) { digIndex++; renderDigViewer(); } }
+function digPrev() { if (digIndex > 0) { digIndex--; renderDigViewer(); } }
+
+function renderDigViewer() {
+  const f = digFiles[digIndex];
+  if (!f) return;
+  const stage = document.getElementById('digStageInner');
+  if (isImgFile(f)) {
+    stage.innerHTML = `<i class="fas fa-spinner fa-spin dig-spin"></i>`;
+    const img = new Image();
+    img.alt = f.name;
+    img.onload = () => { stage.innerHTML = ''; stage.appendChild(img); };
+    img.onerror = () => { stage.innerHTML = `<div style="color:#fff;font-size:13px;">Could not load this page.</div>`; };
+    img.src = f.url;
+  } else {
+    stage.innerHTML = `<iframe src="${esc(f.url)}" title="${esc(f.name)}"></iframe>`;
+  }
+  document.getElementById('digVName').textContent = f.name;
+  document.getElementById('digVCount').textContent = `Page ${digIndex + 1} of ${digFiles.length}`;
+  document.getElementById('digNavPrev').disabled = digIndex === 0;
+  document.getElementById('digNavNext').disabled = digIndex === digFiles.length - 1;
+  [digIndex - 1, digIndex + 1].forEach(j => { const nf = digFiles[j]; if (nf && isImgFile(nf)) { const im = new Image(); im.src = nf.url; } });
+  const strip = document.getElementById('digStrip');
+  strip.querySelectorAll('.dig-strip-item').forEach((el, j) => {
+    el.classList.toggle('active', j === digIndex);
+    if (j === digIndex) el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  });
+}
+
+function buildDigStrip() {
+  if (digStripBuilt) return;
+  const strip = document.getElementById('digStrip');
+  strip.innerHTML = digFiles.map((f, i) => {
+    const thumb = isImgFile(f)
+      ? `<img src="${esc(f.url)}" alt="" loading="lazy" onerror="this.outerHTML='<i class=\\'fas fa-file-image\\'></i>'">`
+      : `<i class="fas fa-file-${f.ext === 'pdf' ? 'pdf' : 'alt'}"></i>`;
+    return `<div class="dig-strip-item" onclick="digGoto(${i})">${thumb}<span class="dig-strip-n">${i + 1}</span></div>`;
+  }).join('');
+  digStripBuilt = true;
+}
+function digGoto(i) { digIndex = Math.max(0, Math.min(i, digFiles.length - 1)); renderDigViewer(); }
+
+document.addEventListener('keydown', (e) => {
+  if (!document.getElementById('digViewer').classList.contains('open')) return;
+  if (e.key === 'Escape') closeDigViewer();
+  else if (e.key === 'ArrowRight') digNext();
+  else if (e.key === 'ArrowLeft') digPrev();
+});
+(function () {
+  const stage = document.getElementById('digStage');
+  if (!stage) return;
+  let x0 = null, y0 = null;
+  stage.addEventListener('touchstart', e => { const t = e.changedTouches[0]; x0 = t.clientX; y0 = t.clientY; }, { passive: true });
+  stage.addEventListener('touchend', e => {
+    if (x0 === null) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - x0, dy = t.clientY - y0;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? digNext() : digPrev(); }
+    x0 = y0 = null;
+  }, { passive: true });
+})();
+
+// OFS: raise a (Blind) File Search Request from the locator. The backend tags it
+// as OFS (is_ofs + priority from the user's rank) using the authenticated user.
+// Reflect the selected registry's short code next to the dropdown.
+function onFsRegistryChange() {
+  const sel  = document.getElementById('fsRegistry');
+  const code = document.getElementById('fsRegistryCode');
+  if (!sel || !code) return;
+  const opt = sel.options[sel.selectedIndex];
+  code.textContent = (opt && opt.getAttribute('data-code')) ? opt.getAttribute('data-code') : '—';
+  // Gate the Send button: only enabled once an origin Registry is selected.
+  const btn = document.getElementById('fsSendBtn');
+  if (btn) {
+    const ok = !!(sel.value || '').trim();
+    btn.disabled = !ok;
+    btn.style.opacity = ok ? '1' : '.5';
+    btn.style.cursor  = ok ? 'pointer' : 'not-allowed';
+  }
+
+  // Reload the digital copy from the selected registry's folder (falls back to
+  // the FileIndexing library when that registry has no folder for this file).
+  if (lastFileSearch && lastFileSearch.file_number) {
+    loadFsDigital(lastFileSearch.file_number, (sel.value || '').trim() || null);
+  }
+}
+
+// Requester cascade: Department → Office → Officer (mirrors Quick Search).
+function onFsDeptChange() {
+  const deptSel    = document.getElementById('fsDept');
+  const deptOther  = document.getElementById('fsDeptOther');
+  const officeSel  = document.getElementById('fsOffice');
+  const officeOther= document.getElementById('fsOfficeOther');
+  if (!deptSel || !officeSel) return;
+  const dept = deptSel.value;
+  // "Other" department → reveal a free-text specify input.
+  if (deptOther) {
+    const isOther = dept === FS_DEPT_OTHER;
+    deptOther.style.display = isOther ? 'block' : 'none';
+    if (!isOther) deptOther.value = '';
+  }
+  officeSel.innerHTML = '<option value="">Select Office</option>' +
+    REQ_OFFICES.filter(o => o.department === dept)
+      .map(o => `<option value="${esc(o.code)}" data-name="${esc(o.name)}">${esc(o.name)}</option>`).join('') +
+    `<option value="${FS_OFFICE_OTHER}">Other…</option>`;
+  officeSel.disabled = false;
+  if (officeOther) { officeOther.style.display = 'none'; officeOther.value = ''; }
+}
+
+function onFsOfficeChange() {
+  const officeSel  = document.getElementById('fsOffice');
+  const officeOther= document.getElementById('fsOfficeOther');
+  if (!officeSel) return;
+  // "Other" office → reveal a free-text specify input.
+  if (officeOther) {
+    const isOther = officeSel.value === FS_OFFICE_OTHER;
+    officeOther.style.display = isOther ? 'block' : 'none';
+    if (!isOther) officeOther.value = '';
+  }
+}
+
+async function sendFrFromSearch(btn) {
+  const d = lastFileSearch;
+  if (!d) return;
+  // Origin Registry is required before a request can be raised.
+  const regSel = document.getElementById('fsRegistry');
+  const registry = regSel ? (regSel.value || '').trim() : '';
+  const registryCode = regSel ? (regSel.options[regSel.selectedIndex]?.getAttribute('data-code') || '') : '';
+  if (regSel && !registry) {
+    toast('Please select the origin Registry first.', 'error');
+    regSel.focus();
+    return;
+  }
+
+  // Requester cascade (Department → Office → Officer).
+  const deptSel    = document.getElementById('fsDept');
+  const officeSel  = document.getElementById('fsOffice');
+  const officerSel = document.getElementById('fsOfficer');
+  const deptOther  = document.getElementById('fsDeptOther');
+  const officeOther= document.getElementById('fsOfficeOther');
+
+  const deptIsOther = deptSel && deptSel.value === FS_DEPT_OTHER;
+  const requesterDept = deptIsOther
+    ? (deptOther ? deptOther.value.trim() : '')
+    : (deptSel ? deptSel.value.trim() : '');
+
+  const officeOpt     = officeSel ? officeSel.options[officeSel.selectedIndex] : null;
+  const officeIsOther = officeOpt && officeOpt.value === FS_OFFICE_OTHER;
+  const requesterOffice = officeIsOther
+    ? (officeOther ? officeOther.value.trim() : '')
+    : ((officeOpt && officeOpt.value) ? (officeOpt.getAttribute('data-name') || officeOpt.textContent.trim()) : '');
+  const requesterOfficeCode = officeIsOther ? '' : ((officeOpt && officeOpt.value) ? officeOpt.value : '');
+
+  // Requester Officer is the logged-in user raising the request.
+  const receivingOfficer = ((officerSel && officerSel.value.trim()) || CURRENT_USER.name || '').trim();
+
+  if (deptSel && !requesterDept)   { toast('Please select the requester department.', 'error'); (deptIsOther ? deptOther : deptSel).focus(); return; }
+  if (officeIsOther && !requesterOffice) { toast('Please specify the requester office.', 'error'); officeOther.focus(); return; }
+  if (officeSel && !requesterOffice) { toast('Please select the requester office.', 'error'); officeSel.focus(); return; }
+  if (!receivingOfficer) { toast('Could not determine the requester officer (logged-in user).', 'error'); return; }
+  const original = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…';
+  try {
+    const res = await api(`{{ route('create-file-tracker.file-request') }}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        file_number:     d.file_number,
+        file_title:      d.file_title || null,
+        resolved_status: d.status || null,
+        current_location: d.current_location || null,
+        registry:        registry || null,
+        registry_code:   registryCode || null,
+        requester_department:  requesterDept || null,
+        requester_office:      requesterOffice || null,
+        requester_office_code: requesterOfficeCode || null,
+        receiving_officer:     receivingOfficer || null,
+      }),
+    });
+    if (res.success) {
+      toast(`${d.is_blind ? 'Blind ' : ''}Request ${res.data?.request_no || ''} sent to SCB`);
+      btn.outerHTML = `<div style="margin-top:12px;text-align:center;font-size:12px;font-weight:700;color:#10b981;"><i class="fas fa-check-circle"></i> Request ${esc(res.data?.request_no || '')} sent to SCB Monitor</div>`;
+      if (IS_OFS && document.getElementById('myReqContainer')) loadMyRequests();
+    } else if (res.duplicate) {
+      toast(res.message || 'This file already has an open request to SCB', 'error');
+      btn.disabled = false; btn.innerHTML = original;
+    } else {
+      toast(res.message || 'Could not send request', 'error');
+      btn.disabled = false; btn.innerHTML = original;
+    }
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+    btn.disabled = false; btn.innerHTML = original;
+  }
+}
+
+// OFS: re-direct an in-transit file's request straight to the office currently
+// holding it. Mirrors the Digital File Request "Send Request to {office}" redirect —
+// creates a redirected request routed to the last receiving officer's account.
+async function redirectFromSearch(btn) {
+  const d = lastFileSearch;
+  if (!d) return;
+  const original = btn.innerHTML;
+  const office = d.current_location || 'Current Office';
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…';
+  try {
+    const res = await api(`{{ route('digital-request.store') }}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        file_no:               d.file_number,
+        file_title:            d.file_title || null,
+        request_type:          'Physical',
+        is_redirected:         true,
+        receiving_officer:     d.receiving_officer_name || null,
+        current_file_location: d.current_location || null,
+        current_file_holder:   d.receiving_officer_name || null,
+      }),
+    });
+    if (res.success) {
+      toast(`Request ${res.request_no || ''} re-directed to ${office}`);
+      btn.outerHTML = `<div style="margin-top:12px;text-align:center;font-size:12px;font-weight:700;color:#10b981;"><i class="fas fa-check-circle"></i> Request ${esc(res.request_no || '')} re-directed to ${esc(office)}</div>`;
+      if (IS_OFS && document.getElementById('myReqContainer')) loadMyRequests();
+    } else if (res.duplicate) {
+      toast(res.message || 'This file already has an open request', 'error');
+      btn.disabled = false; btn.innerHTML = original;
+    } else {
+      toast(res.message || 'Could not re-direct request', 'error');
+      btn.disabled = false; btn.innerHTML = original;
+    }
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+    btn.disabled = false; btn.innerHTML = original;
+  }
+}
+
+// ─── OFS: My File Requests (track what I sent + outcome) ───────────────────
+async function loadMyRequests() {
+  const box = document.getElementById('myReqContainer');
+  if (!box) return;
+  box.innerHTML = '<div class="card" style="padding:30px;text-align:center;color:var(--faint);"><i class="fas fa-spinner fa-spin fa-lg"></i></div>';
+  try {
+    const res = await api(`${MOB_BASE}/my-file-requests`);
+    const list = (res && res.success) ? (res.data || []) : [];
+    if (!list.length) {
+      box.innerHTML = '<div class="card" style="padding:40px;text-align:center;color:var(--faint);"><i class="fas fa-inbox fa-2x"></i><p style="margin-top:12px;">You haven\'t sent any file requests yet.</p></div>';
+      return;
+    }
+    box.innerHTML = list.map(renderMyRequestCard).join('');
+  } catch(e) {
+    box.innerHTML = `<p style="color:#ef4444;font-size:12px;">Error loading your requests: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderMyRequestCard(fr) {
+  const m = FSR_STATUS_META[fr.status] || FSR_STATUS_META.PENDING;
+  // Logged-out outcome: green "to your office" callout if it's out to this user,
+  // otherwise a neutral note showing where the file currently is.
+  let loggedOut = '';
+  if (fr.logged_out) {
+    if (fr.logged_out_to_me) {
+      loggedOut = `<div style="margin-top:8px;display:flex;align-items:center;gap:7px;background:rgba(16,185,129,0.12);border:1px solid #10b98155;border-radius:10px;padding:8px 10px;font-size:11.5px;font-weight:700;color:#059669;"><i class="fas fa-building-circle-check"></i> Logged out to your office${fr.logged_out_office ? ' · '+esc(fr.logged_out_office) : ''}</div>`;
+    } else {
+      loggedOut = `<div style="margin-top:8px;display:flex;align-items:center;gap:7px;background:rgba(245,158,11,0.12);border:1px solid #f59e0b55;border-radius:10px;padding:8px 10px;font-size:11.5px;font-weight:700;color:#b45309;"><i class="fas fa-arrow-right-from-bracket"></i> Logged out${fr.logged_out_office ? ' to '+esc(fr.logged_out_office) : ''}${fr.handler ? ' · '+esc(fr.handler) : ''}</div>`;
+    }
+  }
+  return `
+    <div class="result-card" style="margin-bottom:12px;${fr.is_ofs ? 'border-left:4px solid #f59e0b;' : ''}">
+      <div style="padding:14px 16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <div style="font-size:15px;font-weight:800;">${esc(fr.file_number)}</div>
+          <span style="white-space:nowrap;font-size:10px;font-weight:800;padding:3px 9px;border-radius:30px;background:${m.bg};color:${m.fg};">${esc(m.label)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">${esc(fr.file_title||'—')}</div>
+        <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;">
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:30px;background:${fr.is_dfr ? '#e5e7eb' : (fr.is_blind ? '#fee2e2' : '#e0f2fe')};color:${fr.is_dfr ? '#374151' : (fr.is_blind ? '#b91c1c' : '#0369a1')};"><i class="fas ${fr.is_dfr ? 'fa-file-lines' : (fr.is_blind ? 'fa-eye-slash' : 'fa-folder-open')}"></i> ${esc(fr.request_type || 'Open Request')}</span>
+          <span style="font-size:10px;font-weight:700;color:var(--primary);background:var(--primary-soft);padding:2px 8px;border-radius:30px;">${esc(fr.request_no)}</span>
+        </div>
+        ${fr.feedback_note ? `<div style="margin-top:8px;font-size:11.5px;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:7px 9px;"><i class="fas fa-comment-dots" style="margin-right:5px;color:var(--primary);"></i>${esc(fr.feedback_note)}</div>` : ''}
+        ${loggedOut}
+        ${fr.current_location && !fr.logged_out ? `<div style="font-size:11px;color:var(--faint);margin-top:6px;"><i class="fas fa-map-marker-alt" style="margin-right:4px;color:var(--primary);"></i>${esc(fr.current_location)}</div>` : ''}
+        ${fr.created_at ? `<div style="font-size:11px;color:var(--faint);margin-top:6px;"><i class="fas fa-clock" style="margin-right:4px;color:var(--primary);"></i>Sent ${esc(fr.created_at)}${fr.responded_at ? ' · Responded '+esc(fr.responded_at) : ''}</div>` : ''}
+      </div>
+    </div>`;
 }
 
 // Raise an FR straight from a Pool-Office search result (web → SCB pipeline mirror).
@@ -1171,8 +1921,8 @@ function renderFsrLog() {
             <div style="font-size:15px;font-weight:800;">${esc(fr.file_number)}</div>
             <span style="font-size:9px;font-weight:800;padding:3px 9px;border-radius:30px;background:${meta.bg};color:${meta.fg};">${meta.label}</span>
           </div>
-          <div style="font-size:12px;color:var(--muted);margin-top:4px;">${esc(fr.file_title||'—')}</div>
-          <div style="font-size:11px;color:var(--faint);margin-top:8px;display:flex;flex-direction:column;gap:5px;">
+          <div style="font-size:12px;color:var(--text);margin-top:4px;">${esc(fr.file_title||'—')}</div>
+          <div style="font-size:12px;color:var(--text);margin-top:8px;display:flex;flex-direction:column;gap:5px;">
             <span><i class="fas fa-hashtag" style="width:14px;color:var(--primary);"></i> ${esc(fr.request_no)}</span>
             <span><i class="fas ${fr.is_dfr ? 'fa-file-lines' : (fr.is_blind ? 'fa-eye-slash' : 'fa-folder-open')}" style="width:14px;color:var(--primary);"></i> ${esc(fr.request_type || 'Open Request')}</span>
             <span><i class="fas fa-user" style="width:14px;color:var(--primary);"></i> By ${esc(fr.requester||'—')}</span>
@@ -1181,9 +1931,36 @@ function renderFsrLog() {
             ${fr.responded_at ? `<span><i class="fas fa-reply" style="width:14px;color:var(--primary);"></i> ${meta.label} ${esc(fr.responded_at)}${fr.responder ? ' · '+esc(fr.responder) : ''}</span>` : ''}
             ${fr.feedback_note ? `<span style="font-style:italic;">"${esc(fr.feedback_note)}"</span>` : ''}
           </div>
+          ${(IS_SUPER_ADMIN && fr.can_revert) ? `
+          <div data-fr="${fr.id}" style="margin-top:12px;">
+            <button class="btn" style="width:100%;padding:11px;font-size:13px;box-shadow:none;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;" onclick="revertFr(${fr.id}, this)"><i class="fas fa-rotate-left"></i> Revert response</button>
+          </div>` : ''}
         </div>
       </div>`;
     }).join('');
+}
+
+// Revert (undo) an accidental Found / Not-Found response, putting the request
+// back in the Open queue. Only offered while the Front Desk hasn't acted yet.
+async function revertFr(id, btn) {
+  if (!confirm('Revert this response and send the request back to the open queue?')) return;
+  const original = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reverting…';
+  try {
+    const res = await api(`${MOB_BASE}/file-requests/${id}/revert`, { method: 'POST' });
+    if (res && res.success) {
+      toast('Response reverted — back in the open queue');
+      // Reload both lists and drop the user back on the Open tab.
+      loadFileRequests();
+      setFrView('open');
+    } else {
+      toast(res.message || 'Could not revert this response', 'error');
+      btn.disabled = false; btn.innerHTML = original;
+    }
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+    btn.disabled = false; btn.innerHTML = original;
+  }
 }
 
 // ─── SCB Monitor: File Requests inbox ──────────────────────────────────────
@@ -1229,7 +2006,7 @@ function frRequesterDetails(fr) {
   ].filter(([, val]) => val && String(val).trim() && String(val).trim() !== '—');
   if (!rows.length) return '';
   return `<div style="margin-top:8px;display:flex;flex-direction:column;gap:3px;">` + rows.map(([icon, val, label]) =>
-    `<div style="font-size:11px;color:var(--muted);"><i class="fas ${icon}" style="width:13px;margin-right:5px;color:var(--primary);"></i><span style="color:var(--faint);">${label}:</span> ${esc(val)}</div>`
+    `<div style="font-size:12px;color:var(--text);"><i class="fas ${icon}" style="width:13px;margin-right:5px;color:var(--primary);"></i><span style="color:var(--text);">${label}:</span> ${esc(val)}</div>`
   ).join('') + `</div>`;
 }
 
@@ -1244,17 +2021,17 @@ function renderFileRequests() {
   // IDs present in FSR History — a request here AND in Open is a mix-up (flagged with a green dot).
   const histIds = new Set((frLogList || []).map(r => r.id));
   container.innerHTML = list.map(fr => `
-      <div class="result-card" style="margin-bottom:12px;" data-fr="${fr.id}">
+      <div class="result-card" style="margin-bottom:12px;${fr.is_ofs ? 'border-left:4px solid #f59e0b;background:rgba(245,158,11,0.06);' : ''}" data-fr="${fr.id}">
         <div style="padding:14px 16px;">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
             <div style="font-size:15px;font-weight:800;">${histIds.has(fr.id) ? `<span title="Also in FSR History — this request is in both tabs at once" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;margin-right:7px;vertical-align:middle;box-shadow:0 0 0 3px rgba(16,185,129,0.25);"></span>` : ''}${esc(fr.file_number)}</div>
             <span style="font-size:10px;font-weight:700;color:var(--primary);background:var(--primary-soft);padding:3px 9px;border-radius:30px;">${esc(fr.request_no)}</span>
           </div>
-          <div style="font-size:12px;color:var(--muted);margin-top:4px;">${esc(fr.file_title||'—')}</div>
-          <div style="margin-top:6px;"><span style="display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:30px;background:${fr.is_dfr ? '#e5e7eb' : (fr.is_blind ? '#fee2e2' : '#e0f2fe')};color:${fr.is_dfr ? '#374151' : (fr.is_blind ? '#b91c1c' : '#0369a1')};"><i class="fas ${fr.is_dfr ? 'fa-file-lines' : (fr.is_blind ? 'fa-eye-slash' : 'fa-folder-open')}"></i> ${esc(fr.request_type || 'Open Request')}</span></div>
+          <div style="font-size:12px;color:var(--text);margin-top:4px;">${esc(fr.file_title||'—')}</div>
+          <div style="margin-top:6px;"><span style="display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:30px;background:${fr.is_dfr ? '#e5e7eb' : (fr.is_blind ? '#fee2e2' : '#e0f2fe')};color:${fr.is_dfr ? '#374151' : (fr.is_blind ? '#b91c1c' : '#0369a1')};"><i class="fas ${fr.is_dfr ? 'fa-file-lines' : (fr.is_blind ? 'fa-eye-slash' : 'fa-folder-open')}"></i> ${esc(fr.request_type || 'Open Request')}</span>${fr.is_ofs ? `<span style="margin-left:5px;display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:30px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;"><i class="fas fa-crown"></i> OFS${fr.ofs_rank ? ' · '+esc(fr.ofs_rank) : ''}</span>` : ''}</div>
           ${frRequesterDetails(fr)}
-          ${fr.current_location ? `<div style="font-size:11px;color:var(--faint);margin-top:6px;"><i class="fas fa-map-marker-alt" style="margin-right:4px;color:var(--primary);"></i>${esc(fr.current_location)}</div>` : ''}
-          ${fr.created_at ? `<div style="font-size:11px;color:var(--faint);margin-top:6px;"><i class="fas fa-clock" style="margin-right:4px;color:var(--primary);"></i>Sent ${esc(fr.created_at)}</div>` : ''}
+          ${fr.current_location ? `<div style="font-size:12px;color:var(--text);margin-top:6px;"><i class="fas fa-map-marker-alt" style="margin-right:4px;color:var(--primary);"></i>${esc(fr.current_location)}</div>` : ''}
+          ${fr.created_at ? `<div style="font-size:12px;color:var(--text);margin-top:6px;"><i class="fas fa-clock" style="margin-right:4px;color:var(--primary);"></i>Sent ${esc(fr.created_at)}</div>` : ''}
           <div style="display:flex;gap:8px;margin-top:14px;align-items:stretch;">
             <button class="btn" style="flex:1;width:auto;min-width:0;padding:12px;font-size:13px;box-shadow:none;background:linear-gradient(135deg,#10b981,#059669);" onclick="respondFr(${fr.id}, 'found', this)"><i class="fas fa-check"></i> Found</button>
             <button class="btn ghost-btn" style="flex:1;width:auto;min-width:0;padding:12px;font-size:13px;box-shadow:none;" onclick="respondFr(${fr.id}, 'not_found', this)"><i class="fas fa-xmark"></i> Not&nbsp;Found</button>
@@ -1364,6 +2141,8 @@ $('#fileSearchSelect').select2({
   },
 });
 $('#fileSearchSelect').on('select2:select', searchFile);
+// Blind request: typed file number — Enter runs the lookup.
+document.getElementById('fileSearchManual')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchFile(); } });
 
 document.getElementById('startCameraBtn')?.addEventListener('click', startScanner);
 document.getElementById('stopCameraBtn')?.addEventListener('click', stopScanner);
@@ -1394,7 +2173,11 @@ document.querySelectorAll('#create-screen .prio-chip').forEach(chip=>{
 
 // ─── Boot ─────────────────────────────────────────────────────────────────
 applyTheme(document.documentElement.getAttribute('data-theme') || 'light');
-setActiveTab('dashboard');
+// Honour a deep-link hash (e.g. #files) so the bottom-nav on other pages can open
+// a specific screen here. Falls back to the dashboard.
+const VALID_TABS = ['dashboard','files','myreq','requests','scanner','profile'];
+const bootTab = (location.hash || '').replace('#','');
+setActiveTab(VALID_TABS.includes(bootTab) ? bootTab : 'dashboard');
 loadNotifications();
 </script>
 </body>

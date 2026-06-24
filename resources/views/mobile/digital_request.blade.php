@@ -6,18 +6,66 @@
   <meta name="theme-color" content="#450a0a">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>My File Requests</title>
+  {{-- Set theme before paint to avoid flash (shared 'klaes-theme' key, same as the dashboard) --}}
+  <script>
+    (function(){
+      try {
+        var t = localStorage.getItem('klaes-theme') ||
+                ((window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', t);
+      } catch(e){}
+    })();
+  </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
   <style>
+    /* ── Design tokens (light defaults; dark overrides below) ──────── */
+    :root {
+      --dfr-bg: #fff7f7;
+      --dfr-surface: #ffffff;
+      --dfr-surface-2: #fafafa;
+      --dfr-surface-3: #f9fafb;
+      --dfr-text: #1f2937;
+      --dfr-body: #4b5563;
+      --dfr-muted: #6b7280;
+      --dfr-faint: #9ca3af;
+      --dfr-border: #f3f4f6;
+      --dfr-border-strong: #e5e7eb;
+      --dfr-accent: #450a0a;   /* brand, used as text/icon accent */
+      --dfr-brand: #450a0a;    /* solid brand fill (header, primary buttons) */
+      --dfr-brand-grad: linear-gradient(135deg, #450a0a 0%, #6b1010 50%, #450a0a 100%);
+      --dfr-on-brand: #ffffff; /* text/icons sitting on a brand fill */
+      --dfr-active: #450a0a;   /* selected tab / file-type toggle */
+    }
+    [data-theme="dark"] {
+      --dfr-bg: #0c0e15;
+      --dfr-surface: #171a24;
+      --dfr-surface-2: #1d212e;
+      --dfr-surface-3: #242938;
+      --dfr-text: #e7e9f3;
+      --dfr-body: #e7e9f3;
+      --dfr-muted: #c3c8d8;
+      --dfr-faint: #9aa0b6;
+      --dfr-border: #262b3a;
+      --dfr-border-strong: #2f3445;
+      /* Dark mode: keep header + primary buttons dark (no bright gradient), with an
+         indigo accent reserved for the selected tab/toggle so the choice stays clear. */
+      --dfr-accent: #a5b4fc;
+      --dfr-brand: #242938;
+      --dfr-brand-grad: linear-gradient(135deg, #242938 0%, #2f3445 100%);
+      --dfr-on-brand: #e7e9f3;
+      --dfr-active: #6366f1;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Inter', sans-serif; background: #fff7f7; color: #4b5563; height: 100vh; overflow: hidden; position: fixed; width: 100%; }
+    body { font-family: 'Inter', sans-serif; background: var(--dfr-bg); color: var(--dfr-body); height: 100vh; overflow: hidden; position: fixed; width: 100%; transition: background-color .3s ease, color .3s ease; }
     #app { display: flex; flex-direction: column; height: 100vh; width: 100%; overflow: hidden; }
 
     /* ── Header ─────────────────────────────────────── */
-    .dfr-header { background: linear-gradient(135deg, #450a0a 0%, #6b1010 50%, #450a0a 100%); padding: 16px 16px 20px; flex-shrink: 0; }
+    .dfr-header { background: var(--dfr-brand-grad); padding: 16px 16px 20px; flex-shrink: 0; }
     .dfr-header-top { display: flex; align-items: center; justify-content: space-between; }
     .back-btn { background: rgba(255,255,255,0.15); border: none; color: white; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
     .back-btn i { font-size: 16px; }
@@ -27,30 +75,39 @@
     .header-avatar { width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; color: white; font-size: 15px; font-weight: 700; flex-shrink: 0; }
 
     /* ── Toolbar ─────────────────────────────────────── */
-    .toolbar { background: white; border-bottom: 1px solid #f3f4f6; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-    .toolbar-title { font-size: 14px; font-weight: 700; color: #450a0a; display: flex; align-items: center; gap: 6px; }
-    .refresh-btn { background: none; border: 1px solid #fca5a5; border-radius: 30px; padding: 5px 14px; font-size: 11px; font-weight: 600; color: #450a0a; cursor: pointer; display: flex; align-items: center; gap: 5px; }
-    .refresh-btn:active { background: #fff0f0; }
+    .toolbar { background: var(--dfr-surface); border-bottom: 1px solid var(--dfr-border); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .toolbar-title { font-size: 14px; font-weight: 700; color: var(--dfr-accent); display: flex; align-items: center; gap: 6px; }
+    .refresh-btn { background: none; border: 1px solid var(--dfr-accent); border-radius: 30px; padding: 5px 14px; font-size: 11px; font-weight: 600; color: var(--dfr-accent); cursor: pointer; display: flex; align-items: center; gap: 5px; }
+    .refresh-btn:active { background: var(--dfr-surface-2); }
 
     /* ── Scroll area ─────────────────────────────────── */
-    .main-scroll { flex: 1; overflow-y: auto; padding: 14px 14px 24px; -webkit-overflow-scrolling: touch; }
+    .main-scroll { flex: 1; overflow-y: auto; padding: 14px 14px calc(96px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; }
     .main-scroll::-webkit-scrollbar { width: 3px; }
-    .main-scroll::-webkit-scrollbar-thumb { background: #450a0a; border-radius: 10px; }
+    .main-scroll::-webkit-scrollbar-thumb { background: var(--dfr-accent); border-radius: 10px; }
+
+    /* ── Bottom navigation (mirrors the dashboard tab bar) ─────────── */
+    .dfr-nav { position: fixed; bottom: 14px; left: 14px; right: 14px; max-width: 540px; margin: 0 auto; z-index: 9000;
+      background: var(--dfr-surface); border: 1px solid var(--dfr-border); border-radius: 26px; display: flex;
+      padding: 8px 6px calc(8px + env(safe-area-inset-bottom)); box-shadow: 0 10px 34px rgba(0,0,0,0.18); }
+    .dfr-nav a { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+      color: var(--dfr-faint); font-size: 10px; font-weight: 600; text-decoration: none; padding: 7px 4px; border-radius: 16px; }
+    .dfr-nav a i { font-size: 18px; }
+    .dfr-nav a.active { color: var(--dfr-accent); }
 
     /* ── Request cards ─────────────────────────────────── */
-    .req-card { background: white; border-radius: 16px; border: 1px solid #f3f4f6; box-shadow: 0 1px 4px rgba(0,0,0,0.04); margin-bottom: 12px; overflow: hidden; }
-    .req-card-top { padding: 11px 14px; background: #fafafa; border-bottom: 1px solid #f3f4f6; display: flex; justify-content: space-between; align-items: center; }
-    .req-no { font-size: 11px; font-weight: 700; color: #450a0a; }
+    .req-card { background: var(--dfr-surface); border-radius: 16px; border: 1px solid var(--dfr-border); box-shadow: 0 1px 4px rgba(0,0,0,0.04); margin-bottom: 12px; overflow: hidden; }
+    .req-card-top { padding: 11px 14px; background: var(--dfr-surface-2); border-bottom: 1px solid var(--dfr-border); display: flex; justify-content: space-between; align-items: center; }
+    .req-no { font-size: 11px; font-weight: 700; color: var(--dfr-accent); }
     .req-type-badge { font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 30px; }
     .req-type-physical { background: #fef3c7; color: #92400e; }
     .req-type-digital  { background: #dbeafe; color: #1e40af; }
     .req-body { padding: 12px 14px; }
-    .req-file { font-size: 14px; font-weight: 700; color: #1f2937; }
-    .req-title { font-size: 11px; color: #6b7280; margin-top: 2px; }
-    .req-remarks { font-size: 11px; color: #9ca3af; font-style: italic; margin-top: 4px; }
-    .req-loc { display: flex; align-items: flex-start; gap: 6px; font-size: 10.5px; color: #6b7280; margin-top: 9px; padding-top: 9px; border-top: 1px dashed #eee; }
-    .req-loc i { color: #450a0a; margin-top: 1px; }
-    .req-loc-label { font-weight: 700; color: #450a0a; }
+    .req-file { font-size: 14px; font-weight: 700; color: var(--dfr-text); }
+    .req-title { font-size: 11px; color: var(--dfr-muted); margin-top: 2px; }
+    .req-remarks { font-size: 11px; color: var(--dfr-faint); font-style: italic; margin-top: 4px; }
+    .req-loc { display: flex; align-items: flex-start; gap: 6px; font-size: 10.5px; color: var(--dfr-muted); margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--dfr-border-strong); }
+    .req-loc i { color: var(--dfr-accent); margin-top: 1px; }
+    .req-loc-label { font-weight: 700; color: var(--dfr-accent); }
     .req-loc.is-archive i { color: #b45309; }
     .req-loc.is-archive .req-loc-label { color: #b45309; }
     .req-loc.is-transit i { color: #1e40af; }
@@ -61,16 +118,16 @@
     .status-approved { background: #dcfce7; color: #166534; }
     .status-rejected { background: #fee2e2; color: #991b1b; }
     .status-transit  { background: #dbeafe; color: #1e40af; }
-    .req-date { font-size: 10px; color: #9ca3af; }
+    .req-date { font-size: 10px; color: var(--dfr-faint); }
 
     /* ── Empty / loading ─────────────────────────────── */
     .empty-state { text-align: center; padding: 50px 20px; }
-    .empty-state i  { font-size: 48px; color: #fca5a5; margin-bottom: 12px; display: block; }
-    .empty-state h3 { font-size: 15px; font-weight: 700; color: #374151; margin-bottom: 6px; }
-    .empty-state p  { font-size: 12px; color: #9ca3af; }
+    .empty-state i  { font-size: 48px; color: var(--dfr-accent); margin-bottom: 12px; display: block; }
+    .empty-state h3 { font-size: 15px; font-weight: 700; color: var(--dfr-text); margin-bottom: 6px; }
+    .empty-state p  { font-size: 12px; color: var(--dfr-faint); }
 
     /* ── Spinner ─────────────────────────────────────── */
-    .spinner { width: 28px; height: 28px; border: 3px solid rgba(69,10,10,0.15); border-top-color: #450a0a; border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
+    .spinner { width: 28px; height: 28px; border: 3px solid var(--dfr-border-strong); border-top-color: var(--dfr-accent); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── Toast ─────────────────────────────────────────── */
@@ -82,39 +139,89 @@
     @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
     /* ── New Request form ──────────────────────────────── */
-    .nr-card { background: white; border-radius: 16px; border: 1px solid #f3f4f6; box-shadow: 0 1px 4px rgba(0,0,0,0.04); margin-bottom: 14px; overflow: hidden; }
-    .nr-head { padding: 12px 14px; background: #450a0a; color: #fff; display: flex; align-items: center; justify-content: space-between; }
+    .nr-card { background: var(--dfr-surface); border-radius: 16px; border: 1px solid var(--dfr-border); box-shadow: 0 1px 4px rgba(0,0,0,0.04); margin-bottom: 14px; overflow: hidden; }
+    .nr-head { padding: 12px 14px; background: var(--dfr-brand); color: var(--dfr-on-brand); display: flex; align-items: center; justify-content: space-between; }
     .nr-head h3 { font-size: 13px; font-weight: 700; }
     .nr-body { padding: 14px; }
     .nr-type { display: flex; gap: 8px; margin-bottom: 14px; }
-    .nr-type-btn { flex: 1; text-align: center; padding: 10px; border-radius: 12px; border: 1px solid #e5e7eb; background: #fafafa; font-size: 12px; font-weight: 700; color: #6b7280; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
-    .nr-type-btn.active { background: #450a0a; color: #fff; border-color: #450a0a; }
+    .nr-type-btn { flex: 1; text-align: center; padding: 10px; border-radius: 12px; border: 1px solid var(--dfr-border-strong); background: var(--dfr-surface-2); font-size: 12px; font-weight: 700; color: var(--dfr-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .nr-type-btn.active { background: var(--dfr-active); color: #fff; border-color: var(--dfr-active); }
     .fld { margin-bottom: 12px; }
-    .fld label { display: block; font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; margin-bottom: 5px; }
-    .fld input, .fld select, .fld textarea { width: 100%; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 11px 12px; font-size: 14px; font-family: 'Inter', sans-serif; color: #1f2937; outline: none; }
-    .fld input:focus, .fld select:focus, .fld textarea:focus { border-color: #450a0a; box-shadow: 0 0 0 3px rgba(69,10,10,0.08); }
-    .fld input[readonly] { background: #f9fafb; color: #6b7280; }
+    .fld label { display: block; font-size: 11px; font-weight: 700; color: var(--dfr-text); text-transform: uppercase; margin-bottom: 5px; }
+    .fld input, .fld select, .fld textarea { width: 100%; background: var(--dfr-surface); border: 1px solid var(--dfr-border-strong); border-radius: 12px; padding: 11px 12px; font-size: 14px; font-family: 'Inter', sans-serif; color: var(--dfr-text); outline: none; }
+    .fld input:focus, .fld select:focus, .fld textarea:focus { border-color: var(--dfr-brand); box-shadow: 0 0 0 3px var(--dfr-border-strong); }
+    .fld input[readonly] { background: var(--dfr-surface-3); color: var(--dfr-muted); }
     .fld-row { display: flex; gap: 8px; }
     .avail-box { font-size: 11px; border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
     .avail-ok  { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
     .avail-no  { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-    .nr-btn { width: 100%; background: linear-gradient(135deg,#450a0a,#6b1010); color: #fff; border: none; border-radius: 14px; padding: 14px; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .nr-btn { width: 100%; background: var(--dfr-brand-grad); color: var(--dfr-on-brand); border: 1px solid var(--dfr-border-strong); border-radius: 14px; padding: 14px; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
     .nr-btn:disabled { opacity: .6; }
-    .nr-mini-btn { background: #450a0a; color: #fff; border: none; border-radius: 12px; padding: 0 16px; font-size: 12px; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+    .nr-mini-btn { background: var(--dfr-brand); color: var(--dfr-on-brand); border: none; border-radius: 12px; padding: 0 16px; font-size: 12px; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+
+    /* ── Digital file (Doc-Ware) inline cover card ─────── */
+    .dig-empty { background: var(--dfr-surface-2); border: 1px solid var(--dfr-border); border-radius: 12px; padding: 12px; margin-bottom: 12px; font-size: 11px; color: var(--dfr-muted); display: flex; align-items: center; gap: 7px; }
+    .dig-cover { display: flex; align-items: center; gap: 12px; background: var(--dfr-surface-2); border: 1px solid var(--dfr-border); border-radius: 14px; padding: 12px; margin-bottom: 12px; cursor: pointer; transition: border-color .15s, transform .05s; }
+    .dig-cover:active { transform: scale(.99); }
+    .dig-cover:hover { border-color: var(--dfr-active); }
+    /* Stacked-pages thumbnail look */
+    .dig-cover-stack { position: relative; width: 62px; height: 80px; flex-shrink: 0; }
+    .dig-cover-stack::before, .dig-cover-stack::after { content: ''; position: absolute; inset: 0; border-radius: 9px; background: var(--dfr-surface); border: 1px solid var(--dfr-border-strong); }
+    .dig-cover-stack::before { transform: translate(6px, 6px); opacity: .55; }
+    .dig-cover-stack::after  { transform: translate(3px, 3px); opacity: .8; }
+    .dig-cover-page { position: absolute; inset: 0; border-radius: 9px; overflow: hidden; background: var(--dfr-surface); border: 1px solid var(--dfr-border-strong); display: flex; align-items: center; justify-content: center; z-index: 1; }
+    .dig-cover-page img { width: 100%; height: 100%; object-fit: cover; }
+    .dig-cover-page i { font-size: 26px; color: var(--dfr-accent); }
+    .dig-cover-meta { flex: 1; min-width: 0; }
+    .dig-cover-title { font-size: 13px; font-weight: 800; color: var(--dfr-text); display: flex; align-items: center; gap: 6px; }
+    .dig-cover-title i { color: var(--dfr-accent); }
+    .dig-cover-sub { font-size: 11px; color: var(--dfr-muted); margin-top: 3px; }
+    .dig-cover-cta { font-size: 10.5px; font-weight: 700; color: var(--dfr-active); margin-top: 7px; display: inline-flex; align-items: center; gap: 5px; }
+    .dig-cover-chev { color: var(--dfr-faint); font-size: 16px; flex-shrink: 0; }
+
+    /* ── Fullscreen gallery viewer ─────────────────────── */
+    .dig-viewer { position: fixed; inset: 0; z-index: 10001; background: #0b0b0f; display: none; flex-direction: column; }
+    .dig-viewer.open { display: flex; }
+    .dig-viewer-bar { display: flex; align-items: center; gap: 10px; padding: 14px; color: #fff; flex-shrink: 0; background: linear-gradient(to bottom, rgba(0,0,0,.6), transparent); }
+    .dig-viewer-bar .dig-vtitle { flex: 1; min-width: 0; }
+    .dig-viewer-bar .dig-vname { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dig-viewer-bar .dig-vcount { font-size: 11px; opacity: .7; margin-top: 1px; }
+    .dig-viewer-bar button { background: rgba(255,255,255,0.14); border: none; color: #fff; width: 38px; height: 38px; border-radius: 50%; font-size: 15px; cursor: pointer; flex-shrink: 0; }
+    .dig-viewer-bar button:active { background: rgba(255,255,255,0.28); }
+    .dig-stage { flex: 1; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: pan-y; }
+    .dig-stage img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
+    .dig-stage iframe { width: 100%; height: 100%; border: none; background: #fff; }
+    .dig-stage .dig-spin { position: absolute; color: rgba(255,255,255,.8); font-size: 26px; }
+    /* Big tap zones for prev / next on the sides */
+    .dig-nav { position: absolute; top: 0; bottom: 0; width: 26%; display: flex; align-items: center; z-index: 2; border: none; background: transparent; color: rgba(255,255,255,.85); font-size: 20px; cursor: pointer; }
+    .dig-nav:disabled { opacity: 0; pointer-events: none; }
+    .dig-nav .dig-nav-ic { width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; }
+    .dig-nav.prev { left: 0; justify-content: flex-start; padding-left: 10px; }
+    .dig-nav.next { right: 0; justify-content: flex-end; padding-right: 10px; }
+    /* Lazy thumbnail filmstrip */
+    .dig-strip { flex-shrink: 0; display: flex; gap: 6px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); overflow-x: auto; background: rgba(0,0,0,.55); -webkit-overflow-scrolling: touch; }
+    .dig-strip::-webkit-scrollbar { height: 0; }
+    .dig-strip-item { position: relative; flex: 0 0 auto; width: 46px; height: 60px; border-radius: 6px; overflow: hidden; border: 2px solid transparent; background: #1b1f29; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .dig-strip-item.active { border-color: #818cf8; }
+    .dig-strip-item img { width: 100%; height: 100%; object-fit: cover; }
+    .dig-strip-item i { color: rgba(255,255,255,.5); font-size: 14px; }
+    .dig-strip-item .dig-strip-n { position: absolute; bottom: 0; left: 0; right: 0; font-size: 8px; font-weight: 700; text-align: center; background: rgba(0,0,0,.6); color: #fff; }
 
     /* ── Tabs ──────────────────────────────────────────── */
-    .dfr-tabs { display: flex; gap: 6px; background: #fff; padding: 8px 14px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0; }
-    .dfr-tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; border: none; background: #f9fafb; color: #6b7280; font-size: 12.5px; font-weight: 700; border-radius: 12px; cursor: pointer; font-family: 'Inter', sans-serif; }
-    .dfr-tab.active { background: #450a0a; color: #fff; }
+    .dfr-tabs { display: flex; gap: 6px; background: var(--dfr-surface); padding: 8px 14px; border-bottom: 1px solid var(--dfr-border); flex-shrink: 0; }
+    .dfr-tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; border: none; background: var(--dfr-surface-2); color: var(--dfr-muted); font-size: 12.5px; font-weight: 700; border-radius: 12px; cursor: pointer; font-family: 'Inter', sans-serif; }
+    .dfr-tab.active { background: var(--dfr-active); color: #fff; }
 
     /* ── Select2 to match .fld inputs ──────────────────── */
     .select2-container { width: 100% !important; }
-    .select2-container--default .select2-selection--single { height: 46px; border: 1px solid #e5e7eb; border-radius: 12px; display: flex; align-items: center; padding: 0 12px; }
-    .select2-container--default .select2-selection--single .select2-selection__rendered { color: #1f2937; font-size: 14px; line-height: normal; padding: 0; }
-    .select2-container--default .select2-selection--single .select2-selection__placeholder { color: #9ca3af; }
+    .select2-container--default .select2-selection--single { height: 46px; background: var(--dfr-surface); border: 1px solid var(--dfr-border-strong); border-radius: 12px; display: flex; align-items: center; padding: 0 12px; }
+    .select2-container--default .select2-selection--single .select2-selection__rendered { color: var(--dfr-text); font-size: 14px; line-height: normal; padding: 0; }
+    .select2-container--default .select2-selection--single .select2-selection__placeholder { color: var(--dfr-faint); }
     .select2-container--default .select2-selection--single .select2-selection__arrow { height: 44px; }
-    .select2-dropdown { border: 1px solid #e5e7eb; border-radius: 12px; }
-    .select2-container--default .select2-results__option--highlighted[aria-selected] { background: #450a0a; }
+    .select2-dropdown { background: var(--dfr-surface); border: 1px solid var(--dfr-border-strong); border-radius: 12px; }
+    .select2-results__option { color: var(--dfr-text); }
+    .select2-search--dropdown .select2-search__field { background: var(--dfr-surface-2); color: var(--dfr-text); }
+    .select2-container--default .select2-results__option--highlighted[aria-selected] { background: var(--dfr-active); color: #fff; }
     .select2-search--dropdown .select2-search__field { border-radius: 8px; }
   </style>
 </head>
@@ -157,14 +264,17 @@
           <div class="fld">
             <label>File Number *</label>
             <select id="nrFileNo" style="width:100%"></select>
-            <p id="nrCheckHint" style="font-size:10px;color:#9ca3af;margin-top:5px;">Search and select a file number — its location is checked automatically.</p>
+            <p id="nrCheckHint" style="font-size:10px;color:var(--dfr-faint);margin-top:5px;">Search and select a file number — its location is checked automatically.</p>
           </div>
 
           <div id="nrAvail"></div>
 
+          {{-- Inline digital file (Doc-Ware) preview for the searched file --}}
+          <div id="nrDigital"></div>
+
           <div class="fld">
             <label>File Title</label>
-            <input type="text" id="nrFileTitle" placeholder="Auto-filled after location check (editable)" autocomplete="off">
+            <input type="text" id="nrFileTitle" placeholder="Auto-filled after location check" autocomplete="off" readonly>
           </div>
 
           <div class="fld" id="nrDestWrap">
@@ -193,7 +303,7 @@
       <div id="requests-list">
         <div class="empty-state">
           <div class="spinner"></div>
-          <p style="font-size:12px; color:#9ca3af;">Loading your requests…</p>
+          <p style="font-size:12px; color:var(--dfr-faint);">Loading your requests…</p>
         </div>
       </div>
     </div>
@@ -201,7 +311,39 @@
 
 </div>
 
+{{-- Bottom navigation — links back to the dashboard screens; DFR is the active tab --}}
+<nav class="dfr-nav">
+  <a href="{{ route('mobile.dashboard') }}"><i class="fas fa-house"></i><span>Home</span></a>
+  <a href="{{ route('mobile.dashboard') }}#files"><i class="fas fa-magnifying-glass"></i><span>Search</span></a>
+  @if(!empty($isOfs))
+  <a href="{{ route('mobile.dashboard') }}#myreq"><i class="fas fa-list-check"></i><span>My FRs</span></a>
+  @endif
+  @if(!empty($isScbMonitor))
+  <a href="{{ route('mobile.dashboard') }}#requests"><i class="fas fa-clipboard-list"></i><span>FSR</span></a>
+  @endif
+  <a href="{{ route('mobile.dashboard') }}#scanner"><i class="fas fa-qrcode"></i><span>Scan</span></a>
+  <a href="{{ route('mobile.digital-request') }}" class="active"><i class="fas fa-paper-plane"></i><span>DFR</span></a>
+  <a href="{{ route('mobile.dashboard') }}#profile"><i class="fas fa-user"></i><span>Profile</span></a>
+</nav>
+
 <div id="toast"></div>
+
+{{-- Fullscreen digital-file gallery viewer --}}
+<div class="dig-viewer" id="digViewer">
+  <div class="dig-viewer-bar">
+    <div class="dig-vtitle">
+      <div class="dig-vname" id="digVName">—</div>
+      <div class="dig-vcount" id="digVCount">—</div>
+    </div>
+    <button onclick="closeDigViewer()" title="Close"><i class="fas fa-times"></i></button>
+  </div>
+  <div class="dig-stage" id="digStage">
+    <button class="dig-nav prev" id="digNavPrev" onclick="digPrev()" title="Previous"><span class="dig-nav-ic"><i class="fas fa-chevron-left"></i></span></button>
+    <div class="dig-spin" id="digStageInner"></div>
+    <button class="dig-nav next" id="digNavNext" onclick="digNext()" title="Next"><span class="dig-nav-ic"><i class="fas fa-chevron-right"></i></span></button>
+  </div>
+  <div class="dig-strip" id="digStrip"></div>
+</div>
 
 <script>
 const CSRF = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
@@ -210,7 +352,7 @@ const IS_SUPER_ADMIN = @json($isSuperAdmin ?? false);
 
 async function loadMyRequests() {
   const list = document.getElementById('requests-list');
-  list.innerHTML = '<div class="empty-state"><div class="spinner"></div><p style="font-size:12px;color:#9ca3af;">Loading…</p></div>';
+  list.innerHTML = '<div class="empty-state"><div class="spinner"></div><p style="font-size:12px;color:var(--dfr-faint);">Loading…</p></div>';
 
   try {
     const res  = await fetch(`${BASE}/digital-request/list?mine=1&with_location=1`, {
@@ -328,6 +470,10 @@ async function loadOffices() {
       sel.innerHTML = `<option value="">${placeholder}</option>` +
         offices.map(o => `<option value="${o.id}" data-name="${(o.office_name||'').replace(/"/g,'&quot;')}">${o.office_name}</option>`).join('');
       nrOfficesLoaded = true;
+      // Auto-select the user's own office (server flags it) so the destination
+      // defaults based on who is logged in. The user can still change it.
+      const def = offices.find(o => o.is_default);
+      if (def) { sel.value = String(def.id); updateSubmitState(); }
     } else {
       sel.innerHTML = '<option value="">No offices for your department</option>';
     }
@@ -372,6 +518,8 @@ function resetCheck() {
   nrChecked = false;
   nrRouting = null;
   document.getElementById('nrAvail').innerHTML = '';
+  document.getElementById('nrDigital').innerHTML = '';
+  digFiles = [];
   syncDestVisibility();
   updateSubmitState();
 }
@@ -410,6 +558,9 @@ async function checkAvailability() {
   const box = document.getElementById('nrAvail');
   if (!fileNo) { showToast('Enter a file number first', 'error'); return; }
   box.innerHTML = '<div class="avail-box avail-no">Checking file location…</div>';
+  // The digital copy (Doc-Ware) exists independently of the physical location,
+  // so fetch it in parallel with the location check.
+  loadDigitalFiles(fileNo);
   try {
     const res = await fetch(`${BASE}/digital-request/check-availability`, {
       method: 'POST',
@@ -427,9 +578,12 @@ async function checkAvailability() {
         + `Currently with: <strong>${d.receiving_officer || 'Unknown Officer'}</strong>${d.current_office ? ' (' + d.current_office + ')' : ''}.<br>`
         + `This request will be redirected to the last receiving officer.</div>`;
     } else if (d.found) {
-      // File is at the registry → requester selects the destination office.
+      // File located (at the registry, in its Pool Office, or archive per the range
+      // engine) → requester selects the destination office.
       nrRouting = { mode: 'frontdesk' };
-      box.innerHTML = `<div class="avail-box avail-ok"><strong><i class="fas fa-check-circle"></i> Available at Registry</strong><br>`
+      const label = d.location_label || 'Available at Registry';
+      const loc = d.current_office ? `<br>Location: <strong>${esc(d.current_office)}</strong>` : '';
+      box.innerHTML = `<div class="avail-box avail-ok"><strong><i class="fas fa-check-circle"></i> ${esc(label)}</strong>${loc}<br>`
         + `Choose the destination office below to send the request.</div>`;
     } else {
       // No tracker record → still selectable; Front-Desk will locate the file.
@@ -533,6 +687,166 @@ $('#nrFileNo').select2({
     cache: true,
   },
 });
+// ── Digital file (Doc-Ware) inline preview ──────────────────────────────
+let digFiles = [];   // [{name, ext, url}]
+let digIndex = 0;
+const DIG_IMG = ['jpg','jpeg','png','tif','tiff','gif','webp'];
+
+async function loadDigitalFiles(fileNo) {
+  const box = document.getElementById('nrDigital');
+  box.innerHTML = `<div class="dig-empty"><i class="fas fa-spinner fa-spin"></i> Checking the digital library…</div>`;
+  try {
+    const res = await fetch(`${BASE}/digital-request/digital-files`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' },
+      body: JSON.stringify({ file_no: fileNo }),
+    });
+    const d = await res.json();
+    let files = (d && d.available && Array.isArray(d.files)) ? d.files : [];
+    // The DB may list pages whose soft copy is missing — quietly drop those whose
+    // file 404s (only definitive 404s; any other status/error keeps the page).
+    if (files.length) files = await pruneMissing(files);
+    digFiles = files;
+    renderDigital();
+  } catch (e) {
+    digFiles = [];
+    box.innerHTML = `<div class="dig-empty"><i class="fas fa-exclamation-circle"></i> Could not load the digital file.</div>`;
+  }
+}
+
+// HEAD-probe each file; exclude only when the server clearly says 404 (missing
+// soft copy). Network errors / other statuses fail open so we never wipe a file
+// just because HEAD is blocked or slow.
+async function pruneMissing(files) {
+  const present = new Array(files.length).fill(true);
+  let i = 0;
+  const worker = async () => {
+    while (i < files.length) {
+      const idx = i++;
+      try {
+        const r = await fetch(files[idx].url, { method: 'HEAD' });
+        if (r.status === 404) present[idx] = false;
+      } catch (e) { /* keep on network error */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(8, files.length) }, worker));
+  return files.filter((_, idx) => present[idx]);
+}
+
+const isImgFile = f => DIG_IMG.includes((f.ext || '').toLowerCase());
+
+// Inline: a single cover card (no heavy grid — a file can be hundreds of pages).
+function renderDigital() {
+  digStripBuilt = false; // new file set → filmstrip needs rebuilding
+  const box = document.getElementById('nrDigital');
+  if (!digFiles.length) {
+    box.innerHTML = `<div class="dig-empty"><i class="fas fa-folder-open"></i> No digital copy found in the library for this file.</div>`;
+    return;
+  }
+  const cover = digFiles[0];
+  const n = digFiles.length;
+  const coverInner = isImgFile(cover)
+    ? `<img src="${esc(cover.url)}" alt="cover" loading="lazy" onerror="this.parentNode.innerHTML='<i class=\\'fas fa-images\\'></i>'">`
+    : `<i class="fas fa-file-${cover.ext === 'pdf' ? 'pdf' : 'alt'}"></i>`;
+  box.innerHTML =
+    `<div class="dig-cover" onclick="openDigViewer(0)">
+       <div class="dig-cover-stack"><div class="dig-cover-page">${coverInner}</div></div>
+       <div class="dig-cover-meta">
+         <div class="dig-cover-title"><i class="fas fa-images"></i> Digital File</div>
+         <div class="dig-cover-sub">${n} page${n > 1 ? 's' : ''} in the digital library</div>
+         <div class="dig-cover-cta"><i class="fas fa-expand"></i> Tap to open gallery</div>
+       </div>
+       <i class="fas fa-chevron-right dig-cover-chev"></i>
+     </div>`;
+}
+
+// ── Gallery viewer ──────────────────────────────────────────────────────
+let digStripBuilt = false;
+
+function openDigViewer(i) {
+  if (!digFiles.length) return;
+  digIndex = Math.max(0, Math.min(i, digFiles.length - 1));
+  document.getElementById('digViewer').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  buildDigStrip();
+  renderDigViewer();
+}
+function closeDigViewer() {
+  document.getElementById('digViewer').classList.remove('open');
+  document.getElementById('digStageInner').innerHTML = '';
+  document.body.style.overflow = '';
+}
+function digNext() { if (digIndex < digFiles.length - 1) { digIndex++; renderDigViewer(); } }
+function digPrev() { if (digIndex > 0) { digIndex--; renderDigViewer(); } }
+
+function renderDigViewer() {
+  const f = digFiles[digIndex];
+  if (!f) return;
+  const stage = document.getElementById('digStageInner');
+  if (isImgFile(f)) {
+    stage.innerHTML = `<i class="fas fa-spinner fa-spin dig-spin"></i>`;
+    const img = new Image();
+    img.alt = f.name;
+    img.onload = () => { stage.innerHTML = ''; stage.appendChild(img); };
+    img.onerror = () => { stage.innerHTML = `<div style="color:#fff;font-size:13px;">Could not load this page.</div>`; };
+    img.src = f.url;
+  } else {
+    stage.innerHTML = `<iframe src="${esc(f.url)}" title="${esc(f.name)}"></iframe>`;
+  }
+  document.getElementById('digVName').textContent = f.name;
+  document.getElementById('digVCount').textContent = `Page ${digIndex + 1} of ${digFiles.length}`;
+  document.getElementById('digNavPrev').disabled = digIndex === 0;
+  document.getElementById('digNavNext').disabled = digIndex === digFiles.length - 1;
+  // Preload neighbours for snappy paging.
+  [digIndex - 1, digIndex + 1].forEach(j => {
+    const nf = digFiles[j];
+    if (nf && isImgFile(nf)) { const im = new Image(); im.src = nf.url; }
+  });
+  // Highlight + scroll the active filmstrip thumbnail.
+  const strip = document.getElementById('digStrip');
+  strip.querySelectorAll('.dig-strip-item').forEach((el, j) => {
+    el.classList.toggle('active', j === digIndex);
+    if (j === digIndex) el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  });
+}
+
+// Lazy filmstrip: thumbnails only load as they scroll into view (img loading=lazy).
+function buildDigStrip() {
+  if (digStripBuilt) return;
+  const strip = document.getElementById('digStrip');
+  strip.innerHTML = digFiles.map((f, i) => {
+    const thumb = isImgFile(f)
+      ? `<img src="${esc(f.url)}" alt="" loading="lazy" onerror="this.outerHTML='<i class=\\'fas fa-file-image\\'></i>'">`
+      : `<i class="fas fa-file-${f.ext === 'pdf' ? 'pdf' : 'alt'}"></i>`;
+    return `<div class="dig-strip-item" onclick="digGoto(${i})">${thumb}<span class="dig-strip-n">${i + 1}</span></div>`;
+  }).join('');
+  digStripBuilt = true;
+}
+function digGoto(i) { digIndex = Math.max(0, Math.min(i, digFiles.length - 1)); renderDigViewer(); }
+
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+  if (!document.getElementById('digViewer').classList.contains('open')) return;
+  if (e.key === 'Escape') closeDigViewer();
+  else if (e.key === 'ArrowRight') digNext();
+  else if (e.key === 'ArrowLeft') digPrev();
+});
+
+// Touch swipe (left/right) on the stage
+(function () {
+  const stage = document.getElementById('digStage');
+  if (!stage) return;
+  let x0 = null, y0 = null;
+  stage.addEventListener('touchstart', e => { const t = e.changedTouches[0]; x0 = t.clientX; y0 = t.clientY; }, { passive: true });
+  stage.addEventListener('touchend', e => {
+    if (x0 === null) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - x0, dy = t.clientY - y0;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? digNext() : digPrev(); }
+    x0 = y0 = null;
+  }, { passive: true });
+})();
+
 $('#nrFileNo').on('select2:select', function (e) {
   const title = e.params && e.params.data ? e.params.data.title : null;
   resetCheck();

@@ -19,6 +19,7 @@
                 $statusColors = [
                     'pending'            => 'bg-yellow-100 text-yellow-800',
                     'documents_approved' => 'bg-teal-100 text-teal-800',
+                    'awaiting_sla'       => 'bg-violet-100 text-violet-800',
                     'payment_pending'    => 'bg-orange-100 text-orange-800',
                     'payment_received'   => 'bg-blue-100 text-blue-800',
                     'sla_uploaded'       => 'bg-indigo-100 text-indigo-800',
@@ -383,15 +384,15 @@
     @if ($request->status === 'documents_approved')
         <div class="mt-8 bg-white rounded-lg shadow-md p-6">
             <h2 class="text-xl font-bold mb-1">Admin Actions</h2>
-            <p class="text-sm text-slate-500 mb-5">Documents have been approved by Legal. Approving will send the organization a payment link to select their subscription package.</p>
+            <p class="text-sm text-slate-500 mb-5">Documents have been approved by Legal. Approving will email the organization a secure link to download, sign, and upload their Service Level Agreement (SLA).</p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <form method="POST" action="{{ route('system-admin.phs.requests.approve', ['id' => $request->id]) }}" class="approve-form">
                     @csrf
                     <div class="border border-green-300 rounded-lg p-4 bg-green-50">
-                        <h3 class="font-semibold text-green-900 mb-2">Send Payment Link</h3>
-                        <p class="text-sm text-green-800 mb-4">Approving will email the organization a secure link to select their package and pay via Paystack.</p>
-                        <button type="button" data-org="{{ $request->organization_name }}" data-msg="Send payment link to {{ $request->organization_name }}?" class="approve-btn-show w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">
-                            <i data-lucide="send" class="h-4 w-4"></i> Approve &amp; Send Payment Link
+                        <h3 class="font-semibold text-green-900 mb-2">Send SLA Link</h3>
+                        <p class="text-sm text-green-800 mb-4">Approving will email the organization a secure link to download, sign, and upload their SLA. No payment is requested at this stage.</p>
+                        <button type="button" data-org="{{ $request->organization_name }}" data-msg="Send SLA download &amp; upload link to {{ $request->organization_name }}?" class="approve-btn-show w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">
+                            <i data-lucide="send" class="h-4 w-4"></i> Approve &amp; Send SLA Link
                         </button>
                     </div>
                 </form>
@@ -412,15 +413,15 @@
     @elseif ($request->status === 'sla_approved')
         <div class="mt-8 bg-white rounded-lg shadow-md p-6">
             <h2 class="text-xl font-bold mb-1">Final Approval</h2>
-            <p class="text-sm text-slate-500 mb-5">The signed SLA has been approved by Legal. Final approval will send the organization a registration link to activate their account.</p>
+            <p class="text-sm text-slate-500 mb-5">The signed SLA has been approved by Legal. Final approval will send the organization a combined payment &amp; onboarding link — once they pay, they proceed straight to registering their account.</p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <form method="POST" action="{{ route('system-admin.phs.requests.final-approve', ['id' => $request->id]) }}" class="approve-form">
                     @csrf
                     <div class="border border-green-300 rounded-lg p-4 bg-green-50">
-                        <h3 class="font-semibold text-green-900 mb-2">Activate Account</h3>
-                        <p class="text-sm text-green-800 mb-4">This will generate a registration link and email it to the organization. They can then set up their account and start using the portal.</p>
-                        <button type="button" data-org="{{ $request->organization_name }}" data-msg="Send registration link to {{ $request->organization_name }}?" class="approve-btn-show w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">
-                            <i data-lucide="check-circle" class="h-4 w-4"></i> Activate &amp; Send Registration Link
+                        <h3 class="font-semibold text-green-900 mb-2">Send Payment &amp; Onboarding Link</h3>
+                        <p class="text-sm text-green-800 mb-4">This will email the organization a secure link to confirm their package and pay via Paystack. After payment they are taken directly to register their account.</p>
+                        <button type="button" data-org="{{ $request->organization_name }}" data-msg="Send payment &amp; onboarding link to {{ $request->organization_name }}?" class="approve-btn-show w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">
+                            <i data-lucide="check-circle" class="h-4 w-4"></i> Approve &amp; Send Payment Link
                         </button>
                     </div>
                 </form>

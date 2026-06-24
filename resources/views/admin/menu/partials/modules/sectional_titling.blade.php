@@ -264,7 +264,16 @@
             <span>File Tracker (Archive)</span>
           </a>
 
-          {{-- iii. Log a File --}}
+          {{-- iii. Quick Search --}}
+          @php $stQuickSearchActive = request()->routeIs('create-file-tracker.quick-search') && request('url') === 'st'; @endphp
+          <a href="{{ route('create-file-tracker.quick-search', ['url' => 'st']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ $stQuickSearchActive ? 'active' : '' }}"
+            @if($stQuickSearchActive) style="color: #1d4ed8;" @endif>
+            <i data-lucide="search" class="h-3.5 w-3.5 text-blue-500"></i>
+            <span>Quick Search</span>
+          </a>
+
+          {{-- iv. Log a File --}}
           <a href="{{ route('create-file-tracker.index', ['url' => 'st']) }}"
             class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black {{ request()->routeIs('create-file-tracker.index') && request('url') === 'st' ? 'active' : '' }}">
             <i data-lucide="file-plus" class="h-3.5 w-3.5 text-blue-500"></i>

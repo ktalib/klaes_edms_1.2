@@ -5,7 +5,7 @@
         border-radius: 8px;
         overflow: hidden;
         animation: fadeIn 0.15s ease-out;
-    }
+    }   
 
     .dropdown-menu button {
         transition: all 0.15s ease;
@@ -2363,6 +2363,20 @@
                                     ${data.decommission_summary.archived.map(f => `<span class="px-2.5 py-1 bg-white border border-amber-200 text-[10px] font-black text-amber-700 rounded-lg shadow-sm">${f}</span>`).join('')}
                                 </div>
                             </div>` : ''}
+
+                            ${data.skipped_serials && data.skipped_serials.length > 0 ? `
+                            <div class="mt-4 p-4 bg-amber-50/50 border border-amber-100 rounded-2xl">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <div class="bg-amber-500 text-white p-1 rounded-lg">
+                                        <i data-lucide="alert-triangle" class="h-3 w-3"></i>
+                                    </div>
+                                    <p class="text-[10px] font-black text-amber-800 uppercase tracking-tight">Serials Already In Use — Skipped</p>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    ${data.skipped_serials.map(s => `<span class="px-2.5 py-1 bg-white border border-amber-200 text-[10px] font-black text-amber-700 rounded-lg shadow-sm">${s.file_number}</span>`).join('')}
+                                </div>
+                                <p class="mt-2 text-[10px] text-amber-600 italic font-medium px-1">${data.notice || 'These serials were already taken, so the next free number was assigned instead.'}</p>
+                            </div>` : ''}
                         </div>`,
                         confirmButtonColor: '#10b981',
                         confirmButtonText: 'Great, Continue',
@@ -2472,6 +2486,50 @@
 
     // Batch Summary Modal Functions
     function showBatchSummaryModal(alpineData) {
+        // Persist the currently displayed applicant into its entry before validating,
+        // otherwise the file name typed for the active entry would be missed.
+        if (typeof alpineData.saveCurrentApplicantToEntry === 'function') {
+            alpineData.saveCurrentApplicantToEntry();
+        }
+
+        // File Name is required for every file in the batch (mirrors single-generation validation).
+        // Effective name per record = entry.file_name, falling back to the global file name.
+        const globalFileName = (alpineData.fileName || '').toString().trim();
+        const missingEntries = [];
+        for (let i = 0; i < alpineData.batchQuantity; i++) {
+            const entry = alpineData.locationEntries[i];
+            const entryName = (entry && entry.file_name ? entry.file_name : '').toString().trim();
+            if (!entryName && !globalFileName) {
+                missingEntries.push(i + 1);
+            }
+        }
+        if (missingEntries.length > 0) {
+            const allMissing = missingEntries.length === parseInt(alpineData.batchQuantity);
+            Swal.fire({
+                icon: 'warning',
+                title: 'File Name Required',
+                text: allMissing
+                    ? 'Please enter a File Name before generating the batch file numbers.'
+                    : 'Please enter a File Name for file(s) #' + missingEntries.join(', #') + ' before generating the batch.',
+                confirmButtonColor: '#f59e0b'
+            }).then(() => {
+                // Move to the first entry missing a name so the user can fix it
+                const targetIndex = missingEntries[0] - 1;
+                if (alpineData.currentEntryIndex !== targetIndex) {
+                    alpineData.currentEntryIndex = targetIndex;
+                    if (typeof alpineData.loadApplicantFromEntry === 'function') {
+                        alpineData.loadApplicantFromEntry();
+                    }
+                    if (typeof alpineData.loadLocationFieldsForEntry === 'function') {
+                        alpineData.$nextTick(() => alpineData.loadLocationFieldsForEntry());
+                    }
+                }
+                const fileNameInput = document.getElementById('fileName');
+                if (fileNameInput) fileNameInput.focus();
+            });
+            return;
+        }
+
         // Populate summary data
         const startSerial = parseInt(alpineData.serialNo);
         const endSerial = startSerial + parseInt(alpineData.batchQuantity) - 1;
@@ -2767,6 +2825,20 @@
                                     ${data.decommission_summary.archived.map(f => `<span class="px-2.5 py-1 bg-white border border-amber-200 text-[10px] font-black text-amber-700 rounded-lg shadow-sm">${f}</span>`).join('')}
                                 </div>
                                 <p class="mt-2 text-[10px] text-amber-600 italic font-medium px-1">These files are no longer in the active registry but are stored in the secure archives.</p>
+                            </div>` : ''}
+
+                            ${data.skipped_serials && data.skipped_serials.length > 0 ? `
+                            <div class="mt-4 p-4 bg-amber-50/50 border border-amber-100 rounded-2xl">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <div class="bg-amber-500 text-white p-1 rounded-lg">
+                                        <i data-lucide="alert-triangle" class="h-3 w-3"></i>
+                                    </div>
+                                    <p class="text-[10px] font-black text-amber-800 uppercase tracking-tight">Serials Already In Use — Skipped</p>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    ${data.skipped_serials.map(s => `<span class="px-2.5 py-1 bg-white border border-amber-200 text-[10px] font-black text-amber-700 rounded-lg shadow-sm">${s.file_number}</span>`).join('')}
+                                </div>
+                                <p class="mt-2 text-[10px] text-amber-600 italic font-medium px-1">${data.notice || 'These serials were already taken, so the next free numbers were assigned instead.'}</p>
                             </div>` : ''}
                         </div>`,
                         confirmButtonColor: '#10b981',

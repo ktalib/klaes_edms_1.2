@@ -68,6 +68,7 @@
                     <table class="w-full text-left border-collapse" id="valuation-table">
                         <thead class="bg-slate-50 border-b border-slate-100">
                             <tr>
+                                <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px]">S/N</th>
                                 <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px] whitespace-nowrap">File Number</th>
                                 <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px]">Owner / Client</th>
                                 <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px]">Property Type</th>
@@ -82,6 +83,7 @@
                         <tbody class="divide-y divide-slate-100">
                             @forelse($reports as $report)
                                 <tr class="hover:bg-slate-50/50 transition duration-200">
+                                    <td class="px-6 py-4 text-slate-500 font-semibold">{{ $loop->iteration }}</td>
                                     <td class="px-6 py-4 text-slate-900 font-bold whitespace-nowrap">
                                         {{ $report->file_number }}
                                     </td>
@@ -122,9 +124,6 @@
                                                     x-transition:enter="transition ease-out duration-100"
                                                     x-transition:enter-start="transform opacity-0 scale-95"
                                                     x-transition:enter-end="transform opacity-100 scale-100"
-                                                    x-transition:leave="transition ease-in duration-75"
-                                                    x-transition:leave-start="transform opacity-100 scale-100"
-                                                    x-transition:leave-end="transform opacity-0 scale-95"
                                                     class="absolute right-0 z-50 {{ $loop->remaining < 2 ? 'bottom-full mb-2 origin-bottom-right' : 'mt-2 origin-top-right' }} w-52 rounded-2xl bg-white shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none overflow-hidden border border-slate-100">
                                                     <div class="py-2">
                                                         <div class="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 mb-1">Actions</div>
@@ -136,7 +135,17 @@
                                                                 <span>Edit Report</span>
                                                             </button>
                                                         @else
-                                                            <button type="button" @click="$dispatch('open-valuation-modal', {{ json_encode($report->toArray() + ['_mode' => 'reevaluate']) }}); open = false"
+                                                            <button type="button" @click="open = false"
+                                                                data-reeval='{{ json_encode([
+                                                                    'id' => $report->id,
+                                                                    'file_number' => $report->file_number,
+                                                                    'full_name' => $report->full_name,
+                                                                    'value_figures' => $report->value_figures,
+                                                                    'value_words' => $report->value_words,
+                                                                    're_value_figures' => $report->re_value_figures,
+                                                                    're_value_words' => $report->re_value_words,
+                                                                ]) }}'
+                                                                onclick="openReevaluateModal(JSON.parse(this.dataset.reeval))"
                                                                 class="flex items-center gap-3 w-full px-4 py-2.5 text-xs text-purple-600 hover:bg-purple-50 transition font-bold">
                                                                 <i data-lucide="refresh-cw" class="h-4 w-4"></i>
                                                                 <span>Need to Re-Evaluate</span>
@@ -165,7 +174,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7" class="px-6 py-12 text-center text-slate-500 italic">
+                                    <td colspan="10" class="px-6 py-12 text-center text-slate-500 italic">
                                         No valuation reports found. Click "Generate" to create your first one.
                                     </td>
                                 </tr>
@@ -176,8 +185,9 @@
             </div>
         </div>
     </div>
-
+     @include('valuation_reports.partials.reevaluate_modal')
     @include('valuation_reports.partials.modal')
+   
     @include('components.global-fileno-modal')
  
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
@@ -193,3 +203,5 @@
         });
     </script>
 @endsection
+
+

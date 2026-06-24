@@ -93,9 +93,9 @@
             {{-- Owner / File Title – readonly, filled from file_title --}}
             <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">Owner / File Title <span class="text-red-500">*</span></label>
-                <input type="text" name="owner_name" id="f-owner_name" readonly required
-                    placeholder="Auto-filled from file number"
-                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 outline-none cursor-default">
+                <input type="text" name="owner_name" id="f-owner_name" required
+                    placeholder="Auto-filled from file number — type if not on record"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 outline-none focus:border-[rgb(186,191,12)]">
             </div>
 
             {{-- Location badge (shown after file lookup) --}}

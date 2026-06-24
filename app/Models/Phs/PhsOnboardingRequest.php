@@ -10,6 +10,7 @@ class PhsOnboardingRequest extends Model
 
     const STATUS_PENDING             = 'pending';
     const STATUS_DOCUMENTS_APPROVED  = 'documents_approved';
+    const STATUS_AWAITING_SLA        = 'awaiting_sla';
     const STATUS_PAYMENT_PENDING     = 'payment_pending';
     const STATUS_PAYMENT_RECEIVED    = 'payment_received';
     const STATUS_SLA_UPLOADED        = 'sla_uploaded';

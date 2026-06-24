@@ -627,7 +627,8 @@ class SpecialAssignmentController extends Controller
                 'fi.id as file_indexing_id', 'fi.tracking_id',
                 'fi.file_number', 'fi.land_use_type',
                 'fi.location', 'fi.district', 'fi.lga',
-                'fi.phone', 'fn.FileName as file_title'
+                'fi.phone', 'fn.FileName as file_title',
+                'fi.dciv_status', 'fi.dciv_fileno', 'fi.dciv_reason'
             )
             ->orderByDesc('fi.created_at')
             ->first();
@@ -647,7 +648,8 @@ class SpecialAssignmentController extends Controller
                     'fi.id as file_indexing_id', 'fi.tracking_id',
                     'fi.file_number', 'fi.land_use_type',
                     'fi.location', 'fi.district', 'fi.lga',
-                    'fi.phone', 'fn.FileName as file_title'
+                    'fi.phone', 'fn.FileName as file_title',
+                    'fi.dciv_status', 'fi.dciv_fileno', 'fi.dciv_reason'
                 )
                 ->orderByDesc('fi.created_at')
                 ->first();
@@ -685,6 +687,9 @@ class SpecialAssignmentController extends Controller
             'phone'           => $record->phone,
             'owner_name'      => $ownerName,
             'file_title'      => $record->file_title ?? '',
+            'dciv_status'     => (int) ($record->dciv_status ?? 0),
+            'dciv_fileno'     => $record->dciv_fileno ?? null,
+            'dciv_reason'     => $record->dciv_reason ?? null,
         ]);
     }
 

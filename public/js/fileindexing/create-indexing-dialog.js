@@ -5354,6 +5354,8 @@
             tp_no: collectArrayValues('tp_number') || collectArrayValues('tp_no') || (document.getElementById('tp-number')?.value || ''),
             lpkn_no: collectArrayValues('lpkn_no') || (document.getElementById('lpkn-no')?.value || ''),
             location: collectArrayValues('location') || document.getElementById('location')?.value || groupingState.record?.location || groupingState.record?.property_location || '',
+            latitude: (collectArrayValues('latitude') || []).map(v => (v === '' || v == null) ? null : v),
+            longitude: (collectArrayValues('longitude') || []).map(v => (v === '' || v == null) ? null : v),
             plot_size: collectArrayValues('plot_size') || (document.getElementById('plot-size')?.value || ''),
             street_name: resolvedStreetNameValues || null,
             custom_street_name: customStreetNameValues || null,
@@ -5436,6 +5438,11 @@
             kangis_file_no: document.getElementById('kangis_file_no_hidden')?.value || null,
             new_kangis_file_no: document.getElementById('new_kangis_file_no_hidden')?.value || null,
             has_new_kangis_fileno: document.getElementById('has-new-kangis-fileno')?.checked ? 1 : 0,
+            // New KANGIS transactions → saved to the pra table (one shared prop_id per file)
+            has_new_kangis_transaction: document.getElementById('has-new-kangis-transaction')?.checked ? 1 : 0,
+            transactions: (typeof window.collectNewKangisTransactions === 'function')
+                ? window.collectNewKangisTransactions()
+                : [],
         };
 
         // Add related file numbers and details to formData
@@ -5614,18 +5621,22 @@
             return;
         }
 
-        // Title Status is required — the placeholder "Select Title Status" must not be submitted.
-        const titleStatusSelect = document.getElementById('ts-title-type');
-        if (titleStatusSelect && !titleStatusSelect.value.trim()) {
+        // Title Status is required — at least one checkbox must be selected. The checkboxes
+        // span two cards (Parcel Update / Normal and Title Status Update), so query by class.
+        const titleStatusGroup = document.getElementById('ts-title-type-group');
+        const titleStatusBoxes = Array.from(document.querySelectorAll('.ts-title-type-cb'));
+        const titleStatusChosen = titleStatusBoxes.some(cb => cb.checked);
+        if (titleStatusBoxes.length && !titleStatusChosen) {
+            const errorTarget = titleStatusGroup || titleStatusBoxes[0];
             const focusTitleStatus = () => {
-                titleStatusSelect.focus();
-                titleStatusSelect.classList.add('error-border');
-                titleStatusSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                errorTarget.classList.add('error-border');
+                errorTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                (titleStatusBoxes[0] || errorTarget).focus();
                 const clearError = () => {
-                    titleStatusSelect.classList.remove('error-border');
-                    titleStatusSelect.removeEventListener('change', clearError);
+                    errorTarget.classList.remove('error-border');
+                    document.removeEventListener('change', clearError);
                 };
-                titleStatusSelect.addEventListener('change', clearError);
+                document.addEventListener('change', clearError);
             };
 
             if (typeof Swal !== 'undefined') {
@@ -7205,6 +7216,16 @@
                         const knStat = document.getElementById('kn-fileno-status');
                         if (knStat) knStat.textContent = '';
                     }
+
+                    // Reset the "Has Transaction" card when leaving KANGIS registry
+                    const nkTxnChk = document.getElementById('has-new-kangis-transaction');
+                    if (nkTxnChk && nkTxnChk.checked) {
+                        nkTxnChk.checked = false;
+                        document.getElementById('nk-transaction-card')?.classList.add('hidden');
+                        if (typeof window.resetNewKangisTransactions === 'function') {
+                            window.resetNewKangisTransactions();
+                        }
+                    }
                 }
             }
         }
@@ -8285,6 +8306,9 @@
             if (knStatus) knStatus.textContent = '';
             if (errorEl) errorEl.classList.add('hidden');
             knDisplay.classList.remove('error-border');
+            if (typeof window.refreshTransactionFileNoLabels === 'function') {
+                window.refreshTransactionFileNoLabels();
+            }
         }
 
         chk.addEventListener('change', function () {
@@ -8318,6 +8342,10 @@
                     if (knStatus) {
                         knStatus.textContent = `✓ Selected: ${val}`;
                         knStatus.className = 'mt-1 text-xs text-purple-700 font-semibold';
+                    }
+                    // Reflect the selected file in the transaction row headers
+                    if (typeof window.refreshTransactionFileNoLabels === 'function') {
+                        window.refreshTransactionFileNoLabels();
                     }
                 }
             });
@@ -8359,6 +8387,115 @@
     // Expose for the submit handler
     window.validateHasNewKangisFileno = validateHasNewKangisFileno;
 
+    /** "Has Transaction" (New KANGIS) — toggles a repeatable transaction card; each row is
+     *  collected into formData.transactions and saved to the pra table on submit. */
+    function initializeNewKangisTransactions() {
+        const chk = document.getElementById('has-new-kangis-transaction');
+        const card = document.getElementById('nk-transaction-card');
+        const rows = document.getElementById('nk-transaction-rows');
+        const addBtn = document.getElementById('add-nk-transaction-btn');
+
+        // Only present in normal (non-new_kn) mode.
+        if (!chk || !card || !rows || !addBtn) return;
+
+        const clearRow = (row) => {
+            row.querySelectorAll('input').forEach(el => { el.value = ''; });
+            row.querySelectorAll('select').forEach(el => { el.selectedIndex = 0; });
+        };
+
+        // Stamp the selected New KANGIS file number in front of each "Transaction X" header.
+        const updateFileNoLabels = () => {
+            const fileNo = (document.getElementById('new_kangis_file_no_hidden')?.value
+                || document.getElementById('new_kangis_file_no_display')?.value || '').trim();
+            rows.querySelectorAll('.nk-txn-fileno').forEach(el => {
+                el.textContent = fileNo || '';
+            });
+        };
+        window.refreshTransactionFileNoLabels = updateFileNoLabels;
+
+        // Renumber rows and show/hide remove buttons (first row keeps no remove).
+        const refreshRows = () => {
+            const all = rows.querySelectorAll('.nk-transaction-row');
+            all.forEach((row, i) => {
+                const idx = row.querySelector('.nk-txn-index');
+                if (idx) idx.textContent = String(i + 1);
+                const removeBtn = row.querySelector('.nk-txn-remove');
+                if (removeBtn) removeBtn.classList.toggle('hidden', all.length === 1);
+            });
+            updateFileNoLabels();
+        };
+
+        // Reset to a single empty row (used on uncheck / registry change).
+        const resetRows = () => {
+            const all = rows.querySelectorAll('.nk-transaction-row');
+            all.forEach((row, i) => { if (i > 0) row.remove(); });
+            const first = rows.querySelector('.nk-transaction-row');
+            if (first) clearRow(first);
+            refreshRows();
+        };
+        window.resetNewKangisTransactions = resetRows;
+
+        chk.addEventListener('change', function () {
+            if (this.checked) {
+                card.classList.remove('hidden');
+                updateFileNoLabels();
+                if (window.lucide) window.lucide.createIcons({ nodes: [card] });
+            } else {
+                card.classList.add('hidden');
+                resetRows();
+            }
+        });
+
+        addBtn.addEventListener('click', function () {
+            const template = rows.querySelector('.nk-transaction-row');
+            if (!template) return;
+            const clone = template.cloneNode(true);
+            clearRow(clone);
+            rows.appendChild(clone);
+            refreshRows();
+            if (window.lucide) window.lucide.createIcons({ nodes: [clone] });
+        });
+
+        rows.addEventListener('click', function (e) {
+            const removeHit = e.target.closest('.nk-txn-remove');
+            if (removeHit) {
+                const row = removeHit.closest('.nk-transaction-row');
+                if (row && rows.querySelectorAll('.nk-transaction-row').length > 1) {
+                    row.remove();
+                    refreshRows();
+                }
+            }
+        });
+
+        refreshRows();
+    }
+
+    /** Collect the New KANGIS transaction rows into an array of plain objects.
+     *  Rows that are entirely empty are skipped. */
+    function collectNewKangisTransactions() {
+        const chk = document.getElementById('has-new-kangis-transaction');
+        const card = document.getElementById('nk-transaction-card');
+        if (!chk || !chk.checked || !card || card.classList.contains('hidden')) return [];
+
+        const out = [];
+        document.querySelectorAll('#nk-transaction-rows .nk-transaction-row').forEach(row => {
+            const txn = {
+                instrument_type:  (row.querySelector('.nk-txn-instrument')?.value || '').trim(),
+                transaction_date: (row.querySelector('.nk-txn-date')?.value || '').trim(),
+                serial_no:        (row.querySelector('.nk-txn-serial')?.value || '').trim(),
+                page_no:          (row.querySelector('.nk-txn-page')?.value || '').trim(),
+                vol_no:           (row.querySelector('.nk-txn-vol')?.value || '').trim(),
+                reg_date:         (row.querySelector('.nk-txn-reg-date')?.value || '').trim(),
+                reg_time:         (row.querySelector('.nk-txn-reg-time')?.value || '').trim(),
+                grantor:          (row.querySelector('.nk-txn-grantor')?.value || '').trim(),
+                grantee:          (row.querySelector('.nk-txn-grantee')?.value || '').trim(),
+            };
+            if (Object.values(txn).some(v => v !== '')) out.push(txn);
+        });
+        return out;
+    }
+    window.collectNewKangisTransactions = collectNewKangisTransactions;
+
     document.addEventListener('DOMContentLoaded', function () {
         const init = (fn, name) => {
             try {
@@ -8373,6 +8510,7 @@
         init(handleRegistryFieldToggling, 'RegistryFieldToggling');
         init(initializeNewKangisFields, 'NewKangisFields');
         init(initializeHasNewKangisFileno, 'HasNewKangisFileno');
+        init(initializeNewKangisTransactions, 'NewKangisTransactions');
         init(initializeDynamicRelatedFiles, 'DynamicRelatedFiles');
         init(initializeBlockIndexingUI, 'BlockIndexingUI');
         init(initializeRelatedFilesDetails, 'RelatedFilesDetails');

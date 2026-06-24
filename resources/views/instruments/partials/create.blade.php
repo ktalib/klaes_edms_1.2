@@ -354,15 +354,15 @@
                                     <div class="grid grid-cols-2 gap-4">
                                         <x-instrument-input id="solicitorName" label="" icon="briefcase"
                                             placeholder="Name" />
-                                        <x-instrument-textarea id="solicitorAddress" label="" icon="map-pin"
-                                            placeholder="Address" rows="1" />
-                                    </div>
-                                    <div class="grid grid-cols-2 gap-4">
                                         <input id="solicitorCity" name="solicitorCity"
                                             class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm"
                                             placeholder="City">
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-4">
                                         <x-instrument-select id="solicitorState" label="" icon="map-pin" :options="$states"
                                             placeholder="State" />
+                                        <x-instrument-textarea id="solicitorAddress" label="" icon="map-pin"
+                                            placeholder="Auto-generated from city and state" rows="1" readonly />
                                     </div>
                                 </div>
                             </div>
@@ -497,11 +497,11 @@
                 </div>
                 <div class="items-center px-4 py-3">
                     <button type="button" id="btn-update-existing"
-                        class="hidden px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                        class="px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300">
                         Update Existing Record
                     </button>
                     <button type="button" id="btn-create-new"
-                        class="hidden mt-3 px-4 py-2 bg-gray-100 text-gray-700 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                        class="mt-3 px-4 py-2 bg-gray-100 text-gray-700 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300">
                         Create New Record
                     </button>
                     <button type="button" id="btn-close-duplicate-footer"

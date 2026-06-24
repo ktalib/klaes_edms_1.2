@@ -10,11 +10,35 @@
     <div class="flex-1 overflow-y-auto overflow-x-hidden">
         @include('admin.header')
 
-        <div class="bg-gradient-to-r from-red-700 via-red-600 to-red-800 px-6 py-3 flex items-center gap-3 shadow-sm">
+        @php
+            $urlCtx = request('url');
+            $isStContext = $urlCtx === 'st';
+            $isSltrContext = $urlCtx === 'sltr';
+            $isSurveyContext = $urlCtx === 'survey';
+            if ($isStContext) {
+                $headerGradient = 'bg-gradient-to-r from-blue-700 via-blue-600 to-blue-800';
+                $headerStyle = 'background-image: linear-gradient(to right, #1d4ed8, #2563eb, #1e40af);';
+                $dotClass = 'text-blue-100';
+            } elseif ($isSltrContext) {
+                $headerGradient = 'bg-gradient-to-r from-lime-600 via-green-500 to-lime-600';
+                $headerStyle = 'background-image: linear-gradient(to right, #65a30d, #22c55e, #65a30d);';
+                $dotClass = 'text-lime-100';
+            } elseif ($isSurveyContext) {
+                $headerGradient = 'bg-gradient-to-r from-pink-600 via-pink-500 to-pink-700';
+                $headerStyle = 'background-image: linear-gradient(to right, #db2777, #ec4899, #be185d);';
+                $dotClass = 'text-pink-100';
+            } else {
+                $headerGradient = 'bg-gradient-to-r from-red-700 via-red-600 to-red-800';
+                $headerStyle = '';
+                $dotClass = 'text-red-100';
+            }
+        @endphp
+        <div class="px-6 py-3 flex items-center gap-3 shadow-sm {{ $headerGradient }}"
+            @if($headerStyle) style="{{ $headerStyle }}" @endif>
             <i data-lucide="search" class="h-5 w-5 text-white shrink-0"></i>
             <div class="flex items-center gap-2">
                 <span class="text-white font-bold text-sm uppercase tracking-widest">Quick Search</span>
-                <span class="text-red-100 text-sm">·</span>
+                <span class="{{ $dotClass }} text-sm">·</span>
                 <span class="text-white text-sm font-medium">File Location &amp; Status</span>
             </div>
             {{-- Hidden for now: Send File Search Request --}}
@@ -28,16 +52,48 @@
         <div class="max-w-7xl mx-auto px-4 py-8">
             <!-- Reporting summary -->
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
-                <div class="flex items-center justify-between gap-3 mb-4">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                     <h3 class="text-sm font-bold text-gray-800 flex items-center gap-2">
                         <i data-lucide="bar-chart-3" class="h-4 w-4 text-indigo-600"></i> File Search Report
                     </h3>
-                    <span id="qs-rep-date" class="text-xs font-medium text-gray-400"></span>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <div class="flex items-center gap-1.5 text-xs text-gray-500">
+                            <i data-lucide="calendar" class="h-3.5 w-3.5 text-gray-400"></i>
+                            <input id="qs-rep-from" type="date" class="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:ring-2 focus:ring-indigo-500" title="From date">
+                            <span class="text-gray-400">–</span>
+                            <input id="qs-rep-to" type="date" class="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:ring-2 focus:ring-indigo-500" title="To date">
+                            <button type="button" id="qs-rep-clear" class="hidden inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-50" title="Clear date range">
+                                <i data-lucide="x" class="h-3 w-3"></i> Clear
+                            </button>
+                        </div>
+                        <span class="hidden sm:inline text-gray-200">|</span>
+                        <button type="button" id="qs-export-csv" class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100" title="Export current view to CSV">
+                            <i data-lucide="file-spreadsheet" class="h-3.5 w-3.5"></i> CSV
+                        </button>
+                        <button type="button" id="qs-export-pdf" class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100" title="Export current view to PDF">
+                            <i data-lucide="file-text" class="h-3.5 w-3.5"></i> PDF
+                        </button>
+                        <span id="qs-rep-date" class="text-xs font-medium text-gray-400"></span>
+                    </div>
                 </div>
-                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                     <div class="rounded-lg border border-indigo-100 bg-indigo-50/60 px-4 py-3">
                         <div class="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">Requests Today</div>
                         <div id="qs-rep-today" class="mt-1 text-2xl font-bold text-indigo-900">—</div>
+                        <div class="mt-2 space-y-0.5 text-[10px] font-medium border-t border-indigo-100 pt-1.5">
+                            <div class="flex items-center justify-between">
+                                <span class="inline-flex items-center gap-1 text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>Found</span>
+                                <span id="qs-rep-today-found" class="font-bold text-emerald-800">—</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="inline-flex items-center gap-1 text-amber-700"><span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>Not Found</span>
+                                <span id="qs-rep-today-notfound" class="font-bold text-amber-800">—</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="inline-flex items-center gap-1 text-slate-600"><span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>Awaiting</span>
+                                <span id="qs-rep-today-awaiting" class="font-bold text-slate-700">—</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="rounded-lg border border-sky-100 bg-sky-50/60 px-4 py-3">
                         <div class="text-[11px] font-semibold uppercase tracking-wide text-sky-700">Blind / Open</div>
@@ -54,6 +110,10 @@
                     <div class="rounded-lg border border-red-100 bg-red-50/60 px-4 py-3">
                         <div class="text-[11px] font-semibold uppercase tracking-wide text-red-700">Missing</div>
                         <div id="qs-rep-missing" class="mt-1 text-2xl font-bold text-red-900">—</div>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Awaiting</div>
+                        <div id="qs-rep-awaiting" class="mt-1 text-2xl font-bold text-slate-800">—</div>
                     </div>
                 </div>
             </div>
@@ -128,6 +188,7 @@
 
 @push('scripts')
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.1/jspdf.plugin.autotable.min.js"></script>
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
     @include('components.global-fileno-modal')
     @include('create_file_tracker_page.partials.fr-modal')
@@ -153,11 +214,20 @@
         const FEEDBACK_URL= "{{ route('create-file-tracker.quick-search.scb-feedback') }}";
         const CSRF        = "{{ csrf_token() }}";
         const IS_SUPER_ADMIN = @json(auth()->user()->isSuperAdmin());
+        // SCB Monitors receive File Search Requests — they don't raise them, so the
+        // "Send (Blind) Request to SCB Monitor" buttons are hidden for them. Everyone
+        // else (incl. OFS ranked officers) sees them. OFS overrides the SCB hide —
+        // an OFS user (even one who is also SCB) sees all.
+        const IS_SCB_MONITOR = @json(auth()->user()->isScbMonitor());
+        const IS_OFS         = @json(auth()->user()->isOfs());
+        // Show the "Send Request" buttons unless the user is an SCB-only monitor.
+        const CAN_SEND_FR    = IS_OFS || !IS_SCB_MONITOR;
         // ── Requester cascade data (mirrors Create File Tracker) ──
         const REQ_DEPARTMENTS = @json(($departments ?? collect())->values());
         const REQ_OFFICES     = @json($reqOffices);
         const REQ_OFFICERS    = @json($reqOfficers);
         const REQ_DEPT_NAME_TO_ID = @json($reqDeptNameToId);
+        const REGISTRIES      = @json($registries ?? []);
         const ADD_OFFICER_URL = "{{ route('create-file-tracker.receiving-officers.store') }}";
 
         const STATUS_OPTIONS = [
@@ -190,6 +260,7 @@
         const row = (l, v) => v ? `<div class="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
             <span class="text-xs font-medium text-gray-500">${esc(l)}</span>
             <span class="text-sm text-gray-800 text-right">${esc(v)}</span></div>` : '';
+        const money = (l, v) => (v == null || v === '') ? '' : row(l, '₦' + Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
         function pickFileNumber() {
             if (typeof GlobalFileNoModal === 'undefined') { search(); return; }
@@ -207,8 +278,21 @@
             const out = [];
             const fno = encodeURIComponent(d.file_number);
             if (d.status === 'IN_TRANSIT' && d.file_tracker_id) {
-                out.push(`<a href="/create-file-tracker/${d.file_tracker_id}/request-sheet" target="_blank"
-                    class="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">
+                // Re-direct the request straight to the office currently holding the file
+                // (its last receiving officer) instead of routing it to the SCB Monitor.
+                const showRedirect = d.can_redirect && CAN_SEND_FR;
+                if (showRedirect) {
+                    const office = d.current_location || 'Current Office';
+                    out.push(`<button type="button" data-redirect
+                        class="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600">
+                        <i data-lucide="user-check" class="h-4 w-4"></i> Re-direct Request to ${esc(office)}</button>`);
+                }
+                // The slip can only be printed once the re-direct request has been sent —
+                // disabled/greyed until then (only gated when a redirect button is shown).
+                const slipDisabled = showRedirect;
+                out.push(`<a href="/create-file-tracker/${d.file_tracker_id}/request-sheet" target="_blank" data-print-slip
+                    class="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white ${slipDisabled ? 'bg-gray-300 cursor-not-allowed pointer-events-none opacity-60' : 'bg-amber-600 hover:bg-amber-700'}"
+                    ${slipDisabled ? 'aria-disabled="true" tabindex="-1"' : ''}>
                     <i data-lucide="printer" class="h-4 w-4"></i> Print Tracking Confirmation Slip</a>`);
             }
             // SCB confirmed Found -> log the file (redirect to create-file-tracker, prefilled).
@@ -224,7 +308,7 @@
                     class="inline-flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
                     <i data-lucide="printer" class="h-4 w-4"></i> ${labels[d.slip_variant] || 'Print Slip'}</a>`);
             }
-            if (d.can_send_fr) {
+            if (d.can_send_fr && CAN_SEND_FR) {
                 const label = d.is_blind ? 'Send Blind Request to SCB Monitor' : 'Send File Search Request to SCB Monitor';
                 const frCls = d.is_blind ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700';
                 out.push(`<button type="button" data-fr class="inline-flex items-center gap-2 rounded-lg ${frCls} px-4 py-2 text-sm font-semibold text-white">
@@ -249,6 +333,46 @@
             const meta = STATUS_META[d.status] || { label:d.status, cls:'bg-gray-100 text-gray-800 border-gray-300', icon:'file' };
             // SCB has confirmed the file is physically present (…_FOUND, but not …NOT_FOUND).
             const isFound = /_FOUND$/.test(d.status || '') && !/NOT_FOUND/.test(d.status || '');
+
+            // Ownership timeline — chronological holder chain from the cross-table
+            // property timeline. Falls back to the two flat indexing rows when the
+            // file has no transaction history.
+            const holderHistoryHtml = (() => {
+                const hist = Array.isArray(d.holder_history) ? d.holder_history : [];
+                if (!hist.length) {
+                    return row('Original Holder', d.original_holder) + row('Current Holder', d.current_holder);
+                }
+                const nodes = hist.map((h, i) => {
+                    const isFirst = i === 0, isLast = i === hist.length - 1;
+                    const dot = isFirst ? 'bg-emerald-600' : (isLast ? 'bg-indigo-600' : 'bg-gray-300');
+                    const dotIcon = (isFirst || isLast) ? 'text-white' : 'text-gray-500';
+                    const line = !isLast ? `<span class="absolute left-[6px] top-[18px] -bottom-0.5 w-0.5 bg-gray-200"></span>` : '';
+                    const tag = isFirst
+                        ? `<span class="text-[9px] font-extrabold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-px rounded-full whitespace-nowrap">Original</span>`
+                        : (isLast ? `<span class="text-[9px] font-extrabold uppercase tracking-wide text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-px rounded-full whitespace-nowrap">Current</span>` : '');
+                    const toLine = h.to ? `<div class="text-[11px] font-semibold text-gray-700 mt-0.5"><i data-lucide="arrow-right" class="inline h-3 w-3 mr-1 text-indigo-500 align-text-bottom"></i>${esc(h.to)}</div>` : '';
+                    return `
+                        <div class="relative pl-6 ${isLast ? '' : 'pb-3.5'}">
+                            ${line}
+                            <span class="absolute left-0 top-px h-[15px] w-[15px] rounded-full ${dot} border-2 border-gray-200 flex items-center justify-center">
+                                <i data-lucide="user" class="h-2 w-2 ${dotIcon}"></i>
+                            </span>
+                            <div class="flex justify-between gap-2 items-baseline flex-wrap">
+                                <span class="text-[13px] font-bold text-gray-900 leading-tight">${esc(h.holder)}</span>
+                                ${tag}
+                            </div>
+                            ${toLine}
+                            <div class="flex gap-1.5 items-center flex-wrap mt-1">
+                                <span class="text-[10px] font-bold text-gray-700 bg-gray-100 border border-gray-200 px-1.5 py-px rounded-full">${esc(h.transaction_type)}</span>
+                                ${h.date ? `<span class="text-[10px] text-gray-500"><i data-lucide="calendar" class="inline h-2.5 w-2.5 mr-1 align-text-bottom"></i>${esc(h.date)}</span>` : ''}
+                            </div>
+                        </div>`;
+                }).join('');
+                return `
+                    <div class="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 mb-2.5">Ownership</div>
+                    <div class="pb-0.5">${nodes}</div>`;
+            })();
+
             result.innerHTML = `
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -261,8 +385,40 @@
 </span>
                     </div>
                     <div class="px-6 py-3">
+                        ${Number(d.dciv_status) === 1 ? `
+                        <div class="mb-3 rounded-lg bg-rose-50 border border-rose-200 px-4 py-3">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="alert-triangle" class="h-4 w-4 text-rose-600 shrink-0"></i>
+                                <span class="text-sm font-bold text-rose-800">Under Investigation</span>
+                                ${d.dciv_fileno ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-700 border border-rose-200 whitespace-nowrap">${esc(d.dciv_fileno)}</span>` : ''}
+                            </div>
+                            ${d.dciv_reason ? `<div class="text-xs text-rose-700 mt-1.5">${esc(d.dciv_reason)}</div>` : ''}
+                        </div>` : ''}
+                        <details class="mb-3 rounded-lg border border-gray-200">
+                            <summary class="cursor-pointer select-none px-4 py-2 text-xs font-semibold text-gray-600 flex items-center gap-2">
+                                <i data-lucide="users" class="h-3.5 w-3.5"></i> Holder &amp; Bill Details
+                            </summary>
+                            <div class="px-4 pb-3 pt-1">
+                                ${holderHistoryHtml}
+                                ${d.bill_balance ? `
+                                <div class="mt-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+                                    <div class="mb-1">
+                                        <span class="text-xs font-bold text-gray-700">Bill Ref ID: ${d.bill_balance.reference ? `<span class="text-red-600">${esc(d.bill_balance.reference)}</span>` : '<span class="text-gray-400">—</span>'}</span>
+                                    </div>
+                                    ${money('Rent / Annum', d.bill_balance.amount)}
+                                    ${row('Rent Period', [d.bill_balance.rent_from_year, d.bill_balance.rent_to_year].filter(Boolean).join(' – '))}
+                                    ${row('Expiry', d.bill_balance.expiry)}
+                                    ${row('Receipt', d.bill_balance.receipt)}
+                                    ${Object.entries(d.bill_balance.fees || {}).map(([k, v]) => money(k, v)).join('')}
+                                    ${money('Total', d.bill_balance.fees_total)}
+                                </div>` : `
+                                <div class="mt-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+                                    <span class="text-xs font-bold text-gray-700">Bill Ref ID: <span class="text-gray-400">—</span></span>
+                                </div>`}
+                            </div>
+                        </details>
                         ${row('Registry', d.registry)}
-                        ${row('Current Location', d.current_location)}
+                        ${row('Current Location (Expected)', d.current_location)}
                         ${row('Rack / Shelf', d.rack_shelf)}
                         ${row('Receiving Officer', d.receiving_officer_name)}
                         ${row('Logged Out', d.logged_out_at)}
@@ -294,9 +450,20 @@
                             </div>
                         </details>
                     </div>
-                    ${d.can_send_fr ? `
+                    ${(d.can_send_fr && CAN_SEND_FR) ? `
                     <div class="px-6 pt-4 border-t border-gray-100">
                         <div class="text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">Requester</div>
+                        <div class="mb-3">
+                            <label class="block text-[11px] font-semibold text-gray-600 mb-1">Registry (Origin) <span class="text-red-500">*</span></label>
+                            <div class="flex items-center gap-2">
+                                <select data-fr-registry class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
+                                    <option value="">— Select Registry (Origin) —</option>
+                                    ${REGISTRIES.map(rg => `<option value="${esc(rg.name)}" data-code="${esc(rg.registry_code || '')}">${esc(rg.name)}</option>`).join('')}
+                                </select>
+                                <span data-fr-registry-code class="inline-flex items-center justify-center min-w-[56px] rounded-lg bg-indigo-50 border border-indigo-100 px-2 py-2 text-xs font-bold text-indigo-700">—</span>
+                            </div>
+                            <div data-fr-registry-preview class="mt-2"></div>
+                        </div>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <div>
                                 <label class="block text-[11px] font-semibold text-gray-600 mb-1">Requester Office (Departments) <span class="text-red-500">*</span></label>
@@ -345,10 +512,12 @@
                 </div>`;
             result.classList.remove('hidden');
 
-            if (d.can_send_fr) initRequesterCascade();
+            if (d.can_send_fr) initRequesterCascade(d);
 
             const frBtn = result.querySelector('[data-fr]');
             if (frBtn) frBtn.addEventListener('click', () => sendFR(d, frBtn));
+            const redirectBtn = result.querySelector('[data-redirect]');
+            if (redirectBtn) redirectBtn.addEventListener('click', () => sendRedirect(d, redirectBtn));
             const logBtn = result.querySelector('[data-log]');
             if (logBtn) logBtn.addEventListener('click', () => logFile(d));
             const saveBtn = result.querySelector('[data-us-save]');
@@ -406,7 +575,7 @@
         const OFFICER_ADD  = '__OFFICER_ADD__';
 
         // Wire the Requester cascade: Department → Office → Officer (mirrors Create File Tracker).
-        function initRequesterCascade() {
+        function initRequesterCascade(fileData = {}) {
             const deptSel    = result.querySelector('[data-fr-dept]');
             const officeSel  = result.querySelector('[data-fr-office]');
             const officerSel = result.querySelector('[data-fr-officer]');
@@ -454,6 +623,19 @@
                 if (officerSel.value === OFFICER_ADD) { showAddCard(); }
                 else hideAddCard();
             });
+
+            // Registry (Origin): reflect the selected registry's short code live and
+            // load the digital copy from that registry's folder (if one exists).
+            const registrySel     = result.querySelector('[data-fr-registry]');
+            const registryCode    = result.querySelector('[data-fr-registry-code]');
+            const registryPreview = result.querySelector('[data-fr-registry-preview]');
+            if (registrySel && registryCode) {
+                registrySel.addEventListener('change', () => {
+                    const opt = registrySel.selectedOptions[0];
+                    registryCode.textContent = (opt && opt.dataset.code) ? opt.dataset.code : '—';
+                    loadRegistryPreview(fileData.file_number, registrySel.value, registryPreview);
+                });
+            }
 
             function showAddCard() { if (addCard) { addCard.classList.remove('hidden'); if (window.lucide) window.lucide.createIcons(); } }
             function hideAddCard() { if (addCard) addCard.classList.add('hidden'); }
@@ -548,12 +730,18 @@
             let receivingOfficer  = officerSel ? officerSel.value.trim() : '';
             if (receivingOfficer === OFFICER_ADD) receivingOfficer = '';
 
+            // Origin Registry (required) + its short code.
+            const registrySel  = result.querySelector('[data-fr-registry]');
+            const registry     = registrySel ? registrySel.value.trim() : '';
+            const registryCode = registrySel && registrySel.selectedOptions[0] ? (registrySel.selectedOptions[0].dataset.code || '') : '';
+
             const flag = (el) => { if (el) { el.classList.add('ring-2','ring-red-400','border-red-400'); } };
             const unflag = (el) => { if (el) el.classList.remove('ring-2','ring-red-400','border-red-400'); };
-            [deptSel, officeSel, officerSel, deptOther, officeOther].forEach(unflag);
+            [deptSel, officeSel, officerSel, deptOther, officeOther, registrySel].forEach(unflag);
             if (deptIsOther && !requesterDept) { flag(deptOther); deptOther.focus(); return; }
             if (officeIsOther && !requesterOffice) { flag(officeOther); officeOther.focus(); return; }
             if (officerSel && !receivingOfficer) { flag(officerSel); officerSel.focus(); return; }
+            if (registrySel && !registry) { flag(registrySel); registrySel.focus(); return; }
 
             frBtn.disabled = true;
             frBtn.innerHTML = updateId
@@ -564,7 +752,7 @@
                 const res = await fetch(FR_URL, {
                     method:'POST',
                     headers:{ 'Content-Type':'application/json', 'X-CSRF-TOKEN':CSRF, 'Accept':'application/json' },
-                    body: JSON.stringify({ file_number:d.file_number, file_title:d.file_title, current_location:d.current_location, resolved_status:d.status, receiving_officer: receivingOfficer, requester_department: requesterDept, requester_office: requesterOffice, requester_office_code: requesterOfficeCode, force: force ? 1 : 0, update_existing_id: updateId || null }),
+                    body: JSON.stringify({ file_number:d.file_number, file_title:d.file_title, current_location:d.current_location, resolved_status:d.status, receiving_officer: receivingOfficer, requester_department: requesterDept, requester_office: requesterOffice, requester_office_code: requesterOfficeCode, registry: registry || null, registry_code: registryCode || null, force: force ? 1 : 0, update_existing_id: updateId || null }),
                 });
                 const json = await res.json();
                 if (json.success) {
@@ -588,6 +776,105 @@
             }
         }
 
+        // ── Registry digital preview ────────────────────────────────────────────
+        // When a Registry (Origin) is selected, look up the file folder in that
+        // registry's on-disk source (SLTR / Cadastral / KANGIS / Physical Planning)
+        // and show the scanned image(s)/document(s) if the folder exists.
+        const REGISTRY_FILES_URL = "{{ route('digital-request.registry-files') }}";
+        const REG_IMG_EXT = ['jpg','jpeg','png','gif','webp','bmp','tif','tiff'];
+
+        async function loadRegistryPreview(fileNo, registry, box) {
+            if (!box) return;
+            box.innerHTML = '';
+            if (!fileNo || !registry) return;
+            box.innerHTML = `<div class="flex items-center gap-2 text-[11px] text-gray-400"><i data-lucide="loader" class="h-3.5 w-3.5 animate-spin"></i> Checking ${esc(registry)} digital copy…</div>`;
+            if (window.lucide) window.lucide.createIcons();
+            try {
+                const res  = await fetch(REGISTRY_FILES_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type':'application/json', 'X-CSRF-TOKEN':CSRF, 'Accept':'application/json' },
+                    body: JSON.stringify({ file_no: fileNo, registry }),
+                });
+                const json = await res.json();
+                const files = (json && json.available && Array.isArray(json.files)) ? json.files : [];
+                if (!files.length) {
+                    box.innerHTML = `<div class="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-[11px] text-gray-500"><i data-lucide="folder-x" class="h-3.5 w-3.5"></i> No digital copy found in ${esc(registry)} for this file.</div>`;
+                    if (window.lucide) window.lucide.createIcons();
+                    return;
+                }
+                const thumbs = files.map((f, i) => {
+                    const isImg = REG_IMG_EXT.includes((f.ext || '').toLowerCase());
+                    const inner = isImg
+                        ? `<img src="${esc(f.url)}" alt="${esc(f.name)}" loading="lazy" class="h-16 w-16 object-cover rounded-md border border-gray-200 group-hover:ring-2 group-hover:ring-indigo-400">`
+                        : `<span class="flex h-16 w-16 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-gray-500"><i data-lucide="file-text" class="h-6 w-6"></i></span>`;
+                    return `<a href="${esc(f.url)}" target="_blank" rel="noopener" class="group relative" title="${esc(f.name)}${f.category ? ' · ' + esc(f.category) : ''}">${inner}</a>`;
+                }).join('');
+                box.innerHTML = `
+                    <div class="rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-2.5">
+                        <div class="flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 mb-2">
+                            <i data-lucide="images" class="h-3.5 w-3.5"></i> ${esc(registry)} digital copy · ${files.length} page${files.length > 1 ? 's' : ''}
+                        </div>
+                        <div class="flex flex-wrap gap-2">${thumbs}</div>
+                    </div>`;
+                if (window.lucide) window.lucide.createIcons();
+            } catch (e) {
+                box.innerHTML = `<div class="text-[11px] text-red-600">Could not load the registry digital copy.</div>`;
+            }
+        }
+
+        // Re-direct an in-transit file's request straight to the office currently holding
+        // it (its last receiving officer) instead of routing it to the SCB Monitor.
+        // Mirrors the Digital File Request "Send Request to {office}" redirect.
+        const REDIRECT_URL = "{{ route('digital-request.store') }}";
+        async function sendRedirect(d, btn) {
+            const office = d.current_location || 'Current Office';
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader" class="h-4 w-4 animate-spin"></i> Sending…';
+            if (window.lucide) window.lucide.createIcons();
+            try {
+                const res = await fetch(REDIRECT_URL, {
+                    method:'POST',
+                    headers:{ 'Content-Type':'application/json', 'X-CSRF-TOKEN':CSRF, 'Accept':'application/json' },
+                    body: JSON.stringify({
+                        file_no: d.file_number,
+                        file_title: d.file_title,
+                        request_type: 'Physical',
+                        is_redirected: true,
+                        receiving_officer: d.receiving_officer_name || null,
+                        current_file_location: d.current_location || null,
+                        current_file_holder: d.receiving_officer_name || null,
+                    }),
+                });
+                const json = await res.json();
+                if (json.success) {
+                    // Grey out / disable the re-direct button now that the request is sent,
+                    // keeping its original label. Show the confirmation as feedback below.
+                    btn.disabled = true;
+                    btn.className = 'inline-flex items-center gap-2 rounded-lg bg-gray-300 px-4 py-2 text-sm font-semibold text-white cursor-not-allowed opacity-60';
+                    btn.innerHTML = `<i data-lucide="user-check" class="h-4 w-4"></i> Re-direct Request to ${esc(office)}`;
+                    Swal.fire('Request re-directed to ' + office, '', 'success');
+                    // Enable the Print Tracking Confirmation Slip now that the request is sent.
+                    const slip = result.querySelector('[data-print-slip]');
+                    if (slip) {
+                        slip.classList.remove('bg-gray-300','cursor-not-allowed','pointer-events-none','opacity-60');
+                        slip.classList.add('bg-amber-600','hover:bg-amber-700');
+                        slip.removeAttribute('aria-disabled');
+                        slip.removeAttribute('tabindex');
+                    }
+                } else if (json.duplicate) {
+                    btn.disabled = false; btn.innerHTML = '<i data-lucide="user-check" class="h-4 w-4"></i> Re-direct Request to ' + esc(office);
+                    alert(json.message || 'This file already has an open request.');
+                } else {
+                    btn.disabled = false; btn.innerHTML = '<i data-lucide="user-check" class="h-4 w-4"></i> Retry Re-direct';
+                    alert(json.message || 'Could not re-direct the request.');
+                }
+                if (window.lucide) window.lucide.createIcons();
+            } catch (e) {
+                btn.disabled = false; btn.innerHTML = '<i data-lucide="user-check" class="h-4 w-4"></i> Retry Re-direct';
+                alert('Network error — please try again.');
+            }
+        }
+
         // ── File Request Log + SCB Feedback ──
         const LOG_URL    = "{{ route('create-file-tracker.quick-search.file-request-log') }}";
         const ACTED_BASE = "{{ url('create-file-tracker/quick-search/file-request') }}";
@@ -595,6 +882,9 @@
         const tblBox     = document.getElementById('qs-feedback-table');
         const logFilters = document.getElementById('qs-log-filters');
         let   logStatus  = 'FOUND';   // default active tab
+        let   logFrom    = '';        // date-range filter (YYYY-MM-DD)
+        let   logTo      = '';
+        let   lastReport = {};        // last report summary (for exports)
 
         // Loaded rows kept client-side so the search boxes can filter without a refetch.
         let   scbRows = [], logRows = [];
@@ -651,12 +941,19 @@
             report = report || {};
             const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = (v ?? 0); };
             const dateEl = document.getElementById('qs-rep-date');
-            if (dateEl) dateEl.textContent = report.date ? `Today · ${report.date}` : '';
+            if (dateEl) dateEl.textContent = report.range_label
+                ? `Range · ${report.range_label}`
+                : (report.date ? `Today · ${report.date}` : '');
             set('qs-rep-today',    report.submitted_today);
+            set('qs-rep-today-found',    report.today_found);
+            set('qs-rep-today-notfound', report.today_not_found);
+            set('qs-rep-today-awaiting', report.today_awaiting);
             set('qs-rep-blind',    report.blind_open);
             set('qs-rep-found',    report.found);
             set('qs-rep-notfound', report.not_found);
             set('qs-rep-missing',  report.missing);
+            set('qs-rep-awaiting', report.awaiting);
+            lastReport = report;
         }
 
         function renderLogFilters(counts) {
@@ -664,10 +961,10 @@
             const totalEl = document.getElementById('qs-log-total');
             if (totalEl) totalEl.textContent = `${counts.all ?? 0}`;
             const chips = [
+                ['BLIND',     'Blind/Open', counts.blind_open],
                 ['FOUND',     'Found',      counts.found],
                 ['NOT_FOUND', 'Not Found',  counts.not_found],
                 ['MISSING',   'Missing',    counts.missing],
-                ['BLIND',     'Blind/Open', counts.blind_open],
                 ['PENDING',   'Awaiting',   counts.pending],
                 // ['', 'FSR History', counts.all],  // hidden for now
             ];
@@ -705,6 +1002,7 @@
                 <table class="w-full text-sm">
                     <thead>
                         <tr class="text-left text-[11px] uppercase tracking-wide text-gray-400 bg-gray-50 border-b border-gray-100">
+                            <th class="px-3 py-2.5 w-10">S/N</th>
                             <th class="px-3 py-2.5">File No</th>
                             <th class="px-3 py-2.5">Title</th>
                             <th class="px-3 py-2.5">Requester</th>
@@ -716,9 +1014,10 @@
                         </tr>
                     </thead>
                     <tbody>
-                        ${pageRows.map(r => {
+                        ${pageRows.map((r, i) => {
                             const badge  = LOG_BADGE[r.scb_response] || 'bg-gray-100 text-gray-700';
                             const icon   = r.found ? 'check' : (r.not_found ? 'x' : 'clock');
+                            const sn     = start + i + 1;
                             const sentDt = splitDT(r.requested_at);
                             const dt     = splitDT(r.responded_at);
                             const action = r.found
@@ -729,16 +1028,36 @@
                             const delBtn = IS_SUPER_ADMIN
                                 ? `<button type="button" data-fb-del data-id="${r.id}" title="Delete request" class="inline-flex items-center gap-1 rounded-lg bg-red-100 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-200"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>`
                                 : '';
+                            // Revert an SCB Found/Not-Found response (e.g. tapped by mistake),
+                            // sending the request back to the open queue. Super Admins only.
+                            const revertBtn = (IS_SUPER_ADMIN && (r.found || r.not_found))
+                                ? `<button type="button" data-fb-revert data-id="${r.id}" title="Revert SCB response" class="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"><i data-lucide="rotate-ccw" class="h-3.5 w-3.5"></i> Revert response</button>`
+                                : '';
+                            // OFS (Office Priority Search) requests get a dedicated amber/gold
+                            // treatment so they stand out from regular front-desk requests.
+                            const ofsBadge = r.is_ofs
+                                ? `<span class="mt-1 ml-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 ring-1 ring-amber-300" title="Office Priority Search${r.ofs_rank ? ' · ' + esc(r.ofs_rank) : ''}"><i data-lucide="crown" class="h-2.5 w-2.5"></i> OFS${r.ofs_rank ? ' · ' + esc(r.ofs_rank) : ''}</span>`
+                                : '';
                             return `
-                            <tr class="border-b border-gray-50 hover:bg-gray-50/60 align-top">
+                            <tr class="border-b border-gray-50 hover:bg-gray-50/60 align-top ${r.is_ofs ? 'bg-amber-50/60 border-l-4 border-l-amber-400' : ''}">
+                                <td class="px-3 py-3 whitespace-nowrap text-gray-400 font-medium">${sn}</td>
                                 <td class="px-3 py-3 whitespace-nowrap">
                                     <div class="font-semibold text-gray-800">${esc(r.file_number)}</div>
                                     <div class="text-[11px] text-gray-400">${esc(r.request_no)}</div>
                                     <span class="mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${r.is_dfr ? 'bg-gray-200 text-gray-600' : (r.is_blind ? 'bg-red-100 text-red-700' : 'bg-sky-100 text-sky-700')}">
-                                        <i data-lucide="${r.is_dfr ? 'file-text' : (r.is_blind ? 'eye-off' : 'folder-search')}" class="h-2.5 w-2.5"></i> ${esc(r.request_type)}</span>
+                                        <i data-lucide="${r.is_dfr ? 'file-text' : (r.is_blind ? 'eye-off' : 'folder-search')}" class="h-2.5 w-2.5"></i> ${esc(r.request_type)}</span>${ofsBadge}
                                 </td>
                                 <td class="px-3 py-3 text-gray-600 max-w-[180px] truncate" title="${esc(r.file_title || '')}">${r.file_title ? esc(r.file_title) : dash}</td>
-                                <td class="px-3 py-3 text-gray-600 max-w-[150px] truncate" title="${esc(r.receiving_officer || '')}">${r.receiving_officer ? esc(r.receiving_officer) : dash}</td>
+                                <td class="px-3 py-3 text-gray-600 max-w-[170px] align-top">
+                                    <div class="truncate font-medium text-gray-800" title="${esc(r.receiving_officer || '')}">${r.receiving_officer ? esc(r.receiving_officer) : dash}</div>
+                                    ${(() => {
+                                        const chips = [];
+                                        if (r.requester_department) chips.push(`<span class="inline-flex items-center gap-1 rounded-full bg-violet-50 border border-violet-100 px-1.5 py-px text-[10px] font-semibold text-violet-700" title="Department"><i data-lucide="building-2" class="h-2.5 w-2.5"></i>${esc(r.requester_department)}</span>`);
+                                        if (r.requester_office)     chips.push(`<span class="inline-flex items-center gap-1 rounded-full bg-sky-50 border border-sky-100 px-1.5 py-px text-[10px] font-semibold text-sky-700" title="Office"><i data-lucide="map-pin" class="h-2.5 w-2.5"></i>${esc(r.requester_office)}</span>`);
+                                        return chips.length ? `<div class="mt-1 flex flex-wrap gap-1">${chips.join('')}</div>` : '';
+                                    })()}
+                                    ${r.registry ? `<div class="mt-0.5"><span class="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-100 px-1.5 py-px text-[10px] font-semibold text-indigo-700" title="Origin Registry"><i data-lucide="library" class="h-2.5 w-2.5"></i>${esc(r.registry)}${r.registry_code ? ` · ${esc(r.registry_code)}` : ''}</span></div>` : ''}
+                                </td>
                                 <td class="px-3 py-3 text-gray-500 max-w-[150px] truncate" title="${esc(r.current_location || r.location_type || '')}">${(r.current_location || r.location_type) ? esc(r.current_location || r.location_type) : dash}</td>
                                 <td class="px-3 py-3 whitespace-nowrap">
                                     <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${badge}">
@@ -751,7 +1070,7 @@
                                     ${dt ? `<div class="text-gray-700 font-medium">${esc(dt.d)}</div><div class="text-gray-400">${esc(dt.t)}</div>` : dash}
                                 </td>
                                 <td class="px-3 py-3 whitespace-nowrap">
-                                    <div class="flex items-center justify-end gap-2">${action}${delBtn}</div>
+                                    <div class="flex items-center justify-end gap-2">${action}${revertBtn}${delBtn}</div>
                                 </td>
                             </tr>`;
                         }).join('')}
@@ -770,6 +1089,8 @@
                 b.addEventListener('click', () => frontDeskAct(b)));
             tblBox.querySelectorAll('[data-fb-del]').forEach(b =>
                 b.addEventListener('click', () => deleteFileRequest(b)));
+            tblBox.querySelectorAll('[data-fb-revert]').forEach(b =>
+                b.addEventListener('click', () => revertFileRequest(b)));
             tblBox.querySelectorAll('[data-scb-page]').forEach(b =>
                 b.addEventListener('click', () => {
                     if (b.disabled) return;
@@ -778,6 +1099,35 @@
                     tblBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }));
             if (window.lucide) window.lucide.createIcons();
+        }
+
+        // Revert an SCB Found/Not-Found response (tapped by mistake) — sends the request
+        // back to the open queue so the SCB can respond afresh.
+        async function revertFileRequest(btn) {
+            if (!confirm('Revert this SCB response and send the request back to the open queue?')) return;
+            const id = btn.dataset.id;
+            btn.disabled = true;
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i data-lucide="loader" class="h-3.5 w-3.5 animate-spin"></i> Reverting…';
+            if (window.lucide) window.lucide.createIcons();
+            try {
+                const res = await fetch(`${ACTED_BASE}/${id}/revert`, {
+                    method: 'POST',
+                    headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' },
+                });
+                const json = await res.json();
+                if (json.success) {
+                    reloadPanels();
+                } else {
+                    btn.disabled = false; btn.innerHTML = original;
+                    alert(json.message || 'Could not revert this response.');
+                    if (window.lucide) window.lucide.createIcons();
+                }
+            } catch (e) {
+                btn.disabled = false; btn.innerHTML = original;
+                alert('Network error — please try again.');
+                if (window.lucide) window.lucide.createIcons();
+            }
         }
 
         // Delete a File Search Request (Super Admins only).
@@ -823,7 +1173,12 @@
         async function loadLog() {
             fbBox.innerHTML = '<div class="px-4 py-8 text-center text-xs text-gray-400">Loading…</div>';
             try {
-                const url  = LOG_URL + (logStatus ? ('?status=' + encodeURIComponent(logStatus)) : '');
+                const params = new URLSearchParams();
+                if (logStatus) params.set('status', logStatus);
+                if (logFrom)   params.set('from', logFrom);
+                if (logTo)     params.set('to', logTo);
+                const qs   = params.toString();
+                const url  = LOG_URL + (qs ? ('?' + qs) : '');
                 const res  = await fetch(url, { headers: { 'Accept': 'application/json' } });
                 const json = await res.json();
                 renderReport(json.report);
@@ -880,10 +1235,172 @@
 
         function reloadPanels() { loadScbFeedback(); loadLog(); }
 
+        // ── Export (CSV / PDF) — Instrument-Capture-style consolidated report ──
+        // Exports exactly what's on screen: the current status chip + date range +
+        // search box, applied to the loaded File Search History rows.
+        const EXPORT_COLS = [
+            { key: 'sn',                label: 'S/N',           pdfWidth: 10 },
+            { key: 'request_no',        label: 'Request No',    pdfWidth: 26 },
+            { key: 'file_number',       label: 'File No',       pdfWidth: 28 },
+            { key: 'file_title',        label: 'Title',         pdfWidth: 'auto' },
+            { key: 'request_type',      label: 'Type',          pdfWidth: 22 },
+            { key: 'scb_response',      label: 'Response',      pdfWidth: 20 },
+            { key: 'requested_by',      label: 'Sent By',       pdfWidth: 28 },
+            { key: 'receiving_officer', label: 'Requester',     pdfWidth: 28 },
+            { key: 'current_location',  label: 'File Location',  pdfWidth: 28 },
+            { key: 'requested_at',      label: 'Requested',     pdfWidth: 26 },
+            { key: 'responded_at',      label: 'Responded',     pdfWidth: 26 },
+        ];
+
+        // Build flat export rows from the currently filtered history.
+        function exportRows() {
+            return logRows.filter(r => rowMatches(r, logQuery)).map((r, i) => {
+                const isMissing = r.not_found && r.is_blind;
+                return {
+                    sn:                i + 1,
+                    request_no:        r.request_no || '',
+                    file_number:       r.file_number || '',
+                    file_title:        r.file_title || '',
+                    request_type:      r.request_type || '',
+                    scb_response:      isMissing ? 'Missing' : (r.scb_response || ''),
+                    requested_by:      r.requested_by || '',
+                    receiving_officer: r.receiving_officer || '',
+                    current_location:  r.current_location || r.location_type || '',
+                    requested_at:      r.requested_at || '',
+                    responded_at:      r.responded_at || '',
+                };
+            });
+        }
+
+        // Human label for the active filter, used in filenames + the PDF subtitle.
+        function exportScopeLabel() {
+            const map = { FOUND:'Found', NOT_FOUND:'Not Found', MISSING:'Missing', BLIND:'Blind-Open', PENDING:'Awaiting' };
+            return map[logStatus] || 'All';
+        }
+        function exportRangeLabel() {
+            if (logFrom && logTo) return `${logFrom} to ${logTo}`;
+            if (logFrom) return `From ${logFrom}`;
+            if (logTo)   return `To ${logTo}`;
+            return '';
+        }
+        function csvCell(v) { return `"${String(v ?? '').replace(/"/g, '""')}"`; }
+
+        function exportHistoryCsv() {
+            const rows = exportRows();
+            if (!rows.length) { Swal.fire('No Data', 'There is nothing to export in the current view.', 'warning'); return; }
+            const lines = [
+                EXPORT_COLS.map(c => c.label).join(','),
+                ...rows.map(r => EXPORT_COLS.map(c => csvCell(r[c.key])).join(',')),
+            ];
+            const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `File_Search_Report_${exportScopeLabel()}_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }
+
+        function loadImg(url) {
+            return fetch(url).then(r => r.ok ? r.blob() : Promise.reject())
+                .then(b => new Promise(res => { const fr = new FileReader(); fr.onloadend = () => res(fr.result); fr.onerror = () => res(null); fr.readAsDataURL(b); }))
+                .catch(() => null);
+        }
+
+        function exportHistoryPdf() {
+            const rows = exportRows();
+            if (!rows.length) { Swal.fire('No Data', 'There is nothing to export in the current view.', 'warning'); return; }
+            if (!window.jspdf || !window.jspdf.jsPDF) { Swal.fire('Error', 'PDF engine not loaded. Please refresh and try again.', 'error'); return; }
+
+            Promise.all([
+                loadImg('/assets/logo/ministry1.jpg'),
+                loadImg('/assets/logo/ministry2.jpeg'),
+                loadImg('/assets/logo/Nigerian-Coat-of-Arms.png'),
+            ]).then(([leftLogo, rightLogo, watermark]) => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                const pageW = doc.internal.pageSize.getWidth();
+                const pageH = doc.internal.pageSize.getHeight();
+                const center = pageW / 2;
+                const logo = 22;
+
+                function header() {
+                    if (leftLogo)  doc.addImage(leftLogo, 'JPEG', 10, 8, logo, logo);
+                    if (rightLogo) doc.addImage(rightLogo, 'JPEG', pageW - 10 - logo, 8, logo, logo);
+                    doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+                    doc.setFontSize(16); doc.text('KANO STATE GOVERNMENT', center, 14, { align: 'center' });
+                    doc.setFontSize(12); doc.text('MINISTRY OF LAND AND PHYSICAL PLANNING', center, 20, { align: 'center' });
+                    doc.setFontSize(11); doc.text('FILE SEARCH REPORT', center, 26, { align: 'center' });
+                    doc.setLineWidth(0.5); doc.line(10, 32, pageW - 10, 32);
+                }
+                function watermarkDraw() {
+                    if (!watermark) return;
+                    try {
+                        const s = 120, x = (pageW - s) / 2, y = (pageH - s) / 2;
+                        if (typeof doc.GState === 'function') { doc.setGState(new doc.GState({ opacity: 0.08 })); doc.addImage(watermark, 'PNG', x, y, s, s); doc.setGState(new doc.GState({ opacity: 1 })); }
+                        else doc.addImage(watermark, 'PNG', x, y, s, s);
+                    } catch (e) {}
+                }
+
+                const scope = exportScopeLabel();
+                const range = exportRangeLabel();
+
+                const columnStyles = {};
+                EXPORT_COLS.forEach((c, i) => { if (c.pdfWidth) columnStyles[i] = { cellWidth: c.pdfWidth }; });
+
+                doc.autoTable({
+                    head: [EXPORT_COLS.map(c => c.label)],
+                    body: rows.map(r => EXPORT_COLS.map(c => r[c.key] ?? '')),
+                    startY: 52,
+                    theme: 'grid',
+                    styles: { fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'middle' },
+                    headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
+                    columnStyles,
+                    margin: { top: 52, left: 10, right: 10 },
+                    didDrawPage: function () {
+                        header();
+                        doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(0, 0, 0);
+                        doc.text(`File Search History — ${scope}${range ? ' (' + range + ')' : ''}`, 14, 39);
+                        doc.setFont('helvetica', 'normal');
+                        doc.setFontSize(8); doc.setTextColor(120, 120, 120);
+                        doc.text('Generated on: ' + new Date().toLocaleString(), pageW - 10, 45, { align: 'right' });
+                        watermarkDraw();
+                    },
+                });
+
+                const total = doc.internal.getNumberOfPages();
+                for (let p = 1; p <= total; p++) {
+                    doc.setPage(p);
+                    doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(120, 120, 120);
+                    doc.text(`Page ${p} of ${total}`, pageW - 10, pageH - 5, { align: 'right' });
+                }
+
+                doc.save(`File_Search_Report_${scope}_${new Date().toISOString().split('T')[0]}.pdf`);
+            }).catch(e => Swal.fire('Error', 'Failed to generate PDF: ' + (e && e.message ? e.message : e), 'error'));
+        }
+
         btn.addEventListener('click', search);
         if (pickBtn) pickBtn.addEventListener('click', pickFileNumber);
         input.addEventListener('click', pickFileNumber);   // read-only: open picker instead of typing
         document.getElementById('qs-fb-refresh').addEventListener('click', loadLog);
+
+        // Date-range filter for the report + history.
+        const repFrom  = document.getElementById('qs-rep-from');
+        const repTo    = document.getElementById('qs-rep-to');
+        const repClear = document.getElementById('qs-rep-clear');
+        function syncDateRange() {
+            logFrom = repFrom.value || '';
+            logTo   = repTo.value || '';
+            repClear.classList.toggle('hidden', !(logFrom || logTo));
+            loadLog();
+        }
+        repFrom.addEventListener('change', syncDateRange);
+        repTo.addEventListener('change', syncDateRange);
+        repClear.addEventListener('click', () => {
+            repFrom.value = ''; repTo.value = '';
+            syncDateRange();
+        });
+
+        document.getElementById('qs-export-csv').addEventListener('click', exportHistoryCsv);
+        document.getElementById('qs-export-pdf').addEventListener('click', exportHistoryPdf);
         document.getElementById('qs-tbl-refresh').addEventListener('click', loadScbFeedback);
 
         // Live, client-side filtering of the already-loaded rows.

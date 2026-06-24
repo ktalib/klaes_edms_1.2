@@ -312,10 +312,15 @@
         <span></span><input type="text" value="{{ $report->valuation_basis }}" />
       </div>
 
+      @php
+        // Print re-evaluation values when present, otherwise fall back to the originals.
+        $printValueWords = filled($report->re_value_words) ? $report->re_value_words : $report->value_words;
+        $printValueFigures = filled($report->re_value_figures) ? $report->re_value_figures : $report->value_figures;
+      @endphp
       <div class="section-title">21. OPINION/RECOMMENDATION</div>
       <div class="grid grid-cols-[160px_1fr] grid-compact">
-        <span>a) Value in Words:</span><textarea class="font-bold uppercase text-sm w-full leading-tight">{{ $report->value_words }}</textarea>
-        <span>b) Amount (₦):</span><input type="text" value="{{ $report->value_figures }}" class="font-bold text-lg" />
+        <span>a) Value in Words:</span><textarea class="font-bold uppercase text-sm w-full leading-tight">{{ $printValueWords }}</textarea>
+        <span>b) Amount (₦):</span><input type="text" value="{{ $printValueFigures }}" class="font-bold text-lg" />
       </div>
 
       <div class="section-title">22. SURVEYOR DETAILS</div>

@@ -207,6 +207,10 @@
             <i data-lucide="archive" class="h-3.5 w-3.5 text-[#65a30d]"></i>
             <span>File Tracker (Archive)</span>
           </a>
+          <a href="{{ route('create-file-tracker.quick-search', ['url' => 'sltr']) }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.quick-search') && request('url') === 'sltr' ? 'active' : '' }}">
+            <i data-lucide="search" class="h-3.5 w-3.5 text-[#65a30d]"></i>
+            <span>Quick Search</span>
+          </a>
           <a href="{{ route('create-file-tracker.index', ['url' => 'sltr']) }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.index') && request('url') === 'sltr' ? 'active' : '' }}">
             <i data-lucide="file-plus" class="h-3.5 w-3.5 text-[#65a30d]"></i>
             <span>Log a File</span>

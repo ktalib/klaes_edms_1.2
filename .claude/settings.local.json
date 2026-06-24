@@ -154,7 +154,17 @@
       "Bash(rm -f \"C:\\\\Users\\\\admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--wamp64-www-klaes\\\\2fdda8aa-550e-48ee-9650-68ad48e77d92\\\\tasks\\\\br03tkdkr.output\" 2>/dev/null; echo done)",
       "Bash(grep -n \"username\\\\|fillable\\\\|protected \\\\$\" app/Models/Phs/PhsMember.php)",
       "Bash(grep -n 'connection\\\\|protected $table\\\\|class SltrRecommendation' app/Models/SltrRecommendation.php)",
-      "PowerShell(php artisan tinker --execute=\"echo \\\\Illuminate\\\\Support\\\\Facades\\\\Schema::connection\\('sqlsrv'\\)->hasTable\\('sltr_recommendations'\\) ? 'EXISTS on sqlsrv' : 'MISSING on sqlsrv';\")"
+      "PowerShell(php artisan tinker --execute=\"echo \\\\Illuminate\\\\Support\\\\Facades\\\\Schema::connection\\('sqlsrv'\\)->hasTable\\('sltr_recommendations'\\) ? 'EXISTS on sqlsrv' : 'MISSING on sqlsrv';\")",
+      "PowerShell(php -l app\\\\Http\\\\Controllers\\\\CreateFileTrackerController.php)",
+      "Bash(php -l \"c:/wamp64/www/klaes/app/Http/Controllers/Api/Mobile/MobileFileSearchController.php\")",
+      "Bash(php -l \"c:/wamp64/www/klaes/app/Http/Controllers/CreateFileTrackerController.php\")",
+      "Bash(php -l app/Models/MasterDcivLink.php)",
+      "Bash(php -l app/Http/Controllers/MasterDcivLinkController.php)",
+      "Bash(php -l app/Http/Controllers/DcivGenerationController.php)",
+      "Bash(php -l app/Http/Controllers/IndexedFileTableController.php)",
+      "Bash(php -l database/migrations/2026_06_20_000000_create_master_dciv_links_table.php)",
+      "Bash(grep -nE 'getNextSerial|findNextAvailableFileNumber|full_file_number'\\\\'', \\\\$fullFileNumber|generateFileNumber' app/Http/Controllers/MlsFileNoController.php)",
+      "Bash(awk -F: '$1>=2468 && $1<=2920')"
     ],
     "additionalDirectories": [
       "C:\\wamp64\\www\\klaes\\resources\\views\\special_assignment",

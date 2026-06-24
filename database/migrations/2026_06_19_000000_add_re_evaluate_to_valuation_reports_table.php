@@ -12,10 +12,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::connection('sqlsrv')->table('valuation_reports', function (Blueprint $table) {
-            // Marks a printed row that has been superseded by a re-evaluation.
-            $table->boolean('re_evaluate')->default(0);
-            // Links a re-evaluated (new) row back to the original printed row.
-            $table->unsignedBigInteger('parent_id')->nullable();
+            // Re-evaluation values. When present they supersede the original
+            // value_words / value_figures when printing the report.
+            $table->text('re_value_words')->nullable();
+            $table->string('re_value_figures')->nullable();
         });
     }
 
@@ -25,7 +25,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::connection('sqlsrv')->table('valuation_reports', function (Blueprint $table) {
-            $table->dropColumn(['re_evaluate', 'parent_id']);
+            $table->dropColumn(['re_value_words', 're_value_figures']);
         });
     }
 };

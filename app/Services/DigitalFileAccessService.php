@@ -223,63 +223,87 @@ class DigitalFileAccessService
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /**
-     * Look for a subdirectory of $root matching $fileNo (case-insensitive)
-     * and collect allowed files inside it.
+     * Normalise a file number / name for matching: lower-cased and stripped of
+     * every non-alphanumeric character. This makes "RES/2024/1990",
+     * "RES-2024-1990" and "res 2024 1990" all compare equal.
      */
-    private function searchInSubfolder(string $root, string $fileNo, array $allowed): array
+    private function normalizeKey(string $s): string
     {
-        $lc = strtolower($fileNo);
-
-        foreach (scandir($root) as $entry) {
-            if ($entry === '.' || $entry === '..') continue;
-            $full = $root . DIRECTORY_SEPARATOR . $entry;
-            if (is_dir($full) && strtolower($entry) === $lc) {
-                return $this->collectFiles($full, $allowed);
-            }
-        }
-
-        return [];
+        return strtolower(preg_replace('/[^a-z0-9]/i', '', $s));
     }
 
     /**
-     * Scan root (non-recursively) for files whose name contains $fileNo.
+     * Look for a subdirectory (at any depth) whose name matches $fileNo
+     * (separator-insensitive) and collect allowed files recursively inside it.
+     * Matches from multiple folders are merged.
      */
-    private function searchFlatInRoot(string $root, string $fileNo, array $allowed): array
+    private function searchInSubfolder(string $root, string $fileNo, array $allowed): array
     {
+        $key     = $this->normalizeKey($fileNo);
         $results = [];
-        $lc      = strtolower($fileNo);
 
-        foreach (scandir($root) as $entry) {
-            if ($entry === '.' || $entry === '..') continue;
-            $full = $root . DIRECTORY_SEPARATOR . $entry;
-            if (!is_file($full)) continue;
-            $ext = strtolower(pathinfo($entry, PATHINFO_EXTENSION));
-            if (!in_array($ext, $allowed)) continue;
-            if (str_contains(strtolower($entry), $lc)) {
-                $results[] = $full;
+        $it = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($it as $item) {
+            if ($item->isDir() && $this->normalizeKey($item->getFilename()) === $key) {
+                $results = array_merge($results, $this->collectFiles($item->getPathname(), $allowed));
             }
         }
 
+        return array_values(array_unique($results));
+    }
+
+    /**
+     * Recursively scan $root for files whose name contains $fileNo
+     * (separator-insensitive).
+     */
+    private function searchFlatInRoot(string $root, string $fileNo, array $allowed): array
+    {
+        $key     = $this->normalizeKey($fileNo);
+        $results = [];
+
+        $it = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($it as $item) {
+            if (!$item->isFile()) continue;
+            $ext = strtolower($item->getExtension());
+            if (!in_array($ext, $allowed)) continue;
+            if (str_contains($this->normalizeKey($item->getFilename()), $key)) {
+                $results[] = $item->getPathname();
+            }
+        }
+
+        sort($results); // stable, predictable page order
         return $results;
     }
 
     /**
-     * Collect all allowed files from a directory (non-recursive).
+     * Collect all allowed files from a directory (recursively).
      */
     private function collectFiles(string $dir, array $allowed): array
     {
         $files = [];
 
-        foreach (scandir($dir) as $entry) {
-            if ($entry === '.' || $entry === '..') continue;
-            $full = $dir . DIRECTORY_SEPARATOR . $entry;
-            if (!is_file($full)) continue;
-            $ext = strtolower(pathinfo($entry, PATHINFO_EXTENSION));
+        $it = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($it as $item) {
+            if (!$item->isFile()) continue;
+            $ext = strtolower($item->getExtension());
             if (in_array($ext, $allowed)) {
-                $files[] = $full;
+                $files[] = $item->getPathname();
             }
         }
 
+        sort($files);
         return $files;
     }
 

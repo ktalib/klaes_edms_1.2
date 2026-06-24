@@ -6,6 +6,7 @@ use App\Models\Office;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class MobileController extends Controller
@@ -67,12 +68,33 @@ class MobileController extends Controller
 
         $officers = User::where('is_active', 1)
             ->orderBy('first_name')
-            ->get(['id', 'first_name', 'last_name', 'username']);
+            ->get(['id', 'first_name', 'last_name', 'username', 'department_id']);
+
+        // Origin registries (+ short codes) for the File Search request dropdown —
+        // mirrors the Registry selector on Create File Tracker.
+        $registries = DB::connection('sqlsrv')->table('physical_registries')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get(['name', 'registry_code']);
+
+        // Requester cascade for the File Search request (mirrors Quick Search):
+        // Requester Office (Departments) → Requester Office → Requester Officer.
+        $departments = $offices->pluck('department')->filter()->unique()->sort()->values();
+
+        // Map department NAME → id (officers are linked to departments.id) so the
+        // officer dropdown can be filtered by the chosen department.
+        $departmentIds = DB::connection('sqlsrv')
+            ->table('departments')
+            ->select('id', 'name')
+            ->get();
 
         $user = Auth::user();
         $isScbMonitor = ($user->fr_permissions ?? '') === 'SCB';
+        // OFS (Office Priority Search): a ranked officer (users.rank matches the
+        // hierarchy) who may raise prioritised File/Blind Requests from File Search.
+        $isOfs = $user->isOfs();
 
-        return view('mobile.dashboard', compact('offices', 'officers', 'user', 'isScbMonitor'));
+        return view('mobile.dashboard', compact('offices', 'officers', 'registries', 'departments', 'departmentIds', 'user', 'isScbMonitor', 'isOfs'));
     }
 
     /**
@@ -83,8 +105,11 @@ class MobileController extends Controller
         $user = Auth::user();
         // Super Admins can skip the mandatory destination-office selection.
         $isSuperAdmin = $user->isSuperAdmin();
+        // Role flags drive the bottom navigation (mirrors the dashboard tab bar).
+        $isScbMonitor = ($user->fr_permissions ?? '') === 'SCB';
+        $isOfs        = $user->isOfs();
 
-        return view('mobile.digital_request', compact('user', 'isSuperAdmin'));
+        return view('mobile.digital_request', compact('user', 'isSuperAdmin', 'isScbMonitor', 'isOfs'));
     }
 
     /**

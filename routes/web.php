@@ -1610,6 +1610,7 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'create-file-tracker'
     Route::get('/quick-search/scb-feedback', [App\Http\Controllers\CreateFileTrackerController::class, 'scbFeedback'])->name('create-file-tracker.quick-search.scb-feedback');
     Route::get('/quick-search/file-request-log', [App\Http\Controllers\CreateFileTrackerController::class, 'fileRequestLog'])->name('create-file-tracker.quick-search.file-request-log');
     Route::post('/quick-search/file-request/{id}/front-desk-acted', [App\Http\Controllers\CreateFileTrackerController::class, 'markFrontDeskActed'])->name('create-file-tracker.quick-search.front-desk-acted');
+    Route::post('/quick-search/file-request/{id}/revert', [App\Http\Controllers\CreateFileTrackerController::class, 'revertScbResponse'])->name('create-file-tracker.quick-search.file-request.revert');
     Route::delete('/quick-search/file-request/{id}', [App\Http\Controllers\CreateFileTrackerController::class, 'deleteFileRequest'])->name('create-file-tracker.quick-search.file-request.delete');
     Route::get('/slip', [App\Http\Controllers\CreateFileTrackerController::class, 'slipFromFileNumber'])->name('create-file-tracker.slip');
     Route::post('/file-request', [App\Http\Controllers\CreateFileTrackerController::class, 'sendFileRequest'])->name('create-file-tracker.file-request');
@@ -1637,6 +1638,8 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'digital-request'], f
     Route::post('/approve/{id}',        [App\Http\Controllers\DigitalFileRequestController::class, 'approve'])->name('digital-request.approve');
     Route::post('/reject/{id}',         [App\Http\Controllers\DigitalFileRequestController::class, 'reject'])->name('digital-request.reject');
     Route::post('/check-availability',  [App\Http\Controllers\DigitalFileRequestController::class, 'checkFileAvailability'])->name('digital-request.check-availability');
+    Route::post('/digital-files',       [App\Http\Controllers\DigitalFileRequestController::class, 'digitalFiles'])->name('digital-request.digital-files');
+    Route::post('/registry-files',      [App\Http\Controllers\DigitalFileRequestController::class, 'registryFiles'])->name('digital-request.registry-files');
     Route::get('/file-numbers',         [App\Http\Controllers\DigitalFileRequestController::class, 'fileNumberSearch'])->name('digital-request.file-numbers');
     Route::get('/offices-by-department',[App\Http\Controllers\DigitalFileRequestController::class, 'getOfficesByDepartment'])->name('digital-request.offices-by-department');
     Route::get('/pending-count',        [App\Http\Controllers\DigitalFileRequestController::class, 'pendingCount'])->name('digital-request.pending-count');

@@ -199,6 +199,8 @@
                                                 Related FileNo</th>
                                             <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
                                                 Temp FileNo</th>
+                                            <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
+                                                DCIV FileNo</th>
                                             <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide"
                                                 data-sort="file_title">File Name</th>
                                             <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide"
@@ -219,6 +221,8 @@
                                                 data-sort="lga">LGA</th>
                                             <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide"
                                                 data-sort="registry_batch_no">Registry Batch No</th>
+                                            <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
+                                                DCIV Reason</th>
                                             <th
                                                 class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
                                                 Status</th>
@@ -229,7 +233,7 @@
                                     </thead>
                                     <tbody class="divide-y divide-gray-100" id="indexed-files-tbody">
                                         <tr class="text-center py-8">
-                                            <td colspan="19" class="text-gray-500 py-8">
+                                            <td colspan="21" class="text-gray-500 py-8">
                                                 <i data-lucide="loader" class="h-5 w-5 animate-spin inline-block"></i>
                                                 Loading...
                                             </td>

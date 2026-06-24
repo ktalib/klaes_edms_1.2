@@ -1789,6 +1789,18 @@ class InstrumentRegistrationController extends Controller
             $rejectedCount = 0; // No rejected status in this context
             $totalCount = $allInstruments->count();
 
+            // ST Deeds view: registered instruments broken down by application type (PUA / SUA / Primary)
+            $registeredByAppType = ['PUA' => 0, 'SUA' => 0, 'Primary' => 0];
+            if ($isStDeeds) {
+                $registeredInstruments = $allInstruments->where('status', 'registered');
+                $registeredByAppType['PUA'] = $registeredInstruments
+                    ->filter(fn($i) => strtoupper(trim($i->application_type ?? '')) === 'PUA')->count();
+                $registeredByAppType['SUA'] = $registeredInstruments
+                    ->filter(fn($i) => strtoupper(trim($i->application_type ?? '')) === 'SUA')->count();
+                $registeredByAppType['Primary'] = $registeredInstruments
+                    ->filter(fn($i) => strtoupper(trim($i->application_type ?? '')) === 'PRIMARY')->count();
+            }
+
             // Process property descriptions and durations
             foreach ($allInstruments as $application) {
                 if (empty($application->propertyDescription)) {
@@ -1908,6 +1920,7 @@ class InstrumentRegistrationController extends Controller
                 'registeredCount',
                 'rejectedCount',
                 'totalCount',
+                'registeredByAppType',
                 'instrumentTypes',
                 'fullDataForJs',
                 'isStDeeds',
@@ -1924,6 +1937,7 @@ class InstrumentRegistrationController extends Controller
             $fullDataForJs = collect();
             $stGroups = collect();
             $pendingCount = $registeredCount = $rejectedCount = $totalCount = 0;
+            $registeredByAppType = ['PUA' => 0, 'SUA' => 0, 'Primary' => 0];
             $instrumentTypes = collect();
 
             return view('instrument_registration.index', compact(
@@ -1934,6 +1948,7 @@ class InstrumentRegistrationController extends Controller
                 'registeredCount',
                 'rejectedCount',
                 'totalCount',
+                'registeredByAppType',
                 'instrumentTypes',
                 'fullDataForJs',
                 'isStDeeds',

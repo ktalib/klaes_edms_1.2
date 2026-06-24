@@ -209,12 +209,20 @@ class FileTrackerApiController extends Controller
             // A file is "logged out" when it has been checked out to another office and has not been
             // logged back in — indicated by at least one 'completed' log entry but no 'active' one.
             $fileNumber = trim((string) ($request->input('file_number', '')));
+            $currentModule = strtolower(trim((string) $request->input('module', '')));
             if ($fileNumber !== '') {
                 $existingTrackers = FileTracker::where('file_number', $fileNumber)
                     ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(status,'')))) NOT IN ('COMPLETED', 'CANCELLED')")
                     ->get();
 
                 foreach ($existingTrackers as $existing) {
+                    // Only a logged-out tracker in the SAME module blocks a new logout.
+                    // A file checked out under a different module/department (e.g. Cadastral)
+                    // is tracked independently and must not block this module's registry.
+                    if (strtolower(trim((string) ($existing->module ?? ''))) !== $currentModule) {
+                        continue;
+                    }
+
                     $log = $existing->movement_log ?? [];
                     if (empty($log)) {
                         continue;
@@ -326,6 +334,7 @@ class FileTrackerApiController extends Controller
                 'origin_office_code' => $request->origin_office_code,
                 'origin_office_name' => $request->origin_office_name,
                 'origin_office_department' => $request->origin_office_department,
+                'registry_code' => $registryCode,
                 'receiving_office_code' => $request->receiving_office_code,
                 'receiving_office_name' => $request->receiving_office_name,
                 'receiving_officer_id' => $receivingOfficerId,
@@ -995,6 +1004,10 @@ class FileTrackerApiController extends Controller
 
             $tracker->movement_log = $movementLog;
 
+            // Editing a log entry invalidates any previously printed log/complete sheet,
+            // so reset the printed flag to force a fresh print.
+            $tracker->printed = false;
+
             $entryStatus = strtolower((string) ($movementLog[$entryIndex]['status'] ?? ''));
             if ($entryStatus !== 'completed') {
                 $tracker->current_office_code = $request->office_code;
@@ -1107,13 +1120,51 @@ class FileTrackerApiController extends Controller
             $tracker->movement_log = $movementLog;
             $tracker->total_offices = count($movementLog);
 
-            // If we removed the most recent entry, restore current office
-            // pointers from the new latest entry (if any).
-            if (!empty($movementLog)) {
-                $latest = end($movementLog);
-                $tracker->current_office_code = $latest['office_code'] ?? $tracker->current_office_code;
-                $tracker->current_office_name = $latest['office_name'] ?? $tracker->current_office_name;
+            // Recompute the tracker status from what remains, otherwise a deleted
+            // out-movement leaves the tracker stuck ACTIVE and the file keeps showing as
+            // IN_TRANSIT in Quick Search.
+            $hasActiveMovement = collect($movementLog)
+                ->contains(fn ($e) => is_array($e) && strtolower($e['status'] ?? '') === 'active');
+
+            if (empty($movementLog)) {
+                // No movements left: the log is empty, so delete the tracker entirely.
+                // Clear any indexing snapshot that points at it so Quick Search falls
+                // back to the file's home location instead of a dangling reference.
+                $trackerId  = $tracker->id;
+                $fileNumber = $tracker->file_number;
+
+                try {
+                    DB::connection('sqlsrv')->table('file_indexings')
+                        ->where('file_tracker_id', $trackerId)
+                        ->update([
+                            'file_tracker_id'        => null,
+                            'tracking_status'        => null,
+                            'location_status_manual' => null,
+                        ]);
+                } catch (Exception $e) {
+                    // Non-fatal: the resolver re-derives location even without this cleanup.
+                    Log::warning('Could not clear file_indexings snapshot on tracker delete', ['tracker_id' => $trackerId, 'error' => $e->getMessage()]);
+                }
+
+                $tracker->delete();
+                DB::commit();
+
+                return response()->json([
+                    'success'         => true,
+                    'tracker_deleted' => true,
+                    'file_number'     => $fileNumber,
+                    'message'         => 'Last log entry removed — file tracker deleted.',
+                ]);
             }
+
+            // Restore current office pointers from the new latest entry.
+            $latest = end($movementLog);
+            $tracker->current_office_code = $latest['office_code'] ?? $tracker->current_office_code;
+            $tracker->current_office_name = $latest['office_name'] ?? $tracker->current_office_name;
+            // Out-movement remaining -> still ACTIVE; otherwise it has been logged back in.
+            $tracker->status = $hasActiveMovement
+                ? FileTracker::STATUS_ACTIVE
+                : FileTracker::STATUS_COMPLETED;
 
             $tracker->save();
             DB::commit();

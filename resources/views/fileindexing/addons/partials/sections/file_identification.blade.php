@@ -209,6 +209,109 @@
                     <p id="kn-fileno-status" class="mt-1 text-xs text-gray-500"></p>
                 </div>
             </div>
+
+            {{-- Has Transaction (New KANGIS) — repeatable transaction rows; each row is saved
+                 to the pra table on submit, sharing one prop_id for the file. --}}
+            <div class="mt-4 pt-4 border-t border-gray-100">
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="has-new-kangis-transaction" name="has_new_kangis_transaction" value="1"
+                        class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                    <label for="has-new-kangis-transaction" class="text-sm font-medium text-gray-700 cursor-pointer">
+                        Has Transaction
+                    </label>
+                </div>
+
+                <div id="nk-transaction-card" class="hidden mt-3">
+                    <div id="nk-transaction-rows" class="space-y-4">
+                        {{-- Template / first transaction row --}}
+                        <div class="nk-transaction-row rounded-lg border border-blue-200 bg-blue-50/50 p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <h5 class="text-sm font-semibold text-blue-900 flex items-center gap-2">
+                                    <i data-lucide="receipt" class="h-4 w-4"></i>
+                                    Transaction <span class="nk-txn-index">1</span> <span class="nk-txn-fileno font-mono text-purple-700"></span>
+                                </h5>
+                                <button type="button" class="nk-txn-remove hidden inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-800">
+                                    <i data-lucide="trash-2" class="h-3.5 w-3.5"></i> Remove
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="form-group">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Instrument Type</label>
+                                    <select class="nk-txn-instrument block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                        <option value="">Select Instrument Type</option>
+                                        <option value="Certificate of Occupancy">Certificate of Occupancy</option>
+                                        <option value="ST Certificate of Occupancy">ST Certificate of Occupancy</option>
+                                        <option value="SLTR Certificate of Occupancy">SLTR Certificate of Occupancy</option>
+                                        <option value="Customary Right of Occupancy">Customary Right of Occupancy</option>
+                                        <option value="Deed of Transfer">Deed of Transfer</option>
+                                        <option value="Deed of Assignment">Deed of Assignment</option>
+                                        <option value="ST Assignment">ST Assignment</option>
+                                        <option value="Deed of Mortgage">Deed of Mortgage</option>
+                                        <option value="Tripartite Mortgage">Tripartite Mortgage</option>
+                                        <option value="Deed of Sub Lease">Deed of Sub Lease</option>
+                                        <option value="Deed of Sub Under Lease">Deed of Sub Under Lease</option>
+                                        <option value="Power of Attorney">Power of Attorney</option>
+                                        <option value="Irrevocable Power of Attorney">Irrevocable Power of Attorney</option>
+                                        <option value="Conveyance">Conveyance</option>
+                                        <option value="Deed of Gift">Deed of Gift</option>
+                                        <option value="Court Affidavit">Court Affidavit</option>
+                                        <option value="Consent Judgment">Consent Judgment</option>
+                                        <option value="Right of Occupancy">Right of Occupancy</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Transaction Date</label>
+                                    <input type="date" class="nk-txn-date block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-3 gap-4 mt-2">
+                                <div class="form-group">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Serial No</label>
+                                    <input type="text" class="nk-txn-serial block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                </div>
+                                <div class="form-group">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Page No</label>
+                                    <input type="text" class="nk-txn-page block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                </div>
+                                <div class="form-group">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Vol No</label>
+                                    <input type="text" class="nk-txn-vol block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4 mt-2">
+                                <div class="form-group">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Registration Date</label>
+                                    <input type="date" class="nk-txn-reg-date block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                </div>
+                                <div class="form-group">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Registration Time</label>
+                                    <input type="time" class="nk-txn-reg-time block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4 mt-2">
+                                <div class="form-group">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Grantor</label>
+                                    <input type="text" class="nk-txn-grantor block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                </div>
+                                <div class="form-group">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Grantee</label>
+                                    <input type="text" class="nk-txn-grantee block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" style="text-transform: uppercase;">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="button" id="add-nk-transaction-btn"
+                        class="mt-3 inline-flex items-center gap-1.5 px-3 py-2 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        <i data-lucide="plus" class="h-4 w-4"></i>
+                        Add Transaction
+                    </button>
+                </div>
+            </div>
             @endunless
         </div>
 

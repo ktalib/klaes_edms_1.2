@@ -22,6 +22,7 @@ class DuplicateFileno extends Model
         'category',
         'created_by',
         'source',
+        'prop_id',
     ];
 
     /**

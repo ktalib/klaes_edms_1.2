@@ -134,26 +134,68 @@
                 </select>
             </div>
             <div class="form-group">
-                <label class="block text-sm font-medium text-gray-700 mb-2">Location</label>
-                <input type="text" :id="'location-' + index" name="location[]" x-model="param.location" 
-                    x-effect="
-                        let parts = [];
-                        if (param.plot_number) parts.push('PLOTNO: ' + param.plot_number);
-
-                        if (param.lga && !['', 'Select LGA'].includes(param.lga)) {
-                            parts.push('LGA: ' + param.lga);
-                        }
-
-                        if (parts.length > 0) {
-                            parts.push('STATE: KANO');
-                            param.location = parts.join(', ').toUpperCase();
-                        }
-                    "
-                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-gray-50" readonly placeholder="Auto-generated as PLOTNO, LGA, STATE" style="cursor: default; text-transform: uppercase;">
-            </div>
-            <div class="form-group">
                 <label class="block text-sm font-medium text-gray-700 mb-2">Plot Size</label>
                 <input type="text" :id="'plot-size-' + index" :name="'plot_size[' + index + ']'" x-model="param.plot_size" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" style="text-transform: uppercase;">
+            </div>
+        </div>
+
+        <!-- Location (full width) + geocode action -->
+        <div class="form-group">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Location</label>
+            <div class="flex flex-col sm:flex-row gap-2">
+                <input type="text" :id="'location-' + index" name="location[]" x-model="param.location"
+                    x-effect="
+                        let plot = (param.plot_number || '').trim();
+                        let street = ((param.street_name === 'Other' || param.street_name === 'other') ? (param.custom_street_name || '') : (param.street_name || '')).trim();
+                        if (['', 'SELECT STREET NAME'].includes(street.toUpperCase())) street = '';
+                        let district = ((param.district === 'Other' || param.district === 'other') ? (param.custom_district || '') : (param.district || '')).trim();
+                        if (['', 'SELECT DISTRICT'].includes(district.toUpperCase())) district = '';
+                        let lga = (param.lga && !['', 'Select LGA'].includes(param.lga)) ? param.lga.trim() : '';
+
+                        if (plot || street || district || lga) {
+                            let parts = [];
+                            if (plot) parts.push(plot);
+                            if (street) parts.push('STREET: ' + street);
+                            if (district) parts.push('DISTRICT: ' + district);
+                            if (lga) parts.push('LGA: ' + lga);
+                            parts.push('STATE: KANO');
+                            param.location = parts.join(', ').toUpperCase();
+                        } else {
+                            param.location = '';
+                        }
+                    "
+                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-gray-50" readonly placeholder="Auto-generated as PLOT, STREET, DISTRICT. LGA, STATE" style="cursor: default; text-transform: uppercase;">
+
+                <!-- Apply / Pin on Map -->
+                <button type="button"
+                    @click="geocodeLocation(param, index)"
+                    :disabled="!param.location"
+                    class="shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md flex items-center justify-center gap-2 transition-all whitespace-nowrap">
+                    <i data-lucide="map-pin" class="h-4 w-4"></i>
+                    <span>Apply &amp; Pin on Map</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Geocoded coordinates (read-only) — also the submitted lat/lng fields -->
+        <div class="form-grid-2">
+            <div class="form-group">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Latitude</label>
+                <div class="relative">
+                    <i data-lucide="map-pin" class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400"></i>
+                    <input type="text" :id="'latitude-' + index" :name="'latitude[' + index + ']'" x-model="param.latitude"
+                        class="block w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 text-gray-600 sm:text-sm cursor-not-allowed"
+                        readonly placeholder="Pin on map to capture latitude">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Longitude</label>
+                <div class="relative">
+                    <i data-lucide="map-pin" class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400"></i>
+                    <input type="text" :id="'longitude-' + index" :name="'longitude[' + index + ']'" x-model="param.longitude"
+                        class="block w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 text-gray-600 sm:text-sm cursor-not-allowed"
+                        readonly placeholder="Pin on map to capture longitude">
+                </div>
             </div>
         </div>
     </div>

@@ -901,6 +901,10 @@ class FileIndexingController extends Controller
                 'tp_no' => 'nullable',
                 'lpkn_no' => 'nullable',
                 'location' => 'nullable',
+                'latitude' => 'nullable',
+                'latitude.*' => 'nullable|numeric|between:-90,90',
+                'longitude' => 'nullable',
+                'longitude.*' => 'nullable|numeric|between:-180,180',
                 'district' => 'nullable',
                 'registry' => 'nullable|string|max:255',
                 'physical_registry' => [
@@ -2762,6 +2766,10 @@ class FileIndexingController extends Controller
                 'tp_no' => 'nullable',
                 'lpkn_no' => 'nullable',
                 'location' => 'nullable',
+                'latitude' => 'nullable',
+                'latitude.*' => 'nullable|numeric|between:-90,90',
+                'longitude' => 'nullable',
+                'longitude.*' => 'nullable|numeric|between:-180,180',
                 'district' => 'nullable',
                 'registry' => 'nullable|string|max:255',
                 'physical_registry' => [
@@ -2861,6 +2869,18 @@ class FileIndexingController extends Controller
                     'string',
                     'max:255',
                 ],
+                // New KANGIS transactions — each row is saved to the pra table on submit.
+                'has_new_kangis_transaction' => 'nullable|boolean',
+                'transactions' => 'nullable|array',
+                'transactions.*.instrument_type'  => 'nullable|string|max:255',
+                'transactions.*.transaction_date' => 'nullable|date',
+                'transactions.*.serial_no'        => 'nullable|string|max:100',
+                'transactions.*.page_no'          => 'nullable|string|max:100',
+                'transactions.*.vol_no'           => 'nullable|string|max:100',
+                'transactions.*.reg_date'         => 'nullable|date',
+                'transactions.*.reg_time'         => 'nullable|string|max:20',
+                'transactions.*.grantor'          => 'nullable|string|max:500',
+                'transactions.*.grantee'          => 'nullable|string|max:500',
             ], [
                 'land_use_type.required' => 'Please select a Land Use Type.',
                 'kangis_fileno_placeholder.required' => 'KANGIS FileNo Placeholder is required when KANGIS Registry is selected.',
@@ -3658,6 +3678,8 @@ class FileIndexingController extends Controller
                 $this->syncRelatedFileLinks($fileIndexing, $relatedFileNos, $relatedDetails);
             }
 
+            // Persist New KANGIS transactions (if any) to the pra table.
+            $this->syncFileIndexingTransactions($request, $fileIndexing, $propIdForStore);
 
             if ($propIdForStore !== null) {
                 $fileNoForHistory = $fileIndexing->file_number;
@@ -4209,6 +4231,115 @@ class FileIndexingController extends Controller
 
         // Update file indexing has_rofo flag
         $fileIndexing->update(['has_rofo' => true]);
+    }
+
+    /**
+     * Persist "Has Transaction" rows captured during New KANGIS file indexing into the pra
+     * table. Each row becomes one pra row; the main indexing file number is stored as mlsFNo,
+     * and every row shares the file's prop_id ($propId), so they all resolve to one property.
+     */
+    protected function syncFileIndexingTransactions(Request $request, FileIndexing $fileIndexing, ?int $propId = null): void
+    {
+        if (!$request->boolean('has_new_kangis_transaction')) {
+            return;
+        }
+
+        $transactions = $request->input('transactions');
+        if (!is_array($transactions) || empty($transactions)) {
+            return;
+        }
+
+        $newKangis = $this->normalizeValue($request->input('new_kangis_file_no'))
+            ?? $this->normalizeValue($fileIndexing->new_kangis_file_no ?? null);
+        $kangis = $this->normalizeValue($request->input('kangis_fileno_placeholder'));
+
+        $praTable  = DB::connection('sqlsrv')->table('pra');
+        $cofoTable = DB::connection('sqlsrv')->table(self::COFO_TABLE);
+        $saved = 0;
+
+        foreach ($transactions as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $instrument = $this->normalizeValue($row['instrument_type'] ?? null);
+            $txnDate    = $this->normalizeValue($row['transaction_date'] ?? null);
+            $serial     = $this->normalizeValue($row['serial_no'] ?? null);
+            $page       = $this->normalizeValue($row['page_no'] ?? null);
+            $vol        = $this->normalizeValue($row['vol_no'] ?? null);
+            $regDate    = $this->normalizeValue($row['reg_date'] ?? null);
+            $regTime    = $this->normalizeValue($row['reg_time'] ?? null);
+            $grantor    = $this->normalizeValue($row['grantor'] ?? null);
+            $grantee    = $this->normalizeValue($row['grantee'] ?? null);
+
+            // Skip fully-empty rows.
+            if (!$instrument && !$txnDate && !$serial && !$page && !$vol && !$regDate && !$regTime && !$grantor && !$grantee) {
+                continue;
+            }
+
+            // Certificate of Occupancy transactions belong in CofO_staging, not pra.
+            $isCofo = strcasecmp((string) $instrument, 'Certificate of Occupancy') === 0;
+
+            $payload = [
+                'mlsFNo'            => $fileIndexing->file_number,
+                'NewKANGISFileno'   => $newKangis,
+                'kangisFileNo'      => $kangis,
+                'transaction_type'  => $instrument,
+                'instrument_type'   => $instrument,
+                'transaction_date'  => $txnDate,
+                // registration date/time live in the deeds_date/deeds_time columns
+                'deeds_date'        => $regDate,
+                'deeds_time'        => $regTime,
+                'serialNo'          => $serial,
+                'pageNo'            => $page,
+                'volumeNo'          => $vol,
+                'Grantor'           => $grantor,
+                'Grantee'           => $grantee,
+                'party_1'           => $grantor,
+                'party_2'           => $grantee,
+                'land_use'          => $fileIndexing->land_use_type,
+                'plot_no'           => $fileIndexing->plot_number,
+                'location'          => $fileIndexing->location ?? $fileIndexing->district,
+                'property_description' => $fileIndexing->location ?? $fileIndexing->district,
+                'lgsaOrCity'        => $fileIndexing->lga,
+                'source'            => 'File Indexing',
+                'created_by'        => Auth::id(),
+                'updated_by'        => Auth::id(),
+                'created_at'        => now(),
+                'updated_at'        => now(),
+            ];
+
+            if ($propId !== null) {
+                $payload['prop_id'] = $propId;
+            }
+
+            if ($isCofo) {
+                // CofO-specific columns
+                $payload['cofo_type'] = $instrument;
+                $payload['cofo_date'] = $txnDate;
+                $payload['transaction_time'] = $regTime;
+                $payload['regNo'] = $this->formatRegistrationNumber($serial, $page, $vol);
+            }
+
+            try {
+                ($isCofo ? $cofoTable : $praTable)->insert($payload);
+                $saved++;
+            } catch (\Throwable $e) {
+                Log::warning('FileIndexing: transaction insert failed', [
+                    'file_number' => $fileIndexing->file_number,
+                    'table' => $isCofo ? self::COFO_TABLE : 'pra',
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if ($saved > 0) {
+            try {
+                $fileIndexing->update(['has_transaction' => 1]);
+            } catch (\Throwable $e) {
+                // non-fatal
+            }
+        }
     }
 
     protected function syncEntityAndCustomer(FileIndexing $fileIndexing, Request $request, ?string $testControl = null): void

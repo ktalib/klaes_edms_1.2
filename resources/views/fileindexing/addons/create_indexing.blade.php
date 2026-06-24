@@ -94,40 +94,75 @@
                                     <i data-lucide="layers" class="h-4 w-4 text-indigo-600"></i>
                                     Indexing Type
                                 </h4>
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div class="form-group">
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Indexing Type <span class="text-red-500">*</span></label>
-                                        <select id="indexing-type" name="indexing_type"
-                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                                            x-model="indexing_type"
-                                            required>
-                                            <option value="Regular" {{ (isset($record) && $record->indexing_type == 'Regular') ? 'selected' : '' }}>Regular Indexing</option>
-                                            <option value="Block" {{ (isset($record) && $record->indexing_type == 'Block') ? 'selected' : '' }}>Block Indexing</option>
-                                        </select>
-                                    </div>
+                                <div class="form-group">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Indexing Type <span class="text-red-500">*</span></label>
+                                    <select id="indexing-type" name="indexing_type"
+                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                        x-model="indexing_type"
+                                        required>
+                                        <option value="Regular" {{ (isset($record) && $record->indexing_type == 'Regular') ? 'selected' : '' }}>Regular Indexing</option>
+                                        <option value="Block" {{ (isset($record) && $record->indexing_type == 'Block') ? 'selected' : '' }}>Block Indexing</option>
+                                    </select>
+                                </div>
 
-                                    {{-- Title Status (optional) — mirrors the standalone Title Status module --}}
-                                    <div class="form-group">
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Title Status <span class="text-red-500">*</span></label>
-                                        <select id="ts-title-type" required
-                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                                            <option value="" selected disabled>Select Title Status</option>
-                                            <option value="Normal">Normal</option>
-                                            <option value="Withdrawal (Application)">Withdrawal (Application)</option>
-                                            <option value="Cancellation (RofO)">Cancellation (RofO)</option>
-                                            <option value="Revoke (CofO)">Revocation (CofO)</option>
-                                            <option value="Litigation">Litigation</option>
-                                            <option value="Amendment/Reconsideration (Application/RofO/CofO)">Amendment / Reconsideration</option>
-                                            <option value="Surrender">Surrender</option>
-                                            <option value="Re-grant">Re-grant</option>
-                                            <option value="Subdivision">Subdivision</option>
-                                            <option value="Merger">Merger</option>
-                                            <option value="Change of Purpose">Change of Purpose</option>
-                                            <option value="Extension">Extension</option>
-                                            <option value="Change of Name">Change of Name</option>
-                                            <option value="Separation">Separation</option>
-                                        </select>
+                                {{-- Title Status (optional) — mirrors the standalone Title Status module --}}
+                                <div class="form-group mt-6">
+
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Title Status <span class="text-red-500">*</span></label>
+                                    @php
+                                        // Left group: Parcel Update (emerald). Right group: Title Status Update (indigo).
+                                        $parcelOptions = [
+                                            'Subdivision'       => ['Plot Subdivision', 'split'],
+                                            'Merger'            => ['Plot Merger', 'merge'],
+                                            'Extension'         => ['Plot Extension', 'scaling'],
+                                            'Separation'        => ['Plot Separation', 'scissors'],
+                                            'Change of Purpose' => ['Change of Purpose', 'repeat'],
+                                            'Change of Name'    => ['Change of Name', 'user-pen'],
+                                        ];
+                                        $titleOptions = [
+                                            'Withdrawal (Application)'                            => ['Withdrawal (Application)', 'undo-2'],
+                                            'Cancellation (RofO)'                                 => ['Cancellation (RofO)', 'x-circle'],
+                                            'Revoke (CofO)'                                       => ['Revocation (CofO)', 'ban'],
+                                            'Litigation'                                          => ['Litigation', 'gavel'],
+                                            'Amendment/Reconsideration (Application/RofO/CofO)'   => ['Amendment / Reconsideration', 'file-pen'],
+                                            'Surrender'                                           => ['Surrender', 'flag'],
+                                            'Re-grant'                                            => ['Re-grant', 'refresh-cw'],
+                                        ];
+                                    @endphp
+                                    <div id="ts-title-type-group">
+                                     
+
+                                        {{-- Parcel Update (emerald) --}}
+                                        <h5 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                                            <i data-lucide="land-plot" class="h-3.5 w-3.5"></i>
+                                            Parcel Update
+                                        </h5>
+
+                                           {{-- Normal --}}
+                                        <div class="mb-3">
+                                            <label class="block cursor-pointer">
+                                                <input type="checkbox" value="Normal"
+                                                    class="ts-title-type-cb peer sr-only">
+                                                <span class="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 transition hover:border-gray-400 hover:bg-gray-50 peer-checked:border-gray-700 peer-checked:bg-gray-100 peer-checked:text-gray-800 peer-checked:font-medium peer-focus:ring-2 peer-focus:ring-gray-200">
+                                                    <i data-lucide="check-circle" class="h-4 w-4 flex-shrink-0"></i>
+                                                    <span class="leading-tight">Normal</span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            @foreach($parcelOptions as $tsValue => $tsMeta)
+                                                <label class="block cursor-pointer">
+                                                    <input type="checkbox" value="{{ $tsValue }}"
+                                                        class="ts-title-type-cb peer sr-only">
+                                                    <span class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 transition hover:border-emerald-300 hover:bg-emerald-50/40 peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 peer-checked:font-medium peer-focus:ring-2 peer-focus:ring-emerald-200">
+                                                        <i data-lucide="{{ $tsMeta[1] }}" class="h-4 w-4 flex-shrink-0"></i>
+                                                        <span class="leading-tight">{{ $tsMeta[0] }}</span>
+                                                    </span>
+                                                </label>
+                                            @endforeach
+                                        </div>
                                     </div>
+                                    <p class="text-[11px] text-gray-400 mt-1.5">Select one or more title statuses.</p>
                                 </div>
                             </div>
 
@@ -163,15 +198,32 @@
                                         class="block w-full px-3 py-2 border border-red-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-red-500 focus:border-red-500 sm:text-sm bg-red-50"
                                         placeholder="Enter reason for investigation" value="{{ isset($record) ? $record->dciv_reason : '' }}">
                                 </div>
+
+                                {{-- Title Status Update (indigo) — checkboxes share the .ts-title-type-cb class --}}
+                                <div class="form-group mt-6" id="ts-title-update-group">
+                                    <h5 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                                        <i data-lucide="badge-check" class="h-3.5 w-3.5"></i>
+                                        Title Status Update
+                                    </h5>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        @foreach($titleOptions as $tsValue => $tsMeta)
+                                            <label class="block cursor-pointer">
+                                                <input type="checkbox" value="{{ $tsValue }}"
+                                                    class="ts-title-type-cb peer sr-only">
+                                                <span class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 transition hover:border-indigo-300 hover:bg-indigo-50/40 peer-checked:border-indigo-500 peer-checked:bg-indigo-50 peer-checked:text-indigo-700 peer-checked:font-medium peer-focus:ring-2 peer-focus:ring-indigo-200">
+                                                    <i data-lucide="{{ $tsMeta[1] }}" class="h-4 w-4 flex-shrink-0"></i>
+                                                    <span class="leading-tight">{{ $tsMeta[0] }}</span>
+                                                </span>
+                                            </label>
+                                        @endforeach
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
                         {{-- Title Status details (shown when a Title Status is selected) --}}
                         <div id="ts-status-fields" class="hidden mt-6 rounded-lg border border-teal-200 bg-teal-50/40 p-6 space-y-5">
-                            <h4 class="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-teal-700">
-                                <i data-lucide="badge-check" class="h-4 w-4 text-teal-600"></i>
-                                Title Status Details
-                            </h4>
+                           
 
                             {{-- See (Additional File No.) — Re-grant only --}}
                             <div id="ts-see-row" class="form-group hidden">
@@ -217,7 +269,10 @@
                             @include('fileindexing.addons.partials.sections.property_details')
                         </div>
 
-
+                        <!-- Property Location Map (full-width, dedicated card) -->
+                        <div class="mt-6">
+                            @include('fileindexing.addons.partials.sections.property_map')
+                        </div>
 
                         <hr class="my-8 border-t border-gray-200">
 
@@ -325,6 +380,40 @@
                         return;
                     }
 
+                    // Map pin required: every file must be geocoded via "Apply & Pin on Map"
+                    const latInputs = form.querySelectorAll('input[name^="latitude["]');
+                    let firstUnpinned = null;
+                    let unpinnedIndex = null;
+                    latInputs.forEach(input => {
+                        const idx = input.name.replace(/[^0-9]/g, '');
+                        const lng = form.querySelector('input[name="longitude[' + idx + ']"]');
+                        if (!firstUnpinned && (!input.value.trim() || !(lng && lng.value.trim()))) {
+                            firstUnpinned = input;
+                            unpinnedIndex = idx;
+                        }
+                    });
+                    if (firstUnpinned) {
+                        e.preventDefault();
+                        const msg = latInputs.length > 1
+                            ? 'Please click "Apply & Pin on Map" to capture the location for File ' + (Number(unpinnedIndex) + 1) + ' before submitting.'
+                            : 'Please click "Apply & Pin on Map" to capture the property location before submitting.';
+                        if (typeof Swal !== 'undefined') {
+                            Swal.fire({
+                                icon: 'warning',
+                                title: 'Location Pin Required',
+                                text: msg,
+                                confirmButtonColor: '#f59e0b'
+                            }).then(() => {
+                                firstUnpinned.focus();
+                                firstUnpinned.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            });
+                        } else {
+                            firstUnpinned.focus();
+                            firstUnpinned.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                        return;
+                    }
+
                     if (!validateNigerianPhone() && phoneInput.value.trim()) {
                         e.preventDefault();
                         phoneInput.focus();
@@ -374,15 +463,17 @@
                         title: '', 
                         applicant_name: '',
                         plot_number: '', 
-                        district: '', 
-                        custom_district: '', 
-                        lga: '', 
-                        location: '', 
-                        land_use_type: '', 
-                        tp_number: '', 
-                        lpkn_no: '', 
-                        plot_size: '', 
-                        customer_name: '', 
+                        district: '',
+                        custom_district: '',
+                        lga: '',
+                        location: '',
+                        latitude: null,
+                        longitude: null,
+                        land_use_type: '',
+                        tp_number: '',
+                        lpkn_no: '',
+                        plot_size: '',
+                        customer_name: '',
                         entity_name: '',
                         street_name: '',
                         custom_street_name: ''
@@ -404,6 +495,8 @@
                         custom_district: '',
                         lga: '',
                         location: '',
+                        latitude: null,
+                        longitude: null,
                         land_use_type: '',
                         tp_number: '',
                         lpkn_no: '',
@@ -424,6 +517,156 @@
                     }
                 },
 
+                buildGeocodeAddress(param) {
+                    // Google's geocoder expects a natural address, not the labelled
+                    // "STREET: / DISTRICT: / LGA:" string stored in param.location.
+                    const street = (param.street_name === 'Other' || param.street_name === 'other')
+                        ? param.custom_street_name : param.street_name;
+                    const district = (param.district === 'Other' || param.district === 'other')
+                        ? param.custom_district : param.district;
+                    const parts = [
+                        param.plot_number,
+                        street,
+                        district,
+                        param.lga,
+                        'KANO',
+                        'NIGERIA'
+                    ];
+                    return parts
+                        .map(p => (p || '').toString().trim())
+                        .filter(p => p && !/^select /i.test(p))
+                        .join(', ');
+                },
+
+                // Live map/marker instances keyed by file index, so the marker can be
+                // dragged and the map reused across re-pins without re-instantiating.
+                _maps: {},
+                _markers: {},
+
+                // Round to 7 decimals (~1cm precision) — keeps the grey fields tidy.
+                _roundCoord(v) {
+                    return Math.round(parseFloat(v) * 1e7) / 1e7;
+                },
+
+                // Custom property marker. Edit FILL to recolour, or swap the inner
+                // <path> for a different glyph (this one is a house = property).
+                getMarkerIcon() {
+                    const FILL = '#2563eb';   // blue-600 — change to taste (e.g. '#059669' emerald)
+                    const svg = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="42" height="50" viewBox="0 0 42 50">
+                            <path d="M21 0C10 0 1 9 1 20c0 14 20 30 20 30s20-16 20-30C41 9 32 0 21 0z"
+                                  fill="${FILL}" stroke="#ffffff" stroke-width="2"/>
+                            <circle cx="21" cy="20" r="13" fill="#ffffff"/>
+                            <path d="M21 12l-8 7h2.4v8.4h11.2V19H29z" fill="${FILL}"/>
+                        </svg>`;
+                    return {
+                        url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg.trim()),
+                        scaledSize: new google.maps.Size(42, 50),
+                        anchor: new google.maps.Point(21, 50),
+                        labelOrigin: new google.maps.Point(21, 20),
+                    };
+                },
+
+                setPin(param, index, lat, lng, recenter = false) {
+                    param.latitude  = this._roundCoord(lat);
+                    param.longitude = this._roundCoord(lng);
+
+                    const map = this._maps[index];
+                    const marker = this._markers[index];
+                    if (map && marker) {
+                        const pos = { lat: param.latitude, lng: param.longitude };
+                        marker.setPosition(pos);
+                        if (recenter) map.panTo(pos);
+                    }
+                },
+
+                renderPropertyMap(param, index) {
+                    this.$nextTick(() => {
+                        const mapEl = document.getElementById('map-' + index);
+                        if (!mapEl) return;
+
+                        const pos = { lat: param.latitude, lng: param.longitude };
+                        let map = this._maps[index];
+
+                        if (!map) {
+                            map = new google.maps.Map(mapEl, {
+                                center: pos,
+                                zoom: 17,
+                                mapTypeId: 'satellite',
+                                streetViewControl: true,
+                                fullscreenControl: true,
+                            });
+                            this._maps[index] = map;
+
+                            // Click anywhere on the map to move the pin there.
+                            map.addListener('click', (e) => {
+                                this.setPin(param, index, e.latLng.lat(), e.latLng.lng());
+                            });
+                        } else {
+                            map.setCenter(pos);
+                            // Container may have been display:none while hidden — nudge a resize.
+                            google.maps.event.trigger(map, 'resize');
+                        }
+
+                        let marker = this._markers[index];
+                        if (!marker) {
+                            marker = new google.maps.Marker({
+                                position: pos,
+                                map,
+                                draggable: true,
+                                title: 'Drag to adjust the exact property location',
+                                animation: google.maps.Animation.DROP,
+                                icon: this.getMarkerIcon(),
+                            });
+                            this._markers[index] = marker;
+
+                            // Update coordinates live while/after dragging.
+                            marker.addListener('dragend', (e) => {
+                                this.setPin(param, index, e.latLng.lat(), e.latLng.lng());
+                            });
+                        } else {
+                            marker.setPosition(pos);
+                            marker.setMap(map);
+                        }
+                    });
+                },
+
+                geocodeLocation(param, index) {
+                    const address = this.buildGeocodeAddress(param);
+                    if (!address || !param.location) return;
+
+                    if (typeof google === 'undefined' || !google.maps) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Map not ready',
+                            text: 'Google Maps is still loading. Please try again in a moment.'
+                        });
+                        return;
+                    }
+
+                    const geocoder = new google.maps.Geocoder();
+                    geocoder.geocode({ address: address, region: 'NG' }, (results, status) => {
+                        if (status === 'OK' && results[0]) {
+                            const pos = results[0].geometry.location;
+                            param.latitude  = this._roundCoord(pos.lat());
+                            param.longitude = this._roundCoord(pos.lng());
+                            this.renderPropertyMap(param, index);
+                        } else if (status === 'ZERO_RESULTS') {
+                            Swal.fire({
+                                icon: 'warning',
+                                title: 'Location not found',
+                                text: 'Google could not find: ' + address
+                            });
+                        } else {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Geocoding failed (' + status + ')',
+                                text: 'The map service rejected the request. Check that Billing and the Geocoding API are enabled for the API key.'
+                            });
+                        }
+                    });
+                },
+
                 applyPropertyDetailsToAllFiles() {
                     if (this.indexing_type !== 'Block' || this.fileParams.length < 2) return;
                     
@@ -439,6 +682,8 @@
                         custom_street_name: current.custom_street_name,
                         lga: current.lga,
                         location: current.location,
+                        latitude: current.latitude,
+                        longitude: current.longitude,
                         plot_size: current.plot_size
                     };
 
@@ -629,6 +874,8 @@
                                 custom_street_name: record.street_name === 'Other' || record.street_name === 'other' ? record.custom_street_name : '',
                                 lga: record.lga || record.lgsaOrCity,
                                 location: record.location,
+                                latitude: record.latitude ?? null,
+                                longitude: record.longitude ?? null,
                                 plot_size: record.plot_size
                             }];
                         }
@@ -646,7 +893,7 @@
                         // Real-time batch apply for Property Details
                         if (this.indexing_type === 'Block' && this.applyPropertyToAll && params.length > 1) {
                             const current = params[this.activeTab];
-                            const propFields = ['land_use_type', 'plot_number', 'tp_number', 'lpkn_no', 'district', 'custom_district', 'street_name', 'custom_street_name', 'lga', 'location', 'plot_size'];
+                            const propFields = ['land_use_type', 'plot_number', 'tp_number', 'lpkn_no', 'district', 'custom_district', 'street_name', 'custom_street_name', 'lga', 'location', 'latitude', 'longitude', 'plot_size'];
                             
                             params.forEach((param, idx) => {
                                 if (idx !== this.activeTab) {
@@ -846,7 +1093,7 @@
                 'Separation':                                         'Separation',
             };
 
-            const typeSelect   = document.getElementById('ts-title-type');
+            const typeGroup    = document.getElementById('ts-title-type-group');
             const statusBlock  = document.getElementById('ts-status-fields');
             const seeRow       = document.getElementById('ts-see-row');
             const seeHidden    = document.getElementById('ts-see-fileno');
@@ -854,7 +1101,13 @@
             const reasonEl     = document.getElementById('ts-reason');
             const remarkEl     = document.getElementById('ts-remark');
 
-            if (!typeSelect) return;
+            if (!typeGroup) return;
+
+            // Checkboxes live in two cards (Parcel Update + Normal in the Indexing Type card,
+            // Title Status Update in the General Registry card), so query document-wide.
+            const typeCbs = () => Array.from(document.querySelectorAll('.ts-title-type-cb'));
+            const getSelectedTypes = () => typeCbs().filter(cb => cb.checked).map(cb => cb.value);
+            const getActionableTypes = () => getSelectedTypes().filter(isActionableType);
 
             const getFileNo = () =>
                 ((document.getElementById('fileno')?.value
@@ -869,9 +1122,7 @@
             // Treat empty default and "Normal" as "no title status action".
             const isActionableType = (t) => t !== '' && t !== 'Normal';
 
-            function buildRemark() {
-                const type   = typeSelect.value;
-                if (!isActionableType(type)) return '';
+            function buildRemarkFor(type) {
                 const verb   = TS_TYPE_VERB[type] || type;
                 const fileNo = getFileNo();
                 const reason = (reasonEl?.value || '').trim() || '[Reason]';
@@ -883,20 +1134,37 @@
                 return `${verb}${fileRef} was initiated by ${initiator} on ${dt} due to ${reason}`;
             }
 
+            function buildRemark() {
+                const types = getActionableTypes();
+                if (!types.length) return '';
+                return types.map(buildRemarkFor).join('\n');
+            }
+
             function refreshRemark() {
                 if (remarkEl) remarkEl.value = buildRemark();
             }
 
             function toggleStatusFields() {
-                const hasType   = isActionableType(typeSelect.value);
-                const isRegrant = typeSelect.value === 'Re-grant';
+                const actionable = getActionableTypes();
+                const hasType   = actionable.length > 0;
+                const isRegrant = actionable.includes('Re-grant');
                 statusBlock?.classList.toggle('hidden', !hasType);
                 seeRow?.classList.toggle('hidden', !isRegrant);
                 if (!isRegrant && seeHidden) { seeHidden.value = ''; if (seeDisplay) seeDisplay.value = ''; }
                 if (typeof lucide !== 'undefined') lucide.createIcons();
             }
 
-            typeSelect.addEventListener('change', function () {
+            // "Normal" is mutually exclusive with the actionable title statuses. Delegated on
+            // document since the checkboxes span two separate cards.
+            document.addEventListener('change', function (e) {
+                const cb = e.target;
+                if (!cb || !cb.classList || !cb.classList.contains('ts-title-type-cb')) return;
+                if (cb.value === 'Normal' && cb.checked) {
+                    typeCbs().forEach(o => { if (o.value !== 'Normal') o.checked = false; });
+                } else if (cb.value !== 'Normal' && cb.checked) {
+                    const normal = typeCbs().find(o => o.value === 'Normal');
+                    if (normal) normal.checked = false;
+                }
                 toggleStatusFields();
                 refreshRemark();
             });
@@ -924,19 +1192,35 @@
 
             // Called by create-indexing-dialog.js after a file index is created/updated.
             window.tsAfterFileIndexCreated = function (data, formData) {
-                const type = typeSelect.value;
-                if (!isActionableType(type)) return; // "Normal" or unselected → no title status
+                const types = getActionableTypes();
+                if (!types.length) return; // "Normal" or unselected → no title status
 
                 formData = formData || {};
                 const pick = (v) => Array.isArray(v) ? (v[0] || '') : (v || '');
                 const reg  = (formData.general_registry || '').toString().toLowerCase();
                 const url  = reg.includes('dciv') ? 'dciv' : 'land';
+                const fileNo = getFileNo() || pick(formData.file_number);
+                if (!fileNo) return;
 
+                const reason = (reasonEl?.value || '').trim();
+                const customRemark = (remarkEl?.value || '').trim();
+
+                // Per-type remarks (parallel to `title_types`). A single selection may keep the
+                // user-edited remark; otherwise each type gets its own generated remark.
+                const remarks = types.map(function (type) {
+                    return (types.length === 1 && customRemark) ? customRemark : buildRemarkFor(type);
+                });
+                const regrant = types.indexOf('Re-grant');
+
+                // One request carrying every selected type so the backend records all of them
+                // (one application per type) and writes a combined title-status flag on the file.
                 const payload = {
                     url,
-                    title_type:     type,
-                    file_no:        getFileNo() || pick(formData.file_number),
-                    see_fileno:     (seeHidden?.value || '').trim(),
+                    title_type:     types[0],   // kept for validation / backward compatibility
+                    title_types:    types,
+                    remarks:        remarks,
+                    file_no:        fileNo,
+                    see_fileno:     regrant !== -1 ? (seeHidden?.value || '').trim() : '',
                     file_title:     pick(formData.file_title),
                     applicant_name: pick(formData.current_holder) || pick(formData.file_title),
                     plot_no:        pick(formData.plot_number),
@@ -944,15 +1228,13 @@
                     land_use:       pick(formData.land_use_type),
                     district:       pick(formData.district) || pick(formData.custom_district),
                     lga:            pick(formData.lga),
-                    initiated_by:   initiatedByFor(type),
-                    reason:         (reasonEl?.value || '').trim(),
-                    remark:         (remarkEl?.value || '').trim() || buildRemark(),
+                    initiated_by:   initiatedByFor(types[0]),
+                    reason:         reason,
+                    remark:         remarks.join('\n'),
                     // Title Status raised from File Indexing = false decommissioning
                     // (the file is flagged but NOT actually decommissioned).
                     false_decommissioning: 1,
                 };
-
-                if (!payload.file_no) return;
 
                 fetch(TS_STORE_URL, {
                     method: 'POST',
@@ -969,7 +1251,7 @@
                     if (!res.success) {
                         console.warn('Title status not recorded:', res.message || res.errors);
                     } else {
-                        console.log('Title status recorded:', res.data?.remark || '');
+                        console.log('Title status recorded (' + types.length + '):', types.join(', '));
                     }
                 })
                 .catch(err => console.warn('Title status request failed:', err));
@@ -977,3 +1259,8 @@
         })();
     </script>
 @endsection
+
+@push('scripts')
+    {{-- Google Maps JS — used by the Property Details "Apply & Pin on Map" geocoder --}}
+    <script src="https://maps.googleapis.com/maps/api/js?key={{ config('services.google_maps.key') }}" defer></script>
+@endpush

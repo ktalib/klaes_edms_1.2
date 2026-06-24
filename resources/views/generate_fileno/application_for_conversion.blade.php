@@ -274,6 +274,16 @@
             padding-bottom: 20px;
         }
 
+        .footer-logo {
+            text-align: center;
+            margin-top: 15px;
+        }
+
+        .footer-logo img {
+            max-height: 50px;
+            width: auto;
+        }
+
         .signature-box {
             border: 2px solid var(--ministry-red);
             padding: 15px 25px;
@@ -437,7 +447,7 @@
             <!-- 3. Ref & Date Row -->
             <div class="meta-line">
                 <div>
-                    Our Ref: <span class="underline-box" style="min-width: 320px;"> </span>
+                    Our Ref: <span class="underline-box" style="min-width: 320px;">{{ $record->mlsfNo ?? '' }}</span>
                 </div>
                 <div>
                     Date: <span class="underline-box" style="min-width: 150px;">{{ date('d/m/Y') }}</span>
@@ -512,7 +522,12 @@
                 </div>
 
             </div>
-        </div>
+
+            <!-- 8. Footer Logo -->
+            <div class="footer-logo" style="text-align: right;">
+    <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Logo"
+        onerror="this.src='https://placehold.co/120x40?text=LOGO'">
+</div>        </div>
     @endforeach
 
     <script>

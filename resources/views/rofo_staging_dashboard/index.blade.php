@@ -166,18 +166,19 @@ $(function () {
             data: function (d) { Object.assign(d, getFilters()); }
         },
         columns: [
-            { data: null,                   name: 'mlsFNo',               orderable: true,  render: function(d,t,row){ return fileCell(row); } },
-            { data: 'instrument_type',      name: 'instrument_type',      orderable: true,  render: function(v){ return instrBadge(v); } },
-            { data: 'party_2',              name: 'party_2',              orderable: true,  render: function(v){ return toTitle(v); } },
-            { data: 'reg_no',               name: 'reg_no',               orderable: true  },
-            { data: 'land_use',             name: 'land_use',             orderable: true,  render: function(v){ return luBadge(v); } },
-            { data: 'lgsaOrCity',           name: 'lgsaOrCity',           orderable: true,  render: function(v){ return toTitle(v); } },
-            { data: 'property_description', name: 'property_description', orderable: true,  render: function(v){ return toTitle(v); } },
-            { data: 'transaction_date',     name: 'transaction_date',     orderable: true  },
+            { data: null,                   name: 'mlsFNo',               orderable: true,  searchable: true,  render: function(d,t,row){ return fileCell(row); } },
+            { data: 'instrument_type',      name: 'instrument_type',      orderable: true,  searchable: false, render: function(v){ return instrBadge(v); } },
+            { data: 'party_2',              name: 'party_2',              orderable: true,  searchable: false, render: function(v){ return toTitle(v); } },
+            { data: 'reg_no',               name: 'reg_no',               orderable: true,  searchable: false },
+            { data: 'land_use',             name: 'land_use',             orderable: true,  searchable: false, render: function(v){ return luBadge(v); } },
+            { data: 'lgsaOrCity',           name: 'lgsaOrCity',           orderable: true,  searchable: false, render: function(v){ return toTitle(v); } },
+            { data: 'property_description', name: 'property_description', orderable: true,  searchable: false, render: function(v){ return toTitle(v); } },
+            { data: 'transaction_date',     name: 'transaction_date',     orderable: true,  searchable: false },
             {
                 data: 'created_at',
                 name: 'created_at',
                 orderable: true,
+                searchable: false,
                 render: function(data, type, row) {
                     if (type === 'sort' || type === 'type') {
                         return row.created_at_sort || '';

@@ -68,6 +68,104 @@ class TimelineWeightingService
     }
 
     /**
+     * Build a compact, UI-ready ownership chain for a file (or property).
+     *
+     * Pulls the weighted, deduped records across all sources and orders them the
+     * same way as the web Property Timeline (weight first — OP=10, TOT=9, ROFO=8,
+     * others=1 — then chronologically, then id). Each node carries the holder,
+     * the other party, the transaction type, the date and a friendly source label.
+     *
+     * Returns an empty array when the file has no transaction history.
+     *
+     * @return array<int, array{holder:string, to:?string, transaction_type:string, date:?string, source:string}>
+     */
+    public function holderHistory(?string $fileNumber, ?string $propId = null): array
+    {
+        $fileNumber = trim((string) $fileNumber);
+        if ($fileNumber === '' && ! $propId) {
+            return [];
+        }
+
+        $records = $this->getRawRecords($fileNumber ?: null, $propId);
+        if (empty($records)) {
+            return [];
+        }
+
+        $weighted = $this->getWeightedRecords($records);
+        if (empty($weighted)) {
+            return [];
+        }
+
+        usort($weighted, function ($a, $b) {
+            $wa = (float) ($a['timeline_weight'] ?? 1.0);
+            $wb = (float) ($b['timeline_weight'] ?? 1.0);
+            if ($wa !== $wb) {
+                return $wb <=> $wa;
+            }
+            $da = $this->holderSortDate($a) ?? '9999-12-31';
+            $db = $this->holderSortDate($b) ?? '9999-12-31';
+            if ($da !== $db) {
+                return $da <=> $db;
+            }
+            return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+        });
+
+        $sourceLabels = [
+            'file_history_staging' => 'File History',
+            'CofO_staging'         => 'CofO',
+            'pra'                  => 'PRA',
+            'deed_registrations'   => 'Deed',
+        ];
+
+        $history = [];
+        foreach ($weighted as $row) {
+            $party1 = trim((string) ($row['party_1'] ?? ''));
+            $party2 = trim((string) ($row['party_2'] ?? ''));
+            $holder = $party1 !== '' ? $party1 : ($party2 !== '' ? $party2 : 'Unknown');
+
+            $type = trim((string) ($row['transaction_type'] ?? ''));
+            $type = $type !== '' ? ucwords(strtolower($type)) : 'Transaction';
+
+            $history[] = [
+                'holder'           => $holder,
+                'to'               => ($party2 !== '' && strcasecmp($party2, $holder) !== 0) ? $party2 : null,
+                'transaction_type' => $type,
+                'date'             => $this->holderDisplayDate($row['transaction_date'] ?? null),
+                'source'           => $sourceLabels[$row['source_table'] ?? ''] ?? ($row['source_table'] ?? ''),
+            ];
+        }
+
+        return $history;
+    }
+
+    /** Parse a record's transaction date to a sortable Y-m-d string (or null). */
+    private function holderSortDate(array $row): ?string
+    {
+        $raw = $row['transaction_date'] ?? null;
+        if (empty($raw)) {
+            return null;
+        }
+        try {
+            return Carbon::parse($raw)->toDateString();
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /** Human-friendly display date for a holder node (or null when unparseable). */
+    private function holderDisplayDate($raw): ?string
+    {
+        if (empty($raw)) {
+            return null;
+        }
+        try {
+            return Carbon::parse($raw)->format('M j, Y');
+        } catch (\Throwable $e) {
+            return is_string($raw) ? $raw : null;
+        }
+    }
+
+    /**
      * Perform full weighting analysis, separating records into weighted and omitted (duplicates).
      */
     public function getWeightingAnalysis(array $records): array

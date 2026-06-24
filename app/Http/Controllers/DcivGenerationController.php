@@ -8,6 +8,7 @@ use App\Models\FileNumber;
 use App\Models\DcivGrouping;
 use App\Models\DcivFileNo;
 use App\Models\DcivSerialControl;
+use App\Models\MasterDcivLink;
 use App\Models\Lga;
 use App\Models\LandUse;
 use App\Models\Purpose;
@@ -607,25 +608,22 @@ class DcivGenerationController extends Controller
                 'is_deleted' => 0,
             ]);
 
+            // Collect the related file numbers up front so they can be persisted to
+            // dciv_file_no.related_fileno (JSON) as before.
             $relatedFileNumbers = [];
             if (!empty($validated['relatedFiles'])) {
                 foreach ($validated['relatedFiles'] as $rel) {
                     if (!empty($rel['file_number'])) {
                         $relatedFileNumbers[] = $rel['file_number'];
-                        // Save to dciv_link before file_indexings as requested
-                        DB::connection('sqlsrv')->table('dciv_link')->insert([
-                            'main_file_number' => $dcivNumber,
-                            'related_file_number' => $rel['file_number'],
-                            'secondary_title' => $rel['secondary_title'] ?? null,
-                            'created_at' => $now,
-                            'updated_at' => $now,
-                        ]);
                     }
                 }
             }
 
-            // 4. Insert into dciv_file_no (Dedicated Metadata Table)
-            DcivFileNo::create([
+            $dcivReason = $validated['reason'] ?? null;
+
+            // 4. Insert into dciv_file_no (Dedicated Metadata Table) FIRST so its id is
+            //    available for the master_dciv_links foreign key below.
+            $dcivRecord = DcivFileNo::create([
                 'batch_no' => $batchNo,
                 'prefix' => $prefix,
                 'year' => $year,
@@ -643,8 +641,55 @@ class DcivGenerationController extends Controller
                 'land_use_id' => $validated['land_use_id'] ?? null,
                 'purpose_id' => $validated['purpose_id'] ?? null,
                 'related_fileno' => !empty($relatedFileNumbers) ? json_encode($relatedFileNumbers) : null,
-                'dciv_reason' => $validated['reason'] ?? null,
+                'dciv_reason' => $dcivReason,
             ]);
+
+            // Persist the related-file links to dciv_link (general) + master_dciv_links,
+            // and flag each linked file's indexing row as under DCIV investigation.
+            if (!empty($validated['relatedFiles'])) {
+                foreach ($validated['relatedFiles'] as $rel) {
+                    if (empty($rel['file_number'])) {
+                        continue;
+                    }
+
+                    $relatedNo = $rel['file_number'];
+                    $relatedTitle = $rel['secondary_title'] ?? null;
+
+                    // Save to dciv_link before file_indexings as requested
+                    DB::connection('sqlsrv')->table('dciv_link')->insert([
+                        'main_file_number' => $dcivNumber,
+                        'related_file_number' => $relatedNo,
+                        'secondary_title' => $relatedTitle,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+
+                    // Resolve a title from file_indexings when none was provided.
+                    if (empty($relatedTitle)) {
+                        $relatedTitle = DB::connection('sqlsrv')->table('file_indexings')
+                            ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [strtoupper(trim($relatedNo))])
+                            ->value('file_title');
+                    }
+
+                    // Master link row (typed columns + general related_file_number).
+                    MasterDcivLink::create(array_merge([
+                        'dciv_file_no_id' => $dcivRecord->id,
+                        'dciv_file_number' => $dcivNumber,
+                        'dciv_reason' => $dcivReason,
+                        'related_file_number' => $relatedNo,
+                        'related_file_title' => $relatedTitle,
+                        'created_by' => $userId,
+                    ], MasterDcivLink::typeColumns($relatedNo)));
+
+                    // Flag the related file's indexing row (if it exists) as DCIV-linked.
+                    FileIndexing::whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [strtoupper(trim($relatedNo))])
+                        ->update([
+                            'dciv_status' => 1,
+                            'dciv_fileno' => $dcivNumber,
+                            'dciv_reason' => $dcivReason,
+                        ]);
+                }
+            }
 
             FileIndexing::create([
                 'tracking_id' => $trackingId,
@@ -869,6 +914,16 @@ class DcivGenerationController extends Controller
                 'location' => $validated['location'],
                 'lga' => $lga->name ?? null,
             ]);
+
+            // Propagate the (possibly updated) reason to the master link table and to
+            // every related file's indexing row flagged under this DCIV file.
+            $newReason = $validated['reason'] ?? $record->dciv_reason;
+
+            MasterDcivLink::where('dciv_file_number', $oldFileNo)
+                ->update(['dciv_reason' => $newReason]);
+
+            FileIndexing::where('dciv_fileno', $oldFileNo)
+                ->update(['dciv_reason' => $newReason]);
 
             DB::connection('sqlsrv')->commit();
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Mobile;
 use App\Http\Controllers\Controller;
 use App\Models\FileSearchRequest;
 use App\Services\FileLocationResolver;
+use App\Services\TimelineWeightingService;
 use App\Services\UserNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,7 +18,8 @@ use Illuminate\Http\Request;
 class MobileFileSearchController extends Controller
 {
     public function __construct(
-        protected UserNotificationService $notificationService
+        protected UserNotificationService $notificationService,
+        protected TimelineWeightingService $timelineService
     ) {}
 
     /**
@@ -38,6 +40,52 @@ class MobileFileSearchController extends Controller
             ?? $result['indexing']->file_title
             ?? null;
 
+        // Resolve the receiving officer's person name. Prefer the linked user account
+        // (authoritative) over the free-text column, which sometimes holds an office
+        // label rather than a person's name.
+        $tracker      = $result['tracker'] ?? null;
+        $officerName  = $tracker->receiving_officer_name ?? null;
+        $officerId    = $tracker->receiving_officer_id ?? null;
+        if ($officerId) {
+            $user = \App\Models\User::find($officerId);
+            if ($user) {
+                $resolvedName = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
+                    ?: ($user->username ?? null);
+                if ($resolvedName) {
+                    $officerName = $resolvedName;
+                }
+            }
+        }
+
+        // In-transit timeline: when the file was requested, and when the current
+        // holder physically collected it (the active movement's acceptance / log-in).
+        $dateRequested = null;
+        $dateCollected = null;
+        if ($result['status'] === FileLocationResolver::STATUS_IN_TRANSIT && $tracker) {
+            $requested = $tracker->date_requested ?? $tracker->date_created ?? $tracker->created_at;
+            $dateRequested = $requested ? \Carbon\Carbon::parse($requested)->format('Y-m-d g:i A') : null;
+
+            $current = $tracker->getCurrentMovement();
+            if ($current) {
+                if (!empty($current['accepted_at'])) {
+                    $dateCollected = \Carbon\Carbon::parse($current['accepted_at'])->format('Y-m-d g:i A');
+                } elseif (!empty($current['log_in_date'])) {
+                    $collected = trim($current['log_in_date'] . ' ' . ($current['log_in_time'] ?? ''));
+                    $dateCollected = \Carbon\Carbon::parse($collected)->format('Y-m-d g:i A');
+                }
+            }
+        }
+
+        // The receiving officer's department (from the offices table), used to label
+        // who currently holds the file. Match by office code first, then office name.
+        $receivingDepartment = null;
+        if ($tracker && ($tracker->receiving_office_code || $tracker->receiving_office_name)) {
+            $receivingDepartment = \App\Models\Office::query()
+                ->when($tracker->receiving_office_code, fn ($q) => $q->where('office_code', $tracker->receiving_office_code))
+                ->when(! $tracker->receiving_office_code, fn ($q) => $q->where('office_name', $tracker->receiving_office_name))
+                ->value('department');
+        }
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -52,6 +100,28 @@ class MobileFileSearchController extends Controller
                 'can_send_fr'      => (bool) ($result['can_send_fr'] ?? false),
                 'can_log'          => (bool) ($result['can_log'] ?? false),
                 'is_blind'         => (bool) ($result['is_blind'] ?? false),
+                // In-transit files can be re-directed straight to the office currently
+                // holding them (the last receiving officer) instead of going to the SCB.
+                'can_redirect'           => $result['status'] === FileLocationResolver::STATUS_IN_TRANSIT,
+                'receiving_officer_name'   => $officerName,
+                'receiving_office_name'    => $tracker->receiving_office_name ?? null,
+                'receiving_department'     => $receivingDepartment,
+                // In-transit timeline (null for every other outcome).
+                'date_requested'           => $dateRequested,
+                'date_collected'           => $dateCollected,
+                // DCIV investigation flag (from the matched indexing row): 1 when this
+                // file is referenced as a related file by a DCIV record.
+                'dciv_status'              => (int) ($result['indexing']?->dciv_status ?? 0),
+                'dciv_fileno'              => $result['indexing']?->dciv_fileno,
+                'dciv_reason'              => $result['indexing']?->dciv_reason,
+                // Ownership history — the chronological chain of holders derived from the
+                // cross-table property timeline (file_history/CofO/pra/deeds). Rendered as a
+                // vertical timeline in the Holders panel. Falls back to the single indexing
+                // holders below when the file has no transaction history.
+                'holder_history'           => $this->timelineService->holderHistory($result['file_number']),
+                'original_holder'          => $result['indexing']?->formattedHolder('original_holder'),
+                'current_holder'           => $result['indexing']?->formattedHolder('current_holder'),
+                'bill_balance'             => \App\Models\BillBalance::summaryForFile($result['file_number']),
             ],
         ]);
     }
@@ -78,9 +148,13 @@ class MobileFileSearchController extends Controller
                         ->orWhere('assigned_monitor_id', $userId);
                 });
             })
+            // OFS (Office Priority Search) requests float to the top, then by seniority
+            // weight, then newest first.
+            ->orderByDesc('is_ofs')
+            ->orderByDesc('priority')
             ->orderByDesc('id')
             ->limit(100)
-            ->get(['id', 'request_no', 'file_number', 'file_title', 'current_location', 'status', 'resolved_status', 'source', 'requester_user_id', 'receiving_officer', 'requester_office', 'requester_department', 'created_at']);
+            ->get(['id', 'request_no', 'file_number', 'file_title', 'current_location', 'status', 'resolved_status', 'source', 'requester_user_id', 'receiving_officer', 'requester_office', 'requester_department', 'is_ofs', 'ofs_rank', 'priority', 'created_at']);
 
         $data = $requests->map(function (FileSearchRequest $fr) {
             $req = $fr->requester;
@@ -95,6 +169,8 @@ class MobileFileSearchController extends Controller
                 'requester_department'=> $fr->requester_department,
                 'current_location'    => $fr->current_location,
                 'status'              => $fr->status,
+                'is_ofs'              => (bool) $fr->is_ofs,
+                'ofs_rank'            => $fr->ofs_rank,
                 'created_at'          => optional($fr->created_at)->format('Y-m-d g:i A'),
             ], $this->requestTypeMeta($fr));
         });
@@ -142,7 +218,7 @@ class MobileFileSearchController extends Controller
             $query->where('status', $status);
         }
 
-        $rows = $query->orderByDesc('id')->limit(200)->get();
+        $rows = $query->orderByDesc('is_ofs')->orderByDesc('priority')->orderByDesc('id')->limit(200)->get();
 
         $data = $rows->map(function (FileSearchRequest $fr) {
             $req  = $fr->requester;
@@ -167,10 +243,71 @@ class MobileFileSearchController extends Controller
                 'created_by'           => $createdBy ?: null,
                 'current_location' => $fr->current_location,
                 'status'           => $fr->status,
+                'is_ofs'           => (bool) $fr->is_ofs,
+                'ofs_rank'         => $fr->ofs_rank,
                 'feedback_note'    => $fr->feedback_note,
                 'responder'        => $resp ? trim($resp->first_name . ' ' . $resp->last_name) : null,
                 'created_at'       => optional($fr->created_at)->format('Y-m-d g:i A'),
                 'responded_at'     => optional($fr->responded_at)->format('Y-m-d g:i A'),
+                // A responded request can be reverted (undone) only while the Front Desk
+                // has not yet acted on it — e.g. an accidental "Found" tap.
+                'can_revert'       => in_array($fr->status, [FileSearchRequest::STATUS_FOUND, FileSearchRequest::STATUS_NOT_FOUND], true)
+                    && $fr->front_desk_acted_at === null,
+            ]);
+        });
+
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    /**
+     * GET /api/mobile/my-file-requests
+     * The authenticated user's OWN File Search Requests — what they sent, the SCB
+     * status, and (once the file is retrieved + logged out) whether it has been
+     * logged out to them / their office. Used by OFS requesters to track outcomes.
+     */
+    public function mine(Request $request): JsonResponse
+    {
+        $userId = $request->user()->id;
+
+        $requests = FileSearchRequest::where('requester_user_id', $userId)
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get(['id', 'request_no', 'file_number', 'file_title', 'current_location', 'status', 'resolved_status', 'source', 'is_ofs', 'ofs_rank', 'feedback_note', 'responded_at', 'created_at']);
+
+        // Latest file_tracker per requested file, to surface a logged-out outcome.
+        $fileNumbers = $requests->pluck('file_number')->filter()->unique()->values();
+        $trackers = collect();
+        if ($fileNumbers->isNotEmpty()) {
+            $trackers = \App\Models\FileTracker::whereIn('file_number', $fileNumbers->all())
+                ->orderByDesc('id')
+                ->get(['id', 'file_number', 'status', 'current_office_name', 'receiving_office_name', 'receiving_officer_id', 'receiving_officer_name'])
+                ->groupBy(fn ($t) => strtoupper(trim((string) $t->file_number)))
+                ->map(fn ($group) => $group->first());
+        }
+
+        $data = $requests->map(function (FileSearchRequest $fr) use ($trackers, $userId) {
+            $t          = $trackers[strtoupper(trim((string) $fr->file_number))] ?? null;
+            $loggedOut  = $t && strtoupper((string) $t->status) === \App\Models\FileTracker::STATUS_ACTIVE;
+            $office     = $t ? ($t->current_office_name ?: $t->receiving_office_name) : null;
+            $toMe       = $t && (int) $t->receiving_officer_id === (int) $userId;
+
+            return array_merge($this->requestTypeMeta($fr), [
+                'id'                => $fr->id,
+                'request_no'        => $fr->request_no,
+                'file_number'       => $fr->file_number,
+                'file_title'        => $fr->file_title,
+                'current_location'  => $fr->current_location,
+                'status'            => $fr->status,
+                'is_ofs'            => (bool) $fr->is_ofs,
+                'ofs_rank'          => $fr->ofs_rank,
+                'feedback_note'     => $fr->feedback_note,
+                'created_at'        => optional($fr->created_at)->format('Y-m-d g:i A'),
+                'responded_at'      => optional($fr->responded_at)->format('Y-m-d g:i A'),
+                // Logged-out outcome: the file was retrieved and is now out to an office.
+                'logged_out'        => (bool) $loggedOut,
+                'logged_out_office' => $loggedOut ? $office : null,
+                'logged_out_to_me'  => (bool) ($loggedOut && $toMe),
+                'handler'           => $t ? $t->receiving_officer_name : null,
             ]);
         });
 
@@ -301,6 +438,68 @@ class MobileFileSearchController extends Controller
                 'slip_variant'   => $slipVariant,
             ],
             'message' => 'Feedback recorded.',
+        ]);
+    }
+
+    /**
+     * Revert (undo) an SCB Found/Not-Found response — e.g. when the monitor tapped it
+     * by accident — putting the request back into the open queue. Only allowed while
+     * the Front Desk has not yet acted on it.
+     * POST /api/mobile/file-requests/{id}/revert
+     */
+    public function revert(Request $request, int $id, FileLocationResolver $resolver): JsonResponse
+    {
+        if (!$request->user() || !$request->user()->isSuperAdmin()) {
+            return response()->json(['success' => false, 'message' => 'Not authorized — Super Admins only.'], 403);
+        }
+
+        $fr = FileSearchRequest::find($id);
+        if (!$fr) {
+            return response()->json(['success' => false, 'message' => 'File Request not found.'], 404);
+        }
+
+        if (!in_array($fr->status, [FileSearchRequest::STATUS_FOUND, FileSearchRequest::STATUS_NOT_FOUND], true)) {
+            return response()->json(['success' => false, 'message' => 'Only a Found / Not-Found response can be reverted.'], 422);
+        }
+
+        if ($fr->front_desk_acted_at !== null) {
+            return response()->json(['success' => false, 'message' => 'The Front Desk has already acted on this request — it can no longer be reverted.'], 422);
+        }
+
+        // Put the request back in the open queue (clear the response fields).
+        $fr->forceFill([
+            'status'        => FileSearchRequest::STATUS_PENDING,
+            'feedback_note' => null,
+            'responded_by'  => null,
+            'responded_at'  => null,
+        ])->save();
+
+        // Undo the SCB outcome stamped on the matching file_indexings row so the Front
+        // Desk Quick Search stops showing the (accidental) Found / Not-Found outcome.
+        $resolved = $resolver->resolve($fr->file_number);
+        if ($indexing = $resolved['indexing']) {
+            $indexing->forceFill([
+                'tracking_status'        => null,
+                'location_status_manual' => null,
+            ])->save();
+        }
+
+        // Let the original requester know the outcome was withdrawn.
+        if ($fr->requester_user_id) {
+            $this->notificationService->create(
+                $fr->requester_user_id,
+                'file_search_request',
+                "File Request {$fr->request_no}: response reverted",
+                "The SCB Monitor reverted the earlier response for file {$fr->file_number}. It is awaiting a fresh physical check.",
+                ['request_id' => $fr->id, 'request_no' => $fr->request_no, 'file_number' => $fr->file_number],
+                ['module' => 'file_search_request']
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'data'    => ['status' => $fr->status],
+            'message' => 'Response reverted — the request is back in the open queue.',
         ]);
     }
 }

@@ -629,6 +629,49 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
     // Toggle Solicitor Section
+    function getSolicitorAddressParts() {
+        const districtSelect = document.getElementById('solicitorDistrict');
+        const districtOther = document.getElementById('solicitorDistrictCustom')?.value?.trim()
+            || document.getElementById('solicitorDistrictOther')?.value?.trim()
+            || '';
+        const district = districtSelect
+            ? (districtSelect.value === 'Other' ? districtOther : districtSelect.value.trim())
+            : '';
+        const lga = document.getElementById('solicitorLga')?.value?.trim() || '';
+        const city = document.getElementById('solicitorCity')?.value?.trim() || '';
+        const state = document.getElementById('solicitorState')?.value?.trim() || '';
+
+        return [district, lga, city, state].filter(Boolean);
+    }
+
+    function updateSolicitorOfficeAddress() {
+        const addressField = document.getElementById('solicitorAddress');
+        if (!addressField) return;
+
+        const parts = getSolicitorAddressParts();
+        addressField.value = parts.join(', ');
+    }
+
+    function handleSolicitorDistrictChange(select) {
+        const wrapper = document.getElementById('solicitorDistrictOtherWrapper');
+        const otherInput = document.getElementById('solicitorDistrictOther');
+        const customInput = document.getElementById('solicitorDistrictCustom');
+
+        if (select.value === 'Other') {
+            if (wrapper) wrapper.classList.remove('hidden');
+            if (otherInput) otherInput.focus();
+        } else {
+            if (wrapper) wrapper.classList.add('hidden');
+            if (otherInput) otherInput.value = '';
+            if (customInput) customInput.value = '';
+        }
+
+        updateSolicitorOfficeAddress();
+    }
+
+    window.handleSolicitorDistrictChange = handleSolicitorDistrictChange;
+    window.updateSolicitorOfficeAddress = updateSolicitorOfficeAddress;
+
     function attachSolicitorListeners() {
         const sidebarToggle = document.getElementById('includeSolicitorSidebar');
         const mainCheckbox = document.getElementById('includeSolicitor');
@@ -650,6 +693,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 fields.forEach(input => input.value = '');
             }
             if (mainCheckbox) mainCheckbox.checked = checked;
+            updateSolicitorOfficeAddress();
         };
 
         if (sidebarToggle) {
@@ -665,9 +709,38 @@ document.addEventListener('DOMContentLoaded', function () {
         const sidebarState = document.getElementById('solicitorState');
         if (sidebarState) {
             sidebarState.addEventListener('change', function () {
-                fetchLgas(this.value, 'solicitorLga');
+                fetchLgas(this.value, 'solicitorLga').then(() => updateSolicitorOfficeAddress());
             });
         }
+
+        const sidebarLga = document.getElementById('solicitorLga');
+        if (sidebarLga) {
+            sidebarLga.addEventListener('change', updateSolicitorOfficeAddress);
+        }
+
+        const sidebarCity = document.getElementById('solicitorCity');
+        if (sidebarCity) {
+            sidebarCity.addEventListener('input', updateSolicitorOfficeAddress);
+        }
+
+        const sidebarDistrict = document.getElementById('solicitorDistrict');
+        if (sidebarDistrict) {
+            sidebarDistrict.addEventListener('change', function () {
+                handleSolicitorDistrictChange(this);
+            });
+        }
+
+        const sidebarDistrictOther = document.getElementById('solicitorDistrictOther');
+        if (sidebarDistrictOther) {
+            sidebarDistrictOther.addEventListener('input', updateSolicitorOfficeAddress);
+        }
+
+        const sidebarDistrictCustom = document.getElementById('solicitorDistrictCustom');
+        if (sidebarDistrictCustom) {
+            sidebarDistrictCustom.addEventListener('input', updateSolicitorOfficeAddress);
+        }
+
+        updateSolicitorOfficeAddress();
     }
 
     function refreshSolicitorVisibility(instrumentType) {

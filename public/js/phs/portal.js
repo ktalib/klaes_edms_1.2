@@ -207,11 +207,12 @@
   async function performSearch() {
     const query = $('search-query').value.trim();
     if (!query) return alert('Please enter a search term.');
+    const filters = (typeof window.phsGetActiveFilters === 'function') ? window.phsGetActiveFilters() : {};
     hide($('results-section'));
     hide($('file-details-section'));
     show($('loading-section'));
     try {
-      const data = await postJson(cfg.routes.search, { query });
+      const data = await postJson(cfg.routes.search, { query, filters });
       setTokenBalance(data.token_balance);
       renderSearchResults(data, query);
     } catch (error) {

@@ -37,6 +37,7 @@ class FileTracker extends Model
         'origin_office_code',
         'origin_office_name',
         'origin_office_department',
+        'registry_code',
         'receiving_office_code',
         'receiving_office_name',
         'receiving_officer_id',

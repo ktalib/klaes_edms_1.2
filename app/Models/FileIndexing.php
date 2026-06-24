@@ -37,6 +37,8 @@ class FileIndexing extends Model
         'tp_no',
         'lpkn_no',
         'location',
+        'latitude',
+        'longitude',
         'street_name',
         'district',
         'registry',
@@ -55,6 +57,8 @@ class FileIndexing extends Model
         'has_cofo',
         'complainant',
         'dciv_reason',
+        'dciv_status',
+        'dciv_fileno',
         'is_merged',
         'has_transaction',
         'is_problematic',
@@ -111,6 +115,8 @@ class FileIndexing extends Model
             'file_title',
             'land_use_type',
             'plot_number',
+            'latitude',
+            'longitude',
             'district',
             'lga',
             'has_cofo',
@@ -171,6 +177,8 @@ class FileIndexing extends Model
             'phone',
             'complainant',
             'dciv_reason',
+            'dciv_status',
+            'dciv_fileno',
             'current_holder',
             'original_holder',
             'party_3',
@@ -329,6 +337,41 @@ class FileIndexing extends Model
     {
         $firstPage = $this->firstPageTyping;
         return $firstPage ? $firstPage->coverType : null;
+    }
+
+    /**
+     * Normalize a holder column ('original_holder' | 'current_holder') for display.
+     *
+     * These columns store EITHER a plain name string OR a JSON-encoded array of
+     * names (block indexing). The model casts them as 'array', which decodes a
+     * plain-string value to null — so we read the raw attribute and handle both.
+     */
+    public function formattedHolder(string $which): ?string
+    {
+        $raw = $this->getRawOriginal($which);
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+
+        $decoded = json_decode($raw, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            // Stored as a JSON array of names (block indexing).
+            if (is_array($decoded)) {
+                $names = array_values(array_filter(array_map('trim', $decoded), fn ($n) => $n !== ''));
+                return $names ? implode(', ', $names) : null;
+            }
+            // Stored as a JSON-encoded scalar string (e.g. "ZAKARI AHMED" or "").
+            if (is_string($decoded)) {
+                return trim($decoded) ?: null;
+            }
+            if ($decoded === null) {
+                return null;
+            }
+            return trim((string) $decoded) ?: null;
+        }
+
+        // Plain, non-JSON string.
+        return trim((string) $raw) ?: null;
     }
 
     /**
