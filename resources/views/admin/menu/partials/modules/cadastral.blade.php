@@ -144,14 +144,21 @@
             <span>File Tracker (Archive)</span>
           </a>
 
-          <!-- iii. Log a File -->
+          <!-- iii. Quick Search (scoped to Cadastral registry files) -->
+          <a href="{{ route('create-file-tracker.quick-search', ['url' => 'cadastral']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.quick-search') && request('url') === 'cadastral' ? 'active' : '' }}">
+            <i data-lucide="search" class="h-3.5 w-3.5 text-rose-400"></i>
+            <span>Quick Search</span>
+          </a>
+
+          <!-- iv. Log a File -->
           <a href="{{ route('create-file-tracker.index', ['url' => 'cadastral']) }}"
             class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.index') && request('url') === 'cadastral' ? 'active' : '' }}">
             <i data-lucide="file-plus" class="h-3.5 w-3.5 text-rose-400"></i>
             <span>Log a File</span>
           </a>
 
-          <!-- iv. EDMS Update -->
+          <!-- v. EDMS Update -->
           <a href="#"
             class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
             <i data-lucide="refresh-cw" class="h-3.5 w-3.5 text-rose-400"></i>

@@ -71,6 +71,28 @@ class ValuationCompensation extends Model
     }
 
     /**
+     * The true compensation total for this record = building amounts + compensated
+     * item amounts. For the JSON compensated_items format, compensation_amount holds
+     * only the buildings portion, so the items (e.g. a fence/wall on an "Allow"
+     * building with no area/rate) must be added. Legacy string records keep the
+     * stored compensation_amount, which already represents the full total.
+     */
+    public function getTotalCompensationAttribute(): float
+    {
+        $raw = $this->compensated_items;
+        if ($raw) {
+            $decoded = json_decode($raw, true);
+            if (json_last_error() === JSON_ERROR_NONE && isset($decoded['buildings'])) {
+                $buildings = collect($decoded['buildings'] ?? [])->sum(fn ($b) => (float) ($b['amount'] ?? 0));
+                $items     = collect($decoded['items'] ?? [])->sum(fn ($i) => (float) ($i['amount'] ?? 0));
+                return $buildings + $items;
+            }
+        }
+
+        return (float) $this->compensation_amount;
+    }
+
+    /**
      * Relationship to the user who created the record.
      */
     public function user()

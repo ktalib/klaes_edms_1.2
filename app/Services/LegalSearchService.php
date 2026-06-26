@@ -279,7 +279,7 @@ class LegalSearchService
             ])));
 
             if (!empty($primaryCandidates)) {
-                $fileIndexingData = $conn->table('file_indexings')
+                $fileIndexingDataList = $conn->table('file_indexings')
                     ->whereNull('deleted_at')
                     ->where(function ($q) use ($primaryCandidates) {
                         foreach ($primaryCandidates as $candidate) {
@@ -288,7 +288,24 @@ class LegalSearchService
                         }
                     })
                     ->select('file_title', 'district', 'lga', 'land_use_type', 'plot_number', 'tp_no', 'related_fileno', 'file_number')
-                    ->first();
+                    ->get();
+
+                $fileIndexingData = null;
+                
+                // Priority 1: Exact match on file_number
+                foreach ($fileIndexingDataList as $row) {
+                    foreach ($primaryCandidates as $candidate) {
+                        if (strcasecmp((string)$row->file_number, (string)$candidate) === 0) {
+                            $fileIndexingData = $row;
+                            break 2;
+                        }
+                    }
+                }
+                
+                // Priority 2: Fallback to the first match (e.g. matched via related_fileno)
+                if (!$fileIndexingData && $fileIndexingDataList->isNotEmpty()) {
+                    $fileIndexingData = $fileIndexingDataList->first();
+                }
             }
         }
 
@@ -328,8 +345,16 @@ class LegalSearchService
             }
         }
 
+        // DCIV investigation flag — a searched file tied to a DCIV (on either side
+        // of master_dciv_links) is marked Under Investigation.
+        $investigation = $this->resolveDcivInvestigation([$fileNo], $all);
+
         return [
             'transactions' => $all,
+            'under_investigation' => $investigation !== null,
+            'investigation_note' => $investigation['note'] ?? null,
+            'investigation_reason' => $investigation['reason'] ?? null,
+            'investigation_dciv_file_number' => $investigation['dciv_file_number'] ?? null,
             'file_title' => $fileIndexingData->file_title ?? null,
             'file_district' => $fileIndexingData->district ?? null,
             'file_lga' => $fileIndexingData->lga ?? null,
@@ -461,6 +486,10 @@ class LegalSearchService
     {
         return [
             'transactions' => [],
+            'under_investigation' => false,
+            'investigation_note' => null,
+            'investigation_reason' => null,
+            'investigation_dciv_file_number' => null,
             'file_title' => null,
             'file_district' => null,
             'file_lga' => null,
@@ -2203,7 +2232,25 @@ class LegalSearchService
             return null;
         };
 
-        $getTransPriorityWeight = function (array $row) use ($norm, $canonicalTransactionType): int {
+        $getTransPriorityWeight = function (array $row) use ($norm, $canonicalTransactionType, $getTransactionTimestamp): int {
+            $currentYear = (int) date('Y');
+            
+            // Check if file number has current year
+            $fileNo = trim((string) ($row['file_number'] ?? ($row['fileno'] ?? ($row['mlsFNo'] ?? ''))));
+            if (preg_match('/\b(?:19|20)\d{2}\b/', $fileNo, $m)) {
+                if ((int) $m[0] === $currentYear) {
+                    return 0;
+                }
+            }
+            
+            // Check if transaction date has current year
+            $ts = $getTransactionTimestamp($row);
+            if ($ts !== null) {
+                if ((int) date('Y', $ts) === $currentYear) {
+                    return 0;
+                }
+            }
+
             $txType = $canonicalTransactionType($row['transaction_type'] ?? ($row['instrument_type'] ?? ''));
             if ($txType === 'occupancy permit')
                 return 10;
@@ -2314,7 +2361,7 @@ class LegalSearchService
         $fiLandUse = null;
         if ($fileNumber && $fileNumber !== '-') {
             $fileNumberCandidates = array_values(array_unique(array_filter([$fileNumber, $fileNo])));
-            $fi = DB::connection('sqlsrv')->table('file_indexings')
+            $fiList = DB::connection('sqlsrv')->table('file_indexings')
                 ->whereNull('deleted_at')
                 ->where(function ($qq) use ($fileNumberCandidates) {
                     foreach ($fileNumberCandidates as $candidate) {
@@ -2322,8 +2369,23 @@ class LegalSearchService
                             ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
                     }
                 })
-                ->select('file_title', 'plot_number', 'tp_no', 'land_use_type', 'related_fileno')
-                ->first();
+                ->select('file_title', 'plot_number', 'tp_no', 'land_use_type', 'related_fileno', 'file_number')
+                ->get();
+                
+            $fi = null;
+            // Priority 1: Exact match on file_number
+            foreach ($fiList as $row) {
+                foreach ($fileNumberCandidates as $candidate) {
+                    if (strcasecmp((string)$row->file_number, (string)$candidate) === 0) {
+                        $fi = $row;
+                        break 2;
+                    }
+                }
+            }
+            // Priority 2: Fallback to first match
+            if (!$fi && $fiList->isNotEmpty()) {
+                $fi = $fiList->first();
+            }
             if ($fi) {
                 if ($fi->file_title)
                     $fileTitle = $tc($fi->file_title);
@@ -2536,6 +2598,8 @@ class LegalSearchService
         }
 
         $remarksTimestamp = 'These details are as at ' . $now->format('l, F j, Y g:i A');
+        $investigation = $this->resolveDcivInvestigation([$fileNumber, $fileNo], $transactions);
+
         if ($caveatedRecord && $mortgageCaveat) {
             $caveatNote = 'This Property is Under an Active Mortgage and Caveat' . ($caveatNumber ? " (See, {$caveatNumber})" : '') . '!!!';
         } elseif ($caveatedRecord) {
@@ -2546,6 +2610,16 @@ class LegalSearchService
             $caveatNote = 'Based on our available records, the subject title is currently at the Letter of Grant stage, hence Certificate of Occupancy is yet to be issued. However the title is free from encumbrances.';
         } else {
             $caveatNote = 'Based on our available records, the title is free from encumbrances.';
+        }
+
+        if ($investigation !== null) {
+            // If the property has no additional caveat/mortgage, only show the investigation notice.
+            // Do NOT show "free from encumbrances" alongside an active investigation.
+            if ($caveatedRecord || $mortgageCaveat) {
+                $caveatNote = 'This Property is under Investigation. ' . $caveatNote;
+            } else {
+                $caveatNote = 'This Property is under Investigation.';
+            }
         }
 
         $comments = DB::connection('sqlsrv')->table('ls_comment_staging')
@@ -2592,6 +2666,13 @@ class LegalSearchService
             $litigationComment = $litigation->comment;
         }
 
+        // DCIV investigation flag: when the searched file — or any file number
+        // resolved onto the timeline rows — is tied to a DCIV in
+        // master_dciv_links (on EITHER side), the property is under investigation.
+        // NOTE: The DCIV "Under Investigation" note is injected into each matching
+        // row's Comments cell inside search() (called above), so it already flows
+        // through into the report rows — no separate handling is needed here.
+
         $generatedByText = 'Generated by ' . $generatedBy . ' at ' . $now->format('g:i A & d/m/Y');
 
         $qrData = substr(hash_hmac('sha256', $fileNumber . $now->timestamp, config('app.key')), 0, 11);
@@ -2629,6 +2710,7 @@ class LegalSearchService
                     'remarks' => $remarksTimestamp,
                     'caveat_note' => $caveatNote,
                     'is_caveated' => $isCaveated,
+                    'under_investigation' => $investigation !== null,
                     'has_cofo' => $hasCofo,
                     'ground_rent' => $groundRentText,
                     'no_cofo_comment' => $noCofoComment,
@@ -2641,6 +2723,125 @@ class LegalSearchService
                 ],
             ],
         ];
+    }
+
+    /**
+     * Determine whether a file is under DCIV investigation, and why.
+     *
+     * A property is "Under Investigation" when the searched file — or any of the
+     * file-number variants resolved onto its timeline rows — appears in
+     * master_dciv_links on EITHER side: as the DCIV parent (dciv_file_number)
+     * or as a linked child (related_file_number). The note is accompanied by the
+     * DCIV's reason (dciv_reason) and parent file number when available.
+     *
+     * @param array $fileNos      Primary candidate file numbers (searched + resolved)
+     * @param array $transactions Result rows whose file-number variants are also candidates
+     * @return array{note:string, reason:?string, dciv_file_number:?string}|null
+     */
+    private function resolveDcivInvestigation(array $fileNos, array $transactions = []): ?array
+    {
+        $seen = [];
+        $candidates = [];
+        $add = function ($value) use (&$seen, &$candidates) {
+            $v = trim((string) $value);
+            if ($v === '' || $v === '-') {
+                return;
+            }
+            $u = strtoupper($v);
+            if (isset($seen[$u])) {
+                return;
+            }
+            $seen[$u] = true;
+            $candidates[] = $u;
+        };
+
+        foreach ($fileNos as $fn) {
+            $add($fn);
+        }
+        foreach ($transactions as $row) {
+            foreach (['fileno', 'file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno'] as $col) {
+                $add($row[$col] ?? null);
+            }
+        }
+
+        if (empty($candidates)) {
+            return null;
+        }
+
+        if (!Schema::connection('sqlsrv')->hasTable('master_dciv_links')) {
+            return null;
+        }
+
+        $matches = DB::connection('sqlsrv')->table('master_dciv_links')
+            ->where(function ($q) use ($candidates) {
+                $q->whereIn(DB::raw('UPPER(LTRIM(RTRIM(dciv_file_number)))'), $candidates)
+                    ->orWhereIn(DB::raw('UPPER(LTRIM(RTRIM(related_file_number)))'), $candidates);
+            })
+            ->orderByDesc('id')
+            ->get(['dciv_file_number', 'related_file_number', 'dciv_reason']);
+
+        if ($matches->isEmpty()) {
+            return null;
+        }
+
+        // Prefer a match that actually carries a reason.
+        $best = $matches->first(fn($m) => trim((string) ($m->dciv_reason ?? '')) !== '') ?? $matches->first();
+
+        // Capture the searched-side file numbers that are actually under a DCIV,
+        // so callers can flag only the matching timeline rows (not the whole group).
+        $candidateSet = array_flip($candidates);
+        $fileNumbers = [];
+        foreach ($matches as $m) {
+            foreach (['dciv_file_number', 'related_file_number'] as $col) {
+                $u = strtoupper(trim((string) ($m->$col ?? '')));
+                if ($u !== '' && isset($candidateSet[$u])) {
+                    $fileNumbers[$u] = true;
+                }
+            }
+        }
+
+        return [
+            'note' => 'Under Investigation',
+            'reason' => trim((string) ($best->dciv_reason ?? '')) ?: null,
+            'dciv_file_number' => trim((string) ($best->dciv_file_number ?? '')) ?: null,
+            'file_numbers' => array_keys($fileNumbers),
+        ];
+    }
+
+    /**
+     * Build the "Under Investigation" comment text (note + reason).
+     * This is used for the transaction rows' Comments column.
+     */
+    private function investigationCommentText(array $investigation): string
+    {
+        $text = $investigation['note'] ?? 'Under Investigation';
+        $reason = trim((string) ($investigation['reason'] ?? ''));
+        if ($reason !== '') {
+            $text .= ' — ' . $reason;
+        }
+        return $text;
+    }
+
+    /**
+     * Whether a result/report row's file number is one of the investigated files.
+     *
+     * @param array $row         Row carrying file-number variants
+     * @param array $fileNumbers UPPERCASE investigated file numbers
+     * @param array $columns     Which row keys hold file numbers
+     */
+    private function rowIsUnderInvestigation(array $row, array $fileNumbers, array $columns): bool
+    {
+        if (empty($fileNumbers)) {
+            return false;
+        }
+        $set = array_flip($fileNumbers);
+        foreach ($columns as $col) {
+            $u = strtoupper(trim((string) ($row[$col] ?? '')));
+            if ($u !== '' && isset($set[$u])) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

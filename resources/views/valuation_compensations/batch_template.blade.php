@@ -66,8 +66,8 @@
             font-weight: bold;
             font-size: 18px;
             text-transform: uppercase;
-            border-top: 2px solid black;
-            border-bottom: 2px solid black;
+            border-top: 2px solid rgba(255, 0, 0, 0);
+            border-bottom: 2px solid rgba(255, 0, 0, 0);
             padding: 15px 0;
             margin-bottom: 30px;
         }
@@ -183,6 +183,7 @@
             display: flex;
             gap: 10px;
             z-index: 1000;
+             display: none;
         }
 
         .btn {
@@ -215,11 +216,12 @@
 
 <div class="container">
     <div class="logo-header">
-        <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Header Left">
-        <img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Header Right">
+        <img src="http://app.klaes.ng/assets/logo/ministry2.png" alt="Header Left">
+         <h1>COMPENSATION VALUATION ({{ $project->project_fileno ?? 'N/A' }})</h1>
+        <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Header Right">
     </div>
 
-    <h1>COMPENSATION VALUATION ({{ $project->project_fileno ?? 'N/A' }})</h1>
+   
 
     <div class="header-meta">
         <div>
@@ -271,15 +273,21 @@
                 <th style="width: 12%;">Amount of Compensation ₦</th>
                 <th style="width: 10%;">Account Number</th>
                 <th style="width: 10%;">Phone Number</th>
-               
                 <th style="width: 6%;">Remarks</th>
             </tr>
         </thead>
         <tbody>
-            @php 
-                $globalIndex = 1;
+            @php
                 $projectWorkers = $project->workers()->with('user')->get()->keyBy('worker_code');
-                
+
+                // Running worker counter -> letters A, B, C ... (Excel-style beyond Z).
+                $workerSeq = 0;
+                $numToLetters = function ($n) {
+                    $s = '';
+                    while ($n > 0) { $n--; $s = chr(65 + ($n % 26)) . $s; $n = intdiv($n, 26); }
+                    return $s;
+                };
+
                 // Group by sub-project first
                 $recordsBySubProject = $records->groupBy('sub_project_id');
                 $totalValuation = 0;
@@ -292,13 +300,15 @@
                     $subProjectTotal = 0;
                 @endphp
 
-                <!-- Sub-Project Header Row -->
+                <!-- Sub-Project Header Row (only when a sub-project is set) -->
+                @if($subProject)
                 <tr style="border-top: 2px solid #000;">
                     <td colspan="1" style="font-weight: bold;"></td>
                     <td colspan="9" style="text-align: left; padding-left: 15px; font-weight: bold; text-transform: uppercase; background-color: #f8fafc;">
                         {{ $subProjectName }}
                     </td>
                 </tr>
+                @endif
 
                 @php
                     // Group by worker within this sub-project
@@ -311,11 +321,16 @@
                         $workerName = ($worker && $worker->user) ? $worker->user->first_name : 'Unknown';
                         $workerCode = $worker ? $worker->worker_code : 'N/A';
                         $workerTotal = 0;
+
+                        // Worker letter (A, B, C ...) and per-worker owner counter (A1, A2 ...).
+                        $workerSeq++;
+                        $workerLetter = $numToLetters($workerSeq);
+                        $ownerSeq = 0;
                     @endphp
 
                     <!-- Worker Header Row -->
                     <tr style="border-bottom: 2px solid #000;">
-                        <td colspan="1" style="font-weight: bold;"></td>
+                        <td colspan="1" style="font-weight: bold; text-align: center;">{{ $workerLetter }}</td>
                         <td colspan="9" style="text-align: left; padding-left: 15px; font-weight: bold; text-transform: uppercase; font-size: 10px; color: #475569;">
                             WORKER: {{ $workerName }} ({{ $workerCode }})
                         </td>
@@ -334,15 +349,14 @@
 
                         @foreach($ownerRecords as $record)
                             @php
-                                $recordTotal = (float)$record->compensation_amount;
-                                $ownerSubTotal += $recordTotal;
-
                                 // Parse compensated_items — supports JSON (new) and legacy string (old)
                                 $buildings = [];
                                 $subItems = [];
+                                $isJsonFormat = false;
                                 if ($record->compensated_items) {
                                     $decoded = json_decode($record->compensated_items, true);
                                     if (json_last_error() === JSON_ERROR_NONE && isset($decoded['buildings'])) {
+                                        $isJsonFormat = true;
                                         $buildings = $decoded['buildings'] ?? [];
                                         $subItems  = $decoded['items'] ?? [];
                                     } else {
@@ -359,72 +373,114 @@
                                         }
                                     }
                                 }
-                                $mainAmount = $record->compensation_amount - collect($subItems)->sum('amount');
+
+                                $itemsSum = collect($subItems)->sum(fn ($s) => (float) ($s['amount'] ?? 0));
+
+                                // Record total = buildings + items for the JSON format (compensation_amount
+                                // there is the buildings portion only). Legacy records keep the stored
+                                // compensation_amount, which already represents the full total.
+                                if ($isJsonFormat) {
+                                    $buildingsSum = collect($buildings)->sum(fn ($b) => (float) ($b['amount'] ?? 0));
+                                    $recordTotal = $buildingsSum + $itemsSum;
+                                } else {
+                                    $recordTotal = (float) $record->compensation_amount;
+                                }
+                                $ownerSubTotal += $recordTotal;
+
+                                $mainAmount = max(0, (float) $record->compensation_amount - $itemsSum);
                             @endphp
 
-                            @if(count($buildings) > 0)
-                                {{-- JSON format: one row per building --}}
-                                @foreach($buildings as $bIdx => $building)
-                                <tr>
-                                    <td>{{ $bIdx === 0 ? $globalIndex++ : '' }}</td>
-                                    <td style="font-weight: bold; text-align: left; padding-left: 8px;">
-                                        {{ $bIdx === 0 ? $record->owner_name : '' }}
-                                    </td>
-                                    <td style="text-align: left; padding-left: {{ $bIdx > 0 ? '20px' : '8px' }};">
-                                        {{ $bIdx > 0 ? '• ' : '' }}{{ $building['building_type'] ?? '' }}
-                                    </td>
-                                    <td>1</td>
-                                    <td>{{ ($building['area'] ?? 0) > 0 ? number_format($building['area'], 2) : 'Allow' }}</td>
-                                    <td style="text-align: right; padding-right: 8px;">{{ number_format($building['rate'] ?? 0, 2) }}</td>
-                                    <td style="text-align: right; padding-right: 8px;">{{ number_format($building['amount'] ?? 0, 2) }}</td>
+                            @php
+                                // Build the ordered list of rows to render for this record.
+                                // Rule: a building line is only shown when its building type
+                                // is entered. Compensated items are always shown. The owner's
+                                // identity (S/N, name, account, phone, remarks) is attached to
+                                // whichever row ends up first, so it is never lost even when the
+                                // building row is skipped.
+                                $displayRows = [];
+
+                                if (count($buildings) > 0) {
+                                    foreach ($buildings as $building) {
+                                        if (trim($building['building_type'] ?? '') === '') continue;
+                                        $displayRows[] = [
+                                            'kind'   => 'building',
+                                            'type'   => $building['building_type'],
+                                            'count'  => 1,
+                                            'area'   => ($building['area'] ?? 0) > 0 ? number_format($building['area'], 2) : 'Allow',
+                                            'rate'   => number_format($building['rate'] ?? 0, 2),
+                                            'amount' => number_format($building['amount'] ?? 0, 2),
+                                        ];
+                                    }
+                                } elseif (trim($record->building_type ?? '') !== '') {
+                                    $displayRows[] = [
+                                        'kind'   => 'building',
+                                        'type'   => $record->building_type,
+                                        'count'  => $record->building_count,
+                                        'area'   => $record->area_covered > 0 ? number_format($record->area_covered, 2) : 'Allow',
+                                        'rate'   => number_format($record->rate_of_cost, 2),
+                                        'amount' => number_format($mainAmount, 2),
+                                    ];
+                                }
+
+                                foreach ($subItems as $sub) {
+                                    // Show the entered measurement (area m² / volume m³, or linear
+                                    // length) when available; only fall back to "Allow" for older
+                                    // records that never stored measurements.
+                                    $itemMeasure = (float) ($sub['measure'] ?? 0);
+                                    $itemLength  = (float) ($sub['length'] ?? 0);
+                                    $itemRate    = (float) ($sub['rate'] ?? 0);
+
+                                    if ($itemMeasure > 0) {
+                                        $itemArea = number_format($itemMeasure, 2);
+                                    } elseif ($itemLength > 0) {
+                                        $itemArea = number_format($itemLength, 2);
+                                    } else {
+                                        $itemArea = 'Allow';
+                                    }
+
+                                    $displayRows[] = [
+                                        'kind'   => 'item',
+                                        'type'   => $sub['name'],
+                                        'count'  => 1,
+                                        'area'   => $itemArea,
+                                        'rate'   => $itemRate > 0 ? number_format($itemRate, 2) : number_format($sub['amount'], 2),
+                                        'amount' => number_format($sub['amount'], 2),
+                                    ];
+                                }
+                            @endphp
+
+                            @foreach($displayRows as $rIdx => $drow)
+                                @php
+                                    $isFirst = ($rIdx === 0);
+                                    $isItem  = ($drow['kind'] === 'item');
+                                    // The first visible row acts as the owner's main row; any
+                                    // following row (extra building or item) is bulleted/indented.
+                                    $bulleted = !$isFirst;
+                                @endphp
+                                <tr @if($isItem && !$isFirst) style="font-size: 10px; color: #444; font-style: italic;" @endif>
+                                    <td>{{ $isFirst ? $workerLetter . (++$ownerSeq) : '' }}</td>
+                                    <td style="font-weight: bold; text-align: left; padding-left: 8px;">{{ $isFirst ? $record->owner_name : '' }}</td>
+                                    <td style="text-align: left; padding-left: {{ $bulleted ? '20px' : '8px' }};">{{ $bulleted ? '• ' : '' }}{{ $drow['type'] }}</td>
+                                    <td>{{ $drow['count'] }}</td>
+                                    <td>{{ $drow['area'] }}</td>
+                                    <td style="text-align: right; padding-right: 8px;">{{ $drow['rate'] }}</td>
+                                    <td style="text-align: right; padding-right: 8px;">{{ $drow['amount'] }}</td>
                                     <td style="font-size: 11px;">
-                                        @if($bIdx === 0)
+                                        @if($isFirst)
                                             <div style="font-weight: bold;">{{ $record->account_number }}</div>
                                             <div style="color: #666;">{{ $record->bank_name }}</div>
                                         @endif
                                     </td>
-                                    <td>{{ $bIdx === 0 ? $record->phone_number : '' }}</td>
-                                    <td style="font-size: 9px; text-align: left;">{{ $bIdx === 0 ? Str::limit($record->remarks, 50) : '' }}</td>
+                                    <td>{{ $isFirst ? $record->phone_number : '' }}</td>
+                                    <td style="font-size: 9px; text-align: left;">{{ $isFirst ? Str::limit($record->remarks, 50) : '' }}</td>
                                 </tr>
-                                @endforeach
-                            @else
-                                {{-- Legacy / fallback: single aggregated row --}}
-                                <tr>
-                                    <td>{{ $globalIndex++ }}</td>
-                                    <td style="font-weight: bold; text-align: left; padding-left: 8px;">{{ $record->owner_name }}</td>
-                                    <td style="text-align: left; padding-left: 8px;">{{ $record->building_type }}</td>
-                                    <td>{{ $record->building_count }}</td>
-                                    <td>{{ $record->area_covered > 0 ? number_format($record->area_covered, 2) : 'Allow' }}</td>
-                                    <td style="text-align: right; padding-right: 8px;">{{ number_format($record->rate_of_cost, 2) }}</td>
-                                    <td style="text-align: right; padding-right: 8px;">{{ number_format($mainAmount, 2) }}</td>
-                                    <td style="font-size: 11px;">
-                                        <div style="font-weight: bold;">{{ $record->account_number }}</div>
-                                        <div style="color: #666;">{{ $record->bank_name }}</div>
-                                    </td>
-                                    <td>{{ $record->phone_number }}</td>
-                                    <td style="font-size: 9px; text-align: left;">{{ Str::limit($record->remarks, 50) }}</td>
-                                </tr>
-                            @endif
-
-                            {{-- Compensated items sub-rows --}}
-                            @foreach($subItems as $sub)
-                            <tr style="font-size: 10px; color: #444; font-style: italic;">
-                                <td></td>
-                                <td></td>
-                                <td style="text-align: left; padding-left: 20px;">• {{ $sub['name'] }}</td>
-                                <td>1</td>
-                                <td>Allow</td>
-                                <td style="text-align: right; padding-right: 8px;">{{ number_format($sub['amount'], 2) }}</td>
-                                <td style="text-align: right; padding-right: 8px;">{{ number_format($sub['amount'], 2) }}</td>
-                                <td colspan="3"></td>
-                            </tr>
                             @endforeach
 
                             <!-- Owner Total Row -->
                             @if($ownerRecordCount > 1 || count($subItems) > 0)
                             <tr>
                                 <td colspan="6" style="text-align: right; padding-right: 15px; font-weight: bold; font-size: 10px; color: #555;">
-                                    Sub Total {{ $ownerName }} ({{ $subProjectName }})
+                                    Sub Total {{ $ownerName }}@if($subProject) ({{ $subProjectName }})@endif
                                 </td>
                                 <td style="font-weight: bold; text-align: right; padding-right: 8px; border-top: 1px solid #999; font-size: 11px;">
                                     {{ number_format($ownerSubTotal, 2) }}
@@ -453,7 +509,8 @@
                     @php $subProjectTotal += $workerTotal; @endphp
                 @endforeach
 
-                <!-- Sub-Project Sub-total row -->
+                <!-- Sub-Project Sub-total row (only when a sub-project is set) -->
+                @if($subProject)
                 <tr style="border-top: 1.5px solid #000;">
                     <td colspan="6" style="text-align: right; padding-right: 15px; height: 35px; font-weight: bold; text-transform: uppercase; font-size: 11px;">
                         Sub Total {{ $subProjectName }}
@@ -463,6 +520,7 @@
                     </td>
                     <td colspan="3"></td>
                 </tr>
+                @endif
 
                 @php $totalValuation += $subProjectTotal; @endphp
             @endforeach

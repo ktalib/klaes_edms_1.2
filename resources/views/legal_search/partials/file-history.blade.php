@@ -648,6 +648,16 @@
           {{-- Editable Comments & Remarks Section --}}
           <div id="ls-comments-section" class="mt-4 space-y-3">
 
+            {{-- DCIV Investigation Notice (shown only when property is under investigation) --}}
+            <div id="investigation-notice-section" class="p-3 bg-red-50 border border-red-400 rounded-lg hidden">
+              <div class="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                </svg>
+                <p id="investigation-notice-text" class="text-sm font-semibold text-red-700">This Property is under Investigation.</p>
+              </div>
+            </div>
+
             {{-- Ground Rent --}}
             <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg">
               <div class="flex items-center justify-between mb-2">
@@ -687,6 +697,7 @@
             </div>
 
             {{-- No CoFO Remark --}}
+
             <div id="no-cofo-comment-section" class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <div class="flex items-center justify-between mb-2">
                 <h4 class="text-sm font-semibold text-blue-800">No Certificate of Occupancy Remark</h4>

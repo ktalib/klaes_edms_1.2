@@ -260,10 +260,12 @@ class DeedsApplicationController extends Controller
 
             // Formally log the action
             if (class_exists('\App\Services\AuditService')) {
-                \App\Services\AuditService::logAction(
+                app(\App\Services\AuditService::class)->logAction(
                     'Deeds Master Delete',
                     'consent_applications',
                     $application->id,
+                    null,
+                    null,
                     "Deleted deeds consent application for file: {$fileNo}"
                 );
             }
@@ -319,10 +321,12 @@ class DeedsApplicationController extends Controller
 
                     // Formally log the action
                     if (class_exists('\App\Services\AuditService')) {
-                        \App\Services\AuditService::logAction(
+                        app(\App\Services\AuditService::class)->logAction(
                             'Deeds Master Delete Bulk',
                             'consent_applications',
                             $application->id,
+                            null,
+                            null,
                             "Deleted deeds consent application for file: {$fileNo} (Bulk)"
                         );
                     }

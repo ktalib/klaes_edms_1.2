@@ -2971,6 +2971,21 @@
 
                 const result = GlobalFileNoModal.open({
                     targetFields: ['file_number'], // Target our file number field
+                    // Scope the selectable registries to the current module so, e.g., the
+                    // Land module never surfaces SLTR/ST/KANGIS files (and vice versa).
+                    // Modules not listed here keep the full set of tabs.
+                    allowedTabs: (function () {
+                        const m = @json(strtolower($module ?? ''));
+                        const map = {
+                            '':      ['mls', 'old_mls'],
+                            'land':  ['mls', 'old_mls'],
+                            'kangis': ['kangis'],
+                            'sltr':  ['sltr'],
+                            'st':    ['sit'],
+                            'dciv':  ['dciv']
+                        };
+                        return Object.prototype.hasOwnProperty.call(map, m) ? map[m] : null;
+                    })(),
                     callback: function (data) {
                         // This callback is executed when user clicks Apply
                         console.log('File number selected:', data.fileNumber);
@@ -3021,6 +3036,19 @@
             // Listen for the global modal apply event
             $(document).on('fileno-modal:applied', function (event, data) {
                 console.log('File number modal applied:', data);
+            });
+
+            // In-transit override: when the user opts in, re-enable the smart
+            // file selector button that is locked on the Log-a-File registries
+            // so an already-out file can be picked manually without going back
+            // through Quick Search.
+            $('#fileno-selector-override').on('change', function () {
+                const enabled = this.checked;
+                const $btn = $('#fileno-selector-btn');
+                $btn.prop('disabled', !enabled).attr('aria-disabled', String(!enabled));
+                $btn.toggleClass('text-gray-300 cursor-not-allowed', !enabled)
+                    .toggleClass('text-gray-500 hover:text-blue-600 hover:bg-blue-50', enabled)
+                    .attr('title', enabled ? 'Select from existing file numbers' : 'Files are logged through Quick Search');
             });
         } else {
             console.warn('GlobalFileNoModal not available');
@@ -3176,6 +3204,157 @@
         };
     }
 
+    // Chronological sort value for a converted (camelCase) movement entry — mirrors
+    // the backend CreateFileTrackerController::movementSortTimestamp(): prefer the
+    // arrival (log-in) time, then the departure (log-out) time, then the entry's
+    // creation timestamp. Entries with no usable date sort last. Used so a tracker's
+    // own rows read in the same continuous timeline as merged prior-cycle rows
+    // (so re-tracked / multi-cycle files don't bury a "Completed" return row at the
+    // bottom out of chronological order).
+    function movementChronoValue(entry) {
+        if (!entry) return Number.POSITIVE_INFINITY;
+        const parse = (d, t) => {
+            const ds = (d || '').toString().trim();
+            if (ds === '') return null;
+            const ts = (t || '').toString().trim() || '00:00';
+            const ms = Date.parse(ds + ' ' + ts);
+            return Number.isNaN(ms) ? null : ms;
+        };
+        const inVal = parse(entry.logInDate, entry.logInTime);
+        if (inVal !== null) return inVal;
+        const outVal = parse(entry.logOutDate, entry.logOutTime);
+        if (outVal !== null) return outVal;
+        if (entry.createdAt) {
+            const ms = Date.parse(entry.createdAt);
+            if (!Number.isNaN(ms)) return ms;
+        }
+        return Number.POSITIVE_INFINITY;
+    }
+
+    // Map a status label to the printed-sheet colour class so the File Tracking Sheet
+    // matches the on-screen table badges exactly (resolveStatusDisplay).
+    function sheetStatusClass(label) {
+        switch ((label || '').toLowerCase()) {
+            case 'in-transit': return 'status-in-transit'; // amber
+            case 'completed':  return 'status-completed';  // blue
+            case 'in archive':
+            case 'archive':    return 'status-archive';    // indigo
+            case 'log-in':     return 'status-login';      // green
+            case 'log-out':    return 'status-logout';     // green
+            case 'rejected':   return 'status-rejected';   // red
+            case 'cancelled':
+            case 'canceled':   return 'status-cancelled';  // grey
+            default:           return 'status-completed';  // matches the table's generic (blue) override
+        }
+    }
+
+    // Paginate the printed File Tracking Sheet: at most 5 movement-history rows per
+    // page, and the Signatures block always travels with the final row on the last
+    // page (so it is never stranded on a page of its own). Operates on the print
+    // window DOM after the sheet HTML is written. No-op when history fits one page (<=5).
+    function paginateTrackingSheet(doc) {
+        const ROWS_PER_PAGE = 5;
+        const section = doc.querySelector('.section.table-section');
+        if (!section) return;
+        const table = section.querySelector('table');
+        const tbody = table ? table.querySelector('tbody') : null;
+        const thead = table ? table.querySelector('thead') : null;
+        if (!tbody) return;
+
+        const rows = Array.from(tbody.children).filter(n => n.tagName === 'TR');
+        const footer = doc.querySelector('.footer');
+        if (rows.length <= ROWS_PER_PAGE) return; // fits on one page — leave footer in place
+
+        const parent = section.parentNode;
+        const theadHTML = thead ? thead.outerHTML : '';
+        const titleEl = section.querySelector('.section-title');
+        const baseTitle = (titleEl && titleEl.textContent) || 'Movement History';
+
+        const chunks = [];
+        for (let i = 0; i < rows.length; i += ROWS_PER_PAGE) {
+            chunks.push(rows.slice(i, i + ROWS_PER_PAGE));
+        }
+
+        const frag = doc.createDocumentFragment();
+        chunks.forEach((chunk, idx) => {
+            const sec = doc.createElement('div');
+            sec.className = 'section table-section';
+            if (idx > 0) sec.style.pageBreakBefore = 'always';
+
+            const title = doc.createElement('div');
+            title.className = 'section-title';
+            title.textContent = idx === 0 ? baseTitle : baseTitle + ' (cont.)';
+            sec.appendChild(title);
+
+            const tbl = doc.createElement('table');
+            tbl.innerHTML = theadHTML + '<tbody></tbody>';
+            const tb = tbl.querySelector('tbody');
+            chunk.forEach(r => tb.appendChild(r));
+            sec.appendChild(tbl);
+            frag.appendChild(sec);
+
+            // Signatures travel with the final page, immediately after the last row.
+            if (idx === chunks.length - 1 && footer) {
+                sec.appendChild(footer);
+            }
+        });
+
+        parent.insertBefore(frag, section);
+        section.remove();
+    }
+
+    // Normalise a raw movement_log row (snake_case) into the camelCase shape the
+    // card/table renderers consume. Shared by the current tracker's log and the
+    // prior-cycle movements merged in for a continuous timeline.
+    function convertMovementLogEntry(log) {
+        const normalizeId = normalizeNumericId;
+        const rawNewStatus = typeof log.new_status === 'string' && log.new_status.trim() !== ''
+            ? log.new_status.trim()
+            : (typeof log.newStatus === 'string' && log.newStatus.trim() !== ''
+                ? log.newStatus.trim()
+                : null);
+        const rawStatusLabel = typeof log.status_label === 'string' && log.status_label.trim() !== ''
+            ? log.status_label.trim()
+            : (typeof log.statusLabel === 'string' && log.statusLabel.trim() !== ''
+                ? log.statusLabel.trim()
+                : null);
+        const statusLabelOverride = rawStatusLabel ?? rawNewStatus ?? null;
+
+        return {
+            logId: log.log_id,
+            officeId: log.office_code,
+            officeName: log.office_name,
+            logInTime: log.log_in_time,
+            logInDate: log.log_in_date,
+            logOutTime: log.log_out_time || '',
+            logOutDate: log.log_out_date || '',
+            notes: log.notes || '',
+            status: (log.status || 'completed').toLowerCase(),
+            statusLabelOverride,
+            newStatus: rawNewStatus,
+            oldStatus: log.old_status ?? log.oldStatus ?? null,
+            actionType: log.action ?? log.action_type ?? null,
+            createdAt: log.timestamp || null,
+            receivingOfficerId: normalizeId(log.receiving_officer_id ?? log.receivingOfficerId ?? null),
+            receivingOfficerName: log.receiving_officer_name ?? log.receivingOfficerName ?? null,
+            receivingOfficeCode: log.receiving_office_code ?? log.receivingOfficeCode ?? log.office_code ?? null,
+            receivingOfficeName: log.receiving_office_name ?? log.receivingOfficeName ?? log.office_name ?? null,
+            originOfficeCode: log.origin_office_code ?? log.originOfficeCode ?? null,
+            originOfficeName: log.origin_office_name ?? log.originOfficeName ?? null,
+            originOfficeDepartment: log.origin_office_department ?? log.originOfficeDepartment ?? null,
+            manualUpdate: Boolean(log.manual_update),
+            manualUpdateBy: log.manual_update_by ?? null,
+            manualUpdateAt: log.manual_update_at ?? null,
+            createdById: normalizeId(log.user_id ?? log.userId ?? log.created_by ?? log.createdBy ?? null),
+            createdByName: log.user_name ?? log.userName ?? log.created_by_name ?? log.createdByName ?? null,
+            acceptedById: normalizeId(log.accepted_by ?? log.acceptedBy ?? null),
+            acceptedByName: log.accepted_by_name ?? log.acceptedByName ?? null,
+            rejectedById: normalizeId(log.rejected_by ?? log.rejectedBy ?? null),
+            rejectedByName: log.rejected_by_name ?? log.rejectedByName ?? null,
+            purpose: log.purpose ?? null
+        };
+    }
+
     function transformApiTracker(tracker) {
         if (!tracker) {
             return null;
@@ -3184,53 +3363,13 @@
         const movementLog = Array.isArray(tracker.movement_log) ? tracker.movement_log : [];
         const normalizeId = normalizeNumericId;
 
-        const convertedEntries = movementLog.map(log => {
-            const rawNewStatus = typeof log.new_status === 'string' && log.new_status.trim() !== ''
-                ? log.new_status.trim()
-                : (typeof log.newStatus === 'string' && log.newStatus.trim() !== ''
-                    ? log.newStatus.trim()
-                    : null);
-            const rawStatusLabel = typeof log.status_label === 'string' && log.status_label.trim() !== ''
-                ? log.status_label.trim()
-                : (typeof log.statusLabel === 'string' && log.statusLabel.trim() !== ''
-                    ? log.statusLabel.trim()
-                    : null);
-            const statusLabelOverride = rawStatusLabel ?? rawNewStatus ?? null;
+        const convertedEntries = movementLog.map(convertMovementLogEntry);
 
-            return {
-                logId: log.log_id,
-                officeId: log.office_code,
-                officeName: log.office_name,
-                logInTime: log.log_in_time,
-                logInDate: log.log_in_date,
-                logOutTime: log.log_out_time || '',
-                logOutDate: log.log_out_date || '',
-                notes: log.notes || '',
-                status: (log.status || 'completed').toLowerCase(),
-                statusLabelOverride,
-                newStatus: rawNewStatus,
-                oldStatus: log.old_status ?? log.oldStatus ?? null,
-                actionType: log.action ?? log.action_type ?? null,
-                createdAt: log.timestamp || null,
-                receivingOfficerId: normalizeId(log.receiving_officer_id ?? log.receivingOfficerId ?? null),
-                receivingOfficerName: log.receiving_officer_name ?? log.receivingOfficerName ?? null,
-                receivingOfficeCode: log.receiving_office_code ?? log.receivingOfficeCode ?? log.office_code ?? null,
-                receivingOfficeName: log.receiving_office_name ?? log.receivingOfficeName ?? log.office_name ?? null,
-                originOfficeCode: log.origin_office_code ?? log.originOfficeCode ?? null,
-                originOfficeName: log.origin_office_name ?? log.originOfficeName ?? null,
-                originOfficeDepartment: log.origin_office_department ?? log.originOfficeDepartment ?? null,
-                manualUpdate: Boolean(log.manual_update),
-                manualUpdateBy: log.manual_update_by ?? null,
-                manualUpdateAt: log.manual_update_at ?? null,
-                createdById: normalizeId(log.user_id ?? log.userId ?? log.created_by ?? log.createdBy ?? null),
-                createdByName: log.user_name ?? log.userName ?? log.created_by_name ?? log.createdByName ?? null,
-                acceptedById: normalizeId(log.accepted_by ?? log.acceptedBy ?? null),
-                acceptedByName: log.accepted_by_name ?? log.acceptedByName ?? null,
-                rejectedById: normalizeId(log.rejected_by ?? log.rejectedBy ?? null),
-                rejectedByName: log.rejected_by_name ?? log.rejectedByName ?? null,
-                purpose: log.purpose ?? null
-            };
-        });
+        // Movements carried over from earlier tracking cycles of the same file
+        // (server-provided, already ordered chronologically). Rendered read-only so
+        // the timeline reads continuously across re-tracking.
+        const priorMovementLog = Array.isArray(tracker.prior_movements) ? tracker.prior_movements : [];
+        const priorEntries = priorMovementLog.map(convertMovementLogEntry);
 
         const assignedOfficeSource = (() => {
             const relation = tracker.assigned_office && typeof tracker.assigned_office === 'object' && !Array.isArray(tracker.assigned_office)
@@ -3369,6 +3508,7 @@
                 department: tracker.department || ''
             } : null,
             logEntries: convertedEntries,
+            priorLogEntries: priorEntries,
             notes: tracker.notes,
             createdAt: tracker.created_at,
             fileIndexingCreatedAt: tracker.file_indexing_created_at || null,
@@ -4836,13 +4976,11 @@
                             </tr>
                         `;
                 })() : [...movements].sort((a, b) => {
-                    // Keep Completed / Log-in (file-back-home) rows at the bottom of the
-                    // table; everything else retains its original order (stable sort).
-                    const isDone = (e) => {
-                        const lbl = (resolveStatusDisplay(e, (e.status || '')).label || '').toLowerCase();
-                        return lbl === 'log-in' || lbl === 'completed';
-                    };
-                    return (isDone(a) ? 1 : 0) - (isDone(b) ? 1 : 0);
+                    // Order rows chronologically (arrival, else departure, else created)
+                    // so a re-tracked / multi-cycle file reads as one continuous timeline
+                    // — a "Completed" return row sits right after the out-row of the same
+                    // cycle instead of being forced to the bottom of the table.
+                    return movementChronoValue(a) - movementChronoValue(b);
                 }).map(entry => {
                     // General view: one row per log entry
                     const entryStatus = (entry.status || 'completed').toLowerCase();
@@ -4958,7 +5096,9 @@
                                             ${updateButton}
                                             ${canDelete ? `
                                             <hr class="my-1 border-gray-200">
-                                            <button class="${actionsDisabled ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-60' : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-red-600 transition hover:bg-gray-100'}" data-action="delete-log" ${actionsDisabled ? 'data-disabled="true" aria-disabled="true" tabindex="-1"' : ''}>
+                                            {{-- Delete Log Entry stays enabled even after the file is logged back in,
+                                                 so individual movement rows can be cleaned up / corrected. --}}
+                                            <button class="dropdown-item flex w-full items-center px-4 py-2 text-sm text-red-600 transition hover:bg-gray-100" data-action="delete-log">
                                                 <i data-lucide="trash-2" class="mr-2 h-4 w-4"></i>
                                                 <span>Delete Log Entry</span>
                                             </button>
@@ -5033,6 +5173,69 @@
                             <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-400">—</td>
                         </tr>
                     `;
+
+            // Prior-cycle movement rows — entries carried over from earlier completed
+            // trackers for the SAME file. Rendered read-only (no per-row actions) between
+            // the Archive home row and this tracker's own rows, so a re-tracked file shows
+            // one continuous timeline. Only on the standard (non-KANGIS aggregated) view.
+            const priorEntries = Array.isArray(tracker.priorLogEntries) ? tracker.priorLogEntries : [];
+            const priorRows = (isKangisView || priorEntries.length === 0) ? '' : priorEntries.map(entry => {
+                const entryStatus = (entry.status || 'completed').toLowerCase();
+                const statusMeta = resolveStatusDisplay(entry, entryStatus);
+                const entryStatusLabel = statusMeta.label;
+                const isLoginEntry = entryStatusLabel === 'Log-in';
+                const statusClass = statusMeta.badgeClass;
+                const statusDotClass = statusMeta.dotClass;
+                const officeLabel = entry.officeName
+                    || entry.office
+                    || officeData[entry.officeId]?.name
+                    || entry.officeId
+                    || '—';
+                const safeNotes = sanitize(entry.notes);
+                const officerName = entry.receivingOfficerName || '';
+                const officerId = entry.receivingOfficerId ?? null;
+                const displayName = officerName ? sanitize(officerName) : 'N/A';
+                const officerBadge = officerId ? sanitize(String(officerId)) : null;
+                return `
+                        <tr class="bg-gray-50/60" title="Earlier tracking cycle for this file (read-only)">
+                            <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-gray-500">
+                                <div class="flex items-center gap-2">
+                                    <span class="inline-block h-2 w-2 rounded-full bg-gray-300" title="Previous tracking cycle"></span>
+                                    <span>${sanitize(entry.logId)}</span>
+                                </div>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                                <div class="flex items-center gap-2">
+                                    ${isLoginEntry ? '' : `<span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">${sanitize(entry.officeId)}</span>`}
+                                    <span>${sanitize(officeLabel)}</span>
+                                </div>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                                <div class="flex items-center gap-2"><span>${displayName}</span>${officerBadge ? `<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">${officerBadge}</span>` : ''}</div>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                                ${(isLoginEntry || entryStatusLabel === 'Completed') ? `
+                                <div>${sanitize(entry.logInDate || '—')}</div>
+                                <div class="text-xs text-gray-400">${sanitize(entry.logInTime || '—')}</div>
+                                ` : '<div class="text-gray-400">—</div>'}
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                                <div>${sanitize(entry.logOutDate || '—')}</div>
+                                <div class="text-xs text-gray-400">${sanitize(entry.logOutTime || '—')}</div>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm">
+                                <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusClass}">
+                                    <span class="mr-1 inline-flex h-2 w-2 rounded-full ${statusDotClass}"></span>
+                                    ${entryStatusLabel}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-500">
+                                ${safeNotes ? `<span class="line-clamp-2" title="${safeNotes}">${safeNotes}</span>` : '—'}
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-400">—</td>
+                        </tr>
+                    `;
+            }).join('');
 
             const currentModuleCode = (window.currentModule || '').toLowerCase();
             const isWorkflowGateModuleView = ['kangis', 'dgis', 'dg'].includes(currentModuleCode);
@@ -5324,7 +5527,7 @@
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    ${homeLocationRow}${rows}
+                                    ${homeLocationRow}${priorRows}${rows}
                                 </tbody>
                             </table>
                         </div>
@@ -6098,7 +6301,14 @@
                         ${(() => {
                             const approvalPurposes = ['recommendation', 'approval'];
                             const approvalEntries = tracker.logEntries.filter(e => approvalPurposes.includes((e.purpose || '').toLowerCase()));
-                            const movementEntries = tracker.logEntries.filter(e => !approvalPurposes.includes((e.purpose || '').toLowerCase()));
+                            // Prepend movements from earlier tracking cycles of the same file so the
+                            // Movement History reads continuously across re-tracking (matches the card).
+                            const priorMovementEntries = (tracker.priorLogEntries || [])
+                                .filter(e => !approvalPurposes.includes((e.purpose || '').toLowerCase()));
+                            const movementEntries = [
+                                ...priorMovementEntries,
+                                ...tracker.logEntries.filter(e => !approvalPurposes.includes((e.purpose || '').toLowerCase())),
+                            ];
 
                             const purposeConfig = {
                                 recommendation: { label: 'DGIS Recommendation', icon: '👤', color: 'indigo' },
@@ -6637,9 +6847,15 @@
                         table th { background: #f3f4f6; border: 1px solid #d1d5db; padding: 0.35rem; text-align: left; font-weight: bold; color: #1f2937; }
                         table td { border: 1px solid #e5e7eb; padding: 0.35rem; vertical-align: top; }
                         table tr:nth-child(even) { background: #f9fafb; }
-                        .status-in-transit { color: #2563eb; font-weight: bold; }
-                        .status-archive { color: #f59e0b; font-weight: bold; }
-                        .status-archived { color: #16a34a; font-weight: bold; }
+                        /* Colours mirror the on-screen table badges (resolveStatusDisplay). */
+                        .status-in-transit { color: #d97706; font-weight: bold; }  /* amber */
+                        .status-completed { color: #2563eb; font-weight: bold; }   /* blue */
+                        .status-archive { color: #4f46e5; font-weight: bold; }     /* indigo — In Archive */
+                        .status-archived { color: #16a34a; font-weight: bold; }    /* green (legacy alias) */
+                        .status-login { color: #16a34a; font-weight: bold; }       /* green — Log-in */
+                        .status-logout { color: #16a34a; font-weight: bold; }      /* green — Log-out */
+                        .status-rejected { color: #dc2626; font-weight: bold; }    /* red */
+                        .status-cancelled { color: #6b7280; font-weight: bold; }   /* grey */
                         .priority-HIGH { color: #dc2626; font-weight: bold; }
                         .priority-MEDIUM { color: #f59e0b; font-weight: bold; }
                         .priority-LOW { color: #10b981; font-weight: bold; }
@@ -6652,7 +6868,7 @@
                             body { margin: 0; padding: 0; font-size: 10px; }
                             .print-container { max-width: 100%; margin: 0; padding: 0.5in; }
                             table th, table td { padding: 0.3rem; }
-                            .footer { position: relative; page-break-after: always; }
+                            .footer { position: relative; }
                         }
                     </style>
                 </head>
@@ -6775,13 +6991,44 @@
                                             + '<td>' + (homeShelf ? ('Shelf/Rack: ' + homeShelf) : 'Shelf/Rack -') + '</td>'
                                             + '</tr>';
                                     })()}
-                                    ${tracker.logEntries && tracker.logEntries.length > 0 ? [...tracker.logEntries].sort((a, b) => {
-                                        // Keep Completed / Log-in (file-back-home) rows at the bottom.
-                                        const isDone = (e) => {
-                                            const lbl = (resolveStatusDisplay(e, (e.status || '')).label || '').toLowerCase();
-                                            return lbl === 'log-in' || lbl === 'completed';
+                                    ${(tracker.priorLogEntries && tracker.priorLogEntries.length > 0) ? tracker.priorLogEntries.map(entry => {
+                                        // Prior tracking cycles for the same file — shown read-only so the
+                                        // printed sheet reads as one continuous timeline.
+                                        const formatDateTime = (value) => {
+                                            if (!value) return '-';
+                                            const date = new Date(value);
+                                            if (Number.isNaN(date.getTime())) return value;
+                                            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
                                         };
-                                        return (isDone(a) ? 1 : 0) - (isDone(b) ? 1 : 0);
+                                        const createdAtRaw = entry.created_at || entry.createdAt || '';
+                                        const dateTimeRaw = entry.logInDate && entry.logInTime
+                                            ? entry.logInDate + ' ' + entry.logInTime
+                                            : (createdAtRaw || entry.logInDate || entry.logInTime || '-');
+                                        const dateTime = formatDateTime(dateTimeRaw);
+                                        const logOut = entry.logOutDate && entry.logOutTime
+                                            ? entry.logOutDate + ' ' + entry.logOutTime
+                                            : '-';
+                                        const logIn = entry.logInDate && entry.logInTime
+                                            ? entry.logInDate + ' ' + entry.logInTime
+                                            : (entry.logInDate || entry.logInTime || '-');
+                                        const statusMeta = resolveStatusDisplay(entry, entry.status || 'completed');
+                                        const statusLabel = statusMeta.label;
+                                        const statusClass = sheetStatusClass(statusLabel);
+                                        return '<tr>'
+                                            + '<td>' + dateTime + '</td>'
+                                            + '<td>' + (entry.officeName || '-') + '</td>'
+                                            + '<td>' + (entry.receivingOfficerName || 'N/A') + '</td>'
+                                            + '<td>' + logOut + '</td>'
+                                            + '<td>' + ((statusLabel === 'Log-in' || statusLabel === 'Completed') ? logIn : '-') + '</td>'
+                                            + '<td><span class="' + statusClass + '">' + statusLabel + '</span></td>'
+                                            + '<td>' + (entry.notes || '-') + '</td>'
+                                            + '</tr>';
+                                    }).join('') : ''}
+                                    ${tracker.logEntries && tracker.logEntries.length > 0 ? [...tracker.logEntries].sort((a, b) => {
+                                        // Chronological order so the printed sheet reads as one
+                                        // continuous timeline (return rows sit with their cycle,
+                                        // not all forced to the bottom).
+                                        return movementChronoValue(a) - movementChronoValue(b);
                                     }).map(entry => {
                                         const formatDateTime = (value) => {
                                             if (!value) return '-';
@@ -6802,16 +7049,7 @@
                                             : (entry.logInDate || entry.logInTime || '-');
                                         const statusMeta = resolveStatusDisplay(entry, entry.status || 'completed');
                                         const statusLabel = statusMeta.label;
-                                        let statusClass = 'status-in-transit';
-                                        if (statusLabel === 'In-Transit') {
-                                            statusClass = 'status-in-transit';
-                                        } else if (statusLabel === 'Log-out' || statusLabel === 'Log-in') {
-                                            statusClass = 'status-archived';
-                                        } else if (statusLabel === 'Archive') {
-                                            statusClass = 'status-archive';
-                                        } else if (statusLabel === 'Rejected') {
-                                            statusClass = 'status-archive';
-                                        }
+                                        const statusClass = sheetStatusClass(statusLabel);
                                         return '<tr>'
                                             + '<td>' + dateTime + '</td>'
                                             + '<td>' + (entry.officeName || '-') + '</td>'
@@ -6828,7 +7066,7 @@
 
                         <div class="footer">
                             <div class="signatories">
-                                <div class="signatory"><div class="line">${(() => { const m = (window.currentModule || '').toLowerCase(); if (m === 'st') return 'Director Sectional Titling'; if (m === 'cadastral') return 'Director Cadastral'; return 'Director Deeds'; })()}</div></div>
+                                <div class="signatory"><div class="line">${(() => { const m = (window.currentModule || '').toLowerCase(); if (m === 'st') return 'Director Sectional Titling'; if (m === 'cadastral') return 'Director Cadastral'; if (m === 'deeds') return 'Director Deeds'; if (m === 'sltr') return 'Director SLTR'; return 'Director Land'; })()}</div></div>
                                 <div class="signatory"><div class="line">Permanent Secretary</div></div>
                                 <div class="signatory"><div class="line">Honorable Commissioner</div></div>
                             </div>
@@ -6847,6 +7085,9 @@
         }
         printWindow.document.write(printContent);
         printWindow.document.close();
+        // Split the movement history into pages of 5 rows and keep the signatures
+        // with the final row on the last page.
+        try { paginateTrackingSheet(printWindow.document); } catch (e) { console.error('Pagination failed:', e); }
         const invokePrint = () => { try { printWindow.focus(); printWindow.print(); } catch (e) { console.error('Print failed:', e); } };
         const waitForQrAndPrint = () => {
             const qrImg = printWindow.document.querySelector('.qr-wrapper img');

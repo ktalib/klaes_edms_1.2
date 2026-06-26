@@ -12,6 +12,7 @@ use Illuminate\Support\Arr;
 use Carbon\Carbon;
 use App\Models\FileIndexing;
 use App\Models\FileIndexingLink;
+use App\Models\MasterDcivLink;
 use App\Models\Grouping;
 use App\Models\Entity;
 use App\Models\Customer;
@@ -20,19 +21,44 @@ use App\Services\CommissioningMirrorService;
 use App\Services\KangisFileNoPlaceholderService;
 use Illuminate\Validation\Rule;
 use App\Services\PropertyIdAllocationService;
+use App\Services\FileIndexingBillService;
 
 class FileIndexingController extends Controller
 {
     private const COFO_TABLE = 'CofO_staging';
     private PropertyIdAllocationService $propertyIdAllocationService;
     private CommissioningMirrorService $commissioningMirrorService;
+    private FileIndexingBillService $fileIndexingBillService;
 
     public function __construct(
         PropertyIdAllocationService $propertyIdAllocationService,
-        CommissioningMirrorService $commissioningMirrorService
+        CommissioningMirrorService $commissioningMirrorService,
+        FileIndexingBillService $fileIndexingBillService
     ) {
         $this->propertyIdAllocationService = $propertyIdAllocationService;
         $this->commissioningMirrorService = $commissioningMirrorService;
+        $this->fileIndexingBillService = $fileIndexingBillService;
+    }
+
+    /**
+     * Coerce empty-string bill values into null before they reach the
+     * file_indexings numeric/date columns (SQL Server rejects '' for those
+     * types). The repeater may submit '' for the primary row when blank.
+     */
+    protected function normalizeBillColumns(array $data): array
+    {
+        $nullable = [
+            'bill_total_amount', 'bill_from_year', 'bill_to_year', 'bill_receipt_date',
+            'ground_rent_amount', 'ground_rent_from_year', 'ground_rent_to_year', 'ground_rent_receipt_date',
+        ];
+
+        foreach ($nullable as $key) {
+            if (array_key_exists($key, $data) && ($data[$key] === '' || $data[$key] === [])) {
+                $data[$key] = null;
+            }
+        }
+
+        return $data;
     }
 
     protected function resolveCurrentUserName(): string
@@ -927,6 +953,8 @@ class FileIndexingController extends Controller
                 'is_problematic' => 'nullable|boolean',
                 'is_co_owned_plot' => 'nullable|boolean',
                 'indexing_type' => 'nullable|string|in:Regular,Block',
+                'file_classification' => 'nullable|string|max:50',
+                'file_classification_remarks' => 'nullable|string',
                 'shelf_label_id' => 'nullable|integer',
                 'is_merged' => 'nullable|boolean',
                 'serial_no' => 'nullable|string|max:255',
@@ -1002,6 +1030,19 @@ class FileIndexingController extends Controller
                     'string',
                     'max:255',
                 ],
+                // Bill Balance & Grant Rent (repeatable: arrays). Kept permissive so
+                // partial/empty repeater rows never block submission; the
+                // FileIndexingBillService sanitizes each value.
+                'bill_total_amount'        => 'nullable|array',
+                'bill_from_year'           => 'nullable|array',
+                'bill_to_year'             => 'nullable|array',
+                'bill_receipt_no'          => 'nullable|array',
+                'bill_receipt_date'        => 'nullable|array',
+                'ground_rent_amount'       => 'nullable|array',
+                'ground_rent_from_year'    => 'nullable|array',
+                'ground_rent_to_year'      => 'nullable|array',
+                'ground_rent_receipt_no'   => 'nullable|array',
+                'ground_rent_receipt_date' => 'nullable|array',
             ], [
                 'land_use_type.required' => 'Please select a Land Use Type.',
                 'kangis_fileno_placeholder.required' => 'KANGIS FileNo Placeholder is required when KANGIS Registry is selected.',
@@ -1133,6 +1174,7 @@ class FileIndexingController extends Controller
                         $updatePayload[$key] = $value[0] ?? null;
                     }
                 }
+                $updatePayload = $this->normalizeBillColumns($updatePayload);
 
                 // Explicitly serialize array fields since we're using Query Builder's update() call 
                 // which bypasses Eloquent's $casts.
@@ -1227,12 +1269,20 @@ class FileIndexingController extends Controller
                 $fileIndexingModel = FileIndexing::on('sqlsrv')->find($id);
                 if ($fileIndexingModel) {
                     $this->syncRelatedFileLinks($fileIndexingModel, $relatedFileNos, $relatedDetails);
+                    $this->syncMasterDcivLinks($fileIndexingModel, $relatedFileNos, $relatedDetails);
                 }
             });
 
             // Fetch updated record
             $updatedRecord = DB::connection('sqlsrv')->table('file_indexings')->where('id', $id)->first();
             $fileNumber = $updatedRecord->file_number ?? ($validated['file_number'] ?? null);
+
+            // Persist Bill Balance + Grant Rent (billing + file_indexing_bills tables).
+            $billFileIndexing = FileIndexing::on('sqlsrv')->find($id);
+            if ($billFileIndexing) {
+                $this->fileIndexingBillService->syncForFile($billFileIndexing, $request);
+            }
+
             $fileTransactions = $fileNumber
                 ? $this->fetchFileTransactionsForFileNumber($fileNumber)
                 : [];
@@ -2335,6 +2385,8 @@ class FileIndexingController extends Controller
                 'has_transaction' => (int) ($record->has_transaction ?? 0),
                 'is_problematic' => (int) ($record->is_problematic ?? 0),
                 'is_co_owned_plot' => (int) ($record->is_co_owned_plot ?? 0),
+                'file_classification' => $record->file_classification ?? null,
+                'file_classification_remarks' => $record->file_classification_remarks ?? null,
                 'file_type' => $record->file_type ?? null,
                 'dob' => $record->dob ?? null,
                 'nin' => $record->nin ?? null,
@@ -2838,6 +2890,8 @@ class FileIndexingController extends Controller
                 'customer_status' => 'nullable|string|max:50',
                 'property_address' => 'nullable|string',
                 'indexing_type' => 'nullable|string|in:Regular,Block',
+                'file_classification' => 'nullable|string|max:50',
+                'file_classification_remarks' => 'nullable|string',
                 // RoFO fields
                 'has_rofo' => 'nullable|boolean',
                 'rofo_instrument_type' => 'nullable|string|max:255',
@@ -2881,6 +2935,19 @@ class FileIndexingController extends Controller
                 'transactions.*.reg_time'         => 'nullable|string|max:20',
                 'transactions.*.grantor'          => 'nullable|string|max:500',
                 'transactions.*.grantee'          => 'nullable|string|max:500',
+                // Bill Balance & Grant Rent (repeatable: arrays). Kept permissive so
+                // partial/empty repeater rows never block submission; the
+                // FileIndexingBillService sanitizes each value.
+                'bill_total_amount'        => 'nullable|array',
+                'bill_from_year'           => 'nullable|array',
+                'bill_to_year'             => 'nullable|array',
+                'bill_receipt_no'          => 'nullable|array',
+                'bill_receipt_date'        => 'nullable|array',
+                'ground_rent_amount'       => 'nullable|array',
+                'ground_rent_from_year'    => 'nullable|array',
+                'ground_rent_to_year'      => 'nullable|array',
+                'ground_rent_receipt_no'   => 'nullable|array',
+                'ground_rent_receipt_date' => 'nullable|array',
             ], [
                 'land_use_type.required' => 'Please select a Land Use Type.',
                 'kangis_fileno_placeholder.required' => 'KANGIS FileNo Placeholder is required when KANGIS Registry is selected.',
@@ -3425,6 +3492,7 @@ class FileIndexingController extends Controller
                     $persistableData[$key] = $value[0] ?? null;
                 }
             }
+            $persistableData = $this->normalizeBillColumns($persistableData);
 
             // Also flatten the same fields in the main $validated array because it's used 
             // in subsequent operations like syncFileNumberTracking which use query builder.
@@ -3678,6 +3746,11 @@ class FileIndexingController extends Controller
                 $this->syncRelatedFileLinks($fileIndexing, $relatedFileNos, $relatedDetails);
             }
 
+            // Surface DCIV relationships in the DCIV master link table — whether the
+            // indexed file is itself a DCIV (its related files become links) or an
+            // ordinary file whose related number points at a DCIV.
+            $this->syncMasterDcivLinks($fileIndexing, $relatedFileNos, $relatedDetails);
+
             // Persist New KANGIS transactions (if any) to the pra table.
             $this->syncFileIndexingTransactions($request, $fileIndexing, $propIdForStore);
 
@@ -3694,6 +3767,9 @@ class FileIndexingController extends Controller
             }
 
             $this->commissioningMirrorService->mirror($fileIndexing, $validated, $relatedFileNos);
+
+            // Persist Bill Balance + Grant Rent (billing + file_indexing_bills tables).
+            $this->fileIndexingBillService->syncForFile($fileIndexing, $request);
 
             Log::info('FileIndexing::store - saved record', [
                 'id' => $fileIndexing->id,
@@ -5514,6 +5590,145 @@ class FileIndexingController extends Controller
             'count' => count($relatedFileNos),
             'main_id' => $mainRecord->id
         ]);
+    }
+
+    /**
+     * Is the given file number a DCIV/LPCC investigation file?
+     */
+    protected function isDcivFileNumber(?string $fileNo): bool
+    {
+        $f = strtoupper(trim((string) $fileNo));
+
+        return $f !== '' && (str_starts_with($f, 'DCIV') || str_starts_with($f, 'LPCC'));
+    }
+
+    /**
+     * Mirror DCIV relationships discovered at indexing time into master_dciv_links.
+     *
+     * master_dciv_links is directional (dciv_file_number -> related_file_number), so
+     * we cover both ways a relationship can surface during file indexing:
+     *   1. The indexed file is itself a DCIV/LPCC file — each related file becomes a link.
+     *   2. The indexed file is an ordinary file whose related number points at a DCIV —
+     *      the DCIV becomes the parent and the indexed file the related link.
+     *
+     * Idempotent (per dciv/related pair) and best-effort: failures are logged, not thrown,
+     * so they never block the core indexing save.
+     */
+    protected function syncMasterDcivLinks($mainRecord, array $relatedFileNos, array $relatedDetails = [])
+    {
+        try {
+            if (! Schema::connection('sqlsrv')->hasTable('master_dciv_links')) {
+                return;
+            }
+
+            $mainNo = trim((string) ($mainRecord->file_number ?? ''));
+            if ($mainNo === '' || empty($relatedFileNos)) {
+                return;
+            }
+
+            $userId = is_numeric(Auth::id()) ? (int) Auth::id() : null;
+            $mainIsDciv = $this->isDcivFileNumber($mainNo);
+            $mainReason = $mainRecord->dciv_reason ?? null;
+            $mainTitle = $mainRecord->file_title ?? null;
+
+            // Map related file number -> supplied title (from the details repeater).
+            $titles = [];
+            foreach ($relatedFileNos as $index => $rNo) {
+                $rNo = trim((string) $rNo);
+                if ($rNo === '') {
+                    continue;
+                }
+                $detail = $relatedDetails[$index] ?? null;
+                if (! is_array($detail)) {
+                    foreach ($relatedDetails as $d) {
+                        if (is_array($d) && trim((string) ($d['file_number'] ?? '')) === $rNo) {
+                            $detail = $d;
+                            break;
+                        }
+                    }
+                }
+                $titles[$rNo] = $detail['file_title'] ?? $detail['holder'] ?? null;
+            }
+
+            foreach ($relatedFileNos as $relatedNo) {
+                $relatedNo = trim((string) $relatedNo);
+                if ($relatedNo === '' || strcasecmp($relatedNo, $mainNo) === 0) {
+                    continue; // skip blanks and self-references
+                }
+
+                // Direction 1: the indexed file is the DCIV; related is its linked file.
+                if ($mainIsDciv) {
+                    $this->upsertMasterDcivLink($mainNo, $relatedNo, $titles[$relatedNo] ?? null, $mainReason, $userId);
+                }
+
+                // Direction 2: the related number is a DCIV; the indexed file is its link.
+                if ($this->isDcivFileNumber($relatedNo)) {
+                    $this->upsertMasterDcivLink($relatedNo, $mainNo, $mainTitle, $mainReason, $userId);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('FileIndexing::syncMasterDcivLinks failed', [
+                'main_id' => $mainRecord->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Insert (or refresh) a single master_dciv_links row for a dciv/related pair.
+     * Resolves the related-file title and the dciv_file_no metadata when available.
+     */
+    protected function upsertMasterDcivLink(string $dcivNo, string $relatedNo, ?string $relatedTitle, ?string $dcivReason, ?int $userId): void
+    {
+        $dcivNo = trim($dcivNo);
+        $relatedNo = trim($relatedNo);
+        if ($dcivNo === '' || $relatedNo === '') {
+            return;
+        }
+
+        $conn = DB::connection('sqlsrv');
+
+        // Resolve a related-file title from file_indexings when none was supplied.
+        if (empty($relatedTitle)) {
+            $relatedTitle = $conn->table('file_indexings')
+                ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [strtoupper($relatedNo)])
+                ->orderByDesc('id')
+                ->value('file_title');
+        }
+
+        // Pull dciv_file_no metadata (id / reason / created_by) when a record exists.
+        $dcivFileNo = $conn->table('dciv_file_no')
+            ->whereRaw('UPPER(LTRIM(RTRIM(full_file_number))) = ?', [strtoupper($dcivNo)])
+            ->where(fn ($q) => $q->where('is_deleted', 0)->orWhereNull('is_deleted'))
+            ->orderByDesc('id')
+            ->first();
+
+        $existing = $conn->table('master_dciv_links')
+            ->whereRaw('UPPER(LTRIM(RTRIM(dciv_file_number))) = ?', [strtoupper($dcivNo)])
+            ->whereRaw('UPPER(LTRIM(RTRIM(related_file_number))) = ?', [strtoupper($relatedNo)])
+            ->first();
+
+        if ($existing) {
+            // Keep the title fresh if we now have one and the row didn't.
+            if (! empty($relatedTitle) && empty($existing->related_file_title)) {
+                $conn->table('master_dciv_links')
+                    ->where('id', $existing->id)
+                    ->update([
+                        'related_file_title' => $relatedTitle,
+                        'updated_at' => now(),
+                    ]);
+            }
+            return;
+        }
+
+        MasterDcivLink::create(array_merge([
+            'dciv_file_no_id'     => $dcivFileNo->id ?? null,
+            'dciv_file_number'    => $dcivNo,
+            'dciv_reason'         => $dcivFileNo->dciv_reason ?? $dcivReason,
+            'related_file_number' => $relatedNo,
+            'related_file_title'  => $relatedTitle,
+            'created_by'          => $dcivFileNo->created_by ?? $userId,
+        ], MasterDcivLink::typeColumns($relatedNo)));
     }
 
 }

@@ -11,11 +11,13 @@
         @if($isStDeeds ?? false)
             {{-- ST Deeds: registered instruments broken down by application type --}}
             <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-xs text-green-700">
+                                <span><span class="font-semibold">Primary</span> {{ $registeredByAppType['Primary'] ?? 0 }}</span>
+                                
                 <span><span class="font-semibold">PUA</span> {{ $registeredByAppType['PUA'] ?? 0 }}</span>
                 <span class="text-green-300">|</span>
                 <span><span class="font-semibold">SUA</span> {{ $registeredByAppType['SUA'] ?? 0 }}</span>
                 <span class="text-green-300">|</span>
-                <span><span class="font-semibold">Primary</span> {{ $registeredByAppType['Primary'] ?? 0 }}</span>
+
             </div>
         @else
             <p class="text-xs text-green-600 mt-1">Successfully registered</p>

@@ -603,24 +603,56 @@
                                             </div>
                                             <div class="p-6 space-y-4">
                                                 <div class="grid grid-cols-3 gap-4">
+                                                    @php
+                                                        // Every file must pass through Quick Search before it can be
+                                                        // logged here. On the "Log a File" registries the smart file
+                                                        // selector stays locked at ALL times — the file number is
+                                                        // always pre-filled by the Quick Search redirect (?file_number=…),
+                                                        // so the selector is never needed and must not re-enable after a
+                                                        // submit or form reset. Track New File (new_kangis), Digital
+                                                        // Request and DGIS/DG keep their own selector.
+                                                        $logAFileModules = ['', 'land', 'kangis', 'sltr', 'st', 'dciv', 'cadastral', 'survey'];
+                                                        $isLogAFileCtx   = in_array(strtolower($module ?? ''), $logAFileModules, true);
+                                                        $lockFileSelector = $isLogAFileCtx;
+                                                    @endphp
                                                     <div class="space-y-2">
                                                         <label for="file-no"
                                                             class="block text-sm font-medium text-gray-700">File No
                                                             *</label>
                                                         <div class="relative">
                                                             <input type="text" id="file-no" name="file_number"
-                                                                placeholder="e.g. RES-2015-4859" readonly
+                                                                placeholder="{{ $lockFileSelector ? 'Loaded from Quick Search' : 'e.g. RES-2015-4859' }}" readonly
                                                                 class="block w-full px-3 py-2 pr-12 border border-gray-300 rounded-md shadow-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                                             <button type="button" id="fileno-selector-btn"
-                                                                class="absolute inset-y-0 right-0 flex items-center px-3 border-l border-gray-300 text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-r-md"
-                                                                title="Select from existing file numbers">
+                                                                @if($lockFileSelector) disabled aria-disabled="true" @endif
+                                                                class="absolute inset-y-0 right-0 flex items-center px-3 border-l border-gray-300 transition-colors rounded-r-md {{ $lockFileSelector ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50' }}"
+                                                                title="{{ $lockFileSelector ? 'Files are logged through Quick Search' : 'Select from existing file numbers' }}">
                                                                 <i data-lucide="search" class="h-4 w-4"></i>
                                                             </button>
                                                         </div>
+                                                        @if($lockFileSelector)
+                                                        <div class="flex items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
+                                                            <i data-lucide="info" class="h-4 w-4 text-indigo-500 shrink-0 mt-0.5"></i>
+                                                            <p class="text-xs text-indigo-700">Files are logged through
+                                                                <a href="{{ route('create-file-tracker.quick-search') }}" class="font-semibold underline hover:text-indigo-900">Quick Search</a>
+                                                                — the smart selector is disabled here. Search a file in Quick Search and click <span class="font-semibold">Log File</span> to load it.</p>
+                                                        </div>
+                                                        {{-- In-transit override: lets the user re-enable the smart file
+                                                             selector to manually pick a file that is already out (in
+                                                             transit) without going back through Quick Search. --}}
+                                                        <label for="fileno-selector-override"
+                                                            class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 cursor-pointer">
+                                                            <input type="checkbox" id="fileno-selector-override"
+                                                                class="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
+                                                            <span class="text-xs text-amber-700">Override for in-transit file —
+                                                                enable the file number selector.</span>
+                                                        </label>
+                                                        @else
                                                         <p class="text-xs text-gray-500">Use the smart file number selector
                                                             <i data-lucide="search" class="h-3 w-3 inline"></i> to search
                                                             and select
                                                         </p>
+                                                        @endif
                                                         <p id="file-indexing-status" class="hidden text-xs font-medium"></p>
                                                     </div>
                                                     <div class="space-y-2">
@@ -862,7 +894,7 @@
                                                         <label for="origin-office" class="block text-sm font-medium text-gray-700">Registry (Origin)</label>
                                                         <select id="origin-office"
                                                             class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 {{ in_array(strtolower($module ?? ''), ['sltr', 'dciv', 'st']) ? 'bg-gray-100 text-gray-700 cursor-not-allowed' : '' }}"
-                                                            @if(in_array(($module ?? ''), ['kangis', 'new_kangis'])) data-default="KANGIS Registry" @elseif(($module ?? '') === 'sltr') data-default="SLTR Registry" @elseif(($module ?? '') === 'st') data-default="ST Registry" @elseif(($module ?? '') === 'dciv') data-default="DCIV Registry" @endif
+                                                            @if(in_array(($module ?? ''), ['kangis', 'new_kangis'])) data-default="KANGIS Registry" @elseif(($module ?? '') === 'sltr') data-default="SLTR Registry" @elseif(($module ?? '') === 'st') data-default="ST Registry" @elseif(($module ?? '') === 'dciv') data-default="DCIV Registry" @elseif(strtolower($module ?? '') === 'cadastral') data-default="Registry 1 - Cadastral" @endif
                                                             {{ in_array(strtolower($module ?? ''), ['sltr', 'dciv', 'st']) ? 'disabled' : '' }}>
                                                             <option value="">Select Registry (Origin)</option>
                                                             @foreach ($registries as $registry)
@@ -871,15 +903,26 @@
                                                                         ? 'Registry 1 - Land'
                                                                         : $registry->name;
                                                                     $isCadastral = str_contains(strtolower($registry->name), 'cadastr');
+                                                                    $isLand = str_contains(strtolower($registry->name), 'land');
+                                                                    $isKangis = str_contains(strtolower($registry->name), 'kangis');
+                                                                    $isSltr = str_contains(strtolower($registry->name), 'sltr');
                                                                     $currentModule = strtolower($module ?? '');
+                                                                    $isDefaultLandPage = in_array($currentModule, ['', 'land'], true);
+                                                                    $isKangisModule = in_array($currentModule, ['kangis', 'new_kangis'], true);
                                                                     $isSelected = (
                                                                         ($currentModule === 'sltr' && $registry->name === 'SLTR Registry') ||
                                                                         ($currentModule === 'st'   && $registry->name === 'ST Registry')
                                                                     );
                                                                 @endphp
-                                                                {{-- Cadastral module shows only its own registries; every other
-                                                                     context (incl. the default page) lists all registries. --}}
+                                                                {{-- Cadastral module shows only its own registries; the KANGIS
+                                                                     module shows only the KANGIS Registry; the SLTR module shows
+                                                                     only the SLTR Registry; the default /create-file-tracker page
+                                                                     shows only Land registries; every other module context lists
+                                                                     all registries. --}}
                                                                 @continue($currentModule === 'cadastral' && !$isCadastral)
+                                                                @continue($isKangisModule && !$isKangis)
+                                                                @continue($currentModule === 'sltr' && !$isSltr)
+                                                                @continue($isDefaultLandPage && !$isLand)
                                                                 <option value="{{ $registry->name }}"
                                                                     data-registry-code="{{ $registry->registry_code }}"
                                                                     {{ $isSelected ? 'selected' : '' }}>{{ $registryDisplay }}</option>
@@ -1767,6 +1810,7 @@
                                             </h4>
                                             <div class="relative">
                                                 <input type="text" id="search-logs" placeholder="Search by file name, number, or handler..."
+                                                    autocomplete="off"
                                                     class="w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
                                                 <i data-lucide="search" class="absolute left-3 top-2.5 h-4 w-4 text-gray-400"></i>
                                             </div>

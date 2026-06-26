@@ -28,6 +28,8 @@ class CreateFileTrackerController extends Controller
 
     protected array $indexingCreatedAtCache = [];
 
+    protected array $fileTrackerMovementHistoryCache = [];
+
     public function __construct(
         protected UserNotificationService $notificationService
     ) {
@@ -482,8 +484,12 @@ class CreateFileTrackerController extends Controller
             $applyModuleScope = function ($builder) use ($moduleFilter, $normalizedModuleExpr, $normalizedWorkflowExpr, $normalizedFileNoExpr) {
                 if ($moduleFilter === '') {
                     // General /create-file-tracker (no url=kangis / no url=new_kangis):
-                    // exclude trackers that belong to the KANGIS / New KANGIS modules so
-                    // their files don't leak into the generic file tracker view.
+                    // this is the LAND file log — it must show land files only. Exclude
+                    // the KANGIS / New KANGIS modules AND, by file-number prefix, any file
+                    // that belongs to another registry (KANGIS legacy/new, SLTR, ST/SIT,
+                    // DCIV, Survey/GKN). The prefix guard is the ground truth: it also
+                    // catches older records that carry a NULL/empty module and would
+                    // otherwise leak into the Land view.
                     $builder->where(function ($excludeQuery) use ($normalizedModuleExpr, $normalizedWorkflowExpr, $normalizedFileNoExpr) {
                         $excludeQuery->whereRaw("{$normalizedModuleExpr} NOT IN (?, ?)", ['kangis', 'new_kangis'])
                             ->whereRaw("{$normalizedWorkflowExpr} NOT IN (?, ?, ?)", [
@@ -491,11 +497,16 @@ class CreateFileTrackerController extends Controller
                                 FileTracker::WORKFLOW_KANGIS_APPROVAL,
                                 FileTracker::WORKFLOW_KANGIS_3STEP,
                             ])
-                            // Belt & braces: KN-prefixed file numbers are always New KANGIS.
-                            ->where(function ($knGuard) use ($normalizedFileNoExpr) {
-                                $knGuard->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'KN%'")
-                                    ->orWhereRaw("PATINDEX('%[^0-9]%', SUBSTRING({$normalizedFileNoExpr}, 3, 8000)) <> 0");
-                            });
+                            ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'KN%'")
+                            ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'MLKN%'")
+                            ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'SLTR%'")
+                            ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'SIT%'")
+                            ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'ST-%'")
+                            ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'ST/%'")
+                            ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'LPCC%'")
+                            ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'DCIV%'")
+                            ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'GKN%'")
+                            ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'LPKN%'");
                     });
                     return;
                 }
@@ -706,6 +717,43 @@ class CreateFileTrackerController extends Controller
                 $query->whereDate('created_at', '<=', $request->get('date_to'));
             }
 
+            // Collapse to one card per file: keep only the most recent tracker per file
+            // number within the current status scope. Earlier cycles of the same file are
+            // already merged into the surviving card as read-only "prior movements", so
+            // rendering the older trackers as their own cards would just duplicate that
+            // history (and leave empty/stale cards). Uses an indexed correlated existence
+            // check (file_number is indexed) so it stays fast on large datasets — a
+            // GROUP BY / window collapse re-runs the non-sargable PATINDEX filters and
+            // times out. Trackers without a file number can't be grouped, so each is kept.
+            $statusFilter = $request->input('status');
+            $collapseMode = null;
+            if ($statusFilter === 'completed') {
+                $collapseMode = 'completed';
+            } elseif ($statusFilter === 'not-completed') {
+                $collapseMode = 'active';
+            } elseif (!$request->filled('status') || $statusFilter === 'all') {
+                $collapseMode = 'any';
+            }
+
+            if ($collapseMode !== null) {
+                $query->where(function ($outer) use ($collapseMode) {
+                    $outer->whereNull('file_number')
+                        ->orWhereRaw("LTRIM(RTRIM(file_number)) = ''")
+                        ->orWhereNotExists(function ($sub) use ($collapseMode) {
+                            $sub->selectRaw('1')
+                                ->from('file_tracker as ft2')
+                                ->whereColumn('ft2.file_number', 'file_tracker.file_number')
+                                ->whereColumn('ft2.id', '>', 'file_tracker.id');
+
+                            if ($collapseMode === 'completed') {
+                                $sub->where('ft2.status', FileTracker::STATUS_COMPLETED);
+                            } elseif ($collapseMode === 'active') {
+                                $sub->where('ft2.status', '!=', FileTracker::STATUS_COMPLETED);
+                            }
+                        });
+                });
+            }
+
             // Sorting
             $sortBy = $request->get('sort_by', 'created_at');
             $sortOrder = $request->get('sort_order', 'desc');
@@ -725,6 +773,11 @@ class CreateFileTrackerController extends Controller
                 ->skip(($page - 1) * $perPage)
                 ->take($perPage)
                 ->get();
+
+            // Bulk pre-load the movement history for every file number on this page so
+            // decorateTrackerForResponse() resolves prior_movements from cache instead of
+            // running one query per row (N+1).
+            $this->primeMovementHistoryCache($results->pluck('file_number'));
 
             $collection = $results->map(function ($tracker) {
                 return $this->decorateTrackerForResponse($tracker);
@@ -1445,17 +1498,128 @@ HTML;
     }
 
     /**
+     * Re-direct a duplicate file (one registered in the duplicate_fileno table) to
+     * the Director Land (Land Department) instead of raising a blind File Search
+     * Request to the SCB. Creates a redirected Digital File Request addressed to the
+     * active user whose rank / work station is "Director Land" and notifies them.
+     * POST /create-file-tracker/quick-search/redirect-director-land
+     */
+    public function redirectToDirectorLand(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'file_number' => 'required|string|max:255',
+            'file_title'  => 'nullable|string|max:255',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        $fileNumber = trim((string) $request->input('file_number'));
+        $fileTitle  = $request->input('file_title');
+
+        // Recipient: the active user whose rank (or work station) is "Director Land".
+        $director = User::where('is_active', 1)
+            ->where(function ($q) {
+                $q->where('rank', 'Director Land')->orWhere('work_station', 'Director Land');
+            })
+            ->first();
+
+        if (! $director) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active user with the rank “Director Land” was found. Set a Director Land in user management first.',
+            ], 422);
+        }
+
+        $directorName = trim(($director->first_name ?? '') . ' ' . ($director->last_name ?? ''));
+        $user = Auth::user();
+
+        // Don't raise a second open re-direct for the same file to the Director Land.
+        $existing = \App\Models\DigitalFileRequest::where('file_no', $fileNumber)
+            ->where('is_redirected', true)
+            ->where('receiving_officer', $directorName)
+            ->where('request_status', \App\Models\DigitalFileRequest::STATUS_PENDING)
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'success'    => true,
+                'request_no' => $existing->request_no,
+                'message'    => "Already re-directed to Director Land ({$existing->request_no}).",
+            ]);
+        }
+
+        $req = \App\Models\DigitalFileRequest::create([
+            'request_no'              => \App\Models\DigitalFileRequest::generateRequestNo(),
+            'request_type'            => \App\Models\DigitalFileRequest::TYPE_PHYSICAL,
+            'file_no'                 => $fileNumber,
+            'file_title'              => $fileTitle,
+            'requester_user_id'       => $user->id,
+            'sending_officer'         => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')),
+            'receiving_officer'       => $directorName,
+            'destination_office_name' => 'Land Department',
+            'current_file_location'   => 'Land Department',
+            'is_redirected'           => true,
+            'request_status'          => \App\Models\DigitalFileRequest::STATUS_PENDING,
+            'remarks'                 => 'Duplicate file — re-directed to Director Land for resolution.',
+            'requested_at'            => now(),
+        ]);
+
+        // Notify the Director Land in-app.
+        $this->notificationService->create(
+            $director->id,
+            'digital_request',
+            "Duplicate File Re-directed: {$req->request_no}",
+            "{$req->sending_officer} re-directed duplicate file {$fileNumber} to you (Director Land) for resolution.",
+            ['request_id' => $req->id, 'file_no' => $fileNumber],
+            ['module' => 'digital_request']
+        );
+
+        return response()->json([
+            'success'    => true,
+            'request_no' => $req->request_no,
+            'message'    => "Re-directed to Director Land ({$directorName}).",
+        ]);
+    }
+
+    /**
      * SCB Feedback queue: File Search Requests the current Front Desk user raised
      * that the SCB has responded to (Found / Not Found) but the Front Desk has NOT
      * acted on yet. Once the Front Desk logs/refers the file it leaves this queue
      * and lives only in the File Request Log.
      * GET /create-file-tracker/quick-search/scb-feedback
      */
-    public function scbFeedback()
+    /**
+     * Map a Quick Search module context (?url=kangis | sltr | cadastral | st | …)
+     * to a registry-name keyword so the page can be scoped to that registry's files.
+     * The FileSearchRequest.registry column stores the physical_registries name
+     * ("KANGIS Registry", "SLTR Registry", "Registry 1 - Cadastral", "ST Registry", …),
+     * so a LIKE on the keyword matches every registry belonging to that module.
+     * Returns null for an unscoped (general) context.
+     */
+    protected function registryKeywordForModule($module): ?string
     {
+        return match (strtolower(trim((string) $module))) {
+            'kangis', 'new_kangis' => 'KANGIS',
+            'sltr'                 => 'SLTR',
+            'cadastral'            => 'Cadastral',
+            'st'                   => 'ST Registry',
+            'dciv'                 => 'DCIV',
+            'survey'               => 'Survey',
+            default                => null,
+        };
+    }
+
+    public function scbFeedback(Request $request)
+    {
+        // Optionally scope the queue to a single registry (?url=kangis|sltr|cadastral|…).
+        $registryKw = $this->registryKeywordForModule($request->get('url'));
+
         // Full SCB Feedback queue — every responded request awaiting front-desk action
         // (not scoped to the current user, so the shared front desk sees them all).
         $rows = FileSearchRequest::whereIn('status', [FileSearchRequest::STATUS_FOUND, FileSearchRequest::STATUS_NOT_FOUND])
+            ->when($registryKw, fn ($q) => $q->where('registry', 'like', '%' . $registryKw . '%'))
             ->whereNull('front_desk_acted_at')
             // A "Found" request is done once the file is logged in response to it: i.e. a
             // tracker for the same file was created at/after the request was responded to.
@@ -1626,6 +1790,13 @@ HTML;
             if ($to)   { $q->whereDate('created_at', '<=', $to); }
         };
 
+        // Optionally scope the whole log + report to a single registry
+        // (?url=kangis|sltr|cadastral|…) so each registry sees only its own files.
+        $registryKw = $this->registryKeywordForModule($request->get('url'));
+        $registryScope = function ($q) use ($registryKw) {
+            if ($registryKw) { $q->where('registry', 'like', '%' . $registryKw . '%'); }
+        };
+
         // "Missing" = a NOT_FOUND on a blind / not-indexed file (the file has no
         // archive record, so it is genuinely unaccounted for). "Not Found" = a
         // NOT_FOUND on an indexed file (SCB searched a known location and it wasn't there).
@@ -1643,7 +1814,8 @@ HTML;
         // Full File Search History — everyone's requests (no per-user scoping).
         $query = FileSearchRequest::query()
             ->with(['responder:id,first_name,last_name', 'requester:id,first_name,last_name'])
-            ->where($dateScope);
+            ->where($dateScope)
+            ->where($registryScope);
 
         if ($statusFilter === 'PENDING') {
             $query->whereIn('status', [FileSearchRequest::STATUS_PENDING, FileSearchRequest::STATUS_SEARCHING]);
@@ -1668,19 +1840,19 @@ HTML;
             default                                    => 'Archive',
         };
 
-        // Counts for the filter chips — scoped to the same date range as the list.
-        $counts       = FileSearchRequest::query()->where($dateScope)
+        // Counts for the filter chips — scoped to the same date range + registry as the list.
+        $counts       = FileSearchRequest::query()->where($dateScope)->where($registryScope)
             ->selectRaw('status, COUNT(*) as c')->groupBy('status')->pluck('c', 'status');
         $pendingCount = (int) ($counts[FileSearchRequest::STATUS_PENDING] ?? 0)
                       + (int) ($counts[FileSearchRequest::STATUS_SEARCHING] ?? 0);
 
-        $missingCount = (int) FileSearchRequest::where($dateScope)
+        $missingCount = (int) FileSearchRequest::where($dateScope)->where($registryScope)
             ->where('status', FileSearchRequest::STATUS_NOT_FOUND)
             ->whereIn('resolved_status', $blindStatuses)->count();
-        $notFoundCount = (int) FileSearchRequest::where($dateScope)
+        $notFoundCount = (int) FileSearchRequest::where($dateScope)->where($registryScope)
             ->where('status', FileSearchRequest::STATUS_NOT_FOUND)
             ->where($indexedScope)->count();
-        $blindOpenCount = (int) FileSearchRequest::where($dateScope)->where(function ($q) {
+        $blindOpenCount = (int) FileSearchRequest::where($dateScope)->where($registryScope)->where(function ($q) {
             $q->whereNull('source')->orWhere('source', '!=', FileSearchRequest::SOURCE_DFR);
         })->count();
 
@@ -1692,7 +1864,7 @@ HTML;
 
         // Today's requests, broken down by SCB outcome (always today — independent of
         // the date-range filter) so the "Requests Today" tile can show its split.
-        $todayCounts = FileSearchRequest::query()
+        $todayCounts = FileSearchRequest::query()->where($registryScope)
             ->whereDate('created_at', now()->toDateString())
             ->selectRaw('status, COUNT(*) as c')->groupBy('status')->pluck('c', 'status');
         $todayAwaiting = (int) ($todayCounts[FileSearchRequest::STATUS_PENDING] ?? 0)
@@ -1803,6 +1975,16 @@ HTML;
             ->orderByDesc('created_at')
             ->first();
 
+        // The receiving officer's department (from the offices table), so the In-Transit
+        // card can show "Receiving Officer: X (Dept) · currently holding the file."
+        $receivingDepartment = null;
+        if ($tracker && ($tracker->receiving_office_code || $tracker->receiving_office_name)) {
+            $receivingDepartment = \App\Models\Office::query()
+                ->when($tracker->receiving_office_code, fn ($q) => $q->where('office_code', $tracker->receiving_office_code))
+                ->when(! $tracker->receiving_office_code, fn ($q) => $q->where('office_name', $tracker->receiving_office_name))
+                ->value('department');
+        }
+
         return [
             'logged_out_at'    => $loggedOutAt,
             'fr_sent_at'       => optional($openFr?->created_at)?->format('Y-m-d g:i A'),
@@ -1822,9 +2004,13 @@ HTML;
             // holding them (the last receiving officer) instead of going to the SCB.
             'can_redirect'     => $result['status'] === FileLocationResolver::STATUS_IN_TRANSIT,
             'manual'           => (bool) ($result['manual'] ?? false),
+            // Duplicate-registry flag (CofO collected/ready, duplicate, temp, W/C/R) when
+            // the file number is registered in duplicate_fileno — null otherwise.
+            'duplicate_flag'   => $result['duplicate_flag'] ?? null,
             'file_tracker_id'  => $result['file_tracker_id'],
             'file_title'       => $tracker->file_title ?? $indexing->file_title ?? null,
             'receiving_officer_name' => $tracker->receiving_officer_name ?? null,
+            'receiving_department'   => $receivingDepartment,
             'tracking_id'      => $tracker->tracking_id ?? null,
             // DCIV investigation flag (from the matched indexing row): 1 when this
             // file is referenced as a related file by a DCIV record.
@@ -1833,11 +2019,16 @@ HTML;
             'dciv_reason'      => $indexing?->dciv_reason,
             // Ownership history — the chronological holder chain from the cross-table
             // property timeline (file_history/CofO/pra/deeds), rendered as a timeline.
-            // Falls back to the single indexing holders below when there's no chain.
-            'holder_history'   => app(\App\Services\TimelineWeightingService::class)->holderHistory($result['file_number']),
+            // Only surfaced for indexed files: a file with no indexing row (Pending /
+            // Not Indexed) brings no transactions.
+            'holder_history'   => $indexing
+                ? app(\App\Services\TimelineWeightingService::class)->holderHistory($result['file_number'])
+                : [],
             'original_holder'  => $indexing?->formattedHolder('original_holder'),
             'current_holder'   => $indexing?->formattedHolder('current_holder'),
             'bill_balance'     => \App\Models\BillBalance::summaryForFile($result['file_number']),
+            // Indexing bills (Bill Balance + Grant Rent amounts captured during File Indexing).
+            'indexing_bills'   => \App\Models\FileIndexingBill::amountsForFile($result['file_number']),
         ];
     }
 
@@ -2169,6 +2360,12 @@ HTML;
         // Original file-indexing created_at — used as the "home location" row's
         // Date & Time / Log In on the Movement History sheet.
         $tracker->setAttribute('file_indexing_created_at', $this->getFileIndexingCreatedAt($tracker->file_number));
+
+        // Movement entries from EARLIER tracking cycles of the same file. The front-end
+        // renders these read-only between the Archive home row and this tracker's own
+        // rows so a file that is re-tracked after being logged back into the registry
+        // shows one continuous timeline instead of a fresh, disconnected log.
+        $tracker->setAttribute('prior_movements', $this->getPriorMovements($tracker));
 
         // Add workflow progress if this is a 3-step tracker
         if ($tracker->isKangis3Step()) {
@@ -2788,6 +2985,137 @@ HTML;
         $this->indexingCreatedAtCache[$key] = $createdAt;
 
         return $createdAt;
+    }
+
+    /**
+     * Collect movement-log entries from all EARLIER trackers (lower id) that share
+     * this tracker's file number, in chronological order. This lets the front-end
+     * render a continuous movement timeline: when a file is logged back into the
+     * registry (completed) and later re-tracked to a new office, the new tracker's
+     * card shows the prior cycle (logout → completed/return) above its own rows.
+     */
+    /**
+     * Bulk-load the full tracker history for a set of file numbers into the per-request
+     * cache so getPriorMovements() avoids an N+1 query when decorating a page of results.
+     */
+    protected function primeMovementHistoryCache($fileNumbers): void
+    {
+        $keys = collect($fileNumbers)
+            ->map(fn ($value) => mb_strtoupper(trim((string) $value)))
+            ->filter(fn ($value) => $value !== '')
+            ->reject(fn ($value) => array_key_exists($value, $this->fileTrackerMovementHistoryCache))
+            ->unique()
+            ->values();
+
+        if ($keys->isEmpty()) {
+            return;
+        }
+
+        $grouped = FileTracker::query()
+            ->whereIn(DB::raw('UPPER(LTRIM(RTRIM(file_number)))'), $keys->all())
+            ->orderBy('id')
+            ->get(['id', 'movement_log', 'receiving_officer_name', 'receiving_officer_id', 'file_number'])
+            ->groupBy(fn ($row) => mb_strtoupper(trim((string) $row->file_number)));
+
+        foreach ($keys as $key) {
+            // Always set the key (even to an empty collection) so getPriorMovements()
+            // treats it as primed and never re-queries.
+            $this->fileTrackerMovementHistoryCache[$key] = $grouped->get($key, collect());
+        }
+    }
+
+    protected function getPriorMovements(FileTracker $tracker): array
+    {
+        $fileNumber = trim((string) $tracker->file_number);
+        if ($fileNumber === '') {
+            return [];
+        }
+
+        $key = mb_strtoupper($fileNumber);
+        if (!array_key_exists($key, $this->fileTrackerMovementHistoryCache)) {
+            $this->fileTrackerMovementHistoryCache[$key] = FileTracker::query()
+                ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [$key])
+                ->orderBy('id')
+                ->get(['id', 'movement_log', 'receiving_officer_name', 'receiving_officer_id']);
+        }
+
+        $priorMovements = [];
+        foreach ($this->fileTrackerMovementHistoryCache[$key] as $row) {
+            // Only entries from trackers created before this one.
+            if ((int) $row->id >= (int) $tracker->id) {
+                continue;
+            }
+
+            $log = is_array($row->movement_log)
+                ? $row->movement_log
+                : json_decode((string) ($row->movement_log ?? '[]'), true);
+
+            if (is_array($log)) {
+                foreach ($log as $entry) {
+                    if (!is_array($entry)) {
+                        continue;
+                    }
+
+                    // When a file is logged back into the registry, the entry records the
+                    // performing clerk as its receiving officer (receiving_officer_id ==
+                    // user_id) — that's effectively the "created by", not the cycle's
+                    // receiving officer. Surface the parent tracker's receiving officer
+                    // instead so the Completed/return row shows the correct name.
+                    $recvId = $entry['receiving_officer_id'] ?? null;
+                    $userId = $entry['user_id'] ?? null;
+                    if ($recvId !== null && $userId !== null && (int) $recvId === (int) $userId) {
+                        $entry['receiving_officer_name'] = $row->receiving_officer_name ?: null;
+                        $entry['receiving_officer_id']   = $row->receiving_officer_id;
+                    }
+
+                    $priorMovements[] = $entry;
+                }
+            }
+        }
+
+        // Order the merged history chronologically so the timeline reads correctly
+        // across cycles (e.g. a log-out at 15:17 must precede the completed/return at
+        // 15:45). Per-tracker array order can place a later "Completed" entry before
+        // an earlier log-out, so we sort by each entry's representative event time.
+        usort($priorMovements, function ($a, $b) {
+            return $this->movementSortTimestamp($a) <=> $this->movementSortTimestamp($b);
+        });
+
+        return $priorMovements;
+    }
+
+    /**
+     * Best-effort sortable unix timestamp for a movement-log entry. Prefers the
+     * arrival (log-in) time, then the departure (log-out) time, then the entry's
+     * creation timestamp. Unparseable entries sort last (stable).
+     */
+    protected function movementSortTimestamp(array $entry): float
+    {
+        $inDate  = trim((string) ($entry['log_in_date'] ?? ''));
+        $inTime  = trim((string) ($entry['log_in_time'] ?? ''));
+        $outDate = trim((string) ($entry['log_out_date'] ?? ''));
+        $outTime = trim((string) ($entry['log_out_time'] ?? ''));
+
+        $candidates = [];
+        if ($inDate !== '') {
+            $candidates[] = $inDate . ' ' . ($inTime !== '' ? $inTime : '00:00');
+        }
+        if ($outDate !== '') {
+            $candidates[] = $outDate . ' ' . ($outTime !== '' ? $outTime : '00:00');
+        }
+        if (!empty($entry['timestamp'])) {
+            $candidates[] = (string) $entry['timestamp'];
+        }
+
+        foreach ($candidates as $candidate) {
+            try {
+                return (float) \Illuminate\Support\Carbon::parse($candidate)->timestamp;
+            } catch (\Throwable $e) {
+                continue;
+            }
+        }
+
+        return PHP_FLOAT_MAX;
     }
 
     public function acceptAssignment(Request $request, $id)

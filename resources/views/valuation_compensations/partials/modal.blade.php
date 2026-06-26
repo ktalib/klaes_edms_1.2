@@ -161,7 +161,7 @@
                                 <p class="text-[10px] text-slate-400 mt-1 italic">The Worker ID will be automatically recorded.</p>
                             </div>
                             <div id="sub-project-section" class="hidden">
-                                <label class="block text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2">Select Sub-Project <span class="text-red-500">*</span></label>
+                                <label class="block text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2">Select Sub-Project <span class="text-slate-400 font-normal normal-case">(optional)</span></label>
                                 <select name="sub_project_id" id="vfc_sub_project_id"
                                     class="w-full px-4 py-3 rounded-xl border border-indigo-200 bg-indigo-50/30 focus:border-indigo-500 focus:bg-white transition text-sm font-bold text-indigo-700">
                                     <option value="">Select Sub-Project</option>
@@ -244,9 +244,9 @@
                         <div class="max-w-md">
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-2">
                                 <i data-lucide="hash" class="h-3 w-3"></i>
-                                Building Count <span class="text-red-500">*</span>
+                                Building Count  
                             </label>
-                            <input type="number" name="building_count" id="building_count" required min="1" value="1"
+                            <input type="number" name="building_count" id="building_count" min="1" value="1"
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-medium">
                         </div>
 
@@ -316,7 +316,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <input type="hidden" name="building_type" id="building_type_final" required>
+                            <input type="hidden" name="building_type" id="building_type_final">
                             <input type="hidden" name="completion_stage" id="completion_stage_final">
                             <input type="hidden" name="number_of_floors" id="number_of_floors_final">
                         </div>
@@ -339,7 +339,7 @@
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Total Area Covered (m²) <span class="text-red-500">*</span></label>
-                                    <input type="number" step="0.01" name="area_covered" id="area_covered" required readonly
+                                    <input type="number" step="0.01" name="area_covered" id="area_covered" readonly
                                         class="w-full px-4 py-3 rounded-xl border border-blue-100 bg-blue-50/50 text-sm font-bold text-blue-700 shadow-inner transition cursor-not-allowed"
                                         placeholder="0.00">
                                 </div>
@@ -347,7 +347,7 @@
 
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Average Rate of Cost (₦) <span class="text-red-500">*</span></label>
-                                <input type="number" step="0.01" name="rate_of_cost" id="rate_of_cost" required readonly
+                                <input type="number" step="0.01" name="rate_of_cost" id="rate_of_cost" readonly
                                     class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-bold text-slate-500 cursor-not-allowed shadow-inner transition"
                                     placeholder="0.00">
                             </div>
@@ -355,7 +355,7 @@
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Total Amount of Compensation</label>
                                 <div class="relative">
-                                    <input type="number" step="0.01" name="compensation_amount" id="compensation_amount" required readonly
+                                    <input type="number" step="0.01" name="compensation_amount" id="compensation_amount" readonly
                                         class="w-full pl-10 pr-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 font-bold text-blue-700 text-lg focus:ring-0 shadow-inner cursor-not-allowed"
                                         placeholder="0.00">
                                     <div class="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 font-bold">₦</div>

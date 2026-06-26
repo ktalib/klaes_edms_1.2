@@ -294,8 +294,8 @@ Ministry of Land and Physical
 Planning, Kano State</textarea>
                         </div>
                         <div class="md:col-span-2">
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Number of Sub-Projects <span class="text-red-500">*</span></label>
-                            <input type="number" name="number_of_sub_projects" id="number_of_sub_projects" min="1" value="1" required
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Number of Sub-Projects</label>
+                            <input type="number" name="number_of_sub_projects" id="number_of_sub_projects" min="0" value="0" 
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:bg-white transition text-sm font-bold"
                                 placeholder="e.g. 5">
                         </div>

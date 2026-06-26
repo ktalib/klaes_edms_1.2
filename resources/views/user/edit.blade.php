@@ -569,6 +569,36 @@
                                         </div>
                                     </div>
                                 </div>
+
+                                {{-- Officer Rank (Seniority) — used to prioritise file search requests --}}
+                                <div class="flex flex-wrap -mx-2">
+                                    <div class="w-full md:w-1/2 px-2 mb-2">
+                                        <div>
+                                            {{ Form::label('rank', __('Officer Rank (Seniority)'), ['class' => 'block text-sm font-medium text-blue-800 mb-1']) }}
+                                            <div class="text-xs text-blue-600 mb-2">Designation used to prioritise this officer's file search requests — the most senior requester is honored first.</div>
+                                            @php $currentRank = old('rank', $user->rank ?? ''); @endphp
+                                            <select name="rank" id="rank"
+                                                class="w-full p-2 border border-blue-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+                                                <option value="">Select Rank (optional)</option>
+                                                @foreach($ranks as $rankOption)
+                                                    <option value="{{ $rankOption }}" {{ $currentRank === $rankOption ? 'selected' : '' }}>{{ $rankOption }}</option>
+                                                @endforeach
+                                                {{-- Preserve a previously-saved rank that isn't in the configured options --}}
+                                                @if($currentRank && !in_array($currentRank, $ranks, true))
+                                                    <option value="{{ $currentRank }}" selected>{{ $currentRank }} (current)</option>
+                                                @endif
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="w-full md:w-1/2 px-2 mb-2">
+                                        <div class="text-xs text-blue-700 bg-blue-100 p-3 rounded-md">
+                                            <strong>Seniority (honored first):</strong><br>
+                                            @foreach($ranks as $rankOption)
+                                                • {{ $rankOption }}<br>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             @php

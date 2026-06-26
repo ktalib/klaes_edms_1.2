@@ -578,11 +578,30 @@
         }
     }
 
-    // Pre-store options to avoid losing them when clearing container
-    const streetOpts = `<option value="">Select Street</option>@foreach($streetNames as $street)<option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>@endforeach<option value="OTHER">OTHER</option>`;
-    const districtOpts = `<option value="">Select District</option>@foreach($districts as $district)<option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>@endforeach<option value="OTHER">OTHER</option>`;
-    const lgaOpts = `<option value="">Select LGA</option>@foreach($lgas as $lga)<option value="{{ $lga->name }}">{{ strtoupper($lga->name) }}</option>@endforeach`;
-    const stateOpts = `@foreach($states as $state)<option value="{{ $state->StateName }}" @selected($state->StateName == 'Kano')>{{ strtoupper($state->StateName) }}</option>@endforeach`;
+    // Pre-store options to avoid losing them when clearing container.
+    // Data is passed as JSON arrays and options are built in JS with an escaper, so a name
+    // containing a backtick / ${ / quote can never break this <script> block (which previously
+    // happened in production with names that contained such characters).
+    const _esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const _opt = (val, label, selected) =>
+        `<option value="${_esc(val)}"${selected ? ' selected' : ''}>${_esc(label)}</option>`;
+
+    const _streetNames = @json($streetNames->pluck('name'));
+    const _districtNames = @json($districts->pluck('name'));
+    const _lgaNames = @json($lgas->pluck('name'));
+    const _stateNames = @json($states->pluck('StateName'));
+
+    const streetOpts = '<option value="">Select Street</option>'
+        + _streetNames.map(n => _opt(n, String(n).toUpperCase())).join('')
+        + '<option value="OTHER">OTHER</option>';
+    const districtOpts = '<option value="">Select District</option>'
+        + _districtNames.map(n => _opt(n, String(n).toUpperCase())).join('')
+        + '<option value="OTHER">OTHER</option>';
+    const lgaOpts = '<option value="">Select LGA</option>'
+        + _lgaNames.map(n => _opt(n, String(n).toUpperCase())).join('');
+    const stateOpts = _stateNames
+        .map(n => _opt(n, String(n).toUpperCase(), n === 'Kano')).join('');
 
     function openCreateModal() {
         document.getElementById('create-form').reset();

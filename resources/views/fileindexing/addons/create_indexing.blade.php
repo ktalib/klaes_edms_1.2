@@ -149,6 +149,35 @@
                                                 </span>
                                             </label>
                                         </div>
+
+                                        {{-- File classification flags (amber) — multi-select. Mutually exclusive
+                                             only with "Normal". Their auto comment is appended to the shared
+                                             Title Status "Remark / Comment" box below. Persisted to
+                                             file_indexings.file_classification (+ _remarks). --}}
+                                        @php
+                                            $fcSelected = isset($record) ? array_filter(array_map('trim', explode(',', (string) $record->file_classification))) : [];
+                                        @endphp
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                                            <label class="block cursor-pointer">
+                                                <input type="checkbox" value="Dummy File"
+                                                    class="ts-title-type-cb ts-classification-cb peer sr-only"
+                                                    {{ in_array('Dummy File', $fcSelected) ? 'checked' : '' }}>
+                                                <span class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 transition hover:border-amber-300 hover:bg-amber-50/40 peer-checked:border-amber-500 peer-checked:bg-amber-50 peer-checked:text-amber-700 peer-checked:font-medium peer-focus:ring-2 peer-focus:ring-amber-200">
+                                                    <i data-lucide="file-question" class="h-4 w-4 flex-shrink-0"></i>
+                                                    <span class="leading-tight">Dummy File</span>
+                                                </span>
+                                            </label>
+                                            <label class="block cursor-pointer">
+                                                <input type="checkbox" value="Temporary"
+                                                    class="ts-title-type-cb ts-classification-cb peer sr-only"
+                                                    {{ in_array('Temporary', $fcSelected) ? 'checked' : '' }}>
+                                                <span class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 transition hover:border-amber-300 hover:bg-amber-50/40 peer-checked:border-amber-500 peer-checked:bg-amber-50 peer-checked:text-amber-700 peer-checked:font-medium peer-focus:ring-2 peer-focus:ring-amber-200">
+                                                    <i data-lucide="clock" class="h-4 w-4 flex-shrink-0"></i>
+                                                    <span class="leading-tight">Temporary</span>
+                                                </span>
+                                            </label>
+                                        </div>
+
                                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                             @foreach($parcelOptions as $tsValue => $tsMeta)
                                                 <label class="block cursor-pointer">
@@ -287,6 +316,10 @@
 
                         <hr class="my-8 border-t border-gray-200">
 
+                        @include('fileindexing.addons.partials.sections.billing_ground_rent')
+
+                        <hr class="my-8 border-t border-gray-200">
+
                         @include('fileindexing.addons.partials.sections.rofo_details')
 
                         <hr class="my-8 border-t border-gray-200">
@@ -380,39 +413,9 @@
                         return;
                     }
 
-                    // Map pin required: every file must be geocoded via "Apply & Pin on Map"
-                    const latInputs = form.querySelectorAll('input[name^="latitude["]');
-                    let firstUnpinned = null;
-                    let unpinnedIndex = null;
-                    latInputs.forEach(input => {
-                        const idx = input.name.replace(/[^0-9]/g, '');
-                        const lng = form.querySelector('input[name="longitude[' + idx + ']"]');
-                        if (!firstUnpinned && (!input.value.trim() || !(lng && lng.value.trim()))) {
-                            firstUnpinned = input;
-                            unpinnedIndex = idx;
-                        }
-                    });
-                    if (firstUnpinned) {
-                        e.preventDefault();
-                        const msg = latInputs.length > 1
-                            ? 'Please click "Apply & Pin on Map" to capture the location for File ' + (Number(unpinnedIndex) + 1) + ' before submitting.'
-                            : 'Please click "Apply & Pin on Map" to capture the property location before submitting.';
-                        if (typeof Swal !== 'undefined') {
-                            Swal.fire({
-                                icon: 'warning',
-                                title: 'Location Pin Required',
-                                text: msg,
-                                confirmButtonColor: '#f59e0b'
-                            }).then(() => {
-                                firstUnpinned.focus();
-                                firstUnpinned.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            });
-                        } else {
-                            firstUnpinned.focus();
-                            firstUnpinned.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
-                        return;
-                    }
+                    // NOTE: the "Apply & Pin on Map" coordinate requirement is enforced in
+                    // submitFileIndexingForm() (create-indexing-dialog.js), which actually blocks
+                    // submission — a preventDefault() here does not stop that handler's fetch.
 
                     if (!validateNigerianPhone() && phoneInput.value.trim()) {
                         e.preventDefault();
@@ -1119,23 +1122,33 @@
                 return opts[0] || 'Ministry';
             };
 
-            // Treat empty default and "Normal" as "no title status action".
-            const isActionableType = (t) => t !== '' && t !== 'Normal';
+            // Classification flags (Parcel Update). They do NOT trigger the title-status
+            // backend, but they DO contribute an auto line to the shared Remark / Comment box.
+            const CLASSIFICATION_TYPES = ['Dummy File', 'Temporary'];
+            const NON_ACTIONABLE = ['Normal', ...CLASSIFICATION_TYPES];
+            const isActionableType = (t) => t !== '' && !NON_ACTIONABLE.includes(t);
+            const isClassificationType = (t) => CLASSIFICATION_TYPES.includes(t);
+            // Everything that should appear in Remark / Comment (actionable + classification).
+            const isRemarkType = (t) => t !== '' && t !== 'Normal';
+            const getRemarkTypes = () => getSelectedTypes().filter(isRemarkType);
 
             function buildRemarkFor(type) {
-                const verb   = TS_TYPE_VERB[type] || type;
                 const fileNo = getFileNo();
-                const reason = (reasonEl?.value || '').trim() || '[Reason]';
-                const initiator = initiatedByFor(type);
                 const now = new Date();
                 const pad = n => String(n).padStart(2, '0');
                 const dt  = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
                 const fileRef = fileNo ? ` FileNo ${fileNo}` : '';
+                if (isClassificationType(type)) {
+                    return `File${fileRef} was marked as ${type} on ${dt}`;
+                }
+                const verb   = TS_TYPE_VERB[type] || type;
+                const reason = (reasonEl?.value || '').trim() || '[Reason]';
+                const initiator = initiatedByFor(type);
                 return `${verb}${fileRef} was initiated by ${initiator} on ${dt} due to ${reason}`;
             }
 
             function buildRemark() {
-                const types = getActionableTypes();
+                const types = getRemarkTypes();
                 if (!types.length) return '';
                 return types.map(buildRemarkFor).join('\n');
             }
@@ -1145,8 +1158,9 @@
             }
 
             function toggleStatusFields() {
-                const actionable = getActionableTypes();
-                const hasType   = actionable.length > 0;
+                const remarkTypes = getRemarkTypes();
+                const actionable  = getActionableTypes();
+                const hasType   = remarkTypes.length > 0;
                 const isRegrant = actionable.includes('Re-grant');
                 statusBlock?.classList.toggle('hidden', !hasType);
                 seeRow?.classList.toggle('hidden', !isRegrant);
@@ -1154,8 +1168,10 @@
                 if (typeof lucide !== 'undefined') lucide.createIcons();
             }
 
-            // "Normal" is mutually exclusive with the actionable title statuses. Delegated on
-            // document since the checkboxes span two separate cards.
+            // Only "Normal" is exclusive: checking it clears every other option, and checking
+            // any other option clears "Normal". Dummy File, Temporary and the actionable title
+            // statuses are all freely multi-selectable. Delegated on document since the
+            // checkboxes span two separate cards.
             document.addEventListener('change', function (e) {
                 const cb = e.target;
                 if (!cb || !cb.classList || !cb.classList.contains('ts-title-type-cb')) return;
@@ -1204,11 +1220,14 @@
 
                 const reason = (reasonEl?.value || '').trim();
                 const customRemark = (remarkEl?.value || '').trim();
+                // When classification flags are also selected, the Remark box holds their lines
+                // too, so don't reuse it verbatim for the title-status record — regenerate per type.
+                const hasClassification = !!document.querySelector('.ts-classification-cb:checked');
 
                 // Per-type remarks (parallel to `title_types`). A single selection may keep the
                 // user-edited remark; otherwise each type gets its own generated remark.
                 const remarks = types.map(function (type) {
-                    return (types.length === 1 && customRemark) ? customRemark : buildRemarkFor(type);
+                    return (types.length === 1 && customRemark && !hasClassification) ? customRemark : buildRemarkFor(type);
                 });
                 const regrant = types.indexOf('Re-grant');
 

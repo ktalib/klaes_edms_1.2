@@ -83,6 +83,8 @@ class FileIndexing extends Model
         'party_4',
         'party_5',
         'indexing_type',
+        'file_classification',
+        'file_classification_remarks',
         'has_rofo',
         'has_temp_file',
         'temp_file_no',
@@ -101,6 +103,18 @@ class FileIndexing extends Model
         'current_location',
         'file_tracker_id',
         'location_status_manual',
+        // Bill Balance
+        'bill_total_amount',
+        'bill_from_year',
+        'bill_to_year',
+        'bill_receipt_no',
+        'bill_receipt_date',
+        // Grant Rent
+        'ground_rent_amount',
+        'ground_rent_from_year',
+        'ground_rent_to_year',
+        'ground_rent_receipt_no',
+        'ground_rent_receipt_date',
     ];
 
     public static function columnWhitelist(): array
@@ -185,6 +199,8 @@ class FileIndexing extends Model
             'party_4',
             'party_5',
             'indexing_type',
+            'file_classification',
+            'file_classification_remarks',
             'has_rofo',
             'has_temp_file',
             'temp_file_no',
@@ -200,6 +216,18 @@ class FileIndexing extends Model
             'sub_prefix',
             'suffix',
             'digit_rank',
+            // Bill Balance
+            'bill_total_amount',
+            'bill_from_year',
+            'bill_to_year',
+            'bill_receipt_no',
+            'bill_receipt_date',
+            // Grant Rent
+            'ground_rent_amount',
+            'ground_rent_from_year',
+            'ground_rent_to_year',
+            'ground_rent_receipt_no',
+            'ground_rent_receipt_date',
         ];
     }
 

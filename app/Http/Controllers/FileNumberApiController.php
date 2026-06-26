@@ -822,6 +822,17 @@ class FileNumberApiController extends Controller
                         $q->where('temp_file_no', 'LIKE', "%{$search}%")
                           ->orWhere('file_number', 'LIKE', "%{$search}%");
                     })
+                    // Keep this MLS endpoint MLS/Lands-only: exclude file_indexings rows
+                    // that belong to other registries (KANGIS / New KANGIS / SLTR / ST /
+                    // SIT / DCIV / Survey) so the MLS selector never surfaces their files.
+                    ->whereRaw("ISNULL(kangis_file_no, '') = ''")
+                    ->whereRaw("ISNULL(new_kangis_file_no, '') = ''")
+                    ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(registry, '')))) NOT IN ('SLTR','DCIV','KANGIS','SURVEY','SIT','ST REGISTRY','CADESTRAL','CADASTRAL')")
+                    ->where(function ($q) {
+                        foreach (['KN%','MLKN%','KNGP%','KNML%','SLTR%','SIT%','ST-%','ST/%','LPCC%','DCIV%','GKN%','LPKN%'] as $prefix) {
+                            $q->whereRaw("UPPER(LTRIM(ISNULL(file_number, ''))) NOT LIKE ?", [$prefix]);
+                        }
+                    })
                     ->limit($limit - $files->count())
                     ->get();
 

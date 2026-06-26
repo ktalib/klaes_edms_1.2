@@ -1607,6 +1607,7 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'create-file-tracker'
     Route::get('/quick-search', [App\Http\Controllers\CreateFileTrackerController::class, 'quickSearch'])->name('create-file-tracker.quick-search');
     Route::get('/quick-search/resolve', [App\Http\Controllers\CreateFileTrackerController::class, 'quickSearchResolve'])->name('create-file-tracker.quick-search.resolve');
     Route::post('/quick-search/update-status', [App\Http\Controllers\CreateFileTrackerController::class, 'updateLocationStatus'])->name('create-file-tracker.quick-search.update-status');
+    Route::post('/quick-search/redirect-director-land', [App\Http\Controllers\CreateFileTrackerController::class, 'redirectToDirectorLand'])->name('create-file-tracker.quick-search.redirect-director-land');
     Route::get('/quick-search/scb-feedback', [App\Http\Controllers\CreateFileTrackerController::class, 'scbFeedback'])->name('create-file-tracker.quick-search.scb-feedback');
     Route::get('/quick-search/file-request-log', [App\Http\Controllers\CreateFileTrackerController::class, 'fileRequestLog'])->name('create-file-tracker.quick-search.file-request-log');
     Route::post('/quick-search/file-request/{id}/front-desk-acted', [App\Http\Controllers\CreateFileTrackerController::class, 'markFrontDeskActed'])->name('create-file-tracker.quick-search.front-desk-acted');

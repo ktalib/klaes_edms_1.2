@@ -545,11 +545,27 @@ let subdivisionChildCounter = 0;
 let mergedFileData    = null;
 let mergerResultFile  = null;
 
-// Pre-build select option strings once (used by manualLocationBlock / merger cards)
-const manualStreetOptions   = `<option value="">SELECT STREET</option>@foreach($streetNames as $street)<option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>@endforeach`;
-const manualDistrictOptions = `<option value="">SELECT DISTRICT</option>@foreach($districts as $district)<option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>@endforeach`;
-const manualLgaOptions      = `<option value="">SELECT LGA</option>@foreach($lgas as $lga)<option value="{{ $lga->name }}">{{ strtoupper($lga->name) }}</option>@endforeach`;
-const manualStateOptions    = `@foreach($states as $state)<option value="{{ $state->StateName }}" @selected($state->StateName == 'Kano')>{{ strtoupper($state->StateName) }}</option>@endforeach`;
+// Pre-build select option strings once (used by manualLocationBlock / merger cards).
+// Data is passed as JSON (the json blade directive escapes safely for a JS context); options are built in JS
+// so a name containing a backtick / ${ / quote can never break this <script> block.
+const _esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const _opt = (val, label, selected) =>
+    `<option value="${_esc(val)}"${selected ? ' selected' : ''}>${_esc(label)}</option>`;
+
+const _streetNames = @json($streetNames->pluck('name'));
+const _districtNames = @json($districts->pluck('name'));
+const _lgaNames = @json($lgas->pluck('name'));
+const _stateNames = @json($states->pluck('StateName'));
+
+const manualStreetOptions   = '<option value="">SELECT STREET</option>'
+    + _streetNames.map(n => _opt(n, String(n).toUpperCase())).join('');
+const manualDistrictOptions = '<option value="">SELECT DISTRICT</option>'
+    + _districtNames.map(n => _opt(n, String(n).toUpperCase())).join('');
+const manualLgaOptions      = '<option value="">SELECT LGA</option>'
+    + _lgaNames.map(n => _opt(n, String(n).toUpperCase())).join('');
+const manualStateOptions    = _stateNames
+    .map(n => _opt(n, String(n).toUpperCase(), n === 'Kano')).join('');
 
 // ─── History table: expand/collapse extra "Old File(s)" chips ────────────────
 function toggleOldFiles(id) {

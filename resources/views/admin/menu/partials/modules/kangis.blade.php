@@ -178,7 +178,14 @@
           <span>File Tracker (Archive)</span>
         </a>
 
-        <!-- iii. Log a File -->
+        <!-- iii. Quick Search (scoped to KANGIS registry files) -->
+        <a href="{{ route('create-file-tracker.quick-search', ['url' => 'kangis']) }}"
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.quick-search') && request('url') === 'kangis' ? 'active' : '' }}">
+          <i data-lucide="search" class="h-3.5 w-3.5 text-yellow-400"></i>
+          <span>Quick Search</span>
+        </a>
+
+        <!-- iv. Log a File -->
         <a href="{{ route('create-file-tracker.index', ['url' => 'kangis']) }}"
           class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.index') && request('url') === 'kangis' && request('action') !== 'request-land' ? 'active' : '' }}">
           <i data-lucide="file-plus" class="h-3.5 w-3.5 text-yellow-400"></i>

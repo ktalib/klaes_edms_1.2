@@ -46,6 +46,9 @@ class FileLocationResolver
     /** Cache of shelf lookups within a single request. */
     protected array $rackShelfCache = [];
 
+    /** Duplicate-registry flag for the file currently being resolved (set per resolve()). */
+    protected ?array $currentDuplicateFlag = null;
+
     /**
      * Resolve the location/status for a file number.
      *
@@ -60,6 +63,10 @@ class FileLocationResolver
     {
         $fileNumber = trim($fileNumber);
         $variants   = $this->variants($fileNumber);
+
+        // Flag if this file number is registered in duplicate_fileno (CofO collected/ready,
+        // duplicate, temporary, or withdrawn/cancelled/revoked). Surfaced on every outcome.
+        $this->currentDuplicateFlag = $this->duplicateFlagFor($variants);
 
         $indexing = $this->findIndexing($variants);
         $tracker  = $this->findTracker($variants);
@@ -254,7 +261,63 @@ class FileLocationResolver
             'can_log'          => false,
             'is_blind'         => false,
             'manual'           => false,
+            'duplicate_flag'   => $this->currentDuplicateFlag,
         ], $extra);
+    }
+
+    /**
+     * Look up the file in duplicate_fileno and, if present, return a normalized
+     * badge payload (category + display label + colour). Surfaced on every Quick
+     * Search / mobile File Search result so the front desk can see at a glance
+     * that the file is flagged as CofO-collected/ready, a duplicate, a temporary
+     * file, or withdrawn/cancelled/revoked.
+     *
+     * @return array{category:string,label:string,color:string,comment:?string,registry:?string}|null
+     */
+    protected function duplicateFlagFor(array $variants): ?array
+    {
+        if (empty($variants)) {
+            return null;
+        }
+
+        $row = DB::connection('sqlsrv')
+            ->table('duplicate_fileno')
+            ->whereIn('file_number', $variants)
+            ->orderByDesc('id')
+            ->first(['category', 'comment', 'registry']);
+
+        if (!$row || empty($row->category)) {
+            return null;
+        }
+
+        // The comment chip is only useful when it adds information beyond the category
+        // itself (the import often copies the category into the comment column verbatim).
+        $comment = trim((string) ($row->comment ?? ''));
+        if ($comment === '' || strtoupper($comment) === strtoupper(trim((string) $row->category))) {
+            $comment = null;
+        }
+
+        return array_merge(
+            $this->duplicateCategoryMeta($row->category),
+            ['comment' => $comment, 'registry' => $row->registry ?: null]
+        );
+    }
+
+    /**
+     * Map a raw duplicate_fileno.category value to a display label + badge colour.
+     */
+    protected function duplicateCategoryMeta(string $category): array
+    {
+        $key = strtoupper(trim($category));
+
+        return match ($key) {
+            '[COFO_COLLECTED]' => ['category' => $category, 'label' => 'CofO Collected', 'color' => '#16a34a'],
+            '[COFO_READY]'     => ['category' => $category, 'label' => 'CofO Ready',     'color' => '#2563eb'],
+            'DUPLICATE FILES'  => ['category' => $category, 'label' => 'Duplicate File', 'color' => '#d97706'],
+            'TEMP FILES'       => ['category' => $category, 'label' => 'Temporary File', 'color' => '#7c3aed'],
+            'W/C/R FILES'      => ['category' => $category, 'label' => 'Withdrawn / Cancelled / Revoked', 'color' => '#dc2626'],
+            default            => ['category' => $category, 'label' => trim($category, '[]'), 'color' => '#475569'],
+        };
     }
 
     /**

@@ -93,6 +93,10 @@ class MobileFileSearchController extends Controller
                 'file_title'       => $fileTitle,
                 'status'           => $result['status'],
                 'registry'         => $result['registry'],
+                // Origin registry the file physically belongs to (KANGIS / SLTR / ST /
+                // Cadastral), so the Send-to-SCB form can pre-select the Registry (Origin)
+                // and theme its colour. Null when the file type can't be classified.
+                'origin_registry'  => $this->detectOriginRegistry($result['indexing'] ?? null),
                 'current_location' => $result['current_location'],
                 'rack_shelf'       => $result['rack_shelf'],
                 'next_action'      => $result['next_action'],
@@ -114,16 +118,64 @@ class MobileFileSearchController extends Controller
                 'dciv_status'              => (int) ($result['indexing']?->dciv_status ?? 0),
                 'dciv_fileno'              => $result['indexing']?->dciv_fileno,
                 'dciv_reason'              => $result['indexing']?->dciv_reason,
+                // Duplicate-registry flag (CofO collected/ready, duplicate, temp, W/C/R) when
+                // the file number is registered in duplicate_fileno — null otherwise.
+                'duplicate_flag'           => $result['duplicate_flag'] ?? null,
                 // Ownership history — the chronological chain of holders derived from the
                 // cross-table property timeline (file_history/CofO/pra/deeds). Rendered as a
-                // vertical timeline in the Holders panel. Falls back to the single indexing
-                // holders below when the file has no transaction history.
-                'holder_history'           => $this->timelineService->holderHistory($result['file_number']),
+                // vertical timeline in the Holders panel. Only surfaced for indexed files: a
+                // file with no indexing row (Pending / Not Indexed) brings no transactions.
+                'holder_history'           => ($result['indexing'] ?? null)
+                    ? $this->timelineService->holderHistory($result['file_number'])
+                    : [],
                 'original_holder'          => $result['indexing']?->formattedHolder('original_holder'),
                 'current_holder'           => $result['indexing']?->formattedHolder('current_holder'),
                 'bill_balance'             => \App\Models\BillBalance::summaryForFile($result['file_number']),
+                // Indexing bills (Bill Balance + Grant Rent amounts captured during File Indexing).
+                'indexing_bills'           => \App\Models\FileIndexingBill::amountsForFile($result['file_number']),
             ],
         ]);
+    }
+
+    /**
+     * Classify a file's origin registry from its indexing row, so the Send-to-SCB
+     * form can pre-select the Registry (Origin). Returns a physical_registries.name
+     * (matching the dropdown options) or null when it can't be classified.
+     *
+     *   - Cadastral : a corresponding (land) file — is_corresponding_file = 1.
+     *   - KANGIS / SLTR / ST : tagged on the indexing's general/physical registry.
+     *
+     * Cadastral wins first: a land file flagged as corresponding is cadastral even
+     * if it also carries a KANGIS general-registry tag.
+     */
+    private function detectOriginRegistry($indexing): ?string
+    {
+        if (!$indexing) {
+            return null;
+        }
+
+        if ((string) ($indexing->is_corresponding_file ?? '') === '1') {
+            return 'Registry 1 - Cadastral';
+        }
+
+        $gen  = strtoupper(trim((string) ($indexing->general_registry ?? '')));
+        $phys = strtoupper(trim((string) ($indexing->physical_registry ?? '')));
+        $hay  = $gen . '|' . $phys;
+
+        if (str_contains($hay, 'KANGIS')) {
+            return 'KANGIS Registry';
+        }
+        if (str_contains($hay, 'SLTR')) {
+            return 'SLTR Registry';
+        }
+        // ST (STIL) files carry an "ST-" prefix in the file number itself — not a
+        // land file that merely references an ST number in st_fillno.
+        $fileNo = strtoupper(trim((string) ($indexing->file_number ?? '')));
+        if (str_starts_with($fileNo, 'ST-') || $gen === 'ST REGISTRY' || $phys === 'ST REGISTRY') {
+            return 'ST Registry';
+        }
+
+        return null;
     }
 
     /**
@@ -140,14 +192,20 @@ class MobileFileSearchController extends Controller
         $userId  = $request->user()->id;
         $isAdmin = $this->isAdmin($request);
 
-        $requests = FileSearchRequest::open()
-            ->with('requester:id,first_name,last_name')
+        $base = FileSearchRequest::open()
             ->when(! $isAdmin, function ($q) use ($userId) {
                 $q->where(function ($q2) use ($userId) {
                     $q2->whereNull('assigned_monitor_id')
                         ->orWhere('assigned_monitor_id', $userId);
                 });
-            })
+            });
+
+        // True total for the tab badge (counted before the display limit, so the
+        // badge keeps climbing past 100 instead of freezing at the cap).
+        $total = (clone $base)->count();
+
+        $requests = $base
+            ->with('requester:id,first_name,last_name')
             // OFS (Office Priority Search) requests float to the top, then by seniority
             // weight, then newest first.
             ->orderByDesc('is_ofs')
@@ -175,7 +233,7 @@ class MobileFileSearchController extends Controller
             ], $this->requestTypeMeta($fr));
         });
 
-        return response()->json(['success' => true, 'data' => $data]);
+        return response()->json(['success' => true, 'data' => $data, 'total' => $total]);
     }
 
     /**
@@ -218,6 +276,10 @@ class MobileFileSearchController extends Controller
             $query->where('status', $status);
         }
 
+        // True total for the tab badge (counted before the display limit, so the
+        // badge reflects the real history size instead of freezing at the cap).
+        $total = (clone $query)->count();
+
         $rows = $query->orderByDesc('is_ofs')->orderByDesc('priority')->orderByDesc('id')->limit(200)->get();
 
         $data = $rows->map(function (FileSearchRequest $fr) {
@@ -256,7 +318,7 @@ class MobileFileSearchController extends Controller
             ]);
         });
 
-        return response()->json(['success' => true, 'data' => $data]);
+        return response()->json(['success' => true, 'data' => $data, 'total' => $total]);
     }
 
     /**

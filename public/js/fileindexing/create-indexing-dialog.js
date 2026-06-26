@@ -786,6 +786,20 @@
                 }
             }
         })();
+
+        // Restore the Parcel Update classification flags (Dummy File / Temporary). Their
+        // comment lives in the shared Remark / Comment box, which the title-status controller
+        // regenerates from the selected types once we dispatch the change below.
+        (function () {
+            const selected = String(record.file_classification ?? '')
+                .split(',').map(s => s.trim()).filter(Boolean);
+            document.querySelectorAll('.ts-classification-cb').forEach(cb => {
+                cb.checked = selected.includes(cb.value);
+            });
+            const target = document.querySelector('.ts-classification-cb:checked');
+            if (target) target.dispatchEvent(new Event('change', { bubbles: true }));
+        })();
+
         setAutoFilledValue('dob-0', record.dob ? String(record.dob).substring(0, 10) : '', { lock: false });
         setAutoFilledValue('nin-0', record.nin ?? '', { lock: false });
         setAutoFilledValue('tin-0', record.tin ?? '', { lock: false });
@@ -5347,6 +5361,18 @@
             temp_file_no: tempFileNo,
             file_title: collectArrayValues('file_title') || fileTitle,
             indexing_type: indexingType,
+            // Parcel Update classification flags (multi-select: 'Dummy File' / 'Temporary'),
+            // stored comma-separated. Their comment lives in the shared Title Status
+            // Remark / Comment box, which we persist when a classification flag is set.
+            file_classification: (function () {
+                const vals = Array.from(document.querySelectorAll('.ts-classification-cb:checked')).map(cb => cb.value);
+                return vals.length ? vals.join(',') : null;
+            })(),
+            file_classification_remarks: (function () {
+                if (!document.querySelector('.ts-classification-cb:checked')) return null;
+                const ta = document.getElementById('ts-remark');
+                return (ta?.value || '').trim() || null;
+            })(),
             current_holder: indexingType === 'Block' ? currentHolders : (currentHolders[0] || fileTitle),
             original_holder: indexingType === 'Block' ? (originalHolders && originalHolders.length > 0 ? originalHolders : [currentHolders[0] || fileTitle]) : (originalHolders ? originalHolders[0] : (currentHolders[0] || fileTitle)),
             land_use_type: collectArrayValues('land_use_type') || (document.getElementById('land-use-type')?.value || ''),
@@ -5443,6 +5469,18 @@
             transactions: (typeof window.collectNewKangisTransactions === 'function')
                 ? window.collectNewKangisTransactions()
                 : [],
+            // Bill Balance & Grant Rent (repeatable — arrays). Saved to file_indexings
+            // (primary/first) + billing + file_indexing_bills tables server-side.
+            bill_total_amount: collectArrayValues('bill_total_amount'),
+            bill_from_year: collectArrayValues('bill_from_year'),
+            bill_to_year: collectArrayValues('bill_to_year'),
+            bill_receipt_no: collectArrayValues('bill_receipt_no'),
+            bill_receipt_date: collectArrayValues('bill_receipt_date'),
+            ground_rent_amount: collectArrayValues('ground_rent_amount'),
+            ground_rent_from_year: collectArrayValues('ground_rent_from_year'),
+            ground_rent_to_year: collectArrayValues('ground_rent_to_year'),
+            ground_rent_receipt_no: collectArrayValues('ground_rent_receipt_no'),
+            ground_rent_receipt_date: collectArrayValues('ground_rent_receipt_date'),
         };
 
         // Add related file numbers and details to formData
@@ -5649,6 +5687,41 @@
             } else {
                 alert('Please select a Title Status before submitting.');
                 focusTitleStatus();
+            }
+            return;
+        }
+
+        // Location pin required — coordinates may only be applied via "Apply & Pin on Map",
+        // so every file must have both latitude and longitude captured before submitting.
+        const latPinInputs = Array.from(document.querySelectorAll('input[name^="latitude["]'));
+        let unpinnedIdx = null;
+        for (const latEl of latPinInputs) {
+            const idx = latEl.name.replace(/[^0-9]/g, '');
+            const lngEl = document.querySelector(`input[name="longitude[${idx}]"]`);
+            if (!String(latEl.value || '').trim() || !lngEl || !String(lngEl.value || '').trim()) {
+                unpinnedIdx = idx;
+                break;
+            }
+        }
+        if (latPinInputs.length && unpinnedIdx !== null) {
+            const multi = latPinInputs.length > 1;
+            const msg = multi
+                ? `Please click "Apply & Pin on Map" to capture the location for File ${Number(unpinnedIdx) + 1} before submitting.`
+                : 'Please click "Apply & Pin on Map" to capture the property location before submitting.';
+            const focusUnpinned = () => {
+                const el = document.querySelector(`input[name="latitude[${unpinnedIdx}]"]`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            };
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    title: 'Location Pin Required',
+                    text: msg,
+                    icon: 'warning',
+                    confirmButtonColor: '#f59e0b',
+                }).then(focusUnpinned);
+            } else {
+                alert(msg);
+                focusUnpinned();
             }
             return;
         }

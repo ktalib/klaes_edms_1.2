@@ -135,7 +135,7 @@
                                 <span class="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">{{ $group->count() }}</span>
                             </td>
                             <td class="px-6 py-4 font-bold text-teal-600">
-                                ₦{{ number_format($group->sum('compensation_amount'), 2) }}
+                                ₦{{ number_format($group->sum('total_compensation'), 2) }}
                             </td>
                             <td class="px-6 py-4 text-right">
                                 <button onclick="VFC.openRecordsModal('{{ $projectId }}')" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Open Records">

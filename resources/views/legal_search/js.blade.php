@@ -670,6 +670,11 @@ const executeSearchAjax = (filters, searchData) => {
         // Store raw response for debug view
         lastApiResponse = data;
 
+        // DCIV investigation flag (file linked to a DCIV in master_dciv_links).
+        // The "Under Investigation" note is already written into each matching
+        // row's Comments cell server-side; this flag is kept for any consumers.
+        window._underInvestigation = !!data.under_investigation;
+
         // The API returns a unified chronological array
         searchResults = data.transactions || [];
 
@@ -1311,9 +1316,6 @@ const executeSearchAjax = (filters, searchData) => {
     return text.toString().toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  // File numbers issued in the current year are brand-new consolidated/working
-  // files — they must never outrank the historical chain, so they always sort to
-  // the bottom of the timeline with a weight of 0.
   const CURRENT_FILE_YEAR = new Date().getFullYear();
   const isCurrentYearFileNumber = (item) => {
     const fileNo = String(getMappedValue(item, 'fileNumber') || '');
@@ -1321,12 +1323,29 @@ const executeSearchAjax = (filters, searchData) => {
     return match ? Number(match[0]) === CURRENT_FILE_YEAR : false;
   };
 
+  const isCurrentYearTransaction = (item) => {
+    const dates = [
+        item.reg_date, item.transaction_date, item.deeds_date, 
+        item.cofo_date, item.certificateDate, item.approval_date, item.date
+    ];
+    for (const txDate of dates) {
+      if (txDate && txDate !== '-') {
+        const d = new Date(txDate);
+        if (!isNaN(d.getTime()) && d.getFullYear() === CURRENT_FILE_YEAR) return true;
+        
+        const parts = String(txDate).split(/[\/\-]/);
+        if (parts.length === 3 && parts[2].length === 4 && Number(parts[2]) === CURRENT_FILE_YEAR) return true;
+      }
+    }
+    return false;
+  };
+
   // Rule B: transaction-type priority for Timeline sort order.
   // Priority group (always displayed first, in weight order): OP=10, TOT=9, RoFO=8.
   // CofO + all other instruments = 1 → sorted chronologically by reg date within tie.
   // Current-year file numbers are forced to weight 0 (sorted last).
   const recordPriorityWeight = (item) => {
-    if (isCurrentYearFileNumber(item)) return 0;
+    if (isCurrentYearFileNumber(item) || isCurrentYearTransaction(item)) return 0;
     const txType = canonicalWeightingInstrumentType(getMappedValue(item, 'transactionType'));
     if (txType === 'occupancy permit') return 10;
     if (txType === 'transfer of title') return 9;
@@ -1753,7 +1772,10 @@ const executeSearchAjax = (filters, searchData) => {
       data: window.__lsLastSearchData,
       success: function (data) {
         if (icon) icon.classList.remove('animate-spin');
-        
+
+        // Keep the DCIV investigation flag in sync on silent refresh
+        window._underInvestigation = !!data.under_investigation;
+
         const prevCount = searchResults.length;
         searchResults = data.transactions || [];
 
@@ -3537,8 +3559,43 @@ const executeSearchAjax = (filters, searchData) => {
     const mortgageCaveat = hasMortgage && !hasRelease;
     const isClear = hasCofo && !hasCaveat && !mortgageCaveat;
 
+    let baseText = 'Based on our available records, the title is free from encumbrances.';
+    if (hasCaveat && mortgageCaveat) {
+        baseText = 'This Property is Under an Active Mortgage and Caveat!!!';
+    } else if (hasCaveat) {
+        baseText = 'N.B. This Property is Under an Active Caveat!!!';
+    } else if (mortgageCaveat) {
+        baseText = 'This Property is Under an Active Mortgage !!!';
+    }
+
+    let noCofoBase = 'Based on our available records, the subject title is currently at the Letter of Grant stage, hence Certificate of Occupancy is yet to be issued. However the title is free from encumbrances.';
+    if (hasCaveat && mortgageCaveat) {
+        noCofoBase = 'Based on our available records, the subject title is currently at the Letter of Grant stage. This Property is Under an Active Mortgage and Caveat!!!';
+    } else if (hasCaveat) {
+        noCofoBase = 'Based on our available records, the subject title is currently at the Letter of Grant stage. N.B. This Property is Under an Active Caveat!!!';
+    } else if (mortgageCaveat) {
+        noCofoBase = 'Based on our available records, the subject title is currently at the Letter of Grant stage. This Property is Under an Active Mortgage !!!';
+    }
+
+    if (window._underInvestigation) {
+        const invText = 'This Property is under Investigation.';
+        // Show the dedicated investigation notice panel — keep remark fields clean.
+        const noticeSection = document.getElementById('investigation-notice-section');
+        const noticeText    = document.getElementById('investigation-notice-text');
+        if (noticeSection) noticeSection.classList.remove('hidden');
+        if (noticeText)    noticeText.textContent = invText;
+    } else {
+        const noticeSection = document.getElementById('investigation-notice-section');
+        if (noticeSection) noticeSection.classList.add('hidden');
+    }
+
+    document.getElementById('comment-encumbrance-text').value = baseText;
+    document.getElementById('comment-no_cofo-text').value = noCofoBase;
+
     // Both sections are always visible regardless of CofO/caveat state.
     // (Previously conditional; now enabled for all records per user requirement.)
+    // DCIV "Under Investigation" is surfaced directly in each row's Comments cell
+    // (set server-side), so no separate banner is rendered here.
   };
 
   document.querySelectorAll('.save-comment-btn').forEach(btn => {

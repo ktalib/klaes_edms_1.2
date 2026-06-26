@@ -23,6 +23,7 @@
   <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     /* ─── Design tokens ─────────────────────────────────────────── */
     :root {
@@ -268,7 +269,11 @@
     }
   </style>
 </head>
-<body>
+<body >
+
+  {{-- @if(optional(auth()->user())->username !== 'admin1') style="display:none" @endif --}}
+
+
 @include('mobile.partials.splash')
 @include('mobile.partials.preloader')
 
@@ -303,8 +308,17 @@
   .dig-viewer-bar .dig-vcount { font-size: 11px; opacity: .7; margin-top: 1px; }
   .dig-viewer-bar button { background: rgba(255,255,255,0.14); border: none; color: #fff; width: 38px; height: 38px; border-radius: 50%; font-size: 15px; cursor: pointer; flex-shrink: 0; }
   .dig-stage { flex: 1; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: pan-y; }
-  .dig-stage img { max-width: 100%; max-height: 100%; object-fit: contain; -webkit-user-drag: none; }
+  .dig-stage img { max-width: 100%; max-height: 100%; object-fit: contain; -webkit-user-drag: none; transition: transform .2s ease; }
   .dig-stage iframe { width: 100%; height: 100%; border: none; background: #fff; }
+  .dig-doc { width: 100%; height: 100%; display: flex; flex-direction: column; }
+  .dig-doc iframe { flex: 1; }
+  .dig-doc a { flex-shrink: 0; text-align: center; padding: 9px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(0,0,0,.6); text-decoration: none; }
+  /* PDF rendered to canvas via PDF.js — scrollable page stack overlaying the stage. */
+  .dig-pdf { position: absolute; inset: 0; z-index: 1; background: #0b0b0f; display: flex; flex-direction: column; }
+  .dig-pdf-pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px; }
+  .dig-pdf-pages canvas { max-width: 100%; height: auto; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+  .dig-pdf-fallback { flex-shrink: 0; text-align: center; padding: 9px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(0,0,0,.6); text-decoration: none; }
+  .dig-pdf-spin { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,.8); font-size: 26px; }
   .dig-stage .dig-spin { position: absolute; color: rgba(255,255,255,.8); font-size: 26px; }
   .dig-nav { position: absolute; top: 0; bottom: 0; width: 26%; display: flex; align-items: center; z-index: 2; border: none; background: transparent; color: rgba(255,255,255,.85); font-size: 20px; cursor: pointer; }
   .dig-nav:disabled { opacity: 0; pointer-events: none; }
@@ -325,6 +339,8 @@
       <div class="dig-vname" id="digVName">—</div>
       <div class="dig-vcount" id="digVCount">—</div>
     </div>
+    <button id="digRotateLeft" onclick="digRotate(-1)" title="Rotate left" style="display:none;"><i class="fas fa-rotate-left"></i></button>
+    <button id="digRotateRight" onclick="digRotate(1)" title="Rotate right" style="display:none;"><i class="fas fa-rotate-right"></i></button>
     <button onclick="closeDigViewer()" title="Close"><i class="fas fa-times"></i></button>
   </div>
   <div class="dig-stage" id="digStage">
@@ -368,9 +384,14 @@
       <div class="quick-action-btn" onclick="setActiveTab('scanner')">
         <div class="qa-ic"><i class="fas fa-qrcode"></i></div><span>Scan QR</span>
       </div>
+      <div class="quick-action-btn" onclick="setActiveTab('files')">
+        <div class="qa-ic"><i class="fas fa-magnifying-glass"></i></div><span>Quick Search</span>
+      </div>
+      {{-- DFR quick action commented out for now
       <div class="quick-action-btn red" onclick="window.location='{{ route('mobile.digital-request') }}'">
         <div class="qa-ic"><i class="fas fa-paper-plane"></i></div><span>Digital File Request</span>
       </div>
+      --}}
     </div>
 
     <div class="card panel">
@@ -655,8 +676,9 @@
     <button class="tab-item" data-tab="requests"><i class="fas fa-clipboard-list"></i><span>FSR</span></button>
     @endif
     <button class="tab-item" data-tab="scanner"><i class="fas fa-qrcode"></i><span>Scan</span></button>
+    {{-- DFR tab commented out for now
     <button class="tab-item" data-tab="dfr" onclick="window.location='{{ route('mobile.digital-request') }}'"><i class="fas fa-paper-plane"></i><span>DFR</span></button>
-   
+    --}}
     <button class="tab-item" data-tab="profile"><i class="fas fa-user"></i><span>Profile</span></button>
   </div>
 </div>
@@ -678,6 +700,15 @@ const IS_OFS = {{ ($isOfs ?? false) ? 'true' : 'false' }};
 const IS_SUPER_ADMIN = {{ auth()->user()->isSuperAdmin() ? 'true' : 'false' }};
 // Origin registries (+ short codes) for the File Search request dropdown.
 const REGISTRIES = @json($registries ?? []);
+// Registry theme colours — mirror Create File Tracker (?url=kangis / sltr / st /
+// cadastral). Drives the Registry (Origin) code badge + Send button colour.
+const REGISTRY_THEME = {
+  'KANGIS Registry':        '#ea580c', // orange  (KANGIS)
+  'SLTR Registry':          '#65a30d', // lime    (SLTR)
+  'ST Registry':            '#2563eb', // blue    (ST)
+  'Registry 1 - Cadastral': '#8B4513', // brown   (Cadastral)
+  'Registry 2 - Cadastral': '#8B4513',
+};
 // Requester cascade (mirrors Quick Search): Department → Office → Officer.
 @php
     $reqOffices = ($offices ?? collect())->map(fn ($o) => [
@@ -1187,13 +1218,29 @@ function toggleBlindSearch() {
   const on        = document.getElementById('fsBlindToggle')?.checked;
   const manual    = document.getElementById('fileSearchManual');
   const container = $('#fileSearchSelect').next('.select2-container');
+  const btn       = document.getElementById('fileSearchBtn');
   if (on) {
     container.hide();
     if (manual) { manual.style.display = ''; manual.focus(); }
+    // Blind mode → the search button becomes a red "send" (the request goes to SCB).
+    if (btn) { btn.innerHTML = '<i class="fas fa-paper-plane"></i>'; btn.style.background = '#ef4444'; btn.style.borderColor = '#ef4444'; }
   } else {
     container.show();
     if (manual) { manual.style.display = 'none'; manual.value = ''; }
+    if (btn) { btn.innerHTML = '<i class="fas fa-search"></i>'; btn.style.background = ''; btn.style.borderColor = ''; }
+    clearTimeout(blindAutoLoadTimer);
   }
+}
+
+// Blind mode: auto-load the result once the user finishes typing the file number,
+// so they don't have to click the button — same outcome as pressing search.
+let blindAutoLoadTimer = null;
+function onBlindManualInput() {
+  if (!document.getElementById('fsBlindToggle')?.checked) return;
+  const manual = document.getElementById('fileSearchManual');
+  clearTimeout(blindAutoLoadTimer);
+  if (!manual || !manual.value.trim()) return;
+  blindAutoLoadTimer = setTimeout(() => searchFile(), 700);
 }
 
 async function searchFile() {
@@ -1245,7 +1292,7 @@ async function searchFile() {
         // Origin Registry selector (mirrors Create File Tracker). The chosen registry's
         // short code is carried via the option's data attribute and shown live below.
         const regOpts = REGISTRIES.map(r =>
-          `<option value="${esc(r.name)}" data-code="${esc(r.registry_code || '')}">${esc(r.name)}</option>`
+          `<option value="${esc(r.name)}" data-code="${esc(r.registry_code || '')}"${d.origin_registry && r.name === d.origin_registry ? ' selected' : ''}>${esc(r.name)}</option>`
         ).join('');
         // Requester cascade options (Department → Office → Officer; mirrors Quick Search).
         const fieldSelCss = 'width:100%;height:42px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;padding:0 12px;font-size:13px;color:var(--text);';
@@ -1253,7 +1300,7 @@ async function searchFile() {
         const fieldLblCss = 'display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;';
         const deptOpts = REQ_DEPARTMENTS.map(dn => `<option value="${esc(dn)}">${esc(dn)}</option>`).join('');
         ofsRegistry = `
-          <div class="grid-2" style="margin-top:12px;">
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:12px;">
             <div>
               <label style="${fieldLblCss}"><i class="fas fa-building-columns" style="margin-right:5px;color:var(--primary);"></i>Registry (Origin) <span style="color:#ef4444;">*</span></label>
               <div style="display:flex;gap:8px;align-items:center;">
@@ -1274,7 +1321,7 @@ async function searchFile() {
               <input id="fsDeptOther" type="text" placeholder="Specify department *" style="${fieldInpCss}display:none;">
             </div>
           </div>
-          <div class="grid-2" style="margin-top:12px;">
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:12px;">
             <div>
               <label style="${fieldLblCss}"><i class="fas fa-briefcase" style="margin-right:5px;color:var(--primary);"></i>Requester Office <span style="color:#ef4444;">*</span></label>
               <select id="fsOffice" onchange="onFsOfficeChange()" disabled style="${fieldSelCss}">
@@ -1345,57 +1392,58 @@ async function searchFile() {
         const dTotal = (l, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;"><span style="font-size:12px;font-weight:800;">${esc(l)}</span><span style="font-size:13px;font-weight:800;text-align:right;">${has(v) ? '₦' + Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : DASH}</span></div>`;
         // Fee labels mirror the "Generate Bill Balance" wizard (Fees & Charges step).
         const FEE_KEYS = ['Registration Fees', 'Survey Fees', 'Preparation Fees', 'Compensation Fees', 'Development Charges'];
+        // Indexing bills (Bill Balance + Grant Rent amounts captured during File Indexing).
+        const ib = d.indexing_bills || {};
+        const indexingBillRows = `${dMoney('Bill Balance', ib.bill_balance)}${dMoney('Grant Rent', ib.grant_rent)}`;
         const billHtml = `
           <details style="margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;">
             <summary style="cursor:pointer;list-style:none;padding:8px 10px;font-size:11px;font-weight:800;color:var(--text);"><i class="fas fa-file-invoice-dollar" style="margin-right:6px;color:var(--primary);"></i>Bill Balance Details</summary>
             <div style="padding:0 10px 8px;">
-              <div style="margin-bottom:4px;">
-                <span style="font-size:11px;font-weight:800;">Bill Ref ID: ${bb.reference ? `<span style="color:#dc2626;">${esc(bb.reference)}</span>` : DASH}</span>
-              </div>
-              ${dRow('Area (sqm)', has(bb.area) ? Number(bb.area).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null)}
-              ${dMoney('Unit Cost', bb.unit_cost)}
-              ${dMoney('Rent / Annum', bb.amount)}
-              ${dRow('Rent Period', [bb.rent_from_year, bb.rent_to_year].filter(Boolean).join(' – '))}
-              ${dMoney('Cumulative Annual', bb.cumulative_annual)}
-              ${FEE_KEYS.map(k => dMoney(k, fees[k])).join('')}
-              ${dRow('Date of Expiry', bb.expiry)}
-              <div style="margin-top:6px;padding-top:4px;border-top:1px dashed var(--border);">
-                ${dTotal('Total Amount', bb.total_amount)}
-              </div>
+              ${dTotal('Balance', bb.balance_due)}
+              ${indexingBillRows}
             </div>
           </details>`;
         // Ownership history — a vertical timeline of holders derived from the
         // cross-table property timeline. Falls back to the two flat indexing
         // rows when the file has no transaction chain.
         const holderHistoryHtml = (() => {
-          const hist = Array.isArray(d.holder_history) ? d.holder_history : [];
+          let hist = Array.isArray(d.holder_history) ? d.holder_history : [];
+          // Hide Mortgage and Surrender And Release nodes from the holders list.
+          hist = hist.filter((h) => {
+            const t = String(h.transaction_type || '').toLowerCase();
+            return !t.includes('mortgage') && !t.includes('surrender');
+          });
           if (!hist.length) {
             return dRow('Original Holder', d.original_holder) + dRow('Current Holder', d.current_holder);
           }
-          // Render a single holder node. `last` controls the connecting rail.
+          // Shorten a transaction type to its instrument label (R of O, C of O,
+          // Assignment, Mortgage, …) for the compact ownership list.
+          const abbrevType = (t) => {
+            if (!t) return '';
+            const s = String(t).toLowerCase();
+            if (s.includes('right of occupancy')) return 'RofO';
+            if (s.includes('certificate of occupancy')) return 'CofO';
+            return String(t).replace(/^deed of\s+/i, '').trim();
+          };
+
+          // Render a single holder node: recipient name + role (Original/Current
+          // Holder) and the instrument in brackets. `last` controls the rail.
           const buildNode = (h, isFirst, isLast) => {
             const dot = isFirst ? '#059669' : (isLast ? 'var(--primary)' : 'var(--surface-3)');
             const dotIcon = (isFirst || isLast) ? '#fff' : 'var(--muted)';
             const line = !isLast ? `<span style="position:absolute;left:6px;top:17px;bottom:-2px;width:2px;background:var(--border);"></span>` : '';
-            const tag = isFirst
-              ? `<span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#059669;background:#05966915;border:1px solid #05966944;padding:1px 6px;border-radius:20px;white-space:nowrap;">Original</span>`
-              : (isLast ? `<span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--primary);background:var(--primary-soft);border:1px solid var(--primary);padding:1px 6px;border-radius:20px;white-space:nowrap;">Current</span>` : '');
-            const toLine = h.to ? `<div style="font-size:11px;font-weight:600;color:var(--text);margin-top:2px;"><i class="fas fa-arrow-right-long" style="font-size:9px;margin-right:4px;color:var(--primary);"></i>${esc(h.to)}</div>` : '';
+            const name = h.to || h.holder;
+            const roleLabel = isFirst ? 'Original Holder' : (isLast ? 'Current Holder' : 'Holder');
+            const roleColor = isFirst ? '#059669' : (isLast ? 'var(--primary)' : 'var(--muted)');
+            const type = abbrevType(h.transaction_type);
             return `
-              <div style="position:relative;padding-left:24px;padding-bottom:${isLast ? '0' : '14px'};">
+              <div style="position:relative;padding-left:24px;padding-bottom:${isLast ? '0' : '7px'};">
                 ${line}
                 <span style="position:absolute;left:0;top:1px;width:15px;height:15px;border-radius:50%;background:${dot};border:2px solid var(--border);display:flex;align-items:center;justify-content:center;">
                   <i class="fas fa-user" style="font-size:7px;color:${dotIcon};"></i>
                 </span>
-                <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap;">
-                  <span style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;">${esc(h.holder)}</span>
-                  ${tag}
-                </div>
-                ${toLine}
-                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px;">
-                  <span style="font-size:10px;font-weight:700;color:var(--text);background:var(--surface-2);border:1px solid var(--border);padding:1px 7px;border-radius:20px;">${esc(h.transaction_type)}</span>
-                  ${h.date ? `<span style="font-size:10px;color:var(--muted);"><i class="far fa-calendar" style="margin-right:3px;"></i>${esc(h.date)}</span>` : ''}
-                </div>
+                <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;">${esc(name)}</div>
+                <div style="font-size:11px;font-weight:600;color:${roleColor};margin-top:2px;">${roleLabel}${type ? ` <span style="color:var(--muted);font-weight:500;">(${esc(type)})</span>` : ''}</div>
               </div>`;
           };
 
@@ -1414,6 +1462,13 @@ async function searchFile() {
           </details>`;
       }
 
+      // When the file's origin registry is known, the status pill becomes
+      // "In {Registry}" tinted with that registry's colour (KANGIS / SLTR / ST /
+      // Cadastral); otherwise it shows the resolved location status.
+      const badge = d.origin_registry
+        ? { label: 'In ' + d.origin_registry, color: REGISTRY_THEME[d.origin_registry] || meta.color, icon: 'fa-folder-open' }
+        : meta;
+
       result.innerHTML = `
         <div class="result-card">
           <div style="background:var(--surface-2);padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;">
@@ -1421,7 +1476,7 @@ async function searchFile() {
               <div style="font-size:15px;font-weight:800;">${esc(d.file_number)}</div>
               <div style="font-size:12px;font-weight:600;color:var(--text);opacity:.82;margin-top:3px;">${esc(d.file_title||'—')}</div>
             </div>
-            <span style="white-space:nowrap;font-size:11px;font-weight:700;color:${meta.color};background:${meta.color}1a;border:1px solid ${meta.color}55;padding:5px 10px;border-radius:30px;"><i class="fas ${meta.icon}" style="margin-right:4px;"></i>${esc(meta.label)}</span>
+            <span style="white-space:nowrap;font-size:11px;font-weight:700;color:${badge.color};background:${badge.color}1a;border:1px solid ${badge.color}55;padding:5px 10px;border-radius:30px;"><i class="fas ${badge.icon}" style="margin-right:4px;"></i>${esc(badge.label)}</span>
           </div>
           <div style="padding:12px 16px;">
             ${Number(d.dciv_status) === 1 ? `
@@ -1431,6 +1486,10 @@ async function searchFile() {
                 ${d.dciv_fileno ? `<span style="font-size:11px;font-weight:700;color:#be123c;background:#ffe4e6;border:1px solid #fecdd3;padding:3px 9px;border-radius:30px;white-space:nowrap;">${esc(d.dciv_fileno)}</span>` : ''}
               </div>
               ${d.dciv_reason ? `<div style="font-size:11px;color:#9f1239;margin-top:6px;line-height:1.5;">${esc(d.dciv_reason)}</div>` : ''}
+            </div>` : ''}
+            ${d.duplicate_flag ? `
+            <div style="margin-bottom:12px;background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="font-size:13px;font-weight:800;color:${d.duplicate_flag.color};"><i class="fas fa-copy" style="margin-right:5px;"></i>${esc(d.duplicate_flag.label)}</span>
             </div>` : ''}
             ${holderBill}
             ${rowsHtml}
@@ -1442,8 +1501,14 @@ async function searchFile() {
             ${frShortcut}
           </div>
         </div>`;
-      // Load the File Digital Library (same source as the DFR preview) inline.
-      loadFsDigital(d.file_number);
+      // When the file's origin registry was auto-detected and the Send form is shown,
+      // sync the pre-selected Registry (Origin): set its code, theme its colour, enable
+      // Send and load the digital copy from that registry. Otherwise load the default lib.
+      if (d.origin_registry && document.getElementById('fsRegistry')) {
+        onFsRegistryChange();
+      } else {
+        loadFsDigital(d.file_number);
+      }
     } else {
       result.innerHTML = `<p style="color:#ef4444;font-size:12px;margin-top:6px;"><i class="fas fa-times-circle"></i> Could not resolve "<strong>${esc(val)}</strong>".</p>`;
     }
@@ -1451,14 +1516,14 @@ async function searchFile() {
     result.innerHTML = `<p style="color:#ef4444;font-size:12px;margin-top:6px;">Error: ${esc(e.message)}</p>`;
   }
 
-  btn.disabled = false; btn.innerHTML = '<i class="fas fa-search"></i>';
+  btn.disabled = false; btn.innerHTML = blind ? '<i class="fas fa-paper-plane"></i>' : '<i class="fas fa-search"></i>';
 }
 
 // ─── File Digital Library (cover card + gallery; shared source with DFR) ────
 const DIG_DIGITAL_URL  = '{{ route('digital-request.digital-files') }}';
 const DIG_REGISTRY_URL = '{{ route('digital-request.registry-files') }}';
 const DIG_IMG = ['jpg','jpeg','png','tif','tiff','gif','webp'];
-let digFiles = [], digIndex = 0, digStripBuilt = false;
+let digFiles = [], digIndex = 0, digStripBuilt = false, digRotation = 0;
 
 // Load the digital copy for a file. When a Registry (Origin) is selected, the
 // registry folder source (SLTR / Cadastral / KANGIS / Physical Planning) is
@@ -1538,6 +1603,8 @@ function openDigViewer(i) {
   renderDigViewer();
 }
 function closeDigViewer() {
+  pdfRenderToken++; // cancel any in-flight PDF render
+  removeDigPdf();
   document.getElementById('digViewer').classList.remove('open');
   document.getElementById('digStageInner').innerHTML = '';
   document.body.style.overflow = '';
@@ -1548,16 +1615,33 @@ function digPrev() { if (digIndex > 0) { digIndex--; renderDigViewer(); } }
 function renderDigViewer() {
   const f = digFiles[digIndex];
   if (!f) return;
+  pdfRenderToken++;   // cancel any in-flight PDF render
+  removeDigPdf();     // drop a PDF overlay left from the previous page
+  digRotation = 0;    // each page starts upright
+  const isImg = isImgFile(f);
+  // Rotate tools apply to images only.
+  document.getElementById('digRotateLeft').style.display  = isImg ? '' : 'none';
+  document.getElementById('digRotateRight').style.display = isImg ? '' : 'none';
   const stage = document.getElementById('digStageInner');
-  if (isImgFile(f)) {
+  if (isImg) {
     stage.innerHTML = `<i class="fas fa-spinner fa-spin dig-spin"></i>`;
     const img = new Image();
     img.alt = f.name;
-    img.onload = () => { stage.innerHTML = ''; stage.appendChild(img); };
+    img.onload = () => { stage.innerHTML = ''; stage.appendChild(img); applyImgRotation(); };
     img.onerror = () => { stage.innerHTML = `<div style="color:#fff;font-size:13px;">Could not load this page.</div>`; };
     img.src = f.url;
+  } else if ((f.ext || '').toLowerCase() === 'pdf') {
+    // Mobile/embedded browsers won't render a PDF in an <iframe>, so paint the
+    // pages to <canvas> with PDF.js instead. Each page is rendered in order into
+    // a scrollable stack overlaying the stage.
+    renderPdfToStage(f);
   } else {
-    stage.innerHTML = `<iframe src="${esc(f.url)}" title="${esc(f.name)}"></iframe>`;
+    // Other doc types embed in a frame; a fallback link covers browsers that
+    // won't render the format inline.
+    stage.innerHTML = `<div class="dig-doc">
+      <iframe src="${esc(f.url)}" title="${esc(f.name)}"></iframe>
+      <a href="${esc(f.url)}" target="_blank" rel="noopener"><i class="fas fa-external-link-alt" style="margin-right:5px;"></i>Open file in new tab</a>
+    </div>`;
   }
   document.getElementById('digVName').textContent = f.name;
   document.getElementById('digVCount').textContent = `Page ${digIndex + 1} of ${digFiles.length}`;
@@ -1584,11 +1668,91 @@ function buildDigStrip() {
 }
 function digGoto(i) { digIndex = Math.max(0, Math.min(i, digFiles.length - 1)); renderDigViewer(); }
 
+// Rotate the current image in 90° steps. When sideways (90°/270°) the natural
+// width/height caps are swapped so the rotated image still fits the stage.
+function digRotate(dir) {
+  digRotation = (((digRotation + (dir < 0 ? -90 : 90)) % 360) + 360) % 360;
+  applyImgRotation();
+}
+function applyImgRotation() {
+  const img = document.querySelector('#digStageInner img');
+  if (!img) return;
+  img.style.transformOrigin = 'center center';
+  img.style.transform = `rotate(${digRotation}deg)`;
+  if (digRotation % 180 === 0) {
+    img.style.maxWidth = '';
+    img.style.maxHeight = '';
+  } else {
+    const stage = document.getElementById('digStage');
+    img.style.maxWidth = stage.clientHeight + 'px';
+    img.style.maxHeight = stage.clientWidth + 'px';
+  }
+}
+
+// ── PDF rendering (PDF.js) ──────────────────────────────────────────────────
+// Embedded <iframe> PDFs render blank in mobile/in-app browsers, so paint the
+// pages to <canvas>. A bumping token cancels a render when the user navigates
+// to another page before this PDF finishes.
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+let pdfRenderToken = 0;
+function removeDigPdf() {
+  document.querySelectorAll('#digStage .dig-pdf').forEach(el => el.remove());
+}
+function pdfFallbackWrap(f) {
+  const wrap = document.createElement('div');
+  wrap.className = 'dig-pdf';
+  wrap.innerHTML = `<div class="dig-doc" style="flex:1;">`
+    + `<iframe src="${esc(f.url)}" title="${esc(f.name)}"></iframe>`
+    + `<a href="${esc(f.url)}" target="_blank" rel="noopener"><i class="fas fa-external-link-alt" style="margin-right:5px;"></i>Open PDF in new tab</a></div>`;
+  return wrap;
+}
+// Paint a PDF's pages to <canvas> as an overlay filling the stage. Returning to
+// another page (or closing) bumps pdfRenderToken, which cancels this render.
+async function renderPdfToStage(f) {
+  const token = ++pdfRenderToken;
+  const stage = document.getElementById('digStage');
+  removeDigPdf();
+  document.getElementById('digStageInner').innerHTML = '';
+  const overlay = document.createElement('div');
+  overlay.className = 'dig-pdf';
+  overlay.innerHTML = `<div class="dig-pdf-spin"><i class="fas fa-spinner fa-spin"></i></div>`;
+  stage.appendChild(overlay);
+  if (!window.pdfjsLib) { overlay.replaceWith(pdfFallbackWrap(f)); return; }
+  try {
+    const pdf = await pdfjsLib.getDocument({ url: f.url }).promise;
+    if (token !== pdfRenderToken) { overlay.remove(); return; }
+    const pages = document.createElement('div');
+    pages.className = 'dig-pdf-pages';
+    const link = document.createElement('a');
+    link.className = 'dig-pdf-fallback';
+    link.href = f.url; link.target = '_blank'; link.rel = 'noopener';
+    link.innerHTML = `<i class="fas fa-external-link-alt" style="margin-right:5px;"></i>Open PDF in new tab`;
+    overlay.innerHTML = '';
+    overlay.appendChild(pages); overlay.appendChild(link);
+    const scale = Math.min(2, (window.devicePixelRatio || 1) * 1.4);
+    for (let p = 1; p <= pdf.numPages; p++) {
+      if (token !== pdfRenderToken) return;
+      const page = await pdf.getPage(p);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width; canvas.height = viewport.height;
+      pages.appendChild(canvas);
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    }
+  } catch (e) {
+    if (token !== pdfRenderToken) { overlay.remove(); return; }
+    overlay.replaceWith(pdfFallbackWrap(f));
+  }
+}
+
 document.addEventListener('keydown', (e) => {
   if (!document.getElementById('digViewer').classList.contains('open')) return;
   if (e.key === 'Escape') closeDigViewer();
   else if (e.key === 'ArrowRight') digNext();
   else if (e.key === 'ArrowLeft') digPrev();
+  else if (e.key === 'r' || e.key === 'R') digRotate(e.shiftKey ? -1 : 1);
 });
 (function () {
   const stage = document.getElementById('digStage');
@@ -1622,11 +1786,30 @@ function onFsRegistryChange() {
     btn.style.cursor  = ok ? 'pointer' : 'not-allowed';
   }
 
+  // Theme the registry code badge + Send button to the chosen registry's colour
+  // (KANGIS / SLTR / ST / Cadastral — same palette as Create File Tracker).
+  applyFsRegistryTheme(REGISTRY_THEME[(sel.value || '').trim()] || null);
+
   // Reload the digital copy from the selected registry's folder (falls back to
   // the FileIndexing library when that registry has no folder for this file).
   if (lastFileSearch && lastFileSearch.file_number) {
     loadFsDigital(lastFileSearch.file_number, (sel.value || '').trim() || null);
   }
+}
+
+// Colour the Registry (Origin) code badge, the select border and the Send button
+// to a registry's theme colour. Passing null restores the default theme.
+function applyFsRegistryTheme(color) {
+  const code = document.getElementById('fsRegistryCode');
+  const sel  = document.getElementById('fsRegistry');
+  const btn  = document.getElementById('fsSendBtn');
+  if (code) {
+    code.style.color       = color || 'var(--primary)';
+    code.style.borderColor = color || 'var(--primary)';
+    code.style.background   = color ? color + '1a' : 'var(--primary-soft)';
+  }
+  if (sel)  sel.style.borderColor = color || 'var(--border-strong)';
+  if (btn && color) { btn.style.background = color; btn.style.backgroundImage = 'none'; }
 }
 
 // Requester cascade: Department → Office → Officer (mirrors Quick Search).
@@ -1869,11 +2052,14 @@ function frMatches(fr) {
     .some(v => (v || '').toString().toLowerCase().includes(q));
 }
 
+// Tab badges show the TRUE total from the API (counted before the display limit),
+// falling back to the loaded list length when a total isn't supplied.
+let frOpenTotal = null, frLogTotal = null;
 function updateFrCounts() {
   const openEl = document.getElementById('frCountOpen');
   const logEl  = document.getElementById('frCountLog');
-  if (openEl) openEl.textContent = (frOpenList || []).length;
-  if (logEl)  logEl.textContent  = (frLogList  || []).length;
+  if (openEl) openEl.textContent = frOpenTotal != null ? frOpenTotal : (frOpenList || []).length;
+  if (logEl)  logEl.textContent  = frLogTotal  != null ? frLogTotal  : (frLogList  || []).length;
 }
 
 // Re-render whichever tab is active (used by the search box).
@@ -1897,6 +2083,7 @@ async function loadFsrLog() {
   try {
     const res = await api(`${MOB_BASE}/file-requests/log`);
     frLogList = (res && res.success) ? (res.data || []) : [];
+    frLogTotal = (res && res.success && res.total != null) ? res.total : frLogList.length;
     updateFrCounts();
     renderFsrLog();
   } catch(e) {
@@ -1989,6 +2176,8 @@ async function loadFileRequests() {
     ]);
     frOpenList = (res && res.success) ? (res.data || []) : [];
     frLogList  = (logRes && logRes.success) ? (logRes.data || []) : [];
+    frOpenTotal = (res && res.success && res.total != null) ? res.total : frOpenList.length;
+    frLogTotal  = (logRes && logRes.success && logRes.total != null) ? logRes.total : frLogList.length;
     openFileRequests = frOpenList;  // keep the search shortcut in sync
     updateFrCounts();
     renderFileRequests();
@@ -2141,8 +2330,10 @@ $('#fileSearchSelect').select2({
   },
 });
 $('#fileSearchSelect').on('select2:select', searchFile);
-// Blind request: typed file number — Enter runs the lookup.
-document.getElementById('fileSearchManual')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchFile(); } });
+// Blind request: typed file number — Enter runs the lookup; pausing after typing
+// auto-loads the result so the user doesn't have to click the button.
+document.getElementById('fileSearchManual')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(blindAutoLoadTimer); searchFile(); } });
+document.getElementById('fileSearchManual')?.addEventListener('input', onBlindManualInput);
 
 document.getElementById('startCameraBtn')?.addEventListener('click', startScanner);
 document.getElementById('stopCameraBtn')?.addEventListener('click', stopScanner);

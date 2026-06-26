@@ -207,7 +207,7 @@ window.VFC = {
                         $subProjSelect.append(`<option value="${sp.id}">${sp.name}</option>`);
                     });
                     $subProjSection.removeClass('hidden');
-                    $subProjSelect.prop('required', true);
+                    $subProjSelect.prop('required', false);
                 } else {
                     $subProjSection.addClass('hidden');
                     $subProjSelect.prop('required', false).html('<option value="">No Sub-Projects</option>');
@@ -290,10 +290,12 @@ window.VFC = {
                 if (isOther) $('#compensated_items_other').addClass('hidden');
             }
             self.updateCompensatedItemsValue();
+            self.calculateCompensation();
         });
 
         $(document).on('input', '.item-amount-input', function () {
             self.updateCompensatedItemsValue();
+            self.calculateCompensation();
         });
 
         $(document).on('change', '.structure-type-dropdown', function () {
@@ -566,12 +568,19 @@ window.VFC = {
             });
         });
 
-        // 3. Get selected compensated items and their amounts
+        // 3. Get selected compensated items, their measurements and amounts
         $('.item-checkbox:checked').each(function () {
             const itemName = $(this).val();
-            const $wrapper = $(this).closest('.item-container').find('.item-amount-wrapper');
-            const amount = parseFloat($wrapper.find('.item-amount-input').val()) || 0;
-            data.items.push({ name: itemName, amount: amount });
+            const $container = $(this).closest('.item-container');
+            const amount = parseFloat($container.find('.item-amount-wrapper .item-amount-input').val()) || 0;
+            // Measurements used to derive the amount (kept so the sheet can show
+            // the real area/volume instead of falling back to "Allow").
+            const length  = parseFloat($container.find('.sub-length').val()) || 0;
+            const width   = parseFloat($container.find('.sub-width').val()) || 0;
+            const height  = parseFloat($container.find('.sub-height').val()) || 0;
+            const measure = parseFloat($container.find('.sub-volume-val').val()) || 0; // area (m²) or volume (m³)
+            const rate    = parseFloat($container.find('.sub-rate').val()) || 0;
+            data.items.push({ name: itemName, amount, length, width, height, measure, rate });
         });
 
         $('#compensated_items_val').val(JSON.stringify(data));
@@ -644,6 +653,16 @@ window.VFC = {
                 weightedRateSum += area * rate;
             }
         });
+
+        // Compensated items carry value too (e.g. fences/walls on an "Allow" building
+        // with no area/rate). The record's compensation amount = buildings + items,
+        // matching how the batch report derives the building portion (amount − items).
+        let itemsTotal = 0;
+        $('.item-checkbox:checked').each(function () {
+            const $wrapper = $(this).closest('.item-container').find('.item-amount-wrapper');
+            itemsTotal += parseFloat($wrapper.find('.item-amount-input').val()) || 0;
+        });
+        totalComp += itemsTotal;
 
         // Compute average rate
         let averageRate = 0;
@@ -989,6 +1008,25 @@ window.VFC = {
         }
     },
 
+    // The true compensation total for a record = sum of building amounts + sum of
+    // compensated-item amounts, derived from the compensated_items JSON. This is
+    // robust to a null/legacy compensation_amount (e.g. an "Allow" building whose
+    // value sits entirely in the items), so totals always count. Falls back to the
+    // stored compensation_amount when there is no parseable items JSON.
+    computeRecordTotal: function (record) {
+        if (record && record.compensated_items) {
+            let parsed = null;
+            try { parsed = JSON.parse(record.compensated_items); } catch (e) {}
+            if (parsed && (parsed.buildings || parsed.items)) {
+                let sum = 0;
+                (parsed.buildings || []).forEach(b => { sum += parseFloat(b.amount) || 0; });
+                (parsed.items || []).forEach(i => { sum += parseFloat(i.amount) || 0; });
+                return sum;
+            }
+        }
+        return parseFloat(record && record.compensation_amount) || 0;
+    },
+
     openRecordsModal: function (projectId) {
         // Handle potential type mismatch (integer vs string) or null/empty
         const targetId = (projectId === null || projectId === undefined || projectId === '') ? "" : projectId;
@@ -1030,7 +1068,7 @@ window.VFC = {
                     };
                 }
                 subProjectGroups[subId].records.push(record);
-                subProjectGroups[subId].total += parseFloat(record.compensation_amount) || 0;
+                subProjectGroups[subId].total += this.computeRecordTotal(record);
 
                 // Parse items for summary
                 if (record.compensated_items) {
@@ -1108,7 +1146,7 @@ window.VFC = {
                             stage: record.completion_stage || '',
                             area:  parseFloat(record.area_covered)  || 0,
                             rate:  parseFloat(record.rate_of_cost)  || 0,
-                            amount: parseFloat(record.compensation_amount) - subItems.reduce((a, i) => a + i.amount, 0)
+                            amount: (parseFloat(record.compensation_amount) || 0) - subItems.reduce((a, i) => a + (parseFloat(i.amount) || 0), 0)
                         }];
                     }
 
@@ -1184,7 +1222,7 @@ window.VFC = {
                         html += `
                             <tr class="bg-slate-50/30">
                                 <td colspan="4" class="px-2 py-1.5 text-[9px] text-right font-bold text-slate-400 uppercase tracking-tighter">Record Total:</td>
-                                <td class="px-2 py-1.5 text-[10px] text-right font-black text-slate-700 border-t border-slate-200 font-mono">₦${parseFloat(record.compensation_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                <td class="px-2 py-1.5 text-[10px] text-right font-black text-slate-700 border-t border-slate-200 font-mono">₦${this.computeRecordTotal(record).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                             </tr>
                         `;
                     }

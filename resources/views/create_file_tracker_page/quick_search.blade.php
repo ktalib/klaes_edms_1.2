@@ -15,6 +15,8 @@
             $isStContext = $urlCtx === 'st';
             $isSltrContext = $urlCtx === 'sltr';
             $isSurveyContext = $urlCtx === 'survey';
+            $isKangisContext = $urlCtx === 'kangis';
+            $isCadastralContext = $urlCtx === 'cadastral';
             if ($isStContext) {
                 $headerGradient = 'bg-gradient-to-r from-blue-700 via-blue-600 to-blue-800';
                 $headerStyle = 'background-image: linear-gradient(to right, #1d4ed8, #2563eb, #1e40af);';
@@ -27,6 +29,14 @@
                 $headerGradient = 'bg-gradient-to-r from-pink-600 via-pink-500 to-pink-700';
                 $headerStyle = 'background-image: linear-gradient(to right, #db2777, #ec4899, #be185d);';
                 $dotClass = 'text-pink-100';
+            } elseif ($isKangisContext) {
+                $headerGradient = 'bg-gradient-to-r from-yellow-600 via-amber-500 to-yellow-600';
+                $headerStyle = 'background-image: linear-gradient(to right, #ca8a04, #f59e0b, #ca8a04);';
+                $dotClass = 'text-yellow-100';
+            } elseif ($isCadastralContext) {
+                $headerGradient = 'bg-gradient-to-r from-rose-700 via-rose-600 to-rose-800';
+                $headerStyle = 'background-image: linear-gradient(to right, #be123c, #e11d48, #9f1239);';
+                $dotClass = 'text-rose-100';
             } else {
                 $headerGradient = 'bg-gradient-to-r from-red-700 via-red-600 to-red-800';
                 $headerStyle = '';
@@ -189,6 +199,7 @@
 @push('scripts')
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.1/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
     @include('components.global-fileno-modal')
     @include('create_file_tracker_page.partials.fr-modal')
@@ -211,7 +222,11 @@
         const SLIP_URL    = "{{ route('create-file-tracker.slip') }}";
         const FR_URL      = "{{ route('create-file-tracker.file-request') }}";
         const UPDATE_URL  = "{{ route('create-file-tracker.quick-search.update-status') }}";
+        const REDIRECT_LAND_URL = "{{ route('create-file-tracker.quick-search.redirect-director-land') }}";
         const FEEDBACK_URL= "{{ route('create-file-tracker.quick-search.scb-feedback') }}";
+        // Module context (?url=kangis|sltr|cadastral|st|…) scopes the report, SCB
+        // Feedback queue and File Search History to that registry's files only.
+        const URL_CTX     = @json(request('url'));
         const CSRF        = "{{ csrf_token() }}";
         const IS_SUPER_ADMIN = @json(auth()->user()->isSuperAdmin());
         // SCB Monitors receive File Search Requests — they don't raise them, so the
@@ -309,17 +324,60 @@
                     <i data-lucide="printer" class="h-4 w-4"></i> ${labels[d.slip_variant] || 'Print Slip'}</a>`);
             }
             if (d.can_send_fr && CAN_SEND_FR) {
-                const label = d.is_blind ? 'Send Blind Request to SCB Monitor' : 'Send File Search Request to SCB Monitor';
-                const frCls = d.is_blind ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700';
-                out.push(`<button type="button" data-fr class="inline-flex items-center gap-2 rounded-lg ${frCls} px-4 py-2 text-sm font-semibold text-white">
-                    <i data-lucide="send" class="h-4 w-4"></i> ${label}</button>`);
+                if (d.duplicate_flag) {
+                    // Files registered in the duplicate_fileno table must NOT be blind-searched
+                    // by the SCB — they are re-directed to the Director Land (Land Department) to
+                    // resolve the duplication.
+                    out.push(`<button type="button" data-redirect-land class="inline-flex items-center gap-2 rounded-lg bg-purple-600 hover:bg-purple-700 px-4 py-2 text-sm font-semibold text-white">
+                        <i data-lucide="user-check" class="h-4 w-4"></i> Re-direct To Director Land (Land Department)</button>`);
+                } else {
+                    const label = d.is_blind ? 'Send Blind Request to SCB Monitor' : 'Send File Search Request to SCB Monitor';
+                    const frCls = d.is_blind ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700';
+                    out.push(`<button type="button" data-fr class="inline-flex items-center gap-2 rounded-lg ${frCls} px-4 py-2 text-sm font-semibold text-white">
+                        <i data-lucide="send" class="h-4 w-4"></i> ${label}</button>`);
+                }
             }
             return out.join('');
+        }
+
+        // In-transit files: a one-line note under the actions naming the Receiving Officer
+        // (and their department) currently holding the file — mirrors the mobile redirect note.
+        function redirectSubline(d) {
+            if (d.status !== 'IN_TRANSIT' || !d.can_redirect) return '';
+            const officer = (d.receiving_officer_name || '').trim();
+            let dept = (d.receiving_department || '').trim();
+            if (dept && !/department$/i.test(dept)) dept = dept + ' Department';
+            if (officer) {
+                const deptPart = (dept && dept.toLowerCase() !== officer.toLowerCase()) ? ` (${esc(dept)})` : '';
+                return `<p class="px-6 pb-4 -mt-1 text-xs text-gray-500">Receiving Officer: <strong class="text-gray-700">${esc(officer)}</strong>${deptPart} · currently holding the file.</p>`;
+            }
+            const office = d.current_location;
+            if (office) {
+                return `<p class="px-6 pb-4 -mt-1 text-xs text-gray-500">This request will be sent to <strong class="text-gray-700">${esc(office)}</strong>, which currently holds the file.</p>`;
+            }
+            return '';
+        }
+
+        // Map a registry name to its Create File Tracker module (?url=…) so the Log
+        // File button lands on the registry-appropriate page (KANGIS → ?url=kangis,
+        // Cadastral → ?url=cadastral, …). Land/Deeds registries use the base page.
+        function registryToModule(registry) {
+            const r = String(registry || '').toLowerCase();
+            if (r.includes('kangis'))  return 'kangis';
+            if (r.includes('sltr'))    return 'sltr';
+            if (r.includes('cadastr')) return 'cadastral';
+            if (r.includes('dciv'))    return 'dciv';
+            if (r.includes('survey'))  return 'survey';
+            if (r.includes('sit') || r === 'st registry') return 'st';
+            return ''; // Land / Deeds / other → base Create File Tracker page
         }
 
         function logFile(d) {
             const params = new URLSearchParams({ file_number: d.file_number || '' });
             if (d.file_title) params.set('file_title', d.file_title);
+            // Land the user on the page that matches the file's registry.
+            const mod = registryToModule(d.registry);
+            if (mod) params.set('url', mod);
             // Backfill the requester details captured on the file request into the
             // Create File Tracker form.
             if (d.receiving_officer)     params.set('req_officer', d.receiving_officer);
@@ -338,33 +396,42 @@
             // property timeline. Falls back to the two flat indexing rows when the
             // file has no transaction history.
             const holderHistoryHtml = (() => {
-                const hist = Array.isArray(d.holder_history) ? d.holder_history : [];
+                let hist = Array.isArray(d.holder_history) ? d.holder_history : [];
+                // Hide Mortgage and Surrender And Release nodes from the holders list.
+                hist = hist.filter((h) => {
+                    const t = String(h.transaction_type || '').toLowerCase();
+                    return !t.includes('mortgage') && !t.includes('surrender');
+                });
                 if (!hist.length) {
                     return row('Original Holder', d.original_holder) + row('Current Holder', d.current_holder);
                 }
+                // Shorten a transaction type to its instrument label (R of O, C of O,
+                // Assignment, Mortgage, …) for the compact ownership list.
+                const abbrevType = (t) => {
+                    if (!t) return '';
+                    const s = String(t).toLowerCase();
+                    if (s.includes('right of occupancy')) return 'R of O';
+                    if (s.includes('certificate of occupancy')) return 'C of O';
+                    return String(t).replace(/^deed of\s+/i, '').trim();
+                };
                 const nodes = hist.map((h, i) => {
                     const isFirst = i === 0, isLast = i === hist.length - 1;
                     const dot = isFirst ? 'bg-emerald-600' : (isLast ? 'bg-indigo-600' : 'bg-gray-300');
                     const dotIcon = (isFirst || isLast) ? 'text-white' : 'text-gray-500';
                     const line = !isLast ? `<span class="absolute left-[6px] top-[18px] -bottom-0.5 w-0.5 bg-gray-200"></span>` : '';
-                    const tag = isFirst
-                        ? `<span class="text-[9px] font-extrabold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-px rounded-full whitespace-nowrap">Original</span>`
-                        : (isLast ? `<span class="text-[9px] font-extrabold uppercase tracking-wide text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-px rounded-full whitespace-nowrap">Current</span>` : '');
-                    const toLine = h.to ? `<div class="text-[11px] font-semibold text-gray-700 mt-0.5"><i data-lucide="arrow-right" class="inline h-3 w-3 mr-1 text-indigo-500 align-text-bottom"></i>${esc(h.to)}</div>` : '';
+                    const name = h.to || h.holder;
+                    const roleLabel = isFirst ? 'Original Holder' : (isLast ? 'Current Holder' : 'Holder');
+                    const roleColor = isFirst ? 'text-emerald-700' : (isLast ? 'text-indigo-700' : 'text-gray-500');
+                    const type = abbrevType(h.transaction_type);
                     return `
-                        <div class="relative pl-6 ${isLast ? '' : 'pb-3.5'}">
+                        <div class="relative pl-6 ${isLast ? '' : 'pb-2'}">
                             ${line}
                             <span class="absolute left-0 top-px h-[15px] w-[15px] rounded-full ${dot} border-2 border-gray-200 flex items-center justify-center">
                                 <i data-lucide="user" class="h-2 w-2 ${dotIcon}"></i>
                             </span>
-                            <div class="flex justify-between gap-2 items-baseline flex-wrap">
-                                <span class="text-[13px] font-bold text-gray-900 leading-tight">${esc(h.holder)}</span>
-                                ${tag}
-                            </div>
-                            ${toLine}
-                            <div class="flex gap-1.5 items-center flex-wrap mt-1">
-                                <span class="text-[10px] font-bold text-gray-700 bg-gray-100 border border-gray-200 px-1.5 py-px rounded-full">${esc(h.transaction_type)}</span>
-                                ${h.date ? `<span class="text-[10px] text-gray-500"><i data-lucide="calendar" class="inline h-2.5 w-2.5 mr-1 align-text-bottom"></i>${esc(h.date)}</span>` : ''}
+                            <div class="flex items-baseline gap-2 flex-wrap">
+                                <span class="text-[13px] font-bold text-gray-900 leading-tight">${esc(name)}</span>
+                                <span class="text-[11px] font-semibold ${roleColor}">${roleLabel}${type ? ` <span class="text-gray-400 font-medium">(${esc(type)})</span>` : ''}</span>
                             </div>
                         </div>`;
                 }).join('');
@@ -385,6 +452,12 @@
 </span>
                     </div>
                     <div class="px-6 py-3">
+                        ${d.duplicate_flag ? `
+                        <div class="mb-3 rounded-lg px-4 py-3 flex items-center gap-2" style="background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;">
+                            <i data-lucide="copy" class="h-4 w-4 shrink-0" style="color:${d.duplicate_flag.color};"></i>
+                            <span class="text-sm font-bold" style="color:${d.duplicate_flag.color};">${esc(d.duplicate_flag.label)}</span>
+                            ${d.duplicate_flag.comment ? `<span class="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style="color:${d.duplicate_flag.color};background:${d.duplicate_flag.color}1a;">${esc(d.duplicate_flag.comment)}</span>` : ''}
+                        </div>` : ''}
                         ${Number(d.dciv_status) === 1 ? `
                         <div class="mb-3 rounded-lg bg-rose-50 border border-rose-200 px-4 py-3">
                             <div class="flex items-center gap-2">
@@ -415,6 +488,11 @@
                                 <div class="mt-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
                                     <span class="text-xs font-bold text-gray-700">Bill Ref ID: <span class="text-gray-400">—</span></span>
                                 </div>`}
+                                ${(d.indexing_bills && (d.indexing_bills.bill_balance != null || d.indexing_bills.grant_rent != null)) ? `
+                                <div class="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                                    ${money('Bill Balance', d.indexing_bills.bill_balance)}
+                                    ${money('Grant Rent', d.indexing_bills.grant_rent)}
+                                </div>` : ''}
                             </div>
                         </details>
                         ${row('Registry', d.registry)}
@@ -450,7 +528,7 @@
                             </div>
                         </details>
                     </div>
-                    ${(d.can_send_fr && CAN_SEND_FR) ? `
+                    ${(d.can_send_fr && CAN_SEND_FR && !d.duplicate_flag) ? `
                     <div class="px-6 pt-4 border-t border-gray-100">
                         <div class="text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">Requester</div>
                         <div class="mb-3">
@@ -462,7 +540,6 @@
                                 </select>
                                 <span data-fr-registry-code class="inline-flex items-center justify-center min-w-[56px] rounded-lg bg-indigo-50 border border-indigo-100 px-2 py-2 text-xs font-bold text-indigo-700">—</span>
                             </div>
-                            <div data-fr-registry-preview class="mt-2"></div>
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <div>
@@ -507,22 +584,31 @@
                             </div>
                         </div>
                         <p class="mt-2 text-[11px] text-gray-400">The file is logged back to whoever is honored first by seniority.</p>
+                        <div data-fr-registry-preview class="mt-3"></div>
                     </div>` : ''}
-                    <div class="px-6 py-4 ${d.can_send_fr ? '' : 'border-t border-gray-100'} flex flex-wrap gap-2">${actionButtons(d)}</div>
+                    <div id="qs-fsDigital" class="px-6 pt-4 border-t border-gray-100"></div>
+                    <div class="px-6 py-4 flex flex-wrap gap-2">${actionButtons(d)}</div>
+                    ${redirectSubline(d)}
                 </div>`;
             result.classList.remove('hidden');
 
-            if (d.can_send_fr) initRequesterCascade(d);
+            if (d.can_send_fr && !d.duplicate_flag) initRequesterCascade(d);
 
             const frBtn = result.querySelector('[data-fr]');
             if (frBtn) frBtn.addEventListener('click', () => sendFR(d, frBtn));
             const redirectBtn = result.querySelector('[data-redirect]');
             if (redirectBtn) redirectBtn.addEventListener('click', () => sendRedirect(d, redirectBtn));
+            const redirectLandBtn = result.querySelector('[data-redirect-land]');
+            if (redirectLandBtn) redirectLandBtn.addEventListener('click', () => sendRedirectToDirectorLand(d, redirectLandBtn));
             const logBtn = result.querySelector('[data-log]');
             if (logBtn) logBtn.addEventListener('click', () => logFile(d));
             const saveBtn = result.querySelector('[data-us-save]');
             if (saveBtn) saveBtn.addEventListener('click', () => updateStatus(d, result.querySelector('[data-us-status]').value, result.querySelector('[data-us-loc]').value, saveBtn));
             if (window.lucide) window.lucide.createIcons();
+
+            // Load the File Digital Library (same FileIndexing source as the DFR / mobile
+            // File Search preview) inline beneath the location details.
+            loadFsDigital(d.file_number);
 
             // File already has an open request → surface the duplicate prompt immediately
             // (instead of waiting for the user to fill the form and click Send).
@@ -803,11 +889,12 @@
                     return;
                 }
                 const thumbs = files.map((f, i) => {
-                    const isImg = REG_IMG_EXT.includes((f.ext || '').toLowerCase());
+                    const isImg = qsIsImg(f);
+                    const isPdf = (f.ext || '').toLowerCase() === 'pdf';
                     const inner = isImg
                         ? `<img src="${esc(f.url)}" alt="${esc(f.name)}" loading="lazy" class="h-16 w-16 object-cover rounded-md border border-gray-200 group-hover:ring-2 group-hover:ring-indigo-400">`
-                        : `<span class="flex h-16 w-16 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-gray-500"><i data-lucide="file-text" class="h-6 w-6"></i></span>`;
-                    return `<a href="${esc(f.url)}" target="_blank" rel="noopener" class="group relative" title="${esc(f.name)}${f.category ? ' · ' + esc(f.category) : ''}">${inner}</a>`;
+                        : `<span class="flex h-16 w-16 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-gray-500 group-hover:ring-2 group-hover:ring-indigo-400"><i data-lucide="${isPdf ? 'file-text' : 'file'}" class="h-6 w-6"></i></span>`;
+                    return `<button type="button" data-reg-i="${i}" class="group relative cursor-pointer" title="${esc(f.name)}${f.category ? ' · ' + esc(f.category) : ''}">${inner}</button>`;
                 }).join('');
                 box.innerHTML = `
                     <div class="rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-2.5">
@@ -816,11 +903,292 @@
                         </div>
                         <div class="flex flex-wrap gap-2">${thumbs}</div>
                     </div>`;
+                // Open the registry pages in the same in-page lightbox (images + PDFs)
+                // rather than a new browser tab.
+                box.querySelectorAll('[data-reg-i]').forEach(el =>
+                    el.addEventListener('click', () => qsOpenDig(files, parseInt(el.dataset.regI, 10))));
                 if (window.lucide) window.lucide.createIcons();
             } catch (e) {
                 box.innerHTML = `<div class="text-[11px] text-red-600">Could not load the registry digital copy.</div>`;
             }
         }
+
+        // ── File Digital Library (cover card + lightbox; FileIndexing source) ─────
+        // Mirrors the mobile File Search / DFR preview: shows the scanned pages held
+        // for this file number in the digital library, with a full-screen viewer.
+        const DIGITAL_FILES_URL = "{{ route('digital-request.digital-files') }}";
+        let qsDigFiles = [], qsDigIndex = 0, qsDigStripBuilt = false;
+        // The list currently shown in the lightbox. May be the File Digital Library
+        // (qsDigFiles) or a registry digital copy — both share the same viewer so PDFs
+        // and images open inline in the modal instead of a new browser tab.
+        let qsViewFiles = [];
+        let qsDigRotation = 0, qsPdfToken = 0;
+        const qsIsImg = f => REG_IMG_EXT.includes((f.ext || '').toLowerCase());
+
+        async function loadFsDigital(fileNo) {
+            const box = document.getElementById('qs-fsDigital');
+            if (!box) return;
+            box.innerHTML = `<div class="flex items-center gap-2 text-[11px] text-gray-400"><i data-lucide="loader" class="h-3.5 w-3.5 animate-spin"></i> Checking the digital library…</div>`;
+            if (window.lucide) window.lucide.createIcons();
+            try {
+                const res = await fetch(DIGITAL_FILES_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type':'application/json', 'X-CSRF-TOKEN':CSRF, 'Accept':'application/json' },
+                    body: JSON.stringify({ file_no: fileNo }),
+                });
+                const json = await res.json();
+                let files = (json && json.available && Array.isArray(json.files)) ? json.files : [];
+                if (files.length) files = await qsPruneMissing(files);
+                qsDigFiles = files;
+                renderFsDigital();
+            } catch (e) {
+                qsDigFiles = [];
+                box.innerHTML = `<div class="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-[11px] text-gray-500"><i data-lucide="folder-x" class="h-3.5 w-3.5"></i> Could not load the digital file.</div>`;
+                if (window.lucide) window.lucide.createIcons();
+            }
+        }
+
+        // Drop pages whose soft copy is missing — only on a definitive 404 (fail open).
+        async function qsPruneMissing(files) {
+            const present = new Array(files.length).fill(true);
+            let i = 0;
+            const worker = async () => {
+                while (i < files.length) {
+                    const idx = i++;
+                    try { const r = await fetch(files[idx].url, { method: 'HEAD' }); if (r.status === 404) present[idx] = false; }
+                    catch (e) {}
+                }
+            };
+            await Promise.all(Array.from({ length: Math.min(8, files.length) }, worker));
+            return files.filter((_, idx) => present[idx]);
+        }
+
+        function renderFsDigital() {
+            qsDigStripBuilt = false;
+            const box = document.getElementById('qs-fsDigital');
+            if (!box) return;
+            if (!qsDigFiles.length) {
+                // No library copy → render nothing. The registry-based preview below the
+                // Registry (Origin) dropdown already covers the "not found" message.
+                box.innerHTML = '';
+                box.classList.add('hidden');
+                return;
+            }
+            box.classList.remove('hidden');
+            const cover = qsDigFiles[0];
+            const n = qsDigFiles.length;
+            const coverInner = qsIsImg(cover)
+                ? `<img src="${esc(cover.url)}" alt="cover" loading="lazy" class="h-full w-full object-cover">`
+                : `<i data-lucide="file-text" class="h-7 w-7 text-gray-400"></i>`;
+            box.innerHTML = `
+                <button type="button" data-dig-open class="group w-full flex items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 px-3 py-2.5 text-left hover:bg-indigo-50 transition">
+                    <span class="h-14 w-14 shrink-0 rounded-lg overflow-hidden border border-indigo-200 bg-white flex items-center justify-center">${coverInner}</span>
+                    <span class="min-w-0 flex-1">
+                        <span class="flex items-center gap-1.5 text-[12px] font-bold text-indigo-700"><i data-lucide="images" class="h-3.5 w-3.5"></i> File Digital Library</span>
+                        <span class="block text-[11px] text-gray-500 mt-0.5">${n} page${n > 1 ? 's' : ''} in the digital library</span>
+                        <span class="block text-[11px] font-semibold text-indigo-600 mt-0.5"><i data-lucide="expand" class="inline h-3 w-3 mr-1 align-text-bottom"></i>Click to open gallery</span>
+                    </span>
+                    <i data-lucide="chevron-right" class="h-4 w-4 text-indigo-400 group-hover:translate-x-0.5 transition"></i>
+                </button>`;
+            const openBtn = box.querySelector('[data-dig-open]');
+            if (openBtn) openBtn.addEventListener('click', () => qsOpenDig(qsDigFiles, 0));
+            if (window.lucide) window.lucide.createIcons();
+        }
+
+        // Lazily build the full-screen viewer once and reuse it across searches.
+        function qsEnsureDigViewer() {
+            if (document.getElementById('qsDigViewer')) return;
+            const el = document.createElement('div');
+            el.id = 'qsDigViewer';
+            el.className = 'fixed inset-0 z-[60] hidden flex-col bg-black/90';
+            el.innerHTML = `
+                <div class="flex items-center justify-between gap-3 px-4 py-3 text-white">
+                    <div class="min-w-0">
+                        <div id="qsDigVName" class="text-sm font-semibold truncate"></div>
+                        <div id="qsDigVCount" class="text-[11px] text-white/60"></div>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button type="button" id="qsDigRotateLeft" title="Rotate left" class="hidden p-2 rounded-lg hover:bg-white/10 text-white"><i data-lucide="rotate-ccw" class="h-5 w-5"></i></button>
+                        <button type="button" id="qsDigRotateRight" title="Rotate right" class="hidden p-2 rounded-lg hover:bg-white/10 text-white"><i data-lucide="rotate-cw" class="h-5 w-5"></i></button>
+                        <button type="button" data-dig-close class="p-2 rounded-lg hover:bg-white/10 text-white"><i data-lucide="x" class="h-5 w-5"></i></button>
+                    </div>
+                </div>
+                <div id="qsDigStage" class="relative flex-1 flex items-center justify-center overflow-hidden px-2">
+                    <button type="button" id="qsDigPrev" class="absolute left-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white disabled:opacity-30"><i data-lucide="chevron-left" class="h-6 w-6"></i></button>
+                    <div id="qsDigStageInner" class="flex items-center justify-center"></div>
+                    <button type="button" id="qsDigNext" class="absolute right-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white disabled:opacity-30"><i data-lucide="chevron-right" class="h-6 w-6"></i></button>
+                </div>
+                <div id="qsDigStrip" class="flex gap-2 overflow-x-auto px-4 py-3 bg-black/40"></div>`;
+            document.body.appendChild(el);
+            el.querySelector('[data-dig-close]').addEventListener('click', qsCloseDig);
+            el.addEventListener('click', (e) => { if (e.target === el) qsCloseDig(); });
+            document.getElementById('qsDigPrev').addEventListener('click', qsDigPrev);
+            document.getElementById('qsDigNext').addEventListener('click', qsDigNext);
+            document.getElementById('qsDigRotateLeft').addEventListener('click', () => qsDigRotate(-1));
+            document.getElementById('qsDigRotateRight').addEventListener('click', () => qsDigRotate(1));
+        }
+
+        function qsOpenDig(files, i) {
+            // Back-compat: qsOpenDig(index) defaults to the File Digital Library list.
+            if (typeof files === 'number') { i = files; files = qsDigFiles; }
+            qsViewFiles = Array.isArray(files) ? files : [];
+            if (!qsViewFiles.length) return;
+            qsEnsureDigViewer();
+            qsDigStripBuilt = false;
+            qsDigIndex = Math.max(0, Math.min(i, qsViewFiles.length - 1));
+            const v = document.getElementById('qsDigViewer');
+            v.classList.remove('hidden'); v.classList.add('flex');
+            document.body.style.overflow = 'hidden';
+            qsDigBuildStrip();
+            qsDigRenderViewer();
+            if (window.lucide) window.lucide.createIcons();
+        }
+        function qsCloseDig() {
+            const v = document.getElementById('qsDigViewer');
+            if (!v) return;
+            qsPdfToken++; // cancel any in-flight PDF render
+            v.classList.add('hidden'); v.classList.remove('flex');
+            const inner = document.getElementById('qsDigStageInner');
+            if (inner) inner.innerHTML = '';
+            document.body.style.overflow = '';
+        }
+        function qsDigNext() { if (qsDigIndex < qsViewFiles.length - 1) { qsDigIndex++; qsDigRenderViewer(); } }
+        function qsDigPrev() { if (qsDigIndex > 0) { qsDigIndex--; qsDigRenderViewer(); } }
+        function qsDigGoto(i) { qsDigIndex = Math.max(0, Math.min(i, qsViewFiles.length - 1)); qsDigRenderViewer(); }
+
+        function qsDigRenderViewer() {
+            const f = qsViewFiles[qsDigIndex];
+            if (!f) return;
+            qsPdfToken++;        // cancel any in-flight PDF render
+            qsDigRotation = 0;   // each page starts upright
+            const stage = document.getElementById('qsDigStageInner');
+            const isImg = qsIsImg(f);
+            const isPdf = (f.ext || '').toLowerCase() === 'pdf';
+            // Rotate tools apply to images only.
+            document.getElementById('qsDigRotateLeft').classList.toggle('hidden', !isImg);
+            document.getElementById('qsDigRotateRight').classList.toggle('hidden', !isImg);
+            if (isImg) {
+                stage.innerHTML = `<i data-lucide="loader" class="h-8 w-8 text-white animate-spin"></i>`;
+                if (window.lucide) window.lucide.createIcons();
+                const img = new Image();
+                img.alt = f.name;
+                img.style.objectFit = 'contain'; img.style.transition = 'transform .2s ease';
+                img.onload = () => { stage.innerHTML = ''; stage.appendChild(img); qsApplyImgRotation(); };
+                img.onerror = () => { stage.innerHTML = `<div style="color:#fff;font-size:13px;">Could not load this page.</div>`; };
+                img.src = f.url;
+            } else if (isPdf) {
+                // Browsers/webviews that won't embed a PDF in an <iframe> get a blank
+                // frame, so paint the pages to <canvas> with PDF.js instead.
+                qsRenderPdf(f);
+            } else {
+                // Other doc types embed in a frame, with a fallback link in case the
+                // browser can't display the format inline.
+                stage.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;align-items:center;">
+                    <iframe src="${esc(f.url)}" title="${esc(f.name)}" style="width:92vw;height:78vh;background:#fff;border:0;border-radius:6px;"></iframe>
+                    <a href="${esc(f.url)}" target="_blank" rel="noopener" style="color:#fff;font-size:12px;text-decoration:underline;">Open in new tab</a>
+                </div>`;
+            }
+            document.getElementById('qsDigVName').textContent = f.name;
+            document.getElementById('qsDigVCount').textContent = `Page ${qsDigIndex + 1} of ${qsViewFiles.length}`;
+            document.getElementById('qsDigPrev').disabled = qsDigIndex === 0;
+            document.getElementById('qsDigNext').disabled = qsDigIndex === qsViewFiles.length - 1;
+            [qsDigIndex - 1, qsDigIndex + 1].forEach(j => { const nf = qsViewFiles[j]; if (nf && qsIsImg(nf)) { const im = new Image(); im.src = nf.url; } });
+            const strip = document.getElementById('qsDigStrip');
+            strip.querySelectorAll('[data-strip-item]').forEach((el, j) => {
+                el.classList.toggle('ring-2', j === qsDigIndex);
+                el.classList.toggle('ring-indigo-400', j === qsDigIndex);
+                if (j === qsDigIndex) el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+            });
+        }
+
+        function qsDigBuildStrip() {
+            if (qsDigStripBuilt) return;
+            const strip = document.getElementById('qsDigStrip');
+            strip.innerHTML = qsViewFiles.map((f, i) => {
+                const thumb = qsIsImg(f)
+                    ? `<img src="${esc(f.url)}" alt="" loading="lazy" class="h-full w-full object-cover">`
+                    : `<i data-lucide="file-text" class="h-4 w-4 text-white/60"></i>`;
+                return `<button type="button" data-strip-item data-dig-i="${i}" class="relative h-14 w-12 shrink-0 rounded-md overflow-hidden border border-white/20 bg-white/5 flex items-center justify-center ring-indigo-400">${thumb}<span class="absolute bottom-0 right-0 px-1 text-[9px] font-bold text-white bg-black/50">${i + 1}</span></button>`;
+            }).join('');
+            strip.querySelectorAll('[data-strip-item]').forEach(el =>
+                el.addEventListener('click', () => qsDigGoto(parseInt(el.dataset.digI, 10))));
+            qsDigStripBuilt = true;
+            if (window.lucide) window.lucide.createIcons();
+        }
+
+        // ── Image rotate tool ───────────────────────────────────────────────
+        // Rotate the current image in 90° steps. When sideways (90°/270°) the
+        // max width/height caps are swapped so the rotated image still fits.
+        function qsDigRotate(dir) {
+            qsDigRotation = (((qsDigRotation + (dir < 0 ? -90 : 90)) % 360) + 360) % 360;
+            qsApplyImgRotation();
+        }
+        function qsApplyImgRotation() {
+            const img = document.querySelector('#qsDigStageInner img');
+            if (!img) return;
+            img.style.transformOrigin = 'center center';
+            img.style.transform = `rotate(${qsDigRotation}deg)`;
+            if (qsDigRotation % 180 === 0) {
+                img.style.maxWidth = '92vw'; img.style.maxHeight = '80vh';
+            } else {
+                img.style.maxWidth = '80vh'; img.style.maxHeight = '92vw';
+            }
+        }
+
+        // ── PDF rendering (PDF.js) ──────────────────────────────────────────
+        if (window.pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+        function qsPdfFallback(f) {
+            return `<div style="display:flex;flex-direction:column;gap:8px;align-items:center;">
+                <iframe src="${esc(f.url)}" title="${esc(f.name)}" style="width:92vw;height:78vh;background:#fff;border:0;border-radius:6px;"></iframe>
+                <a href="${esc(f.url)}" target="_blank" rel="noopener" style="color:#fff;font-size:12px;text-decoration:underline;">Open PDF in new tab</a>
+            </div>`;
+        }
+        async function qsRenderPdf(f) {
+            const token = ++qsPdfToken;
+            const stage = document.getElementById('qsDigStageInner');
+            stage.innerHTML = `<i data-lucide="loader" class="h-8 w-8 text-white animate-spin"></i>`;
+            if (window.lucide) window.lucide.createIcons();
+            if (!window.pdfjsLib) { stage.innerHTML = qsPdfFallback(f); return; }
+            try {
+                const pdf = await pdfjsLib.getDocument({ url: f.url }).promise;
+                if (token !== qsPdfToken) return; // a newer page took over
+                const wrap = document.createElement('div');
+                wrap.style.cssText = 'width:92vw;height:80vh;display:flex;flex-direction:column;';
+                const pages = document.createElement('div');
+                pages.style.cssText = 'flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px;';
+                const link = document.createElement('a');
+                link.href = f.url; link.target = '_blank'; link.rel = 'noopener';
+                link.textContent = 'Open PDF in new tab';
+                link.style.cssText = 'flex-shrink:0;text-align:center;padding:8px;color:#fff;font-size:12px;text-decoration:underline;';
+                wrap.appendChild(pages); wrap.appendChild(link);
+                stage.innerHTML = ''; stage.appendChild(wrap);
+                const scale = Math.min(2, (window.devicePixelRatio || 1) * 1.4);
+                for (let p = 1; p <= pdf.numPages; p++) {
+                    if (token !== qsPdfToken) return;
+                    const page = await pdf.getPage(p);
+                    const viewport = page.getViewport({ scale });
+                    const canvas = document.createElement('canvas');
+                    canvas.width = viewport.width; canvas.height = viewport.height;
+                    canvas.style.cssText = 'max-width:100%;height:auto;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.4);';
+                    pages.appendChild(canvas);
+                    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                }
+            } catch (e) {
+                if (token !== qsPdfToken) return;
+                stage.innerHTML = qsPdfFallback(f);
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            const v = document.getElementById('qsDigViewer');
+            if (!v || v.classList.contains('hidden')) return;
+            if (e.key === 'Escape') qsCloseDig();
+            else if (e.key === 'ArrowRight') qsDigNext();
+            else if (e.key === 'ArrowLeft') qsDigPrev();
+            else if (e.key === 'r' || e.key === 'R') qsDigRotate(e.shiftKey ? -1 : 1);
+        });
 
         // Re-direct an in-transit file's request straight to the office currently holding
         // it (its last receiving officer) instead of routing it to the SCB Monitor.
@@ -875,6 +1243,38 @@
             }
         }
 
+        // Re-direct a duplicate file (in the duplicate_fileno table) to the Director Land
+        // (Land Department) instead of raising a blind File Search Request to the SCB.
+        async function sendRedirectToDirectorLand(d, btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader" class="h-4 w-4 animate-spin"></i> Re-directing…';
+            if (window.lucide) window.lucide.createIcons();
+            try {
+                const res = await fetch(REDIRECT_LAND_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type':'application/json', 'X-CSRF-TOKEN':CSRF, 'Accept':'application/json' },
+                    body: JSON.stringify({ file_number: d.file_number, file_title: d.file_title }),
+                });
+                const json = await res.json();
+                if (json.success) {
+                    btn.disabled = true;
+                    btn.className = 'inline-flex items-center gap-2 rounded-lg bg-gray-300 px-4 py-2 text-sm font-semibold text-white cursor-not-allowed opacity-60';
+                    btn.innerHTML = '<i data-lucide="check" class="h-4 w-4"></i> Re-directed To Director Land (Land Department)';
+                    if (window.Swal) Swal.fire(json.message || 'Re-directed to Director Land (Land Department).', '', 'success');
+                    loadLog();
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i data-lucide="user-check" class="h-4 w-4"></i> Re-direct To Director Land (Land Department)';
+                    alert(json.message || 'Could not re-direct to Director Land.');
+                }
+                if (window.lucide) window.lucide.createIcons();
+            } catch (e) {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="user-check" class="h-4 w-4"></i> Re-direct To Director Land (Land Department)';
+                alert('Network error — please try again.');
+            }
+        }
+
         // ── File Request Log + SCB Feedback ──
         const LOG_URL    = "{{ route('create-file-tracker.quick-search.file-request-log') }}";
         const ACTED_BASE = "{{ url('create-file-tracker/quick-search/file-request') }}";
@@ -919,6 +1319,7 @@
             const id = btn.dataset.id, kind = btn.dataset.fbAct;
             const fno = btn.dataset.fno, title = btn.dataset.title || '', officer = btn.dataset.officer || '';
             const office = btn.dataset.office || '', dept = btn.dataset.dept || '';
+            const registry = btn.dataset.registry || '';
             btn.disabled = true;
             try {
                 await fetch(`${ACTED_BASE}/${id}/front-desk-acted`, {
@@ -928,7 +1329,7 @@
             } catch (e) { /* non-fatal — still let the Front Desk proceed */ }
 
             if (kind === 'log') {
-                logFile({ file_number: fno, file_title: title, receiving_officer: officer, requester_office: office, requester_department: dept });   // navigates to Create File Tracker
+                logFile({ file_number: fno, file_title: title, receiving_officer: officer, requester_office: office, requester_department: dept, registry: registry });   // navigates to Create File Tracker (?url=… by registry)
             } else {
                 window.open(`${SLIP_URL}?file_number=${encodeURIComponent(fno)}&variant=refer_registry`, '_blank');
                 loadScbFeedback();
@@ -1021,7 +1422,7 @@
                             const sentDt = splitDT(r.requested_at);
                             const dt     = splitDT(r.responded_at);
                             const action = r.found
-                                ? `<button type="button" data-fb-act="log" data-id="${r.id}" data-fno="${esc(r.file_number)}" data-title="${esc(r.file_title || '')}" data-officer="${esc(r.receiving_officer || '')}" data-office="${esc(r.requester_office || '')}" data-dept="${esc(r.requester_department || '')}" class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"><i data-lucide="file-plus" class="h-3.5 w-3.5"></i> Log File</button>`
+                                ? `<button type="button" data-fb-act="log" data-id="${r.id}" data-fno="${esc(r.file_number)}" data-title="${esc(r.file_title || '')}" data-officer="${esc(r.receiving_officer || '')}" data-office="${esc(r.requester_office || '')}" data-dept="${esc(r.requester_department || '')}" data-registry="${esc(r.registry || '')}" class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"><i data-lucide="file-plus" class="h-3.5 w-3.5"></i> Log File</button>`
                                 : (r.not_found
                                     ? `<button type="button" data-fb-act="refer" data-id="${r.id}" data-fno="${esc(r.file_number)}" class="inline-flex items-center gap-1 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"><i data-lucide="printer" class="h-3.5 w-3.5"></i> Print</button>`
                                     : `<span class="text-[11px] text-gray-400 italic">Awaiting SCB…</span>`);
@@ -1038,8 +1439,16 @@
                             const ofsBadge = r.is_ofs
                                 ? `<span class="mt-1 ml-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 ring-1 ring-amber-300" title="Office Priority Search${r.ofs_rank ? ' · ' + esc(r.ofs_rank) : ''}"><i data-lucide="crown" class="h-2.5 w-2.5"></i> OFS${r.ofs_rank ? ' · ' + esc(r.ofs_rank) : ''}</span>`
                                 : '';
+                            // Tint the whole row by the SCB outcome — green for Found, red for
+                            // Not Found — so the queue reads at a glance. Rows still awaiting a
+                            // response keep the OFS amber highlight (if any).
+                            const rowTint = r.found
+                                ? 'bg-emerald-50/70 border-l-4 border-l-emerald-400 hover:bg-emerald-50'
+                                : (r.not_found
+                                    ? 'bg-red-50/70 border-l-4 border-l-red-400 hover:bg-red-50'
+                                    : (r.is_ofs ? 'bg-amber-50/60 border-l-4 border-l-amber-400 hover:bg-gray-50/60' : 'hover:bg-gray-50/60'));
                             return `
-                            <tr class="border-b border-gray-50 hover:bg-gray-50/60 align-top ${r.is_ofs ? 'bg-amber-50/60 border-l-4 border-l-amber-400' : ''}">
+                            <tr class="border-b border-gray-200 align-top ${rowTint}">
                                 <td class="px-3 py-3 whitespace-nowrap text-gray-400 font-medium">${sn}</td>
                                 <td class="px-3 py-3 whitespace-nowrap">
                                     <div class="font-semibold text-gray-800">${esc(r.file_number)}</div>
@@ -1156,7 +1565,8 @@
         async function loadScbFeedback() {
             tblBox.innerHTML = '<div class="px-4 py-8 text-center text-xs text-gray-400">Loading…</div>';
             try {
-                const res  = await fetch(FEEDBACK_URL, { headers: { 'Accept': 'application/json' } });
+                const fbUrl = FEEDBACK_URL + (URL_CTX ? ('?url=' + encodeURIComponent(URL_CTX)) : '');
+                const res  = await fetch(fbUrl, { headers: { 'Accept': 'application/json' } });
                 const json = await res.json();
                 scbRows = (json && json.data) || [];
                 // Most recent on top — sort by SCB response time, then by sent time.
@@ -1177,6 +1587,7 @@
                 if (logStatus) params.set('status', logStatus);
                 if (logFrom)   params.set('from', logFrom);
                 if (logTo)     params.set('to', logTo);
+                if (URL_CTX)   params.set('url', URL_CTX);
                 const qs   = params.toString();
                 const url  = LOG_URL + (qs ? ('?' + qs) : '');
                 const res  = await fetch(url, { headers: { 'Accept': 'application/json' } });

@@ -34,4 +34,16 @@ return [
     ],
 
     'default' => 0,
+
+    // Canonical rank options for the user create/edit forms, most senior first.
+    // Each must substring-match a key in 'ranks' above so FileSearchRequest::priorityFor()
+    // resolves the saved users.rank to the right seniority weight.
+    'options' => [
+        'Honorable Commissioner',
+        'Permanent Secretary',
+        'Director',
+        'Deputy Director',
+        'Assistant Director',
+        'Officer',
+    ],
 ];

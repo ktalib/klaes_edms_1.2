@@ -505,7 +505,7 @@
           if (caveatEl && d.caveat_note) {
             caveatEl.textContent = d.caveat_note;
             caveatEl.style.display = 'block';
-            if (d.is_caveated) {
+            if (d.under_investigation || d.is_caveated) {
               caveatEl.style.color = '#dc2626';
             } else {
               caveatEl.style.color = '#166534';

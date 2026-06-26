@@ -27,7 +27,8 @@
         initialValue: null,
         initialTab: null,
         autoPopulateGenericFields: true,
-        excludePrefixes: []  // Array of uppercase file-number prefixes to hide (e.g. ['CON'])
+        excludePrefixes: [],  // Array of uppercase file-number prefixes to hide (e.g. ['CON'])
+        allowedTabs: null     // Array of registry tab names to show (e.g. ['mls']); null = show all
     };
 
     // Main GlobalFileNoModal object
@@ -74,8 +75,20 @@
                 });
             }
 
-            // Set initial tab
-            const initialTab = this.config.initialTab || DEFAULT_CONFIG.currentTab;
+            // Restrict which registry tabs are visible when the caller scopes the
+            // selector by module/registry (e.g. Land module → MLS only). null/empty
+            // means show every tab (default behaviour for all other callers).
+            const allowedTabs = (Array.isArray(this.config.allowedTabs) && this.config.allowedTabs.length)
+                ? this.config.allowedTabs
+                : null;
+            this.applyAllowedTabs(allowedTabs);
+
+            // Set initial tab — fall back to the first allowed tab when the requested
+            // one is hidden by the allowedTabs scope.
+            let initialTab = this.config.initialTab || DEFAULT_CONFIG.currentTab;
+            if (allowedTabs && allowedTabs.indexOf(initialTab) === -1) {
+                initialTab = allowedTabs[0];
+            }
 
             // Show modal
             modal.removeClass('hidden').addClass('flex');
@@ -161,6 +174,20 @@
             // Initialize the input method UI for this tab
             this.initializeTabUI(tabName);
             try { console.log('[GlobalFileNoModal] switchTab complete', { tabName }); } catch (e) { }
+        },
+
+        // Show only the registry tabs allowed for the current context. Passing null
+        // (or an empty list) reveals every tab — the default for callers that don't scope.
+        applyAllowedTabs: function (allowed) {
+            const $buttons = $('.fileno-tab-btn');
+            if (!allowed || !allowed.length) {
+                $buttons.show();
+                return;
+            }
+            $buttons.each(function () {
+                const tab = $(this).attr('data-tab');
+                $(this).toggle(allowed.indexOf(tab) !== -1);
+            });
         },
 
         // Update modal header based on active tab

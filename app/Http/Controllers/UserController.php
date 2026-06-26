@@ -102,6 +102,9 @@ class UserController extends Controller
 
             $paymentStructures = $this->structureService->dropdownOptions();
 
+            // Officer ranks (seniority) for file-request prioritisation.
+            $ranks = config('file_request_priority.options', []);
+
             return view('user.create', compact(
                 'departments',
                 'userTypes',
@@ -109,7 +112,8 @@ class UserController extends Controller
                 'workStations',
                 'attendanceShifts',
                 'staffTypeOptions',
-                'paymentStructures'
+                'paymentStructures',
+                'ranks'
             ));
         } catch (\Exception $e) {
             \Log::error('Error in UserController@create', [
@@ -180,6 +184,7 @@ class UserController extends Controller
                 // allow either phone or phone_number
                 $user->phone_number = $request->input('phone_number', $request->input('phone'));
                 $user->department_id = $request->department_id; // Save department_id
+                $user->rank = $request->filled('rank') ? $request->rank : null; // seniority for file-request priority
                 $user->work_station = $request->work_station;
                 $user->user_level = $request->user_level; // Save user_level
                 $user->type = 'owner';
@@ -246,6 +251,7 @@ class UserController extends Controller
                         'user_type' => 'required|string|in:Management,Operations,ALL,User,System',
                         'user_level' => 'required|string|in:Administrative,Technical,Finance,Lowest,High,Highest',
                         'user_role' => 'required|array',
+                        'rank' => 'nullable|string|max:255',
                         'work_station' => $this->workStationValidationRule(false),
                         'work_days_per_week' => 'nullable|integer|in:2,5,7',
                         'man_hours_per_day' => 'nullable|integer|in:4,8',
@@ -335,6 +341,7 @@ class UserController extends Controller
                 
                 $user->lang = 'english';
                 $user->parent_id = parentId();
+                $user->rank = $request->filled('rank') ? $request->rank : null; // seniority for file-request priority
                 $user->assign_role = isset($request->user_role) ? implode(',', $request->user_role) : null;
                 $user->user_actions = isset($request->user_actions) ? implode(',', $request->user_actions) : null;
                 $user->dfr_permissions = isset($request->dfr_permissions) ? implode(',', $request->dfr_permissions) : null;
@@ -402,6 +409,9 @@ class UserController extends Controller
         $paymentStructures = $this->structureService->dropdownOptions();
         $attendanceShifts = config('attendance.shifts', []);
 
+        // Officer ranks (seniority) for file-request prioritisation.
+        $ranks = config('file_request_priority.options', []);
+
         return view('user.edit', compact(
             'user',
             'departments',
@@ -410,7 +420,8 @@ class UserController extends Controller
             'workStations',
             'attendanceShifts',
             'staffTypeOptions',
-            'paymentStructures'
+            'paymentStructures',
+            'ranks'
         ));
     }
 
@@ -462,6 +473,7 @@ class UserController extends Controller
                         'user_type' => 'required|string|in:Management,Operations,ALL,User,System',
                         'user_level' => 'required|string|in:Administrative,Technical,Finance,Lowest,Highest,High',
                         'user_role' => 'required|array',
+                        'rank' => 'nullable|string|max:255',
                         'work_station' => $this->workStationValidationRule(false),
                         'work_days_per_week' => 'nullable|integer|in:2,5,7',
                         'man_hours_per_day' => 'nullable|integer|in:4,8',
@@ -490,6 +502,7 @@ class UserController extends Controller
                 $user->email = $request->filled('email') ? $request->email : uniqid('temp') . '@klaes.com.ng';
                 $user->phone_number = $request->phone_number;
                 $user->department_id = $request->department_id;
+                $user->rank = $request->filled('rank') ? $request->rank : null; // seniority for file-request priority
                 $user->user_level = $request->user_level;
                 if ($request->has('work_station')) {
                     $user->work_station = $request->input('work_station');

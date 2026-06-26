@@ -238,11 +238,17 @@
                         Date: {{ $tracker->date_created ? $tracker->date_created->format('d/m/Y H:i') : ($tracker->created_at ? $tracker->created_at->format('d/m/Y H:i') : '') }}
                     </div>
                 </div>
+                @php
+                    $sigModule = strtolower($tracker->module ?? '');
+                    $sigDirector = in_array($sigModule, ['kangis', 'new_kangis'], true)
+                        ? 'Director GIS'
+                        : ($sigModule === 'sltr' ? 'Director SLTR' : 'Director Lands');
+                @endphp
                 <div class="sig-box">
                     <div class="sig-line"></div>
                     <div class="sig-text">
                         Signature and Date<br>
-                        <strong>Director Lands</strong>
+                        <strong>{{ $sigDirector }}</strong>
                     </div>
                 </div>
             </div>

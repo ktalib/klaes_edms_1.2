@@ -295,16 +295,18 @@
             <div class="fields">
                 <div class="row">
                     <div class="label">File No:</div>
-                    <div class="value-line">{{ $fileNumber }}</div>
+                    <div class="value-line">
+                        {{ $fileNumber }}
+                        @if(!empty($data['related_file_title']))
+                            ({{ $data['related_file_title'] }})
+                        @endif
+                    </div>
                 </div>
+                @if(!empty($data['related_file_number']))
                 <div class="row">
-                    <div class="label">File Name:</div>
-                    <div class="value-line">{{ $fileName }}</div>
+                    <div class="label">Related File No:</div>
+                    <div class="value-line">{{ $data['related_file_number'] }}</div>
                 </div>
-                {{-- <div class="row">
-                    <div class="label">Allottee:</div>
-                    <div class="value-line">{{ $allottee }}</div>
-                </div> --}}
                 <div class="row">
                     <div class="label">{{ $isOss ? 'Plot No:' : 'Reason:' }}</div>
                     <div class="value-line">{{ $reason }}</div>
