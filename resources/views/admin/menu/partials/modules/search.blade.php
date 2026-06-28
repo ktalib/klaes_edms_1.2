@@ -17,58 +17,38 @@
 
       <div class="pl-4 mt-1 space-y-0.5 hidden" data-content="search">
 
-           
+      <!-- a. Property Records -->
       <a href="{{ route('property-search.index') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('property-search.*') ? 'active' : '' }}">
         <i data-lucide="file-bar-chart" class="h-3.5 w-3.5 text-cyan-400"></i>
         <span>Property Records</span>
       </a>
-     
 
+      <!-- b. On-Premise Legal Search -->
       @if($hasRole('Deeds - Official (for filing purpose)') || $hasRole('Deeds - On-Premise (Pay-Per-Search)') || $hasRole('Deeds - Legal Search Reports'))
-      <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md" data-section="legalSearch">
+      <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md" data-section="onPremiseLegalSearch">
         <div class="flex items-center gap-2">
-        <i data-lucide="scale" class="h-4 w-4 text-cyan-500"></i>
-        <span>Legal Search</span>
+          <i data-lucide="scale" class="h-4 w-4 text-cyan-500"></i>
+          <span>On-Premise Legal Search</span>
         </div>
-        <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="legalSearch"></i>
+        <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="onPremiseLegalSearch"></i>
       </div>
 
-      <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="legalSearch">
+      <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="onPremiseLegalSearch">
+        <!-- i. Official (for filing purpose) -->
         @if($hasRole('Deeds - Official (for filing purpose)'))
         <a href="{{route('legal_search.index')}}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('legal_search.index') ? 'active' : '' }}">
-        <i data-lucide="file-check-2" class="h-3.5 w-3.5 text-cyan-400"></i>
-        <span>Official (for filing purpose)</span>
+          <i data-lucide="file-check-2" class="h-3.5 w-3.5 text-cyan-400"></i>
+          <span>Official (for filing purpose)</span>
         </a>
         @endif
+        <!-- ii. On-Premise -->
         @if($hasRole('Deeds - On-Premise (Pay-Per-Search)'))
         <a href="{{route('onpremise.index')}}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('onpremise.index') ? 'active' : '' }}">
-        <i data-lucide="building" class="h-3.5 w-3.5 text-cyan-400"></i>
-        <span>On-Premise - Pay-per-Search</span>
+          <i data-lucide="building" class="h-3.5 w-3.5 text-cyan-400"></i>
+          <span>On-Premise</span>
         </a>
         @endif
-        <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md" data-section="onlineLegalSearch">
-          <div class="flex items-center gap-2">
-          <i data-lucide="globe" class="h-4 w-4 text-cyan-500"></i>
-          <span>Online Legal Search</span>
-          </div>
-          <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="onlineLegalSearch"></i>
-        </div>
-        <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="onlineLegalSearch">
-          <a href="{{ route('legal_search.online') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('legal_search.online') ? 'active' : '' }}">
-            <i data-lucide="globe" class="h-3.5 w-3.5 text-cyan-400"></i>
-            <span>Online</span>
-          </a>
-          @if(auth()->user()->assign_role === 'Supper Admin')
-          <a href="{{ route('legal-search-online.admin.index') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('legal-search-online.admin.index') ? 'active' : '' }}">
-            <i data-lucide="shield-check" class="h-3.5 w-3.5 text-cyan-400"></i>
-            <span>Online Legal Search Admin</span>
-          </a>
-          @endif
-          <a href="{{ route('legal-search-online.admin.feedback') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('legal-search-online.admin.feedback') ? 'active' : '' }}">
-            <i data-lucide="message-square-warning" class="h-3.5 w-3.5 text-cyan-400"></i>
-            <span>Feedback &amp; Complaints</span>
-          </a>
-        </div>
+        <!-- iii. Legal Search Reports -->
         @if($hasRole('Deeds - Legal Search Reports'))
         <a href="{{route('legalsearchreports.index')}}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('legalsearchreports.index') ? 'active' : '' }}">
           <i data-lucide="file-bar-chart" class="h-3.5 w-3.5 text-cyan-400"></i>
@@ -77,6 +57,34 @@
         @endif
       </div>
       @endif
+
+      <!-- c. Online Legal Search -->
+      <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md" data-section="onlineLegalSearch">
+        <div class="flex items-center gap-2">
+          <i data-lucide="globe" class="h-4 w-4 text-cyan-500"></i>
+          <span>Online Legal Search</span>
+        </div>
+        <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="onlineLegalSearch"></i>
+      </div>
+      <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="onlineLegalSearch">
+        <!-- i. Online -->
+        <a href="{{ route('ols.landing') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('ols.landing') ? 'active' : '' }}">
+          <i data-lucide="globe" class="h-3.5 w-3.5 text-cyan-400"></i>
+          <span>Online</span>
+        </a>
+        <!-- ii. Online Legal Search Admin -->
+        @if(auth()->user()->assign_role === 'Supper Admin')
+        <a href="{{ route('legal-search-online.admin.index') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('legal-search-online.admin.index') ? 'active' : '' }}">
+          <i data-lucide="shield-check" class="h-3.5 w-3.5 text-cyan-400"></i>
+          <span>Online Legal Search Admin</span>
+        </a>
+        @endif
+        <!-- iii. Feedback & Complaints -->
+        <a href="{{ route('legal-search-online.admin.feedback') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('legal-search-online.admin.feedback') ? 'active' : '' }}">
+          <i data-lucide="message-square-warning" class="h-3.5 w-3.5 text-cyan-400"></i>
+          <span>Feedback &amp; Complaints</span>
+        </a>
+      </div>
 
       @if(auth()->user()->assign_role === 'Supper Admin')
       <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md" data-section="phsPortalAdmin">

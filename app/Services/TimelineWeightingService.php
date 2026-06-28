@@ -288,8 +288,8 @@ class TimelineWeightingService
         $rowArr['location'] = $rowArr['location'] ?? ($rowArr['district'] ?? ($rowArr['lga'] ?? ($rowArr['lgsaOrCity'] ?? null)));
 
         // Party Mapping (Handle both CamelCase and lowercase)
-        $rowArr['party_1'] = $rowArr['party_1'] ?? ($rowArr['Grantor'] ?? ($rowArr['grantor'] ?? ($rowArr['Assignor'] ?? ($rowArr['assignor'] ?? ($rowArr['Mortgagor'] ?? ($rowArr['mortgagor'] ?? ''))))));
-        $rowArr['party_2'] = $rowArr['party_2'] ?? ($rowArr['Grantee'] ?? ($rowArr['grantee'] ?? ($rowArr['Assignee'] ?? ($rowArr['assignee'] ?? ($rowArr['Mortgagee'] ?? ($rowArr['mortgagee'] ?? ''))))));
+        $rowArr['party_1'] = $this->sanitizePartyName($rowArr['party_1'] ?? ($rowArr['Grantor'] ?? ($rowArr['grantor'] ?? ($rowArr['Assignor'] ?? ($rowArr['assignor'] ?? ($rowArr['Mortgagor'] ?? ($rowArr['mortgagor'] ?? '')))))));
+        $rowArr['party_2'] = $this->sanitizePartyName($rowArr['party_2'] ?? ($rowArr['Grantee'] ?? ($rowArr['grantee'] ?? ($rowArr['Assignee'] ?? ($rowArr['assignee'] ?? ($rowArr['Mortgagee'] ?? ($rowArr['mortgagee'] ?? '')))))));
 
         // Ensure lowercase aliases exist for normalizeTimelineRow compatibility
         $roles = ['Assignor', 'Assignee', 'Mortgagor', 'Mortgagee', 'Grantor', 'Grantee', 'Surrenderor', 'Surrenderee', 'Lessor', 'Lessee'];
@@ -496,6 +496,19 @@ class TimelineWeightingService
         // Standardize common name variants
         $v = preg_replace('/\b(muhammad|mohammad|muhammed|mohd)\b/i', 'mohammed', $v);
 
+        return trim($v);
+    }
+
+    protected function sanitizePartyName(string $value): string
+    {
+        $v = trim((string) $value);
+        if ($v === '') {
+            return '';
+        }
+
+        // Strip obvious quotes around names or stray quote characters from imported strings.
+        $v = str_replace(['"', '“', '”'], '', $v);
+        $v = preg_replace('/^[\'"\«\»\‘\’]+|[\'"\«\»\‘\’]+$/u', '', $v);
         return trim($v);
     }
 

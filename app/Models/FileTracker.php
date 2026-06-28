@@ -82,7 +82,7 @@ class FileTracker extends Model
     const WORKFLOW_KANGIS_APPROVAL = 'kangis_approval_flow';
     const WORKFLOW_KANGIS_NEW = 'kangis_approval_flow'; // Alias for generateKangisTrackingSheet
     const WORKFLOW_KANGIS_3STEP = 'kangis_3step'; // Backward compatibility alias
-    const WORKFLOW_CROSS_MODULE_REQUEST = 'cross_module_request'; // Land ↔ KANGIS bilateral request
+    const WORKFLOW_CROSS_MODULE_REQUEST = 'cross_module_request'; // Land ? KANGIS bilateral request
 
     // Workflow step purposes
     const PURPOSE_SUBMISSION = 'submission';
@@ -234,7 +234,7 @@ class FileTracker extends Model
     /**
      * Complete the current movement log entry
      */
-    public function completeCurrentMovement($logOutTime = null, $notes = null)
+    public function completeCurrentMovement($logOutTime = null, $notes = null, ?int $numPages = null, ?bool $inDigitalArchive = null)
     {
         $currentLog = $this->movement_log ?: [];
 
@@ -511,3 +511,4 @@ class FileTracker extends Model
         return $progress;
     }
 }
+

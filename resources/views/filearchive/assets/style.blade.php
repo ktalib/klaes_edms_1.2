@@ -9,6 +9,97 @@
     --ring: #3b82f6;
   }
 
+  /* File card hover tooltip */
+  .file-card-status-header {
+    position: relative;
+  }
+  .file-card-status-header .status-tooltip {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    z-index: 50;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #1f2937;
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 8px 12px;
+    border-radius: 6px;
+    white-space: normal;
+    width: max-content;
+    max-width: 260px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    transition: opacity 0.18s ease, visibility 0.18s ease;
+    pointer-events: none;
+    text-align: left;
+  }
+  .file-card-status-header .status-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: #1f2937;
+  }
+  .file-card-status-header:hover .status-tooltip {
+    visibility: visible;
+    opacity: 1;
+  }
+  .file-card {
+    position: relative;
+  }
+  .file-card .file-movement-info {
+    display: none;
+    position: absolute;
+    z-index: 40;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    padding: 10px 12px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #374151;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .file-card:hover .file-movement-info {
+    display: block;
+  }
+  .file-movement-info .mv-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 0;
+    border-bottom: 1px dashed #f3f4f6;
+  }
+  .file-movement-info .mv-row:last-child {
+    border-bottom: none;
+  }
+  .file-movement-info .mv-date {
+    color: #6b7280;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .file-movement-info .mv-location {
+    color: #111827;
+    font-weight: 500;
+    text-align: right;
+  }
+  .file-movement-info .mv-empty {
+    color: #9ca3af;
+    font-style: italic;
+    text-align: center;
+    padding: 6px 0;
+  }
+
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     color: #0f172a;

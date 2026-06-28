@@ -228,7 +228,7 @@
                                         placeholder="Enter reason for investigation" value="{{ isset($record) ? $record->dciv_reason : '' }}">
                                 </div>
 
-                                {{-- Title Status Update (indigo) — checkboxes share the .ts-title-type-cb class --}}
+                                {{-- Title Status Update (indigo) — radio buttons for single selection --}}
                                 <div class="form-group mt-6" id="ts-title-update-group">
                                     <h5 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-indigo-700">
                                         <i data-lucide="badge-check" class="h-3.5 w-3.5"></i>
@@ -237,7 +237,7 @@
                                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         @foreach($titleOptions as $tsValue => $tsMeta)
                                             <label class="block cursor-pointer">
-                                                <input type="checkbox" value="{{ $tsValue }}"
+                                                <input type="radio" name="ts-title-type" value="{{ $tsValue }}"
                                                     class="ts-title-type-cb peer sr-only">
                                                 <span class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 transition hover:border-indigo-300 hover:bg-indigo-50/40 peer-checked:border-indigo-500 peer-checked:bg-indigo-50 peer-checked:text-indigo-700 peer-checked:font-medium peer-focus:ring-2 peer-focus:ring-indigo-200">
                                                     <i data-lucide="{{ $tsMeta[1] }}" class="h-4 w-4 flex-shrink-0"></i>

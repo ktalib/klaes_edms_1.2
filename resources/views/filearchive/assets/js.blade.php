@@ -1,9 +1,11 @@
 <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
 <script>
   $(document).ready(function () {
+    console.log('[File Archive] Document ready, initializing');
     lucide.createIcons();
 
     const $viewerDialog = $('#document-viewer-dialog');
+    console.log('[File Archive] $viewerDialog found:', $viewerDialog.length > 0, 'Element:', $viewerDialog[0]);
     let documentRequestToken = 0;
     const statusColorClasses = ['bg-green-600', 'bg-red-600'];
     const defaultHeaderState = buildRegistryState();
@@ -271,11 +273,18 @@
     }
 
     function openDocumentViewer(pagesUrl, triggeredFromDetails = false, meta = null) {
+      console.log('[Document Viewer] openDocumentViewer called with:', { pagesUrl, triggeredFromDetails, meta });
       const requestToken = ++documentRequestToken;
+      console.log('[Document Viewer] Request token:', requestToken);
 
       resetDocumentViewerState(true, meta);
+      console.log('[Document Viewer] Viewer state reset');
+      
+      console.log('[Document Viewer] Attempting to show modal. $viewerDialog:', $viewerDialog, '$viewerDialog.length:', $viewerDialog.length);
       $viewerDialog.fadeIn('fast');
+      console.log('[Document Viewer] Modal fadeIn initiated');
 
+      console.log('[Document Viewer] Starting AJAX request to:', pagesUrl);
       $.ajax({
         url: pagesUrl,
         method: 'GET',
@@ -283,11 +292,14 @@
         cache: false
       })
         .done(function (response) {
+          console.log('[Document Viewer] AJAX success. Response:', response);
           if (documentRequestToken !== requestToken) {
+            console.warn('[Document Viewer] Request token mismatch, ignoring response');
             return;
           }
 
           if (response.success) {
+            console.log('[Document Viewer] Response success. Loading', response.pages?.length || 0, 'pages');
             loadDocumentPages(response.file, response.pages || []);
             $('#viewer-file-number').text(response.file?.file_number || (meta?.number ?? '-'));
             $('#viewer-file-title').text(response.file?.file_title || (meta?.title ?? '-'));
@@ -295,16 +307,18 @@
               $('#file-details-dialog').fadeOut('fast');
             }
           } else {
+            console.error('[Document Viewer] Response not successful:', response.message);
             showViewerError(response.message || 'Unable to load document pages.');
           }
         })
         .fail(function (xhr) {
+          console.error('[Document Viewer] AJAX failed. Status:', xhr.status, 'StatusText:', xhr.statusText, 'Response:', xhr.responseText);
           if (documentRequestToken !== requestToken) {
+            console.warn('[Document Viewer] Request token mismatch on fail, ignoring');
             return;
           }
 
-          console.error('Error loading document pages', xhr);
-          showViewerError('Failed to load document pages.');
+          showViewerError('Failed to load document pages. Status: ' + xhr.status);
         });
     }
 
@@ -353,5 +367,6 @@
     }
 
     window.openDocumentViewer = openDocumentViewer;
+    console.log('[File Archive] window.openDocumentViewer exported:', typeof window.openDocumentViewer);
   });
 </script>

@@ -1583,6 +1583,20 @@
         });
     }
 
+    // Clear Number of Pages validation error on input
+    (function () {
+        const npField = document.getElementById('num-pages');
+        const npHint = document.getElementById('num-pages-hint');
+        const npError = document.getElementById('num-pages-error');
+        if (npField) {
+            npField.addEventListener('input', function () {
+                if (npHint) npHint.classList.remove('hidden');
+                if (npError) npError.classList.add('hidden');
+                npField.classList.remove('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+            });
+        }
+    })();
+
     if (updateLogOfficerSelect && updateLogOfficerSelect.length) {
         updateLogOfficerSelect.on('change', function () {
             const value = $(this).val();
@@ -1892,6 +1906,7 @@
     let resolvedFileIndexingId = null;
     let forceNextMetadataLookup = false;
     let resolvedWorkflowState = null; // { type, step, trackerId } for KANGIS workflow
+    let _isInDigitalArchive = false; // true when the loaded file has scanned copies in the Digital Archive
     const metadataSourceMessages = {
         'file-number-registry': 'File metadata loaded from File Number registry.',
         'file-indexing': 'File metadata loaded from File Indexing.',
@@ -2361,6 +2376,17 @@
         if (resolvedFileNumber) {
             $('#file-no').val(resolvedFileNumber);
             $('#sidebar-file-no').text(resolvedFileNumber);
+        }
+
+        const numPagesValue = data.num_pages ?? data.numPages ?? null;
+        const inDigitalArchive = data.in_digital_archive ?? data.inDigitalArchive ?? null;
+        const numPagesField = document.getElementById('num-pages');
+        const numPagesRequiredMark = document.getElementById('num-pages-required-mark');
+        if (numPagesField && numPagesValue !== null && numPagesValue !== undefined && String(numPagesValue).trim() !== '') {
+            numPagesField.value = numPagesValue;
+        }
+        if (numPagesRequiredMark) {
+            numPagesRequiredMark.textContent = inDigitalArchive ? '' : '*';
         }
 
         checkFileLogoutStatus(resolvedFileNumber || '');
@@ -3581,6 +3607,8 @@
             nextStep: tracker.next_step ?? tracker.nextStep ?? null,
             currentStep: tracker.current_step ?? tracker.currentStep ?? null,
             printed: tracker.printed ?? false,
+            numPages: tracker.num_pages ?? tracker.numPages ?? null,
+            inDigitalArchive: tracker.in_digital_archive ?? tracker.inDigitalArchive ?? false,
         };
     }
 
@@ -3793,6 +3821,8 @@
 
         const priority = document.getElementById('file-priority').value;
         const notes = document.getElementById('office-notes').value;
+        const numPages = document.getElementById('num-pages')?.value?.trim() || '';
+        const inDigitalArchive = false;
 
         // When #receiving-officer select is absent (e.g. digital_request module uses hidden inputs instead),
         // fall back to the hidden input values so validation and payload construction still work correctly.
@@ -3888,6 +3918,33 @@
             return;
         }
 
+        // Number of Pages validation
+        const numPagesField = document.getElementById('num-pages');
+        const numPagesHint = document.getElementById('num-pages-hint');
+        const numPagesError = document.getElementById('num-pages-error');
+        const numPagesVal = numPagesField?.value?.trim() || '';
+        if (!numPagesVal) {
+            if (numPagesField) numPagesField.focus();
+            if (numPagesHint) numPagesHint.classList.add('hidden');
+            if (numPagesError) numPagesError.classList.remove('hidden');
+            if (numPagesField) numPagesField.classList.add('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+            Swal.fire({ icon: 'warning', title: 'Number of Pages Required', text: 'Please enter the total number of pages in this file.' });
+            return;
+        }
+        const numPagesInt = parseInt(numPagesVal, 10);
+        if (isNaN(numPagesInt) || numPagesInt < 1 || numPagesInt > 99999) {
+            if (numPagesField) numPagesField.focus();
+            if (numPagesHint) numPagesHint.classList.add('hidden');
+            if (numPagesError) numPagesError.classList.remove('hidden');
+            if (numPagesField) numPagesField.classList.add('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+            Swal.fire({ icon: 'warning', title: 'Invalid Page Count', text: 'Please enter a valid number of pages (1–99,999).' });
+            return;
+        }
+        // Clear any previous error styling
+        if (numPagesHint) numPagesHint.classList.remove('hidden');
+        if (numPagesError) numPagesError.classList.add('hidden');
+        if (numPagesField) numPagesField.classList.remove('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+
         // Officer Construction from DOM
         const receivingOfficer = {
             id: effectiveReceivingOfficerId,
@@ -3957,6 +4014,8 @@
                 logOutDate: document.getElementById('log-out-date')?.value || currentDateStr,
                 officeId: effectiveReceivingOfficeCode,
                 officeName: effectiveReceivingOfficeName,
+                num_pages: inDigitalArchive ? null : (numPages ? parseInt(numPages, 10) : null),
+                in_digital_archive: inDigitalArchive,
                 notes: notes || (
                     _crossModuleRequestMode
                         ? crossRegistryNote
@@ -7915,6 +7974,91 @@
         });
     }
 
+    function getLogoutPageCountState(tracker) {
+        const numPages = document.getElementById('num-pages');
+        const pageSection = document.getElementById('page-count-section');
+        const archiveBadge = document.getElementById('digital-archive-badge');
+        const notArchiveBadge = document.getElementById('not-in-archive-badge');
+        const archiveNotice = document.getElementById('in-digital-archive-notice');
+        const noArchiveNotice = document.getElementById('not-in-digital-archive-notice');
+        const requiredMark = document.getElementById('num-pages-required-mark');
+        const inArchive = Boolean(tracker?.inDigitalArchive ?? tracker?.in_digital_archive);
+
+        if (pageSection) pageSection.classList.remove('hidden');
+        if (archiveBadge) archiveBadge.classList.toggle('hidden', !inArchive);
+        if (notArchiveBadge) notArchiveBadge.classList.toggle('hidden', inArchive);
+        if (archiveNotice) archiveNotice.classList.toggle('hidden', !inArchive);
+        if (noArchiveNotice) noArchiveNotice.classList.toggle('hidden', inArchive);
+        if (requiredMark) requiredMark.classList.toggle('hidden', inArchive);
+        if (numPages) {
+            numPages.required = !inArchive;
+            if (!numPages.value) {
+                numPages.focus({ preventScroll: true });
+            }
+        }
+
+        return { numPages, inArchive };
+    }
+
+    async function promptForLogoutDetails(tracker) {
+        if (!tracker) {
+            return null;
+        }
+
+        const state = getLogoutPageCountState(tracker);
+        const now = new Date();
+        const logOutTime = now.toTimeString().split(' ')[0].substring(0, 5);
+
+        if (state.inArchive) {
+            return { log_out_time: logOutTime, in_digital_archive: true, num_pages: tracker.numPages || tracker.num_pages || null }; 
+        }
+
+        const result = await Swal.fire({
+            title: 'Finalize Logout',
+            html: '<div class="text-left space-y-3"><p class="text-sm text-gray-600">Please enter the total number of pages before completing the logout.</p></div>',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Finalize Logout',
+            cancelButtonText: 'Cancel',
+            focusConfirm: false,
+            didOpen: () => {
+                const content = Swal.getHtmlContainer();
+                if (!content) return;
+                content.innerHTML = `
+                    <div class="space-y-3 text-left">
+                        <p class="text-sm text-gray-600">Please enter the total number of pages before completing the logout.</p>
+                        <div class="space-y-2">
+                            <label for="swal-num-pages" class="block text-sm font-medium text-gray-700">Number of Pages *</label>
+                            <input id="swal-num-pages" type="number" min="1" max="99999" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Enter total pages">
+                        </div>
+                        <label class="flex items-center gap-2 text-sm text-gray-700">
+                            <input id="swal-in-digital-archive" type="checkbox" class="rounded border-gray-300 text-blue-600">
+                            File is already in Digital Archive
+                        </label>
+                    </div>`;
+            },
+            preConfirm: () => {
+                const pages = document.getElementById('swal-num-pages')?.value?.trim();
+                const inDigitalArchive = document.getElementById('swal-in-digital-archive')?.checked || false;
+                if (!inDigitalArchive && (!pages || Number(pages) < 1)) {
+                    Swal.showValidationMessage('Please enter the number of pages.');
+                    return false;
+                }
+                return {
+                    log_out_time: logOutTime,
+                    num_pages: inDigitalArchive ? null : Number(pages),
+                    in_digital_archive: inDigitalArchive
+                };
+            }
+        });
+
+        if (!result.isConfirmed) {
+            return null;
+        }
+
+        return result.value;
+    }
+
     function handleLogOut(trackerId, logId) {
         const tracker = fileTrackers.find(t => t.trackingId === trackerId);
 
@@ -7958,26 +8102,28 @@
             }
         }
 
-        const now = new Date();
-        const logOutTime = now.toTimeString().split(' ')[0].substring(0, 5);
+        promptForLogoutDetails(tracker).then((logoutPayload) => {
+            if (!logoutPayload) {
+                return;
+            }
 
-        requestCompleteMovement(tracker, { log_out_time: logOutTime })
-            .done(function (response) {
-                if (response && response.success && response.data) {
-                    const updatedTracker = transformApiTracker(response.data);
-                    upsertLocalTracker(updatedTracker);
-                    showNotification('File logged out successfully.', 'success');
-                } else {
-                    const message = response?.message || 'Unable to log out this file entry.';
-                    Swal.fire({ icon: 'error', title: 'Log Out Failed', text: message });
-                }
-            })
-            .fail(function (xhr) {
-                const message = xhr?.responseJSON?.message || 'Unable to log out this file entry.';
-                Swal.fire({ icon: 'error', title: 'Error', text: message });
-            });
+            requestCompleteMovement(tracker, logoutPayload)
+                .done(function (response) {
+                    if (response && response.success && response.data) {
+                        const updatedTracker = transformApiTracker(response.data);
+                        upsertLocalTracker(updatedTracker);
+                        showNotification('File logged out successfully.', 'success');
+                    } else {
+                        const message = response?.message || 'Unable to log out this file entry.';
+                        Swal.fire({ icon: 'error', title: 'Log Out Failed', text: message });
+                    }
+                })
+                .fail(function (xhr) {
+                    const message = xhr?.responseJSON?.message || 'Unable to log out this file entry.';
+                    Swal.fire({ icon: 'error', title: 'Error', text: message });
+                });
+        });
     }
-
     window.handleQuickAccept = function (trackingId) {
         const tracker = fileTrackers.find(t => t.trackingId === trackingId);
         
@@ -9597,6 +9743,18 @@
             $('#file-name').val(returnTitle).prop('disabled', true).addClass('metadata-locked');
         }
 
+
+        const returnNumPages = urlParams.get('num_pages');
+        const returnInArchive = urlParams.get('in_digital_archive');
+        const restorePagesField = document.getElementById('num-pages');
+        const restoreRequiredMark = document.getElementById('num-pages-required-mark');
+        if (restorePagesField && returnNumPages) {
+            restorePagesField.value = returnNumPages;
+        }
+        if (restoreRequiredMark && returnInArchive !== null) {
+            restoreRequiredMark.textContent = (returnInArchive === 'true' || returnInArchive === '1') ? '' : '*';
+        }
+
         forceNextMetadataLookup = true;
         $fileNo.trigger('change');
     })();
@@ -10002,3 +10160,8 @@
     };
 
 </script>
+
+
+
+
+

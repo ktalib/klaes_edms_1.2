@@ -553,6 +553,8 @@ class FileNumberApiController extends Controller
                 'district' => $row->district,
                 'lga' => $row->lga,
                 'tracking_id' => $row->tracking_id,
+                'num_pages' => $row->pagetypings_count ?? null,
+                'in_digital_archive' => true,
                 'is_indexed' => true,
                 'file_indexing_id' => $row->id,
             ];
@@ -1825,3 +1827,4 @@ class FileNumberApiController extends Controller
         return str_replace(['-', '/', ' ', '.', '\\'], '', $value);
     }
 }
+

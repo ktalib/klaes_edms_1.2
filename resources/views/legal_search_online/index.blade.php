@@ -35,8 +35,8 @@
         </div>
       </div>
       <div class="flex items-center space-x-3">
-        <a href="{{ route('login') }}" class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-gray-700 border border-gray-300 hover:bg-gray-50 transition">Sign In</a>
-        <a href="{{ route('register') }}" class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition border-0">Register</a>
+        <a href="{{ route('ols.login') }}" class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-gray-700 border border-gray-300 hover:bg-gray-50 transition">Sign In</a>
+        <a href="{{ route('ols.register') }}" class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition border-0">Register</a>
       </div>
     </div>
   </div>
@@ -504,10 +504,16 @@
 const LS = {
     searchUrl:  "{{ route('legalsearch.online.search') }}",
     verifyUrl:  "{{ route('legal_search.online.payment.verify') }}",
+    authCheckUrl: "{{ $config['authCheckUrl'] }}",
+    pendUrl:    "{{ $config['pendUrl'] }}",
     csrf:       "{{ csrf_token() }}",
     pstackKey:  "{{ $config['paystackPublicKey'] }}",
     pstackAmt:  {{ $config['paymentAmount'] }},
-    // Email collected at payment time via Paystack's own email field
+    isAuth:     {{ $config['isAuthenticated'] ? 'true' : 'false' }},
+    loginUrl:   "{{ $config['loginUrl'] }}",
+    registerUrl:"{{ $config['registerUrl'] }}",
+    pendingFile: {{ $config['pendingFile'] ? "'".e($config['pendingFile'])."'" : 'null' }},
+    pendingQuery: {{ $config['pendingQuery'] ? "'".e($config['pendingQuery'])."'" : 'null' }},
 };
 
 // ── State ────────────────────────────────────────────────────────────────
@@ -696,27 +702,90 @@ function renderTable() {
 
 // ── File Details ──────────────────────────────────────────────────────────
 function selectFile(i) {
-    const open = () => {
-        selectedFile = searchResults[i];
-        $id('file-title').textContent    = selectedFile.fileNumber || '—';
-        $id('file-subtitle').textContent = `KANGIS: ${selectedFile.kangisFileNo}${selectedFile.newKangis ? ' | New KANGIS: '+selectedFile.newKangis : ''}`;
-        const b = $id('file-caveat-badge');
-        b.textContent = `Caveat: ${selectedFile.caveat}`;
-        b.className   = `inline-flex items-center rounded-full text-xs font-medium px-3 py-1 ${badge(selectedFile.caveat)}`;
-        $id('property-info').innerHTML = [
-            ['Plot Number',selectedFile.plotNumber],['Plan Number',selectedFile.planNumber],
-            ['Size',selectedFile.size],['LGA',selectedFile.lga],
-            ['District',selectedFile.district],['Location',selectedFile.location],
-        ].map(([l,v]) => `<div class="flex justify-between text-sm"><span class="text-gray-500">${l}:</span><span class="text-gray-800 font-medium text-right">${v||'—'}</span></div>`).join('');
-        $id('ownership-info').innerHTML = [
-            ['Guarantor',selectedFile.guarantor],['Guarantee',selectedFile.guarantee],
-            ['Reg. Particulars',selectedFile.regParticulars],['Last Transaction',selectedFile.lastTx],
-        ].map(([l,v]) => `<div class="flex justify-between text-sm"><span class="text-gray-500">${l}:</span><span class="text-gray-800 font-medium text-right">${v||'—'}</span></div>`).join('');
-        showDetails();
-    };
+    selectedFile = searchResults[i];
 
-    if (paid) { open(); return; }
-    requestPayment(open);
+    // ── Gate: require authentication before showing full result ──
+    if (!LS.isAuth) {
+        // Show auth-required modal, then redirect to login
+        Swal.fire({
+            title: 'Authentication Required',
+            html: 'Please <strong>sign in</strong> or <strong>create an account</strong> to view the full legal search report.',
+            icon: 'info',
+            showCancelButton: true,
+            confirmButtonText: 'Sign In',
+            cancelButtonText: 'Register',
+            reverseButtons: false,
+            allowOutsideClick: false,
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // Store pending file, then go to login
+                pendAndRedirect('login');
+            } else if (result.dismiss === Swal.DismissReason.cancel) {
+                pendAndRedirect('register');
+            }
+        });
+        return;
+    }
+
+    // Authenticated: show preview, then gate payment for full report
+    openDetails();
+}
+
+/**
+ * Store the pending file number in session, then redirect to login/register.
+ */
+function pendAndRedirect(target) {
+    fetch(LS.pendUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': LS.csrf,
+            'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+            file_number: selectedFile?.fileNumber ?? '',
+            query: $id('search-query').value.trim(),
+        }),
+    })
+    .catch(() => {}) // even if this fails, still redirect
+    .finally(() => {
+        const url = target === 'login' ? LS.loginUrl : LS.registerUrl;
+        window.location.href = url;
+    });
+}
+
+/**
+ * Render the file-details preview (shown to authenticated users before payment).
+ */
+function openDetails() {
+    $id('file-title').textContent    = selectedFile.fileNumber || '—';
+    $id('file-subtitle').textContent = `KANGIS: ${selectedFile.kangisFileNo}${selectedFile.newKangis ? ' | New KANGIS: '+selectedFile.newKangis : ''}`;
+    const b = $id('file-caveat-badge');
+    b.textContent = `Caveat: ${selectedFile.caveat}`;
+    b.className   = `inline-flex items-center rounded-full text-xs font-medium px-3 py-1 ${badge(selectedFile.caveat)}`;
+    $id('property-info').innerHTML = [
+        ['Plot Number',selectedFile.plotNumber],['Plan Number',selectedFile.planNumber],
+        ['Size',selectedFile.size],['LGA',selectedFile.lga],
+        ['District',selectedFile.district],['Location',selectedFile.location],
+    ].map(([l,v]) => `<div class="flex justify-between text-sm"><span class="text-gray-500">${l}:</span><span class="text-gray-800 font-medium text-right">${v||'—'}</span></div>`).join('');
+    $id('ownership-info').innerHTML = [
+        ['Guarantor',selectedFile.guarantor],['Guarantee',selectedFile.guarantee],
+        ['Reg. Particulars',selectedFile.regParticulars],['Last Transaction',selectedFile.lastTx],
+    ].map(([l,v]) => `<div class="flex justify-between text-sm"><span class="text-gray-500">${l}:</span><span class="text-gray-800 font-medium text-right">${v||'—'}</span></div>`).join('');
+
+    // If already paid this session, reveal full report; otherwise show preview with pay CTA
+    const btn = $id('request-report-btn');
+    if (paid) {
+        btn.innerHTML = '<i data-lucide="check-circle" class="h-5 w-5 mr-2"></i> Full Report Unlocked';
+        btn.classList.remove('border-gray-300', 'text-gray-700');
+        btn.classList.add('border-green-500', 'text-green-700', 'bg-green-50');
+    } else {
+        btn.innerHTML = '<i data-lucide="lock" class="h-5 w-5 mr-2"></i> Pay ₦1,000 to View Full Report';
+        btn.classList.add('border-gray-300', 'text-gray-700');
+        btn.classList.remove('border-green-500', 'text-green-700', 'bg-green-50');
+    }
+    lucide.createIcons();
+    showDetails();
 }
 
 // ── Payment ───────────────────────────────────────────────────────────────
@@ -807,10 +876,24 @@ document.addEventListener('DOMContentLoaded', function() {
     // Back
     $id('back-to-results').addEventListener('click', () => { selectedFile = null; showResults(); });
 
-    // Request report (from details page)
+    // Request report (from details page) — triggers Paystack payment
     $id('request-report-btn').addEventListener('click', () => {
-        if (paid) { Swal.fire('Access Granted', 'Your report is unlocked for this session.', 'success'); return; }
-        requestPayment(() => Swal.fire('Access Granted', 'You can now view and print the report.', 'success'));
+        if (paid) {
+            Swal.fire('Access Granted', 'Your report is unlocked for this session.', 'success');
+            return;
+        }
+        // After successful payment, mark paid and re-render details
+        requestPayment(() => {
+            paid = true;
+            openDetails();
+            Swal.fire({
+                title: 'Payment Successful',
+                text: 'Your full legal search report is now unlocked.',
+                icon: 'success',
+                timer: 2000,
+                showConfirmButton: false,
+            });
+        });
     });
 
     // Payment modal
@@ -829,6 +912,28 @@ document.addEventListener('DOMContentLoaded', function() {
     [$id('pricing-modal'), $id('report-modal')].forEach(m => {
         m.addEventListener('click', e => { if (e.target === m) m.classList.add('hidden'); });
     });
+
+    // ── Auto-reopen pending file after login/register redirect ──
+    if (LS.pendingFile && LS.isAuth) {
+        // Re-run the search for the pending file, then auto-open its details
+        const query = LS.pendingQuery || LS.pendingFile;
+        $id('search-query').value = query;
+        doSearch({ query: query });
+        // Hook into renderResults to auto-select the matching file once results arrive
+        const origRender = renderResults;
+        renderResults = function () {
+            origRender();
+            if (LS.pendingFile && searchResults.length) {
+                const idx = searchResults.findIndex(f =>
+                    (f.fileNumber || '').toUpperCase() === LS.pendingFile.toUpperCase()
+                );
+                if (idx >= 0) {
+                    LS.pendingFile = null; // consume so it only fires once
+                    setTimeout(() => selectFile(idx), 300);
+                }
+            }
+        };
+    }
 });
 
 window.selectFile = selectFile;

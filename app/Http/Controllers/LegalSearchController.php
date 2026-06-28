@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Services\LegalSearchService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use App\Models\FileIndexing;
 
 class LegalSearchController extends Controller
 {
@@ -189,6 +191,121 @@ class LegalSearchController extends Controller
         ]);
     }
 
+
+    /**
+     * Return archived file folders linked to a searched file number.
+     */
+    public function archiveSummary(Request $request)
+    {
+
+        $request->validate([
+            'file_number' => 'required|string|max:255',
+        ]);
+
+        $fileNumber = $this->normalizeArchiveLookupValue($request->input('file_number'));
+        if ($fileNumber === '') {
+            return response()->json([
+                'success' => true,
+                'file_number' => $request->input('file_number'),
+                'folders' => [],
+                'message' => 'No digital archive available for this file.',
+            ]);
+        }
+
+        $allowedFileNumbers = [$fileNumber];
+        if (method_exists($this->searchService, 'getSmeAllowedFileNos')) {
+            $relatedFileNumbers = $this->searchService->getSmeAllowedFileNos($fileNumber, DB::connection('sqlsrv'));
+            if (!empty($relatedFileNumbers)) {
+                $allowedFileNumbers = array_values(array_unique(array_merge($allowedFileNumbers, $relatedFileNumbers)));
+            }
+        }
+
+        if (Schema::connection('sqlsrv')->hasTable('related_file_number')) {
+            $relatedRows = DB::connection('sqlsrv')->table('related_file_number AS rfn')
+                ->where(function ($q) use ($allowedFileNumbers) {
+                    foreach ($allowedFileNumbers as $candidate) {
+                        $candidate = trim((string) $candidate);
+                        if ($candidate === '') {
+                            continue;
+                        }
+
+                        $q->orWhere('rfn.file_number', $candidate)
+                          ->orWhere('rfn.related_fileno', $candidate)
+                          ->orWhere('rfn.related_fileno', 'like', '%'.$candidate.'%');
+                    }
+                })
+                ->select(['rfn.file_number', 'rfn.related_fileno'])
+                ->get();
+
+            foreach ($relatedRows as $row) {
+                if (!empty($row->file_number)) {
+                    $allowedFileNumbers[] = trim((string) $row->file_number);
+                }
+                if (!empty($row->related_fileno)) {
+                    $allowedFileNumbers[] = trim((string) $row->related_fileno);
+                }
+            }
+            $allowedFileNumbers = array_values(array_unique($allowedFileNumbers));
+        }
+
+        $query = FileIndexing::query()
+            ->select(['id', 'file_number', 'file_title', 'registry', 'land_use_type', 'plot_number', 'location', 'district', 'lga', 'related_fileno', 'mls_file_no', 'kangis_file_no', 'new_kangis_file_no'])
+            ->withCount(['scannings'])
+            ->where(function ($builder) use ($fileNumber, $allowedFileNumbers) {
+                $normalizedColumn = "UPPER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(%s, ''))), '/', '-'), '=', '-'), '_', '-'))";
+                foreach ($allowedFileNumbers as $candidate) {
+                    $builder->orWhereRaw(sprintf($normalizedColumn, 'file_number') . ' = ?', [$candidate]);
+                }
+
+                foreach ($allowedFileNumbers as $candidate) {
+                    $builder->orWhereRaw(sprintf($normalizedColumn, 'related_fileno') . ' = ?', [$candidate])
+                        ->orWhereRaw(sprintf($normalizedColumn, 'related_fileno') . ' LIKE ?', ['%"' . $candidate . '"%'])
+                        ->orWhereRaw(sprintf($normalizedColumn, 'related_fileno') . ' LIKE ?', ['%' . $candidate . '%']);
+                }
+
+                foreach ($allowedFileNumbers as $candidate) {
+                    $builder->orWhereRaw(sprintf($normalizedColumn, 'mls_file_no') . ' = ?', [$candidate])
+                        ->orWhereRaw(sprintf($normalizedColumn, 'kangis_file_no') . ' = ?', [$candidate])
+                        ->orWhereRaw(sprintf($normalizedColumn, 'new_kangis_file_no') . ' = ?', [$candidate]);
+                }
+            })
+            ->whereHas('scannings');
+
+        $folders = $query->orderByDesc('updated_at')->get()->map(function (FileIndexing $file) {
+            return [
+                'id' => $file->id,
+                'folder_name' => $file->file_title ?: $file->file_number,
+                'file_number' => $file->file_number,
+                'document_count' => (int) ($file->scannings_count ?? 0),
+                'file_title' => $file->file_title,
+                'registry' => $file->registry,
+                'meta' => array_values(array_filter([
+                    $file->land_use_type,
+                    $file->district,
+                    $file->lga,
+                    $file->plot_number,
+                ])),
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'file_number' => $request->input('file_number'),
+            'folders' => $folders,
+            'message' => $folders->isEmpty()
+                ? 'No digital archive available for this file.'
+                : null,
+        ]);
+    }
+
+    private function normalizeArchiveLookupValue(?string $value): string
+    {
+        $value = strtoupper(trim((string) $value));
+        $value = preg_replace('/[\/=_]+/', '-', $value);
+        $value = preg_replace('/\s+/', '', $value);
+
+        return $value ?: '';
+    }
     public function reportTemplateData(Request $request)
     {
         // The report-building engine now lives in LegalSearchService::buildPrintReport

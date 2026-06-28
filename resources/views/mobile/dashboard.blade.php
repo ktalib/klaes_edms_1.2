@@ -1359,6 +1359,22 @@ async function searchFile() {
         redirectSend = `<button class="btn" style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};" onclick="redirectFromSearch(this)"><i class="fas fa-user-tag"></i> Re-direct Request to ${esc(office)}</button>` + subline;
       }
 
+      const inTransitLookupId = String(d.file_number || d.file_title || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const _tlOriginRegistry = String(d.origin_registry || d.registry || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const _tlRackShelf = String(d.rack_shelf || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      // Movement timeline now opens directly from the section header, matching
+      // the existing collapsible behavior used for holders and bill balance.
+      // Shown for both IN_TRANSIT and IN_ARCHIVE files.
+      const movementDetails = /^IN_TRANSIT|^IN_ARCHIVE/.test(d.status) ? `
+        <details id="movementTimelineDetails" style="margin-bottom:12px;border:1px solid var(--border);border-radius:10px;" ontoggle="toggleMovementTimeline('${inTransitLookupId}', this, '${_tlOriginRegistry}', '${_tlRackShelf}')">
+          <summary style="cursor:pointer;list-style:none;padding:9px 12px;font-size:12px;font-weight:700;color:var(--text);">
+            <i class="fas fa-stream" style="margin-right:6px;color:var(--primary);"></i>View Movement timeline
+          </summary>
+          <div style="padding:8px 12px;">
+            <div id="fileMovementTimeline"></div>
+          </div>
+        </details>` : '';
+
       // Mobile File Search is a read-only locator. But if this file has an OPEN
       // File Request waiting on this SCB Monitor, offer a Found/Not-Found shortcut.
       let frShortcut = '';
@@ -1392,9 +1408,9 @@ async function searchFile() {
         const dTotal = (l, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;"><span style="font-size:12px;font-weight:800;">${esc(l)}</span><span style="font-size:13px;font-weight:800;text-align:right;">${has(v) ? '₦' + Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : DASH}</span></div>`;
         // Fee labels mirror the "Generate Bill Balance" wizard (Fees & Charges step).
         const FEE_KEYS = ['Registration Fees', 'Survey Fees', 'Preparation Fees', 'Compensation Fees', 'Development Charges'];
-        // Indexing bills (Bill Balance + Grant Rent amounts captured during File Indexing).
+        // Indexing bills (Bill Balance + Ground Rent amounts captured during File Indexing).
         const ib = d.indexing_bills || {};
-        const indexingBillRows = `${dMoney('Bill Balance', ib.bill_balance)}${dMoney('Grant Rent', ib.grant_rent)}`;
+        const indexingBillRows = `${dMoney('Bill Balance', ib.bill_balance)}${dMoney('Ground Rent', ib.grant_rent)}`;
         const billHtml = `
           <details style="margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;">
             <summary style="cursor:pointer;list-style:none;padding:8px 10px;font-size:11px;font-weight:800;color:var(--text);"><i class="fas fa-file-invoice-dollar" style="margin-right:6px;color:var(--primary);"></i>Bill Balance Details</summary>
@@ -1414,7 +1430,9 @@ async function searchFile() {
             return !t.includes('mortgage') && !t.includes('surrender');
           });
           if (!hist.length) {
-            return dRow('Original Holder', d.original_holder) + dRow('Current Holder', d.current_holder);
+            const origVal = has(d.original_holder) ? d.original_holder : d.current_holder;
+            const currVal = has(d.current_holder) ? d.current_holder : d.original_holder;
+            return dRow('Original Holder', origVal) + dRow('Current Holder', currVal);
           }
           // Shorten a transaction type to its instrument label (R of O, C of O,
           // Assignment, Mortgage, …) for the compact ownership list.
@@ -1492,6 +1510,7 @@ async function searchFile() {
               <span style="font-size:13px;font-weight:800;color:${d.duplicate_flag.color};"><i class="fas fa-copy" style="margin-right:5px;"></i>${esc(d.duplicate_flag.label)}</span>
             </div>` : ''}
             ${holderBill}
+            ${movementDetails}
             ${rowsHtml}
             ${ofsRegistry}
             <div id="fsDigital" style="margin-top:12px;"></div>
@@ -1499,6 +1518,7 @@ async function searchFile() {
             ${redirectSend}
             ${physicalNote}
             ${frShortcut}
+            
           </div>
         </div>`;
       // When the file's origin registry was auto-detected and the Send form is shown,
@@ -1517,6 +1537,250 @@ async function searchFile() {
   }
 
   btn.disabled = false; btn.innerHTML = blind ? '<i class="fas fa-paper-plane"></i>' : '<i class="fas fa-search"></i>';
+}
+
+async function toggleMovementTimeline(fileNumber, detailsEl, originRegistry, rackShelf) {
+  const container = document.getElementById('fileMovementTimeline');
+  if (!container) return;
+  if (!detailsEl) return;
+
+  if (!detailsEl.open) {
+    return;
+  }
+
+  if (container.dataset.loaded === '1') return;
+
+  container.innerHTML = `<div style="padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);font-size:13px;color:var(--muted);">Loading movement history for <strong>${esc(fileNumber)}</strong>…</div>`;
+
+  // Default "In Archive" home row — mirrors the permanent registry/archive location
+  // shown at the top of the movement log in the desktop Create File Tracker view.
+  // Always rendered (with fallback label), matching js.blade.php behaviour.
+  const inArchiveHomeRow = `
+    <div style="position:relative;padding:0 0 14px 26px;margin-left:2px;">
+      <span style="position:absolute;left:8px;top:0;bottom:0;width:2px;background:var(--border);"></span>
+      <span style="position:absolute;left:2px;top:6px;width:14px;height:14px;border-radius:50%;background:#10b981;border:3px solid var(--surface);box-shadow:0 0 0 1px rgba(16,185,129,.3);"></span>
+      <div style="padding:0 4px 0 0;">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+          <div style="min-width:0;flex:1 1 65%;">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px;">Archive / Registry</div>
+            <div style="font-size:13px;color:var(--text);font-weight:700;line-height:1.35;">
+              <i class="fas fa-box-archive" style="margin-right:5px;color:#10b981;"></i>${esc(originRegistry || 'Registry / Archive')}${rackShelf ? ` — Rack/Shelf ${esc(rackShelf)}` : ''}
+            </div>
+          </div>
+          <div style="min-width:0;flex:1 1 30%;text-align:right;">
+            <span style="display:inline-block;padding:6px 10px;border-radius:999px;font-size:11px;font-weight:700;background:#d1fae5;color:#166534;border:1px solid #a7f3d0;">In Archive</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  try {
+    const res = await api(`${API_BASE}/track/${encodeURIComponent(fileNumber)}`);
+    if (!res || !res.success || !res.data) {
+      container.innerHTML = `${inArchiveHomeRow}<div style="padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);font-size:13px;color:#ef4444;">Could not load movement history.</div>`;
+    } else {
+      const currentLogs = Array.isArray(res.data.movement_history) ? res.data.movement_history : [];
+      const priorLogs = Array.isArray(res.data.prior_movements) ? res.data.prior_movements : [];
+      const allLogs = [...priorLogs, ...currentLogs].sort(compareMovementEntries);
+      if (!allLogs.length) {
+        container.innerHTML = `${inArchiveHomeRow}<div style="padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);font-size:13px;color:var(--muted);">No movement history available for this file.</div>`;
+      } else {
+        const approvalPurposes = ['recommendation', 'approval'];
+        const movementLogs = allLogs.filter(entry => !approvalPurposes.includes(String(entry.purpose || '').toLowerCase()));
+        const approvalLogs = allLogs.filter(entry => approvalPurposes.includes(String(entry.purpose || '').toLowerCase()));
+
+        container.innerHTML = `
+          <div style="margin-top:12px;font-size:13px;font-weight:700;color:var(--text);">Movement timeline</div>
+          ${priorLogs.length ? `<div style="margin-top:8px;padding:10px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);font-size:12px;color:var(--muted);">Tracking cycles for this file.</div>` : ''}
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px;">
+            ${inArchiveHomeRow}
+            ${movementLogs.length ? movementLogs.map((entry) => renderMovementRow(entry)).join('') : `<div style="padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);font-size:13px;color:var(--muted);">No physical movement entries found. Approval steps may still be present below.</div>`}
+          </div>
+          ${approvalLogs.length ? `
+            <div style="margin-top:16px;font-size:13px;font-weight:700;color:var(--text);">Workflow approvals</div>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px;">
+              ${approvalLogs.map((entry) => renderApprovalRow(entry)).join('')}
+            </div>
+          ` : ''}`;
+        container.dataset.loaded = '1';
+      }
+    }
+  } catch (e) {
+    container.innerHTML = `<div style="padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);font-size:13px;color:#ef4444;">Error loading movement history: ${esc(e.message)}</div>`;
+  }
+}
+
+function compareMovementEntries(a, b) {
+  return movementEntryTimestamp(a) - movementEntryTimestamp(b);
+}
+
+function movementEntryTimestamp(entry) {
+  const parseDateTime = (date, time) => {
+    const d = (date || '').toString().trim();
+    if (!d) return null;
+    const t = (time || '').toString().trim() || '00:00';
+    const parsed = Date.parse(`${d} ${t}`);
+    return Number.isNaN(parsed) ? null : parsed;
+  };
+
+  const inTs = parseDateTime(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime);
+  if (inTs !== null) return inTs;
+
+  const outTs = parseDateTime(entry.log_out_date || entry.logOutDate, entry.log_out_time || entry.logOutTime);
+  if (outTs !== null) return outTs;
+
+  const createdAt = entry.created_at || entry.createdAt || '';
+  const createdTs = Date.parse(createdAt);
+  return Number.isNaN(createdTs) ? Number.POSITIVE_INFINITY : createdTs;
+}
+
+function toAmPm(timeStr) {
+  if (!timeStr) return '';
+  const parts = timeStr.toString().trim().split(':');
+  if (parts.length < 2) return timeStr;
+  let h = parseInt(parts[0], 10);
+  const m = parts[1].padStart(2, '0');
+  if (isNaN(h)) return timeStr;
+  const period = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m} ${period}`;
+}
+
+function formatMovementDate(date, time) {
+  const d = (date || '').toString().trim();
+  if (!d) return '—';
+  if (!time) return esc(d);
+  // Prefer AM/PM formatting for the time portion to match web view
+  const pretty = toAmPm(time);
+  return `${esc(d)} ${esc(pretty)}`;
+}
+
+function resolveMovementStatus(entry) {
+  const rawOverride = (entry.status_label || entry.statusLabel || entry.new_status || entry.newStatus || '').toString().trim();
+  const rawStatus = (entry.status || '').toString().trim().toLowerCase();
+  const normalize = (value) => value.toLowerCase().replace(/_/g, ' ');
+
+  if (rawOverride) {
+    const normalized = normalize(rawOverride);
+    switch (normalized) {
+      case 'log-in':
+      case 'log in':
+        return { label: 'Log-in', style: 'background:#d1fae5;color:#166534;border:1px solid #a7f3d0;' };
+      case 'log-out':
+      case 'log out':
+        return { label: 'Log-out', style: 'background:#d1fae5;color:#166534;border:1px solid #a7f3d0;' };
+      case 'pending acceptance':
+      case 'in-transit':
+      case 'in transit':
+        return { label: 'In-Transit', style: 'background:#fef9c3;color:#78350f;border:1px solid #fde68a;' };
+      case 'rejected':
+        return { label: 'Rejected', style: 'background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;' };
+      case 'cancelled':
+      case 'canceled':
+        return { label: 'Cancelled', style: 'background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db;' };
+      default:
+        return { label: rawOverride, style: 'background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe;' };
+    }
+  }
+
+  switch (rawStatus) {
+    case 'pending_acceptance':
+      return { label: 'In-Transit', style: 'background:#fef9c3;color:#78350f;border:1px solid #fde68a;' };
+    case 'active':
+      return { label: 'Log-out', style: 'background:#d1fae5;color:#166534;border:1px solid #a7f3d0;' };
+    case 'completed':
+      return { label: 'Log-in', style: 'background:#d1fae5;color:#166534;border:1px solid #a7f3d0;' };
+    case 'rejected':
+      return { label: 'Rejected', style: 'background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;' };
+    default:
+      return { label: String(entry.status || 'Completed').replace(/_/g, ' '), style: 'background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe;' };
+  }
+}
+
+function renderMovementRow(entry) {
+  const office = esc(entry.office_name || entry.office || entry.receiving_office_name || 'Unknown');
+  const officer = esc(entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-');
+  const status = resolveMovementStatus(entry);
+  const statusLabel = status.label;
+  const hasLogIn = statusLabel === 'Log-in' || statusLabel === 'Completed';
+  const inDate = hasLogIn
+    ? formatMovementDate(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime)
+    : '-';
+  const outDateRaw = entry.log_out_date || entry.logOutDate;
+  const outTimeRaw = entry.log_out_time || entry.logOutTime;
+  const outDate = outDateRaw
+    ? formatMovementDate(outDateRaw, outTimeRaw)
+    : ['active', 'pending_acceptance', 'in-transit', 'in transit'].includes((entry.status || '').toString().trim().toLowerCase())
+      ? 'In transit'
+      : '-';
+  const notes = entry.notes ? `<div style="margin-top:8px;font-size:12px;color:var(--muted);">${esc(entry.notes)}</div>` : '';
+
+  return `
+    <div style="position:relative;padding:0 0 14px 26px;margin-left:2px;">
+      <span style="position:absolute;left:8px;top:0;bottom:0;width:2px;background:var(--border);"></span>
+      <span style="position:absolute;left:2px;top:6px;width:14px;height:14px;border-radius:50%;background:var(--primary);border:3px solid var(--surface);box-shadow:0 0 0 1px var(--primary-soft);"></span>
+      <div style="padding:0 4px 0 0;">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+          <div style="min-width:0;flex:1 1 65%;">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px;">Office</div>
+            <div style="font-size:13px;color:var(--text);font-weight:700;line-height:1.35;">${office}</div>
+          </div>
+          <div style="min-width:0;flex:1 1 30%;text-align:right;">
+            <span style="display:inline-block;padding:6px 10px;border-radius:999px;font-size:11px;font-weight:700;${status.style}">${esc(status.label)}</span>
+          </div>
+        </div>
+        <div style="margin-top:10px;display:grid;gap:9px;">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px;">Receiving Officer</div>
+            <div style="font-size:13px;color:var(--text);font-weight:600;">${officer}</div>
+          </div>
+          <div style="display:grid;gap:7px;">
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px;">Log In</div>
+              <div style="font-size:13px;color:var(--text);font-weight:600;">${inDate}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px;">Log Out</div>
+              <div style="font-size:13px;color:var(--text);font-weight:600;">${outDate}</div>
+            </div>
+          </div>
+        </div>
+        ${notes}
+      </div>
+    </div>`;
+}
+
+function renderApprovalRow(entry) {
+  const office = esc(entry.office_name || entry.office || entry.receiving_office_name || 'Unknown');
+  const officer = esc(entry.receiving_officer_name || entry.accepted_by_name || '—');
+  const eventDate = formatMovementDate(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime);
+  const status = resolveMovementStatus(entry);
+  const purposeLabel = String(entry.purpose || '').toLowerCase() === 'recommendation' ? 'Recommendation' : 'Approval';
+  const notes = entry.notes ? `<div style="margin-top:8px;font-size:12px;color:var(--muted);">${esc(entry.notes)}</div>` : '';
+
+  return `
+    <div style="padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface-3);">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="min-width:0;flex:1 1 65%;">
+          <div style="font-size:12px;font-weight:700;color:var(--text);">${purposeLabel}</div>
+          <div style="margin-top:6px;font-size:12px;color:var(--muted);">${eventDate}</div>
+        </div>
+        <div style="min-width:0;flex:1 1 30%;text-align:right;">
+          <span style="padding:6px 10px;border-radius:999px;font-size:11px;font-weight:700;${status.style}">${esc(status.label)}</span>
+        </div>
+      </div>
+      <div style="margin-top:10px;display:grid;gap:10px;font-size:12px;color:var(--text);">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;">Office</div>
+          <div>${office}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;">Officer</div>
+          <div>${officer}</div>
+        </div>
+      </div>
+      ${notes}
+    </div>`;
 }
 
 // ─── File Digital Library (cover card + gallery; shared source with DFR) ────
@@ -2373,3 +2637,7 @@ loadNotifications();
 </script>
 </body>
 </html>
+
+
+
+

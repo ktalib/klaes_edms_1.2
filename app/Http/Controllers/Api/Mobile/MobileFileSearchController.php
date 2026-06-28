@@ -154,13 +154,17 @@ class MobileFileSearchController extends Controller
             return null;
         }
 
+        $phys = trim((string) ($indexing->physical_registry ?? ''));
+        if ($phys !== '') {
+            return $phys;
+        }
+
         if ((string) ($indexing->is_corresponding_file ?? '') === '1') {
             return 'Registry 1 - Cadastral';
         }
 
-        $gen  = strtoupper(trim((string) ($indexing->general_registry ?? '')));
-        $phys = strtoupper(trim((string) ($indexing->physical_registry ?? '')));
-        $hay  = $gen . '|' . $phys;
+        $gen = strtoupper(trim((string) ($indexing->general_registry ?? '')));
+        $hay = $gen;
 
         if (str_contains($hay, 'KANGIS')) {
             return 'KANGIS Registry';
@@ -171,7 +175,7 @@ class MobileFileSearchController extends Controller
         // ST (STIL) files carry an "ST-" prefix in the file number itself — not a
         // land file that merely references an ST number in st_fillno.
         $fileNo = strtoupper(trim((string) ($indexing->file_number ?? '')));
-        if (str_starts_with($fileNo, 'ST-') || $gen === 'ST REGISTRY' || $phys === 'ST REGISTRY') {
+        if (str_starts_with($fileNo, 'ST-') || $gen === 'ST REGISTRY') {
             return 'ST Registry';
         }
 

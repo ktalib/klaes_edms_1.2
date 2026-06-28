@@ -702,36 +702,47 @@
                                                     <p class="text-xs text-gray-500">Auto-filled from File Indexing; reset
                                                         the form to unlock if a change is required</p>
                                                 </div>
-                                                <!-- Priority Selection -->
-                                                <div class="space-y-2">
-                                                    <label for="file-priority"
-                                                        class="block text-sm font-medium text-gray-700">File
-                                                        Priority</label>
-                                                    <select id="file-priority"
-                                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                                        <option value="LOW">Low Priority</option>
-                                                        <option value="MEDIUM">Medium Priority</option>
-                                                        <option value="HIGH" selected>High Priority</option>
-                                                    </select>
-                                                    <p class="text-xs text-gray-500">Set the priority level for this file
-                                                    </p>
+
+                                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    <!-- Priority Selection -->
+                                                    <div class="space-y-2">
+                                                        <label for="file-priority"
+                                                            class="block text-sm font-medium text-gray-700">File
+                                                            Priority</label>
+                                                        <select id="file-priority"
+                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                            <option value="LOW">Low Priority</option>
+                                                            <option value="MEDIUM">Medium Priority</option>
+                                                            <option value="HIGH" selected>High Priority</option>
+                                                        </select>
+                                                        <p class="text-xs text-gray-500">Set the priority level for this file
+                                                        </p>
+                                                    </div>
+
+                                                    <!-- Status Update Section -->
+                                                    <div class="space-y-2">
+                                                        <label for="file-status"
+                                                            class="block text-sm font-medium text-gray-700">Status
+                                                            Update</label>
+                                                        <select id="file-status" name="status"
+                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                            <option value="Log-out" selected>Log-out</option>
+                                                            <option value="Log-in">Log-in</option>
+                                                            <option value="Canceled">Canceled</option>
+                                                        </select>
+                                                        <p class="text-xs text-gray-500">Update the file tracker status</p>
+                                                    </div>
                                                 </div>
 
-                                                <!-- Status Update Section -->
                                                 <div class="space-y-2">
-                                                    <label for="file-status"
-                                                        class="block text-sm font-medium text-gray-700">Status
-                                                        Update</label>
-                                                    <select id="file-status" name="status"
-                                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                                        <option value="Log-out" selected>Log-out</option>
-                                                        <option value="Log-in">Log-in</option>
-                                                        <option value="Canceled">Canceled</option>
-                                                    </select>
-                                                    <p class="text-xs text-gray-500">Update the file tracker status</p>
+                                                    <label for="num-pages"
+                                                        class="block text-sm font-medium text-gray-700">Number of Pages <span class="text-red-500">*</span></label>
+                                                    <input type="number" id="num-pages" name="num_pages" min="1" max="99999" required
+                                                        placeholder="Enter total pages…"
+                                                        class="block w-1/2 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                    <p id="num-pages-hint" class="text-xs text-gray-500">Count the total pages in the physical file before logging out.</p>
+                                                    <p id="num-pages-error" class="hidden text-xs text-red-600">Please enter a valid number of pages (1–99,999).</p>
                                                 </div>
-
-
 
                                                 <!-- Notes/Remarks Field -->
                                                 <div class="space-y-2">

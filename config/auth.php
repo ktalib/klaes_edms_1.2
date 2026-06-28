@@ -46,6 +46,12 @@ return [
             'driver' => 'session',
             'provider' => 'phs_members',
         ],
+
+        // Online Legal Search Portal — authenticates OnlineLsUser, separate from staff.
+        'online_ls' => [
+            'driver' => 'session',
+            'provider' => 'online_ls_users',
+        ],
     ],
 
     /*
@@ -74,6 +80,11 @@ return [
         'phs_members' => [
             'driver' => 'eloquent',
             'model' => App\Models\Phs\PhsMember::class,
+        ],
+
+        'online_ls_users' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\OnlineLegalSearch\OnlineLsUser::class,
         ],
 
         // 'users' => [

@@ -1,4 +1,4 @@
-<script>
+﻿<script>
     // Quick Actions functionality
     const QuickActions = {
         searchRequest: null,
@@ -239,7 +239,9 @@
                     const normalizedValue = (identifier || '').trim();
                     if (!normalizedValue) {
                         $('#modal-file-preview').addClass('hidden');
-                        $('#modal-status-update, #modal-status-notes, #modal-registry-office').prop('disabled', true);
+                                $("#modal-status-update, #modal-status-notes, #modal-num-pages, #modal-registry-office").prop("disabled", true);
+                                $("#modal-page-count-section").addClass("hidden");
+                                $("#modal-page-count-section").addClass("hidden");
                         checkStatusUpdateModalForm();
                         return;
                     }
@@ -287,7 +289,9 @@
 
                                 // Enable status, notes and the Registry (Origin) dropdown so the
                                 // user can pick the registry (auto-selected when we can resolve it).
-                                $('#modal-status-update, #modal-status-notes, #modal-registry-office').prop('disabled', false);
+                                $("#modal-status-update, #modal-status-notes, #modal-num-pages, #modal-registry-office").prop("disabled", false);
+                                $("#modal-page-count-section").removeClass("hidden");
+                                $("#modal-page-count-section").removeClass("hidden");
                                 $('#modal-update-status-btn').data('database-id', data.id);
                                 $('#modal-update-status-btn').data('table', data.table || 'file_tracker');
 
@@ -307,8 +311,8 @@
                             } else {
                                 $('#preview-file-name').text('File not found');
                                 $('#preview-file-number, #preview-location, #preview-handler').text('N/A');
-                                $('#preview-status').text('N/A').removeClass().addClass('px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800');
-                                $('#modal-status-update, #modal-status-notes, #modal-registry-office').prop('disabled', true);
+                                $("#modal-status-update, #modal-status-notes, #modal-num-pages, #modal-registry-office").prop("disabled", true);
+                                $("#modal-page-count-section").addClass("hidden");
                                 $('#modal-registry-office').val('');
                             }
                             checkStatusUpdateModalForm();
@@ -316,8 +320,8 @@
                         error: function () {
                             $('#preview-file-name').text('Error loading file information');
                             $('#preview-file-number, #preview-location, #preview-handler').text('N/A');
-                            $('#preview-status').text('Error').removeClass().addClass('px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800');
-                            $('#modal-status-update, #modal-status-notes, #modal-registry-office').prop('disabled', true);
+                                $("#modal-status-update, #modal-status-notes, #modal-num-pages, #modal-registry-office").prop("disabled", true);
+                                $("#modal-page-count-section").addClass("hidden");
                             $('#modal-registry-office').val('');
                             checkStatusUpdateModalForm();
                         }
@@ -330,8 +334,8 @@
                         clearTimeout(trackingLookupTimer);
                         trackingLookupTimer = setTimeout(() => fetchFileInfo(trackingId), 500);
                     } else {
-                        $('#modal-file-preview').addClass('hidden');
-                        $('#modal-status-update, #modal-status-notes, #modal-registry-office').prop('disabled', true);
+                                $("#modal-status-update, #modal-status-notes, #modal-num-pages, #modal-registry-office").prop("disabled", true);
+                                $("#modal-page-count-section").addClass("hidden");
                         $('#modal-registry-office').val('');
                     }
                     checkStatusUpdateModalForm();
@@ -2013,7 +2017,7 @@
             `;
         },
 
-        renderUpdateStatusContent: function () {
+                renderUpdateStatusContent: function () {
             return `
                 <div class="space-y-6">
                     <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -2025,54 +2029,11 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="space-y-4">
                         <div class="space-y-2">
-                            <label for="modal-update-tracking-id" class="block text-sm font-medium text-gray-700">Tracking ID *</label>
-                            <div class="relative">
-                                <input type="text" id="modal-update-tracking-id" placeholder="Enter or scan tracking ID" class="block w-full px-3 py-2 pr-20 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                <div class="absolute inset-y-0 right-0 flex">
-                                    <button type="button" id="modal-scan-tracking" class="flex items-center px-2 border-l border-gray-300 text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Scan QR Code">
-                                        <i data-lucide="scan-line" class="h-4 w-4"></i>
-                                    </button>
-                                    <button type="button" id="modal-search-tracking" class="flex items-center px-2 border-l border-gray-300 text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-r-md" title="Search tracking records">
-                                        <i data-lucide="search" class="h-4 w-4"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <p class="text-xs text-gray-500">Provide the exact tracking ID to see file details</p>
-                        </div>
-                        
-                        <div id="modal-file-preview" class="hidden p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                            <div class="flex items-start gap-3">
-                                <i data-lucide="file-text" class="h-5 w-5 text-gray-600 mt-0.5"></i>
-                                <div class="flex-1 min-w-0">
-                                    <p class="text-sm font-semibold text-gray-900" id="preview-file-name">Loading...</p>
-                                    <div class="mt-2 space-y-1 text-xs text-gray-600">
-                                        <div class="flex justify-between">
-                                            <span>File Number:</span>
-                                            <span id="preview-file-number" class="font-mono">-</span>
-                                        </div>
-                                        <div class="flex justify-between">
-                                            <span>Current Location:</span>
-                                            <span id="preview-location">-</span>
-                                        </div>
-                                        <div class="flex justify-between">
-                                            <span>Current Status:</span>
-                                            <span id="preview-status" class="px-2 py-1 rounded text-xs font-medium">-</span>
-                                        </div>
-                                        <div class="flex justify-between">
-                                            <span>Handler:</span>
-                                            <span id="preview-handler">-</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="space-y-2">
                             <label for="modal-registry-office" class="block text-sm font-medium text-gray-700">Registry (Origin) *</label>
-                            <select id="modal-registry-office" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" disabled>
+                            <select id="modal-registry-office" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                 <option value="">Select Registry (Origin)</option>
                                 @isset($registries)
                                     @foreach($registries as $registry)
@@ -2082,10 +2043,9 @@
                             </select>
                             <p class="text-xs text-gray-500">The file will be logged back to the selected origin Registry</p>
                         </div>
-                        
                         <div class="space-y-2">
                             <label for="modal-status-update" class="block text-sm font-medium text-gray-700">Status *</label>
-                            <select id="modal-status-update" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" disabled>
+                            <select id="modal-status-update" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                 <option value="">Select status</option>
                                 <option value="Log-in">Log-in</option>
                                 <option value="Cancelled">Cancelled</option>
@@ -2093,25 +2053,19 @@
                             </select>
                             <p class="text-xs text-gray-500">Update file status</p>
                         </div>
-                        
                         <div class="space-y-2">
-                            <label for="modal-status-notes" class="block text-sm font-medium text-gray-700">Notes</label>
-                            <textarea id="modal-status-notes" rows="3" placeholder="Optional notes about logging back to registry..." class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" disabled></textarea>
+                            <label for="modal-num-pages" class="block text-sm font-medium text-gray-700">Number of Pages Return <span class="text-red-500">*</span></label>
+                            <input type="number" id="modal-num-pages" name="num_pages" min="1" max="99999" required placeholder="Enter total pages…" class="block w-1/2 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <p id="modal-num-pages-hint" class="text-xs text-gray-500">Enter the total number of pages in the file being returned.</p>
+                            <p id="modal-num-pages-error" class="hidden text-xs text-red-600">Please enter a valid number of pages (1–99,999).</p>
                         </div>
                     </div>
-                    
-                    <div id="modal-status-info" class="hidden p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <div class="flex items-start gap-2">
-                            <i data-lucide="check-circle" class="h-4 w-4 text-green-600 mt-0.5"></i>
-                            <div id="modal-file-info" class="text-sm text-green-800"></div>
-                        </div>
-                    </div>
-                    
+
                     <div class="flex justify-end gap-3 pt-4 border-t border-gray-200">
                         <button type="button" class="modal-close px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                             Cancel
                         </button>
-                        <button type="button" id="modal-update-status-btn" class="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                        <button type="button" id="modal-update-status-btn" class="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
                             <i data-lucide="refresh-cw" class="h-4 w-4 mr-2"></i>
                             Log Back to Registry
                         </button>
@@ -2119,8 +2073,7 @@
                 </div>
             `;
         },
-
-        // Render Update Movement modal content
+// Render Update Movement modal content
         renderUpdateMovementContent: function (trackingId = '') {
             return `
                 <div class="space-y-6">
@@ -2349,3 +2302,9 @@
         </style>
     `);
 </script>
+
+
+
+
+
+

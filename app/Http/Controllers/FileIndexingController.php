@@ -2485,6 +2485,7 @@ class FileIndexingController extends Controller
                     'fn.NewKANGISFileNo',
                     'fn.FileName',
                     'fn.tracking_id',
+                    'fi.id as file_indexing_id',
                     'fi.lga',
                     'fi.location',
                     'fi.district',
@@ -2586,6 +2587,92 @@ class FileIndexingController extends Controller
                 $resolvedFileNumber = $fileNumber;
             }
 
+            // Check if file exists in Digital Archive (has completed scanning + page typing)
+            $inDigitalArchive = false;
+            $numPages = null;
+            try {
+                // Use the file_indexing_id from the joined fi record if available,
+                // otherwise fall back to querying by file_number variants.
+                $indexingId = $record->file_indexing_id ?? null;
+
+                if ($indexingId) {
+                    // Check if this specific file_indexing record has completed scanning + page typing
+                    $archiveRecord = DB::connection('sqlsrv')
+                        ->table('file_indexings')
+                        ->where('id', $indexingId)
+                        ->whereHas('pagetypings')
+                        ->whereHas('scannings')
+                        ->whereColumn(
+                            DB::raw('(SELECT COUNT(*) FROM pagetypings WHERE pagetypings.file_indexing_id = file_indexings.id)'),
+                            '>=',
+                            DB::raw('(SELECT COUNT(*) FROM scannings WHERE scannings.file_indexing_id = file_indexings.id)')
+                        )
+                        ->first();
+
+                    if ($archiveRecord) {
+                        $inDigitalArchive = true;
+                        $numPages = (int) DB::connection('sqlsrv')
+                            ->table('pagetypings')
+                            ->where('file_indexing_id', $archiveRecord->id)
+                            ->count();
+                    }
+                }
+
+                // Fallback: if no fi match or fi.id not found, try by file_number variants
+                if (!$inDigitalArchive) {
+                    $archiveQuery = DB::connection('sqlsrv')
+                        ->table('file_indexings')
+                        ->where(function ($q) use ($variants, $normalizedVariants) {
+                            $added = false;
+                            $fileNumberColumns = ['file_number', 'mls_file_no'];
+                            foreach ($fileNumberColumns as $column) {
+                                foreach ($variants as $variant) {
+                                    if ($variant === '') continue;
+                                    if (!$added) {
+                                        $q->where($column, $variant);
+                                        $added = true;
+                                    } else {
+                                        $q->orWhere($column, $variant);
+                                    }
+                                }
+                            }
+                            foreach ($normalizedVariants as $nv) {
+                                $expr = "REPLACE(REPLACE(REPLACE(UPPER(file_number), '-', ''), '/', ''), ' ', '')";
+                                if (!$added) {
+                                    $q->whereRaw("$expr = ?", [$nv]);
+                                    $added = true;
+                                } else {
+                                    $q->orWhereRaw("$expr = ?", [$nv]);
+                                }
+                            }
+                            if (!$added) {
+                                $q->whereRaw('1 = 0');
+                            }
+                        })
+                        ->whereHas('pagetypings')
+                        ->whereHas('scannings')
+                        ->whereColumn(
+                            DB::raw('(SELECT COUNT(*) FROM pagetypings WHERE pagetypings.file_indexing_id = file_indexings.id)'),
+                            '>=',
+                            DB::raw('(SELECT COUNT(*) FROM scannings WHERE scannings.file_indexing_id = file_indexings.id)')
+                        );
+                    $indexingRecord = $archiveQuery->first();
+
+                    if ($indexingRecord) {
+                        $inDigitalArchive = true;
+                        $numPages = (int) DB::connection('sqlsrv')
+                            ->table('pagetypings')
+                            ->where('file_indexing_id', $indexingRecord->id)
+                            ->count();
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('lookupByFileNumber: digital archive check failed', [
+                    'file_number' => $fileNumber,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -2603,6 +2690,8 @@ class FileIndexingController extends Controller
                     'location' => $record->location ?? null,
                     'district' => $record->district ?? null,
                     'land_use_type' => $record->land_use_type ?? null,
+                    'in_digital_archive' => $inDigitalArchive,
+                    'num_pages' => $numPages,
                     'resolved_at' => now()->toIso8601String(),
                 ],
             ]);

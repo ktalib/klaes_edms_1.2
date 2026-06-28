@@ -21,14 +21,66 @@ class LegalSearchOnlineController extends Controller
     {
         $districtOptions = DB::connection('sqlsrv')->table('districts')->pluck('name')->toArray();
 
+        $pending = session('legal_search_pending');
+        // Clear it once read so it doesn't re-trigger on refresh
+        if ($pending) {
+            session()->forget('legal_search_pending');
+        }
+
         $config = [
             'paystackPublicKey' => config('services.paystack.public'),
             'paymentAmount'     => 100000, // kobo (₦1,000)
             'searchUrl'         => route('legalsearch.online.search'),
             'verifyUrl'         => route('legal_search.online.payment.verify'),
+            'authCheckUrl'      => route('legal_search.online.auth.check'),
+            'pendUrl'           => route('legal_search.online.auth.pend'),
+            'isAuthenticated'   => auth()->check(),
+            'loginUrl'          => route('ols.login'),
+            'registerUrl'       => route('ols.register'),
+            'pendingFile'       => $pending['file_number'] ?? null,
+            'pendingQuery'      => $pending['query'] ?? null,
         ];
 
         return view('legal_search_online.index', compact('districtOptions', 'config'));
+    }
+
+    /**
+     * Check if the current user is authenticated (for JS-side gating).
+     */
+    public function authCheck(Request $request)
+    {
+        return response()->json([
+            'authenticated' => auth()->check(),
+            'user' => auth()->check() ? [
+                'id'    => auth()->id(),
+                'name'  => auth()->user()->name ?? auth()->user()->full_name ?? '',
+                'email' => auth()->user()->email ?? '',
+            ] : null,
+        ]);
+    }
+
+    /**
+     * Store the pending search context in session before redirecting to login.
+     */
+    public function pendSearch(Request $request)
+    {
+        $request->validate(['file_number' => 'required|string|max:100']);
+
+        $backUrl = route('legal_search.online');
+
+        // Store the file number the user was trying to view so we can
+        // re-open it after they log in / register and pay.
+        session([
+            'legal_search_pending' => [
+                'file_number' => trim($request->input('file_number')),
+                'query'       => $request->input('query', ''),
+                'redirect_to' => $backUrl,
+            ],
+            // Tell Laravel's redirect()->intended() where to go after login
+            'url.intended' => $backUrl,
+        ]);
+
+        return response()->json(['ok' => true]);
     }
 
     /**

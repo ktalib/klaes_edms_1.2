@@ -79,6 +79,8 @@ use App\Http\Controllers\Phs\PhsAdminController;
 Route::get('/legal-search/online', [\App\Http\Controllers\LegalSearchOnlineController::class, 'index'])->name('legal_search.online');
 Route::post('/legal-search/online/search', [\App\Http\Controllers\LegalSearchOnlineController::class, 'publicSearch'])->name('legalsearch.online.search');
 Route::post('/legal-search/online/payment/verify', [\App\Http\Controllers\LegalSearchOnlineController::class, 'verifyPayment'])->name('legal_search.online.payment.verify');
+Route::get('/legal-search/online/auth/check', [\App\Http\Controllers\LegalSearchOnlineController::class, 'authCheck'])->name('legal_search.online.auth.check');
+Route::post('/legal-search/online/auth/pend', [\App\Http\Controllers\LegalSearchOnlineController::class, 'pendSearch'])->name('legal_search.online.auth.pend');
 
 Route::middleware(['auth'])->group(function () {
 
@@ -1015,6 +1017,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/search', [LegalSearchController::class, 'search'])->name('legalsearch.search');
         Route::get('/report', [LegalSearchController::class, 'report'])->name('legal_search.report');
         Route::get('/legal_search_report', [LegalSearchController::class, 'legal_search_report'])->name('legal_search.legal_search_report');
+        Route::get('/archive-summary', [LegalSearchController::class, 'archiveSummary'])->name('legal_search.archive-summary');
 
         // Cleanup Mode AJAX endpoints
         Route::post('/match', [LegalSearchController::class, 'match'])->name('legalsearch.match');

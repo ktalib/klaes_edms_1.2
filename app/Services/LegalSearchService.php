@@ -207,16 +207,23 @@ class LegalSearchService
                         }
                     }
                     
+                    $pid = trim((string) ($row['prop_id'] ?? ''));
+                    if ($pid !== '' && isset($searchedPropIds[$pid])) {
+                        return true;
+                    }
+                    
+                    $ppid = trim((string) ($row['parent_prop_id'] ?? ''));
+                    foreach (array_filter(array_map('trim', explode(',', $ppid))) as $pp) {
+                        if ($pp !== '' && isset($searchedPropIds[$pp])) {
+                            return true;
+                        }
+                    }
+                    
                     // If this row's file number is distinctly different from the searched file, exclude it
                     if ($rowFileNo !== '' && $isDistinctFile($rowFileNo)) {
                         return false;
                     }
                     
-                    $pid = trim((string) ($row['prop_id'] ?? ''));
-                    // Keep rows in the searched property's prop_id group.
-                    if ($pid !== '' && isset($searchedPropIds[$pid])) {
-                        return true;
-                    }
                     // Keep orphan rows (no prop_id) only if they directly match the searched file number.
                     if ($pid === '' && $matchesSearchedFile($row)) {
                         return true;
@@ -2861,37 +2868,82 @@ class LegalSearchService
             return [];
         }
 
+        $normalizeForQuery = function (string $value): string {
+            $value = strtoupper(trim($value));
+            $value = preg_replace('/[\/=_]+/', '-', $value);
+            $value = preg_replace('/\s+/', '', $value);
+            return $value;
+        };
+
+        $normalizedFileNo = $normalizeForQuery($fileNo);
+        if ($normalizedFileNo === '') {
+            return [];
+        }
+
         $allowed = [$fileNo];
         $isSme = false;
 
+        $parseRelatedFilenos = function (?string $raw) {
+            $raw = trim((string) $raw);
+            if ($raw === '') {
+                return [];
+            }
+
+            $trimmed = trim($raw, "[]\n\r\t\0\x0B ");
+            $decoded = json_decode($trimmed, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                return array_values(array_filter(array_map(function ($item) {
+                    return trim((string) $item);
+                }, $decoded)));
+            }
+
+            $parts = preg_split('/[,;|]+/', $trimmed);
+            $parts = array_values(array_filter(array_map(function ($part) {
+                return trim(trim((string) $part), "'\" ");
+            }, $parts)));
+
+            if (!empty($parts)) {
+                return $parts;
+            }
+
+            return [trim($trimmed, "'\" ")];
+        };
+
         // 1. Check active indexing
         $active = $conn->table('file_indexings')
-            ->where('file_number', $fileNo)
+            ->whereRaw("UPPER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(file_number, ''))), '/', '-'), '=', '-'), '_', '-')) = ?", [$normalizedFileNo])
             ->whereNull('deleted_at')
             ->first(['related_fileno']);
 
         if ($active && !empty($active->related_fileno)) {
-            $decoded = json_decode($active->related_fileno, true);
-            if (is_array($decoded) && !empty($decoded)) {
+            $decoded = $parseRelatedFilenos($active->related_fileno);
+            if (!empty($decoded)) {
                 $isSme = true;
                 foreach ($decoded as $fn) {
-                    $allowed[] = trim($fn);
+                    if ($fn !== '') {
+                        $allowed[] = trim($fn);
+                    }
                 }
             }
-        } else {
-            // 2. If decommissioned, find active record where this file is in its related_fileno
+        }
+
+        // 2. If the file is a child or decommissioned parent of an SME group,
+        //    find the active parent record and include its related file numbers.
+        if (!$isSme) {
             $activeParent = $conn->table('file_indexings')
                 ->whereNull('deleted_at')
-                ->where('related_fileno', 'like', '%' . $fileNo . '%')
+                ->whereRaw("UPPER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(related_fileno, ''))), '/', '-'), '=', '-'), '_', '-')) LIKE ?", ['%' . $normalizedFileNo . '%'])
                 ->first(['file_number', 'related_fileno']);
             
             if ($activeParent && !str_starts_with(strtoupper($activeParent->file_number), 'ST-')) {
-                $decoded = json_decode($activeParent->related_fileno, true);
-                if (is_array($decoded) && !empty($decoded)) {
+                $decoded = $parseRelatedFilenos($activeParent->related_fileno);
+                if (!empty($decoded)) {
                     $isSme = true;
                     $allowed[] = trim($activeParent->file_number);
                     foreach ($decoded as $fn) {
-                        $allowed[] = trim($fn);
+                        if ($fn !== '') {
+                            $allowed[] = trim($fn);
+                        }
                     }
                 }
             }

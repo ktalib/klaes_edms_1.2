@@ -169,8 +169,8 @@ class DashboardController extends Controller
                     ->where('registry', $registry)
                     ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); });
 
-                // 1. Total File Numbers (from fileNumber table)
-                $totalFileNumbers = $db->table('fileNumber')->count();
+                // 1. Raw file registry file count
+                $fileNumberCount = $db->table('fileNumber')->count();
 
                 // 2. Total Indexed Land Files (file_indexings excluding specialist registries)
                 $landIndexedTotal = $db->table('file_indexings')
@@ -198,6 +198,8 @@ class DashboardController extends Controller
                     ->count();
 
                 // 5. ST Files
+
+                $headlineFileNumberTotal = $fileNumberCount + $cadastralIndexed;
                 $stIndexed      = $db->table('file_indexings')
                     ->where('registry', 'like', 'st%')
                     ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
@@ -222,14 +224,16 @@ class DashboardController extends Controller
                 $gknCommissioned = 0;
 
                 $fileStats = [
-                    'total_file_numbers'   => ['count' => number_format($totalFileNumbers),  'raw' => $totalFileNumbers],
+                    'total_file_numbers'   => ['count' => number_format($headlineFileNumberTotal),  'raw' => $headlineFileNumberTotal],
+                    'total_files'          => ['count' => number_format($fileNumberCount),        'raw' => $fileNumberCount],
                     'land_indexed'         => ['count' => number_format($landIndexedTotal),  'raw' => $landIndexedTotal],
                     'land_commissioned'    => $mlsCommissioned,
                     'cadastral_total'      => ['count' => number_format($cadastralTotal),    'raw' => $cadastralTotal],
                     'kangis' => ['indexed' => number_format($kangisIndexed), 'commissioned' => number_format($kangisCommissioned)],
                     'cadastral' => ['indexed' => number_format($cadastralIndexed), 'commissioned' => number_format($cadastralCommissioned)],
-                    'st'  => ['indexed' => number_format($stIndexed),   'commissioned' => number_format($stCommissioned)],
+                        'st'  => ['indexed' => number_format($stIndexed),   'commissioned' => number_format($stCommissioned)],
                     'dciv'=> ['indexed' => number_format($dcivIndexed), 'commissioned' => number_format($dcivCommissioned)],
+                    'phy_planning' => ['indexed' => number_format(0), 'commissioned' => number_format(0)],
                     'sltr'=> ['indexed' => number_format($sltrIndexed), 'commissioned' => number_format($sltrCommissioned)],
                     'gkn' => ['indexed' => number_format($gknIndexed),  'commissioned' => number_format($gknCommissioned)],
                 ];

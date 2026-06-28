@@ -96,6 +96,11 @@
                 Active
               </span>
             </div>
+            <div id="digital-archive-section" class="mt-4">
+              <div id="digital-archive-loading" class="hidden text-xs text-slate-400">Checking archive...</div>
+              <div id="digital-archive-empty" class="hidden text-xs text-slate-400">No digital archive available.</div>
+              <div id="digital-archive-folders" class="flex flex-col gap-2"></div>
+            </div>
           </div>
         </div>
 
@@ -635,7 +640,11 @@
                     <th style="min-width:120px;">Instrument/Transaction Type</th>
                     <th style="min-width:80px;">Reg Particulars</th>
                     <th style="min-width:100px;">Transaction Date</th>
+                    <th style="min-width:70px;">Reg Time</th>
+                    <th style="min-width:80px;">Reg Date</th>
+                    <th style="min-width:50px;">Size</th>
                     <th style="min-width:120px;max-width:200px;">Comments</th>
+                    <th style="min-width:70px;">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="excluded-table" class="text-gray-500 text-xs">

@@ -7,6 +7,7 @@
 @section('content') 
 @include('legal_search.style') 
 @include('propertycard.css.style')
+@include('filearchive.assets.style')
     <!-- Main Content -->
     <div class="flex-1 overflow-auto">
         <!-- Header -->
@@ -20,6 +21,7 @@
     @include('legal_search.partials.file-history')
     @include('legal_search.partials.report')
   </main>
+@include('filearchive.partials.document_viewer_modal')
 
   @include('legal_search.partials.search-modal')
 
@@ -47,4 +49,5 @@ window.LEGAL_SEARCH_CONTEXT = {
 };
 </script>
 @include('legal_search.js')
+@include('filearchive.assets.js')
 @endsection

@@ -91,7 +91,7 @@ class FilearchiveController extends Controller
             ->select(['id', 'file_number', 'file_title', 'land_use_type', 'district', 'updated_at', 'plot_number', 'location', 'registry'])
             ->with([
                 'fileTracking' => function ($query) {
-                    $query->select(['id', 'file_indexing_id', 'status', 'assignment_status']);
+                    $query->select(['id', 'file_indexing_id', 'status', 'assignment_status', 'current_location', 'movement_history']);
                 },
                 'pagetypings' => function ($query) {
                     $query->select(['id', 'file_indexing_id', 'page_number', 'page_type', 'page_subtype', 'page_code', 'definition_code', 'definition', 'serial_number', 'typed_by', 'cover_type_id', 'created_at', 'updated_at', 'file_path', 'scanning_id'])

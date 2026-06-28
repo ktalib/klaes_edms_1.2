@@ -94,13 +94,22 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateFullLabelDisplay() {
         var primary = (state.rackPrimary||'').toUpperCase().trim();
         var shelf   = (state.shelfNumber||'').toString().trim();
-        var label   = primary + shelf;
-        state.fullLabel = label;
+        // baseLabel is what we persist/send to the server (primary + shelf)
+        var baseLabel = primary + shelf;
+        // displayLabel includes optional backup rack for the UI only and uses the
+        // format PRIMARY + (BACKUP) + SHELF, e.g. "ML1" when primary=M, backup=L, shelf=1
+        var displayLabel = primary + (state.rackSecondary && String(state.rackSecondary).trim() !== '' ? String(state.rackSecondary).toUpperCase().trim() : '') + shelf;
+
+        // Keep fullLabel as the base value for server-side compatibility
+        state.fullLabel = baseLabel;
+        // Provide a separate property for the displayed value if needed elsewhere
+        state.fullLabelDisplay = displayLabel;
+
         var el = document.getElementById('fullLabelInput');
-        if (el) el.value = label;
+        if (el) el.value = displayLabel;
         var lv = document.getElementById('fullLabelValue');
-        if (lv) lv.textContent = label || '—';
-        return label;
+        if (lv) lv.textContent = displayLabel || '—';
+        return baseLabel;
     }
 
     function updateRackLabelStatusDisplay() {
@@ -738,8 +747,15 @@ document.addEventListener('DOMContentLoaded', function() {
             var cn = batch.creator ? batch.creator.name : 'Unknown';
             var fc = batch.batch_items_count || (batch.batch_items?batch.batch_items.length:0) || batch.generated_count || 0;
 
-            var shelfRack = batch.full_label || ((batch.rack_primary||'') + (batch.shelf_number||'')) || '—';
-            if (batch.rack_secondary) shelfRack += ' / ' + batch.rack_secondary;
+            var shelfRack = '—';
+            if (batch.rack_primary || batch.shelf_number) {
+                var p = (batch.rack_primary||'').toString().toUpperCase();
+                var s = (batch.shelf_number||'').toString();
+                var sec = (batch.rack_secondary||'').toString().toUpperCase();
+                shelfRack = p + sec + s;
+            } else if (batch.full_label) {
+                shelfRack = batch.full_label;
+            }
 
             html += '<div class="p-3 grid grid-cols-9 gap-4 hover:bg-gray-50">'+
                 '<div class="font-medium">'+batch.batch_number+'</div>'+
@@ -773,6 +789,15 @@ document.addEventListener('DOMContentLoaded', function() {
     function displayBatchDetailsModal(batchData) {
         var batch = batchData.batch;
         var files = batchData.files || [];
+        var shelfLabelDisplay = '—';
+        if (batch.rack_primary || batch.shelf_number) {
+            var bp = (batch.rack_primary||'').toString().toUpperCase();
+            var bs = (batch.shelf_number||'').toString();
+            var bsec = (batch.rack_secondary||'').toString().toUpperCase();
+            shelfLabelDisplay = bp + bsec + bs;
+        } else if (batch.full_label) {
+            shelfLabelDisplay = batch.full_label;
+        }
         var h = '<div id="batchDetailsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50"><div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white"><div class="mt-3">'+
             '<div class="flex items-center justify-between mb-4"><h3 class="text-lg font-medium text-gray-900">Batch Details: '+batch.batch_number+'</h3><button onclick="closeBatchDetailsModal()" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="h-6 w-6"></i></button></div>'+
             '<div class="grid grid-cols-2 gap-4 mb-6">'+
@@ -781,7 +806,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 '<div><p class="text-sm font-medium text-gray-500">Prefix</p><p class="text-sm text-gray-900">'+(batch.prefix||'—')+'</p></div>'+
                 '<div><p class="text-sm font-medium text-gray-500">Created</p><p class="text-sm text-gray-900">'+new Date(batch.created_at).toLocaleDateString()+'</p></div>'+
                 '<div><p class="text-sm font-medium text-gray-500">Files Count</p><p class="text-sm text-gray-900">'+files.length+'</p></div>'+
-                '<div><p class="text-sm font-medium text-gray-500">Shelf Label</p><p class="text-sm text-gray-900">'+(batch.full_label||'—')+'</p></div>'+
+                '<div><p class="text-sm font-medium text-gray-500">Shelf Label</p><p class="text-sm text-gray-900">'+shelfLabelDisplay+'</p></div>'+
             '</div>';
 
         if (files.length) {
@@ -1094,6 +1119,17 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    var rackSecondarySelect = document.getElementById('rackSecondarySelect');
+    if (rackSecondarySelect) {
+        rackSecondarySelect.addEventListener('change', function() {
+            state.rackSecondary = (this.value||'').toUpperCase();
+            var l = updateFullLabelDisplay();
+            // Use base label for status lookups (updateFullLabelDisplay returns base label)
+            fetchRackLabelStatus(l);
+            if (state.activeTab==='preview') refreshPreview(true);
+        });
+    }
+
     var shelfSelect = document.getElementById('shelfNumberSelect');
     if (shelfSelect) {
         shelfSelect.addEventListener('change', function() {
@@ -1123,6 +1159,7 @@ document.addEventListener('DOMContentLoaded', function() {
         state.kangisPrefix = '';
         state.kangisBatchNo = '';
         state.rackPrimary = 'A';
+        state.rackSecondary = '';
         state.shelfNumber = '1';
         state.fullLabel = 'A1';
         state.availableFiles = [];
@@ -1134,6 +1171,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (kangisPrefixSelect) kangisPrefixSelect.value = '';
         if (kangisBatchNoInput) kangisBatchNoInput.value = '';
         if (rackSelect) rackSelect.value = 'A';
+        if (rackSecondarySelect) rackSecondarySelect.value = '';
         if (shelfSelect) shelfSelect.value = '1';
         var pd = document.getElementById('activePrefixDisplay');
         if (pd) pd.textContent = '—';

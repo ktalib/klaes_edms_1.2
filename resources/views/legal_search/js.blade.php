@@ -1,4 +1,4 @@
-<script>
+﻿<script>
   // Lookup data from DB
   const dbLandUseOptions = @json($landUseOptions ?? []);
   const dbDistrictOptions = @json($districtOptions ?? []);
@@ -1310,10 +1310,19 @@ const executeSearchAjax = (filters, searchData) => {
     } catch(e) { return raw; }
   };
 
+  // Helper: strip stray quote characters from display strings
+  const stripQuotes = (value) => {
+    if (value === null || value === undefined) return '';
+    const text = String(value).trim();
+    if (text === '-') return text;
+    return text.replace(/^["'“”‘’«»]+|["'“”‘’«»]+$/g, '').trim();
+  };
+
   // Helper function to convert text to proper case
   const toProperCase = (text) => {
-    if (!text || text === '-') return text;
-    return text.toString().toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
+    const cleaned = stripQuotes(text);
+    if (!cleaned || cleaned === '-') return cleaned;
+    return cleaned.toString().toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
   };
 
   const CURRENT_FILE_YEAR = new Date().getFullYear();
@@ -1636,7 +1645,12 @@ const executeSearchAjax = (filters, searchData) => {
     const fileNumbers = extractFileNumbers(selectedFile);
     const relatedMls = parseRelatedFilenoValue(selectedFile._file_related_fileno || selectedFile.related_fileno || null);
     const isMlsActuallyKangis = identifyFileNumberType(fileNumbers.mls) === 'kangis';
-    let mlsDisplay = (relatedMls !== '-' && (isMlsActuallyKangis || fileNumbers.mls === '-')) ? relatedMls : fileNumbers.mls;
+    let mlsDisplay = fileNumbers.mls;
+    if (relatedMls !== '-' && (isMlsActuallyKangis || fileNumbers.mls === '-')) {
+      mlsDisplay = relatedMls;
+    } else if (fileNumbers.mls === '-' && relatedMls !== '-') {
+      mlsDisplay = relatedMls;
+    }
 
     // If the user explicitly picked a file number (via the File Number
     // Selector modal or by typing it into the search box) keep that as the
@@ -1746,6 +1760,7 @@ const executeSearchAjax = (filters, searchData) => {
     
     // Default to file history tab
     switchTab('transaction-history');
+    loadLegalSearchArchive();
   };
 
   // Expose renderFileHistory globally so IIFEs and external scripts can call it
@@ -3073,7 +3088,7 @@ const executeSearchAjax = (filters, searchData) => {
     }
 
     if (transactions.length === 0) {
-      excludedTable.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-gray-400 italic">No duplicate or excluded records.</td></tr>';
+      excludedTable.innerHTML = '<tr><td colspan="15" class="text-center py-4 text-gray-400 italic">No duplicate or excluded records.</td></tr>';
       return;
     }
 
@@ -3090,6 +3105,9 @@ const executeSearchAjax = (filters, searchData) => {
       const regTime = formatRegTime(item);
       const size = getMappedValue(item, 'size');
       const uid = getRecordUid(item);
+      const comments = toProperCase((item.is_caveated == 1 && item.caveated_comment) ? item.caveated_comment : getMappedValue(item, 'comments'));
+      const commentsShort = comments && comments.length > 50 ? comments.slice(0, 50) + '…' : (comments || '-');
+      const _wd_ex = recordRichnessScore(item);
       
       const row = document.createElement('tr');
       row.className = 'border-b border-gray-50 hover:bg-gray-50/50 transition-colors';
@@ -3098,6 +3116,7 @@ const executeSearchAjax = (filters, searchData) => {
         <td class="px-3 py-2 text-center">${idx + 1}</td>
         <td class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">${getMappedValue(item, 'fileNumber')}</td>
         <td class="px-3 py-2"><span class="source-badge ${sourceBadgeClass(item.source_table)}">${item.source_table}</span></td>
+        <td class="px-3 py-2 text-gray-500">${_wd_ex}</td>
         <td class="px-3 py-2">${party1}</td>
         <td class="px-3 py-2">${party2}</td>
         <td class="px-3 py-2">${transType}</td>
@@ -3106,6 +3125,7 @@ const executeSearchAjax = (filters, searchData) => {
         <td class="px-3 py-2">${regTime}</td>
         <td class="px-3 py-2">${regDate}</td>
         <td class="px-3 py-2">${size}</td>
+        <td title="${comments}" class="px-3 py-2" style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;">${commentsShort}</td>
         <td class="px-3 py-2 text-center">
           <button class="restore-record-btn px-3 py-1 bg-indigo-50 text-indigo-700 rounded border border-indigo-100 hover:bg-indigo-100 font-medium transition-all" data-uid="${uid}">
             Restore
@@ -4469,6 +4489,190 @@ const executeSearchAjax = (filters, searchData) => {
       }
     });
   })();
+  let archiveLookupController = null;
+  let archiveViewerBound = false;
+
+  const archiveLookupEndpoint = '/legal_search/archive-summary';
+  const archivePagesEndpoint = (fileId) => `/filearchive/document-pages/${fileId}`;
+
+  function normalizeArchiveLookupValue(value) {
+    return String(value || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[\/_=]+/g, '-')
+      .replace(/\s+/g, '');
+  }
+
+  function escapeArchiveHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, function (char) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char];
+    });
+  }
+
+  function getCurrentFileReferenceForArchive() {
+    const override = String(window.__lsLastSearchedFileNumber || '').trim();
+    const panelValue = String(document.getElementById('file-number-value')?.textContent || '').trim();
+    const ref = override || panelValue;
+    return ref && ref !== '-' ? ref : '';
+  }
+
+  function getCurrentArchiveLookupValue() {
+    const selectedRelated = String(selectedFile?._file_related_fileno || selectedFile?.related_fileno || '').trim();
+    const searchedFile = getCurrentFileReferenceForArchive();
+    if (selectedRelated && selectedRelated !== '-' && selectedRelated !== '[]') {
+      const normalized = selectedRelated.replace(/^[\[\]\s'\"]+|[\[\]\s'\"]+$/g, '');
+      const parts = normalized.split(/[,;|]+/).map(p => p.trim().replace(/^['\"]+|['\"]+$/g, '')).filter(Boolean);
+      if (parts.length) {
+        return parts[0];
+      }
+    }
+    return searchedFile;
+  }
+
+  async function loadLegalSearchArchive() {
+    console.log('[Archive Loader] Starting archive load');
+    const section = document.getElementById('digital-archive-section');
+    if (!section) {
+      console.warn('[Archive Loader] Archive section not found in DOM');
+      return;
+    }
+
+    const foldersEl = document.getElementById('digital-archive-folders');
+    const emptyEl = document.getElementById('digital-archive-empty');
+    const loadingEl = document.getElementById('digital-archive-loading');
+    const fileNumber = getCurrentArchiveLookupValue();
+    console.log('[Archive Loader] Current file number:', fileNumber);
+    if (!fileNumber) {
+      console.warn('[Archive Loader] No file number found');
+      if (foldersEl) foldersEl.innerHTML = '';
+      if (loadingEl) loadingEl.classList.add('hidden');
+      if (emptyEl) {
+        emptyEl.textContent = 'No digital archive available for this file.';
+        emptyEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (loadingEl) loadingEl.classList.remove('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
+    if (foldersEl) foldersEl.innerHTML = '';
+
+    if (archiveLookupController) {
+      archiveLookupController.abort();
+    }
+    archiveLookupController = new AbortController();
+
+    try {
+      const normalizedFileNumber = normalizeArchiveLookupValue(fileNumber);
+      const url = `${archiveLookupEndpoint}?file_number=${encodeURIComponent(normalizedFileNumber)}`;
+      console.log('[Archive Loader] Fetching from URL:', url);
+      const response = await fetch(url, { signal: archiveLookupController.signal, headers: { 'Accept': 'application/json' } });
+      const data = await response.json();
+      console.log('[Archive Loader] Response received. Status:', response.status, 'Data:', data);
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Unable to load archive data.');
+      }
+
+      const folders = Array.isArray(data.folders) ? data.folders : [];
+      console.log('[Archive Loader] Found', folders.length, 'folders');
+      if (!folders.length) {
+        console.warn('[Archive Loader] No folders found');
+        if (emptyEl) {
+          emptyEl.textContent = data.message || 'No digital archive available for this file.';
+          emptyEl.classList.remove('hidden');
+        }
+        return;
+      }
+
+      console.log('[Archive Loader] Rendering', folders.length, 'archive button(s)');
+      if (foldersEl) {
+        foldersEl.innerHTML = folders.map((folder) => {
+          const folderName = escapeArchiveHtml(folder.folder_name || folder.file_number || 'Archive');
+          console.log('[Archive Loader] Creating button for folder:', { folderName, folderID: folder.id });
+          return `
+            <button type="button" class="archive-folder-card inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors" data-folder-id="${Number(folder.id)}" data-folder-name="${folderName}">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" /></svg>
+              View Digital Archive
+            </button>
+          `;
+        }).join('');
+        console.log('[Archive Loader] Archive buttons rendered in DOM');
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('[Archive Loader] Archive lookup aborted');
+        return;
+      }
+      console.error('[Archive Loader] Error loading archive:', error.message || error);
+      if (emptyEl) {
+        emptyEl.textContent = 'No digital archive available for this file.';
+        emptyEl.classList.remove('hidden');
+      }
+    } finally {
+      if (loadingEl) loadingEl.classList.add('hidden');
+    }
+  }
+
+  function bindLegalSearchArchiveViewer() {
+    if (archiveViewerBound) return;
+    archiveViewerBound = true;
+    console.log('[Archive Viewer] Binding event listeners for archive folder cards');
+
+    document.addEventListener('click', function (event) {
+      const card = event.target.closest('.archive-folder-card');
+      if (!card) return;
+
+      console.log('[Archive Viewer] Archive folder card clicked');
+
+      const folderId = card.getAttribute('data-folder-id');
+      const folderName = card.getAttribute('data-folder-name');
+      console.log('[Archive Viewer] Folder details:', { folderId, folderName });
+
+      if (!folderId) {
+        console.warn('[Archive Viewer] No folder ID found on clicked card');
+        return;
+      }
+
+      if (typeof window.openDocumentViewer !== 'function') {
+        console.error('[Archive Viewer] window.openDocumentViewer is not a function', typeof window.openDocumentViewer);
+        Swal.fire('Viewer unavailable', 'The digital archive viewer is not available on this page.', 'info');
+        return;
+      }
+
+      const pagesUrl = archivePagesEndpoint(folderId);
+      const metaObj = {
+        number: String(card.getAttribute('data-folder-name') || '').trim() || getCurrentFileReferenceForArchive(),
+        title: String(card.getAttribute('data-folder-name') || '').trim() || 'Digital Archive'
+      };
+      console.log('[Archive Viewer] Calling openDocumentViewer with:', { pagesUrl, metaObj });
+
+      window.openDocumentViewer(pagesUrl, false, metaObj);
+    });
+  }
+
+  // Defer binding until filearchive viewer is available (it's loaded after this script)
+  function attemptBindArchiveViewer() {
+    if (archiveViewerBound) return;
+    const viewerAvailable = typeof window.openDocumentViewer === 'function';
+    console.log('[Archive Viewer] Checking viewer availability. Available:', viewerAvailable);
+    
+    if (!viewerAvailable) {
+      // Viewer not ready yet, try again in 200ms
+      console.log('[Archive Viewer] Viewer not ready, retrying in 200ms');
+      setTimeout(attemptBindArchiveViewer, 200);
+      return;
+    }
+    console.log('[Archive Viewer] Viewer is ready, binding...');
+    bindLegalSearchArchiveViewer();
+  }
+  
+  console.log('[Archive Viewer] Initializing. Document readyState:', document.readyState);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attemptBindArchiveViewer);
+  } else {
+    attemptBindArchiveViewer();
+  }
 
   // Apply-to-File-Information button on timeline rows (delegated)
   document.addEventListener('click', async (e) => {
@@ -4519,6 +4723,7 @@ const executeSearchAjax = (filters, searchData) => {
     if (window._fileInfoOverrides.landUse)         document.getElementById('property-type-value').textContent  = window._fileInfoOverrides.landUse;
 
     document.getElementById('reset-file-info-btn')?.classList.remove('hidden');
+    loadLegalSearchArchive();
   });
 
   // Reset File Information back to original file indexing data
@@ -4526,6 +4731,7 @@ const executeSearchAjax = (filters, searchData) => {
     window._fileInfoOverrides = null;
     renderFileHistory();
     document.getElementById('reset-file-info-btn')?.classList.add('hidden');
+    loadLegalSearchArchive();
   });
 
   // File number picker buttons inside edit modal
@@ -4894,5 +5100,9 @@ const executeSearchAjax = (filters, searchData) => {
     }
   });
 </script>
+
+
+
+
 
 

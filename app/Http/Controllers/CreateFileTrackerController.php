@@ -1321,17 +1321,27 @@ HTML;
             ->first();
 
         if ($archiveRecord) {
+            $archiveFileNumber = $archiveRecord->st_file_no
+                ?? $archiveRecord->kangisFileNo
+                ?? $archiveRecord->mlsfNo
+                ?? $archiveRecord->NewKANGISFileNo
+                ?? $archiveRecord->temp_fileno;
+
+            $archiveFileIndexing = null;
+            if ($archiveFileNumber) {
+                $archiveFileIndexing = FileIndexing::query()
+                    ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [mb_strtoupper(trim((string) $archiveFileNumber))])
+                    ->withCount('pagetypings')
+                    ->first();
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => [
                     'status' => 'archive',
                     'record' => [
                         'id' => $archiveRecord->id,
-                        'file_number' => $archiveRecord->st_file_no
-                            ?? $archiveRecord->kangisFileNo
-                            ?? $archiveRecord->mlsfNo
-                            ?? $archiveRecord->NewKANGISFileNo
-                            ?? $archiveRecord->temp_fileno,
+                        'file_number' => $archiveFileNumber,
                         'tracking_id' => $archiveRecord->tracking_id,
                         'file_name' => $archiveRecord->FileName,
                         'location' => $archiveRecord->location,
@@ -1340,6 +1350,8 @@ HTML;
                         'is_decommissioned' => (bool) $archiveRecord->is_decommissioned,
                         'decommissioning_reason' => $archiveRecord->decommissioning_reason,
                         'created_at' => $archiveRecord->created_at,
+                        'num_pages' => $archiveFileIndexing?->pagetypings_count,
+                        'in_digital_archive' => $archiveFileIndexing ? true : false,
                     ],
                 ],
                 'message' => 'File located in archive records (fileNumber).'
@@ -3779,3 +3791,4 @@ HTML;
         return response()->json(['is_logged_out' => false]);
     }
 }
+

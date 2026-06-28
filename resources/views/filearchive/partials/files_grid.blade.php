@@ -12,6 +12,10 @@
                 <span>File in the Registry</span>
             </div>
             <div class="flex items-center gap-2">
+                <span class="inline-flex w-5 h-5 rounded-full bg-amber-600"></span>
+                <span>File out of Registry</span>
+            </div>
+            <div class="flex items-center gap-2">
                 <span class="inline-flex w-5 h-5 rounded-full bg-red-600"></span>
                 <span>File in Transit</span>
             </div>
@@ -34,12 +38,58 @@
                 @php
                     $isCheckedOut = $file->fileTracking 
                         && ($file->fileTracking->status === 'checked_out' || $file->fileTracking->assignment_status === 'in-transit');
+                    $tracking = $file->fileTracking;
+                    $movementHistory = [];
+                    $currentLocation = null;
+                    $currentStatus = 'registry';
+                    if ($tracking) {
+                        $mh = $tracking->movement_history ?? [];
+                        if (is_array($mh)) {
+                            $movementHistory = $mh;
+                        } elseif (is_string($mh)) {
+                            $movementHistory = json_decode($mh, true) ?: [];
+                        }
+                        $latest = null;
+                        $latestTs = 0;
+                        foreach ($movementHistory as $mv) {
+                            $ts = 0;
+                            $d = $mv['log_in_date'] ?? ($mv['log_out_date'] ?? null);
+                            $t = $mv['log_in_time'] ?? ($mv['log_out_time'] ?? null);
+                            if ($d) {
+                                $ts = strtotime($d . ' ' . ($t ?: '00:00:00')) ?: 0;
+                            }
+                            if ($ts > $latestTs) {
+                                $latestTs = $ts;
+                                $latest = $mv;
+                            }
+                        }
+                        if ($latest) {
+                            $currentLocation = $latest['current_location'] ?? ($latest['location'] ?? ($latest['office'] ?? null));
+                            $hasLogout = !empty($latest['log_out_date']) || !empty($latest['log_out_time']);
+                            $hasLogin = !empty($latest['log_in_date']) || !empty($latest['log_in_time']);
+                            if ($hasLogin && !$hasLogout) {
+                                $currentStatus = 'in_transit';
+                            } else {
+                                $currentStatus = 'registry';
+                            }
+                        }
+                        if (!empty($tracking->current_location)) {
+                            $currentLocation = $tracking->current_location;
+                        }
+                    }
+                    $isInDocWare = !empty($currentLocation);
+                    $statusLabel = $currentStatus === 'in_transit' ? 'File in Transit' : 'File in the Registry';
+                    if ($isInDocWare) {
+                        $statusLabel = $currentLocation;
+                    }
                 @endphp
                 <div class="border rounded-lg overflow-hidden hover:shadow-md transition-shadow cursor-pointer file-card {{ $isCheckedOut ? 'opacity-50 grayscale' : '' }}" 
                     data-id="{{ $file->id }}"
-                       data-pages-url="{{ route('filearchive.document-pages', ['id' => $file->id, 'url' => request('url')]) }}"
+                    data-pages-url="{{ route('filearchive.document-pages', ['id' => $file->id, 'url' => request('url')]) }}"
                     data-file-number="{{ e($file->file_number) }}"
-                    data-file-title="{{ e($file->file_title) }}">
+                    data-file-title="{{ e($file->file_title) }}"
+                    data-status="{{ e($currentStatus) }}"
+                    data-location="{{ e($currentLocation) }}">
                     <div class="aspect-[3/4] bg-gray-100 relative">
                             <!-- Document cover with actual cover page preview -->
                             <div class="absolute inset-0 flex flex-col bg-white">
@@ -129,8 +179,9 @@
                                     */
                                 @endphp
                                 <div 
-                                    class="h-8 {{ $isCheckedOut ? 'bg-red-600' : 'bg-green-600' }} flex items-center justify-between px-3 file-card-status-header transition-colors duration-200" 
+                                    class="h-8 flex items-center justify-between px-3 file-card-status-header transition-colors duration-200 {{ $currentStatus === 'in_transit' ? 'bg-red-600' : ($isInDocWare ? 'bg-amber-600' : 'bg-green-600') }}" 
                                     data-file-number="{{ $file->file_number }}"
+                                    data-status-label="{{ e($statusLabel) }}"
                                 >
                                     <span class="text-xs font-medium text-white whitespace-nowrap">
                                         {{ $file->file_number }}
@@ -139,6 +190,17 @@
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-white/20 text-white whitespace-nowrap">
                                                {{ (int) (($file->storage_page_count ?? 0) > 0 ? $file->storage_page_count : ($file->pagetypings_count ?? 0)) }} pages
                                         </span>
+                                    </div>
+                                    <div class="status-tooltip">
+                                        <div class="font-semibold mb-1">{{ $file->file_number }}</div>
+                                        <div class="text-gray-200">{{ $statusLabel }}</div>
+                                        @if($isInDocWare && $currentLocation)
+                                        <div class="text-gray-300 mt-1">📍 {{ $currentLocation }}</div>
+                                        @elseif($currentStatus === 'in_transit')
+                                        <div class="text-gray-300 mt-1">⏳ File is in transit</div>
+                                        @else
+                                        <div class="text-gray-300 mt-1">✅ File is in the registry</div>
+                                        @endif
                                     </div>
                                 </div>
                                 <div class="flex-1 flex flex-col overflow-hidden">
@@ -226,6 +288,39 @@
                                 <span class="badge text-xs font-medium bg-amber-100 text-amber-700">{{ $file->district }}</span>
                             @endif
                         </div>
+
+                        {{-- File Movement History (Doc-WARE) --}}
+                        @if(!empty($movementHistory) && is_array($movementHistory))
+                        @php
+                            $sortedHistory = $movementHistory;
+                            usort($sortedHistory, function($a, $b) {
+                                $tsA = strtotime(($a['log_in_date'] ?? ($a['log_out_date'] ?? '1970-01-01')) . ' ' . (($a['log_in_time'] ?? ($a['log_out_time'] ?? '00:00:00'))));
+                                $tsB = strtotime(($b['log_in_date'] ?? ($b['log_out_date'] ?? '1970-01-01')) . ' ' . (($b['log_in_time'] ?? ($b['log_out_time'] ?? '00:00:00'))));
+                                return $tsB <=> $tsA;
+                            });
+                            $displayHistory = array_slice($sortedHistory, 0, 5);
+                        @endphp
+                        <div class="file-movement-info" data-fno="{{ e($file->file_number) }}">
+                            <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <i data-lucide="route" class="h-3 w-3"></i> Movement History
+                            </div>
+                            @foreach($displayHistory as $mv)
+                                @php
+                                    $mvLoc = $mv['current_location'] ?? ($mv['location'] ?? ($mv['office'] ?? 'Unknown'));
+                                    $mvDate = $mv['log_in_date'] ?? ($mv['log_out_date'] ?? '');
+                                    $mvTime = $mv['log_in_time'] ?? ($mv['log_out_time'] ?? '');
+                                    $mvAction = !empty($mv['log_in_date']) || !empty($mv['log_in_time']) ? 'Log In' : 'Log Out';
+                                @endphp
+                                <div class="mv-row">
+                                    <span class="mv-date">{{ e($mvDate) }} {{ e($mvTime) }}</span>
+                                    <span class="mv-location">{{ e($mvLoc) }}</span>
+                                </div>
+                            @endforeach
+                            @if(count($movementHistory) > 5)
+                                <div class="text-[10px] text-gray-400 text-center mt-1 italic">+{{ count($movementHistory) - 5 }} more</div>
+                            @endif
+                        </div>
+                        @endif
                     </div>
                 @endforeach
             </div>

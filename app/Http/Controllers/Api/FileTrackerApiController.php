@@ -892,7 +892,9 @@ class FileTrackerApiController extends Controller
 
             $validator = Validator::make($request->all(), [
                 'log_out_time' => 'nullable|string',
-                'notes' => 'nullable|string'
+                'notes' => 'nullable|string',
+                'num_pages' => 'nullable|integer|min:1|max:99999',
+                'in_digital_archive' => 'nullable|boolean',
             ]);
 
             if ($validator->fails()) {
@@ -905,7 +907,11 @@ class FileTrackerApiController extends Controller
 
             $result = $tracker->completeCurrentMovement(
                 $request->log_out_time,
-                $request->notes
+                $request->notes,
+                $request->filled('num_pages') ? (int) $request->input('num_pages') : null,
+                $request->has('in_digital_archive')
+                    ? filter_var($request->input('in_digital_archive'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE)
+                    : null
             );
 
             if (!$result) {
@@ -1335,6 +1341,7 @@ class FileTrackerApiController extends Controller
             // Try to find by tracking ID first, then by file number
             $tracker = FileTracker::where('tracking_id', $identifier)
                                  ->orWhere('file_number', $identifier)
+                                 ->orderByDesc('id')
                                  ->first();
 
             if (!$tracker) {
@@ -1368,6 +1375,7 @@ class FileTrackerApiController extends Controller
                     'days_until_deadline' => $tracker->days_until_deadline,
                     'completion_percentage' => $tracker->completion_percentage,
                     'movement_history' => $movementLog,
+                    'prior_movements' => $this->getPriorMovements($tracker),
                     'notes' => $tracker->notes
                 ],
                 'message' => 'File tracker retrieved successfully'
@@ -1379,6 +1387,82 @@ class FileTrackerApiController extends Controller
                 'message' => 'Error tracking file: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    protected function getPriorMovements(FileTracker $tracker): array
+    {
+        $fileNumber = trim((string) $tracker->file_number);
+        if ($fileNumber === '') {
+            return [];
+        }
+
+        $key = mb_strtoupper($fileNumber);
+        $priorRows = FileTracker::query()
+            ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [$key])
+            ->where('id', '<', $tracker->id)
+            ->orderBy('id')
+            ->get(['id', 'movement_log', 'receiving_officer_name', 'receiving_officer_id']);
+
+        $priorMovements = [];
+        foreach ($priorRows as $row) {
+            $logEntries = is_array($row->movement_log)
+                ? $row->movement_log
+                : (json_decode((string) ($row->movement_log ?? '[]'), true) ?? []);
+
+            if (!is_array($logEntries)) {
+                continue;
+            }
+
+            foreach ($logEntries as $entry) {
+                if (!is_array($entry)) {
+                    continue;
+                }
+
+                $recvId = $entry['receiving_officer_id'] ?? null;
+                $userId = $entry['user_id'] ?? null;
+                if ($recvId !== null && $userId !== null && (int) $recvId === (int) $userId) {
+                    $entry['receiving_officer_name'] = $row->receiving_officer_name ?: null;
+                    $entry['receiving_officer_id'] = $row->receiving_officer_id;
+                }
+
+                $priorMovements[] = $entry;
+            }
+        }
+
+        usort($priorMovements, function ($a, $b) {
+            return $this->movementSortTimestamp($a) <=> $this->movementSortTimestamp($b);
+        });
+
+        return $priorMovements;
+    }
+
+    protected function movementSortTimestamp(array $entry): float
+    {
+        $inDate  = trim((string) ($entry['log_in_date'] ?? ''));
+        $inTime  = trim((string) ($entry['log_in_time'] ?? ''));
+        $outDate = trim((string) ($entry['log_out_date'] ?? ''));
+        $outTime = trim((string) ($entry['log_out_time'] ?? ''));
+
+        $candidates = [];
+        if ($inDate !== '') {
+            $candidates[] = $inDate . ' ' . ($inTime !== '' ? $inTime : '00:00');
+        }
+        if ($outDate !== '') {
+            $candidates[] = $outDate . ' ' . ($outTime !== '' ? $outTime : '00:00');
+        }
+        if (!empty($entry['timestamp'])) {
+            $candidates[] = (string) $entry['timestamp'];
+        }
+
+        foreach ($candidates as $candidate) {
+            try {
+                return (float) Carbon::parse($candidate)->timestamp;
+            } catch (\Throwable $e) {
+                continue;
+            }
+        }
+
+        return PHP_FLOAT_MAX;
     }
 
     /**
@@ -2030,3 +2114,7 @@ class FileTrackerApiController extends Controller
         ];
     }
 }
+
+
+
+
