@@ -556,6 +556,11 @@
                                                         applicationType = 'change_of_purpose';
                                                         fileOption = 'normal';
                                                         updateApplicationType();
+                                                    } else if (val === 'regrant') {
+                                                        // Re-grant uses the same flow as a normal file
+                                                        applicationType = 'new';
+                                                        fileOption = 'normal';
+                                                        updateFileOption();
                                                     } else {
                                                         applicationType = 'new';
                                                         fileOption = val;
@@ -567,6 +572,7 @@
                                             <option value="extension">Extension</option>
                                             <option value="miscellaneous">Miscellaneous</option>
                                             <option value="change_of_purpose">Change of Purpose</option>
+                                            <option value="regrant">Re-grant</option>
                                             <option value="subdivision">Subdivision</option>
                                             <option value="merger">Merger</option>
                                             <option value="separation">Separation</option>
@@ -826,8 +832,19 @@
                                                 </div>
                                             </div>
 
-                                            <!-- Row 3, Col 1: Purpose -->
-                                            <div>
+                                            <!-- SIT File Reason (shown when SIT file type is selected) -->
+                                            <div x-show="fileOption === 'sit'" x-transition class="col-span-2">
+                                                <label for="sitReason" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    <i data-lucide="clipboard-list" class="w-3.5 h-3.5 inline mr-1"></i>
+                                                    SIT File Reason
+                                                </label>
+                                                <textarea id="sitReason" name="sit_reason" x-model="sitReason" rows="2"
+                                                          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                          placeholder="Enter the reason for this SIT file"></textarea>
+                                            </div>
+
+                                            <!-- Row 3, Col 1: Purpose (hidden for SIT) -->
+                                            <div x-show="fileOption !== 'sit'" x-transition>
                                                 <label for="purpose" class="block text-xs font-medium text-gray-600 mb-1">
                                                     Purpose
                                                 </label>
@@ -1254,12 +1271,13 @@
                                             Tracking ID: <span id="trackingIdDisplay" class="text-red-600 font-bold">--</span>
                                         </div> 
                                        </div>
-                                  <!-- Row 2, Col 2: Land Use Category Preview -->
+                                  <!-- Row 2, Col 2: Land Use Category Preview (hidden for SIT) -->
+                                        <div x-show="fileOption !== 'sit'" x-transition>
                                         <label class="block text-xs font-medium text-gray-600 mb-1">
                                                     Land Use (Purpose)
                                                 </label>
                                                 <div class="flex items-center h-[42px]">
-                                                    <span id="landUsePreview" 
+                                                    <span id="landUsePreview"
                                                           class="px-3 py-2 rounded-lg text-sm font-bold inline-flex items-center shadow-sm border transition-all duration-300 ease-in-out transform uppercase"
                                                           :class="{
                                                               'bg-blue-50 text-blue-700 border-blue-200 scale-105 shadow-blue-100': landUse && landUse.toUpperCase().includes('RES'),
@@ -1271,6 +1289,7 @@
                                                           x-text="landUseFullText || 'Select prefix'">
                                                     </span>
                                                 </div>
+                                        </div>
                                             </div>
 
 

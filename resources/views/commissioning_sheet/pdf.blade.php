@@ -17,6 +17,10 @@
         $commissionedBy = $data['created_by'] ?? '';
         $trackingId = $data['tracking_id'] ?? $fileNumber;
 
+        // SIT files show the reason directly after the Location.
+        $sitReason = $data['sit_reason'] ?? '';
+        $isSit = stripos((string) $fileNumber, 'SIT-') === 0;
+
         $status = request('status', 'Original');
         $isCtc = request('isCTC') == '1';
         $isOss = request('source') === 'oss';
@@ -307,6 +311,7 @@
                     <div class="label">Related File No:</div>
                     <div class="value-line">{{ $data['related_file_number'] }}</div>
                 </div>
+                @endif
                 <div class="row">
                     <div class="label">{{ $isOss ? 'Plot No:' : 'Reason:' }}</div>
                     <div class="value-line">{{ $reason }}</div>
@@ -319,6 +324,12 @@
                     <div class="label">Location:</div>
                     <div class="value-line">{{ $location }}</div>
                 </div>
+                @if($isSit && !empty($sitReason))
+                <div class="row">
+                    <div class="label">Reason:</div>
+                    <div class="value-line">{{ $sitReason }}</div>
+                </div>
+                @endif
                 <div class="row">
                     <div class="label">Time Commissioned:</div>
                     <div class="value-line">{{ $timeCommissioned }}</div>

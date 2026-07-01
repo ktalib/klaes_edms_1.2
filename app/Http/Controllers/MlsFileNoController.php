@@ -502,7 +502,8 @@ class MlsFileNoController extends Controller
                     DB::raw('COALESCE(fileNumber.district, mls_file_no.district) as district'),
                     'mls_file_no.purpose_id',
                     'mls_file_no.customer_type',
-                    'mls_file_no.batch_no'
+                    'mls_file_no.batch_no',
+                    'mls_file_no.sit_reason'
                 ])
                 ->first();
 
@@ -525,6 +526,7 @@ class MlsFileNoController extends Controller
                         'mls_file_no.purpose_id as purpose_id',
                         'mls_file_no.customer_type as customer_type',
                         'mls_file_no.batch_no as batch_no',
+                        'mls_file_no.sit_reason as sit_reason',
                         'mls_file_no.created_at as created_at',
                         'mls_file_no.updated_at as updated_at',
                         DB::raw("'MLS_Commissioned' as SOURCE"),
@@ -564,6 +566,7 @@ class MlsFileNoController extends Controller
                         'plot_extensions.purpose_id as purpose_id',
                         'plot_extensions.customer_type as customer_type',
                         DB::raw('NULL as batch_no'),
+                        DB::raw('NULL as sit_reason'),
                         'plot_extensions.created_at as created_at',
                         'plot_extensions.updated_at as updated_at',
                         DB::raw("'Plot Extension' as SOURCE"),
@@ -1497,6 +1500,7 @@ class MlsFileNoController extends Controller
                 'separation_app_id' => 'nullable|integer',
                 'change_of_purpose_app_id' => 'nullable|integer',
                 'file_option' => 'nullable|string|max:50',
+                'sit_reason' => 'nullable|string|max:1000',
             ]);
 
             $landUse = $validated['land_use'] ?? null;
@@ -1969,6 +1973,7 @@ class MlsFileNoController extends Controller
                     'sub_source' => $validated['sub_source'] ?? null,
                     'source_instrument_capture_id' => $validated['source_instrument_capture_id'] ?? null,
                     'source_pra_id' => $validated['source_pra_id'] ?? null,
+                    'sit_reason' => $fileOption === 'sit' ? ($validated['sit_reason'] ?? null) : null,
                 ]);
 
                 if ($fileOption !== 'temporary') {

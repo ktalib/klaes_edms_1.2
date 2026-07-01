@@ -24,6 +24,10 @@ class FileSearchRequest extends Model
     const SOURCE_QUICK_SEARCH = 'QUICK_SEARCH';
     const SOURCE_DFR          = 'DFR';
 
+    // Kind of "Not Found" the SCB Monitor reports when a physical search fails.
+    const NOT_FOUND_MISSING = 'MISSING';   // file genuinely cannot be located
+    const NOT_FOUND_PENDING = 'PENDING';   // search not yet concluded / expected to turn up
+
     protected $fillable = [
         'request_no',
         'file_number',
@@ -34,6 +38,7 @@ class FileSearchRequest extends Model
         'resolved_status',
         'current_location',
         'feedback_note',
+        'not_found_type',
         'responded_by',
         'responded_at',
         'source',

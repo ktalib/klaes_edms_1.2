@@ -7,10 +7,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class LegalSearchOnlineFeedback extends Model
 {
+    protected $connection = 'sqlsrv';
+
     protected $table = 'legal_search_online_feedback';
 
     protected $fillable = [
         'user_id',
+        'online_ls_user_id',
+        'legal_search_online_payment_id',
         'name',
         'email',
         'phone',

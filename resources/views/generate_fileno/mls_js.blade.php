@@ -2077,6 +2077,9 @@
         if (fileOption === 'sit') {
             formData.set('land_use', 'SIT');
             formData.set('customer_type', 'Government');
+        } else {
+            // Reason only applies to SIT files; drop any stale value for other types
+            formData.delete('sit_reason');
         }
 
         // Handle Direct Allocation (is_allocated check)
@@ -3724,6 +3727,8 @@
             customerType: '',
             // Default to normal file
             fileOption: 'normal',
+            // Reason captured for SIT files
+            sitReason: '',
             // Extension category: 'file' (existing AND EXTENSION flow) or 'plot' (keep original number)
             extensionType: 'file',
             _lastFileOption: 'normal', // tracks previous fileOption to detect transitions
@@ -3917,7 +3922,17 @@
             },
 
             buildLocation() {
-                const parts = [this.plotNo, this.district, this.lga].filter(v => v && v.trim());
+                // In batch mode the per-entry values are the source of truth (the plot
+                // input only updates the entry, not the top-level this.plotNo), so read
+                // from the current entry to avoid building the string from stale data.
+                let plot = this.plotNo, dist = this.district, lga = this.lga;
+                if (this.batchMode && this.locationEntries[this.currentEntryIndex]) {
+                    const entry = this.locationEntries[this.currentEntryIndex];
+                    plot = entry.plotNo;
+                    dist = entry.district;
+                    lga = entry.lga;
+                }
+                const parts = [plot, dist, lga].filter(v => v && v.toString().trim());
                 const loc = parts.join(', ').toUpperCase();
                 this.location = loc;
                 if (this.batchMode) {
@@ -5311,11 +5326,19 @@
                     return;
                 }
 
+                // Rebuild the auto-location string from the current entry so it always
+                // reflects the latest plot / district / LGA regardless of input timing.
+                const builtLocation = [currentEntry.plotNo, currentEntry.district, currentEntry.lga]
+                    .filter(v => v && v.toString().trim())
+                    .join(', ')
+                    .toUpperCase();
+
                 const locationData = {
                     plotNo: currentEntry.plotNo || '',
                     tpNo: currentEntry.tpNo || '',
-                    location: currentEntry.location || '',
-                    lga: currentEntry.lga || ''
+                    district: currentEntry.district || '',
+                    lga: currentEntry.lga || '',
+                    location: builtLocation
                 };
 
                 // Apply to all entries in the batch
@@ -5331,6 +5354,11 @@
                         console.warn('Location entry at index ' + i + ' is missing during batch apply');
                     }
                 }
+
+                // Keep the top-level bound fields in sync with what was just applied
+                this.district = locationData.district;
+                this.lga = locationData.lga;
+                this.location = builtLocation;
 
                 // Show success notification
                 Swal.fire({
@@ -6104,12 +6132,15 @@
             doc.setFontSize(10);
             doc.setFont("helvetica", "normal");
             let y = 85;
+            // SIT files carry a reason that should print directly after the Location.
+            const isSitFile = String(fileNumberVal || '').toUpperCase().startsWith('SIT-');
             const fields = [
                 ['File No:', formData.get('file_number')],
                 ['File Name:', formData.get('file_name')],
                 ['Plot No:', formData.get('plot_number')],
                 ['TP No:', formData.get('tp_number')],
                 ['Location:', formData.get('location')],
+                ...(isSitFile ? [['Reason:', formData.get('sit_reason')]] : []),
                 ['Time Commissioned:', formatTimeToAMPM(formData.get('time_created'))],
                 ['Date Commissioned:', formData.get('date_created')],
                 ['Commissioned by:', formData.get('created_by')]
@@ -6214,12 +6245,14 @@
 
                 const createdAt = row.created_at ? new Date(row.created_at) : new Date();
 
+                const isSitRow = String(rowFileNo || '').toUpperCase().startsWith('SIT-');
                 const fields = [
                     ['File No:', row.full_file_number || row.mlsf_no || row.file_number || ''],
                     ['File Name:', row.file_name || ''],
                     ['Plot No:', row.plot_no || 'N/A'],
                     ['TP No:', row.tp_no || 'N/A'],
                     ['Location:', row.location || 'N/A'],
+                    ...(isSitRow ? [['Reason:', row.sit_reason || '']] : []),
                     ['Time Commissioned:', createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })],
                     ['Date Commissioned:', createdAt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })],
                     ['Commissioned by:', row.created_by || '']
@@ -6446,6 +6479,7 @@
                     formData.append('plot_number', responseData.plot_number || '');
                     formData.append('tp_number', responseData.tp_number || '');
                     formData.append('location', responseData.location || '');
+                    formData.append('sit_reason', responseData.sit_reason || '');
                     formData.append('date_created', responseData.date_created || responseData.created_at || '');
                     formData.append('created_by', responseData.created_by || '');
 
@@ -7624,6 +7658,7 @@
                     formData.append('location', record.location || '');
                     formData.append('lga', record.lga || '');
                     formData.append('tracking_id', record.tracking_id || '');
+                    formData.append('sit_reason', record.sit_reason || '');
 
                     // Add current time/date/user
                     const now = new Date();

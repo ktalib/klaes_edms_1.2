@@ -48,13 +48,24 @@
                 </select>
             </div>
             <div class="form-group">
+                <label for="cofo-status" class="block text-sm font-medium text-gray-700 mb-2">CofO Status</label>
+                <select id="cofo-status" name="cofo_status"
+                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    @php $cofoStatusValue = isset($cofoDetails) ? ($cofoDetails['cofo_status'] ?? 'Normal') : 'Normal'; @endphp
+                    <option value="Normal" {{ $cofoStatusValue === 'Normal' ? 'selected' : '' }}>Normal</option>
+                    <option value="Normal Cancellation" {{ $cofoStatusValue === 'Normal Cancellation' ? 'selected' : '' }}>Normal Cancellation</option>
+                    <option value="Total Cancellation" {{ $cofoStatusValue === 'Total Cancellation' ? 'selected' : '' }}>Total Cancellation</option>
+                
+                </select>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+            <div class="form-group">
                 <label for="cofo-date" class="block text-sm font-medium text-gray-700 mb-2">CofO Date</label>
                 <input type="date" id="cofo-date" name="cofo_date"
                     class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
             </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-4">
             <div class="form-group">
                 <label for="cofo-number" class="block text-sm font-medium text-gray-700 mb-2">CofO Number</label>
                 <input type="text" id="cofo-number" name="cofo_no"
@@ -70,7 +81,7 @@
                     @if(isset($landUseTypes))
                         @foreach($landUseTypes as $key => $label)
                             <option value="{{ $key }}" {{ (isset($record) && ($record->land_use_type == $key || $record->land_use == $key)) ? 'selected' : '' }}>
-                                {{ $label }} 
+                                {{ $label }}
                             </option>
                         @endforeach
                     @endif
@@ -81,18 +92,21 @@
         <div class="grid grid-cols-3 gap-4 mt-4">
             <div class="form-group">
                 <label for="cofo-serial-no" class="block text-sm font-medium text-gray-700 mb-2">Serial No</label>
-                <input type="text" id="cofo-serial-no" name="cofo_serial_no"
+                <input type="text" inputmode="numeric" pattern="[0-9]*" id="cofo-serial-no" name="cofo_serial_no"
+                    oninput="this.value = this.value.replace(/[^0-9]/g, '')"
                     class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
             </div>
             <div class="form-group">
                 <label for="cofo-page-no" class="block text-sm font-medium text-gray-700 mb-2">Page No</label>
-                <input type="text" id="cofo-page-no" name="cofo_page_no"
+                <input type="text" inputmode="numeric" pattern="[0-9]*" id="cofo-page-no" name="cofo_page_no"
+                    oninput="this.value = this.value.replace(/[^0-9]/g, '')"
                     class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-gray-50"
                     readonly style="cursor: default;">
             </div>
             <div class="form-group">
                 <label for="cofo-vol-no" class="block text-sm font-medium text-gray-700 mb-2">Vol No</label>
-                <input type="text" id="cofo-vol-no" name="cofo_vol_no"
+                <input type="text" inputmode="numeric" pattern="[0-9]*" id="cofo-vol-no" name="cofo_vol_no"
+                    oninput="this.value = this.value.replace(/[^0-9]/g, '')"
                     class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
             </div>
         </div>

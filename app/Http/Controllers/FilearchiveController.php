@@ -357,6 +357,8 @@ class FilearchiveController extends Controller
      */
     public function getDocumentPages(Request $request, $id)
     {
+        $module = $request->get('url', '');
+
         if (str_starts_with((string) $id, 'storage-demo-')) {
             $decodedPath = $this->decodeStorageDemoPath((string) $id, $module);
             if (!$decodedPath) {
@@ -382,7 +384,6 @@ class FilearchiveController extends Controller
             }
         ])->findOrFail($id);
 
-        $module = $request->get('url', '');
         if ($this->isStorageDemoMode($module) && $file->pagetypings->isEmpty()) {
             $folderPath = $this->resolveStorageFolderByFileNumber((string) $file->file_number, $module);
             if ($folderPath) {

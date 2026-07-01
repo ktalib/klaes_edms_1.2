@@ -157,8 +157,13 @@
                                             }
 
                                             if ($isImagePage) {
-                                                if ($normalizedPath && file_exists(storage_path('app/public/' . $normalizedPath))) {
-                                                    $coverPagePath = asset('storage/' . $normalizedPath);
+                                                // Resolve via the configured 'public' disk (mirrors the working
+                                                // document-pages preview). On production the public disk root may
+                                                // point to a different mount than storage_path('app/public'), so a
+                                                // raw file_exists(storage_path(...)) check fails and the cover never
+                                                // renders even though the file is reachable through the disk URL.
+                                                if ($normalizedPath && \Illuminate\Support\Facades\Storage::disk('public')->exists($normalizedPath)) {
+                                                    $coverPagePath = \Illuminate\Support\Facades\Storage::disk('public')->url($normalizedPath);
                                                 } elseif ($trimmedPath && file_exists(public_path($trimmedPath))) {
                                                     $coverPagePath = asset($trimmedPath);
                                                 }

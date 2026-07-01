@@ -260,6 +260,7 @@ function renderRows(rows) {
           ${tableVariant === 'main' ? `<div class="mt-1"><button type="button" class="edms-view-files-btn inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 hover:text-emerald-800 hover:underline transition-colors" data-id="${row.id}" data-file-number="${escapeHtml(row.file_number)}" data-registry-folder="Lands_Registry"><i data-lucide="folder-open" class="w-3 h-3"></i><span>View Files</span></button></div>` : ''}
         </td>`)}
         ${col('corresponding_fileno', `<td class="${standardCellClass}">${row.corresponding_fileno ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">${escapeHtml(row.corresponding_fileno)}</span>` : '<span class="text-gray-400">-</span>'}</td>`)}
+        ${col('pp_lands_fileno', `<td class="${standardCellClass}">${row.pp_lands_fileno ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-200">${escapeHtml(row.pp_lands_fileno)}</span>` : '<span class="text-gray-400">-</span>'}</td>`)}
         ${col('related_file_no', `<td class="${standardCellClass}">
           ${row.has_related_files ? `
             <div class="flex flex-col gap-1">
@@ -476,6 +477,11 @@ function buildActionsMenu(row, viewUrl) {
           IsDuplicate
         </button>`;
 
+  const duplicateCallupButton = `<button type="button" class="duplicate-callup-btn block w-full text-left px-4 py-2.5 text-sm ${row.has_duplicate ? 'text-rose-700 hover:bg-rose-50' : 'text-gray-400 cursor-not-allowed opacity-40'} transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}" ${row.has_duplicate ? '' : 'disabled="disabled"'}>
+          <i data-lucide="copy" class="h-4 w-4 mr-2.5 inline ${row.has_duplicate ? 'text-rose-600' : 'text-gray-300'}"></i>
+          Duplicate Call-up Sheet
+        </button>`;
+
   const tempFileButton = `<button type="button" class="has-temp-file-btn block w-full text-left px-4 py-2.5 text-sm text-teal-700 hover:bg-teal-50 transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}"
           data-file-title="${escapeHtml(row.file_title ?? '')}"
           data-plot-number="${escapeHtml(row.plot_number ?? '')}"
@@ -490,6 +496,12 @@ function buildActionsMenu(row, viewUrl) {
   const mccFileNoButton = `<button type="button" class="mcc-fileno-btn flex items-start gap-2.5 w-full text-left px-4 py-2.5 text-sm text-orange-700 hover:bg-orange-50 transition-colors" data-file-id="${id}">
           <i data-lucide="git-compare" class="h-4 w-4 mt-0.5 shrink-0 text-orange-600"></i>
           <span class="leading-snug">Match Correspondence<br>FileNo${isMatchedRow ? ' <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-green-50 text-green-600 border border-green-200 align-middle">MATCHED</span>' : ''}</span>
+        </button>`;
+
+  const isPpMatchedRow = !!(row.pp_lands_matching && Number(row.pp_lands_matching) === 1) || !!(row.pp_lands_fileno && String(row.pp_lands_fileno).trim() !== '' && String(row.pp_lands_fileno).trim() !== '-');
+  const mppFileNoButton = `<button type="button" class="mpp-fileno-btn flex items-start gap-2.5 w-full text-left px-4 py-2.5 text-sm text-sky-700 hover:bg-sky-50 transition-colors" data-file-id="${id}">
+          <i data-lucide="map" class="h-4 w-4 mt-0.5 shrink-0 text-sky-600"></i>
+          <span class="leading-snug">Match Shadow File ${isPpMatchedRow ? ' <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-green-50 text-green-600 border border-green-200 align-middle">MATCHED</span>' : ''}</span>
         </button>`;
 
   const updatePlaceholderButton = (isKangisVariant || row.kangis_fileno_placeholder) ? `<button type="button" class="update-placeholder-btn block w-full text-left px-4 py-2.5 text-sm text-purple-700 hover:bg-purple-50 transition-colors" data-file-id="${id}" data-placeholder="${escapeHtml(row.kangis_fileno_placeholder ?? '')}">
@@ -539,8 +551,10 @@ function buildActionsMenu(row, viewUrl) {
           ${trackingButton}
           ${commissionSheetButton}
           ${duplicateButton}
+          ${duplicateCallupButton}
           ${tempFileButton}
           ${mccFileNoButton}
+          ${mppFileNoButton}
           ${updatePlaceholderButton}
           ${deleteButton ? '<div class="border-t border-slate-50 my-1.5"></div>' + deleteButton : ''}
         </div>
@@ -700,6 +714,17 @@ function handleTableBodyClick(event) {
     return;
   }
 
+  const callupButton = event.target.closest('.duplicate-callup-btn');
+  if (callupButton && !callupButton.disabled) {
+    event.preventDefault();
+    event.stopPropagation();
+    const fn = callupButton.getAttribute('data-file-number') || '';
+    const fid = callupButton.getAttribute('data-file-id') || '';
+    window.open(`/duplicate-callup?file_number=${encodeURIComponent(fn)}&indexed_id=${encodeURIComponent(fid)}`, '_blank');
+    closeAllActionMenus();
+    return;
+  }
+
   const tempFileButton = event.target.closest('.has-temp-file-btn, .open-temp-file-btn');
   if (tempFileButton) {
     event.preventDefault();
@@ -714,6 +739,14 @@ function handleTableBodyClick(event) {
     event.preventDefault();
     event.stopPropagation();
     openMccModal(mccBtn);
+    return;
+  }
+
+  const mppBtn = event.target.closest('.mpp-fileno-btn');
+  if (mppBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    openMppModal(mppBtn);
     return;
   }
 
@@ -1892,6 +1925,274 @@ async function submitMccUnmatch() {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * MPP FileNo — Match Physical Planning-Land (Shadow Files) modal
+ * ------------------------------------------------------------------------- */
+let mppState = { fileId: null, fileNumber: null, selectedPp: null, isMatched: false };
+
+function mppShow(id, show) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('hidden', !show);
+}
+
+function renderMppLandDetails(row) {
+  const el = document.getElementById('mpp-land-details');
+  if (!el) return;
+  const locationParts = [row.plot_number, row.district, row.lga].filter(v => v && String(v).trim() !== '' && String(v).trim() !== '-');
+  const location = (row.location && row.location !== '-') ? row.location : locationParts.join(', ');
+  el.innerHTML = [
+    mccDetailRow('File No', row.file_number),
+    mccDetailRow('File Title', row.file_title),
+    mccDetailRow('Plot No', row.plot_number),
+    mccDetailRow('TP No', row.tp_no),
+    mccDetailRow('LPKN No', row.lpkn_no),
+    mccDetailRow('District', row.district),
+    mccDetailRow('LGA', row.lga),
+    mccDetailRow('Location', location),
+  ].join('');
+}
+
+function renderMppPpDetails(fileNumber, details) {
+  const el = document.getElementById('mpp-pp-details');
+  if (!el) return;
+  const locationParts = [];
+  if (details) {
+    if (details.plot_no) locationParts.push(details.plot_no);
+    if (details.district_name) locationParts.push(details.district_name);
+    if (details.lga_name || details.lga) locationParts.push(details.lga_name || details.lga);
+  }
+  const location = (details && details.location) ? details.location : locationParts.join(', ');
+  el.innerHTML = [
+    mccDetailRow('File No', fileNumber),
+    mccDetailRow('File Title', details ? details.title : ''),
+    mccDetailRow('Plot No', details ? details.plot_no : ''),
+    mccDetailRow('TP No', details ? details.tp_no : ''),
+    mccDetailRow('LPKN No', details ? details.lpkn_no : ''),
+    mccDetailRow('District', details ? details.district_name : ''),
+    mccDetailRow('LGA', details ? (details.lga_name || details.lga) : ''),
+    mccDetailRow('Location', location),
+  ].join('');
+}
+
+function setMppMatchEnabled(enabled) {
+  const btn = document.getElementById('mpp-match-btn');
+  if (!btn) return;
+  btn.disabled = !enabled;
+  btn.classList.toggle('opacity-50', !enabled);
+  btn.classList.toggle('cursor-not-allowed', !enabled);
+}
+
+async function loadMppPpDetails(fileNumber) {
+  mppShow('mpp-pp-awaiting', false);
+  mppShow('mpp-pp-details', false);
+  mppShow('mpp-pp-loading', true);
+  const details = await fetchMatchedFileDetails(fileNumber);
+  renderMppPpDetails(fileNumber, details);
+  mppShow('mpp-pp-loading', false);
+  mppShow('mpp-pp-details', true);
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function openMppModal(button) {
+  const fileId = button.getAttribute('data-file-id');
+  const row = rowCache.get(String(fileId));
+  closeAllActionMenus();
+  if (!row) {
+    alert('Unable to load file details for matching.');
+    return;
+  }
+
+  const modal = document.getElementById('mpp-file-modal');
+  if (!modal) return;
+
+  const isMatched = !!(row.pp_lands_fileno && String(row.pp_lands_fileno).trim() !== '' && String(row.pp_lands_fileno).trim() !== '-');
+  mppState = {
+    fileId,
+    fileNumber: row.file_number || '',
+    selectedPp: isMatched ? row.pp_lands_fileno : null,
+    isMatched,
+  };
+
+  const idInput = document.getElementById('mpp-file-id');
+  if (idInput) idInput.value = fileId;
+  renderMppLandDetails(row);
+
+  const badge = document.getElementById('mpp-status-badge');
+  const ppInput = document.getElementById('mpp-pp-input');
+  if (ppInput) ppInput.value = isMatched ? (row.pp_lands_fileno || '') : '';
+
+  if (isMatched) {
+    mppShow('mpp-pp-selector', false);
+    mppShow('mpp-match-btn', false);
+    mppShow('mpp-unmatch-btn', true);
+    if (badge) badge.innerHTML = `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200"><i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Matched</span>`;
+    modal.classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+    await loadMppPpDetails(row.pp_lands_fileno);
+  } else {
+    mppShow('mpp-pp-selector', true);
+    mppShow('mpp-pp-awaiting', true);
+    mppShow('mpp-pp-details', false);
+    mppShow('mpp-pp-loading', false);
+    mppShow('mpp-match-btn', true);
+    mppShow('mpp-unmatch-btn', false);
+    setMppMatchEnabled(false);
+    if (badge) badge.innerHTML = `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200"><i data-lucide="clock" class="w-3.5 h-3.5"></i> Not Matched</span>`;
+    modal.classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+  }
+}
+
+function closeMppModal() {
+  const modal = document.getElementById('mpp-file-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function openMppPpSelector() {
+  const onPicked = (fileNumber) => {
+    if (!fileNumber) return;
+    mppState.selectedPp = fileNumber;
+    const ppInput = document.getElementById('mpp-pp-input');
+    if (ppInput) ppInput.value = fileNumber;
+    setMppMatchEnabled(true);
+    loadMppPpDetails(fileNumber);
+  };
+
+  if (typeof window.GlobalFileNoModal !== 'undefined' && typeof window.GlobalFileNoModal.open === 'function') {
+    window.GlobalFileNoModal.open({
+      callback: function (result) {
+        if (result && result.fileNumber) onPicked(String(result.fileNumber).trim());
+      }
+    });
+  } else {
+    const val = prompt('Enter the Physical Planning File Number:');
+    if (val && val.trim()) onPicked(val.trim());
+  }
+}
+
+async function submitMppMatch() {
+  const fileId = mppState.fileId;
+  const fileNumber = mppState.fileNumber || `File #${fileId}`;
+  const ppFileNo = mppState.selectedPp;
+
+  if (!fileId || !ppFileNo) {
+    if (window.Swal) {
+      await window.Swal.fire({ icon: 'warning', title: 'Select a file', text: 'Please select a physical planning file number first.' });
+    } else {
+      alert('Please select a physical planning file number first.');
+    }
+    return;
+  }
+
+  let isConfirmed = false;
+  if (window.Swal) {
+    const confirmation = await window.Swal.fire({
+      title: 'Confirm Match',
+      html: `<div class="text-sm text-left space-y-1">
+               <div><span class="font-semibold" style="color:#12407a">Land:</span> ${escapeHtml(fileNumber)}</div>
+               <div><span class="font-semibold" style="color:#2b8a5a">Physical Planning:</span> ${escapeHtml(ppFileNo)}</div>
+             </div>`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, match',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2b8a5a',
+      reverseButtons: true,
+    });
+    isConfirmed = !!confirmation.isConfirmed;
+  } else {
+    isConfirmed = window.confirm(`Match ${fileNumber} ↔ ${ppFileNo}?`);
+  }
+  if (!isConfirmed) return;
+
+  const csrfToken = getCsrfToken();
+  if (!csrfToken) {
+    alert('Unable to locate CSRF token. Please refresh the page and try again.');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${window.location.origin}/api/indexed-files/${encodeURIComponent(fileId)}/match-physical-planning`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({ pp_lands_fileno: ppFileNo })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.success) throw new Error(result.message || 'Failed to match physical planning file.');
+
+    closeMppModal();
+    if (window.Swal) {
+      await window.Swal.fire({ icon: 'success', title: 'Matched', text: result.message || 'Physical planning file matched successfully.' });
+    } else {
+      alert(result.message || 'Physical planning file matched successfully.');
+    }
+    await loadTable();
+  } catch (error) {
+    console.error('Failed to match physical planning file:', error);
+    if (window.Swal) {
+      await window.Swal.fire({ icon: 'error', title: 'Failed', text: error.message || 'Failed to match physical planning file.' });
+    } else {
+      alert(error.message || 'Failed to match physical planning file.');
+    }
+  }
+}
+
+async function submitMppUnmatch() {
+  const fileId = mppState.fileId;
+  const fileNumber = mppState.fileNumber || `File #${fileId}`;
+  const ppFileNo = mppState.selectedPp || '';
+  if (!fileId) return;
+
+  let isConfirmed = false;
+  if (window.Swal) {
+    const confirmation = await window.Swal.fire({
+      title: 'Remove Match?',
+      html: `Unmatch <strong>${escapeHtml(fileNumber)}</strong>${ppFileNo ? ` from <strong>${escapeHtml(ppFileNo)}</strong>` : ''}?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, unmatch',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#12407a',
+      reverseButtons: true,
+    });
+    isConfirmed = !!confirmation.isConfirmed;
+  } else {
+    isConfirmed = window.confirm(`Remove the physical planning match for ${fileNumber}?`);
+  }
+  if (!isConfirmed) return;
+
+  const csrfToken = getCsrfToken();
+  if (!csrfToken) {
+    alert('Unable to locate CSRF token. Please refresh the page and try again.');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${window.location.origin}/api/indexed-files/${encodeURIComponent(fileId)}/unmatch-physical-planning`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({ id: fileId })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.success) throw new Error(result.message || 'Failed to remove physical planning match.');
+
+    closeMppModal();
+    if (window.Swal) {
+      await window.Swal.fire({ icon: 'success', title: 'Unmatched', text: result.message || 'Physical planning match removed successfully.' });
+    } else {
+      alert(result.message || 'Physical planning match removed successfully.');
+    }
+    await loadTable();
+  } catch (error) {
+    console.error('Failed to remove physical planning match:', error);
+    if (window.Swal) {
+      await window.Swal.fire({ icon: 'error', title: 'Failed', text: error.message || 'Failed to remove physical planning match.' });
+    } else {
+      alert(error.message || 'Failed to remove physical planning match.');
+    }
+  }
+}
+
 function handleHasTempFile(button, viewOnly = false) {
   const fileId = button.getAttribute('data-file-id');
   const fileNumber = button.getAttribute('data-file-number') || '';
@@ -2299,6 +2600,23 @@ document.addEventListener('DOMContentLoaded', function () {
   if (mccUnmatchBtn) mccUnmatchBtn.addEventListener('click', submitMccUnmatch);
   if (mccSelectorBtn) mccSelectorBtn.addEventListener('click', openMccCadastralSelector);
   if (mccCadastralInput) mccCadastralInput.addEventListener('click', openMccCadastralSelector);
+
+  // MPP FileNo (Match Physical Planning-Land) modal events
+  const mppCloseBtn = document.getElementById('close-mpp-file-modal');
+  const mppCancelBtn = document.getElementById('cancel-mpp-file');
+  const mppBackdrop = document.getElementById('mpp-file-backdrop');
+  const mppMatchBtn = document.getElementById('mpp-match-btn');
+  const mppUnmatchBtn = document.getElementById('mpp-unmatch-btn');
+  const mppSelectorBtn = document.getElementById('mpp-open-fileno-selector-btn');
+  const mppPpInput = document.getElementById('mpp-pp-input');
+
+  if (mppCloseBtn) mppCloseBtn.addEventListener('click', closeMppModal);
+  if (mppCancelBtn) mppCancelBtn.addEventListener('click', closeMppModal);
+  if (mppBackdrop) mppBackdrop.addEventListener('click', closeMppModal);
+  if (mppMatchBtn) mppMatchBtn.addEventListener('click', submitMppMatch);
+  if (mppUnmatchBtn) mppUnmatchBtn.addEventListener('click', submitMppUnmatch);
+  if (mppSelectorBtn) mppSelectorBtn.addEventListener('click', openMppPpSelector);
+  if (mppPpInput) mppPpInput.addEventListener('click', openMppPpSelector);
 });
 
 function getRowFromCache(id) {

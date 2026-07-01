@@ -35,8 +35,10 @@ class LegalSearchOnlineController extends Controller
             'authCheckUrl'      => route('legal_search.online.auth.check'),
             'pendUrl'           => route('legal_search.online.auth.pend'),
             'isAuthenticated'   => auth()->check(),
-            'loginUrl'          => route('ols.login'),
-            'registerUrl'       => route('ols.register'),
+            // The Online Legal Search portal is now fully public (no accounts);
+            // point would-be sign-in/register actions at the public portal.
+            'loginUrl'          => route('ols.landing'),
+            'registerUrl'       => route('ols.landing'),
             'pendingFile'       => $pending['file_number'] ?? null,
             'pendingQuery'      => $pending['query'] ?? null,
         ];

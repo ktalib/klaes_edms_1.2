@@ -831,7 +831,7 @@
         const state = card.querySelector(`select[name="location_details[${index}][state]"]`)?.value || '';
         
         let parts = [];
-        if (plot) parts.push(`Plot ${plot}`);
+        if (plot) parts.push(plot);
         if (house) parts.push(`House No. ${house}`);
         if (street) parts.push(street);
         if (district) parts.push(district);

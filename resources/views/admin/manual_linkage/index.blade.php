@@ -927,7 +927,7 @@ function streetValue() {
 
 function updateManualLocationPreview() {
     const parts = [
-        document.getElementById('plot_number')?.value ? 'Plot ' + document.getElementById('plot_number').value.trim() : '',
+        document.getElementById('plot_number')?.value ? document.getElementById('plot_number').value.trim() : '',
         document.getElementById('house_no')?.value    ? 'House ' + document.getElementById('house_no').value.trim()   : '',
         streetValue(),
         districtValue(),
@@ -1505,7 +1505,7 @@ function updateManualMergerLocationPreview(index) {
     const lga      = card.querySelector(`select[name="location_details[${index}][lga]"]`)?.value      || '';
     const state    = card.querySelector(`select[name="location_details[${index}][state]"]`)?.value    || '';
     const parts    = [];
-    if (plot)     parts.push(`Plot ${plot}`);
+    if (plot)     parts.push(plot);
     if (house)    parts.push(`House No. ${house}`);
     if (street)   parts.push(street);
     if (district) parts.push(district);

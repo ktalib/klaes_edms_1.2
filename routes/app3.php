@@ -720,6 +720,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/set-temp-file', [IndexedFileTableController::class, 'setTempFile'])->name('set-temp-file');
         Route::post('/{id}/match-correspondence', [IndexedFileTableController::class, 'matchCorrespondence'])->name('match-correspondence');
         Route::post('/{id}/unmatch-correspondence', [IndexedFileTableController::class, 'unmatchCorrespondence'])->name('unmatch-correspondence');
+        Route::post('/{id}/match-physical-planning', [IndexedFileTableController::class, 'matchPhysicalPlanning'])->name('match-physical-planning');
+        Route::post('/{id}/unmatch-physical-planning', [IndexedFileTableController::class, 'unmatchPhysicalPlanning'])->name('unmatch-physical-planning');
         Route::get('/related-files/{id}', [IndexedFileTableController::class, 'getRelatedFiles'])->name('related-files');
         Route::put('/related-files/{id}', [IndexedFileTableController::class, 'updateRelatedFile'])->name('related-files.update');
         Route::get('/edms-files/{id}', [IndexedFileTableController::class, 'getEdmsFiles'])->name('edms-files');

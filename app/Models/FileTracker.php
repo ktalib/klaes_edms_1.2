@@ -49,6 +49,9 @@ class FileTracker extends Model
         'workflow_step',
         'workflow_config',
         'printed',
+        'num_pages',
+        'returned_num_pages',
+        'in_digital_archive',
     ];
 
     protected $casts = [
@@ -61,6 +64,7 @@ class FileTracker extends Model
         'assignment_accepted_at' => 'datetime',
         'workflow_config' => 'array',
         'printed' => 'boolean',
+        'in_digital_archive' => 'boolean',
     ];
 
     // Priority constants
@@ -245,6 +249,17 @@ class FileTracker extends Model
             $currentLog[$lastIndex]['status'] = 'completed';
             if ($notes) {
                 $currentLog[$lastIndex]['completion_notes'] = $notes;
+            }
+
+            // Persist the page count recorded at log-out, both on the movement entry
+            // (for history) and on the tracker column (for quick retrieval on log-back).
+            if ($numPages !== null) {
+                $currentLog[$lastIndex]['num_pages'] = $numPages;
+                $this->num_pages = $numPages;
+            }
+            if ($inDigitalArchive !== null) {
+                $currentLog[$lastIndex]['in_digital_archive'] = $inDigitalArchive;
+                $this->in_digital_archive = $inDigitalArchive;
             }
 
             $this->movement_log = $currentLog;

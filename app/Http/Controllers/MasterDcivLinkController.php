@@ -52,12 +52,15 @@ class MasterDcivLinkController extends Controller
         $applyFilters($countQ);
         $total = $countQ->distinct()->count('dciv_file_number');
 
-        // Get the DCIV file numbers for this page (ordered by newest link first)
+        // Get the DCIV file numbers for this page (newest by Date Created first).
+        // Order by the latest created_at — backfilled rows keep their original
+        // indexing date, so id-order would not reflect Date Created.
         $pageQ = DB::connection('sqlsrv')->table('master_dciv_links')
-            ->select('dciv_file_number', DB::raw('MAX(id) AS max_id'))
+            ->select('dciv_file_number', DB::raw('MAX(created_at) AS max_created'), DB::raw('MAX(id) AS max_id'))
             ->groupBy('dciv_file_number');
         $applyFilters($pageQ);
-        $dcivNos = $pageQ->orderByDesc('max_id')
+        $dcivNos = $pageQ->orderByDesc('max_created')
+            ->orderByDesc('max_id')
             ->forPage($page, $perPage)
             ->pluck('dciv_file_number');
 
@@ -106,11 +109,15 @@ class MasterDcivLinkController extends Controller
                 'dciv_file_title'  => $first->dciv_file_title ?? null,
                 'dciv_reason'      => $first->dciv_reason ?? null,
                 'created_at'       => $first->created_at ?? null,
-                'related_files'    => $links->map(fn ($r) => [
-                    'file_number' => $r->related_file_number,
-                    'type'        => $r->related_file_type,
-                    'title'       => $r->related_file_title,
-                ])->values()->all(),
+                // Standalone DCIVs are stored with a null related_file_number — skip
+                // those placeholder rows so the related-files cell renders empty ("-").
+                'related_files'    => $links
+                    ->filter(fn ($r) => trim((string) $r->related_file_number) !== '')
+                    ->map(fn ($r) => [
+                        'file_number' => $r->related_file_number,
+                        'type'        => $r->related_file_type,
+                        'title'       => $r->related_file_title,
+                    ])->values()->all(),
             ];
         })->values()->all();
 

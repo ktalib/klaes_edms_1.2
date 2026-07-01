@@ -157,15 +157,6 @@
                 </svg>
                 Reset
               </button>
-              {{-- Dev / Debug toggle --}}
-              <button id="toggle-debug-btn" type="button"
-                class="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-orange-600 bg-orange-50 border border-orange-300 rounded-md hover:bg-orange-100 transition"
-                title="Toggle raw debug view">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                </svg>
-                DEV
-              </button>
               <div class="tabs">
                 <button class="tab active" data-view="table">Table View</button>
                 <button class="tab" data-view="cards">Card View</button>
@@ -184,6 +175,16 @@
           <!-- No Results Message -->
           <div id="no-results-message" class="hidden text-center py-8">
             <p class="text-gray-500">No results found. Please try a different search.</p>
+          </div>
+
+          <!-- File Information (shown when the file is indexed but has no transactions) -->
+          <div id="file-info-fallback" class="hidden py-4">
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 max-w-xl mx-auto">
+              <div class="px-6 py-4 border-b border-gray-100">
+                <h3 class="text-base font-semibold text-gray-800">File Information</h3>
+              </div>
+              <div id="file-info-fallback-body" class="px-6 py-4 space-y-3 text-sm"></div>
+            </div>
           </div>
 
           <!-- Table View Results -->

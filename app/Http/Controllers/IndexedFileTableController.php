@@ -168,6 +168,10 @@ class IndexedFileTableController extends Controller
                 'file_indexings.temp_file_no',
                 'file_indexings.kangis_fileno_placeholder',
                 'file_indexings.corresponding_fileno',
+                'file_indexings.pp_lands_fileno',
+                'file_indexings.pp_lands_matching',
+                'file_indexings.pp_lands_date_matched',
+                'file_indexings.pp_lands_time_matched',
                 'file_indexings.mls_file_no',
                 'file_indexings.kangis_file_no',
                 'file_indexings.new_kangis_file_no',
@@ -302,10 +306,22 @@ class IndexedFileTableController extends Controller
         // EDMS registry roots, so the UI can hide the "View Files" button when empty.
         $edmsFolderMap = $this->buildEdmsFolderMap($fileNumbers);
 
+        // Pre-compute which file_numbers are flagged as duplicates (present in
+        // duplicate_fileno), so the UI can enable the "Duplicate Call-up" action.
+        $duplicateSet = $fileNumbers->isEmpty()
+            ? collect()
+            : DB::connection('sqlsrv')
+                ->table('duplicate_fileno')
+                ->whereIn('file_number', $fileNumbers)
+                ->distinct()
+                ->pluck('file_number')
+                ->map(fn ($v) => trim((string) $v))
+                ->flip();
+
         // Since created_by now contains names directly, no need for user lookup
         $creators = collect();
 
-        $data = $items->map(function ($item) use ($scanningCounts, $pageTypingCounts, $creators, $groupingFallbacks, $relatedFileCounts, $edmsFolderMap) {
+        $data = $items->map(function ($item) use ($scanningCounts, $pageTypingCounts, $creators, $groupingFallbacks, $relatedFileCounts, $edmsFolderMap, $duplicateSet) {
             $scanned = (int) ($scanningCounts->get($item->id) ?? 0);
             $typed = (int) ($pageTypingCounts->get($item->id) ?? 0);
             $hasRelatedFilesFromLinks = (int) ($relatedFileCounts->get($item->id) ?? 0) > 0;
@@ -395,12 +411,19 @@ class IndexedFileTableController extends Controller
             $rowData['temp_file_no'] = $item->temp_file_no ?? null;
             $rowData['kangis_fileno_placeholder'] = $item->kangis_fileno_placeholder ?? null;
             $rowData['corresponding_fileno'] = $item->corresponding_fileno ?? null;
+            $rowData['pp_lands_fileno'] = $item->pp_lands_fileno ?? null;
+            $rowData['pp_lands_matching'] = (int) ($item->pp_lands_matching ?? 0);
+            $rowData['pp_lands_date_matched'] = $item->pp_lands_date_matched ?? null;
+            $rowData['pp_lands_time_matched'] = $item->pp_lands_time_matched ?? null;
             $rowData['mls_file_no'] = $item->mls_file_no ?? null;
             $rowData['kangis_file_no'] = $item->kangis_file_no ?? null;
             $rowData['new_kangis_file_no'] = $item->new_kangis_file_no ?? null;
 
             // Flags whether scanned files exist in any EDMS registry folder
             $rowData['has_edms_files'] = (bool) ($edmsFolderMap[$displayFileNo] ?? false);
+
+            // Flags whether this file number is in duplicate_fileno (enables Call-up)
+            $rowData['has_duplicate'] = $duplicateSet->has(trim((string) $displayFileNo));
 
             // DCIV investigation flag: 1 when this file is referenced as a related
             // file by a DCIV record. Reason + DCIV file number are shown when set.
@@ -1073,6 +1096,153 @@ class IndexedFileTableController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to remove correspondence match.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Match an indexed (Land) file to a Physical Planning shadow file number.
+     * Stores pp_lands_fileno + sets pp_lands_matching = 1 with the match date/time
+     * on file_indexings, and mirrors the match flag/timestamps onto the fileNumber
+     * record so the Lands matching module reflects the match.
+     *
+     * POST /api/indexed-files/{id}/match-physical-planning
+     */
+    public function matchPhysicalPlanning(Request $request, $id): JsonResponse
+    {
+        try {
+            $fileId = (int) $id;
+            if ($fileId <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid file ID.',
+                ], 422);
+            }
+
+            $ppLandsFileNo = trim((string) $request->input('pp_lands_fileno', ''));
+            if ($ppLandsFileNo === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Physical Planning File Number is required.',
+                ], 422);
+            }
+
+            $file = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('id', $fileId)
+                ->first(['id', 'file_number']);
+
+            if (!$file) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Indexed file not found.',
+                ], 404);
+            }
+
+            $now = now();
+
+            DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('id', $fileId)
+                ->update([
+                    'pp_lands_fileno'        => $ppLandsFileNo,
+                    'pp_lands_matching'      => 1,
+                    'pp_lands_date_matched'  => $now->toDateString(),
+                    'pp_lands_time_matched'  => $now->toTimeString(),
+                    'updated_at'             => $now,
+                ]);
+
+            // Mirror the match onto the fileNumber record (matching-only architecture)
+            $landFileNo = trim((string) ($file->file_number ?? ''));
+            if ($landFileNo !== '') {
+                DB::connection('sqlsrv')
+                    ->table('fileNumber')
+                    ->where('mlsfNo', $landFileNo)
+                    ->update([
+                        'pp_lands_matching'     => 1,
+                        'pp_lands_date_matched' => $now->toDateString(),
+                        'pp_lands_time_matched' => $now->toTimeString(),
+                    ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "Physical Planning file {$ppLandsFileNo} matched successfully.",
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Error matching Physical Planning file: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to match Physical Planning file.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Remove the Physical Planning match from an indexed file.
+     * Clears pp_lands_matching / pp_lands_fileno and the match timestamps.
+     *
+     * POST /api/indexed-files/{id}/unmatch-physical-planning
+     */
+    public function unmatchPhysicalPlanning(Request $request, $id): JsonResponse
+    {
+        try {
+            $fileId = (int) $id;
+            if ($fileId <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid file ID.',
+                ], 422);
+            }
+
+            $file = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('id', $fileId)
+                ->first(['id', 'file_number']);
+
+            if (!$file) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Indexed file not found.',
+                ], 404);
+            }
+
+            $now = now();
+
+            DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('id', $fileId)
+                ->update([
+                    'pp_lands_fileno'        => null,
+                    'pp_lands_matching'      => 0,
+                    'pp_lands_date_matched'  => null,
+                    'pp_lands_time_matched'  => null,
+                    'updated_at'             => $now,
+                ]);
+
+            $landFileNo = trim((string) ($file->file_number ?? ''));
+            if ($landFileNo !== '') {
+                DB::connection('sqlsrv')
+                    ->table('fileNumber')
+                    ->where('mlsfNo', $landFileNo)
+                    ->update([
+                        'pp_lands_matching'     => 0,
+                        'pp_lands_date_matched' => null,
+                        'pp_lands_time_matched' => null,
+                    ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Physical Planning match removed successfully.',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Error removing Physical Planning match: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to remove Physical Planning match.',
                 'error' => $e->getMessage(),
             ], 500);
         }

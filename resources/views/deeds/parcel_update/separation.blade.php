@@ -647,7 +647,7 @@
         const lga   = card.querySelector(`[name="location_details[${index}][lga]"]`)?.value   || '';
         const state = card.querySelector(`[name="location_details[${index}][state]"]`)?.value || '';
         const parts = [];
-        if (plot)     parts.push(`Plot ${plot}`);
+        if (plot)     parts.push(plot);
         if (house)    parts.push(`House No. ${house}`);
         if (street)   parts.push(street);
         if (district) parts.push(district);

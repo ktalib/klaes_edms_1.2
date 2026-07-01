@@ -138,6 +138,13 @@
                     ? 'block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900'
                     : 'block px-4 py-2 text-sm text-gray-400 cursor-not-allowed';
                 const linkAttrs = timelineUrl ? `href="${timelineUrl}"` : 'href="#" aria-disabled="true"';
+                const dupEnabled = !!row.has_duplicate;
+                const dupClasses = dupEnabled
+                    ? 'block px-4 py-2 text-sm text-rose-700 hover:bg-rose-50 hover:text-rose-900'
+                    : 'block px-4 py-2 text-sm text-gray-400 cursor-not-allowed';
+                const dupAttrs = dupEnabled
+                    ? `href="/duplicate-callup?file_number=${encodeURIComponent(row.file_number || '')}" target="_blank" rel="noopener"`
+                    : 'href="#" aria-disabled="true"';
                 return `
                                     <div class="relative inline-block text-left">
                                         <button
@@ -174,6 +181,11 @@
                                                    data-lpkn-no="${row.lpkn_no || ''}"
                                                    role="menuitem">
                                                     Edit Transaction
+                                                </a>
+                                                <a ${dupAttrs}
+                                                   class="${dupClasses}"
+                                                   role="menuitem">
+                                                    Duplicate Call-up Sheet
                                                 </a>
                                             </div>
                                         </div>

@@ -946,6 +946,7 @@ class FileTrackerController extends Controller
                 'registry_office_code' => 'required|string|max:50',
                 'registry_office_name' => 'required|string|max:255',
                 'notes' => 'nullable|string|max:500',
+                'num_pages' => 'nullable|integer|min:1|max:99999', // Pages returned to registry
                 'table' => 'nullable|string|in:file_tracker,file_trackings' // Added to identify source table
             ]);
 
@@ -974,10 +975,51 @@ class FileTrackerController extends Controller
                 $movementStatus = $validatedData['status'] === 'Log-in' ? 'active' : 'logged_out';
                 $logId = sprintf('LOG-%s-%s', $now->format('YmdHis'), Str::upper(Str::random(4)));
 
-                // Update the status and office information
+                // ── Page-count reconciliation ──────────────────────────────────
+                // Compare the pages being returned against the original count that was
+                // recorded when the file was logged out. A difference is recorded for
+                // auditing but never blocks the log-back.
+                $originalNumPages = $fileTracker->num_pages;
+                if ($originalNumPages === null) {
+                    $existingLog = $fileTracker->movement_log;
+                    if (!is_array($existingLog)) {
+                        $existingLog = json_decode((string) $existingLog, true) ?: [];
+                    }
+                    foreach ($existingLog as $entry) {
+                        if (is_array($entry) && isset($entry['num_pages']) && $entry['num_pages'] !== '' && $entry['num_pages'] !== null) {
+                            $originalNumPages = (int) $entry['num_pages'];
+                            break;
+                        }
+                    }
+                }
+                $originalNumPages = $originalNumPages !== null ? (int) $originalNumPages : null;
+                $returnedNumPages = isset($validatedData['num_pages']) ? (int) $validatedData['num_pages'] : null;
+
+                $pageDiscrepancy = null;     // signed: returned - original
+                $pageDiscrepancyNote = null;
+                if ($originalNumPages !== null && $returnedNumPages !== null) {
+                    $pageDiscrepancy = $returnedNumPages - $originalNumPages;
+                    if ($pageDiscrepancy < 0) {
+                        $pageDiscrepancyNote = sprintf(
+                            'Page discrepancy: %d page(s) MISSING (logged out with %d, returned %d).',
+                            abs($pageDiscrepancy), $originalNumPages, $returnedNumPages
+                        );
+                    } elseif ($pageDiscrepancy > 0) {
+                        $pageDiscrepancyNote = sprintf(
+                            'Page discrepancy: %d page(s) ADDED (logged out with %d, returned %d).',
+                            $pageDiscrepancy, $originalNumPages, $returnedNumPages
+                        );
+                    }
+                }
+
+                // Update the status and office information. num_pages is left as the
+                // original log-out count; the returned count is stored separately.
                 $fileTracker->status = $validatedData['status'];
                 $fileTracker->current_office_code = $validatedData['registry_office_code'];
                 $fileTracker->current_office_name = $validatedData['registry_office_name'];
+                if ($returnedNumPages !== null) {
+                    $fileTracker->returned_num_pages = $returnedNumPages;
+                }
                 $fileTracker->save();
 
                 // Add to movement log (mirrors UI expectations)
@@ -990,10 +1032,15 @@ class FileTrackerController extends Controller
                     'log_in_date' => $now->format('Y-m-d'),
                     'log_out_time' => null,
                     'log_out_date' => null,
-                    'notes' => $validatedData['notes'] ?? 'File logged back to Registry (Origin)',
+                    'notes' => trim(($validatedData['notes'] ?? 'File logged back to Registry (Origin)')
+                        . ($pageDiscrepancyNote ? ' | ' . $pageDiscrepancyNote : '')),
                     'status' => $movementStatus,
                     'old_status' => $oldStatus,
                     'new_status' => $validatedData['status'],
+                    'pages_original' => $originalNumPages,
+                    'pages_returned' => $returnedNumPages,
+                    'page_discrepancy' => $pageDiscrepancy,
+                    'has_page_discrepancy' => $pageDiscrepancy !== null && $pageDiscrepancy !== 0,
                     'timestamp' => $now->toISOString(),
                     'user_id' => auth()->id(),
                     'user_name' => auth()->user()->name ?? 'System',
@@ -1025,6 +1072,9 @@ class FileTrackerController extends Controller
                     'new_status' => $validatedData['status'],
                     'updated_by' => auth()->id(),
                     'destination' => 'Registry (Origin)',
+                    'pages_original' => $originalNumPages,
+                    'pages_returned' => $returnedNumPages,
+                    'page_discrepancy' => $pageDiscrepancy,
                     'table' => 'file_tracker'
                 ]);
 
@@ -1035,6 +1085,11 @@ class FileTrackerController extends Controller
                         'old_status' => $oldStatus,
                         'new_status' => $validatedData['status'],
                         'updated_at' => $fileTracker->updated_at->format('Y-m-d H:i:s'),
+                        'pages_original' => $originalNumPages,
+                        'pages_returned' => $returnedNumPages,
+                        'returned_num_pages' => $returnedNumPages,
+                        'page_discrepancy' => $pageDiscrepancy,
+                        'page_discrepancy_note' => $pageDiscrepancyNote,
                         'file_info' => [
                             'tracking_id' => $fileTracker->tracking_id,
                             'file_name' => $fileTracker->file_title,
@@ -1162,6 +1217,23 @@ class FileTrackerController extends Controller
             }
 
             if ($fileTracker) {
+                // Resolve the page count recorded when the file was logged out.
+                // Prefer the tracker column; fall back to the latest movement entry
+                // that carried a num_pages value.
+                $originalNumPages = $fileTracker->num_pages;
+                if ($originalNumPages === null) {
+                    $movementLog = $fileTracker->movement_log;
+                    if (!is_array($movementLog)) {
+                        $movementLog = json_decode((string) $movementLog, true) ?: [];
+                    }
+                    foreach ($movementLog as $entry) {
+                        if (is_array($entry) && isset($entry['num_pages']) && $entry['num_pages'] !== '' && $entry['num_pages'] !== null) {
+                            $originalNumPages = (int) $entry['num_pages'];
+                            break;
+                        }
+                    }
+                }
+
                 $fileInfo = [
                     'id' => $fileTracker->id,
                     'tracking_id' => $fileTracker->tracking_id,
@@ -1176,6 +1248,7 @@ class FileTrackerController extends Controller
                     'origin_office_name' => $fileTracker->origin_office_name ?: 'N/A',
                     'origin_office_code' => $fileTracker->origin_office_code ?: '',
                     'assigned_office' => $fileTracker->current_office_name ?: 'N/A',
+                    'num_pages' => $originalNumPages !== null ? (int) $originalNumPages : null,
                     'table' => 'file_tracker' // Add identifier for which table this came from
                 ];
 

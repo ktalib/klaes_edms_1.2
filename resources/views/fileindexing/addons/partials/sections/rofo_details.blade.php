@@ -26,14 +26,25 @@
                 <input type="hidden" name="rofo_instrument_type" value="Right of Occupancy">
             </div>
             <div class="form-group">
+                <label for="rofo-status" class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                @php $rofoStatusValue = isset($record) ? ($record->rofo_status ?? 'Normal') : 'Normal'; @endphp
+                <select id="rofo-status" name="rofo_status"
+                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm">
+                    <option value="Normal" {{ $rofoStatusValue === 'Normal' ? 'selected' : '' }}>Normal</option>
+                    <option value="Normal Cancellation" {{ $rofoStatusValue === 'Normal Cancellation' ? 'selected' : '' }}>Normal Cancellation</option>
+                    <option value="Total Cancellation" {{ $rofoStatusValue === 'Total Cancellation' ? 'selected' : '' }}>Total Cancellation</option>
+                  
+                </select>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+            <div class="form-group">
                 <label for="rofo-date" class="block text-sm font-medium text-gray-700 mb-2">RoFO Date</label>
                 <input type="date" id="rofo-date" name="rofo_date"
                     class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
                     value="{{ isset($record) ? ($record->rofo_date ?? '') : '' }}">
             </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-4">
             <div class="form-group">
                 <label for="rofo-number" class="block text-sm font-medium text-gray-700 mb-2">RoFO Number</label>
                 <input type="text" id="rofo-number" name="rofo_number"

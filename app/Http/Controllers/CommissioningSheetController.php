@@ -436,6 +436,19 @@ class CommissioningSheetController extends Controller
                 }
             }
 
+            // 3. SIT files carry a reason that prints after the Location
+            if (empty($data['sit_reason']) && stripos($fileNo, 'SIT-') === 0) {
+                $sitRow = DB::connection('sqlsrv')
+                    ->table('mls_file_no')
+                    ->where('full_file_number', $fileNo)
+                    ->select('sit_reason')
+                    ->first();
+
+                if ($sitRow && !empty($sitRow->sit_reason)) {
+                    $data['sit_reason'] = $sitRow->sit_reason;
+                }
+            }
+
             return view('commissioning_sheet.pdf', compact('data'));
 
         } catch (\Exception $e) {

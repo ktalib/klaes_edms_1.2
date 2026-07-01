@@ -7,7 +7,7 @@
     const $viewerDialog = $('#document-viewer-dialog');
     console.log('[File Archive] $viewerDialog found:', $viewerDialog.length > 0, 'Element:', $viewerDialog[0]);
     let documentRequestToken = 0;
-    const statusColorClasses = ['bg-green-600', 'bg-red-600'];
+    const statusColorClasses = ['bg-green-600', 'bg-red-600', 'bg-amber-600'];
     const defaultHeaderState = buildRegistryState();
 
     $('.dialog-backdrop').hide();
@@ -184,27 +184,66 @@
 
       const trackerStatus = String(tracker.status || '').trim().toUpperCase();
       const movementLog = Array.isArray(tracker.movement_log) ? tracker.movement_log : [];
-      const hasOpenMovement = movementLog.some(function (entry) {
-        return isOpenMovementEntry(entry);
-      });
 
-      if (hasOpenMovement) {
-        return buildTransitState();
-      }
+      // Ground truth — mirrors App\Services\FileLocationResolver: a file is physically
+      // OUT of the registry only while its tracker is ACTIVE with a real movement log.
+      // Any other status — Log-in (file logged back to the Registry), Completed,
+      // Cancelled, or a workflow status — means the file is back in / with the registry.
+      //
+      // We must NOT infer transit from an "open" movement entry (log-in set, no log-out):
+      // the log-back-to-registry action itself writes an open entry (status 'active') at
+      // the registry office, so that heuristic wrongly kept logged-back files showing red.
+      const isTransit = trackerStatus === 'ACTIVE' && movementLog.length > 0;
 
-      const latestMovement = getLatestMovementEntry(movementLog);
-      if (latestMovement && isOpenMovementEntry(latestMovement)) {
-        return buildTransitState();
-      }
-
-      if (trackerStatus === 'ACTIVE') {
-        const currentMovement = tracker.current_movement;
-        if (currentMovement && isOpenMovementEntry(currentMovement)) {
-          return buildTransitState();
-        }
+      if (isTransit) {
+        // The entry the file is currently sitting on tells us where it physically is.
+        const currentMovement = tracker.current_movement && isOpenMovementEntry(tracker.current_movement)
+          ? tracker.current_movement
+          : null;
+        const activeEntry = movementLog.find(isOpenMovementEntry)
+          || currentMovement
+          || getLatestMovementEntry(movementLog);
+        return buildTransitState(
+          resolveTrackerLocation(tracker, activeEntry),
+          resolveTrackerOfficer(tracker, activeEntry)
+        );
       }
 
       return buildRegistryState();
+    }
+
+    // Resolve the file's current physical location using the same field-fallback
+    // order as the create-file-tracker quick-search, preferring the active movement
+    // entry's office (where the file currently is).
+    function resolveTrackerLocation(tracker, entry) {
+      const fromEntry = entry
+        ? (entry.office_name || entry.receiving_office_name || entry.current_location
+           || entry.location || entry.destination_office_name || entry.office)
+        : '';
+      return String(
+        fromEntry
+        || tracker.current_office_name
+        || tracker.currentOffice
+        || tracker.receiving_office_name
+        || tracker.receivingOfficeName
+        || tracker.location
+        || tracker.current_location
+        || ''
+      ).trim();
+    }
+
+    function resolveTrackerOfficer(tracker, entry) {
+      const fromEntry = entry
+        ? (entry.receiving_officer_name || entry.officer_name || entry.officer)
+        : '';
+      return String(
+        fromEntry
+        || tracker.receiving_officer_name
+        || tracker.receivingOfficerName
+        || tracker.current_officer
+        || tracker.current_handler
+        || ''
+      ).trim();
     }
 
     function isOpenMovementEntry(entry) {
@@ -223,11 +262,13 @@
       return ['ACTIVE', 'PENDING_ACCEPTANCE', 'IN_PROGRESS'].includes(status);
     }
 
-    function buildTransitState() {
+    function buildTransitState(location, officer) {
       return {
         colorClass: 'bg-red-600',
         label: 'File in Transit',
-        status: 'in_transit'
+        status: 'in_transit',
+        location: location || '',
+        officer: officer || ''
       };
     }
 
@@ -235,7 +276,9 @@
       return {
         colorClass: 'bg-green-600',
         label: 'File in the Registry',
-        status: 'registry'
+        status: 'registry',
+        location: '',
+        officer: ''
       };
     }
 
@@ -251,7 +294,43 @@
 
         const mapping = statusMap[fileNumber];
         updateHeaderColor($header, mapping);
+        updateCardTooltip($header, mapping, $card.data('fileNumber'));
       });
+    }
+
+    // Rebuild the hover tooltip from authoritative tracker data so an out-of-registry
+    // file shows WHERE it currently is (office) and with whom (officer).
+    function updateCardTooltip($header, mapping, fileNumberRaw) {
+      const $tooltip = $header.find('.status-tooltip');
+      if (!$tooltip.length) {
+        return;
+      }
+
+      const state = mapping || defaultHeaderState;
+      const esc = function (value) {
+        return $('<div>').text(value == null ? '' : value).html();
+      };
+      const fileNumber = esc(fileNumberRaw);
+
+      let body;
+      if (state.status === 'in_transit') {
+        const where = state.location
+          ? `📍 ${esc(state.location)}`
+          : '⏳ File is in transit';
+        const who = state.officer
+          ? `<div class="text-gray-400 mt-1">👤 ${esc(state.officer)}</div>`
+          : '';
+        body =
+          `<div class="text-gray-200">File out of the Registry</div>` +
+          `<div class="text-gray-300 mt-1">${where}</div>` +
+          who;
+      } else {
+        body =
+          `<div class="text-gray-200">File in the Registry</div>` +
+          `<div class="text-gray-300 mt-1">✅ File is in the registry</div>`;
+      }
+
+      $tooltip.html(`<div class="font-semibold mb-1">${fileNumber}</div>${body}`);
     }
 
     function updateHeaderColor($header, mapping) {

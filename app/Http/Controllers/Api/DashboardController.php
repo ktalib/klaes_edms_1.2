@@ -199,7 +199,6 @@ class DashboardController extends Controller
 
                 // 5. ST Files
 
-                $headlineFileNumberTotal = $fileNumberCount + $cadastralIndexed;
                 $stIndexed      = $db->table('file_indexings')
                     ->where('registry', 'like', 'st%')
                     ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
@@ -222,6 +221,16 @@ class DashboardController extends Controller
                     ->where(function ($q) { $q->where('is_deleted', 0)->orWhereNull('is_deleted'); })
                     ->count();
                 $gknCommissioned = 0;
+
+                // 9. Headline "Total Number of Files" = whole total of all files
+                //    (raw fileNumber registry + every registry's indexed + commissioned)
+                $phyIndexed        = 0;
+                $phyCommissioned   = 0;
+                $registryIndexed   = $kangisIndexed + $cadastralIndexed + $stIndexed
+                                   + $sltrIndexed + $dcivIndexed + $phyIndexed + $gknIndexed;
+                $registryCommissioned = $kangisCommissioned + $cadastralCommissioned + $stCommissioned
+                                   + $sltrCommissioned + $dcivCommissioned + $phyCommissioned + $gknCommissioned;
+                $headlineFileNumberTotal = $fileNumberCount + $registryIndexed + $registryCommissioned;
 
                 $fileStats = [
                     'total_file_numbers'   => ['count' => number_format($headlineFileNumberTotal),  'raw' => $headlineFileNumberTotal],

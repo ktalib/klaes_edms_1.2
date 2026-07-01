@@ -164,7 +164,9 @@
       "Bash(php -l app/Http/Controllers/IndexedFileTableController.php)",
       "Bash(php -l database/migrations/2026_06_20_000000_create_master_dciv_links_table.php)",
       "Bash(grep -nE 'getNextSerial|findNextAvailableFileNumber|full_file_number'\\\\'', \\\\$fullFileNumber|generateFileNumber' app/Http/Controllers/MlsFileNoController.php)",
-      "Bash(awk -F: '$1>=2468 && $1<=2920')"
+      "Bash(awk -F: '$1>=2468 && $1<=2920')",
+      "Bash(php -l app/Http/Controllers/DuplicateCallupController.php)",
+      "Bash(php -l app/Http/Controllers/FileIndexViewController.php)"
     ],
     "additionalDirectories": [
       "C:\\wamp64\\www\\klaes\\resources\\views\\special_assignment",

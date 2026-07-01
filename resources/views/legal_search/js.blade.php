@@ -37,6 +37,8 @@
   const resetSearchBtn = document.getElementById('reset-search-btn');
   const searchLoading = document.getElementById('search-loading');
   const noResultsMessage = document.getElementById('no-results-message');
+  const fileInfoFallback = document.getElementById('file-info-fallback');
+  const fileInfoFallbackBody = document.getElementById('file-info-fallback-body');
   const tableResults = document.getElementById('table-results');
   const tableResultsBody = document.getElementById('table-results-body');
   const cardResults = document.getElementById('card-results');
@@ -375,6 +377,11 @@
             fileNumberInput.value = fileData.fileNumber;
             userSelectedFileNumber = String(fileData.fileNumber).trim();
 
+            // Keep the picked record so the File Information card can fall back to
+            // its title/location when the file is not in file_indexings.
+            window.__lsSelectedRecord = fileData.record || null;
+            window.__lsSelectedFileTitle = (fileData.file_title || fileData.file_name || '').toString().trim();
+
             // Enable search button
             if (searchNowBtn) {
               searchNowBtn.disabled = false;
@@ -409,6 +416,8 @@
     clearFilenoBtn.addEventListener('click', () => {
       fileNumberInput.value = '';
       userSelectedFileNumber = '';
+      window.__lsSelectedRecord = null;
+      window.__lsSelectedFileTitle = '';
       clearFilenoBtn.classList.add('hidden');
       if (filenoInfoBadge) {
         filenoInfoBadge.classList.add('hidden');
@@ -482,7 +491,8 @@
     cardResults.classList.add('hidden');
     fileDetailsView.classList.add('hidden');
     noResultsMessage.classList.add('hidden');
-    
+    if (fileInfoFallback) fileInfoFallback.classList.add('hidden');
+
     // Clear debug state
     if (sourceBadges) sourceBadges.classList.add('hidden');
     lastApiResponse = null;
@@ -530,6 +540,7 @@
       tableResults.classList.add('hidden');
       cardResults.classList.add('hidden');
       noResultsMessage.classList.add('hidden');
+      if (fileInfoFallback) fileInfoFallback.classList.add('hidden');
       return;
     }
 
@@ -650,12 +661,133 @@
     executeSearchAjax(filters, searchData);
 };
 
+// Land-use prefix mapping (see .agent/skills/klaes/SKILL.md §5). Used to derive a
+// file's land use from its file-number prefix when the indexed land_use is missing.
+const LAND_USE_PREFIX_MAP = {
+  'RES': 'Residential', 'COM': 'Commercial', 'IND': 'Industrial', 'AG': 'Agriculture',
+  'CON-RES': 'Residential', 'CON-COM': 'Commercial', 'CON-IND': 'Industrial', 'CON-AG': 'Agriculture',
+  'RES-RC': 'Residential', 'COM-RC': 'Commercial', 'IND-RC': 'Industrial', 'AG-RC': 'Agriculture',
+  'CON-RES-RC': 'Residential', 'CON-COM-RC': 'Commercial', 'CON-IND-RC': 'Industrial', 'CON-AG-RC': 'Agriculture',
+};
+
+const deriveLandUseFromFileNumber = (fileNumber) => {
+  if (!fileNumber) return '';
+  const normalized = String(fileNumber).toUpperCase().replace(/[\/=_]+/g, '-').trim();
+  // Collect the leading non-numeric tokens (the prefix), stopping at the year/serial.
+  const prefixTokens = [];
+  for (const token of normalized.split('-').filter(Boolean)) {
+    if (/^\d+$/.test(token)) break;
+    prefixTokens.push(token);
+  }
+  // ST files lead with an ST token that is not part of the land-use mapping.
+  if (prefixTokens[0] === 'ST') prefixTokens.shift();
+
+  const prefix = prefixTokens.join('-');
+  if (LAND_USE_PREFIX_MAP[prefix]) return LAND_USE_PREFIX_MAP[prefix];
+  // Fallback: match the first recognised base land-use token within the prefix.
+  for (const token of prefixTokens) {
+    if (LAND_USE_PREFIX_MAP[token]) return LAND_USE_PREFIX_MAP[token];
+  }
+  return '';
+};
+
+// Build the "File Information" card shown when a file is indexed but has no
+// transactions, so the user still sees the file's details instead of a bare
+// "No results found" message.
+const renderFileInfoFallback = (data) => {
+  if (!fileInfoFallbackBody) return false;
+
+  const fileNumber = (window.__lsLastSearchedFileNumber || userSelectedFileNumber
+    || (document.getElementById('fileNumber')?.value || '')).trim();
+  const typeLabel = (filenoTypeLabel?.textContent || '').trim();
+  const ownerLabel = (filenoOwnerLabel?.textContent || '').replace(/^[—-]\s*/, '').trim();
+
+  // Land use: prefer the indexed value, else derive it from the file-number prefix.
+  const indexedLandUse = (data.file_land_use !== null && data.file_land_use !== undefined && String(data.file_land_use).trim() !== '' && String(data.file_land_use).trim() !== '-')
+    ? String(data.file_land_use).trim()
+    : '';
+  // Fall back to the picked file-number record when the file isn't in file_indexings.
+  const rec = window.__lsSelectedRecord || {};
+  const landUse = indexedLandUse
+    || (rec.land_use && String(rec.land_use).trim() && String(rec.land_use).trim() !== '-' ? String(rec.land_use).trim() : '')
+    || deriveLandUseFromFileNumber(fileNumber);
+  const pick = (...vals) => {
+    for (const v of vals) {
+      if (v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '-') return String(v).trim();
+    }
+    return '';
+  };
+  const fileTitle = pick(data.file_title, window.__lsSelectedFileTitle, rec.file_title, rec.file_name, rec.FileName, ownerLabel);
+  const location  = pick(data.file_location, rec.Location, rec.location, rec.ma_location, rec.property_location, rec.address);
+  const plotNo    = pick(data.file_plot_number, rec.plot_no, rec.plot_number);
+  const sizeVal   = pick(data.file_size, rec.size, rec.plot_size);
+  const tpNo      = pick(data.file_tp_no, rec.tp_no);
+  const district  = pick(data.file_district, rec.district);
+  const lga       = pick(data.file_lga, rec.lga);
+  const relatedNo = pick(data.file_related_fileno, rec.related_fileno);
+
+  // Heroicon (outline) path data per field for the leading icon.
+  const ICONS = {
+    'File Number':     'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+    'File Type':       'M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-5 5a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 014 8V5a2 2 0 012-2z',
+    'Owner':           'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
+    'File Title':      'M4 6h16M4 12h16M4 18h7',
+    'Land Use':        'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7',
+    'Plot No':         'M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z',
+    'Size':            'M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4',
+    'TP No':           'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7',
+    'Location':        'M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z',
+    'District':        'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0H5m0 0H3m2 0h4m6 0h4M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5',
+    'LGA':             'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0H5m0 0H3m2 0h4m6 0h4M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5',
+    'Related File No': 'M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5m6-6l1.5-1.5a4 4 0 015.656 5.656l-3 3a4 4 0 01-5.656 0',
+  };
+  const DEFAULT_ICON = 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
+
+  const rows = [
+    ['File Number', fileNumber],
+    ['File Type', typeLabel],
+    ['File Title', fileTitle],
+    ['Land Use', landUse],
+    ['Location', location],
+    ['Plot No', plotNo],
+    ['Size', sizeVal],
+    ['TP No', tpNo],
+    ['District', district],
+    ['LGA', lga],
+    ['Related File No', relatedNo],
+  ];
+
+  const escape = (v) => String(v).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+
+  const visibleRows = rows.filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '' && String(value).trim() !== '-');
+  if (!visibleRows.length) return false;
+
+  const cells = visibleRows.map(([label, value]) => `
+    <div class="flex items-start gap-2.5">
+      <svg class="h-4 w-4 text-gray-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+        <path stroke-linecap="round" stroke-linejoin="round" d="${ICONS[label] || DEFAULT_ICON}" />
+      </svg>
+      <div class="min-w-0">
+        <div class="text-[11px] uppercase tracking-wide text-gray-400 leading-tight">${escape(label)}</div>
+        <div class="text-sm font-medium text-gray-800 break-words leading-snug">${escape(value)}</div>
+      </div>
+    </div>
+  `).join('');
+
+  fileInfoFallbackBody.innerHTML = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3.5">${cells}</div>`;
+
+  return true;
+};
+
 const executeSearchAjax = (filters, searchData) => {
     // Show loading
     searchLoading.classList.remove('hidden');
     tableResults.classList.add('hidden');
     cardResults.classList.add('hidden');
     noResultsMessage.classList.add('hidden');
+    if (fileInfoFallback) fileInfoFallback.classList.add('hidden');
     fileDetailsView.classList.add('hidden');
 
     // AJAX call to the server
@@ -688,8 +820,14 @@ const executeSearchAjax = (filters, searchData) => {
         const _apiRelatedFileno = data.file_related_fileno || null;
         const _apiIndexFileNumber = data.file_index_number || null;
         const _apiFileSize = data.file_size || null;
+        const _apiCommissioningDate = data.file_commissioning_date || null;
+        const _apiTempFileNumber = data.file_temp_number || null;
+        // Stash so the File Information card can show it even when the selected
+        // record is a prop_id-expanded row from a different file number.
+        window._lsFileTempNumber = _apiTempFileNumber;
         searchResults.forEach(r => {
           if (_apiFileTitle) r._file_title = _apiFileTitle;
+          if (_apiCommissioningDate) r._file_commissioning_date = _apiCommissioningDate;
           if (_apiFileDistrict) r._file_district = _apiFileDistrict;
           if (_apiFileLga) r._file_lga = _apiFileLga;
           if (_apiFileLandUse) r._file_land_use = _apiFileLandUse;
@@ -698,6 +836,7 @@ const executeSearchAjax = (filters, searchData) => {
           if (_apiRelatedFileno) r._file_related_fileno = _apiRelatedFileno;
           if (_apiIndexFileNumber) r._file_index_number = _apiIndexFileNumber;
           if (_apiFileSize) r._file_size = _apiFileSize;
+          if (_apiTempFileNumber) r._file_temp_number = _apiTempFileNumber;
         });
 
         console.log('=== STAGING TABLE SEARCH RESULTS ===');
@@ -716,7 +855,14 @@ const executeSearchAjax = (filters, searchData) => {
 
         // Show appropriate view
         if (searchResults.length === 0) {
-          noResultsMessage.classList.remove('hidden');
+          // If the file itself is indexed (even with no transactions), show its
+          // File Information instead of a bare "No results found" message.
+          const hasFileInfo = renderFileInfoFallback(data);
+          if (hasFileInfo && fileInfoFallback) {
+            fileInfoFallback.classList.remove('hidden');
+          } else {
+            noResultsMessage.classList.remove('hidden');
+          }
         } else {
           // Update active filters summary
           const activeFilters = Object.entries(filters)
@@ -1051,6 +1197,9 @@ const executeSearchAjax = (filters, searchData) => {
 
   // Render search results based on current view
   const renderSearchResults = () => {
+    // Nothing to render when there are no results — the File Information fallback
+    // or the no-results message already covers the empty state.
+    if (!searchResults.length) return;
     if (currentView === 'table') {
       renderTableResults();
       tableResults.classList.remove('hidden');
@@ -1354,6 +1503,8 @@ const executeSearchAjax = (filters, searchData) => {
   // CofO + all other instruments = 1 → sorted chronologically by reg date within tie.
   // Current-year file numbers are forced to weight 0 (sorted last).
   const recordPriorityWeight = (item) => {
+    if (item && item._is_commissioning) return 12;
+    if (item && item._is_temporary_file) return 11;
     if (isCurrentYearFileNumber(item) || isCurrentYearTransaction(item)) return 0;
     const txType = canonicalWeightingInstrumentType(getMappedValue(item, 'transactionType'));
     if (txType === 'occupancy permit') return 10;
@@ -1515,11 +1666,22 @@ const executeSearchAjax = (filters, searchData) => {
       const party4 = normalize(row.party_4 || '');
       // For ROFO the date is irrelevant (allocation date varies by source), drop it
       const date = transType === 'right of occupancy' ? '' : normalize(getMappedValue(row, 'date'));
+      // Without reg particulars we need a discriminator that keeps genuinely different
+      // properties apart (e.g. the source plots of a merger can share the same govt
+      // grantor + grantee on a Right of Occupancy and must NOT collapse). prop_id is
+      // that discriminator: same property = same prop_id, so copies across PRA/FH/CofO
+      // dedupe even when their file-number labels differ (MLS "RES-2000-1767" in File
+      // History vs KANGIS "KN2313" in PRA). Fall back to the file number only when the
+      // row has no prop_id.
+      const propId = String(row.prop_id || '').trim();
+      const discriminator = propId !== ''
+        ? 'p:' + propId
+        : normalize(String(getMappedValue(row, 'fileNumber') || ''));
 
-      const hasSignal = [transType, party1, party2, date].some(Boolean);
+      const hasSignal = [transType, party1, party2, date, discriminator].some(Boolean);
       if (!hasSignal) return null;
 
-      return [transType, party1, party2, party3, party4, date].join('|');
+      return [transType, party1, party2, party3, party4, date, discriminator].join('|');
     };
 
     // Pass 1: build deduped set with scoring
@@ -1666,6 +1828,22 @@ const executeSearchAjax = (filters, searchData) => {
     
     // Update file information fields (with .0 fix and better field mapping)
     document.getElementById('file-number-value').textContent = mlsDisplay;
+
+    // Temporary "(T)" file number — shown as a second line when the searched
+    // file has a temporary sibling registered against it.
+    const tempFileNumber = String(selectedFile._file_temp_number || selectedFile.temp_file_no || window._lsFileTempNumber || '').trim();
+    const tempRow = document.getElementById('temp-file-number-row');
+    const tempVal = document.getElementById('temp-file-number-value');
+    if (tempRow && tempVal) {
+      if (tempFileNumber && tempFileNumber !== '-' && tempFileNumber.toUpperCase() !== String(mlsDisplay).toUpperCase()) {
+        tempVal.textContent = tempFileNumber;
+        tempRow.classList.remove('hidden');
+      } else {
+        tempVal.textContent = '';
+        tempRow.classList.add('hidden');
+      }
+    }
+
     document.getElementById('kangis-file-number-value').textContent = fileNumbers.kangis;
     document.getElementById('new-kangis-file-number-value').textContent = fileNumbers.new_kangis;
     
@@ -1804,6 +1982,8 @@ const executeSearchAjax = (filters, searchData) => {
         const _rf = data.file_related_fileno || null;
         const _ix = data.file_index_number || null;
         const _sz = data.file_size || null;
+        const _tf = data.file_temp_number || null;
+        window._lsFileTempNumber = _tf;
         searchResults.forEach(function (r) {
           if (_t)  r._file_title          = _t;
           if (_d)  r._file_district       = _d;
@@ -1814,6 +1994,7 @@ const executeSearchAjax = (filters, searchData) => {
           if (_rf) r._file_related_fileno = _rf;
           if (_ix) r._file_index_number   = _ix;
           if (_sz) r._file_size           = _sz;
+          if (_tf) r._file_temp_number    = _tf;
         });
 
         // Update counts
@@ -2619,24 +2800,93 @@ const executeSearchAjax = (filters, searchData) => {
     return map[label] || '';
   };
 
+  // Build the synthetic "File Commissioning" timeline record. It is always the
+  // first row (weight 12). Its Transaction Date is the file's commissioning date
+  // (resolved server-side; '-' when the file was not commissioned within KLAES),
+  // and its Reg Particulars are 0/0/0.
+  const buildCommissioningTimelineRow = () => {
+    const commDate = (selectedFile && selectedFile._file_commissioning_date)
+      ? selectedFile._file_commissioning_date : '-';
+    const fileNo = (userSelectedFileNumber && String(userSelectedFileNumber).trim())
+      || window._currentFileNumber
+      || (selectedFile && (selectedFile.mlsFNo || selectedFile.fileno || selectedFile.fileNo))
+      || '-';
+    // Party 1 is the commissioning authority; Party 2 is the file owner/title
+    // (the Ministry commissioned the file for them).
+    const ownerName = (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';
+    return {
+      _is_commissioning: true,
+      id: 'commissioning',
+      source_table: 'File Commissioning',
+      fileno: fileNo,
+      file_number: fileNo,
+      mlsFNo: fileNo,
+      transaction_type: 'File Commissioning',
+      instrument_type: 'File Commissioning',
+      party_1: 'Kano State Ministry of Land and Physical Planning', party_2: ownerName, party_3: '-', party_4: '-',
+      serial_no: '', page_no: '', volume_no: '',
+      transaction_date: (commDate && commDate !== '-') ? commDate : '-',
+      reg_date: '',
+      caveat: 'No',
+      is_caveated: 0,
+      prop_id: (selectedFile && (selectedFile.prop_id || selectedFile.propId)) || '',
+    };
+  };
+
+  // Build the synthetic "Temporary File" timeline record. It appears directly
+  // below File Commissioning (weight 11) only when the searched file has a
+  // temporary "(T)" sibling. Its File No is the "(T)" number.
+  const buildTemporaryFileTimelineRow = () => {
+    const tempFileNo = String(
+      (selectedFile && (selectedFile._file_temp_number || selectedFile.temp_file_no)) ||
+      window._lsFileTempNumber || ''
+    ).trim();
+    if (!tempFileNo || tempFileNo === '-') return null;
+
+    const ownerName = (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';
+    return {
+      _is_temporary_file: true,
+      id: 'temporary-file',
+      source_table: 'Temporary File',
+      fileno: tempFileNo,
+      file_number: tempFileNo,
+      mlsFNo: tempFileNo,
+      transaction_type: 'Temporary File',
+      instrument_type: 'Temporary File',
+      party_1: 'Kano State Ministry of Land and Physical Planning', party_2: ownerName, party_3: '-', party_4: '-',
+      serial_no: '', page_no: '', volume_no: '',
+      transaction_date: '-',
+      reg_date: '',
+      caveat: 'No',
+      is_caveated: 0,
+      prop_id: (selectedFile && (selectedFile.prop_id || selectedFile.propId)) || '',
+    };
+  };
+
   const renderTimeline = async () => {
     let transactions = window._preferredRelatedTransactions || window._allRelatedTransactions || [];
     const timelineTable = document.getElementById('timeline-table');
     if (!timelineTable) return;
     timelineTable.innerHTML = '';
-    
+
+    // Timeline view must be chronological by Transaction Date.
+    transactions = sortTimelineChronologically(transactions);
+
+    // Default "File Commissioning" record — always the first row in the timeline
+    // (weight 12). Commissioning Date = the file's commissioning date when it was
+    // commissioned within KLAES (resolved server-side), otherwise '-'. Reg
+    // particulars are 0/0/0.
+    const commissioningRow = buildCommissioningTimelineRow();
+    // "Temporary File" row sits directly below File Commissioning when present.
+    const temporaryFileRow = buildTemporaryFileTimelineRow();
+    transactions = temporaryFileRow
+      ? [commissioningRow, temporaryFileRow, ...transactions]
+      : [commissioningRow, ...transactions];
+
     const timelineTotalCount = document.getElementById('timeline-total-count');
     if (timelineTotalCount) {
       timelineTotalCount.textContent = transactions.length;
     }
-
-    if (transactions.length === 0) {
-      timelineTable.innerHTML = '<tr><td colspan="18" class="text-center py-4 text-gray-500">No transactions to display.</td></tr>';
-      return;
-    }
-
-    // Timeline view must be chronological by Transaction Date.
-    transactions = sortTimelineChronologically(transactions);
 
     const hasCaveatOnRow = (item) => {
       const caveatText = String(item?.caveat ?? '').trim().toLowerCase();
@@ -2713,7 +2963,7 @@ const executeSearchAjax = (filters, searchData) => {
         <td><span class="source-badge ${sourceBadgeClass(item.source_table)}">${item.source_table}</span></td>
         <td class="text-center text-xs ${weightColorClass}">${weightDisplay}</td>
         <td>${transType}</td>
-        <td>${party1}</td>
+        <td style="white-space:nowrap;">${party1}</td>
         <td>${party2}</td>
         <td>${party3}</td>
         <td>${regParticulars}</td>
@@ -4547,7 +4797,7 @@ const executeSearchAjax = (filters, searchData) => {
       if (foldersEl) foldersEl.innerHTML = '';
       if (loadingEl) loadingEl.classList.add('hidden');
       if (emptyEl) {
-        emptyEl.textContent = 'No digital archive available for this file.';
+        emptyEl.textContent = 'No files found in the digital archive for this file.';
         emptyEl.classList.remove('hidden');
       }
       return;
@@ -4579,7 +4829,7 @@ const executeSearchAjax = (filters, searchData) => {
       if (!folders.length) {
         console.warn('[Archive Loader] No folders found');
         if (emptyEl) {
-          emptyEl.textContent = data.message || 'No digital archive available for this file.';
+          emptyEl.textContent = data.message || 'No files found in the digital archive for this file.';
           emptyEl.classList.remove('hidden');
         }
         return;
@@ -4589,11 +4839,21 @@ const executeSearchAjax = (filters, searchData) => {
       if (foldersEl) {
         foldersEl.innerHTML = folders.map((folder) => {
           const folderName = escapeArchiveHtml(folder.folder_name || folder.file_number || 'Archive');
-          console.log('[Archive Loader] Creating button for folder:', { folderName, folderID: folder.id });
+          const fileNumber = escapeArchiveHtml(folder.file_number || folder.folder_name || 'Archive');
+          // Red = file is currently logged out via the file tracker.
+          // Green = file is in the digital archive (has documents) and not logged out.
+          const loggedOut = folder.is_logged_out === true;
+          const colorClasses = loggedOut
+            ? 'bg-red-600 hover:bg-red-700'
+            : 'bg-green-600 hover:bg-green-700';
+          const docCount = Number(folder.document_count) || 0;
+          const docLabel = docCount ? `${docCount} ${docCount === 1 ? 'doc' : 'docs'}` : '';
+          console.log('[Archive Loader] Creating button for folder:', { folderName, fileNumber, folderID: folder.id, loggedOut, docCount });
           return `
-            <button type="button" class="archive-folder-card inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors" data-folder-id="${Number(folder.id)}" data-folder-name="${folderName}">
+            <button type="button" class="archive-folder-card inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-white ${colorClasses} transition-colors text-left" data-folder-id="${Number(folder.id)}" data-folder-name="${folderName}" data-file-number="${fileNumber}" title="View digital archive for ${fileNumber}">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" /></svg>
-              View Digital Archive
+              <span class="flex-1 min-w-0 truncate">View Digital Archive — ${fileNumber}</span>
+              ${docLabel ? `<span class="flex-shrink-0 text-xs opacity-80">${docLabel}</span>` : ''}
             </button>
           `;
         }).join('');
@@ -4606,7 +4866,7 @@ const executeSearchAjax = (filters, searchData) => {
       }
       console.error('[Archive Loader] Error loading archive:', error.message || error);
       if (emptyEl) {
-        emptyEl.textContent = 'No digital archive available for this file.';
+        emptyEl.textContent = 'No files found in the digital archive for this file.';
         emptyEl.classList.remove('hidden');
       }
     } finally {
@@ -4642,7 +4902,7 @@ const executeSearchAjax = (filters, searchData) => {
 
       const pagesUrl = archivePagesEndpoint(folderId);
       const metaObj = {
-        number: String(card.getAttribute('data-folder-name') || '').trim() || getCurrentFileReferenceForArchive(),
+        number: String(card.getAttribute('data-file-number') || card.getAttribute('data-folder-name') || '').trim() || getCurrentFileReferenceForArchive(),
         title: String(card.getAttribute('data-folder-name') || '').trim() || 'Digital Archive'
       };
       console.log('[Archive Viewer] Calling openDocumentViewer with:', { pagesUrl, metaObj });

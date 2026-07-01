@@ -486,8 +486,9 @@ class CreateFileTrackerController extends Controller
                     // General /create-file-tracker (no url=kangis / no url=new_kangis):
                     // this is the LAND file log — it must show land files only. Exclude
                     // the KANGIS / New KANGIS modules AND, by file-number prefix, any file
-                    // that belongs to another registry (KANGIS legacy/new, SLTR, ST/SIT,
-                    // DCIV, Survey/GKN). The prefix guard is the ground truth: it also
+                    // that belongs to another registry (KANGIS legacy/new, SLTR, ST,
+                    // DCIV, Survey/GKN). SIT files are Land files and stay visible here.
+                    // The prefix guard is the ground truth: it also
                     // catches older records that carry a NULL/empty module and would
                     // otherwise leak into the Land view.
                     $builder->where(function ($excludeQuery) use ($normalizedModuleExpr, $normalizedWorkflowExpr, $normalizedFileNoExpr) {
@@ -500,7 +501,6 @@ class CreateFileTrackerController extends Controller
                             ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'KN%'")
                             ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'MLKN%'")
                             ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'SLTR%'")
-                            ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'SIT%'")
                             ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'ST-%'")
                             ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'ST/%'")
                             ->whereRaw("{$normalizedFileNoExpr} NOT LIKE 'LPCC%'")
@@ -1670,6 +1670,7 @@ HTML;
                     'location_type'    => $locType($r->resolved_status),
                     'current_location' => $r->current_location,
                     'scb_response'     => $found ? 'Found' : 'Not Found',
+                    'not_found_type'   => $found ? null : $r->not_found_type,
                     'found'            => $found,
                     'not_found'        => ! $found,
                     'request_type'     => $isDfr ? 'DFR' : ($isBlind ? 'Blind Request' : 'Open Request'),
@@ -1874,22 +1875,35 @@ HTML;
             ? trim(($fmt($from) ?? '…') . ' – ' . ($fmt($to) ?? '…'))
             : null;
 
-        // Today's requests, broken down by SCB outcome (always today — independent of
-        // the date-range filter) so the "Requests Today" tile can show its split.
-        $todayCounts = FileSearchRequest::query()->where($registryScope)
-            ->whereDate('created_at', now()->toDateString())
+        // "Requests Today" tile — always today, independent of the date-range filter.
+        // Header = requests submitted today. Found / Not Found reflect SCB outcomes
+        // *given today* (by responded_at) regardless of when the file was requested,
+        // so files requested earlier but resolved today are counted. Awaiting =
+        // requests submitted today that have no SCB response yet.
+        $today = now()->toDateString();
+
+        $submittedToday = (int) FileSearchRequest::query()->where($registryScope)
+            ->whereDate('created_at', $today)->count();
+
+        $todayAwaiting = (int) FileSearchRequest::query()->where($registryScope)
+            ->whereDate('created_at', $today)
+            ->whereIn('status', [FileSearchRequest::STATUS_PENDING, FileSearchRequest::STATUS_SEARCHING])
+            ->count();
+
+        // Outcomes responded to today, grouped by status.
+        $todayOutcomes = FileSearchRequest::query()->where($registryScope)
+            ->whereDate('responded_at', $today)
             ->selectRaw('status, COUNT(*) as c')->groupBy('status')->pluck('c', 'status');
-        $todayAwaiting = (int) ($todayCounts[FileSearchRequest::STATUS_PENDING] ?? 0)
-                       + (int) ($todayCounts[FileSearchRequest::STATUS_SEARCHING] ?? 0);
 
         $report = [
             'date'            => now()->format('M j, Y'),
             'range_label'     => $rangeLabel,
             // a. Requests submitted today
-            'submitted_today' => (int) $todayCounts->sum(),
-            // a.1 Today's outcome breakdown (Found / Not Found / Awaiting)
-            'today_found'     => (int) ($todayCounts[FileSearchRequest::STATUS_FOUND] ?? 0),
-            'today_not_found' => (int) ($todayCounts[FileSearchRequest::STATUS_NOT_FOUND] ?? 0),
+            'submitted_today' => $submittedToday,
+            // a.1 Today's outcome breakdown — Found / Not Found by response date,
+            //     Awaiting by submission date (today's requests with no response yet).
+            'today_found'     => (int) ($todayOutcomes[FileSearchRequest::STATUS_FOUND] ?? 0),
+            'today_not_found' => (int) ($todayOutcomes[FileSearchRequest::STATUS_NOT_FOUND] ?? 0),
             'today_awaiting'  => $todayAwaiting,
             // b. Blind / Open requests (everything raised from Quick Search — i.e. not a DFR)
             'blind_open'      => $blindOpenCount,
@@ -1936,6 +1950,7 @@ HTML;
                     'found'            => $r->status === FileSearchRequest::STATUS_FOUND,
                     'not_found'        => $r->status === FileSearchRequest::STATUS_NOT_FOUND,
                     'scb_response'     => $isPending ? 'Awaiting' : ($r->status === FileSearchRequest::STATUS_FOUND ? 'Found' : 'Not Found'),
+                    'not_found_type'   => $r->status === FileSearchRequest::STATUS_NOT_FOUND ? $r->not_found_type : null,
                     'front_desk_acted' => ! is_null($r->front_desk_acted_at),
                     'note'             => $r->feedback_note,
                     'responder'        => $resp ? trim($resp->first_name . ' ' . $resp->last_name) : null,
@@ -1987,6 +2002,24 @@ HTML;
             ->orderByDesc('created_at')
             ->first();
 
+        // The most recent FR the SCB responded to as Found — surfaced on the "File
+        // Found" panel so the front desk can see who requested it, when the request
+        // was sent, when it was found, and which SCB monitor responded.
+        $foundFr = \App\Models\FileSearchRequest::where('file_number', $result['file_number'])
+            ->where('status', FileSearchRequest::STATUS_FOUND)
+            ->with('responder:id,first_name,last_name')
+            ->orderByDesc('responded_at')
+            ->first();
+
+        // Likewise, the most recent FR the SCB responded to as Not Found — surfaced on
+        // the "File Not Found" panel (who requested it, when, who searched, and whether
+        // the file is Missing or the search is still Pending).
+        $notFoundFr = \App\Models\FileSearchRequest::where('file_number', $result['file_number'])
+            ->where('status', FileSearchRequest::STATUS_NOT_FOUND)
+            ->with('responder:id,first_name,last_name')
+            ->orderByDesc('responded_at')
+            ->first();
+
         // The receiving officer's department (from the offices table), so the In-Transit
         // card can show "Receiving Officer: X (Dept) · currently holding the file."
         $receivingDepartment = null;
@@ -2001,6 +2034,34 @@ HTML;
             'logged_out_at'    => $loggedOutAt,
             'fr_sent_at'       => optional($openFr?->created_at)?->format('Y-m-d g:i A'),
             'fr_request_no'    => $openFr?->request_no,
+            // Details of the FR that was responded to as Found (for the "File Found" panel).
+            'fr_found'         => $foundFr ? [
+                'request_no'           => $foundFr->request_no,
+                'requested_at'         => optional($foundFr->created_at)?->format('Y-m-d g:i A'),
+                'responded_at'         => optional($foundFr->responded_at)?->format('Y-m-d g:i A'),
+                'responder'            => $foundFr->responder
+                    ? trim($foundFr->responder->first_name . ' ' . $foundFr->responder->last_name)
+                    : null,
+                'receiving_officer'    => $foundFr->receiving_officer,
+                'requester_office'     => $foundFr->requester_office,
+                'requester_department' => $foundFr->requester_department,
+                'registry'             => $foundFr->registry,
+            ] : null,
+            // Details of the FR that was responded to as Not Found (for the "File Not Found" panel).
+            'fr_not_found'     => $notFoundFr ? [
+                'request_no'           => $notFoundFr->request_no,
+                'requested_at'         => optional($notFoundFr->created_at)?->format('Y-m-d g:i A'),
+                'responded_at'         => optional($notFoundFr->responded_at)?->format('Y-m-d g:i A'),
+                'responder'            => $notFoundFr->responder
+                    ? trim($notFoundFr->responder->first_name . ' ' . $notFoundFr->responder->last_name)
+                    : null,
+                'receiving_officer'    => $notFoundFr->receiving_officer,
+                'requester_office'     => $notFoundFr->requester_office,
+                'requester_department' => $notFoundFr->requester_department,
+                'registry'             => $notFoundFr->registry,
+                'not_found_type'       => $notFoundFr->not_found_type,
+                'note'                 => $notFoundFr->feedback_note,
+            ] : null,
             'file_number'      => $result['file_number'],
             'status'           => $result['status'],
             'registry'         => $result['registry'],

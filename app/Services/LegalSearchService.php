@@ -294,7 +294,7 @@ class LegalSearchService
                                 ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
                         }
                     })
-                    ->select('file_title', 'district', 'lga', 'land_use_type', 'plot_number', 'tp_no', 'related_fileno', 'file_number')
+                    ->select('file_title', 'district', 'lga', 'land_use_type', 'plot_number', 'tp_no', 'related_fileno', 'file_number', 'location', 'has_temp_file', 'temp_file_no')
                     ->get();
 
                 $fileIndexingData = null;
@@ -352,6 +352,10 @@ class LegalSearchService
             }
         }
 
+        // Temporary "(T)" file number tied to the searched file — displayed as a
+        // second line beside the primary file number in the File Information card.
+        $tempFileNumber = $this->resolveTempFileNumber($conn, $fileNo, $fileIndexingData);
+
         // DCIV investigation flag — a searched file tied to a DCIV (on either side
         // of master_dciv_links) is marked Under Investigation.
         $investigation = $this->resolveDcivInvestigation([$fileNo], $all);
@@ -363,6 +367,7 @@ class LegalSearchService
             'investigation_reason' => $investigation['reason'] ?? null,
             'investigation_dciv_file_number' => $investigation['dciv_file_number'] ?? null,
             'file_title' => $fileIndexingData->file_title ?? null,
+            'file_location' => $fileIndexingData->location ?? null,
             'file_district' => $fileIndexingData->district ?? null,
             'file_lga' => $fileIndexingData->lga ?? null,
             'file_land_use' => $fileIndexingData->land_use_type ?? null,
@@ -371,11 +376,16 @@ class LegalSearchService
             'file_size' => $fileSize,
             'file_related_fileno' => $fileIndexingData->related_fileno ?? null,
             'file_index_number' => $fileIndexingData->file_number ?? null,
+            'file_temp_number' => $tempFileNumber,
             'file_history_count' => count($fileHistoryRecords),
             'cofo_count' => count($cofoRecords),
             'pra_count' => count($praRecords),
             'deed_count' => count($deedRecords),
             'total_count' => count($all),
+            'file_commissioning_date' => $this->resolveCommissioningDate(
+                $fileIndexingData->file_number ?? $fileNo,
+                $fileNo
+            ),
         ];
     }
 
@@ -498,6 +508,7 @@ class LegalSearchService
             'investigation_reason' => null,
             'investigation_dciv_file_number' => null,
             'file_title' => null,
+            'file_location' => null,
             'file_district' => null,
             'file_lga' => null,
             'file_land_use' => null,
@@ -511,7 +522,113 @@ class LegalSearchService
             'pra_count' => 0,
             'deed_count' => 0,
             'total_count' => 0,
+            'file_commissioning_date' => '-',
         ];
+    }
+
+    /**
+     * Resolve a file's commissioning date for the default "File Commissioning"
+     * timeline record. Returns a formatted date when the file was commissioned
+     * within KLAES (fileNumber.SOURCE starting with 'MLS_Commissioned'),
+     * otherwise '-'.
+     */
+    private function resolveCommissioningDate(?string $fileNumber, ?string $altFileNo = null): string
+    {
+        $fileNumber = trim((string) $fileNumber);
+        $altFileNo = trim((string) $altFileNo);
+        if ($fileNumber === '' && $altFileNo === '') {
+            return '-';
+        }
+
+        $record = DB::connection('sqlsrv')->table('fileNumber')
+            ->where(function ($qq) use ($fileNumber, $altFileNo) {
+                if ($fileNumber !== '') {
+                    $qq->where('mlsfNo', $fileNumber);
+                }
+                if ($altFileNo !== '' && $altFileNo !== $fileNumber) {
+                    $qq->orWhere('mlsfNo', $altFileNo);
+                }
+            })
+            ->orderByDesc('id')
+            ->first(['SOURCE', 'commissioning_date', 'created_at']);
+
+        if (!$record || stripos((string) $record->SOURCE, 'MLS_Commissioned') !== 0) {
+            return '-';
+        }
+
+        $raw = $record->commissioning_date ?: $record->created_at;
+        if (!$raw) {
+            return '-';
+        }
+
+        try {
+            return \Carbon\Carbon::parse($raw)->format('M j, Y');
+        } catch (\Exception $e) {
+            return '-';
+        }
+    }
+
+    /**
+     * Resolve the temporary "(T)" file number tied to the searched file.
+     *
+     * A temporary file (e.g. "RES-1991-545(T)") is registered against its parent
+     * file ("RES-1991-545"). It may live on the parent's file_indexings row
+     * (has_temp_file / temp_file_no) or exist as its own record in file_indexings
+     * or fileNumber. Returns the "(T)" number to show as a second line, or null.
+     */
+    private function resolveTempFileNumber($conn, string $fileNo, $fileIndexingData): ?string
+    {
+        // 1. Prefer the temp_file_no recorded on the matched parent indexing row.
+        $recorded = trim((string) ($fileIndexingData->temp_file_no ?? ''));
+        if ($recorded !== '') {
+            return $recorded;
+        }
+
+        // Candidate base numbers to derive a "(T)" sibling from.
+        $bases = array_values(array_unique(array_filter([
+            trim((string) ($fileIndexingData->file_number ?? '')),
+            trim($fileNo),
+        ])));
+        if (empty($bases)) {
+            return null;
+        }
+
+        foreach ($bases as $base) {
+            // Skip when the searched value is itself already a temporary number.
+            if (preg_match('/\(\s*T\s*\)\s*$/i', $base)) {
+                continue;
+            }
+            $tempCandidate = $base . '(T)';
+
+            // 2. Parent indexing row that flags a temporary file.
+            $viaParent = $conn->table('file_indexings')
+                ->whereNull('deleted_at')
+                ->where('file_number', $base)
+                ->where('has_temp_file', 1)
+                ->value('temp_file_no');
+            if ($viaParent) {
+                return trim((string) $viaParent);
+            }
+
+            // 3. Temporary file existing as its own indexing record.
+            $inIndexing = $conn->table('file_indexings')
+                ->whereNull('deleted_at')
+                ->where('file_number', $tempCandidate)
+                ->exists();
+            if ($inIndexing) {
+                return $tempCandidate;
+            }
+
+            // 4. Temporary file existing in the fileNumber register.
+            $inFileNumber = $conn->table('fileNumber')
+                ->where('mlsfNo', $tempCandidate)
+                ->exists();
+            if ($inFileNumber) {
+                return $tempCandidate;
+            }
+        }
+
+        return null;
     }
 
     // --- file_history_staging ----------------------------------------
@@ -2102,9 +2219,13 @@ class LegalSearchService
             $serialNo = $cleanNumericValue($row['serial_no'] ?? null) ?: '0';
             $pageNoVal = $cleanNumericValue($row['page_no'] ?? null) ?: '0';
             $volumeNo = $cleanNumericValue($row['volume_no'] ?? null) ?: '0';
-            $hasRealReg = ($serialNo !== '0' && $serialNo !== '') ||
-                ($pageNoVal !== '0' && $pageNoVal !== '') ||
-                ($volumeNo !== '0' && $volumeNo !== '');
+            // Treat a placeholder dash as "no reg particulars" (matching the JS timeline
+            // and TimelineWeightingService). Otherwise a PRA copy with serial/page/volume
+            // of '-' is mistaken for real particulars and keyed differently from its
+            // File History twin (which stores '0'), so the duplicate never collapses.
+            $hasRealReg = ($serialNo !== '0' && $serialNo !== '' && $serialNo !== '-') ||
+                ($pageNoVal !== '0' && $pageNoVal !== '' && $pageNoVal !== '-') ||
+                ($volumeNo !== '0' && $volumeNo !== '' && $volumeNo !== '-');
 
             if ($hasRealReg) {
                 return 'reg|' . $transactionType . '|' . $serialNo . '/' . $pageNoVal . '/' . $volumeNo;
@@ -2376,9 +2497,9 @@ class LegalSearchService
                             ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
                     }
                 })
-                ->select('file_title', 'plot_number', 'tp_no', 'land_use_type', 'related_fileno', 'file_number')
+                ->select('file_title', 'plot_number', 'tp_no', 'land_use_type', 'related_fileno', 'file_number', 'has_temp_file', 'temp_file_no')
                 ->get();
-                
+
             $fi = null;
             // Priority 1: Exact match on file_number
             foreach ($fiList as $row) {
@@ -2531,6 +2652,83 @@ class LegalSearchService
                 'location' => $t['location'] ?? '',
             ];
         }
+
+        // ── Default "File Commissioning" record (always the first timeline row) ──
+        // Highest priority (weight 12), so it precedes every other transaction.
+        // Commissioning Date = the file's commissioning/creation date when the file
+        // was commissioned within KLAES (fileNumber.SOURCE starting with
+        // 'MLS_Commissioned'); otherwise it falls back to '-'. Reg particulars are 0/0/0.
+        $commissioningDate = $this->resolveCommissioningDate($fileNumber, $fileNo);
+
+        // When the file was not commissioned within KLAES there is no stored
+        // commissioning date (e.g. historical files). Fall back to the earliest dated
+        // transaction in the timeline (the file's origin — typically the original Right
+        // of Occupancy) so the File Commissioning row still prints a date instead of '-'.
+        if ($commissioningDate === '-' || trim((string) $commissioningDate) === '') {
+            $earliestCommissioning = null;
+            foreach ($rows as $existingRow) {
+                $rd = $existingRow['reg_date'] ?? null;
+                if (!$rd || $rd === '-') {
+                    continue;
+                }
+                $parsed = rescue(fn() => \Carbon\Carbon::parse($rd), null, false);
+                if ($parsed && (!$earliestCommissioning || $parsed->lt($earliestCommissioning))) {
+                    $earliestCommissioning = $parsed;
+                }
+            }
+            if ($earliestCommissioning) {
+                $commissioningDate = $earliestCommissioning->format('M j, Y');
+            }
+        }
+
+        // ── "Temporary File" record — printed directly below File Commissioning ──
+        // Only present when the searched file has a temporary "(T)" sibling.
+        $tempFileNumber = $this->resolveTempFileNumber(DB::connection('sqlsrv'), $fileNo, $fi ?? null);
+        if ($tempFileNumber) {
+            array_unshift($rows, [
+                'sn' => 0, // renumbered below
+                'file_no' => $tempFileNumber,
+                'grantor' => 'Kano State Ministry of Land and Physical Planning',
+                'grantee' => $fileTitle ?: '-',
+                'party_3' => '-',
+                'party_4' => '-',
+                'instrument_type' => 'Temporary File',
+                'reg_time' => '-',
+                'reg_date' => '-',
+                'reg_no' => '0/0/0',
+                'size' => '-',
+                'caveat' => 'No',
+                'comments' => '-',
+                'source_table' => 'Temporary File',
+                'location' => '',
+            ]);
+        }
+
+        array_unshift($rows, [
+            'sn' => 0, // renumbered below
+            'file_no' => $fileNumber ?: '-',
+            // Party 1 is the commissioning authority; Party 2 is the file owner/title
+            // (the Ministry commissioned the file for them).
+            'grantor' => 'Kano State Ministry of Land and Physical Planning',
+            'grantee' => $fileTitle ?: '-',
+            'party_3' => '-',
+            'party_4' => '-',
+            'instrument_type' => 'File Commissioning',
+            'reg_time' => '-',
+            'reg_date' => $commissioningDate,
+            'reg_no' => '0/0/0',
+            'size' => '-',
+            'caveat' => 'No',
+            'comments' => '-',
+            'source_table' => 'File Commissioning',
+            'location' => '',
+        ]);
+
+        // Renumber serial numbers so the commissioning row is #1.
+        foreach ($rows as $rowIndex => &$rowRef) {
+            $rowRef['sn'] = $rowIndex + 1;
+        }
+        unset($rowRef);
 
         $caveatedRecord = collect($transactions)->first(fn($t) => $t['is_caveated']);
         $caveatId = $caveatedRecord ? ($caveatedRecord['caveat_id'] ?? null) : null;

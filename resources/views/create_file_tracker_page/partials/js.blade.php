@@ -1611,6 +1611,20 @@
         });
     }
 
+    if (movementOfficerSelect && movementOfficerSelect.length) {
+        movementOfficerSelect.on('change', function () {
+            const value = $(this).val();
+            if (value === CUSTOM_RECEIVING_OFFICER_VALUE) {
+                if ($.fn.select2 && $(this).data('select2')) {
+                    $(this).val(null).trigger('change.select2');
+                } else {
+                    $(this).val('');
+                }
+                openNewOfficerDialog(movementOfficerSelect);
+            }
+        });
+    }
+
 
     let fileTrackers = [];
     const expandedTrackerHistory = new Set();
@@ -2274,6 +2288,20 @@
             .val('');
         fileNameField.removeData('prevValue');
 
+        // Restore the Number of Pages field to its editable default.
+        const numPagesField = document.getElementById('num-pages');
+        if (numPagesField) {
+            numPagesField.readOnly = false;
+            numPagesField.removeAttribute('readonly');
+            numPagesField.value = '';
+            numPagesField.classList.remove('bg-gray-50', 'cursor-not-allowed');
+        }
+        const numPagesHint = document.getElementById('num-pages-hint');
+        if (numPagesHint) {
+            numPagesHint.classList.remove('hidden');
+            numPagesHint.textContent = 'Count the total pages in the physical file before logging out.';
+        }
+
         $('#sidebar-tracking-id').text('-');
         lastMetadataLookup = null;
         resolvedFileIndexingId = null;
@@ -2387,6 +2415,12 @@
         }
         if (numPagesRequiredMark) {
             numPagesRequiredMark.textContent = inDigitalArchive ? '' : '*';
+        }
+
+        // Auto-populate the Number of Pages from the total scanned pages for this file.
+        // The field becomes read-only when scans exist, and stays editable when none do.
+        if (resolvedFileNumber) {
+            populateNumPagesFromScanCount(resolvedFileNumber);
         }
 
         checkFileLogoutStatus(resolvedFileNumber || '');
@@ -2915,6 +2949,54 @@
         activeMetadataRequest = request;
     }
 
+    // Populate the "Number of Pages" field from the total scanned pages for a file.
+    // Read-only when scans exist (prevents manual edits); editable when there are none.
+    function populateNumPagesFromScanCount(fileNumber) {
+        const field = document.getElementById('num-pages');
+        if (!field) return;
+
+        const hint = document.getElementById('num-pages-hint');
+        const defaultHint = 'Count the total pages in the physical file before logging out.';
+
+        $.ajax({
+            url: '/api/file-indexings/scan-count',
+            method: 'GET',
+            data: { file_number: fileNumber },
+            dataType: 'json',
+            timeout: 7000,
+        })
+            .done(function (res) {
+                const total = (res && res.success) ? (parseInt(res.total_scans, 10) || 0) : 0;
+                if (total > 0) {
+                    field.value = total;
+                    field.readOnly = true;
+                    field.setAttribute('readonly', 'readonly');
+                    field.classList.add('bg-gray-50', 'cursor-not-allowed');
+                    field.classList.remove('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+                    if (hint) {
+                        hint.classList.remove('hidden');
+                        hint.textContent = `Auto-filled from ${total} scanned page${total === 1 ? '' : 's'} for this file. This field is read-only.`;
+                    }
+                } else {
+                    // No scans on record — let the user type the page count manually.
+                    field.readOnly = false;
+                    field.removeAttribute('readonly');
+                    field.classList.remove('bg-gray-50', 'cursor-not-allowed');
+                    if (hint) {
+                        hint.classList.remove('hidden');
+                        hint.textContent = 'No scanned pages found for this file — enter the total page count manually.';
+                    }
+                }
+            })
+            .fail(function () {
+                // On error, leave the field editable so logging is never blocked.
+                field.readOnly = false;
+                field.removeAttribute('readonly');
+                field.classList.remove('bg-gray-50', 'cursor-not-allowed');
+                if (hint) hint.textContent = defaultHint;
+            });
+    }
+
     function fetchRackShelfLocation(fileNumber, { silent = true } = {}) {
         const normalized = normalizeFileNumberForLookup(fileNumber);
         if (!normalized) {
@@ -3002,9 +3084,10 @@
                     // Modules not listed here keep the full set of tabs.
                     allowedTabs: (function () {
                         const m = @json(strtolower($module ?? ''));
+                        // The base Land create-file-tracker page ('' / 'land') shows the
+                        // full set of registry tabs; other modules stay scoped to their
+                        // own registry. Modules not listed here also keep all tabs.
                         const map = {
-                            '':      ['mls', 'old_mls'],
-                            'land':  ['mls', 'old_mls'],
                             'kangis': ['kangis'],
                             'sltr':  ['sltr'],
                             'st':    ['sit'],
@@ -4497,6 +4580,8 @@
                 log_out_time: currentTracker.logEntries?.[0]?.logOutTime || '',
                 log_out_date: currentTracker.logEntries?.[0]?.logOutDate || '',
                 notes: currentTracker.notes || currentTracker.logEntries?.[0]?.notes || 'Initial file tracking entry',
+                num_pages: currentTracker.logEntries?.[0]?.num_pages ?? null,
+                in_digital_archive: currentTracker.logEntries?.[0]?.in_digital_archive ?? false,
                 origin_office_code: originOfficeCode,
                 origin_office_name: originOfficeName,
                 origin_office_department: originOfficeDepartment,
@@ -4504,7 +4589,9 @@
                 receiving_officer_name: receivingOfficerName,
                 receiving_office_code: receivingOfficeCode,
                 receiving_office_name: receivingOfficeName
-            }], 
+            }],
+            num_pages: currentTracker.logEntries?.[0]?.num_pages ?? null,
+            in_digital_archive: currentTracker.logEntries?.[0]?.in_digital_archive ?? false,
             notes: currentTracker.notes || '',
             origin_office_code: originOfficeCode,
             origin_office_name: originOfficeName,
@@ -5425,6 +5512,13 @@
             const hasApprovalDecision       = _approvalLogEntries.some(e => (e.purpose || '').toLowerCase() === 'approval');
             const isDgisView = window.currentModule === 'dgis';
             const decisionAlreadyRecorded = isDgisView ? hasRecommendationDecision : hasApprovalDecision;
+            // The DG can only act once the Director GIS recommendation is on record —
+            // approval must never skip the recommendation step (mirrors server enforcement).
+            const blockedAwaitingRecommendation = !isDgisView && !hasRecommendationDecision;
+            const approvalActionsDisabled = decisionAlreadyRecorded || blockedAwaitingRecommendation;
+            const approvalDisabledTitle = decisionAlreadyRecorded
+                ? 'Decision already recorded for this file'
+                : (blockedAwaitingRecommendation ? 'Awaiting Director GIS recommendation' : '');
 
             // Cross-module request: show Approve/Reject to the RECEIVER module.
             // The receiver is determined by workflow_config.receiver_module.
@@ -5485,18 +5579,18 @@
                                 ` : ''}
                                 ${showApprovalActions ? `
                                     <button type="button"
-                                        class="inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium transition-colors ${decisionAlreadyRecorded ? 'border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed opacity-60' : 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'}"
+                                        class="inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium transition-colors ${approvalActionsDisabled ? 'border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed opacity-60' : 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'}"
                                         data-workflow-action="approve-forward"
                                         data-tracker-id="${tracker.id || ''}"
-                                        ${decisionAlreadyRecorded ? 'disabled aria-disabled="true" title="Decision already recorded for this file"' : ''}>
+                                        ${approvalActionsDisabled ? `disabled aria-disabled="true" title="${approvalDisabledTitle}"` : ''}>
                                         <i data-lucide="send" class="h-4 w-4 mr-2"></i>
                                         ${isDgisView ? 'Recommend & Forward' : 'Approve & Forward'}
                                     </button>
                                     <button type="button"
-                                        class="inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium transition-colors ${decisionAlreadyRecorded ? 'border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed opacity-60' : 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100'}"
+                                        class="inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium transition-colors ${approvalActionsDisabled ? 'border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed opacity-60' : 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100'}"
                                         data-workflow-action="reject-workflow"
                                         data-tracker-id="${tracker.id || ''}"
-                                        ${decisionAlreadyRecorded ? 'disabled aria-disabled="true" title="Decision already recorded for this file"' : ''}>
+                                        ${approvalActionsDisabled ? `disabled aria-disabled="true" title="${approvalDisabledTitle}"` : ''}>
                                         <i data-lucide="x" class="h-4 w-4 mr-2"></i>
                                         ${isDgisView ? 'Not Recommend' : 'Reject'}
                                     </button>
@@ -6837,10 +6931,10 @@
         }
     }
 
-    // Print tracker details - routes to KANGIS landscape version for ?url=kangis, otherwise uses general portrait format
+    // Print tracker details - routes to KANGIS landscape version for ?url=kangis and ?url=new_kangis, otherwise uses general portrait format
     function printFileTrackerDetails(tracker) {
         const urlView = new URLSearchParams(window.location.search).get('url');
-        if (urlView === 'kangis') {
+        if (urlView === 'kangis' || urlView === 'new_kangis') {
             printFileTrackerDetailsKangis(tracker);
             return;
         }

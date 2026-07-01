@@ -121,8 +121,8 @@
                                         ];
                                         $titleOptions = [
                                             'Withdrawal (Application)'                            => ['Withdrawal (Application)', 'undo-2'],
-                                            'Cancellation (RofO)'                                 => ['Cancellation (RofO)', 'x-circle'],
-                                            'Revoke (CofO)'                                       => ['Revocation (CofO)', 'ban'],
+                                            'Cancellation'                                 => ['Cancellation', 'x-circle'],
+                                            'Revoke'                                       => ['Revocation', 'ban'],
                                             'Litigation'                                          => ['Litigation', 'gavel'],
                                             'Amendment/Reconsideration (Application/RofO/CofO)'   => ['Amendment / Reconsideration', 'file-pen'],
                                             'Surrender'                                           => ['Surrender', 'flag'],

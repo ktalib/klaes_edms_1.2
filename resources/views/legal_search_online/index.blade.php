@@ -35,8 +35,7 @@
         </div>
       </div>
       <div class="flex items-center space-x-3">
-        <a href="{{ route('ols.login') }}" class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-gray-700 border border-gray-300 hover:bg-gray-50 transition">Sign In</a>
-        <a href="{{ route('ols.register') }}" class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition border-0">Register</a>
+        <a href="{{ route('ols.landing') }}" class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition border-0">Online Legal Search</a>
       </div>
     </div>
   </div>

@@ -62,8 +62,8 @@
                             <option value="{{ $option }}" @selected($limit == $option)>{{ $option }} rows</option>
                         @endforeach
                     </select>  
-                    {{-- land or dciv --}}
-                    @if($url === 'land' || $url === 'dciv')
+                    {{-- Create is only available on registries that raise title statuses (land). --}}
+                    @if(!$readOnly && ($url === 'land' || $url === 'dciv'))
                     <button type="button" onclick="tsOpenTypeSelect()"
                         class="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-blue-700 transition">
                         <i data-lucide="plus" class="w-4 h-4"></i>
@@ -87,7 +87,9 @@
                                 <th class="px-4 py-3 text-left">Plot No</th>
                                 <th class="px-4 py-3 text-left">Date</th>
                                 <th class="px-4 py-3 text-center">Status</th>
+                                @unless($readOnly)
                                 <th class="px-4 py-3 text-center">Actions</th>
+                                @endunless
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
@@ -118,6 +120,7 @@
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">Pending</span>
                                     @endif
                                 </td>
+                                @unless($readOnly)
                                 <td class="px-4 py-3 text-center">
                                     <div class="ts-actions relative inline-block text-left">
                                         <button type="button" onclick="tsToggleMenu(this, event)"
@@ -156,10 +159,11 @@
                                         </div>
                                     </div>
                                 </td>
+                                @endunless
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="9" class="px-4 py-12 text-center text-slate-400">
+                                <td colspan="{{ $readOnly ? 8 : 9 }}" class="px-4 py-12 text-center text-slate-400">
                                     <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
                                     <p class="text-sm">No records found.</p>
                                 </td>

@@ -2365,12 +2365,16 @@ function renderFsrLog() {
   }
   container.innerHTML = list.map(fr => {
       const meta = FSR_STATUS_META[fr.status] || FSR_STATUS_META.PENDING;
+      // For a Not Found outcome, spell out the kind (Missing / Pending) on the badge.
+      const nft = (fr.status === 'NOT_FOUND' && fr.not_found_type)
+        ? String(fr.not_found_type).toUpperCase() : '';
+      const badgeLabel = nft ? `${meta.label} · ${nft === 'MISSING' ? 'Missing' : 'Pending'}` : meta.label;
       return `
       <div class="result-card" style="margin-bottom:12px;">
         <div style="padding:14px 16px;">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
             <div style="font-size:15px;font-weight:800;">${esc(fr.file_number)}</div>
-            <span style="font-size:9px;font-weight:800;padding:3px 9px;border-radius:30px;background:${meta.bg};color:${meta.fg};">${meta.label}</span>
+            <span style="font-size:9px;font-weight:800;padding:3px 9px;border-radius:30px;background:${meta.bg};color:${meta.fg};">${badgeLabel}</span>
           </div>
           <div style="font-size:12px;color:var(--text);margin-top:4px;">${esc(fr.file_title||'—')}</div>
           <div style="font-size:12px;color:var(--text);margin-top:8px;display:flex;flex-direction:column;gap:5px;">
@@ -2482,8 +2486,12 @@ function renderFileRequests() {
           </div>
           <div style="font-size:12px;color:var(--text);margin-top:4px;">${esc(fr.file_title||'—')}</div>
           <div style="margin-top:6px;"><span style="display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:30px;background:${fr.is_dfr ? '#e5e7eb' : (fr.is_blind ? '#fee2e2' : '#e0f2fe')};color:${fr.is_dfr ? '#374151' : (fr.is_blind ? '#b91c1c' : '#0369a1')};"><i class="fas ${fr.is_dfr ? 'fa-file-lines' : (fr.is_blind ? 'fa-eye-slash' : 'fa-folder-open')}"></i> ${esc(fr.request_type || 'Open Request')}</span>${fr.is_ofs ? `<span style="margin-left:5px;display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:30px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;"><i class="fas fa-crown"></i> OFS${fr.ofs_rank ? ' · '+esc(fr.ofs_rank) : ''}</span>` : ''}</div>
+          ${fr.current_location ? (
+            String(fr.current_location).trim().toLowerCase() === 'not indexed'
+              ? `<div style="margin-top:8px;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;padding:3px 9px;border-radius:30px;background:#fee2e2;color:#b91c1c;"><i class="fas fa-circle-exclamation"></i> Not indexed</span></div>`
+              : `<div style="font-size:12px;color:var(--text);margin-top:6px;"><i class="fas fa-map-marker-alt" style="margin-right:4px;color:var(--primary);"></i>${esc(fr.current_location)}</div>`
+          ) : ''}
           ${frRequesterDetails(fr)}
-          ${fr.current_location ? `<div style="font-size:12px;color:var(--text);margin-top:6px;"><i class="fas fa-map-marker-alt" style="margin-right:4px;color:var(--primary);"></i>${esc(fr.current_location)}</div>` : ''}
           ${fr.created_at ? `<div style="font-size:12px;color:var(--text);margin-top:6px;"><i class="fas fa-clock" style="margin-right:4px;color:var(--primary);"></i>Sent ${esc(fr.created_at)}</div>` : ''}
           <div style="display:flex;gap:8px;margin-top:14px;align-items:stretch;">
             <button class="btn" style="flex:1;width:auto;min-width:0;padding:12px;font-size:13px;box-shadow:none;background:linear-gradient(135deg,#10b981,#059669);" onclick="respondFr(${fr.id}, 'found', this)"><i class="fas fa-check"></i> Found</button>
@@ -2494,19 +2502,53 @@ function renderFileRequests() {
       </div>`).join('');
 }
 
+// ─── "Not Found" type chooser ──────────────────────────────────────────────
+// When the SCB Monitor marks a request Not Found, they must say which kind:
+// MISSING (file genuinely can't be located) or PENDING (search not concluded).
+// Returns a Promise resolving to 'missing' | 'pending', or null if cancelled.
+function pickNotFoundType() {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,0.55);display:flex;align-items:flex-end;justify-content:center;';
+    overlay.innerHTML = `
+      <div style="background:var(--card,#1b1b22);width:100%;max-width:480px;border-radius:18px 18px 0 0;padding:20px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,0.4);">
+        <div style="width:42px;height:4px;border-radius:4px;background:var(--faint,#555);opacity:.5;margin:0 auto 16px;"></div>
+        <div style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:4px;"><i class="fas fa-triangle-exclamation" style="color:#ef4444;margin-right:6px;"></i> Not Found — which type?</div>
+        <div style="font-size:12px;color:var(--faint);margin-bottom:16px;">Tell the requester whether the file is missing or the search is still pending.</div>
+        <button class="btn" data-pick="missing" style="width:100%;padding:14px;font-size:14px;box-shadow:none;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;margin-bottom:10px;text-align:left;"><i class="fas fa-ban" style="margin-right:8px;"></i> Missing<span style="display:block;font-size:11px;font-weight:500;opacity:.9;margin-top:2px;">File not given to us</span></button>
+        <button class="btn" data-pick="pending" style="width:100%;padding:14px;font-size:14px;box-shadow:none;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;margin-bottom:14px;text-align:left;"><i class="fas fa-hourglass-half" style="margin-right:8px;"></i> Pending<span style="display:block;font-size:11px;font-weight:500;opacity:.9;margin-top:2px;"></span></button>
+        <button class="btn ghost-btn" data-pick="" style="width:100%;padding:12px;font-size:13px;box-shadow:none;">Cancel</button>
+      </div>`;
+    function close(val) { overlay.remove(); resolve(val || null); }
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) return close(null);
+      const b = e.target.closest('[data-pick]');
+      if (b) close(b.getAttribute('data-pick'));
+    });
+    document.body.appendChild(overlay);
+  });
+}
+
 async function respondFr(id, result, btn) {
   let note = '';
+  // A Not Found response requires the monitor to choose missing / pending first.
+  let notFoundType = null;
+  if (result === 'not_found') {
+    notFoundType = await pickNotFoundType();
+    if (!notFoundType) return;  // cancelled — leave the request open
+  }
   const card = document.querySelector(`[data-fr="${id}"]`);
   if (card) card.querySelectorAll('button').forEach(b=>b.disabled=true);
   if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
   try {
     const res = await api(`${MOB_BASE}/file-requests/${id}/respond`, {
       method:'POST',
-      body: JSON.stringify({ result, note }),
+      body: JSON.stringify({ result, note, not_found_type: notFoundType }),
     });
     if (res && res.success) {
       const sc = res.data?.second_check;
       if (result === 'found') toast('Marked as Found ✅');
+      else if (notFoundType) toast(`Marked as Not Found — ${notFoundType === 'missing' ? 'Missing' : 'Pending'}`, 'error');
       else if (sc === 'print_missing_slip') toast('Not found — print Missing File slip', 'error');
       else if (sc === 'do_second_physical_search') toast('Not found — file is scanned; do a 2nd physical search', 'error');
       else toast('Feedback recorded');
@@ -2526,21 +2568,28 @@ async function respondFr(id, result, btn) {
 
 // Respond to an open File Request straight from the File Search result.
 async function respondFrFromSearch(id, result, btn) {
+  // A Not Found response requires the monitor to choose missing / pending first.
+  let notFoundType = null;
+  if (result === 'not_found') {
+    notFoundType = await pickNotFoundType();
+    if (!notFoundType) return;  // cancelled — leave the request open
+  }
   const wrap = btn.closest('[data-fr]');
   if (wrap) wrap.querySelectorAll('button').forEach(b=>b.disabled=true);
   if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
   try {
     const res = await api(`${MOB_BASE}/file-requests/${id}/respond`, {
       method:'POST',
-      body: JSON.stringify({ result, note:'' }),
+      body: JSON.stringify({ result, note:'', not_found_type: notFoundType }),
     });
     if (res && res.success) {
       openFileRequests = null;  // invalidate cache; this FR is no longer open
       const found = result === 'found';
-      toast(found ? 'Marked as Found ✅' : 'Marked as Not Found');
+      const nftLabel = notFoundType ? ` — ${notFoundType === 'missing' ? 'Missing' : 'Pending'}` : '';
+      toast(found ? 'Marked as Found ✅' : 'Marked as Not Found' + nftLabel);
       if (wrap) {
         wrap.innerHTML = `<div style="font-size:12px;font-weight:700;color:${found ? '#10b981' : '#ef4444'};">
-          <i class="fas fa-${found ? 'check-circle' : 'times-circle'}"></i> Response recorded: ${found ? 'Found' : 'Not Found'}</div>`;
+          <i class="fas fa-${found ? 'check-circle' : 'times-circle'}"></i> Response recorded: ${found ? 'Found' : 'Not Found' + nftLabel}</div>`;
       }
     } else {
       toast(res.message || 'Could not record feedback', 'error');

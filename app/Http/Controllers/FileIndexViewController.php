@@ -125,7 +125,24 @@ class FileIndexViewController extends Controller
             ? DB::connection('sqlsrv')->table('users')->whereIn('id', $userIds)->get(['id', 'first_name', 'last_name'])->keyBy('id')
             : collect();
 
-        $data = $records->map(function ($record) use ($self, $userMap, $timelineCounts) {
+        // Pre-compute which resolved file numbers are flagged as duplicates
+        // (present in duplicate_fileno), so the UI can enable the Call-up action.
+        $pageFileNumbers = $records
+            ->map(fn($record) => trim((string) ($self->resolveFileNumber($record) ?? '')))
+            ->filter()
+            ->unique()
+            ->values();
+        $duplicateSet = $pageFileNumbers->isEmpty()
+            ? collect()
+            : DB::connection('sqlsrv')
+                ->table('duplicate_fileno')
+                ->whereIn('file_number', $pageFileNumbers)
+                ->distinct()
+                ->pluck('file_number')
+                ->map(fn($v) => trim((string) $v))
+                ->flip();
+
+        $data = $records->map(function ($record) use ($self, $userMap, $timelineCounts, $duplicateSet) {
             $fileNumber = $self->resolveFileNumber($record) ?? 'N/A';
             $regParts = explode('/', $record->regNo ?? '');
             $serialNo = $regParts[0] ?? null;
@@ -179,6 +196,7 @@ class FileIndexViewController extends Controller
                 'plot_no' => $record->plot_no ?? 'N/A',
                 'tp_no' => $record->tp_no ?? 'N/A',
                 'lpkn_no' => $record->lpkn_no ?? 'N/A',
+                'has_duplicate' => $duplicateSet->has(trim((string) $fileNumber)),
             ];
         });
 

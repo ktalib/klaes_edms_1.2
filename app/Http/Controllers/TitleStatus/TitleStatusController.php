@@ -24,8 +24,14 @@ class TitleStatusController extends Controller
         $limit  = max(10, min((int) $request->input('limit', 50), 200));
         $search = trim((string) $request->input('search'));
 
+        // Deeds and DCIV are downstream registries: they view title-status records
+        // raised elsewhere (read-only) so they know a file's status, but cannot act on
+        // them. They therefore aggregate every registry's records rather than filtering
+        // to their own `url`, and the view hides all action controls.
+        $readOnly = in_array($url, ['deeds', 'dciv'], true);
+
         $records = TitleStatusApplication::query()
-            ->where('url', $url)
+            ->when(!$readOnly, fn ($q) => $q->where('url', $url))
             ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
@@ -47,7 +53,7 @@ class TitleStatusController extends Controller
         $initiatedByOptions   = TitleStatusApplication::INITIATED_BY_OPTIONS;
         $initiatedByByType    = TitleStatusApplication::INITIATED_BY_BY_TYPE;
 
-        return view('title_status.index', compact('records', 'limit', 'url', 'urlLabel', 'authorityOptions', 'initiatedByOptions', 'initiatedByByType'));
+        return view('title_status.index', compact('records', 'limit', 'url', 'readOnly', 'urlLabel', 'authorityOptions', 'initiatedByOptions', 'initiatedByByType'));
     }
 
     public function show(int $id): JsonResponse

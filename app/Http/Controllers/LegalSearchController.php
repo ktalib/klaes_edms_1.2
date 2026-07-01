@@ -7,6 +7,7 @@ use App\Services\LegalSearchService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use App\Models\FileIndexing;
+use App\Models\FileTracker;
 
 class LegalSearchController extends Controller
 {
@@ -208,7 +209,7 @@ class LegalSearchController extends Controller
                 'success' => true,
                 'file_number' => $request->input('file_number'),
                 'folders' => [],
-                'message' => 'No digital archive available for this file.',
+                'message' => 'No files found in the digital archive for this file.',
             ]);
         }
 
@@ -248,6 +249,16 @@ class LegalSearchController extends Controller
             $allowedFileNumbers = array_values(array_unique($allowedFileNumbers));
         }
 
+        // Normalize every candidate to the same form used by the indexed columns below
+        // (uppercase, slashes/underscores/equals collapsed to dashes, whitespace removed).
+        // The searched file number is already normalized, but related file numbers from the
+        // SME group and the related_file_number table arrive raw — without this they would
+        // never match the normalized column comparison and their buttons would be missing.
+        $allowedFileNumbers = array_values(array_unique(array_filter(array_map(
+            fn ($candidate) => $this->normalizeArchiveLookupValue((string) $candidate),
+            $allowedFileNumbers
+        ))));
+
         $query = FileIndexing::query()
             ->select(['id', 'file_number', 'file_title', 'registry', 'land_use_type', 'plot_number', 'location', 'district', 'lga', 'related_fileno', 'mls_file_no', 'kangis_file_no', 'new_kangis_file_no'])
             ->withCount(['scannings'])
@@ -277,6 +288,7 @@ class LegalSearchController extends Controller
                 'folder_name' => $file->file_title ?: $file->file_number,
                 'file_number' => $file->file_number,
                 'document_count' => (int) ($file->scannings_count ?? 0),
+                'is_logged_out' => $this->isFileLoggedOut($file->file_number),
                 'file_title' => $file->file_title,
                 'registry' => $file->registry,
                 'meta' => array_values(array_filter([
@@ -293,9 +305,44 @@ class LegalSearchController extends Controller
             'file_number' => $request->input('file_number'),
             'folders' => $folders,
             'message' => $folders->isEmpty()
-                ? 'No digital archive available for this file.'
+                ? 'No files found in the digital archive for this file.'
                 : null,
         ]);
+    }
+
+    /**
+     * Determine whether a file is currently logged out via the file tracker.
+     * Mirrors FileTrackerApiController::checkLogoutStatus(): a file is "logged out"
+     * when an active (non COMPLETED/CANCELLED) tracker has no movement entry that is
+     * still 'active' with an empty log_out_date.
+     */
+    private function isFileLoggedOut(?string $fileNumber): bool
+    {
+        $fileNumber = trim((string) $fileNumber);
+        if ($fileNumber === '') {
+            return false;
+        }
+
+        $existingTrackers = FileTracker::where('file_number', $fileNumber)
+            ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(status,'')))) NOT IN ('COMPLETED', 'CANCELLED')")
+            ->get();
+
+        foreach ($existingTrackers as $existing) {
+            $log = $existing->movement_log ?? [];
+            if (empty($log)) {
+                continue;
+            }
+
+            $currentlyCheckedIn = collect($log)->contains(
+                fn ($e) => strtolower($e['status'] ?? '') === 'active' && empty($e['log_out_date'])
+            );
+
+            if (!$currentlyCheckedIn) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function normalizeArchiveLookupValue(?string $value): string
@@ -311,7 +358,9 @@ class LegalSearchController extends Controller
         // The report-building engine now lives in LegalSearchService::buildPrintReport
         // so the PHS Portal slip can reuse the exact same dedup/weighting/caveat logic.
         $result = $this->searchService->buildPrintReport($request->query());
-        return response()->json($result['payload'], $result['status']);
+        return response()->json($result['payload'], $result['status'])
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache');
     }
 
 

@@ -32,7 +32,8 @@ class MlsFileNo extends Model
         'source',
         'sub_source',
         'source_instrument_capture_id',
-        'source_pra_id'
+        'source_pra_id',
+        'sit_reason'
     ];
 
     public function purpose()

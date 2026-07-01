@@ -15,6 +15,7 @@ class OnlineLsUser extends Authenticatable
 
     protected $fillable = [
         'name',
+        'username',
         'email',
         'phone',
         'organization',

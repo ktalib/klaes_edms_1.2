@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\OnlineLegalSearch\OnlineLsAuthController;
 use App\Http\Controllers\OnlineLegalSearch\OnlineLsDashboardController;
 
 /*
@@ -9,34 +8,26 @@ use App\Http\Controllers\OnlineLegalSearch\OnlineLsDashboardController;
 | Online Legal Search Portal Routes
 |--------------------------------------------------------------------------
 |
-| Public landing + auth screens, then the authenticated portal (guard: online_ls).
+| Fully public, no accounts. Anyone can run a Legal Search, pay, and view the
+| full report without logging in or registering. Each payment is tracked
+| back-office by a generated tracking id (e.g. USER-0001).
 | Staff-side administration lives in routes/app3.php under the staff `auth` guard.
 |
 */
 
 Route::prefix('online-legal-search')->name('ols.')->group(function () {
 
-    // ---- Public (no login required) ----
-    Route::get('/', [OnlineLsAuthController::class, 'showLanding'])->name('landing');
-    Route::get('login', [OnlineLsAuthController::class, 'showLogin'])->name('login');
-    Route::post('login', [OnlineLsAuthController::class, 'login'])->name('login.submit');
-    Route::get('register', [OnlineLsAuthController::class, 'showRegister'])->name('register');
-    Route::post('register', [OnlineLsAuthController::class, 'register'])->name('register.submit');
-    Route::get('register/verify/{token}', [OnlineLsAuthController::class, 'verifyEmail'])->name('verify');
-    Route::post('password/email', [OnlineLsAuthController::class, 'sendResetLink'])->name('password.email');
-    Route::get('password/reset/{token}', [OnlineLsAuthController::class, 'showResetForm'])->name('password.reset');
-    Route::post('password/reset', [OnlineLsAuthController::class, 'resetPassword'])->name('password.update');
+    // Public landing page.
+    Route::get('/', [OnlineLsDashboardController::class, 'landing'])->name('landing');
 
-    // ---- Authenticated Online LS users ----
-    Route::middleware('auth:online_ls')->group(function () {
-        Route::post('logout', [OnlineLsAuthController::class, 'logout'])->name('logout');
+    // Public search: anyone can run a Legal Search and see a preview/summary.
+    Route::post('search', [OnlineLsDashboardController::class, 'search'])->name('search');
 
-        Route::get('dashboard', [OnlineLsDashboardController::class, 'index'])->name('dashboard');
-        Route::post('search', [OnlineLsDashboardController::class, 'search'])->name('search');
-        Route::post('payment/verify', [OnlineLsDashboardController::class, 'verifyPayment'])->name('payment.verify');
-        Route::get('slip/data', [OnlineLsDashboardController::class, 'slipData'])->name('slip.data');
-        Route::get('slip/print', [OnlineLsDashboardController::class, 'slipPrint'])->name('slip.print');
-        Route::get('search/history', [OnlineLsDashboardController::class, 'history'])->name('history');
-        Route::post('feedback', [OnlineLsDashboardController::class, 'feedback'])->name('feedback.store');
-    });
+    // Public Select2 autocomplete for file numbers (queries file_indexings).
+    Route::get('file-numbers', [OnlineLsDashboardController::class, 'fileNumbers'])->name('file-numbers');
+
+    // Public full result. Shows the Paystack checkout until a verified payment
+    // exists for this file number; the report then opens via its payment reference.
+    Route::get('result', [OnlineLsDashboardController::class, 'result'])->name('result');
+    Route::post('payment/verify', [OnlineLsDashboardController::class, 'verifyPayment'])->name('payment.verify');
 });

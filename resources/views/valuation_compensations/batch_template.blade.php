@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+    {{-- ikkdt --}}
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -265,14 +266,14 @@
         <thead>
             <tr>
                 <th style="width: 4%;">S/N</th>
-                <th style="width: 15%;">Name of Owner</th>
-                <th style="width: 12%;">Type of Building</th>
+                <th style="width: 14%;">Name of Owner</th>
+                <th style="width: 11%;">Type of Building</th>
                 <th style="width: 6%;">No. of Building</th>
-                <th style="width: 8%;">Area Covered in M<sup>2</sup></th>
-                <th style="width: 9%;">Rate of Cost ₦</th>
-                <th style="width: 12%;">Amount of Compensation ₦</th>
+                <th style="width: 7%;">Area Covered in M<sup>2</sup></th>
+                <th style="width: 8%;">Rate of Cost ₦</th>
+                <th style="width: 15%;">Amount of Compensation ₦</th>
                 <th style="width: 10%;">Account Number</th>
-                <th style="width: 10%;">Phone Number</th>
+                <th style="width: 9%;">Phone Number</th>
                 <th style="width: 6%;">Remarks</th>
             </tr>
         </thead>
@@ -302,7 +303,7 @@
 
                 <!-- Sub-Project Header Row (only when a sub-project is set) -->
                 @if($subProject)
-                <tr style="border-top: 2px solid #000;">
+                <tr style="border-top: 1px solid #000;">
                     <td colspan="1" style="font-weight: bold;"></td>
                     <td colspan="9" style="text-align: left; padding-left: 15px; font-weight: bold; text-transform: uppercase; background-color: #f8fafc;">
                         {{ $subProjectName }}
@@ -329,7 +330,7 @@
                     @endphp
 
                     <!-- Worker Header Row -->
-                    <tr style="border-bottom: 2px solid #000;">
+                    <tr style="border-bottom: 1px solid #000;">
                         <td colspan="1" style="font-weight: bold; text-align: center;">{{ $workerLetter }}</td>
                         <td colspan="9" style="text-align: left; padding-left: 15px; font-weight: bold; text-transform: uppercase; font-size: 10px; color: #475569;">
                             WORKER: {{ $workerName }} ({{ $workerCode }})
@@ -457,21 +458,21 @@
                                     // following row (extra building or item) is bulleted/indented.
                                     $bulleted = !$isFirst;
                                 @endphp
-                                <tr @if($isItem && !$isFirst) style="font-size: 10px; color: #444; font-style: italic;" @endif>
-                                    <td>{{ $isFirst ? $workerLetter . (++$ownerSeq) : '' }}</td>
-                                    <td style="font-weight: bold; text-align: left; padding-left: 8px;">{{ $isFirst ? $record->owner_name : '' }}</td>
-                                    <td style="text-align: left; padding-left: {{ $bulleted ? '20px' : '8px' }};">{{ $bulleted ? '• ' : '' }}{{ $drow['type'] }}</td>
-                                    <td>{{ $drow['count'] }}</td>
-                                    <td>{{ $drow['area'] }}</td>
-                                    <td style="text-align: right; padding-right: 8px;">{{ $drow['rate'] }}</td>
-                                    <td style="text-align: right; padding-right: 8px;">{{ $drow['amount'] }}</td>
-                                    <td style="font-size: 11px;">
+                                <tr @if($isItem && !$isFirst) style="font-size: 9px; color: #444; font-style: italic;" @else style="font-size: 9px;" @endif>
+                                    <td style="font-size: 9px;">{{ $isFirst ? $workerLetter . (++$ownerSeq) : '' }}</td>
+                                    <td style="text-align: left; padding-left: 8px; font-size: 9px;">{{ $isFirst ? $record->owner_name : '' }}</td>
+                                    <td style="text-align: left; padding-left: {{ $bulleted ? '20px' : '8px' }}; font-size: 9px;">{{ $bulleted ? '• ' : '' }}{{ $drow['type'] }}</td>
+                                    <td style="font-size: 9px;">{{ $drow['count'] }}</td>
+                                    <td style="font-size: 9px;">{{ $drow['area'] }}</td>
+                                    <td style="text-align: right; padding-right: 8px; font-size: 9px;">{{ $drow['rate'] }}</td>
+                                    <td style="text-align: right; padding-right: 8px; font-size: 9px;">{{ $drow['amount'] }}</td>
+                                    <td style="font-size: 9px;">
                                         @if($isFirst)
-                                            <div style="font-weight: bold;">{{ $record->account_number }}</div>
+                                            <div>{{ $record->account_number }}</div>
                                             <div style="color: #666;">{{ $record->bank_name }}</div>
                                         @endif
                                     </td>
-                                    <td>{{ $isFirst ? $record->phone_number : '' }}</td>
+                                    <td style="font-size: 9px;">{{ $isFirst ? $record->phone_number : '' }}</td>
                                     <td style="font-size: 9px; text-align: left;">{{ $isFirst ? Str::limit($record->remarks, 50) : '' }}</td>
                                 </tr>
                             @endforeach
@@ -479,10 +480,10 @@
                             <!-- Owner Total Row -->
                             @if($ownerRecordCount > 1 || count($subItems) > 0)
                             <tr>
-                                <td colspan="6" style="text-align: right; padding-right: 15px; font-weight: bold; font-size: 10px; color: #555;">
+                                <td colspan="6" style="text-align: right; padding-right: 15px; font-size: 9px; color: #555;">
                                     Sub Total {{ $ownerName }}@if($subProject) ({{ $subProjectName }})@endif
                                 </td>
-                                <td style="font-weight: bold; text-align: right; padding-right: 8px; border-top: 1px solid #999; font-size: 11px;">
+                                <td style="text-align: right; padding-right: 8px; border-top: 1px solid #999; font-size: 9px;">
                                     {{ number_format($ownerSubTotal, 2) }}
                                 </td>
                                 <td colspan="3"></td>
@@ -495,11 +496,11 @@
 
                     <!-- Worker Sub-total row -->
                     @if(count($recordsByWorker) > 1)
-                    <tr style="border-top: 1.5px solid #000; background-color: #f1f5f9;">
-                        <td colspan="6" style="text-align: right; padding-right: 15px; height: 30px; font-weight: bold; text-transform: uppercase; font-size: 10px;">
+                    <tr style="border-top: 1px solid #000; background-color: #f1f5f9;">
+                        <td colspan="6" style="text-align: right; padding-right: 15px; height: 30px; text-transform: uppercase; font-size: 10px;">
                             Sub Total {{ $workerName }} ({{ count($recordsByOwner) }})
                         </td>
-                        <td style="text-align: right; padding-right: 8px; font-size: 12px; font-weight: bold; border-bottom: 2px solid #000;">
+                        <td style="text-align: right; padding-right: 8px; font-size: 9px; border-bottom: 1px solid #000;">
                             {{ number_format($workerTotal, 2) }}
                         </td>
                         <td colspan="3"></td>
@@ -511,11 +512,11 @@
 
                 <!-- Sub-Project Sub-total row (only when a sub-project is set) -->
                 @if($subProject)
-                <tr style="border-top: 1.5px solid #000;">
-                    <td colspan="6" style="text-align: right; padding-right: 15px; height: 35px; font-weight: bold; text-transform: uppercase; font-size: 11px;">
+                <tr style="border-top: 1px solid #000;">
+                    <td colspan="6" style="text-align: right; padding-right: 15px; height: 35px; text-transform: uppercase; font-size: 11px;">
                         Sub Total {{ $subProjectName }}
                     </td>
-                    <td style="text-align: right; padding-right: 8px; font-size: 14px; font-weight: bold; border-bottom: 3px double #000;">
+                    <td style="text-align: right; padding-right: 8px; font-size: 9px; border-bottom: 1px solid #000;">
                         {{ number_format($subProjectTotal, 2) }}
                     </td>
                     <td colspan="3"></td>
@@ -531,27 +532,27 @@
                 $finalTotal = $totalValuation + $appliedAmount;
             @endphp
             
-            <tr style="font-weight: bold; border-top: 2px solid #000;">
-                <td colspan="6" style="text-align: right; padding-right: 15px; height: 45px; font-size: 14px;">Sub Total</td>
-                <td style="text-align: right; padding-right: 8px; font-size: 16px;">
-                    ₦{{ number_format($totalValuation, 2) }}
+            <tr style="border-top: 1px solid #000;">
+                <td colspan="6" style="text-align: right; padding-right: 15px; font-size: 9px; color: #555; font-weight: normal;">Sub Total</td>
+                <td style="text-align: right; padding-right: 8px; font-size: 9px; font-weight: normal;">
+                    <span style="font-family: 'Segoe UI', Calibri, Tahoma, sans-serif; font-weight: 300;"></span>{{ number_format($totalValuation, 2) }}
                 </td>
                 <td colspan="3"></td>
             </tr>
 
             @if($percent > 0)
-            <tr style="font-weight: bold; border-top: 1px solid #000;">
-                <td colspan="6" style="text-align: right; padding-right: 15px; height: 40px; font-size: 14px;">{{ $percent }}%</td>
-                <td style="text-align: right; padding-right: 8px; font-size: 16px;">
-                    ₦{{ number_format($appliedAmount, 2) }}
+            <tr style="border-top: 1px solid #000;">
+                <td colspan="6" style="text-align: right; padding-right: 15px; font-size: 9px; color: #555; font-weight: normal;">{{ $percent }}%</td>
+                <td style="text-align: right; padding-right: 8px; font-size: 9px; font-weight: normal;">
+                    <span style="font-family: 'Segoe UI', Calibri, Tahoma, sans-serif; font-weight: 300;"></span>{{ number_format($appliedAmount, 2) }}
                 </td>
                 <td colspan="3"></td>
             </tr>
             @endif
 
-            <tr style="font-weight: bold; border: 2px solid #000;">
-                <td colspan="6" style="text-align: right; padding-right: 15px; height: 60px; font-size: 16px;">Grand Total</td>
-                <td style="text-align: right; padding-right: 8px; font-size: 20px;">
+            <tr style="font-weight: 900; border: 2.16px solid #000;">
+                <td colspan="6" style="text-align: right; padding-right: 15px; height: 22.5px; font-size: 12px; font-weight: 900;">Grand Total</td>
+                <td style="text-align: right; padding-right: 8px; font-size: 14.48px; font-weight: 900; white-space: nowrap;">
                     ₦{{ number_format($finalTotal, 2) }}
                 </td>
                 <td colspan="3"></td>

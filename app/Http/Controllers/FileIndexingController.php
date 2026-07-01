@@ -822,6 +822,7 @@ class FileIndexingController extends Controller
             'cofo_land_use' => $record->land_use ?? null,
             'cofo_period' => $record->period ?? null,
             'cofo_period_unit' => $record->period_unit ?? null,
+            'cofo_status' => $record->status ?? 'Active',
         ];
     }
 
@@ -880,6 +881,7 @@ class FileIndexingController extends Controller
             'rofo_land_use' => $record->land_use ?? null,
             'rofo_grantor' => $record->party_1 ?? null,
             'rofo_grantee' => $record->party_2 ?? null,
+            'rofo_status' => $record->status ?? 'Active',
         ];
     }
 
@@ -1008,6 +1010,8 @@ class FileIndexingController extends Controller
                 'rofo_land_use' => 'nullable|string|max:255',
                 'rofo_grantor' => 'nullable|string|max:255',
                 'rofo_grantee' => 'nullable|string|max:255',
+                'rofo_status' => 'nullable|string|max:50',
+                'cofo_status' => 'nullable|string|max:50',
                 'has_temp_file' => 'nullable|boolean',
                 'temp_file_no' => 'nullable|string|max:255',
                 // KANGIS placeholder is required only when KANGIS registry is selected.
@@ -2095,6 +2099,7 @@ class FileIndexingController extends Controller
             'regNo' => $registrationNumber,
             'period' => $cofoPayload['period'] ?? null,
             'period_unit' => $cofoPayload['period_unit'] ?? null,
+            'status' => $cofoPayload['status'] ?? 'Active',
             'Grantor' => $cofoPayload['first_party'] ?? null,
             'Grantee' => $cofoPayload['second_party'] ?? null,
             'land_use' => $cofoPayload['land_use'] ?? $validated['land_use_type'],
@@ -2707,6 +2712,72 @@ class FileIndexingController extends Controller
             ], 500);
         }
     }
+    /**
+     * Return the total number of scanned pages for a file number.
+     *
+     * Uses the file_indexings → scannings relationship:
+     *   SELECT COUNT(s.id) FROM file_indexings fi
+     *   LEFT JOIN scannings s ON s.file_indexing_id = fi.id
+     *   WHERE fi.file_number = :file_number
+     *
+     * Drives the auto-populated, read-only "Number of Pages" field on the
+     * Create File Tracker form.
+     */
+    public function scanCountByFileNumber(Request $request)
+    {
+        $fileNumber = trim((string) $request->get('file_number', ''));
+
+        if ($fileNumber === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'File number is required.',
+                'total_scans' => 0,
+            ], 422);
+        }
+
+        try {
+            $variants = $this->buildFileNumberVariants($fileNumber);
+            $normalized = $this->normalizeFileno($fileNumber);
+            if ($normalized !== null) {
+                $variants[] = $normalized;
+            }
+            $variants = array_values(array_unique(array_filter($variants)));
+
+            if (empty($variants)) {
+                $variants = [$fileNumber];
+            }
+
+            $totalScans = (int) DB::connection('sqlsrv')
+                ->table('file_indexings as fi')
+                ->leftJoin('scannings as s', 's.file_indexing_id', '=', 'fi.id')
+                ->where(function ($query) use ($variants) {
+                    foreach ($variants as $i => $variant) {
+                        $i === 0
+                            ? $query->where('fi.file_number', $variant)
+                            : $query->orWhere('fi.file_number', $variant);
+                    }
+                })
+                ->count('s.id');
+
+            return response()->json([
+                'success' => true,
+                'file_number' => $fileNumber,
+                'total_scans' => $totalScans,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('scanCountByFileNumber failed', [
+                'file_number' => $fileNumber,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve scan count for the supplied file number.',
+                'total_scans' => 0,
+            ], 500);
+        }
+    }
+
     public function getSltrGroupingDetails(Request $request)
     {
         $fileNumber = $request->input('file_number');
@@ -2990,6 +3061,8 @@ class FileIndexingController extends Controller
                 'rofo_land_use' => 'nullable|string|max:255',
                 'rofo_grantor' => 'nullable|string|max:255',
                 'rofo_grantee' => 'nullable|string|max:255',
+                'rofo_status' => 'nullable|string|max:50',
+                'cofo_status' => 'nullable|string|max:50',
                 'has_temp_file' => 'nullable|boolean',
                 'temp_file_no' => 'nullable|string|max:255',
                 // KANGIS placeholder is required only when KANGIS registry is selected.
@@ -4260,6 +4333,7 @@ class FileIndexingController extends Controller
             'regNo' => $registrationNumber,
             'period' => $cofoPayload['period'] ?? null,
             'period_unit' => $cofoPayload['period_unit'] ?? null,
+            'status' => $cofoPayload['status'] ?? 'Active',
             'Grantor' => $cofoPayload['first_party'] ?? null,
             'Grantee' => $cofoPayload['second_party'] ?? null,
             'land_use' => $cofoPayload['land_use'] ?? $fileIndexing->land_use_type,
@@ -4309,6 +4383,7 @@ class FileIndexingController extends Controller
             'land_use' => $this->normalizeValue($request->input('cofo_land_use')),
             'period' => $this->normalizeValue($request->input('cofo_period')),
             'period_unit' => $this->normalizeValue($request->input('cofo_period_unit')),
+            'status' => $this->normalizeValue($request->input('cofo_status')),
         ];
     }
 
@@ -4334,6 +4409,7 @@ class FileIndexingController extends Controller
             'land_use' => $this->normalizeValue($request->input('rofo_land_use')),
             'party_1' => $this->normalizeValue($request->input('rofo_grantor')),
             'party_2' => $this->normalizeValue($request->input('rofo_grantee')),
+            'status' => $this->normalizeValue($request->input('rofo_status')),
         ];
 
         $payloadFields = array_filter($rofoPayload, static function ($value) {
@@ -4363,6 +4439,7 @@ class FileIndexingController extends Controller
             'transaction_date' => $rofoPayload['transaction_date'] ?? null,
             'party_1' => $rofoPayload['party_1'] ?? null,
             'party_2' => $rofoPayload['party_2'] ?? null,
+            'status' => $rofoPayload['status'] ?? 'Active',
             'land_use' => $rofoPayload['land_use'] ?? $fileIndexing->land_use_type,
             'property_description' => $fileIndexing->location ?? $fileIndexing->district,
             'location' => $fileIndexing->location ?? $fileIndexing->district,
@@ -5711,7 +5788,7 @@ class FileIndexingController extends Controller
             }
 
             $mainNo = trim((string) ($mainRecord->file_number ?? ''));
-            if ($mainNo === '' || empty($relatedFileNos)) {
+            if ($mainNo === '') {
                 return;
             }
 
@@ -5719,6 +5796,26 @@ class FileIndexingController extends Controller
             $mainIsDciv = $this->isDcivFileNumber($mainNo);
             $mainReason = $mainRecord->dciv_reason ?? null;
             $mainTitle = $mainRecord->file_title ?? null;
+
+            // Normalise related numbers: drop blanks and self-references, de-dupe.
+            $validRelated = [];
+            foreach ($relatedFileNos as $rNo) {
+                $rNo = trim((string) $rNo);
+                if ($rNo !== '' && strcasecmp($rNo, $mainNo) !== 0) {
+                    $validRelated[$rNo] = $rNo;
+                }
+            }
+
+            // A DCIV file belongs in the master table even with no related file —
+            // record a standalone row (null related_file_number) so it isn't lost.
+            if ($mainIsDciv && empty($validRelated)) {
+                $this->upsertMasterDcivLink($mainNo, null, null, $mainReason, $userId);
+                return;
+            }
+
+            if (empty($validRelated)) {
+                return;
+            }
 
             // Map related file number -> supplied title (from the details repeater).
             $titles = [];
@@ -5739,12 +5836,7 @@ class FileIndexingController extends Controller
                 $titles[$rNo] = $detail['file_title'] ?? $detail['holder'] ?? null;
             }
 
-            foreach ($relatedFileNos as $relatedNo) {
-                $relatedNo = trim((string) $relatedNo);
-                if ($relatedNo === '' || strcasecmp($relatedNo, $mainNo) === 0) {
-                    continue; // skip blanks and self-references
-                }
-
+            foreach ($validRelated as $relatedNo) {
                 // Direction 1: the indexed file is the DCIV; related is its linked file.
                 if ($mainIsDciv) {
                     $this->upsertMasterDcivLink($mainNo, $relatedNo, $titles[$relatedNo] ?? null, $mainReason, $userId);
@@ -5767,18 +5859,21 @@ class FileIndexingController extends Controller
      * Insert (or refresh) a single master_dciv_links row for a dciv/related pair.
      * Resolves the related-file title and the dciv_file_no metadata when available.
      */
-    protected function upsertMasterDcivLink(string $dcivNo, string $relatedNo, ?string $relatedTitle, ?string $dcivReason, ?int $userId): void
+    protected function upsertMasterDcivLink(string $dcivNo, ?string $relatedNo, ?string $relatedTitle, ?string $dcivReason, ?int $userId): void
     {
         $dcivNo = trim($dcivNo);
-        $relatedNo = trim($relatedNo);
-        if ($dcivNo === '' || $relatedNo === '') {
+        $relatedNo = $relatedNo === null ? null : trim($relatedNo);
+        if ($dcivNo === '') {
             return;
         }
+
+        // A standalone DCIV (no related file) is stored once with a null related number.
+        $isStandalone = ($relatedNo === null || $relatedNo === '');
 
         $conn = DB::connection('sqlsrv');
 
         // Resolve a related-file title from file_indexings when none was supplied.
-        if (empty($relatedTitle)) {
+        if (! $isStandalone && empty($relatedTitle)) {
             $relatedTitle = $conn->table('file_indexings')
                 ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [strtoupper($relatedNo)])
                 ->orderByDesc('id')
@@ -5791,6 +5886,29 @@ class FileIndexingController extends Controller
             ->where(fn ($q) => $q->where('is_deleted', 0)->orWhereNull('is_deleted'))
             ->orderByDesc('id')
             ->first();
+
+        if ($isStandalone) {
+            // Only create the placeholder when the DCIV has no rows at all — a real
+            // link (now or later) supersedes it.
+            $hasAny = $conn->table('master_dciv_links')
+                ->whereRaw('UPPER(LTRIM(RTRIM(dciv_file_number))) = ?', [strtoupper($dcivNo)])
+                ->exists();
+            if (! $hasAny) {
+                MasterDcivLink::create([
+                    'dciv_file_no_id'     => $dcivFileNo->id ?? null,
+                    'dciv_file_number'    => $dcivNo,
+                    'dciv_reason'         => $dcivFileNo->dciv_reason ?? $dcivReason,
+                    'related_file_number' => null,
+                    'related_file_title'  => null,
+                    'related_file_type'   => null,
+                    'land_file_number'    => null,
+                    'sltr_file_number'    => null,
+                    'st_file_number'      => null,
+                    'created_by'          => $dcivFileNo->created_by ?? $userId,
+                ]);
+            }
+            return;
+        }
 
         $existing = $conn->table('master_dciv_links')
             ->whereRaw('UPPER(LTRIM(RTRIM(dciv_file_number))) = ?', [strtoupper($dcivNo)])
@@ -5807,17 +5925,22 @@ class FileIndexingController extends Controller
                         'updated_at' => now(),
                     ]);
             }
-            return;
+        } else {
+            MasterDcivLink::create(array_merge([
+                'dciv_file_no_id'     => $dcivFileNo->id ?? null,
+                'dciv_file_number'    => $dcivNo,
+                'dciv_reason'         => $dcivFileNo->dciv_reason ?? $dcivReason,
+                'related_file_number' => $relatedNo,
+                'related_file_title'  => $relatedTitle,
+                'created_by'          => $dcivFileNo->created_by ?? $userId,
+            ], MasterDcivLink::typeColumns($relatedNo)));
         }
 
-        MasterDcivLink::create(array_merge([
-            'dciv_file_no_id'     => $dcivFileNo->id ?? null,
-            'dciv_file_number'    => $dcivNo,
-            'dciv_reason'         => $dcivFileNo->dciv_reason ?? $dcivReason,
-            'related_file_number' => $relatedNo,
-            'related_file_title'  => $relatedTitle,
-            'created_by'          => $dcivFileNo->created_by ?? $userId,
-        ], MasterDcivLink::typeColumns($relatedNo)));
+        // A real link supersedes any leftover standalone placeholder for this DCIV.
+        $conn->table('master_dciv_links')
+            ->whereRaw('UPPER(LTRIM(RTRIM(dciv_file_number))) = ?', [strtoupper($dcivNo)])
+            ->whereNull('related_file_number')
+            ->delete();
     }
 
 }

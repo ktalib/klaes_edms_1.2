@@ -43,8 +43,12 @@
           
           <div class="space-y-4">
             <div class="form-row">
-              <span class="form-label">File Number (MLSF):</span>
+              <span class="form-label">File Number (MLPPFNo):</span>
               <span class="form-value" id="file-number-value"></span>
+            </div>
+            <div class="form-row hidden" id="temp-file-number-row">
+              <span class="form-label">Temporary File Number:</span>
+              <span class="form-value" id="temp-file-number-value"></span>
             </div>
             <div class="form-row">
               <span class="form-label">KANGIS File Number:</span>
@@ -96,7 +100,8 @@
                 Active
               </span>
             </div>
-            <div id="digital-archive-section" class="mt-4">
+            <div id="digital-archive-section" class="mt-4 pt-3 border-t border-gray-200">
+              <h4 class="text-sm font-semibold text-gray-700 mb-2">Digital Archive</h4>
               <div id="digital-archive-loading" class="hidden text-xs text-slate-400">Checking archive...</div>
               <div id="digital-archive-empty" class="hidden text-xs text-slate-400">No digital archive available.</div>
               <div id="digital-archive-folders" class="flex flex-col gap-2"></div>
@@ -589,7 +594,7 @@
                   <th style="min-width:60px;">Source</th>
                   <th style="min-width:70px;">Weight</th>
                   <th style="min-width:120px;">Instrument/Transaction Type</th>
-                  <th style="min-width:110px;">Party 1</th>
+                  <th style="min-width:110px;white-space:nowrap;">Party 1</th>
                   <th style="min-width:110px;">Party 2</th>
                   <th style="min-width:100px;">Party 3</th>
                   <th style="min-width:80px;">Reg Particulars</th>

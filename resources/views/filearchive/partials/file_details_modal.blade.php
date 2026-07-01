@@ -443,7 +443,8 @@ function showError(message) {
 // Action functions
 function viewDocument() {
     if (currentFileData) {
-        const pagesUrl = `/filearchive/document-pages/${currentFileData.id}`;
+        const moduleParam = new URLSearchParams(window.location.search).get('url') || '';
+        const pagesUrl = `/filearchive/document-pages/${currentFileData.id}` + (moduleParam ? `?url=${encodeURIComponent(moduleParam)}` : '');
         if (typeof window.openDocumentViewer === 'function') {
             window.openDocumentViewer(pagesUrl, true, {
                 number: currentFileData.file_number || currentFileData.fileno || '-',

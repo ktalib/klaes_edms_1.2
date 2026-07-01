@@ -195,6 +195,7 @@
                                             <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide"
                                                 data-sort="file_number">File No</th>
                                             <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">Correspondence FileNo</th>
+                                            <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">Shadow FileNo</th>
                                             <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
                                                 Related FileNo</th>
                                             <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
@@ -764,6 +765,98 @@
                             Unmatch
                         </button>
                         <button type="button" id="mcc-match-btn" class="hidden px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-[#8a5a2b] hover:bg-[#73491f] shadow-lg shadow-[#8a5a2b]/25 transition-all inline-flex items-center gap-2">
+                            <i data-lucide="link" class="w-4 h-4"></i>
+                            Match
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MPP FileNo: Match  Shadow Files (Shadow Files) Modal -->
+    <div id="mpp-file-modal" class="fixed inset-0 z-[120] hidden overflow-y-auto" role="dialog" aria-modal="true">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" id="mpp-file-backdrop"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full border border-gray-100">
+                <input type="hidden" id="mpp-file-id">
+
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-[#0d3b5c] via-[#1d5a7c] to-[#32869c] px-6 py-4 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
+                            <i data-lucide="git-compare" class="w-5 h-5 text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white">Match Shadow File</h3>
+                            <p class="text-xs text-white/80 font-medium">Link a Land file with its Physical Planning shadow file</p>
+                        </div>
+                    </div>
+                    <button type="button" id="close-mpp-file-modal" class="text-white/70 hover:text-white transition-colors">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+
+                <!-- Body: two columns -->
+                <div class="px-6 py-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 border border-gray-200 rounded-2xl overflow-hidden">
+                        <!-- LAND side -->
+                        <div class="p-5 border-b md:border-b-0 md:border-r border-gray-200 bg-[#fbe9e9]">
+                            <div class="flex items-center gap-2 pb-3 mb-4 border-b border-gray-100">
+                                <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[#fdeaea] text-[#7a1212]"><i data-lucide="file-text" class="w-4 h-4"></i></span>
+                                <h4 class="text-sm font-bold text-[#7a1212] uppercase tracking-wide">Land Department</h4>
+                            </div>
+                            <dl class="grid grid-cols-2 gap-x-4 gap-y-3" id="mpp-land-details"></dl>
+                        </div>
+
+                        <!-- PHYSICAL PLANNING side -->
+                        <div class="p-5 bg-[#eaf6f0]/60">
+                            <div class="flex items-center gap-2 pb-3 mb-4 border-b border-gray-100">
+                                <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[#d3f3e0] text-[#2b8a5a]"><i data-lucide="map" class="w-4 h-4"></i></span>
+                                <h4 class="text-sm font-bold text-[#2b8a5a] uppercase tracking-wide">Physical Planning Department</h4>
+                            </div>
+
+                            <!-- Selector (unmatched only) -->
+                            <div id="mpp-pp-selector" class="mb-4 hidden">
+                                <label class="text-xs font-bold text-[#2b8a5a] uppercase tracking-wider block mb-1.5">Physical Planning File Number <span class="text-red-500">*</span></label>
+                                <div class="flex items-center gap-2">
+                                    <input type="text" id="mpp-pp-input" readonly class="flex-1 px-4 py-2.5 rounded-xl border-2 border-[#a5e3c0] bg-white text-gray-800 font-semibold cursor-pointer" placeholder="Click to select physical planning file...">
+                                    <button type="button" id="mpp-open-fileno-selector-btn" class="px-4 py-2.5 rounded-xl bg-[#2b8a5a] text-white font-bold hover:bg-[#1f7349] transition-all shadow-sm flex items-center gap-2 whitespace-nowrap">
+                                        <i data-lucide="file-search" class="w-4 h-4"></i>
+                                        Select
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Awaiting placeholder -->
+                            <div id="mpp-pp-awaiting" class="flex flex-col items-center justify-center py-10 text-center">
+                                <span class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#d3f3e0] text-[#2b8a5a] mb-3"><i data-lucide="clock" class="w-6 h-6"></i></span>
+                                <p class="text-sm font-semibold text-[#2b8a5a]">Awaiting Match</p>
+                                <p class="text-xs text-gray-400 mt-1">Select a physical planning file number to view its details.</p>
+                            </div>
+
+                            <!-- Loading -->
+                            <div id="mpp-pp-loading" class="hidden py-10 text-center text-sm text-gray-400">
+                                <i data-lucide="loader" class="w-5 h-5 animate-spin inline-block"></i> Loading details...
+                            </div>
+
+                            <!-- Details -->
+                            <dl class="grid grid-cols-2 gap-x-4 gap-y-3 hidden" id="mpp-pp-details"></dl>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="bg-gray-50 px-6 py-5 flex items-center justify-between gap-3 rounded-b-2xl border-t border-gray-100">
+                    <div id="mpp-status-badge"></div>
+                    <div class="flex items-center gap-3">
+                        <button type="button" id="cancel-mpp-file" class="px-6 py-2.5 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-200 transition-all">Cancel</button>
+                        <button type="button" id="mpp-unmatch-btn" class="hidden px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-[#12407a] hover:bg-[#0d3b5c] shadow-lg shadow-[#12407a]/25 transition-all inline-flex items-center gap-2">
+                            <i data-lucide="unlink" class="w-4 h-4"></i>
+                            Unmatch
+                        </button>
+                        <button type="button" id="mpp-match-btn" class="hidden px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-[#2b8a5a] hover:bg-[#1f7349] shadow-lg shadow-[#2b8a5a]/25 transition-all inline-flex items-center gap-2">
                             <i data-lucide="link" class="w-4 h-4"></i>
                             Match
                         </button>

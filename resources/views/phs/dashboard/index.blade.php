@@ -629,7 +629,7 @@
           </div>
           <div class="border-t border-gray-800 mt-8 sm:mt-10 pt-8 text-center text-gray-500 text-xs sm:text-sm">
             <p>
-              &copy; 2026 Kano State Land Administration System (KLAES). All
+              &copy; 2026  LAnd ADmin Enterprise System (KLAES). All
               rights reserved.
             </p>
             <p class="mt-1">
@@ -1358,7 +1358,7 @@
           </div>
         </div>
         <div class="border-t border-gray-800 mt-8 sm:mt-10 pt-8 text-center text-gray-500 text-xs sm:text-sm">
-          <p>&copy; 2026 Kano State Land Administration System (KLAES). All rights reserved.</p>
+          <p>&copy; 2026  LAnd ADmin Enterprise System (KLAES). All rights reserved.</p>
           <p class="mt-1">Empowering Kano with transparent and efficient land administration.</p>
         </div>
       </div>

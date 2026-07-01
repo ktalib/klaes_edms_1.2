@@ -401,6 +401,20 @@ class ManualFileLinkageController extends Controller
                 $oldPropIds = [(int) $oldIndexing->prop_id];
             }
 
+            // Collect each source file's current owner (its party_2/grantee) BEFORE
+            // decommission removes the active file_indexings rows. For a Merger these
+            // become the grantor (party_1) on the new merged file — the people who owned
+            // the plots being merged. Falls back to file_title when no holder is recorded.
+            $oldHolders = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->whereIn('file_number', $oldFileNumbers)
+                ->get(['current_holder', 'file_title'])
+                ->map(fn ($r) => trim((string) ($r->current_holder ?: $r->file_title ?: '')))
+                ->filter(fn ($v) => $v !== '')
+                ->unique()
+                ->values()
+                ->all();
+
             // Decommission only the INDEXED source files (un-indexed ones have no
             // record to decommission — they are captured as related file numbers).
             //
@@ -567,6 +581,9 @@ class ManualFileLinkageController extends Controller
                         'party_2'              => $childGrantee,
                         'parent_prop_id'       => $parentPropId,
                         'comments'             => $subdivisionComment,
+                        // No historical instrument date for a manual linkage — stamp the
+                        // processing date so the timeline shows when it was recorded.
+                        'transaction_date'     => now(),
                         'created_at'           => now(),
                         'updated_at'           => now(),
                     ]);
@@ -744,9 +761,14 @@ class ManualFileLinkageController extends Controller
                     $workflowService->updateHistoricalPropId($oldPropIds, (int) $propId);
                 }
 
-                // Grantor = source/parent holder, Grantee = destination (new) holder.
+                // Grantor = source/parent holder(s), Grantee = destination (new) holder.
                 // party_1/party_2 mirror Grantor/Grantee for views that read the generic columns.
-                $destGrantor = $oldIndexing->current_holder ?? ($oldIndexing->file_title ?? null);
+                // For a Merger the grantor is the combined current owners (party_2) of ALL the
+                // merged source files, not just the first — otherwise party_1 collapses to a
+                // single name and reads the same as the destination owner.
+                $destGrantor = !empty($oldHolders)
+                    ? $this->joinNames($oldHolders)
+                    : ($oldIndexing->current_holder ?? ($oldIndexing->file_title ?? null));
                 $destGrantee = $applicantName
                     ?: ($newIndexing->current_holder ?? ($newIndexing->file_title ?? null));
 
@@ -779,6 +801,9 @@ class ManualFileLinkageController extends Controller
                     'party_2'              => $destGrantee,
                     'parent_prop_id'       => $parentPropId,
                     'comments'             => $praComment,
+                    // No historical instrument date for a manual linkage — stamp the
+                    // processing date so the timeline shows when the merger was recorded.
+                    'transaction_date'     => now(),
                     'created_at'           => now(),
                     'updated_at'           => now(),
                 ]);
@@ -830,6 +855,31 @@ class ManualFileLinkageController extends Controller
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Join owner names into a human-readable list:
+     *   1 name  -> "A"
+     *   2 names -> "A and B"
+     *   3+      -> "A, B and C"
+     * Used for the merger grantor (party_1), which is the combined owners of the merged plots.
+     */
+    private function joinNames(array $names): string
+    {
+        $names = array_values(array_filter(
+            array_map(fn ($n) => trim((string) $n), $names),
+            fn ($n) => $n !== ''
+        ));
+
+        if (empty($names)) {
+            return '';
+        }
+        if (count($names) === 1) {
+            return $names[0];
+        }
+
+        $last = array_pop($names);
+        return implode(', ', $names) . ' and ' . $last;
+    }
 
     private function insertLinkageRow(
         string  $workflowType,

@@ -66,7 +66,11 @@ class FileLocationResolver
 
         // Flag if this file number is registered in duplicate_fileno (CofO collected/ready,
         // duplicate, temporary, or withdrawn/cancelled/revoked). Surfaced on every outcome.
-        $this->currentDuplicateFlag = $this->duplicateFlagFor($variants);
+        // Matched on the EXACT number (temp "(T)" preserved): a temporary file is its own
+        // record, so it must only inherit a flag registered against the "(T)" number itself —
+        // never the one on its stripped base. Otherwise a "(T)" file whose base is a Duplicate
+        // would be wrongly diverted to the Director Land instead of showing the requester form.
+        $this->currentDuplicateFlag = $this->duplicateFlagFor($this->duplicateVariants($fileNumber));
 
         $indexing = $this->findIndexing($variants);
         $tracker  = $this->findTracker($variants);
@@ -136,17 +140,22 @@ class FileLocationResolver
 
         if ($range === null) {
             // Indexed but outside any known registry range -> refer.
+            $registryFallback = $this->indexingRegistry($indexing);
             return $this->result($fileNumber, self::STATUS_REFER, array_merge([
-                'indexing' => $indexing,
+                'indexing'         => $indexing,
+                'registry'         => $registryFallback,
+                'current_location' => $registryFallback,
             ], $this->actionMetaFor(self::STATUS_REFER)));
         }
+
+        $registryName = $range['registry'] ?? $this->indexingRegistry($indexing);
 
         if ($range['zone'] === 'archive') {
             $rackShelf = $this->getRackShelf($fileNumber, $indexing);
             return $this->result($fileNumber, self::STATUS_IN_ARCHIVE, array_merge([
-                'registry'         => $range['registry'],
+                'registry'         => $registryName,
                 'zone'             => 'archive',
-                'current_location' => $this->archiveLocation($range['registry'], $rackShelf),
+                'current_location' => $this->archiveLocation($registryName, $rackShelf),
                 'rack_shelf'       => $rackShelf,
                 'indexing'         => $indexing,
             ], $this->actionMetaFor(self::STATUS_IN_ARCHIVE)));
@@ -154,9 +163,9 @@ class FileLocationResolver
 
         // zone = pool
         return $this->result($fileNumber, self::STATUS_IN_POOL, array_merge([
-            'registry'         => $range['registry'],
+            'registry'         => $registryName,
             'zone'             => 'pool',
-            'current_location' => $range['registry'] . ' — Pool Office',
+            'current_location' => ($registryName ?: 'Pool Office') . ' — Pool Office',
             'indexing'         => $indexing,
         ], $this->actionMetaFor(self::STATUS_IN_POOL)));
     }
@@ -245,7 +254,7 @@ class FileLocationResolver
 
     protected function result(string $fileNumber, string $status, array $extra): array
     {
-        return array_merge([
+        $base = [
             'file_number'      => $fileNumber,
             'status'           => $status,
             'registry'         => null,
@@ -262,7 +271,46 @@ class FileLocationResolver
             'is_blind'         => false,
             'manual'           => false,
             'duplicate_flag'   => $this->currentDuplicateFlag,
-        ], $extra);
+        ];
+
+        $merged = array_merge($base, $extra);
+
+        // Fill in registry/location defaults from indexing when not provided.
+        if (($merged['registry'] ?? null) === null && isset($merged['indexing']) && $merged['indexing'] instanceof FileIndexing) {
+            $fallback = $this->indexingRegistry($merged['indexing']);
+            if ($fallback) {
+                $merged['registry'] = $fallback;
+                if (($merged['current_location'] ?? null) === null) {
+                    $merged['current_location'] = $fallback;
+                }
+            }
+        }
+
+        return $merged;
+    }
+
+    /**
+     * Derive a registry/location label from the indexing row.
+     */
+    protected function indexingRegistry(?FileIndexing $indexing): ?string
+    {
+        if (!$indexing) {
+            return null;
+        }
+
+        $candidates = [
+            trim((string) ($indexing->physical_registry ?? '')),
+            trim((string) ($indexing->registry ?? '')),
+            trim((string) ($indexing->general_registry ?? '')),
+        ];
+
+        foreach ($candidates as $value) {
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -305,18 +353,24 @@ class FileLocationResolver
 
     /**
      * Map a raw duplicate_fileno.category value to a display label + badge colour.
+     *
+     * `directs_to_land` controls whether a flagged file is pulled out of the normal
+     * SCB search and instead re-directed to the Director Land (Land Department) to
+     * resolve the duplication. Only genuine duplicates carry a duplication to
+     * resolve — a Temporary File has none, so it follows the normal SCB workflow
+     * (Send File Search Request) while still showing its "Temporary File" badge.
      */
     protected function duplicateCategoryMeta(string $category): array
     {
         $key = strtoupper(trim($category));
 
         return match ($key) {
-            '[COFO_COLLECTED]' => ['category' => $category, 'label' => 'CofO Collected', 'color' => '#16a34a'],
-            '[COFO_READY]'     => ['category' => $category, 'label' => 'CofO Ready',     'color' => '#2563eb'],
-            'DUPLICATE FILES'  => ['category' => $category, 'label' => 'Duplicate File', 'color' => '#d97706'],
-            'TEMP FILES'       => ['category' => $category, 'label' => 'Temporary File', 'color' => '#7c3aed'],
-            'W/C/R FILES'      => ['category' => $category, 'label' => 'Withdrawn / Cancelled / Revoked', 'color' => '#dc2626'],
-            default            => ['category' => $category, 'label' => trim($category, '[]'), 'color' => '#475569'],
+            '[COFO_COLLECTED]' => ['category' => $category, 'label' => 'CofO Collected', 'color' => '#16a34a', 'directs_to_land' => true],
+            '[COFO_READY]'     => ['category' => $category, 'label' => 'CofO Ready',     'color' => '#2563eb', 'directs_to_land' => true],
+            'DUPLICATE FILES'  => ['category' => $category, 'label' => 'Duplicate File', 'color' => '#d97706', 'directs_to_land' => true],
+            'TEMP FILES'       => ['category' => $category, 'label' => 'Temporary File', 'color' => '#7c3aed', 'directs_to_land' => false],
+            'W/C/R FILES'      => ['category' => $category, 'label' => 'Withdrawn / Cancelled / Revoked', 'color' => '#dc2626', 'directs_to_land' => true],
+            default            => ['category' => $category, 'label' => trim($category, '[]'), 'color' => '#475569', 'directs_to_land' => true],
         };
     }
 
@@ -408,6 +462,26 @@ class FileLocationResolver
         return array_values(array_unique(array_filter($variants)));
     }
 
+    /**
+     * Build EXACT match variants for the duplicate_fileno lookup — casing only, with
+     * the temp "(T)" suffix preserved (never stripped to the base). A temporary file
+     * is a record in its own right, so it must only pick up a duplicate_fileno flag
+     * registered against the "(T)" number itself.
+     */
+    protected function duplicateVariants(string $fileNumber): array
+    {
+        $fileNumber = trim($fileNumber);
+        if ($fileNumber === '') {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter([
+            $fileNumber,
+            strtoupper($fileNumber),
+            strtolower($fileNumber),
+        ])));
+    }
+
     protected function findIndexing(array $variants): ?FileIndexing
     {
         if (empty($variants)) {
@@ -420,7 +494,12 @@ class FileLocationResolver
                     ->orWhereIn('new_kangis_file_no', $variants)
                     ->orWhereIn('kangis_file_no', $variants)
                     ->orWhereIn('mls_file_no', $variants)
-                    ->orWhereIn('st_fillno', $variants);
+                    ->orWhereIn('st_fillno', $variants)
+                    // Temporary file numbers (e.g. "RES-2007-63(T)") are indexed on
+                    // their own column, so an indexed temp file must match here too —
+                    // otherwise it falls through to PENDING_FILE ("Not Indexed"),
+                    // mirroring the Create File Tracker lookup.
+                    ->orWhereIn('temp_file_no', $variants);
             })
             ->orderByDesc('id')
             ->first();

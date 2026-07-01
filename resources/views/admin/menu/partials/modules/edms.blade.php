@@ -5,7 +5,7 @@
       data-module="edms">
       <div class="flex items-center gap-2">
         <i data-lucide="database" class="h-5 w-5 text-emerald-600"></i>
-        <span class="text-sm font-bold uppercase tracking-wider">EDMS</span>
+        <span class="text-sm font-bold uppercase tracking-wider">DMS</span>
       </div>
       <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="edms"></i>
     </div>

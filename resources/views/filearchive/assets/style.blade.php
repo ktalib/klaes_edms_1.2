@@ -18,7 +18,10 @@
     opacity: 0;
     position: absolute;
     z-index: 50;
-    bottom: calc(100% + 8px);
+    /* Drop the tooltip DOWN over the cover so it is always visible (never clipped
+       above the top row) and clearly attached to the file the user is hovering. */
+    top: calc(100% + 8px);
+    bottom: auto;
     left: 50%;
     transform: translateX(-50%);
     background-color: #1f2937;
@@ -38,12 +41,15 @@
   .file-card-status-header .status-tooltip::after {
     content: '';
     position: absolute;
-    top: 100%;
+    bottom: 100%;
     left: 50%;
     transform: translateX(-50%);
     border: 6px solid transparent;
-    border-top-color: #1f2937;
+    border-bottom-color: #1f2937;
   }
+  /* Reveal the location tooltip when hovering anywhere on the file card, not just
+     the thin status bar — users naturally hover the cover/body of the file. */
+  .file-card:hover .status-tooltip,
   .file-card-status-header:hover .status-tooltip {
     visibility: visible;
     opacity: 1;

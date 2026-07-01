@@ -1400,6 +1400,10 @@ Route::middleware(['auth', 'XSS'])->group(function () {
     Route::get('/file-index-view', [\App\Http\Controllers\FileIndexViewController::class, 'index'])->name('file-index-view.index');
     Route::get('/file-index-view/data', [\App\Http\Controllers\FileIndexViewController::class, 'data'])->name('file-index-view.data');
     Route::get('/file-index-view/{record}/timeline', [\App\Http\Controllers\FileIndexViewController::class, 'timeline'])->name('file-index-view.timeline');
+
+    // Duplicate File Call-up sheet — printable side-by-side comparison of the
+    // indexed file vs. its flagged duplicate (duplicate_fileno) record.
+    Route::get('/duplicate-callup', [\App\Http\Controllers\DuplicateCallupController::class, 'sheet'])->name('duplicate-callup.sheet');
 });
 
 Route::middleware(['auth', 'XSS'])->group(function () {

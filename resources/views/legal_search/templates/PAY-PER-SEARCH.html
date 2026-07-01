@@ -439,7 +439,7 @@
           <tr class="header-row">
             <th style="width: 3%">S/N</th>
             <th style="width: 9%">File No</th>
-            <th style="width: 11%">Instrument/Transaction Type</th>
+            <th style="width: 15%; white-space: nowrap;">Instrument/Transaction Type</th>
             <th style="width: 12%">Party 1</th>
             <th style="width: 12%">Party 2</th>
             <th style="width: 9%" class="party-3-col">Party 3</th>
@@ -476,7 +476,7 @@
           <div class="sig-box">
             <div>Name: <span id="report-full-name" style="border-bottom: 1px dotted #000; min-width: 200px; display: inline-block; padding: 0 4px;"></span></div>
             <div>Rank:...............................................</div>
-            <div>Sign:............................ Date:................</div>
+            <div>Sign:............................ Date: <span id="report-sign-date" style="border-bottom: 1px dotted #000; min-width: 90px; display: inline-block; padding: 0 4px;"></span></div>
           </div>
           <div class="sig-box">
             <div>Verified by:.......................................</div>
@@ -564,6 +564,8 @@
           setText('report-tpno', d.tpno);
           setText('report-generated-by', d.generated_by);
           setText('report-full-name', d.full_name);
+          // Auto-fill the signing Date with the report generation date.
+          setText('report-sign-date', d.generated_date || (d.date_line || '').replace(/^Date:\s*/i, ''));
 
           const tsEl = document.getElementById('report-timestamp');
           if (tsEl) {

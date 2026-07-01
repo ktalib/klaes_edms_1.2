@@ -2,6 +2,7 @@
 @section('page-title')
     {{ __('Quick Search & File Location') }}
 @endsection
+{{-- ikkdt --}}
 @section('content')
 @push('styles')
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
@@ -17,6 +18,7 @@
             $isSurveyContext = $urlCtx === 'survey';
             $isKangisContext = $urlCtx === 'kangis';
             $isCadastralContext = $urlCtx === 'cadastral';
+            $isDcivContext = $urlCtx === 'dciv';
             if ($isStContext) {
                 $headerGradient = 'bg-gradient-to-r from-blue-700 via-blue-600 to-blue-800';
                 $headerStyle = 'background-image: linear-gradient(to right, #1d4ed8, #2563eb, #1e40af);';
@@ -30,13 +32,17 @@
                 $headerStyle = 'background-image: linear-gradient(to right, #db2777, #ec4899, #be185d);';
                 $dotClass = 'text-pink-100';
             } elseif ($isKangisContext) {
-                $headerGradient = 'bg-gradient-to-r from-yellow-600 via-amber-500 to-yellow-600';
-                $headerStyle = 'background-image: linear-gradient(to right, #ca8a04, #f59e0b, #ca8a04);';
-                $dotClass = 'text-yellow-100';
+                $headerGradient = 'bg-gradient-to-r from-orange-600 via-orange-500 to-orange-600';
+                $headerStyle = 'background-image: linear-gradient(to right, #ea580c, #f97316, #ea580c);';
+                $dotClass = 'text-orange-100';
             } elseif ($isCadastralContext) {
                 $headerGradient = 'bg-gradient-to-r from-rose-700 via-rose-600 to-rose-800';
                 $headerStyle = 'background-image: linear-gradient(to right, #be123c, #e11d48, #9f1239);';
                 $dotClass = 'text-rose-100';
+            } elseif ($isDcivContext) {
+                $headerGradient = 'bg-gradient-to-r from-green-900 via-emerald-800 to-green-900';
+                $headerStyle = 'background-image: linear-gradient(to right, #0b3d2e, #065f46, #0b3d2e);';
+                $dotClass = 'text-emerald-100';
             } else {
                 $headerGradient = 'bg-gradient-to-r from-red-700 via-red-600 to-red-800';
                 $headerStyle = '';
@@ -87,43 +93,91 @@
                     </div>
                 </div>
                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                    <div class="rounded-lg border border-indigo-100 bg-indigo-50/60 px-4 py-3">
-                        <div class="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">Requests Today</div>
-                        <div id="qs-rep-today" class="mt-1 text-2xl font-bold text-indigo-900">—</div>
-                        <div class="mt-2 space-y-0.5 text-[10px] font-medium border-t border-indigo-100 pt-1.5">
+                    <div class="group relative overflow-hidden rounded-xl border border-indigo-300 bg-indigo-500 p-4 shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+                        <span class="pointer-events-none absolute -right-3 -top-3 text-indigo-300"><i data-lucide="inbox" class="h-16 w-16"></i></span>
+                        <div class="relative flex items-start justify-between gap-2">
+                            <div>
+                                <div class="text-[11px] font-semibold uppercase tracking-wide text-indigo-100">Requests Today</div>
+                                <div id="qs-rep-today" class="mt-1 text-3xl font-extrabold leading-none text-white">—</div>
+                            </div>
+                            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-700 text-white shadow-md shadow-indigo-900">
+                                <i data-lucide="inbox" class="h-5 w-5"></i>
+                            </span>
+                        </div>
+                        <div class="relative mt-3 space-y-1 border-t border-indigo-400 pt-2 text-[10px] font-medium">
                             <div class="flex items-center justify-between">
-                                <span class="inline-flex items-center gap-1 text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>Found</span>
-                                <span id="qs-rep-today-found" class="font-bold text-emerald-800">—</span>
+                                <span class="inline-flex items-center gap-1 text-indigo-100"><span class="h-1.5 w-1.5 rounded-full bg-white"></span>Found</span>
+                                <span id="qs-rep-today-found" class="font-bold text-white">—</span>
                             </div>
                             <div class="flex items-center justify-between">
-                                <span class="inline-flex items-center gap-1 text-amber-700"><span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>Not Found</span>
-                                <span id="qs-rep-today-notfound" class="font-bold text-amber-800">—</span>
+                                <span class="inline-flex items-center gap-1 text-indigo-100"><span class="h-1.5 w-1.5 rounded-full bg-white"></span>Not Found</span>
+                                <span id="qs-rep-today-notfound" class="font-bold text-white">—</span>
                             </div>
                             <div class="flex items-center justify-between">
-                                <span class="inline-flex items-center gap-1 text-slate-600"><span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>Awaiting</span>
-                                <span id="qs-rep-today-awaiting" class="font-bold text-slate-700">—</span>
+                                <span class="inline-flex items-center gap-1 text-indigo-100"><span class="h-1.5 w-1.5 rounded-full bg-white"></span>Awaiting</span>
+                                <span id="qs-rep-today-awaiting" class="font-bold text-white">—</span>
                             </div>
                         </div>
                     </div>
-                    <div class="rounded-lg border border-sky-100 bg-sky-50/60 px-4 py-3">
-                        <div class="text-[11px] font-semibold uppercase tracking-wide text-sky-700">Blind / Open</div>
-                        <div id="qs-rep-blind" class="mt-1 text-2xl font-bold text-sky-900">—</div>
+                    <div class="group relative overflow-hidden rounded-xl border border-sky-300 bg-sky-500 p-4 shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+                        <span class="pointer-events-none absolute -right-3 -top-3 text-sky-300"><i data-lucide="search" class="h-16 w-16"></i></span>
+                        <div class="relative flex items-start justify-between gap-2">
+                            <div>
+                                <div class="text-[11px] font-semibold uppercase tracking-wide text-sky-100">Blind / Open</div>
+                                <div id="qs-rep-blind" class="mt-1 text-3xl font-extrabold leading-none text-white">—</div>
+                            </div>
+                            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-700 text-white shadow-md shadow-sky-900">
+                                <i data-lucide="search" class="h-5 w-5"></i>
+                            </span>
+                        </div>
                     </div>
-                    <div class="rounded-lg border border-emerald-100 bg-emerald-50/60 px-4 py-3">
-                        <div class="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Found</div>
-                        <div id="qs-rep-found" class="mt-1 text-2xl font-bold text-emerald-900">—</div>
+                    <div class="group relative overflow-hidden rounded-xl border border-emerald-300 bg-emerald-500 p-4 shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+                        <span class="pointer-events-none absolute -right-3 -top-3 text-emerald-300"><i data-lucide="check-circle" class="h-16 w-16"></i></span>
+                        <div class="relative flex items-start justify-between gap-2">
+                            <div>
+                                <div class="text-[11px] font-semibold uppercase tracking-wide text-emerald-100">Found</div>
+                                <div id="qs-rep-found" class="mt-1 text-3xl font-extrabold leading-none text-white">—</div>
+                            </div>
+                            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-700 text-white shadow-md shadow-emerald-900">
+                                <i data-lucide="check-circle" class="h-5 w-5"></i>
+                            </span>
+                        </div>
                     </div>
-                    <div class="rounded-lg border border-amber-100 bg-amber-50/60 px-4 py-3">
-                        <div class="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Not Found</div>
-                        <div id="qs-rep-notfound" class="mt-1 text-2xl font-bold text-amber-900">—</div>
+                    <div class="group relative overflow-hidden rounded-xl border border-amber-300 bg-amber-500 p-4 shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+                        <span class="pointer-events-none absolute -right-3 -top-3 text-amber-300"><i data-lucide="x-circle" class="h-16 w-16"></i></span>
+                        <div class="relative flex items-start justify-between gap-2">
+                            <div>
+                                <div class="text-[11px] font-semibold uppercase tracking-wide text-amber-100">Not Found</div>
+                                <div id="qs-rep-notfound" class="mt-1 text-3xl font-extrabold leading-none text-white">—</div>
+                            </div>
+                            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-700 text-white shadow-md shadow-amber-900">
+                                <i data-lucide="x-circle" class="h-5 w-5"></i>
+                            </span>
+                        </div>
                     </div>
-                    <div class="rounded-lg border border-red-100 bg-red-50/60 px-4 py-3">
-                        <div class="text-[11px] font-semibold uppercase tracking-wide text-red-700">Missing</div>
-                        <div id="qs-rep-missing" class="mt-1 text-2xl font-bold text-red-900">—</div>
+                    <div class="group relative overflow-hidden rounded-xl border border-red-300 bg-red-500 p-4 shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+                        <span class="pointer-events-none absolute -right-3 -top-3 text-red-300"><i data-lucide="alert-triangle" class="h-16 w-16"></i></span>
+                        <div class="relative flex items-start justify-between gap-2">
+                            <div>
+                                <div class="text-[11px] font-semibold uppercase tracking-wide text-red-100">Missing</div>
+                                <div id="qs-rep-missing" class="mt-1 text-3xl font-extrabold leading-none text-white">—</div>
+                            </div>
+                            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-700 text-white shadow-md shadow-red-900">
+                                <i data-lucide="alert-triangle" class="h-5 w-5"></i>
+                            </span>
+                        </div>
                     </div>
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Awaiting</div>
-                        <div id="qs-rep-awaiting" class="mt-1 text-2xl font-bold text-slate-800">—</div>
+                    <div class="group relative overflow-hidden rounded-xl border border-slate-300 bg-slate-500 p-4 shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+                        <span class="pointer-events-none absolute -right-3 -top-3 text-slate-300"><i data-lucide="clock" class="h-16 w-16"></i></span>
+                        <div class="relative flex items-start justify-between gap-2">
+                            <div>
+                                <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-100">Awaiting</div>
+                                <div id="qs-rep-awaiting" class="mt-1 text-3xl font-extrabold leading-none text-white">—</div>
+                            </div>
+                            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-700 text-white shadow-md shadow-slate-900">
+                                <i data-lucide="clock" class="h-5 w-5"></i>
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -276,6 +330,10 @@
             <span class="text-xs font-medium text-gray-500">${esc(l)}</span>
             <span class="text-sm text-gray-800 text-right">${esc(v)}</span></div>` : '';
         const money = (l, v) => (v == null || v === '') ? '' : row(l, '₦' + Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+        // A duplicate_fileno flag only diverts the file to the Director Land when the
+        // category carries a duplication to resolve (Duplicate / CofO / W-C-R). Temporary
+        // files are flagged for the badge only and still use the normal SCB workflow.
+        const directsToLand = d => !!(d.duplicate_flag && d.duplicate_flag.directs_to_land);
 
         function pickFileNumber() {
             if (typeof GlobalFileNoModal === 'undefined') { search(); return; }
@@ -297,7 +355,7 @@
                 // (its last receiving officer) instead of routing it to the SCB Monitor.
                 const showRedirect = d.can_redirect && CAN_SEND_FR;
                 if (showRedirect) {
-                    const office = d.current_location || 'Current Office';
+                    const office = d.receiving_officer_name || d.current_location || 'Current Office';
                     out.push(`<button type="button" data-redirect
                         class="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600">
                         <i data-lucide="user-check" class="h-4 w-4"></i> Re-direct Request to ${esc(office)}</button>`);
@@ -324,10 +382,11 @@
                     <i data-lucide="printer" class="h-4 w-4"></i> ${labels[d.slip_variant] || 'Print Slip'}</a>`);
             }
             if (d.can_send_fr && CAN_SEND_FR) {
-                if (d.duplicate_flag) {
-                    // Files registered in the duplicate_fileno table must NOT be blind-searched
-                    // by the SCB — they are re-directed to the Director Land (Land Department) to
-                    // resolve the duplication.
+                if (directsToLand(d)) {
+                    // Duplicate / CofO / W-C-R files must NOT be blind-searched by the SCB —
+                    // they are re-directed to the Director Land (Land Department) to resolve
+                    // the duplication. Temporary files are excluded and fall through to the
+                    // normal SCB workflow below.
                     out.push(`<button type="button" data-redirect-land class="inline-flex items-center gap-2 rounded-lg bg-purple-600 hover:bg-purple-700 px-4 py-2 text-sm font-semibold text-white">
                         <i data-lucide="user-check" class="h-4 w-4"></i> Re-direct To Director Land (Land Department)</button>`);
                 } else {
@@ -372,6 +431,29 @@
             return ''; // Land / Deeds / other → base Create File Tracker page
         }
 
+        function registryBadgeClass(registry) {
+            const r = String(registry || '').toLowerCase();
+            if (r.includes('kangis')) {
+                return 'bg-orange-50 text-orange-800 border-orange-200';
+            }
+            if (r.includes('sltr')) {
+                return 'bg-lime-50 text-lime-800 border-lime-200';
+            }
+            if (r.includes('cadastr')) {
+                return 'bg-rose-50 text-rose-800 border-rose-200';
+            }
+            if (r.includes('dciv')) {
+                return 'bg-emerald-50 text-emerald-800 border-emerald-200';
+            }
+            if (r.includes('survey')) {
+                return 'bg-pink-50 text-pink-800 border-pink-200';
+            }
+            if (r.includes('sit') || r === 'st registry') {
+                return 'bg-sky-50 text-sky-800 border-sky-200';
+            }
+            return 'bg-gray-50 text-gray-800 border-gray-200';
+        }
+
         function logFile(d) {
             const params = new URLSearchParams({ file_number: d.file_number || '' });
             if (d.file_title) params.set('file_title', d.file_title);
@@ -389,8 +471,15 @@
 
         function render(d) {
             const meta = STATUS_META[d.status] || { label:d.status, cls:'bg-gray-100 text-gray-800 border-gray-300', icon:'file' };
+            const showsRegistry = (d.status === 'REFER_TO_ORIGINAL_REGISTRY' && d.registry);
+            const metaLabel = showsRegistry ? d.registry : meta.label;
+            // When the badge shows a registry name, colour it by registry
+            // (KANGIS → orange, SLTR → lime, …) instead of the neutral status grey.
+            const metaCls = showsRegistry ? registryBadgeClass(d.registry) : meta.cls;
             // SCB has confirmed the file is physically present (…_FOUND, but not …NOT_FOUND).
             const isFound = /_FOUND$/.test(d.status || '') && !/NOT_FOUND/.test(d.status || '');
+            // SCB has reported the file as Not Found (Missing / Pending).
+            const isNotFound = /NOT_FOUND/.test(d.status || '');
 
             // Ownership timeline — chronological holder chain from the cross-table
             // property timeline. Falls back to the two flat indexing rows when the
@@ -447,8 +536,8 @@
                             <div class="text-lg font-bold text-gray-900">${esc(d.file_number)}</div>
                             <div class="text-sm text-gray-500">${esc(d.file_title || '—')}</div>
                         </div>
-                        <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${meta.cls}">
-                            <i data-lucide="${meta.icon}" class="h-3.5 w-3.5"></i> ${esc(meta.label)}
+                        <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${metaCls}">
+                            <i data-lucide="${meta.icon}" class="h-3.5 w-3.5"></i> ${esc(metaLabel)}
 </span>
                     </div>
                     <div class="px-6 py-3">
@@ -496,16 +585,68 @@
                             </div>
                         </details>
                         ${row('Registry', d.registry)}
-                        ${row('Current Location (Expected)', d.current_location)}
-                        ${row('Rack / Shelf', d.rack_shelf)}
-                        ${row('Receiving Officer', d.receiving_officer_name)}
+                        ${(() => {
+                            // In-transit files are physically held by a Receiving Officer in
+                            // their department — show the holding Department as the current
+                            // location and label the holder explicitly. Other statuses keep
+                            // the expected archive/pool location.
+                            if (d.status === 'IN_TRANSIT') {
+                                let dept = (d.receiving_department || '').trim();
+                                if (dept && !/department$/i.test(dept)) dept = dept + ' Department';
+                                return row('Department (Current Location)', dept || d.current_location)
+                                     + row('Rack / Shelf', d.rack_shelf)
+                                     + row('Receiving Officer (holder)', d.receiving_officer_name);
+                            }
+                            return row('Current Location (Expected)', d.current_location)
+                                 + row('Rack / Shelf', d.rack_shelf)
+                                 + row('Receiving Officer', d.receiving_officer_name);
+                        })()}
                         ${row('Logged Out', d.logged_out_at)}
                         ${row('Request Sent', d.fr_sent_at ? (d.fr_sent_at + (d.fr_request_no ? ' · ' + d.fr_request_no : '')) : '')}
                         ${isFound ? `
-                        <div class="mt-3 rounded-lg bg-green-50 border border-green-200 px-4 py-3 flex items-center gap-2">
-                            <i data-lucide="check-circle" class="h-4 w-4 text-green-600 shrink-0"></i>
-                            <span class="text-sm font-bold text-green-800">File Found</span>
+                        <div class="mt-3 rounded-lg bg-green-50 border border-green-200 px-4 py-3">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="check-circle" class="h-4 w-4 text-green-600 shrink-0"></i>
+                                <span class="text-sm font-bold text-green-800">File Found</span>
+                                ${d.fr_found && d.fr_found.request_no ? `<span class="ml-auto text-[11px] font-semibold text-green-700">${esc(d.fr_found.request_no)}</span>` : ''}
+                            </div>
+                            ${d.fr_found ? `
+                            <dl class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                                ${d.fr_found.responded_at ? `<div class="flex items-center gap-1.5 text-green-900"><i data-lucide="calendar-check" class="h-3.5 w-3.5 text-green-600 shrink-0"></i><span class="font-semibold">Found:</span> ${esc(d.fr_found.responded_at)}</div>` : ''}
+                                ${d.fr_found.responder ? `<div class="flex items-center gap-1.5 text-green-900"><i data-lucide="user-check" class="h-3.5 w-3.5 text-green-600 shrink-0"></i><span class="font-semibold">Responded by (SCB):</span> ${esc(d.fr_found.responder)}</div>` : ''}
+                                ${d.fr_found.requested_at ? `<div class="flex items-center gap-1.5 text-green-900"><i data-lucide="send" class="h-3.5 w-3.5 text-green-600 shrink-0"></i><span class="font-semibold">Request sent:</span> ${esc(d.fr_found.requested_at)}</div>` : ''}
+                                ${d.fr_found.receiving_officer ? `<div class="flex items-center gap-1.5 text-green-900"><i data-lucide="user" class="h-3.5 w-3.5 text-green-600 shrink-0"></i><span class="font-semibold">Requester:</span> ${esc(d.fr_found.receiving_officer)}</div>` : ''}
+                                ${(d.fr_found.requester_office || d.fr_found.requester_department) ? `<div class="flex items-center gap-1.5 text-green-900"><i data-lucide="building-2" class="h-3.5 w-3.5 text-green-600 shrink-0"></i><span class="font-semibold">Office:</span> ${esc([d.fr_found.requester_department, d.fr_found.requester_office].filter(Boolean).join(' · '))}</div>` : ''}
+                                ${d.fr_found.registry ? `<div class="flex items-center gap-1.5 text-green-900"><i data-lucide="library" class="h-3.5 w-3.5 text-green-600 shrink-0"></i><span class="font-semibold">Registry:</span> ${esc(d.fr_found.registry)}</div>` : ''}
+                            </dl>` : ''}
                         </div>` : ''}
+                        ${isNotFound ? (() => {
+                            // Missing → red, Pending → amber; mirror the SCB Feedback colour coding.
+                            const nft = d.fr_not_found && d.fr_not_found.not_found_type
+                                ? (String(d.fr_not_found.not_found_type).toUpperCase() === 'MISSING' ? 'Missing' : 'Pending') : '';
+                            const c = nft === 'Pending'
+                                ? { bg:'bg-amber-50', bd:'border-amber-200', ic:'text-amber-600', tx:'text-amber-800', body:'text-amber-900', lbl:'text-amber-700', icon:'hourglass' }
+                                : { bg:'bg-red-50',   bd:'border-red-200',   ic:'text-red-600',   tx:'text-red-800',   body:'text-red-900',   lbl:'text-red-700',   icon:'alert-triangle' };
+                            const f = d.fr_not_found;
+                            return `
+                        <div class="mt-3 rounded-lg ${c.bg} border ${c.bd} px-4 py-3">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="${c.icon}" class="h-4 w-4 ${c.ic} shrink-0"></i>
+                                <span class="text-sm font-bold ${c.tx}">File Not Found${nft ? ` (${nft})` : ''}</span>
+                                ${f && f.request_no ? `<span class="ml-auto text-[11px] font-semibold ${c.lbl}">${esc(f.request_no)}</span>` : ''}
+                            </div>
+                            ${f ? `
+                            <dl class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                                ${f.responded_at ? `<div class="flex items-center gap-1.5 ${c.body}"><i data-lucide="calendar-x" class="h-3.5 w-3.5 ${c.ic} shrink-0"></i><span class="font-semibold">Responded:</span> ${esc(f.responded_at)}</div>` : ''}
+                                ${f.responder ? `<div class="flex items-center gap-1.5 ${c.body}"><i data-lucide="user-check" class="h-3.5 w-3.5 ${c.ic} shrink-0"></i><span class="font-semibold">Responded by (SCB):</span> ${esc(f.responder)}</div>` : ''}
+                                ${f.requested_at ? `<div class="flex items-center gap-1.5 ${c.body}"><i data-lucide="send" class="h-3.5 w-3.5 ${c.ic} shrink-0"></i><span class="font-semibold">Request sent:</span> ${esc(f.requested_at)}</div>` : ''}
+                                ${f.receiving_officer ? `<div class="flex items-center gap-1.5 ${c.body}"><i data-lucide="user" class="h-3.5 w-3.5 ${c.ic} shrink-0"></i><span class="font-semibold">Requester:</span> ${esc(f.receiving_officer)}</div>` : ''}
+                                ${(f.requester_office || f.requester_department) ? `<div class="flex items-center gap-1.5 ${c.body}"><i data-lucide="building-2" class="h-3.5 w-3.5 ${c.ic} shrink-0"></i><span class="font-semibold">Office:</span> ${esc([f.requester_department, f.requester_office].filter(Boolean).join(' · '))}</div>` : ''}
+                                ${f.registry ? `<div class="flex items-center gap-1.5 ${c.body}"><i data-lucide="library" class="h-3.5 w-3.5 ${c.ic} shrink-0"></i><span class="font-semibold">Registry:</span> ${esc(f.registry)}</div>` : ''}
+                                ${f.note ? `<div class="sm:col-span-2 flex items-start gap-1.5 ${c.body}"><i data-lucide="message-square" class="h-3.5 w-3.5 ${c.ic} shrink-0 mt-px"></i><span class="font-semibold">Note:</span> ${esc(f.note)}</div>` : ''}
+                            </dl>` : ''}
+                        </div>`;
+                        })() : ''}
                         <div class="mt-3 rounded-lg bg-indigo-50 border border-indigo-100 px-4 py-3">
                             <div class="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Next Action</div>
                             <div class="text-sm text-indigo-900 mt-0.5">${esc(d.next_action)}</div>
@@ -528,7 +669,7 @@
                             </div>
                         </details>
                     </div>
-                    ${(d.can_send_fr && CAN_SEND_FR && !d.duplicate_flag) ? `
+                    ${(d.can_send_fr && CAN_SEND_FR && !directsToLand(d)) ? `
                     <div class="px-6 pt-4 border-t border-gray-100">
                         <div class="text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">Requester</div>
                         <div class="mb-3">
@@ -588,11 +729,11 @@
                     </div>` : ''}
                     <div id="qs-fsDigital" class="px-6 pt-4 border-t border-gray-100"></div>
                     <div class="px-6 py-4 flex flex-wrap gap-2">${actionButtons(d)}</div>
-                    ${redirectSubline(d)}
+                    ${'' /* redirectSubline(d) — "Receiving Officer … currently holding the file" note hidden for now */}
                 </div>`;
             result.classList.remove('hidden');
 
-            if (d.can_send_fr && !d.duplicate_flag) initRequesterCascade(d);
+            if (d.can_send_fr && !directsToLand(d)) initRequesterCascade(d);
 
             const frBtn = result.querySelector('[data-fr]');
             if (frBtn) frBtn.addEventListener('click', () => sendFR(d, frBtn));
@@ -721,6 +862,29 @@
                     registryCode.textContent = (opt && opt.dataset.code) ? opt.dataset.code : '—';
                     loadRegistryPreview(fileData.file_number, registrySel.value, registryPreview);
                 });
+
+                // When opened from a specific registry module (?url=kangis|cadastral|…),
+                // the Registry (Origin) is fixed to that module's registry — preselect it
+                // and lock the dropdown so it cannot be changed.
+                const ctxKeyword = {
+                    kangis:    'kangis',
+                    cadastral: 'cadastr',
+                    sltr:      'sltr',
+                    survey:    'survey',
+                    st:        'st registry',
+                    dciv:      'dciv',
+                }[URL_CTX];
+                if (ctxKeyword) {
+                    const match = Array.from(registrySel.options).find(
+                        o => o.value && o.value.toLowerCase().includes(ctxKeyword)
+                    );
+                    if (match) {
+                        registrySel.value = match.value;
+                        registrySel.dispatchEvent(new Event('change'));
+                        registrySel.disabled = true;
+                        registrySel.classList.add('bg-gray-100', 'cursor-not-allowed');
+                    }
+                }
             }
 
             function showAddCard() { if (addCard) { addCard.classList.remove('hidden'); if (window.lucide) window.lucide.createIcons(); } }
@@ -784,11 +948,16 @@
                     <button type="button" data-fr-cancel class="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
                         Cancel</button>
                 </div>`;
-            frBtn.disabled = false;
+            // The file already has an open request — block a duplicate by disabling the
+            // SCB button. Use "Update Requester Details" to amend the existing request, or
+            // Cancel to re-enable the button.
             frBtn.innerHTML = '<i data-lucide="send" class="h-4 w-4"></i> Send File Search Request to SCB Monitor';
+            const disableFr = () => { frBtn.disabled = true; frBtn.classList.add('opacity-50', 'cursor-not-allowed'); };
+            const enableFr  = () => { frBtn.disabled = false; frBtn.classList.remove('opacity-50', 'cursor-not-allowed'); };
+            disableFr();
             frBtn.insertAdjacentElement('afterend', wrap);
-            wrap.querySelector('[data-fr-update]').addEventListener('click', () => { wrap.remove(); sendFR(d, frBtn, false, ex.id); });
-            wrap.querySelector('[data-fr-cancel]').addEventListener('click', () => wrap.remove());
+            wrap.querySelector('[data-fr-update]').addEventListener('click', () => { wrap.remove(); enableFr(); sendFR(d, frBtn, false, ex.id); });
+            wrap.querySelector('[data-fr-cancel]').addEventListener('click', () => { wrap.remove(); enableFr(); });
             if (window.lucide) window.lucide.createIcons();
         }
 
@@ -1195,7 +1364,7 @@
         // Mirrors the Digital File Request "Send Request to {office}" redirect.
         const REDIRECT_URL = "{{ route('digital-request.store') }}";
         async function sendRedirect(d, btn) {
-            const office = d.current_location || 'Current Office';
+            const office = d.receiving_officer_name || d.current_location || 'Current Office';
             btn.disabled = true;
             btn.innerHTML = '<i data-lucide="loader" class="h-4 w-4 animate-spin"></i> Sending…';
             if (window.lucide) window.lucide.createIcons();
@@ -1416,8 +1585,16 @@
                     </thead>
                     <tbody>
                         ${pageRows.map((r, i) => {
-                            const badge  = LOG_BADGE[r.scb_response] || 'bg-gray-100 text-gray-700';
-                            const icon   = r.found ? 'check' : (r.not_found ? 'x' : 'clock');
+                            // For a Not Found outcome, spell out the kind (Missing / Pending)
+                            // alongside the response, e.g. "Not Found (Pending)", and give each
+                            // kind its own colour — Missing red, Pending amber.
+                            const nft       = (r.not_found && r.not_found_type)
+                                ? (String(r.not_found_type).toUpperCase() === 'MISSING' ? 'Missing' : 'Pending') : '';
+                            const respLabel = nft ? `${r.scb_response} (${nft})` : r.scb_response;
+                            const badge  = nft === 'Missing' ? 'bg-red-100 text-red-800'
+                                : nft === 'Pending' ? 'bg-amber-100 text-amber-800'
+                                : (LOG_BADGE[r.scb_response] || 'bg-gray-100 text-gray-700');
+                            const icon   = r.found ? 'check' : (r.not_found ? (nft === 'Pending' ? 'hourglass' : 'x') : 'clock');
                             const sn     = start + i + 1;
                             const sentDt = splitDT(r.requested_at);
                             const dt     = splitDT(r.responded_at);
@@ -1445,7 +1622,9 @@
                             const rowTint = r.found
                                 ? 'bg-emerald-50/70 border-l-4 border-l-emerald-400 hover:bg-emerald-50'
                                 : (r.not_found
-                                    ? 'bg-red-50/70 border-l-4 border-l-red-400 hover:bg-red-50'
+                                    ? (nft === 'Pending'
+                                        ? 'bg-amber-50/70 border-l-4 border-l-amber-400 hover:bg-amber-50'
+                                        : 'bg-red-50/70 border-l-4 border-l-red-400 hover:bg-red-50')
                                     : (r.is_ofs ? 'bg-amber-50/60 border-l-4 border-l-amber-400 hover:bg-gray-50/60' : 'hover:bg-gray-50/60'));
                             return `
                             <tr class="border-b border-gray-200 align-top ${rowTint}">
@@ -1470,7 +1649,7 @@
                                 <td class="px-3 py-3 text-gray-500 max-w-[150px] truncate" title="${esc(r.current_location || r.location_type || '')}">${(r.current_location || r.location_type) ? esc(r.current_location || r.location_type) : dash}</td>
                                 <td class="px-3 py-3 whitespace-nowrap">
                                     <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${badge}">
-                                        <i data-lucide="${icon}" class="h-3 w-3"></i> ${esc(r.scb_response)}</span>
+                                        <i data-lucide="${icon}" class="h-3 w-3"></i> ${esc(respLabel)}</span>
                                 </td>
                                 <td class="px-3 py-3 whitespace-nowrap text-xs">
                                     ${sentDt ? `<div class="text-gray-700 font-medium">${esc(sentDt.d)}</div><div class="text-gray-400">${esc(sentDt.t)}</div>` : dash}
@@ -1612,9 +1791,15 @@
                         ${rows.map(r => {
                             // A blind / not-indexed file reported Not Found is surfaced as "Missing".
                             const isMissing = r.not_found && r.is_blind;
-                            const respLabel = isMissing ? 'Missing' : r.scb_response;
-                            const badge = isMissing ? 'bg-red-100 text-red-800' : (LOG_BADGE[r.scb_response] || 'bg-gray-100 text-gray-700');
-                            const icon  = r.found ? 'check' : (r.not_found ? (isMissing ? 'help-circle' : 'x') : 'clock');
+                            // When the SCB picked a Not Found kind, spell it out, e.g. "Not Found (Pending)",
+                            // and colour each kind distinctly — Missing red, Pending amber.
+                            const nft = (r.not_found && r.not_found_type)
+                                ? (String(r.not_found_type).toUpperCase() === 'MISSING' ? 'Missing' : 'Pending') : '';
+                            const respLabel = nft ? `${r.scb_response} (${nft})` : (isMissing ? 'Missing' : r.scb_response);
+                            const badge = nft === 'Pending' ? 'bg-amber-100 text-amber-800'
+                                : (nft === 'Missing' || isMissing) ? 'bg-red-100 text-red-800'
+                                : (LOG_BADGE[r.scb_response] || 'bg-gray-100 text-gray-700');
+                            const icon  = r.found ? 'check' : (r.not_found ? (nft === 'Pending' ? 'hourglass' : (isMissing ? 'help-circle' : 'x')) : 'clock');
                             const done  = r.front_desk_acted
                                 ? `<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-gray-200 text-gray-600"><i data-lucide="check-check" class="h-2.5 w-2.5"></i> Completed</span>`
                                 : '';
@@ -1631,9 +1816,11 @@
                                 <div class="mt-1.5 text-xs text-gray-600 truncate" title="${esc(r.file_title || '')}">${esc(r.file_title || '—')}</div>
                                 ${r.receiving_officer ? `<div class="mt-0.5 text-[11px] text-gray-400 truncate">for ${esc(r.receiving_officer)}</div>` : ''}
                                 <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
-                                    ${r.requested_by ? `<span class="inline-flex items-center gap-1"><i data-lucide="user" class="h-3 w-3 text-gray-400"></i> ${esc(r.requested_by)}</span>` : ''}
+                                    ${r.requested_by ? `<span class="inline-flex items-center gap-1 rounded-full bg-slate-50 border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700"><i data-lucide="user" class="h-3 w-3"></i> <span class="uppercase tracking-wide">Sent by</span>: ${esc(r.requested_by)}</span>` : ''}
                                     <span class="inline-flex items-center gap-1"><i data-lucide="map-pin" class="h-3 w-3 text-gray-400"></i> ${esc(r.current_location || r.location_type || '—')}</span>
-                                    <span class="inline-flex items-center gap-1"><i data-lucide="clock" class="h-3 w-3 text-gray-400"></i> ${esc(r.requested_at || '—')}</span>
+                                    ${r.requested_at ? `<span class="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700"><i data-lucide="clock" class="h-3 w-3"></i> <span class="uppercase tracking-wide">Requested</span>: ${esc(r.requested_at)}</span>` : ''}
+                                    ${r.responded_at ? `<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"><i data-lucide="calendar-check" class="h-3 w-3"></i> <span class="uppercase tracking-wide">Responded</span>: ${esc(r.responded_at)}</span>` : ''}
+                                    ${r.responder ? `<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"><i data-lucide="user-check" class="h-3 w-3"></i> <span class="uppercase tracking-wide">Responded by</span>: ${esc(r.responder)}</span>` : ''}
                                     <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${r.is_dfr ? 'bg-gray-200 text-gray-600' : (r.is_blind ? 'bg-red-100 text-red-700' : 'bg-sky-100 text-sky-700')}">
                                         <i data-lucide="${r.is_dfr ? 'file-text' : (r.is_blind ? 'eye-off' : 'folder-search')}" class="h-2.5 w-2.5"></i> ${esc(r.request_type)}</span>
                                     ${done}

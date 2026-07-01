@@ -293,6 +293,7 @@ class UserController extends Controller
                 $user->user_level = $request->user_level;
                 $user->work_station = $request->input('work_station');
                 $user->type = $request->user_type; // Use the selected user type
+                $user->user_type = $request->user_type; // keep canonical column in sync for edit prefill
                 $user->work_days_per_week = $request->filled('work_days_per_week')
                     ? (int) $request->work_days_per_week
                     : null;
@@ -547,6 +548,7 @@ class UserController extends Controller
                     ? 'override'
                     : ($structureId ? 'structure' : null);
                 $user->type = $request->user_type;
+                $user->user_type = $request->user_type; // keep canonical column in sync for edit prefill
                 $user->assign_role = isset($request->user_role) ? implode(',', $request->user_role) : null;
                 $user->user_actions = isset($request->user_actions) ? implode(',', $request->user_actions) : null;
                 $user->dfr_permissions = isset($request->dfr_permissions) ? implode(',', $request->dfr_permissions) : null;

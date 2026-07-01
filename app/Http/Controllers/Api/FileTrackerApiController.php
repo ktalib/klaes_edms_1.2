@@ -376,8 +376,30 @@ class FileTrackerApiController extends Controller
                     $processedEntry['receiving_officer_id'] = $receivingOfficerId;
                     $processedEntry['receiving_officer_name'] = $resolvedOfficerName;
                 }
-                
+
+                // Carry the page count recorded at log-out onto every entry it was supplied for.
+                if (isset($logEntry['num_pages']) && $logEntry['num_pages'] !== '' && $logEntry['num_pages'] !== null) {
+                    $processedEntry['num_pages'] = (int) $logEntry['num_pages'];
+                }
+                if (array_key_exists('in_digital_archive', $logEntry)) {
+                    $processedEntry['in_digital_archive'] = filter_var($logEntry['in_digital_archive'], FILTER_VALIDATE_BOOLEAN);
+                }
+
                 $processedLog[] = $processedEntry;
+            }
+
+            // Persist the original page count on the tracker column so it can be
+            // retrieved when the file is later logged back to the registry.
+            $firstEntry = $request->movement_log[0] ?? [];
+            $originalNumPages = $request->input('num_pages', $firstEntry['num_pages'] ?? null);
+            if ($originalNumPages !== null && $originalNumPages !== '') {
+                $tracker->num_pages = (int) $originalNumPages;
+            }
+            if ($request->has('in_digital_archive') || array_key_exists('in_digital_archive', $firstEntry)) {
+                $tracker->in_digital_archive = filter_var(
+                    $request->input('in_digital_archive', $firstEntry['in_digital_archive'] ?? false),
+                    FILTER_VALIDATE_BOOLEAN
+                );
             }
 
             $tracker->movement_log = $processedLog;
@@ -2065,6 +2087,14 @@ class FileTrackerApiController extends Controller
 
         if ($purpose === FileTracker::PURPOSE_APPROVAL) {
             if ($decision === '' || $decision === 'approve') {
+                // Enforce workflow order: the DG cannot approve a file that the
+                // Director GIS has not yet recommended. workflow_step only reaches
+                // 3 after a positive recommendation (a not_recommend/reject resets
+                // it to 1), so a step below 3 means the recommendation is missing.
+                if ($currentStep < 3) {
+                    throw new Exception('Cannot approve: this file must first be recommended by the Director GIS before the DG can approve it.');
+                }
+
                 return [
                     'status' => 'approved',
                     'next_step' => 4,

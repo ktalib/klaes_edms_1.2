@@ -1079,6 +1079,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 actionsCell.className = 'px-4 py-3 text-center whitespace-nowrap';
                 actionsCell.innerHTML = `
                     <div class="inline-flex items-center gap-1">
+                        <button type="button" class="callup-btn rounded-lg p-2 text-rose-600 hover:bg-rose-50" data-file-number="${record.file_number || ''}" data-id="${record.id}" title="Duplicate Call-up">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                        </button>
                         <button type="button" class="edit-btn rounded-lg p-2 text-blue-600 hover:bg-blue-50" data-id="${record.id}" data-record-type="${record.record_type || type}" title="Edit">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                         </button>
@@ -1090,6 +1093,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.appendChild(actionsCell);
 
                 tableBody.appendChild(row);
+            });
+
+            tableBody.querySelectorAll('.callup-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const fn = btn.getAttribute('data-file-number');
+                    const id = btn.getAttribute('data-id');
+                    if (fn) {
+                        window.open(`/duplicate-callup?file_number=${encodeURIComponent(fn)}&duplicate_id=${encodeURIComponent(id || '')}`, '_blank');
+                    }
+                });
             });
 
             tableBody.querySelectorAll('.edit-btn').forEach((btn) => {

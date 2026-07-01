@@ -1,6 +1,7 @@
     <!-- 9.1 DCIV -->
     @if(
-      $hasRole('Generate New FileNo (DCIVFileNo)') || $hasRole('DCIV - Records')
+      $hasRole('Generate New FileNo (DCIVFileNo)') || $hasRole('DCIV - Records')||
+      $hasRole('DCIV - Digital Archive') 
     )
     <div class="py-1 px-3 mb-0.5 border-t border-slate-100">
       <div class="sidebar-module-header flex items-center justify-between py-2 px-3 mb-0.5 cursor-pointer hover:bg-slate-50 rounded-md" data-module="dciv">
@@ -57,8 +58,10 @@
 
 
 
-              <a href="#" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
-              <i data-lucide="file-plus" class="h-3.5 w-3.5 text-blue-400"></i>
+            <!-- Quick Search (scoped to DCIV registry files) -->
+            <a href="{{ route('create-file-tracker.quick-search', ['url' => 'dciv']) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.quick-search') && request('url') === 'dciv' ? 'active' : '' }}">
+              <i data-lucide="file-search" class="h-3.5 w-3.5 text-blue-400"></i>
               <span>Quick Search</span>
             </a>
 

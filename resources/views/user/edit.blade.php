@@ -51,7 +51,7 @@
                 selectedDeptName: '',
                 showAll: false,
                 userTypeId: '',
-                userTypeName: {{ json_encode(old('user_type', $user->user_type ?? $user->type ?? '')) }},
+                userTypeName: {{ json_encode(old('user_type', $user->type ?? $user->user_type ?? '')) }},
                 userLevelName: {{ json_encode(old('user_level', $user->user_level ?? '')) }},
                 selectedStaffTypeCategory: {{ json_encode(old('staff_type_category', $user->staff_type_category)) }},
                 selectedStaffTypeCategoryLabel: '',
@@ -522,6 +522,7 @@
                                             <div class="text-xs text-blue-600 mb-2">User level will be automatically determined</div>
                                             <select name="user_type" id="user_type"
                                                 class="w-full p-2 border border-blue-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500"
+                                                x-init="$el.value = userTypeName"
                                                 @change="userTypeName = $event.target.value; autoSetUserLevel(userTypeName);"
                                                 required>
                                                 <option value="">Select User Type</option>
@@ -529,7 +530,7 @@
                                                     $userTypes = ['Management', 'Operations', 'System', 'User', 'ALL'];
                                                 @endphp
                                                 @foreach($userTypes as $userType)
-                                                    <option value="{{ $userType }}" {{ old('user_type', $user->user_type ?? $user->type) == $userType ? 'selected' : '' }}>{{ $userType }}</option>
+                                                    <option value="{{ $userType }}" {{ old('user_type', $user->type ?? $user->user_type) == $userType ? 'selected' : '' }}>{{ $userType }}</option>
                                                 @endforeach
                                             </select>
                                         </div>

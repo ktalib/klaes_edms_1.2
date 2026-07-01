@@ -359,11 +359,22 @@ class TimelineWeightingService
         // Match JS: ignore date for Right of Occupancy
         $date = ($transType === 'right of occupancy') ? '' : $this->normalizeString($row['transaction_date'] ?? ($row['deeds_date'] ?? ''));
 
-        if (!$party1 && !$party2 && !$date) {
+        // Without reg particulars we need a discriminator that keeps genuinely different
+        // properties apart (e.g. the source plots of a merger can share the same govt
+        // grantor + grantee on a Right of Occupancy and must NOT collapse). prop_id is
+        // that discriminator: same property = same prop_id, so copies across PRA/FH/CofO
+        // dedupe even when their file-number labels differ (MLS vs KANGIS). Fall back to
+        // the file number only when the row has no prop_id.
+        $propId = trim((string) ($row['prop_id'] ?? ''));
+        $discriminator = $propId !== ''
+            ? 'p:' . $propId
+            : $this->normalizeString((string) ($row['file_number'] ?? ''));
+
+        if (!$party1 && !$party2 && !$date && !$discriminator) {
             return null;
         }
 
-        return implode('|', [$transType, $party1, $party2, $date]);
+        return implode('|', [$transType, $party1, $party2, $date, $discriminator]);
     }
 
     protected function calculateRichnessScore(array $item): float

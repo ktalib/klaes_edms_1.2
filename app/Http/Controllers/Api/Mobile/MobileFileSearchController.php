@@ -309,6 +309,7 @@ class MobileFileSearchController extends Controller
                 'created_by'           => $createdBy ?: null,
                 'current_location' => $fr->current_location,
                 'status'           => $fr->status,
+                'not_found_type'   => $fr->not_found_type,
                 'is_ofs'           => (bool) $fr->is_ofs,
                 'ofs_rank'         => $fr->ofs_rank,
                 'feedback_note'    => $fr->feedback_note,
@@ -448,8 +449,10 @@ class MobileFileSearchController extends Controller
         }
 
         $validated = $request->validate([
-            'result' => 'required|in:found,not_found',
-            'note'   => 'nullable|string|max:1000',
+            'result'         => 'required|in:found,not_found',
+            'note'           => 'nullable|string|max:1000',
+            // When marking Not Found, the SCB Monitor must say which kind it is.
+            'not_found_type' => 'required_if:result,not_found|nullable|in:missing,pending',
         ]);
 
         $fr = FileSearchRequest::find($id);
@@ -458,8 +461,13 @@ class MobileFileSearchController extends Controller
         }
 
         $found = $validated['result'] === 'found';
+        // MISSING / PENDING only applies to a Not Found response; clear it on Found.
+        $notFoundType = (!$found && !empty($validated['not_found_type']))
+            ? strtoupper($validated['not_found_type'])
+            : null;
         $fr->forceFill([
             'status'              => $found ? FileSearchRequest::STATUS_FOUND : FileSearchRequest::STATUS_NOT_FOUND,
+            'not_found_type'      => $notFoundType,
             'feedback_note'       => $validated['note'] ?? null,
             'assigned_monitor_id' => $fr->assigned_monitor_id ?: $request->user()->id,
             'responded_by'        => $request->user()->id,
@@ -487,8 +495,8 @@ class MobileFileSearchController extends Controller
             $this->notificationService->create(
                 $fr->requester_user_id,
                 'file_search_request',
-                "File Request {$fr->request_no}: " . ($found ? 'Found' : 'Not Found'),
-                "File {$fr->file_number} was marked " . ($found ? 'FOUND' : 'NOT FOUND') . ' by the SCB Monitor.'
+                "File Request {$fr->request_no}: " . ($found ? 'Found' : 'Not Found' . ($notFoundType ? " ({$notFoundType})" : '')),
+                "File {$fr->file_number} was marked " . ($found ? 'FOUND' : 'NOT FOUND' . ($notFoundType ? " — {$notFoundType}" : '')) . ' by the SCB Monitor.'
                     . (!empty($validated['note']) ? " Note: {$validated['note']}" : ''),
                 ['request_id' => $fr->id, 'request_no' => $fr->request_no, 'file_number' => $fr->file_number],
                 ['module' => 'file_search_request']
@@ -499,6 +507,7 @@ class MobileFileSearchController extends Controller
             'success' => true,
             'data' => [
                 'status'         => $fr->status,
+                'not_found_type' => $notFoundType,
                 'outcome_status' => $outcomeStatus,
                 'next_action'    => $found ? 'Front Desk can now Log the file' : 'Refer to Original Registry',
                 'slip_variant'   => $slipVariant,
@@ -534,10 +543,11 @@ class MobileFileSearchController extends Controller
 
         // Put the request back in the open queue (clear the response fields).
         $fr->forceFill([
-            'status'        => FileSearchRequest::STATUS_PENDING,
-            'feedback_note' => null,
-            'responded_by'  => null,
-            'responded_at'  => null,
+            'status'         => FileSearchRequest::STATUS_PENDING,
+            'not_found_type' => null,
+            'feedback_note'  => null,
+            'responded_by'   => null,
+            'responded_at'   => null,
         ])->save();
 
         // Undo the SCB outcome stamped on the matching file_indexings row so the Front

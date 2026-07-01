@@ -3703,6 +3703,11 @@
                 cofoLandUseInput.value = fields.land_use;
             }
 
+            const cofoStatusSelect = document.getElementById('cofo-status');
+            if (cofoStatusSelect) {
+                cofoStatusSelect.value = fields.status || 'Active';
+            }
+
             const periodInput = document.getElementById('cofo-period');
             if (periodInput && fields.period) {
                 periodInput.value = fields.period;
@@ -5430,6 +5435,7 @@
             cofo_land_use: document.getElementById('cofo-land-use')?.value || '',
             cofo_period: document.getElementById('cofo-period')?.value || '',
             cofo_period_unit: document.getElementById('cofo-period-unit')?.value || 'Years',
+            cofo_status: document.getElementById('cofo-status')?.value || 'Active',
             has_rofo: document.getElementById('has-rofo-toggle')?.checked || false,
             rofo_instrument_type: document.getElementById('rofo-instrument-type')?.value || '',
             rofo_date: document.getElementById('rofo-date')?.value || '',
@@ -5438,6 +5444,7 @@
             rofo_land_use: document.getElementById('rofo-land-use')?.value || '',
             rofo_grantor: document.getElementById('rofo-grantor')?.value || '',
             rofo_grantee: document.getElementById('rofo-grantee')?.value || '',
+            rofo_status: document.getElementById('rofo-status')?.value || 'Active',
             main_application_id: document.getElementById('application_id')?.value || null,
             subapplication_id: document.getElementById('sub_application_id')?.value || null,
             source_file_id: resolvedSourceFileId,
