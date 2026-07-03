@@ -260,6 +260,14 @@ class LegalSearchService
             $all = array_merge($all, $relatedRecertRows);
         }
 
+        // Surface predecessor decommission events (Change of Purpose / Subdivision / Merger /
+        // Extension) as timeline rows when viewing the successor file, so the transition that
+        // produced this file is visible instead of only the inherited history.
+        $decomLineageRows = $this->fetchDecommissionLineageRows($conn, $fileNo, $all);
+        if (!empty($decomLineageRows)) {
+            $all = array_merge($all, $decomLineageRows);
+        }
+
         // If searched by a subdivided unit (standard or Sectional Titling), only keep its own records and the mother's records,
         // and explicitly exclude other unit records.
         $motherFileNo = null;
@@ -739,6 +747,35 @@ class LegalSearchService
             $out = array_values(array_diff_key($out, $drop));
         }
 
+        // Canonicalise zero-padded numbers that had no clean reciprocal sibling to borrow from
+        // (e.g. a lone "MLKN 02455" row): when the stripped form is a known file number anywhere,
+        // display that instead — which also lets the title lookups below resolve.
+        foreach ($out as $i => $r) {
+            $current = trim((string) ($r['fileno'] ?? ''));
+            if ($current === '') {
+                continue;
+            }
+            $stripped = preg_replace('/(?<=\s|-)0+(\d)/', '$1', $current);
+            if (strcasecmp($stripped, $current) === 0) {
+                continue;
+            }
+            try {
+                $known = $conn->table('file_indexings')->whereNull('deleted_at')->where('file_number', $stripped)->exists()
+                    || $conn->table('fileNumber')->where(function ($q) use ($stripped) {
+                            $q->where('mlsfNo', $stripped)->orWhere('kangisFileNo', $stripped);
+                        })->exists()
+                    || $conn->table('deprecated_records')->where('file_number', $stripped)->exists()
+                    || $conn->table('decommissioned_files')->where('file_no', $stripped)->exists();
+            } catch (\Throwable $e) {
+                $known = false;
+            }
+            if ($known) {
+                $out[$i]['fileno'] = $stripped;
+                $out[$i]['file_number'] = $stripped;
+                $out[$i]['mlsFNo'] = $stripped;
+            }
+        }
+
         // Fallback for any rows still missing party_1 (related file has neither a live indexing
         // row nor an rfn.file_title): pull the title/holder from the decommission archive.
         $missing = [];
@@ -810,6 +847,131 @@ class LegalSearchService
         }
 
         return $out;
+    }
+
+    /**
+     * Build synthetic timeline rows for the decommission events that PRODUCED the searched
+     * file: every decommissioned_files row whose successor_file_no names the searched file
+     * (exact member of the possibly-CSV successor list). E.g. viewing CON-COM-2026-430 shows
+     * "CON-AG-2026-108 — Change of Purpose to CON-COM-2026-430" with the decommission date.
+     * Files already displayed as Related Fileno rows (recertification links) are skipped to
+     * avoid duplicates. Best-effort: returns [] on any failure.
+     */
+    private function fetchDecommissionLineageRows($conn, string $fileNo, array $existingRows): array
+    {
+        $fileNo = trim($fileNo);
+        if ($fileNo === '') {
+            return [];
+        }
+
+        try {
+            $schema = Schema::connection($conn->getName());
+            if (!$schema->hasTable('decommissioned_files')
+                || !$schema->hasColumn('decommissioned_files', 'successor_file_no')) {
+                return [];
+            }
+
+            $candidates = $conn->table('decommissioned_files')
+                ->where('successor_file_no', 'like', '%' . $fileNo . '%')
+                ->get(['id', 'file_no', 'file_name', 'decommissioning_date', 'decommissioning_reason', 'successor_file_no']);
+
+            if ($candidates->isEmpty()) {
+                return [];
+            }
+
+            // Skip predecessors already shown as Related Fileno rows (e.g. recert links).
+            $shownRelated = [];
+            foreach ($existingRows as $r) {
+                if (($r['source_table'] ?? '') === 'Related Fileno') {
+                    $v = strtoupper(trim((string) ($r['fileno'] ?? '')));
+                    if ($v !== '') {
+                        $shownRelated[$v] = true;
+                    }
+                }
+            }
+
+            $needle = strtoupper($fileNo);
+            $out = [];
+            foreach ($candidates as $d) {
+                // successor_file_no may be a CSV list (batch subdivision) — require an exact
+                // member match so LIKE cannot over-match similar numbers.
+                $successors = array_map(fn($v) => strtoupper(trim($v)), explode(',', (string) $d->successor_file_no));
+                if (!in_array($needle, $successors, true)) {
+                    continue;
+                }
+
+                $oldNo = trim((string) $d->file_no);
+                if ($oldNo === '' || isset($shownRelated[strtoupper($oldNo)])) {
+                    continue;
+                }
+
+                // Short transaction label derived from the decommission reason.
+                $reason = trim((string) ($d->decommissioning_reason ?? ''));
+                $label = 'Decommissioned';
+                foreach (['Change of Purpose', 'Plot Subdivision', 'Plot Merger', 'Plot Separation', 'Plot Extension', 'KANGIS Recertification'] as $k) {
+                    if ($reason !== '' && stripos($reason, $k) !== false) {
+                        $label = $k;
+                        break;
+                    }
+                }
+
+                $sortDate = null;
+                $displayDate = '-';
+                if ($d->decommissioning_date) {
+                    try {
+                        $c = Carbon::parse($d->decommissioning_date);
+                        $sortDate = $c->toDateString();
+                        $displayDate = $c->format('M j, Y');
+                    } catch (\Exception $e) { /* ignore */ }
+                }
+
+                $out[] = [
+                    'id'                => (int) $d->id,
+                    'file_number'       => $oldNo,
+                    'mlsFNo'            => $oldNo,
+                    'fileno'            => $oldNo,
+                    'kangisFileNo'      => null,
+                    'NewKANGISFileno'   => null,
+                    'transaction_type'  => $label,
+                    'transaction_date'  => $displayDate,
+                    'sort_date'         => $sortDate,
+                    'party_1'           => $d->file_name ?: '-',
+                    'party_2'           => '-',
+                    'party_3'           => '-',
+                    'party_4'           => '-',
+                    'land_use'          => '-',
+                    'location'          => '-',
+                    'lgsaOrCity'        => '-',
+                    'districtName'      => '-',
+                    'registration'      => '-',
+                    'regNo'             => '-',
+                    'serial_no'         => '-',
+                    'page_no'           => '-',
+                    'volume_no'         => '-',
+                    'size'              => '-',
+                    'caveat'            => '-',
+                    'caveat_id'         => null,
+                    'caveated_comment'  => null,
+                    'is_caveated'       => 0,
+                    'plot_no'           => '-',
+                    'comments'          => $reason !== '' ? $reason : '-',
+                    'cofo_comment'      => null,
+                    'prop_id'           => null,
+                    'parent_prop_id'    => null,
+                    'deeds_date'        => null,
+                    'deeds_time'        => null,
+                    'reg_date'          => null,
+                    'reg_time'          => null,
+                    'tp_no'             => null,
+                    'source_table'      => 'Related Fileno',
+                    'parent_file_number' => $fileNo,
+                ];
+            }
+
+            return $out;
+        } catch (\Throwable $e) {
+            return [];
+        }
     }
 
     private function emptyResult(): array
