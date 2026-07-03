@@ -1317,6 +1317,11 @@ HTML;
             ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
+            // Exclude decommissioned/superseded files so the archive fallback does not
+            // surface a file that has been replaced by a land transaction.
+            ->where(function ($q) {
+                $q->whereNull('is_decommissioned')->orWhere('is_decommissioned', 0);
+            })
             ->orderByDesc('id')
             ->first();
 
@@ -1829,6 +1834,23 @@ HTML;
             ->with(['responder:id,first_name,last_name', 'requester:id,first_name,last_name'])
             ->where($dateScope)
             ->where($registryScope);
+
+        // Free-text search (file no, title, request no, requester, office). Applied
+        // server-side so the panel can find matches beyond the 100 most-recent rows
+        // returned below — client-side filtering alone would miss older requests.
+        $search = trim((string) $request->get('q'));
+        if ($search !== '') {
+            $query->where(function ($w) use ($search) {
+                $like = '%' . $search . '%';
+                $w->where('file_number', 'like', $like)
+                  ->orWhere('file_title', 'like', $like)
+                  ->orWhere('request_no', 'like', $like)
+                  ->orWhere('receiving_officer', 'like', $like)
+                  ->orWhere('requester_office', 'like', $like)
+                  ->orWhere('requester_department', 'like', $like)
+                  ->orWhere('current_location', 'like', $like);
+            });
+        }
 
         if ($statusFilter === 'PENDING') {
             $query->whereIn('status', [FileSearchRequest::STATUS_PENDING, FileSearchRequest::STATUS_SEARCHING]);

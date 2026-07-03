@@ -10,6 +10,7 @@ class LegalSearchService
 {
     private const ARRANGEMENT_TABLE = 'legal_search_timeline_arrangements';
     private array $softDeleteColumnCache = [];
+    private ?array $decommissionedFileNumbers = null;
 
     /** 
      * Main search dispatcher.
@@ -188,15 +189,27 @@ class LegalSearchService
                 }
             }
 
+            // The searched file's explicit lineage set (SME siblings derived from related_fileno).
+            // These are legitimately linked files (e.g. a merger's source files) and must survive
+            // the contamination guard even when their prop_id was never linked/remapped to the
+            // searched file — as happens with manual-linkage backfilled mergers/subdivisions.
+            $smeAllowed = [];
+            foreach (($allowedSmeFileNos ?? []) as $sme) {
+                $s = trim((string) $sme);
+                if ($s !== '') {
+                    $smeAllowed[strtoupper($s)] = true;
+                }
+            }
+
             // Only filter when the searched file resolves to a definite prop_id; otherwise leave
             // file-number / orphan-only results untouched.
             if (!empty($searchedPropIds)) {
-                $all = array_values(array_filter($all, function ($row) use ($searchedPropIds, $matchesSearchedFile, $isDistinctFile, $fileNo) {
+                $all = array_values(array_filter($all, function ($row) use ($searchedPropIds, $matchesSearchedFile, $isDistinctFile, $fileNo, $smeAllowed) {
                     // Always keep synthetic recertification rows (contextual markers).
                     if (($row['source_table'] ?? '') === 'Related Fileno') {
                         return true;
                     }
-                    
+
                     // Get the row's file number
                     $rowFileNo = '';
                     foreach (['fileno', 'file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno'] as $col) {
@@ -206,7 +219,14 @@ class LegalSearchService
                             break;
                         }
                     }
-                    
+
+                    // Keep rows belonging to the searched file's explicit lineage set (related_fileno
+                    // siblings), regardless of prop_id — otherwise a merger's source files whose
+                    // prop_id was never remapped are wrongly dropped as "cross-property".
+                    if ($rowFileNo !== '' && isset($smeAllowed[strtoupper($rowFileNo)])) {
+                        return true;
+                    }
+
                     $pid = trim((string) ($row['prop_id'] ?? ''));
                     if ($pid !== '' && isset($searchedPropIds[$pid])) {
                         return true;
@@ -266,6 +286,31 @@ class LegalSearchService
             $all = array_values($all);
         }
 
+        // When the DIRECTLY-searched file has itself been genuinely decommissioned/superseded by a
+        // land transaction (Subdivision, Merger, Separation, Change of Purpose, File Extension), do
+        // not present it as an active file: drop the rows that carry the searched (old) number.
+        // Rows pulled in via prop_id / parent_prop_id expansion (the SUCCESSOR's history) are kept,
+        // which both preserves lineage and effectively soft-redirects to the successor's records.
+        // false_decommissioning = 1 rows are Title-Status flags (not real decommissions) and are
+        // excluded from this set. Synthetic 'Related Fileno' lineage markers are always preserved.
+        if ($fileNo !== '') {
+            $decommissioned = $this->getDecommissionedFileNumbers($conn);
+            if (isset($decommissioned[strtoupper($fileNo)])) {
+                $all = array_values(array_filter($all, function ($row) use ($fileNo) {
+                    if (($row['source_table'] ?? '') === 'Related Fileno') {
+                        return true;
+                    }
+                    foreach (['fileno', 'file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno'] as $col) {
+                        $v = trim((string) ($row[$col] ?? ''));
+                        if ($v !== '' && strcasecmp($v, $fileNo) === 0) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }));
+            }
+        }
+
         usort($all, function ($a, $b) {
             $dateA = $a['sort_date'] ?? '9999-12-31';
             $dateB = $b['sort_date'] ?? '9999-12-31';
@@ -291,28 +336,14 @@ class LegalSearchService
                     ->where(function ($q) use ($primaryCandidates) {
                         foreach ($primaryCandidates as $candidate) {
                             $q->orWhere('file_number', $candidate)
+                                ->orWhere('temp_file_no', $candidate)
                                 ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
                         }
                     })
                     ->select('file_title', 'district', 'lga', 'land_use_type', 'plot_number', 'tp_no', 'related_fileno', 'file_number', 'location', 'has_temp_file', 'temp_file_no')
                     ->get();
 
-                $fileIndexingData = null;
-                
-                // Priority 1: Exact match on file_number
-                foreach ($fileIndexingDataList as $row) {
-                    foreach ($primaryCandidates as $candidate) {
-                        if (strcasecmp((string)$row->file_number, (string)$candidate) === 0) {
-                            $fileIndexingData = $row;
-                            break 2;
-                        }
-                    }
-                }
-                
-                // Priority 2: Fallback to the first match (e.g. matched via related_fileno)
-                if (!$fileIndexingData && $fileIndexingDataList->isNotEmpty()) {
-                    $fileIndexingData = $fileIndexingDataList->first();
-                }
+                $fileIndexingData = $this->pickBestIndexingRow($fileIndexingDataList, $primaryCandidates);
             }
         }
 
@@ -360,13 +391,38 @@ class LegalSearchService
         // of master_dciv_links) is marked Under Investigation.
         $investigation = $this->resolveDcivInvestigation([$fileNo], $all);
 
+        // File Title: prefer the indexed title, but fall back to the commissioned file's
+        // owner name in fileNumber.FileName. Some commissioned files were never indexed
+        // (no file_indexings row), so the title otherwise shows blank even though the name
+        // exists on the fileNumber record and in the transactions.
+        $resolvedFileTitle = trim((string) ($fileIndexingData->file_title ?? ''));
+        if ($resolvedFileTitle === '') {
+            $baseNo = trim((string) preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', (string) $fileNo));
+            $titleCandidates = array_values(array_unique(array_filter([
+                trim((string) $fileNo),
+                $baseNo,
+                $baseNo !== '' ? $baseNo . '(T)' : '', // record may be stored under the "(T)" number
+                trim((string) ($fileIndexingData->file_number ?? '')),
+            ], fn($v) => $v !== '')));
+            if (!empty($titleCandidates)) {
+                $fnName = $conn->table('fileNumber')
+                    ->whereIn('mlsfNo', $titleCandidates)
+                    ->whereNotNull('FileName')
+                    ->where('FileName', '<>', '')
+                    ->value('FileName');
+                if ($fnName) {
+                    $resolvedFileTitle = trim((string) $fnName);
+                }
+            }
+        }
+
         return [
             'transactions' => $all,
             'under_investigation' => $investigation !== null,
             'investigation_note' => $investigation['note'] ?? null,
             'investigation_reason' => $investigation['reason'] ?? null,
             'investigation_dciv_file_number' => $investigation['dciv_file_number'] ?? null,
-            'file_title' => $fileIndexingData->file_title ?? null,
+            'file_title' => $resolvedFileTitle !== '' ? $resolvedFileTitle : null,
             'file_location' => $fileIndexingData->location ?? null,
             'file_district' => $fileIndexingData->district ?? null,
             'file_lga' => $fileIndexingData->lga ?? null,
@@ -386,7 +442,117 @@ class LegalSearchService
                 $fileIndexingData->file_number ?? $fileNo,
                 $fileNo
             ),
+            'lineage' => $this->resolveFileLineage($conn, $fileNo),
         ];
+    }
+
+    /**
+     * Resolve the previous/current/successor lineage for a searched file so the UI can display
+     * the complete file history chain instead of treating each commissioned file as unrelated.
+     *
+     *  - is_superseded / successor_file_no: set when the searched file was itself decommissioned
+     *    by a land transaction (from decommissioned_files.successor_file_no).
+     *  - previous_file_nos: the file(s) that came before this one — the parents recorded on the
+     *    file's own file_indexings.related_fileno, plus any files superseded INTO this file.
+     */
+    private function resolveFileLineage($conn, string $fileNo): array
+    {
+        $lineage = [
+            'is_superseded'       => false,
+            'successor_file_no'   => null,
+            'decommission_reason' => null,
+            'previous_file_nos'   => [],
+        ];
+
+        if ($fileNo === '') {
+            return $lineage;
+        }
+
+        $needle = strtoupper(trim($fileNo));
+        $prev = [];
+
+        try {
+            $schema = Schema::connection($conn->getName());
+            if ($schema->hasTable('decommissioned_files')) {
+                $hasSuccessor = $schema->hasColumn('decommissioned_files', 'successor_file_no');
+
+                // Was the searched file itself superseded?
+                $dq = $conn->table('decommissioned_files')
+                    ->where(function ($q) use ($needle) {
+                        $q->whereRaw('UPPER(LTRIM(RTRIM(file_no))) = ?', [$needle])
+                            ->orWhereRaw('UPPER(LTRIM(RTRIM(mls_file_no))) = ?', [$needle]);
+                    });
+                if ($schema->hasColumn('decommissioned_files', 'false_decommissioning')) {
+                    $dq->where(function ($q) {
+                        $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                    });
+                }
+                $decRow = $dq->orderByDesc('id')->first();
+                if ($decRow) {
+                    $lineage['is_superseded'] = true;
+                    $lineage['decommission_reason'] = $decRow->decommissioning_reason ?? null;
+                    if ($hasSuccessor) {
+                        $lineage['successor_file_no'] = $decRow->successor_file_no ?: null;
+                    }
+                }
+
+                // Files that were superseded INTO the searched file (its predecessors).
+                if ($hasSuccessor) {
+                    $preds = $conn->table('decommissioned_files')
+                        ->whereRaw('UPPER(LTRIM(RTRIM(successor_file_no))) = ?', [$needle])
+                        ->pluck('file_no')->all();
+                    foreach ($preds as $p) {
+                        $p = trim((string) $p);
+                        if ($p !== '') {
+                            $prev[strtoupper($p)] = $p;
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Lineage is best-effort — never break search.
+        }
+
+        // Parents recorded on the file's own indexing row.
+        try {
+            $rel = $conn->table('file_indexings')
+                ->whereNull('deleted_at')
+                ->where('file_number', $fileNo)
+                ->value('related_fileno');
+            foreach ($this->parseRelatedFileno($rel) as $p) {
+                if ($p !== '' && strcasecmp($p, $fileNo) !== 0) {
+                    $prev[strtoupper($p)] = $p;
+                }
+            }
+        } catch (\Throwable $e) {
+        }
+
+        $lineage['previous_file_nos'] = array_values($prev);
+
+        return $lineage;
+    }
+
+    /**
+     * Decode a related_fileno value that may be a JSON array, a CSV string, or a bare file number.
+     */
+    private function parseRelatedFileno($raw): array
+    {
+        $raw = trim((string) $raw);
+        if ($raw === '') {
+            return [];
+        }
+
+        if ($raw[0] === '[') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                return array_values(array_filter(
+                    array_map(fn($v) => trim((string) $v), $decoded),
+                    fn($v) => $v !== ''
+                ));
+            }
+        }
+
+        return array_values(array_filter(array_map('trim', explode(',', $raw)), fn($v) => $v !== ''));
     }
 
     /**
@@ -459,8 +625,14 @@ class LegalSearchService
                 'transaction_type'  => $row->transaction_type ?: 'Recertification',
                 'transaction_date'  => $displayDate,
                 'sort_date'         => $sortDate,
+                // Prefer the live file_indexings title/holder; fall back to the title stored on
+                // the related_file_number row itself (rfn.file_title) — needed when the related
+                // file was decommissioned by a merger/subdivision and hard-deleted from
+                // file_indexings, so the join yields nothing. A deprecated_records fallback for
+                // any remaining blanks is applied after the loop.
                 'party_1'           => $row->related_file_title
                                         ?: $row->related_current_holder
+                                        ?: ($row->file_title ?? null)
                                         ?: '-',
                 'party_2'           => $row->party_2 ?: '-',
                 'party_3'           => '-',
@@ -494,6 +666,36 @@ class LegalSearchService
                 // that LISTED this related fileno).
                 'parent_file_number' => $row->file_number,
             ];
+        }
+
+        // Fallback for any rows still missing party_1 (related file has neither a live indexing
+        // row nor an rfn.file_title): pull the title/holder from the decommission archive.
+        $missing = [];
+        foreach ($out as $r) {
+            if (($r['party_1'] ?? '-') === '-' && !empty($r['fileno'])) {
+                $missing[strtoupper(trim((string) $r['fileno']))] = trim((string) $r['fileno']);
+            }
+        }
+        if (!empty($missing) && Schema::connection($conn->getName())->hasTable('deprecated_records')) {
+            $drRows = $conn->table('deprecated_records')
+                ->whereIn('file_number', array_values($missing))
+                ->orderBy('id')
+                ->get(['file_number', 'file_title', 'current_holder', 'original_holder']);
+            $map = [];
+            foreach ($drRows as $d) {
+                $k = strtoupper(trim((string) $d->file_number));
+                if (!isset($map[$k])) {
+                    $map[$k] = $d->file_title ?: ($d->current_holder ?: ($d->original_holder ?: null));
+                }
+            }
+            foreach ($out as $i => $r) {
+                if (($r['party_1'] ?? '-') === '-') {
+                    $k = strtoupper(trim((string) ($r['fileno'] ?? '')));
+                    if (!empty($map[$k])) {
+                        $out[$i]['party_1'] = $map[$k];
+                    }
+                }
+            }
         }
 
         return $out;
@@ -569,6 +771,76 @@ class LegalSearchService
     }
 
     /**
+     * Build the "(T)" / base / base(T) variants of a file number for lookups.
+     */
+    private function fileNumberVariants(?string ...$numbers): array
+    {
+        $variants = [];
+        foreach ($numbers as $n) {
+            $n = trim((string) $n);
+            if ($n === '') {
+                continue;
+            }
+            $variants[$n] = $n;
+            $base = trim((string) preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $n));
+            if ($base !== '') {
+                $variants[$base] = $base;
+                $variants[$base . '(T)'] = $base . '(T)';
+            }
+        }
+        return array_values($variants);
+    }
+
+    /**
+     * Whether a file number (or its "(T)"/base variant) exists as an indexed or commissioned
+     * file. Used to decide whether a transaction-less search still warrants a print report —
+     * a commissioned file always has at least its commissioning event.
+     */
+    private function reportFileExists(string $fileNo): bool
+    {
+        $variants = $this->fileNumberVariants($fileNo);
+        if (empty($variants)) {
+            return false;
+        }
+
+        $conn = DB::connection('sqlsrv');
+
+        $inIndexing = $conn->table('file_indexings')
+            ->whereNull('deleted_at')
+            ->where(function ($q) use ($variants) {
+                foreach ($variants as $v) {
+                    $q->orWhere('file_number', $v)->orWhere('temp_file_no', $v);
+                }
+            })
+            ->exists();
+        if ($inIndexing) {
+            return true;
+        }
+
+        return $conn->table('fileNumber')->whereIn('mlsfNo', $variants)->exists();
+    }
+
+    /**
+     * Registered owner name from fileNumber.FileName for a file number and its variants.
+     * Used as a File Title fallback for commissioned-but-unindexed files.
+     */
+    private function resolveFileNameFallback(?string $fileNumber, ?string $fileNo): ?string
+    {
+        $variants = $this->fileNumberVariants($fileNumber, $fileNo);
+        if (empty($variants)) {
+            return null;
+        }
+
+        $name = DB::connection('sqlsrv')->table('fileNumber')
+            ->whereIn('mlsfNo', $variants)
+            ->whereNotNull('FileName')
+            ->where('FileName', '<>', '')
+            ->value('FileName');
+
+        return $name ? trim((string) $name) : null;
+    }
+
+    /**
      * Resolve the temporary "(T)" file number tied to the searched file.
      *
      * A temporary file (e.g. "RES-1991-545(T)") is registered against its parent
@@ -576,6 +848,44 @@ class LegalSearchService
      * (has_temp_file / temp_file_no) or exist as its own record in file_indexings
      * or fileNumber. Returns the "(T)" number to show as a second line, or null.
      */
+    /**
+     * Choose the best-matching file_indexings row for a set of candidate file
+     * numbers. A file can be indexed under several sibling rows (e.g. a base
+     * number and its temporary "(T)" number, or a title-less shell alongside the
+     * titled record). Exact matches on file_number/temp_file_no win over loose
+     * related_fileno matches, and — crucially — a row that actually carries a
+     * file_title is preferred over an otherwise-equal title-less sibling so the
+     * File Name (Party 2 on the File Commissioning row) resolves correctly.
+     */
+    private function pickBestIndexingRow($rows, array $candidates)
+    {
+        if ($rows === null || $rows->isEmpty()) {
+            return null;
+        }
+
+        $hasTitle = fn($row) => trim((string) ($row->file_title ?? '')) !== '';
+        $isExact = function ($row) use ($candidates) {
+            foreach ($candidates as $candidate) {
+                if (strcasecmp((string) ($row->file_number ?? ''), (string) $candidate) === 0
+                    || strcasecmp((string) ($row->temp_file_no ?? ''), (string) $candidate) === 0) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        $exact = $rows->filter($isExact)->values();
+
+        // 1. Exact match that also carries a title.
+        // 2. Any exact match.
+        // 3. Loose match (related_fileno) that carries a title.
+        // 4. First row of any kind.
+        return $exact->first($hasTitle)
+            ?? $exact->first()
+            ?? $rows->first($hasTitle)
+            ?? $rows->first();
+    }
+
     private function resolveTempFileNumber($conn, string $fileNo, $fileIndexingData): ?string
     {
         // 1. Prefer the temp_file_no recorded on the matched parent indexing row.
@@ -1707,6 +2017,55 @@ class LegalSearchService
         return $query->first();
     }
 
+    /**
+     * Set of genuinely decommissioned file numbers (normalised UPPER/trimmed), used to hide
+     * superseded originals from search results. Rows flagged false_decommissioning = 1 are
+     * Title-Status markers, not real decommissions, so they are excluded from this set.
+     * Fails open (returns []) if the audit table is unavailable — search must never break.
+     */
+    private function getDecommissionedFileNumbers($conn): array
+    {
+        if ($this->decommissionedFileNumbers !== null) {
+            return $this->decommissionedFileNumbers;
+        }
+
+        $this->decommissionedFileNumbers = [];
+
+        try {
+            $schema = Schema::connection($conn->getName());
+            if (!$schema->hasTable('decommissioned_files')) {
+                return $this->decommissionedFileNumbers;
+            }
+
+            $query = $conn->table('decommissioned_files');
+
+            // Only exclude REAL decommissions. If the column is absent (older schema),
+            // treat every row as a real decommission.
+            if ($schema->hasColumn('decommissioned_files', 'false_decommissioning')) {
+                $query->where(function ($q) {
+                    $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                });
+            }
+
+            $rows = $query->get(['file_no', 'mls_file_no', 'kangis_file_no', 'new_kangis_file_no']);
+
+            $set = [];
+            foreach ($rows as $r) {
+                foreach (['file_no', 'mls_file_no', 'kangis_file_no', 'new_kangis_file_no'] as $col) {
+                    $v = trim((string) ($r->$col ?? ''));
+                    if ($v !== '') {
+                        $set[strtoupper($v)] = true;
+                    }
+                }
+            }
+            $this->decommissionedFileNumbers = $set;
+        } catch (\Throwable $e) {
+            $this->decommissionedFileNumbers = [];
+        }
+
+        return $this->decommissionedFileNumbers;
+    }
+
     private function applySoftDeleteFilter($query, string $tableName): void
     {
         if ($this->tableHasIsDeletedColumn($tableName)) {
@@ -2414,7 +2773,12 @@ class LegalSearchService
         $transactions = array_values($transactions);
 
         if (empty($transactions)) {
-            return ['status' => 404, 'payload' => ['success' => false, 'message' => 'No records found']];
+            // No transactions, but a commissioned/indexed file still has a commissioning event
+            // (and, for a "(T)", a temporary-file record). Only bail out when the file does not
+            // exist at all; otherwise fall through and render the synthetic commissioning rows.
+            if (!$this->reportFileExists($fileNo)) {
+                return ['status' => 404, 'payload' => ['success' => false, 'message' => 'No records found']];
+            }
         }
 
         if ($timelineOrderRaw !== '') {
@@ -2440,7 +2804,7 @@ class LegalSearchService
             $transactions = array_values($transactions);
         }
 
-        $first = $transactions[0];
+        $first = $transactions[0] ?? []; // may be empty when the file has no transactions
 
         $tc = fn($v) => $v && $v !== '-' ? mb_convert_case(mb_strtolower($v), MB_CASE_TITLE, 'UTF-8') : '-';
 
@@ -2477,7 +2841,7 @@ class LegalSearchService
             return $parts[0];
         };
 
-        $fileNumber = $searchedFileNo ?: ($first['fileno'] ?: ($first['file_number'] ?: ($first['mlsFNo'] ?: '-')));
+        $fileNumber = $searchedFileNo ?: (($first['fileno'] ?? null) ?: (($first['file_number'] ?? null) ?: (($first['mlsFNo'] ?? null) ?: '-')));
         $kangisNumber = $first['kangisFileNo'] ?? null;
         if ($kangisNumber === '-')
             $kangisNumber = null;
@@ -2494,26 +2858,14 @@ class LegalSearchService
                 ->where(function ($qq) use ($fileNumberCandidates) {
                     foreach ($fileNumberCandidates as $candidate) {
                         $qq->orWhere('file_number', $candidate)
+                            ->orWhere('temp_file_no', $candidate)
                             ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
                     }
                 })
                 ->select('file_title', 'plot_number', 'tp_no', 'land_use_type', 'related_fileno', 'file_number', 'has_temp_file', 'temp_file_no')
                 ->get();
 
-            $fi = null;
-            // Priority 1: Exact match on file_number
-            foreach ($fiList as $row) {
-                foreach ($fileNumberCandidates as $candidate) {
-                    if (strcasecmp((string)$row->file_number, (string)$candidate) === 0) {
-                        $fi = $row;
-                        break 2;
-                    }
-                }
-            }
-            // Priority 2: Fallback to first match
-            if (!$fi && $fiList->isNotEmpty()) {
-                $fi = $fiList->first();
-            }
+            $fi = $this->pickBestIndexingRow($fiList, $fileNumberCandidates);
             if ($fi) {
                 if ($fi->file_title)
                     $fileTitle = $tc($fi->file_title);
@@ -2541,7 +2893,16 @@ class LegalSearchService
             }
         }
         if ($fileTitle === '-') {
-            $fileTitle = $tc($first['party_2'] ?: ($first['party_1'] ?: '-'));
+            // Prefer the registered owner on the fileNumber record (matches the on-screen
+            // search() resolution) before the transaction-party heuristic. Needed for
+            // commissioned-but-unindexed files whose name lives only in fileNumber.FileName.
+            $fnName = $this->resolveFileNameFallback($fileNumber, $fileNo);
+            if ($fnName !== null && $fnName !== '') {
+                $fileTitle = $tc($fnName);
+            }
+        }
+        if ($fileTitle === '-') {
+            $fileTitle = $tc(($first['party_2'] ?? null) ?: (($first['party_1'] ?? null) ?: '-'));
         }
         $district = ($first['districtName'] ?? null) ?: null;
         $lga = ($first['lgsaOrCity'] ?? null) ?: null;
@@ -2549,8 +2910,8 @@ class LegalSearchService
             $district = null;
         if ($lga === '-')
             $lga = null;
-        $districtLga = $tc(implode(', ', array_filter([$district, $lga])) ?: ($first['location'] ?: '-'));
-        $plotNo = $fiPlotNo ?: ($first['plot_no'] ?: '-');
+        $districtLga = $tc(implode(', ', array_filter([$district, $lga])) ?: (($first['location'] ?? null) ?: '-'));
+        $plotNo = $fiPlotNo ?: (($first['plot_no'] ?? null) ?: '-');
 
         $size = '-';
         $bestSizeScore = -1;
@@ -2583,7 +2944,7 @@ class LegalSearchService
             }
         }
 
-        $landUse = $tc($fiLandUse ?: ($first['land_use'] ?: '-'));
+        $landUse = $tc($fiLandUse ?: (($first['land_use'] ?? null) ?: '-'));
 
         $bestLocation = '-';
         foreach ($transactions as $t) {
@@ -2594,7 +2955,7 @@ class LegalSearchService
         }
         $plotDescription = $tc($bestLocation);
 
-        $tpno = $fiTpNo ?: ($first['tp_no'] ?: '-');
+        $tpno = $fiTpNo ?: (($first['tp_no'] ?? null) ?: '-');
 
         $rows = [];
         foreach ($transactions as $idx => $t) {
@@ -2682,8 +3043,19 @@ class LegalSearchService
         }
 
         // ── "Temporary File" record — printed directly below File Commissioning ──
-        // Only present when the searched file has a temporary "(T)" sibling.
+        // Present when the searched file has a temporary "(T)" sibling, OR when the searched
+        // file is itself the temporary "(T)" number. In the latter case resolveTempFileNumber()
+        // returns null (there is no further child temp), so fall back to the searched "(T)" itself
+        // so its own commissioning row still appears above its transactions.
         $tempFileNumber = $this->resolveTempFileNumber(DB::connection('sqlsrv'), $fileNo, $fi ?? null);
+        if (!$tempFileNumber) {
+            foreach ([$fileNumber, $fileNo] as $cand) {
+                if (preg_match('/\(\s*T\s*\)\s*$/i', (string) $cand)) {
+                    $tempFileNumber = trim((string) $cand);
+                    break;
+                }
+            }
+        }
         if ($tempFileNumber) {
             array_unshift($rows, [
                 'sn' => 0, // renumbered below
@@ -2704,9 +3076,16 @@ class LegalSearchService
             ]);
         }
 
+        // The File Commissioning row represents the permanent/main file, so it
+        // always carries the main file number. When the searched file is itself a
+        // temporary "(T)" number, strip the "(T)" — the temporary number appears on
+        // its own "Temporary File" row directly below.
+        $commissioningFileNo = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', (string) $fileNumber);
+        $commissioningFileNo = trim($commissioningFileNo) !== '' ? trim($commissioningFileNo) : $fileNumber;
+
         array_unshift($rows, [
             'sn' => 0, // renumbered below
-            'file_no' => $fileNumber ?: '-',
+            'file_no' => $commissioningFileNo ?: '-',
             // Party 1 is the commissioning authority; Party 2 is the file owner/title
             // (the Ministry commissioned the file for them).
             'grantor' => 'Kano State Ministry of Land and Physical Planning',

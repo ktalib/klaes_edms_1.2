@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\FileIndexing;
 use App\Models\FileTracker;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Quick Search & File Location engine.
@@ -75,13 +76,18 @@ class FileLocationResolver
         $indexing = $this->findIndexing($variants);
         $tracker  = $this->findTracker($variants);
 
-        // ── 1. An ACTIVE tracker means the file is physically logged out -> IN_TRANSIT.
+        // ── 1. A non-terminal tracker means the file is physically logged out -> IN_TRANSIT.
         //        This is the ground truth: once the file has been logged, it wins over
         //        any stale SCB found/not-found override left on the indexing row (which
         //        was set while the file was still in the archive awaiting collection).
+        //        A tracker is "still out" for any status except COMPLETED (logged back
+        //        in) or CANCELLED — this matches the rest of the app (see the file-tracker
+        //        API's "NOT IN ('COMPLETED','CANCELLED')" logged-out test). Approval-
+        //        workflow files carry statuses like submitted / recommended / approved /
+        //        in_processing while they sit at another office, and those are all "out".
         if ($tracker
-            && strtoupper((string) $tracker->status) === FileTracker::STATUS_ACTIVE
-            && !empty($tracker->movement_log)   // guard against a stuck ACTIVE tracker whose movements were all deleted
+            && !$this->isTerminalTrackerStatus($tracker->status)
+            && !empty($tracker->movement_log)   // guard against a stuck tracker whose movements were all deleted
         ) {                                     // (a movement still "pending_acceptance" at its destination is still in transit)
             $location = $tracker->current_office_name
                 ?: $tracker->receiving_office_name
@@ -130,6 +136,20 @@ class FileLocationResolver
 
         // ── 3. Not indexed at all -> Pending File (blind request) ──
         if ($indexing === null) {
+            // A file that was decommissioned/superseded by a land transaction has its indexing
+            // hard-deleted, so it lands here. Annotate it with its successor instead of treating
+            // it as an ordinary un-indexed file, so the requester is pointed to the live file.
+            $superseded = $this->supersededInfoFor($variants);
+            if ($superseded !== null) {
+                return $this->result($fileNumber, self::STATUS_PENDING_FILE, array_merge([
+                    'current_location'   => $superseded['successor']
+                        ? 'Superseded by ' . $superseded['successor']
+                        : 'Superseded / decommissioned',
+                    'superseded_by'      => $superseded['successor'],
+                    'superseded_reason'  => $superseded['reason'],
+                ], $this->actionMetaFor(self::STATUS_PENDING_FILE)));
+            }
+
             return $this->result($fileNumber, self::STATUS_PENDING_FILE, array_merge([
                 'current_location' => 'Not indexed',
             ], $this->actionMetaFor(self::STATUS_PENDING_FILE)));
@@ -271,6 +291,8 @@ class FileLocationResolver
             'is_blind'         => false,
             'manual'           => false,
             'duplicate_flag'   => $this->currentDuplicateFlag,
+            'superseded_by'    => null,
+            'superseded_reason' => null,
         ];
 
         $merged = array_merge($base, $extra);
@@ -287,6 +309,56 @@ class FileLocationResolver
         }
 
         return $merged;
+    }
+
+    /**
+     * If any variant of the file number was genuinely decommissioned/superseded by a land
+     * transaction, return ['successor' => ?string, 'reason' => ?string]; otherwise null.
+     * false_decommissioning = 1 rows are Title-Status flags, not real decommissions.
+     */
+    protected function supersededInfoFor(array $variants): ?array
+    {
+        $variants = array_values(array_filter(array_map('trim', $variants), fn($v) => $v !== ''));
+        if (empty($variants)) {
+            return null;
+        }
+
+        try {
+            if (!Schema::connection('sqlsrv')->hasTable('decommissioned_files')) {
+                return null;
+            }
+
+            $hasSuccessor = Schema::connection('sqlsrv')->hasColumn('decommissioned_files', 'successor_file_no');
+
+            $query = DB::connection('sqlsrv')->table('decommissioned_files')
+                ->where(function ($q) use ($variants) {
+                    $q->whereIn('file_no', $variants)->orWhereIn('mls_file_no', $variants);
+                });
+
+            if (Schema::connection('sqlsrv')->hasColumn('decommissioned_files', 'false_decommissioning')) {
+                $query->where(function ($q) {
+                    $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                });
+            }
+
+            $row = $query->orderByDesc('id')->first();
+            if (!$row) {
+                return null;
+            }
+
+            $successor = $hasSuccessor ? ($row->successor_file_no ?: null) : null;
+            $reason = $row->decommissioning_reason ?? null;
+
+            // Legacy fallback: many older reasons embed the successor at the end
+            // (e.g. "Plot Merger to CON-COM-2023-197" or "... → CON-COM-2023-197").
+            if (!$successor && $reason && preg_match('/(?:to|→|->)\s*([A-Z0-9\/\-]+)\s*$/i', $reason, $m)) {
+                $successor = $m[1];
+            }
+
+            return ['successor' => $successor, 'reason' => $reason];
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -503,6 +575,25 @@ class FileLocationResolver
             })
             ->orderByDesc('id')
             ->first();
+    }
+
+    /**
+     * A tracker is "terminal" (no longer holding the file out) once the file has
+     * been logged back into the registry (COMPLETED / "Log-in") or the movement
+     * was cancelled. Every other status — ACTIVE plus the approval-workflow states
+     * (submitted, recommended, approved, rejected, in_processing, cross_*) — means
+     * the file is still physically out of the registry and therefore IN_TRANSIT.
+     * Mirrors the file-tracker API's "NOT IN ('COMPLETED','CANCELLED')" logged-out
+     * test, extended with the manual log-back statuses ("Log-in", "Canceled").
+     */
+    public function isTerminalTrackerStatus(?string $status): bool
+    {
+        return in_array(strtoupper(trim((string) $status)), [
+            FileTracker::STATUS_COMPLETED,   // COMPLETED
+            FileTracker::STATUS_CANCELLED,   // CANCELLED
+            'CANCELED',                      // manual-update spelling variant
+            'LOG-IN',                        // manually logged back into the Registry (Origin)
+        ], true);
     }
 
     protected function findTracker(array $variants): ?FileTracker

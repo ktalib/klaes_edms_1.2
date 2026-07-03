@@ -726,6 +726,18 @@ const renderFileInfoFallback = (data) => {
   const lga       = pick(data.file_lga, rec.lga);
   const relatedNo = pick(data.file_related_fileno, rec.related_fileno);
 
+  // File lineage (previous / successor). Lets a superseded file show where it came from and
+  // what replaced it, instead of appearing as an unrelated record.
+  const lineage = data.lineage || {};
+  const previousFiles = Array.isArray(lineage.previous_file_nos) ? lineage.previous_file_nos.join(', ') : '';
+  let supersededBy = pick(lineage.successor_file_no);
+  // Fallback for legacy rows: the successor is often embedded at the end of the reason text
+  // (e.g. "Plot Merger to CON-COM-2023-197" or "... → CON-COM-2023-197").
+  if (!supersededBy && lineage.is_superseded && lineage.decommission_reason) {
+    const m = String(lineage.decommission_reason).match(/(?:to|→|->)\s*([A-Z0-9\/\-]+)\s*$/i);
+    if (m) supersededBy = m[1];
+  }
+
   // Heroicon (outline) path data per field for the leading icon.
   const ICONS = {
     'File Number':     'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
@@ -740,6 +752,8 @@ const renderFileInfoFallback = (data) => {
     'District':        'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0H5m0 0H3m2 0h4m6 0h4M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5',
     'LGA':             'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0H5m0 0H3m2 0h4m6 0h4M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5',
     'Related File No': 'M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5m6-6l1.5-1.5a4 4 0 015.656 5.656l-3 3a4 4 0 01-5.656 0',
+    'Previous File(s)': 'M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5m6-6l1.5-1.5a4 4 0 015.656 5.656l-3 3a4 4 0 01-5.656 0',
+    'Superseded By':    'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6',
   };
   const DEFAULT_ICON = 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
 
@@ -755,6 +769,8 @@ const renderFileInfoFallback = (data) => {
     ['District', district],
     ['LGA', lga],
     ['Related File No', relatedNo],
+    ['Previous File(s)', previousFiles],
+    ['Superseded By', supersededBy],
   ];
 
   const escape = (v) => String(v).replace(/[&<>"']/g, (c) => ({
@@ -855,10 +871,52 @@ const executeSearchAjax = (filters, searchData) => {
 
         // Show appropriate view
         if (searchResults.length === 0) {
-          // If the file itself is indexed (even with no transactions), show its
-          // File Information instead of a bare "No results found" message.
+          // If the file itself is indexed (even with no transactions), open its full
+          // File Details view so the synthetic "File Commissioning" (and, for a "(T)"
+          // number, "Temporary File") rows still display in the timeline — a commissioned
+          // file always has at least its commissioning event. Otherwise fall back to the
+          // File Information card / "No results found" message.
           const hasFileInfo = renderFileInfoFallback(data);
-          if (hasFileInfo && fileInfoFallback) {
+          const searchedNo = String(window.__lsLastSearchedFileNumber || (filters.fileNumber || '')).trim();
+          if (hasFileInfo && searchedNo) {
+            // No real transactions — reset the buffers so renderTimeline() shows only the
+            // synthetic commissioning rows, then build a file-info-only selected record.
+            window._preferredRelatedTransactions = [];
+            window._allRelatedTransactions = [];
+            const syntheticSelected = {
+              _is_fileinfo_only: true,
+              mlsFNo: searchedNo, fileno: searchedNo, file_number: searchedNo,
+              _file_title: data.file_title || null,
+              _file_district: data.file_district || null,
+              _file_lga: data.file_lga || null,
+              _file_land_use: data.file_land_use || null,
+              _file_plot_number: data.file_plot_number || null,
+              _file_tp_no: data.file_tp_no || null,
+              _file_related_fileno: data.file_related_fileno || null,
+              _file_index_number: data.file_index_number || null,
+              _file_size: data.file_size || null,
+              _file_commissioning_date: data.file_commissioning_date || null,
+              _file_temp_number: data.file_temp_number || null,
+              prop_id: '',
+            };
+            // Set only the selected file — leave searchResults empty so getRelatedTransactions()
+            // returns [] (no real transactions). Adding the synthetic record to searchResults would
+            // make it render as a bogus "undefined" timeline row.
+            selectedFile = syntheticSelected;
+
+            const openRecords = () => {
+              searchModal.classList.add('hidden');
+              dashboardView.classList.add('hidden');
+              fileHistoryView.classList.remove('hidden');
+              renderFileHistory();
+            };
+            if (window.LEGAL_SEARCH_CONTEXT?.requiresPayment && !window._lsOnlinePaid
+                && typeof window.lsOnlineRequestPayment === 'function') {
+              window.lsOnlineRequestPayment(openRecords);
+            } else {
+              openRecords();
+            }
+          } else if (hasFileInfo && fileInfoFallback) {
             fileInfoFallback.classList.remove('hidden');
           } else {
             noResultsMessage.classList.remove('hidden');
@@ -2807,10 +2865,15 @@ const executeSearchAjax = (filters, searchData) => {
   const buildCommissioningTimelineRow = () => {
     const commDate = (selectedFile && selectedFile._file_commissioning_date)
       ? selectedFile._file_commissioning_date : '-';
-    const fileNo = (userSelectedFileNumber && String(userSelectedFileNumber).trim())
+    const rawFileNo = (userSelectedFileNumber && String(userSelectedFileNumber).trim())
       || window._currentFileNumber
       || (selectedFile && (selectedFile.mlsFNo || selectedFile.fileno || selectedFile.fileNo))
       || '-';
+    // The File Commissioning row represents the permanent/main file, so it always
+    // carries the main file number. When the searched file is itself a temporary
+    // "(T)" number, strip the "(T)" here — the temporary number is shown on its own
+    // "Temporary File" row directly below.
+    const fileNo = String(rawFileNo).replace(/\s*\(\s*T\s*\)\s*$/i, '').trim() || rawFileNo;
     // Party 1 is the commissioning authority; Party 2 is the file owner/title
     // (the Ministry commissioned the file for them).
     const ownerName = (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';
@@ -2837,10 +2900,26 @@ const executeSearchAjax = (filters, searchData) => {
   // below File Commissioning (weight 11) only when the searched file has a
   // temporary "(T)" sibling. Its File No is the "(T)" number.
   const buildTemporaryFileTimelineRow = () => {
-    const tempFileNo = String(
+    let tempFileNo = String(
       (selectedFile && (selectedFile._file_temp_number || selectedFile.temp_file_no)) ||
       window._lsFileTempNumber || ''
     ).trim();
+    // When the searched file is ITSELF the temporary "(T)" number there is no child
+    // temp for the resolver to return, so fall back to the searched number itself. This
+    // keeps the temporary file's own commissioning row visible (directly below the
+    // permanent File Commissioning row) when a "(T)" number is searched.
+    if (!tempFileNo || tempFileNo === '-') {
+      const searched = String(
+        (userSelectedFileNumber && String(userSelectedFileNumber).trim())
+        || window._currentFileNumber
+        || window.__lsLastSearchedFileNumber
+        || (selectedFile && (selectedFile.mlsFNo || selectedFile.fileno || selectedFile.fileNo))
+        || ''
+      ).trim();
+      if (/\(\s*T\s*\)\s*$/i.test(searched)) {
+        tempFileNo = searched;
+      }
+    }
     if (!tempFileNo || tempFileNo === '-') return null;
 
     const ownerName = (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';

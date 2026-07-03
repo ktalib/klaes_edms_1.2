@@ -14,8 +14,12 @@ class PlotWorkflowService
 {
     /**
      * Decommission a set of files and move them to archives.
+     *
+     * @param string|null $successorFileNo the file number that replaces the decommissioned file(s)
+     *                                      (the merged/subdivided/separated/extended result), stored
+     *                                      as an old -> successor lineage pointer.
      */
-    public function decommissionFiles(array $fileNumbers, string $reason, ?string $commissionedBy = null): array
+    public function decommissionFiles(array $fileNumbers, string $reason, ?string $commissionedBy = null, ?string $successorFileNo = null): array
     {
         $summary = [
             'archived' => [],
@@ -37,7 +41,7 @@ class PlotWorkflowService
                 }
 
                 // 2. Insert into decommissioned_files
-                DB::connection('sqlsrv')->table('decommissioned_files')->insert([
+                $decommissionRow = [
                     'file_number_id' => (int) ($fileRecord->id ?? ($indexingRecord->id ?? 0)),
                     'file_no' => $fileNo,
                     'mls_file_no' => $fileNo,
@@ -50,7 +54,12 @@ class PlotWorkflowService
                     'decommissioned_by' => $commissionedBy,
                     'created_at' => now(),
                     'updated_at' => now()
-                ]);
+                ];
+                // Store the old -> successor pointer when the column exists (added 2026_07_03).
+                if ($successorFileNo && Schema::connection('sqlsrv')->hasColumn('decommissioned_files', 'successor_file_no')) {
+                    $decommissionRow['successor_file_no'] = $successorFileNo;
+                }
+                DB::connection('sqlsrv')->table('decommissioned_files')->insert($decommissionRow);
 
                 // 2.5 Archive detailed indexing record to deprecated_records before deletion
                 if ($indexingRecord) {
@@ -100,6 +109,12 @@ class PlotWorkflowService
                 DB::connection('sqlsrv')->table('kangis_grouping')
                     ->where('kangis_fileno_placeholder', $fileNo)
                     ->delete();
+
+                // NOTE: We deliberately DO NOT delete the file's rows from the Legal Search staging
+                // tables (file_history_staging, CofO_staging, pra, deed_registrations). Legal Search
+                // relies on those rows to display the successor file's lineage/history via prop_id and
+                // parent_prop_id expansion. Suppression of a decommissioned file when it is searched
+                // directly is handled at query time in LegalSearchService (see getDecommissionedFileNumbers).
 
                 $summary['archived'][] = $fileNo;
                 $summary['deleted']++;

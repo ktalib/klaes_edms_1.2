@@ -1627,7 +1627,7 @@ class MlsFileNoController extends Controller
                     $oldIndexing = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $originalFileNo)->first();
 
                     // 3. Decommission old file into decommissioned_files
-                    DB::connection('sqlsrv')->table('decommissioned_files')->insert([
+                    $copDecommissionRow = [
                         'file_number_id' => $oldFileNoRecord->id ?? 0,
                         'file_no' => $originalFileNo,
                         'mls_file_no' => $originalFileNo,
@@ -1638,7 +1638,13 @@ class MlsFileNoController extends Controller
                         'decommissioned_by' => $commissionedBy,
                         'created_at' => now(),
                         'updated_at' => now()
-                    ]);
+                    ];
+                    // old -> successor pointer (column added 2026_07_03). For Change of Purpose the
+                    // successor is the newly minted number the old file was renamed to.
+                    if (Schema::connection('sqlsrv')->hasColumn('decommissioned_files', 'successor_file_no')) {
+                        $copDecommissionRow['successor_file_no'] = $fullFileNumber;
+                    }
+                    DB::connection('sqlsrv')->table('decommissioned_files')->insert($copDecommissionRow);
 
                     // Try to fetch new tracking ID from grouping table if not provided
                     $trackingId = $validated['tracking_id'] ?? null;
@@ -1695,7 +1701,9 @@ class MlsFileNoController extends Controller
                             ->update([
                                 'file_number' => $fullFileNumber,
                                 'land_use_type' => $landUse,
-                                'related_fileno' => $originalFileNo,
+                                // Store as a JSON array for consistency with Merger/Subdivision/
+                                // Separation/Extension branches (which write json_encode([$parent])).
+                                'related_fileno' => json_encode([$originalFileNo]),
                                 'is_corresponding_file' => ($correspondingMatch !== null) ? 1 : 0,
                                 'corresponding_fileno' => $correspondingMatch,
                                 'tracking_id' => $trackingId ?? $oldIndexing->tracking_id,
@@ -2590,7 +2598,7 @@ class MlsFileNoController extends Controller
                                 'new_file' => $fullFileNumber,
                                 'source_files' => $sourceFiles
                             ]);
-                            $res = $workflowService->decommissionFiles($sourceFiles, "Plot Merger to $fullFileNumber", $commissionedBy);
+                            $res = $workflowService->decommissionFiles($sourceFiles, "Plot Merger to $fullFileNumber", $commissionedBy, $fullFileNumber);
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
 
                             // PRA comment on the new merged file's row
@@ -2677,7 +2685,7 @@ class MlsFileNoController extends Controller
                         // Decommission mother if not already done
                         $motherRecord = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $motherFile)->first();
                         if ($motherRecord && !$motherRecord->is_decommissioned) {
-                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Subdivision into fragments (e.g. $fullFileNumber)", $commissionedBy);
+                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Subdivision into fragments (e.g. $fullFileNumber)", $commissionedBy, $fullFileNumber);
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
                         }
 
@@ -2734,7 +2742,7 @@ class MlsFileNoController extends Controller
                         // Decommission mother if not already done
                         $motherRecord = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $motherFile)->first();
                         if ($motherRecord && !$motherRecord->is_decommissioned) {
-                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Separation into fragments (e.g. $fullFileNumber)", $commissionedBy);
+                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Separation into fragments (e.g. $fullFileNumber)", $commissionedBy, $fullFileNumber);
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
                         }
 
@@ -2789,7 +2797,7 @@ class MlsFileNoController extends Controller
                             ]);
                     }
 
-                    $res = $workflowService->decommissionFiles([$oldFile], "Plot Extension to $fullFileNumber", $commissionedBy);
+                    $res = $workflowService->decommissionFiles([$oldFile], "Plot Extension to $fullFileNumber", $commissionedBy, $fullFileNumber);
                     $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
 
                     // PRA comment on the new extension file and the old file
@@ -3846,7 +3854,7 @@ class MlsFileNoController extends Controller
                                 ->toArray();
 
                             // 2. Decommission
-                            $res = $workflowService->decommissionFiles($sourceFiles, "Plot Merger to batch of " . count($allFileNumbers) . " files", $commissionedBy);
+                            $res = $workflowService->decommissionFiles($sourceFiles, "Plot Merger to batch of " . count($allFileNumbers) . " files", $commissionedBy, ($allFileNumbers[0] ?? null));
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
 
                             $this->logPlotsWorkflow('info', 'Merger decommission result', [
@@ -3908,7 +3916,7 @@ class MlsFileNoController extends Controller
                             || DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->exists();
 
                         if ($motherExists) {
-                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Subdivision into batch of " . count($allFileNumbers) . " fragments", $commissionedBy);
+                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Subdivision into batch of " . count($allFileNumbers) . " fragments", $commissionedBy, ($allFileNumbers[0] ?? null));
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
                         }
 
@@ -3948,7 +3956,7 @@ class MlsFileNoController extends Controller
                             || DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->exists();
 
                         if ($motherExists) {
-                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Separation into batch of " . count($allFileNumbers) . " fragments", $commissionedBy);
+                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Separation into batch of " . count($allFileNumbers) . " fragments", $commissionedBy, ($allFileNumbers[0] ?? null));
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
                         }
 

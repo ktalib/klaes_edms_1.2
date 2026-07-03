@@ -993,8 +993,10 @@
                                             <p class="text-xs text-gray-500 mt-2">Select the main file number to fetch tracking ID and other details</p>
                                         </div>
 
-                                        <!-- Change of Purpose Selection (Change of Purpose only) -->
-                                        <div id="change-of-purpose-section" x-show="applicationType === 'change_of_purpose'" 
+                                        <!-- Change of Purpose Selection (Change of Purpose or Conversion) -->
+                                        <!-- A Change of Purpose may actually be a conversion file (CON- prefix), so keep this
+                                             selector visible for Conversion too, allowing the CoP application to be linked. -->
+                                        <div id="change-of-purpose-section" x-show="applicationType === 'change_of_purpose' || applicationType === 'conversion'"
                                              class="mb-4 border border-blue-200 rounded-lg p-4 bg-blue-50/30 shadow-sm" x-transition x-cloak>
                                             
                                             <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -1419,7 +1421,7 @@
                                             </div>
 
                                             <!-- District dropdown + "Other" specify -->
-                                            <div>
+                                            <div id="generatorDistrictWrap" class="relative">
                                                 <label for="generator_district" class="block text-xs font-medium text-gray-600 mb-1">
                                                     District
                                                 </label>

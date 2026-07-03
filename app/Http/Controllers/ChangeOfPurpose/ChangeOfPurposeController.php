@@ -430,102 +430,13 @@ class ChangeOfPurposeController extends Controller
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Private helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     /**
-     * Update file_indexings rows: rename file_number and append old to related_fileno JSON.
+     * DEAD-CODE REMOVED: updateFileIndexing() and handlePra() previously duplicated the
+     * Change-of-Purpose rename/PRA logic, but Change of Purpose is commissioned exclusively by
+     * MlsFileNoController::generateMlsFileNumber() (application_type = 'change_of_purpose'), which
+     * renames file_indexings/fileNumber in place, records the decommission audit, sets
+     * related_fileno and inserts the PRA row. commissionFileNumber() below only marks the
+     * application status afterwards. The old helpers were never called.
      */
-    private function updateFileIndexing(string $oldFileNo, string $newFileNo): void
-    {
-        $db = DB::connection('sqlsrv');
-        $rows = $db->table('file_indexings')->where('file_number', $oldFileNo)->get();
-
-        foreach ($rows as $row) {
-            $existing = [];
-            if (!empty($row->related_fileno)) {
-                $decoded = json_decode($row->related_fileno, true);
-                $existing = is_array($decoded) ? $decoded : [$row->related_fileno];
-            }
-
-            if (!in_array($oldFileNo, $existing, true)) {
-                $existing[] = $oldFileNo;
-            }
-
-            $db->table('file_indexings')
-                ->where('id', $row->id)
-                ->update([
-                    'file_number' => $newFileNo,
-                    'related_fileno' => json_encode(array_values($existing)),
-                    'updated_by' => Auth::id(),
-                ]);
-        }
-    }
-
-    /**
-     * PRA: copy last row (if any), update file number columns, set transaction type, insert.
-     */
-    private function handlePra(string $oldFileNo, string $newFileNo): void
-    {
-        $db = DB::connection('sqlsrv');
-
-        // Determine which file-number columns actually exist in pra
-        $candidates = ['mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'fileno'];
-        $praColumns = [];
-
-        foreach ($candidates as $col) {
-            try {
-                if (Schema::connection('sqlsrv')->hasColumn('pra', $col)) {
-                    $praColumns[] = $col;
-                }
-            } catch (\Throwable $e) {
-                // Column check failed Ã¢â‚¬â€ skip safely
-            }
-        }
-
-        if (empty($praColumns)) {
-            return;
-        }
-
-        // Find rows for the old file number
-        $query = $db->table('pra')->where(function ($q) use ($praColumns, $oldFileNo) {
-            foreach ($praColumns as $col) {
-                $q->orWhere($col, $oldFileNo);
-            }
-        });
-
-        $rows = $query->orderByDesc('id')->get();
-
-        if ($rows->isEmpty()) {
-            return;
-        }
-
-        // Clone the most recent row
-        $newRow = (array) $rows->first();
-        unset($newRow['id']);
-
-        // Update file number columns
-        foreach ($praColumns as $col) {
-            if (array_key_exists($col, $newRow)) {
-                $newRow[$col] = $newFileNo;
-            }
-        }
-
-        // Set transaction type (handle both naming conventions)
-        foreach (['transaction_type', 'transactionType'] as $typeCol) {
-            if (array_key_exists($typeCol, $newRow)) {
-                $newRow[$typeCol] = 'Change of Purpose';
-                break;
-            }
-        }
-
-        // Timestamps
-        $now = now();
-        if (array_key_exists('created_at', $newRow)) {
-            $newRow['created_at'] = $now;
-        }
-        if (array_key_exists('updated_at', $newRow)) {
-            $newRow['updated_at'] = $now;
-        }
-
-        $db->table('pra')->insert($newRow);
-    }
 
     /**
      * Generate new file number by swapping the land-use prefix.
