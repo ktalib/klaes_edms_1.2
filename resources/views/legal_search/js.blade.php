@@ -1887,6 +1887,18 @@ const executeSearchAjax = (filters, searchData) => {
     // Update file information fields (with .0 fix and better field mapping)
     document.getElementById('file-number-value').textContent = mlsDisplay;
 
+    // Label the primary file number by what is actually displayed — legacy
+    // files are searched by their KANGIS number, which lands in this slot.
+    const fileNumberLabel = document.getElementById('file-number-label');
+    if (fileNumberLabel) {
+      const displayedType = identifyFileNumberType(mlsDisplay);
+      fileNumberLabel.textContent = displayedType === 'kangis'
+        ? 'File Number (KANGIS FileNo):'
+        : (displayedType === 'new_kangis'
+          ? 'File Number (New KANGIS FileNo):'
+          : 'File Number (MLPPFNo):');
+    }
+
     // Temporary "(T)" file number — shown as a second line when the searched
     // file has a temporary sibling registered against it.
     const tempFileNumber = String(selectedFile._file_temp_number || selectedFile.temp_file_no || window._lsFileTempNumber || '').trim();

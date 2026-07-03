@@ -43,7 +43,7 @@
           
           <div class="space-y-4">
             <div class="form-row">
-              <span class="form-label">File Number (MLPPFNo):</span>
+              <span class="form-label" id="file-number-label">File Number (MLPPFNo):</span>
               <span class="form-value" id="file-number-value"></span>
             </div>
             <div class="form-row hidden" id="temp-file-number-row">
