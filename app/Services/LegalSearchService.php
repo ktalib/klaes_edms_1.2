@@ -679,6 +679,66 @@ class LegalSearchService
             }
         }
 
+        // Collapse reciprocal recertification pairs: the same link is often stored twice
+        // (A -> B from file_indexings and B -> A from pra), and the two sources disagree on
+        // zero-padding ("MLKN 2455" vs "MLKN 02455"), so the duplicate also fails its title
+        // lookup. Compare endpoints zero-insensitively, keep one row per pair — preferring the
+        // side that points AWAY from the searched file — and display the cleaner number.
+        $normNo = function ($v) {
+            $v = strtoupper(trim((string) $v));
+            $v = preg_replace('/\s+/', ' ', $v);
+            return preg_replace('/(?<=\s|-)0+(\d)/', '$1', $v); // strip leading zeros per segment
+        };
+        $searchedNorm = $normNo($fileNo);
+        $pairGroups = [];
+        foreach ($out as $i => $r) {
+            $a = $normNo($r['fileno'] ?? '');
+            $b = $normNo($r['parent_file_number'] ?? '');
+            if ($a === '' || $b === '') {
+                continue;
+            }
+            $key = ($a < $b) ? "$a|$b" : "$b|$a";
+            $pairGroups[$key][] = $i;
+        }
+        $drop = [];
+        foreach ($pairGroups as $indexes) {
+            if (count($indexes) < 2) {
+                continue;
+            }
+            // Pick the row to keep: prefer one whose displayed number is not the searched file.
+            $keep = $indexes[0];
+            foreach ($indexes as $i) {
+                if ($searchedNorm !== '' && $normNo($out[$i]['fileno'] ?? '') !== $searchedNorm) {
+                    $keep = $i;
+                    break;
+                }
+            }
+            // Canonicalise the kept row's displayed number: if a sibling row's parent_file_number
+            // is the same file in a cleaner form (no stripped zeros), use that string.
+            $keptNorm = $normNo($out[$keep]['fileno'] ?? '');
+            $current = trim((string) ($out[$keep]['fileno'] ?? ''));
+            if ($normNo($current) !== strtoupper($current)) { // current form contains padding
+                foreach ($indexes as $i) {
+                    $candidate = trim((string) ($out[$i]['parent_file_number'] ?? ''));
+                    if ($candidate !== '' && $normNo($candidate) === $keptNorm
+                        && strtoupper($candidate) === $normNo($candidate)) {
+                        $out[$keep]['fileno'] = $candidate;
+                        $out[$keep]['file_number'] = $candidate;
+                        $out[$keep]['mlsFNo'] = $candidate;
+                        break;
+                    }
+                }
+            }
+            foreach ($indexes as $i) {
+                if ($i !== $keep) {
+                    $drop[$i] = true;
+                }
+            }
+        }
+        if (!empty($drop)) {
+            $out = array_values(array_diff_key($out, $drop));
+        }
+
         // Fallback for any rows still missing party_1 (related file has neither a live indexing
         // row nor an rfn.file_title): pull the title/holder from the decommission archive.
         $missing = [];
