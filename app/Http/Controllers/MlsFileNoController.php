@@ -2822,6 +2822,45 @@ class MlsFileNoController extends Controller
                 if (!empty($validated['change_of_purpose_app_id'])) {
                     $copApp = ChangeOfPurposeApplication::find($validated['change_of_purpose_app_id']);
                     if ($copApp) {
+                        // Supersede the original file and record the lineage — same rules as the
+                        // merger/subdivision branches. Without this, commissioning a CoP through
+                        // the Conversion flow left the original active and the new file unlinked.
+                        $copOriginalFileNo = trim((string) $copApp->file_no);
+                        if ($copOriginalFileNo !== '' && strcasecmp($copOriginalFileNo, $fullFileNumber) !== 0) {
+                            $copOriginalIndexing = DB::connection('sqlsrv')->table('file_indexings')
+                                ->where('file_number', $copOriginalFileNo)
+                                ->first();
+
+                            // 1. Link the new file back to the original (new -> old).
+                            $copLineageUpdate = [
+                                'related_fileno' => json_encode([$copOriginalFileNo]),
+                                'updated_at' => now(),
+                            ];
+                            // Carry property linkage forward: the original's prop_id, or — when the
+                            // original is itself a subdivision fragment — its parent_prop_id.
+                            $copParentProp = $copOriginalIndexing->prop_id
+                                ?? ($copOriginalIndexing->parent_prop_id ?? null);
+                            if (!empty($copParentProp)) {
+                                $copLineageUpdate['parent_prop_id'] = (string) $copParentProp;
+                            }
+
+                            DB::connection('sqlsrv')->table('file_indexings')
+                                ->where('file_number', $fullFileNumber)
+                                ->update($copLineageUpdate);
+                            DB::connection('sqlsrv')->table('fileNumber')
+                                ->where('mlsfNo', $fullFileNumber)
+                                ->update($copLineageUpdate);
+
+                            // 2. Decommission the original (old -> new via successor_file_no).
+                            $res = $workflowService->decommissionFiles(
+                                [$copOriginalFileNo],
+                                "Change of Purpose to $fullFileNumber",
+                                $commissionedBy,
+                                $fullFileNumber
+                            );
+                            $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
+                        }
+
                         $copApp->update([
                             'status' => ChangeOfPurposeApplication::STATUS_COMMISSIONED,
                             'remarks' => "Commissioned to File No: {$fullFileNumber} on " . now()->toDateTimeString(),
