@@ -615,11 +615,21 @@ class LegalSearchService
                 } catch (\Exception $e) { /* ignore */ }
             }
 
+            // A single related_file_number row may carry several file numbers (the Manual
+            // Linkage backfill stores a merger's sources as one CSV string, e.g.
+            // "RES-2021-2865, RES-2021-2866, ..."). Emit one synthetic timeline row per
+            // file number so each source displays on its own line.
+            $relatedNos = $this->parseRelatedFileno($row->related_fileno);
+            if (empty($relatedNos)) {
+                continue;
+            }
+
+            foreach ($relatedNos as $relNo) {
             $out[] = [
                 'id'                => $row->id,
-                'file_number'       => $row->related_fileno, // orange-highlighted column
-                'mlsFNo'            => $row->related_fileno,
-                'fileno'            => $row->related_fileno,
+                'file_number'       => $relNo, // orange-highlighted column
+                'mlsFNo'            => $relNo,
+                'fileno'            => $relNo,
                 'kangisFileNo'      => null,
                 'NewKANGISFileno'   => null,
                 'transaction_type'  => $row->transaction_type ?: 'Recertification',
@@ -666,6 +676,7 @@ class LegalSearchService
                 // that LISTED this related fileno).
                 'parent_file_number' => $row->file_number,
             ];
+            }
         }
 
         // Fallback for any rows still missing party_1 (related file has neither a live indexing
@@ -693,6 +704,46 @@ class LegalSearchService
                     $k = strtoupper(trim((string) ($r['fileno'] ?? '')));
                     if (!empty($map[$k])) {
                         $out[$i]['party_1'] = $map[$k];
+                    }
+                }
+            }
+        }
+
+        // Last-resort fallback: the Manual Linkage backfill records the holder on
+        // manual_file_linkages.applicant_name with the source files in old_file_numbers
+        // (JSON). Covers sources that never had an indexing/archive row of their own.
+        $stillMissing = [];
+        foreach ($out as $r) {
+            if (($r['party_1'] ?? '-') === '-' && !empty($r['fileno'])) {
+                $stillMissing[strtoupper(trim((string) $r['fileno']))] = trim((string) $r['fileno']);
+            }
+        }
+        if (!empty($stillMissing) && Schema::connection($conn->getName())->hasTable('manual_file_linkages')) {
+            $mflRows = $conn->table('manual_file_linkages')
+                ->where(function ($q) use ($stillMissing) {
+                    foreach ($stillMissing as $no) {
+                        $q->orWhere('old_file_numbers', 'like', '%' . $no . '%');
+                    }
+                })
+                ->whereNotNull('applicant_name')
+                ->where('applicant_name', '<>', '')
+                ->orderBy('id')
+                ->get(['old_file_numbers', 'applicant_name']);
+
+            $mflMap = [];
+            foreach ($mflRows as $m) {
+                foreach ($this->parseRelatedFileno($m->old_file_numbers) as $no) {
+                    $k = strtoupper(trim($no));
+                    if ($k !== '' && !isset($mflMap[$k])) {
+                        $mflMap[$k] = trim((string) $m->applicant_name);
+                    }
+                }
+            }
+            foreach ($out as $i => $r) {
+                if (($r['party_1'] ?? '-') === '-') {
+                    $k = strtoupper(trim((string) ($r['fileno'] ?? '')));
+                    if (!empty($mflMap[$k])) {
+                        $out[$i]['party_1'] = $mflMap[$k];
                     }
                 }
             }
