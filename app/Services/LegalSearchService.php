@@ -846,6 +846,14 @@ class LegalSearchService
             }
         }
 
+        // These lineage markers describe a transition where the holder is unchanged,
+        // so mirror the resolved name into Party 2 when it is empty.
+        foreach ($out as $i => $r) {
+            if (($r['party_2'] ?? '-') === '-' && ($r['party_1'] ?? '-') !== '-') {
+                $out[$i]['party_2'] = $r['party_1'];
+            }
+        }
+
         return $out;
     }
 
@@ -935,8 +943,9 @@ class LegalSearchService
                     'transaction_type'  => $label,
                     'transaction_date'  => $displayDate,
                     'sort_date'         => $sortDate,
+                    // The holder is unchanged by the transaction, so both parties carry the name.
                     'party_1'           => $d->file_name ?: '-',
-                    'party_2'           => '-',
+                    'party_2'           => $d->file_name ?: '-',
                     'party_3'           => '-',
                     'party_4'           => '-',
                     'land_use'          => '-',
