@@ -233,12 +233,29 @@ class FileDecommissioningController extends Controller
                 ->take($length)
                 ->get();
 
+            // Resolve PropIDs for the page's rows (decommissioned_files itself has no prop column;
+            // the property id survives in the archive/staging tables).
+            $propIds = $this->resolvePropIds(
+                $data->flatMap(function ($row) {
+                    return [trim($row->mlsfNo ?? ''), trim($row->kangisFileNo ?? ''), trim($row->NewKANGISFileNo ?? '')];
+                })->filter()->unique()->values()->all()
+            );
+
             // Format for DataTables
-            $formattedData = $data->map(function ($row) {
+            $formattedData = $data->map(function ($row) use ($propIds) {
+                $propId = null;
+                foreach ([trim($row->mlsfNo ?? ''), trim($row->kangisFileNo ?? ''), trim($row->NewKANGISFileNo ?? '')] as $n) {
+                    if ($n !== '' && isset($propIds[$n])) {
+                        $propId = $propIds[$n];
+                        break;
+                    }
+                }
+
                 return [
                     'id' => $row->id,
                     'mls_file_no' => trim($row->mlsfNo ?? '') ?: 'N/A',
                     'kangis_file_no' => trim($row->kangisFileNo ?? '') ?: 'N/A',
+                    'prop_id' => $propId !== null && trim((string) $propId) !== '' ? trim((string) $propId) : '-',
                     'file_name' => trim($row->FileName ?? '') ?: 'N/A',
                     'commissioning_date' => $row->commissioning_date ? Carbon::parse($row->commissioning_date)->format('d M Y, h:i A') : 'N/A',
                     'decommissioning_date' => $row->decommissioning_date ? Carbon::parse($row->decommissioning_date)->format('d M Y, h:i A') : 'N/A',
@@ -273,6 +290,59 @@ class FileDecommissioningController extends Controller
                 'error' => 'Error loading data: ' . $e->getMessage()
             ]);
         }
+    }
+
+    /**
+     * Resolve PropIDs for a set of file numbers. Decommissioned files are hard-deleted from
+     * file_indexings, so the prop_id is recovered from the archive/staging tables that
+     * decommissioning intentionally preserves, in order of authority.
+     *
+     * @param  string[] $fileNumbers
+     * @return array<string, string> file number => prop_id
+     */
+    private function resolvePropIds(array $fileNumbers)
+    {
+        if (empty($fileNumbers)) {
+            return [];
+        }
+
+        $conn = \Illuminate\Support\Facades\DB::connection('sqlsrv');
+        $sources = [
+            ['deprecated_records', 'file_number', 'prop_id'],
+            ['file_history_staging', 'mlsfNo', 'prop_id'],
+            ['CofO_staging', 'mlsFNo', 'prop_id'],
+            ['CofO_staging', 'kangisFileNo', 'prop_id'],
+            ['CofO_staging', 'fileno', 'prop_id'],
+            ['pra', 'mlsFNo', 'prop_id'],
+            ['pra', 'fileno', 'prop_id'],
+            ['related_file_number', 'file_number', 'prop_id'],
+            ['related_file_number', 'related_fileno', 'prop_id'],
+        ];
+
+        $resolved = [];
+        foreach ($sources as [$table, $numberColumn, $propColumn]) {
+            $pending = array_values(array_diff($fileNumbers, array_keys($resolved)));
+            if (empty($pending)) {
+                break;
+            }
+
+            try {
+                $found = $conn->table($table)
+                    ->whereIn($numberColumn, $pending)
+                    ->whereNotNull($propColumn)
+                    ->where($propColumn, '!=', '')
+                    ->pluck($propColumn, $numberColumn);
+
+                foreach ($found as $number => $propId) {
+                    $resolved[trim((string) $number)] = trim((string) $propId);
+                }
+            } catch (\Exception $e) {
+                // Table/column missing on this environment — skip the source.
+                continue;
+            }
+        }
+
+        return $resolved;
     }
 
     /**
