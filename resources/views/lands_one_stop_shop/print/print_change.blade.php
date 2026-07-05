@@ -41,6 +41,9 @@
             padding: 15mm 20mm;
             box-sizing: border-box;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            /* Column layout so the footer logos can be pushed to the page bottom. */
+            display: flex;
+            flex-direction: column;
         }
 
         .header-top {
@@ -57,6 +60,28 @@
             align-items: center;
             justify-content: center;
             font-size: 10px;
+            overflow: hidden;
+        }
+        .qr-placeholder img {
+            width: 85px;
+            height: 85px;
+            display: block;
+            object-fit: contain;
+        }
+
+        .form-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            /* Push the logos to the bottom of the page (fills remaining space). */
+            margin-top: auto;
+            padding-top: 12px;
+            border-top: 1px solid #ddd;
+        }
+        .form-footer .footer-logo {
+            max-height: 60px;
+            max-width: 160px;
+            object-fit: contain;
         }
 
         .center-logo {
@@ -134,6 +159,20 @@
             margin-top: 5px;
         }
 
+        /* Item 1 – OP details: OP Number + Location share one row; a long location wraps to a 2nd line */
+        .op1 { line-height: 1.7; }
+        .op1 .ul {
+            border-bottom: 1px solid #000;
+            padding: 0 4px;
+        }
+        .op1 .ul-op {
+            display: inline-block;
+            width: 110px;              /* short OP Number underline */
+        }
+        .op1 .nowrap { white-space: nowrap; }
+        .op1-sub { margin-left: 25px; margin-top: 6px; }
+        .op1-sub .nowrap { margin-right: 22px; }
+
         .checkbox-row {
             display: flex;
             align-items: center;
@@ -170,15 +209,42 @@
         .sig-block {
             width: 45%;
             text-align: center;
-            border-top: 1px solid #000;
-            padding-top: 5px;
             font-size: 14px;
+        }
+        .sig-line {
+            height: 55px;
+            border-bottom: 1px solid #000;
+            margin-bottom: 6px;
         }
 
         @media print {
             .print-bar { display: none !important; }
             body { background-color: white; padding: 0; }
-            .form-container { box-shadow: none; border: none; width: 100%; }
+            /* Force background colours/tints (e.g. the pink badge) to actually print */
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            .form-container {
+                box-shadow: none;
+                border: none;
+                width: 100%;
+                /* Don't force a full-page height — that pushes the footer onto a 2nd sheet */
+                min-height: 0;
+                padding: 6mm 16mm;
+            }
+            /* Tighten every vertical gap so the whole form + footer fits one A4 sheet */
+            .header-top { margin-bottom: 4px; }
+            .ref-box { margin-top: 8px; padding: 5px; }
+            .badge-heading { margin: 10px 0; }
+            .field-row { margin-bottom: 6px; }
+            .checkbox-row { margin-bottom: 4px; }
+            .declaration-box { margin-top: 12px; padding: 10px; }
+            .signature-section { margin-top: 16px; }
+            .sig-line { height: 38px; }
+            .form-footer { margin-top: 10px; padding-top: 8px; }
+            .form-footer .footer-logo { max-height: 48px; }
+            .form-container, .declaration-box { page-break-inside: avoid; }
             @page { size: A4; margin: 0; }
         }
     </style>
@@ -190,10 +256,17 @@
     </div>
 
     <div class="form-container">
+        @php
+            $qrPayload = trim((string) ($data['op_number'] ?? '')) ?: trim((string) ($data['file_no'] ?? ''));
+            $qrPayload = $qrPayload !== '' ? ('OP-CHANGE-OF-OWNERSHIP: ' . $qrPayload) : 'OP-CHANGE-OF-OWNERSHIP';
+        @endphp
         <div class="header-top">
-            <div class="qr-placeholder">QR CODE</div>
+            <div class="qr-placeholder">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=85x85&data={{ urlencode($qrPayload) }}"
+                     alt="QR Code" onerror="this.parentNode.innerHTML='QR CODE';">
+            </div>
             <div class="center-logo">
-                <img src="{{ asset('assets/logo/logo1.jpg') }}" alt="Coat of Arms" onerror="this.style.display='none'">
+                <img src="{{ asset('assets/logo/Nigerian-Coat-of-Arms.png') }}" alt="Coat of Arms" onerror="this.style.display='none'">
             </div>
             <div style="width: 85px;"></div>
         </div>
@@ -215,13 +288,14 @@
             </div>
         </div>
 
-        <div class="field-row">
-            <b>1.</b> OP Number <div class="line-input" style="width: 200px;">{{ $data['op_number'] ?? '' }}</div>
-            Location <div class="line-input" style="width: 300px;">{{ $data['location'] ?? '' }}</div>
-            <div class="sub-fields">
-                Plot No <div class="line-input" style="width: 100px;">{{ $data['plot_no'] ?? '' }}</div>
-                Plan No <div class="line-input" style="width: 150px;">{{ $data['plan_no'] ?? '' }}</div>
-                Date of Issuance <div class="line-input" style="width: 150px;">{{ $data['date_of_issuance'] ?? '' }}</div>
+        <div class="field-row op1">
+            <span class="nowrap"><b>1.</b> OP Number <span class="ul ul-op">{{ $data['op_number'] ?? '' }}</span></span>
+            &nbsp;&nbsp;
+            <span class="nowrap">Location</span> <span class="ul">{{ $data['location'] ?? '' }}</span>
+            <div class="op1-sub">
+                <span class="nowrap">Plot No <span class="ul" style="display:inline-block; width:110px;">{{ $data['plot_no'] ?? '' }}</span></span>
+                <span class="nowrap">Plan No <span class="ul" style="display:inline-block; width:140px;">{{ $data['plan_no'] ?? '' }}</span></span>
+                <span class="nowrap">Date of Issuance <span class="ul" style="display:inline-block; width:120px;">{{ $data['date_of_issuance'] ?? '' }}</span></span>
             </div>
         </div>
 
@@ -246,12 +320,14 @@
         <div class="field-row">
             <b>4. How ownership was obtained</b>
             <div class="sub-fields">
-                @php $method = $data['ownership_method'] ?? ''; @endphp
-                <div class="checkbox-row">a. Direct <div class="check-box">{{ $method === 'Direct' ? '✓' : '' }}</div></div>
-                <div class="checkbox-row">b. Resettlement <div class="check-box">{{ $method === 'Resettlement' ? '✓' : '' }}</div></div>
-                <div class="checkbox-row">c. Gift <div class="check-box">{{ $method === 'Gift' ? '✓' : '' }}</div></div>
-                <div class="checkbox-row">d. Purchase <div class="check-box">{{ $method === 'Purchase' ? '✓' : '' }}</div></div>
-                <div class="checkbox-row">e. Inheritance <div class="check-box">{{ $method === 'Inheritance' ? '✓' : '' }}</div></div>
+                @php
+                    $method = trim((string) ($data['ownership_method'] ?? ''));
+                    // Values must mirror the modal radio options (change-of-ownership-modal.blade.php).
+                    $methods = ['a' => 'Direct', 'b' => 'Resettlement', 'c' => 'Gift', 'd' => 'Purchase', 'e' => 'Inheritance'];
+                @endphp
+                @foreach($methods as $letter => $label)
+                    <div class="checkbox-row">{{ $letter }}. {{ $label }} <div class="check-box">{{ strcasecmp($method, $label) === 0 ? '✓' : '' }}</div></div>
+                @endforeach
             </div>
         </div>
 
@@ -261,11 +337,19 @@
 
         <div class="signature-section">
             <div class="sig-block">
+                <div class="sig-line"></div>
                 Signature of Applicant
             </div>
             <div class="sig-block">
+                <div class="sig-line"></div>
                 Date
             </div>
+        </div>
+ <br><br> <br><br> <br><br>
+        {{-- Footer logos --}}
+        <div class="form-footer">
+            <img class="footer-logo" src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Logo" onerror="this.style.display='none'">
+            <img class="footer-logo" src="http://app.klaes.ng/assets/logo/las.jpg" alt="LAS" onerror="this.style.display='none'">
         </div>
     </div>
 </body>

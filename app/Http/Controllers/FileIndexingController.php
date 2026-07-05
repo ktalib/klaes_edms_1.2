@@ -1011,6 +1011,17 @@ class FileIndexingController extends Controller
                 'rofo_grantor' => 'nullable|string|max:255',
                 'rofo_grantee' => 'nullable|string|max:255',
                 'rofo_status' => 'nullable|string|max:50',
+                // Occupancy Permit fields
+                'has_occupancy_permit' => 'nullable|boolean',
+                'occupancy_permit_instrument_type' => 'nullable|string|max:255',
+                'occupancy_permit_op_type' => 'nullable|string|max:100',
+                'occupancy_permit_op_serial_number' => 'nullable|string|max:100',
+                'occupancy_permit_date' => 'nullable|date',
+                'occupancy_permit_file_number' => 'nullable|string|max:255',
+                'occupancy_permit_land_use' => 'nullable|string|max:255',
+                'occupancy_permit_grantor' => 'nullable|string|max:255',
+                'occupancy_permit_grantee' => 'nullable|string|max:255',
+                'occupancy_permit_status' => 'nullable|string|max:50',
                 'cofo_status' => 'nullable|string|max:50',
                 'has_temp_file' => 'nullable|boolean',
                 'temp_file_no' => 'nullable|string|max:255',
@@ -2495,6 +2506,7 @@ class FileIndexingController extends Controller
                     'fi.location',
                     'fi.district',
                     'fi.land_use_type',
+                    'fi.residence_address',
                 ])
                 ->whereNotNull('fn.tracking_id')
                 ->whereRaw("LTRIM(RTRIM(fn.tracking_id)) != ''")
@@ -2695,6 +2707,7 @@ class FileIndexingController extends Controller
                     'location' => $record->location ?? null,
                     'district' => $record->district ?? null,
                     'land_use_type' => $record->land_use_type ?? null,
+                    'residence_address' => $record->residence_address ?? null,
                     'in_digital_archive' => $inDigitalArchive,
                     'num_pages' => $numPages,
                     'resolved_at' => now()->toIso8601String(),
@@ -3062,6 +3075,17 @@ class FileIndexingController extends Controller
                 'rofo_grantor' => 'nullable|string|max:255',
                 'rofo_grantee' => 'nullable|string|max:255',
                 'rofo_status' => 'nullable|string|max:50',
+                // Occupancy Permit fields
+                'has_occupancy_permit' => 'nullable|boolean',
+                'occupancy_permit_instrument_type' => 'nullable|string|max:255',
+                'occupancy_permit_op_type' => 'nullable|string|max:100',
+                'occupancy_permit_op_serial_number' => 'nullable|string|max:100',
+                'occupancy_permit_date' => 'nullable|date',
+                'occupancy_permit_file_number' => 'nullable|string|max:255',
+                'occupancy_permit_land_use' => 'nullable|string|max:255',
+                'occupancy_permit_grantor' => 'nullable|string|max:255',
+                'occupancy_permit_grantee' => 'nullable|string|max:255',
+                'occupancy_permit_status' => 'nullable|string|max:50',
                 'cofo_status' => 'nullable|string|max:50',
                 'has_temp_file' => 'nullable|boolean',
                 'temp_file_no' => 'nullable|string|max:255',
@@ -3896,6 +3920,12 @@ class FileIndexingController extends Controller
                 $this->syncRofoRecord($fileIndexing, $request, $resolvedTestControl, $propIdForStore);
             }
 
+            // Sync Occupancy Permit record if has_occupancy_permit is checked
+            $requestHasOccupancyPermit = filter_var($request->input('has_occupancy_permit', false), FILTER_VALIDATE_BOOLEAN);
+            if ($requestHasOccupancyPermit) {
+                $this->syncOccupancyPermitRecord($fileIndexing, $request, $resolvedTestControl, $propIdForStore);
+            }
+
             // Exclude from entity/customer sync if Block Indexing OR DCIV Registry
             if ($indexingType !== 'Block' && $validated['general_registry'] !== 'DCIV Registry') {
                 $this->syncEntityAndCustomer($fileIndexing, $request, $resolvedTestControl);
@@ -4473,6 +4503,84 @@ class FileIndexingController extends Controller
 
         // Update file indexing has_rofo flag
         $fileIndexing->update(['has_rofo' => true]);
+    }
+
+    protected function syncOccupancyPermitRecord(FileIndexing $fileIndexing, Request $request, ?string $testControl = null, ?int $propId = null): void
+    {
+        $permitPayload = [
+            'instrument_type' => $this->normalizeValue($request->input('occupancy_permit_instrument_type')),
+            'op_type' => $this->normalizeValue($request->input('occupancy_permit_op_type')),
+            'op_serial_number' => $this->normalizeValue($request->input('occupancy_permit_op_serial_number')),
+            'transaction_date' => $this->normalizeValue($request->input('occupancy_permit_date')),
+            'land_use' => $this->normalizeValue($request->input('occupancy_permit_land_use')),
+            'party_1' => $this->normalizeValue($request->input('occupancy_permit_grantor')),
+            'party_2' => $this->normalizeValue($request->input('occupancy_permit_grantee')),
+            'status' => $this->normalizeValue($request->input('occupancy_permit_status')),
+        ];
+
+        $payloadFields = array_filter($permitPayload, static function ($value) {
+            return !is_null($value) && $value !== '';
+        });
+
+        if (empty($payloadFields)) {
+            return;
+        }
+
+        // Occupancy Permit rows live in the same `pra` instruments table as RoFO,
+        // distinguished by instrument_type. Match on the file number + instrument type
+        // so a re-index updates the existing permit row rather than duplicating it.
+        $instrumentType = $permitPayload['instrument_type'] ?? 'Occupancy Permit';
+        $matchColumns = [
+            'mlsFNo' => $fileIndexing->file_number,
+            'instrument_type' => $instrumentType,
+        ];
+
+        $recordPayload = [
+            'mlsFNo' => $fileIndexing->file_number,
+            // Leave rofo_number null: populating it would let the RoFO matcher, which
+            // looks up pra rows by rofo_number, collide with this Occupancy Permit row.
+            'rofo_number' => null,
+            'instrument_type' => $instrumentType,
+            'transaction_type' => $instrumentType,
+            'op_type' => $permitPayload['op_type'] ?? null,
+            'op_serial_number' => $permitPayload['op_serial_number'] ?? null,
+            'transaction_date' => $permitPayload['transaction_date'] ?? null,
+            'party_1' => $permitPayload['party_1'] ?? null,
+            'party_2' => $permitPayload['party_2'] ?? null,
+            'status' => $permitPayload['status'] ?? 'Active',
+            'land_use' => $permitPayload['land_use'] ?? $fileIndexing->land_use_type,
+            'property_description' => $fileIndexing->location ?? $fileIndexing->district,
+            'location' => $fileIndexing->location ?? $fileIndexing->district,
+            'plot_no' => $fileIndexing->plot_number,
+            'lgsaOrCity' => $fileIndexing->lga,
+            'updated_by' => Auth::id(),
+            'source' => 'indexing',
+            'updated_at' => now(),
+        ];
+
+        if ($testControl) {
+            $recordPayload['test_control'] = $testControl;
+        }
+        if ($propId !== null) {
+            $recordPayload['prop_id'] = $propId;
+        }
+
+        $table = DB::connection('sqlsrv')->table('pra');
+        $existing = $table->where($matchColumns)->first();
+
+        if ($existing) {
+            $table->where('id', $existing->id)->update($recordPayload);
+            $fileIndexing->update(['has_occupancy_permit' => true]);
+            return;
+        }
+
+        $recordPayload['created_at'] = now();
+        $recordPayload['created_by'] = Auth::id();
+
+        $table->insert(array_merge($matchColumns, $recordPayload));
+
+        // Update file indexing has_occupancy_permit flag
+        $fileIndexing->update(['has_occupancy_permit' => true]);
     }
 
     /**

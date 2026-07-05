@@ -224,6 +224,12 @@
                                                 data-sort="registry_batch_no">Registry Batch No</th>
                                             <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
                                                 DCIV Reason</th>
+                                            <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
+                                                Lat</th>
+                                            <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
+                                                Lon</th>
+                                            <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
+                                                Geocode</th>
                                             <th
                                                 class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
                                                 Status</th>
@@ -234,7 +240,7 @@
                                     </thead>
                                     <tbody class="divide-y divide-gray-100" id="indexed-files-tbody">
                                         <tr class="text-center py-8">
-                                            <td colspan="21" class="text-gray-500 py-8">
+                                            <td colspan="25" class="text-gray-500 py-8">
                                                 <i data-lucide="loader" class="h-5 w-5 animate-spin inline-block"></i>
                                                 Loading...
                                             </td>
@@ -369,7 +375,6 @@
                     </div>
                 </div>
             </div>
-            @include('admin.footer')
         </div>
     </div>
 
@@ -379,6 +384,71 @@
     @include('fileindexing.partial.property_transaction_modal')
 
     @include('components.global-fileno-modal')
+
+    <div id="location-map-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+        <div class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm"></div>
+        <div class="relative mx-auto my-8 w-full max-w-5xl px-4">
+            <div class="overflow-hidden rounded-[32px] bg-white shadow-2xl ring-1 ring-slate-200">
+                <div class="flex items-center justify-between gap-4 border-b border-slate-100 px-8 py-5">
+                    <div>
+                        <p class="text-sm font-semibold text-slate-500">Map Coordinates</p>
+                        <h2 id="location-map-modal-title" class="text-lg font-bold text-slate-900">Update Lat / Lon</h2>
+                    </div>
+                    <button type="button" class="location-map-close-btn inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition">
+                        <i data-lucide="x" class="h-5 w-5"></i>
+                    </button>
+                </div>
+                <div class="space-y-6 p-8">
+                    <div class="grid gap-6 sm:grid-cols-3">
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">File Number</label>
+                            <p id="location-map-file-number" class="mt-2 text-sm font-semibold text-slate-900"></p>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Location</label>
+                            <p id="location-map-file-title" class="mt-2 text-sm text-slate-700"></p>
+                        </div>
+                    </div>
+                    <div class="grid gap-6 sm:grid-cols-2">
+                        <div>
+                            <label for="location-map-latitude" class="block text-xs font-semibold uppercase tracking-wide text-slate-500">Latitude</label>
+                            <input id="location-map-latitude" type="text" inputmode="decimal" step="any"
+                                class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-mono" />
+                        </div>
+                        <div>
+                            <label for="location-map-longitude" class="block text-xs font-semibold uppercase tracking-wide text-slate-500">Longitude</label>
+                            <input id="location-map-longitude" type="text" inputmode="decimal" step="any"
+                                class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-mono" />
+                        </div>
+                    </div>
+                    <div class="rounded-3xl border border-slate-200 overflow-hidden bg-slate-50">
+                        <div class="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
+                            <p class="text-sm font-semibold text-slate-700">📍 Map Preview</p>
+                            <span class="text-[10px] text-slate-400 font-medium">Drag the marker to adjust coordinates</span>
+                        </div>
+                        <div id="location-map-preview" class="min-h-[28rem] bg-slate-100 relative z-10"></div>
+                    </div>
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p id="location-map-helper" class="text-sm text-slate-500">Drag the marker or type coordinates to pinpoint the location.</p>
+                        <div class="flex flex-wrap gap-3">
+                            <button type="button" class="location-map-close-btn inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+                                Close
+                            </button>
+                            <button id="location-map-save-btn" type="button" class="inline-flex items-center justify-center rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                                Save Coordinates
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @push('styles')
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    @endpush
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 
     <script>
@@ -387,6 +457,7 @@
             listUrl: @json(route('indexed-files.api.list')),
             viewListUrl: @json(route('indexed-files.api.view-list')),
             statsUrl: @json(route('indexed-files.api.stats')),
+            updateCoordinatesUrlTemplate: @json(route('indexed-files.api.update-coordinates', ['id' => '__ID__'])),
             showUrlTemplate: @json(route('fileindex.show', ['fileindex' => '__ID__'])),
             editUrlTemplate: @json(url('fileindexing/__ID__/edit')),
             deleteUrlTemplate: @json(route('fileindex.destroy', ['fileindex' => '__ID__'])),

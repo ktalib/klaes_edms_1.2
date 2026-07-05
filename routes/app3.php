@@ -262,6 +262,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/applications/{id}/print-acknowledgement', [ApplicationController::class, 'printAcknowledgement'])->name('all-applications.print-acknowledgement')->where('id', '[0-9]+');
         Route::get('/applications/{id}/print-verification-view', [ApplicationController::class, 'printVerificationByRecord'])->name('all-applications.print-verification-view')->where('id', '[0-9]+');
         Route::post('/applications/print-recommendation', [ApplicationController::class, 'printRecommendation'])->name('all-applications.print-recommendation');
+        Route::get('/applications/change-of-ownership-status', [ApplicationController::class, 'changeOfOwnershipStatus'])->name('all-applications.change-of-ownership-status');
         Route::post('/applications/save-change-of-ownership', [ApplicationController::class, 'saveChangeOfOwnership'])->name('applications.save-change-of-ownership');
         Route::post('/applications/save-ffr-change-of-name', [ApplicationController::class, 'saveFfrChangeOfName'])->name('applications.save-ffr-change-of-name');
         Route::post('/applications/capture-ffr-existing', [ApplicationController::class, 'captureFfrExisting'])->name('applications.capture-ffr-existing');
@@ -724,6 +725,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/unmatch-physical-planning', [IndexedFileTableController::class, 'unmatchPhysicalPlanning'])->name('unmatch-physical-planning');
         Route::get('/related-files/{id}', [IndexedFileTableController::class, 'getRelatedFiles'])->name('related-files');
         Route::put('/related-files/{id}', [IndexedFileTableController::class, 'updateRelatedFile'])->name('related-files.update');
+        Route::put('/{id}/coordinates', [IndexedFileTableController::class, 'updateCoordinates'])->name('update-coordinates');
         Route::get('/edms-files/{id}', [IndexedFileTableController::class, 'getEdmsFiles'])->name('edms-files');
         Route::post('/{id}/update-placeholder', [IndexedFileTableController::class, 'updateKangisPlaceholder'])->name('update-placeholder');
     });

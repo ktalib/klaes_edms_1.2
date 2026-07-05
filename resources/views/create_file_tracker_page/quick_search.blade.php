@@ -123,7 +123,7 @@
                         <span class="pointer-events-none absolute -right-3 -top-3 text-sky-300"><i data-lucide="search" class="h-16 w-16"></i></span>
                         <div class="relative flex items-start justify-between gap-2">
                             <div>
-                                <div class="text-[11px] font-semibold uppercase tracking-wide text-sky-100">Blind / Open</div>
+                                <div class="text-[11px] font-semibold uppercase tracking-wide text-sky-100">Total Blind / Open</div>
                                 <div id="qs-rep-blind" class="mt-1 text-3xl font-extrabold leading-none text-white">—</div>
                             </div>
                             <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-700 text-white shadow-md shadow-sky-900">
@@ -135,7 +135,7 @@
                         <span class="pointer-events-none absolute -right-3 -top-3 text-emerald-300"><i data-lucide="check-circle" class="h-16 w-16"></i></span>
                         <div class="relative flex items-start justify-between gap-2">
                             <div>
-                                <div class="text-[11px] font-semibold uppercase tracking-wide text-emerald-100">Found</div>
+                                <div class="text-[11px] font-semibold uppercase tracking-wide text-emerald-100">Total Found</div>
                                 <div id="qs-rep-found" class="mt-1 text-3xl font-extrabold leading-none text-white">—</div>
                             </div>
                             <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-700 text-white shadow-md shadow-emerald-900">
@@ -147,7 +147,7 @@
                         <span class="pointer-events-none absolute -right-3 -top-3 text-amber-300"><i data-lucide="x-circle" class="h-16 w-16"></i></span>
                         <div class="relative flex items-start justify-between gap-2">
                             <div>
-                                <div class="text-[11px] font-semibold uppercase tracking-wide text-amber-100">Not Found</div>
+                                <div class="text-[11px] font-semibold uppercase tracking-wide text-amber-100">Total Not Found</div>
                                 <div id="qs-rep-notfound" class="mt-1 text-3xl font-extrabold leading-none text-white">—</div>
                             </div>
                             <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-700 text-white shadow-md shadow-amber-900">
@@ -159,7 +159,7 @@
                         <span class="pointer-events-none absolute -right-3 -top-3 text-red-300"><i data-lucide="alert-triangle" class="h-16 w-16"></i></span>
                         <div class="relative flex items-start justify-between gap-2">
                             <div>
-                                <div class="text-[11px] font-semibold uppercase tracking-wide text-red-100">Missing</div>
+                                <div class="text-[11px] font-semibold uppercase tracking-wide text-red-100">Total Missing</div>
                                 <div id="qs-rep-missing" class="mt-1 text-3xl font-extrabold leading-none text-white">—</div>
                             </div>
                             <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-700 text-white shadow-md shadow-red-900">
@@ -171,7 +171,7 @@
                         <span class="pointer-events-none absolute -right-3 -top-3 text-slate-300"><i data-lucide="clock" class="h-16 w-16"></i></span>
                         <div class="relative flex items-start justify-between gap-2">
                             <div>
-                                <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-100">Awaiting</div>
+                                <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-100">Total Awaiting</div>
                                 <div id="qs-rep-awaiting" class="mt-1 text-3xl font-extrabold leading-none text-white">—</div>
                             </div>
                             <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-700 text-white shadow-md shadow-slate-900">
@@ -593,7 +593,7 @@
                             if (d.status === 'IN_TRANSIT') {
                                 let dept = (d.receiving_department || '').trim();
                                 if (dept && !/department$/i.test(dept)) dept = dept + ' Department';
-                                return row('Department (Current Location)', dept || d.current_location)
+                                return row('Department', dept || d.current_location)
                                      + row('Rack / Shelf', d.rack_shelf)
                                      + row('Receiving Officer (holder)', d.receiving_officer_name);
                             }
@@ -1766,6 +1766,7 @@
                 if (logStatus) params.set('status', logStatus);
                 if (logFrom)   params.set('from', logFrom);
                 if (logTo)     params.set('to', logTo);
+                if (logQuery)  params.set('q', logQuery);
                 if (URL_CTX)   params.set('url', URL_CTX);
                 const qs   = params.toString();
                 const url  = LOG_URL + (qs ? ('?' + qs) : '');
@@ -2007,9 +2008,14 @@
             scbPage = 1;
             renderScb();
         });
+        // Instant client-side filter over the already-loaded rows, plus a debounced
+        // server refetch so matches beyond the 100 most-recent rows are also found.
+        let logSearchTimer = null;
         document.getElementById('qs-log-search').addEventListener('input', (e) => {
             logQuery = e.target.value.trim();
             renderLog(logRows.filter(r => rowMatches(r, logQuery)));
+            clearTimeout(logSearchTimer);
+            logSearchTimer = setTimeout(loadLog, 350);
         });
         reloadPanels();
     })();

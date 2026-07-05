@@ -524,8 +524,13 @@
                         <div class="grid grid-cols-3 gap-4">
                             <x-instrument-input id="surveyPlanNo" label="" icon="file-text"
                                 placeholder="Survey Plan No" value="{{ $record->survey_plan_no ?? '' }}" />
-                            <x-instrument-select id="district" label="" icon="map-pin" :options="$districts"
-                                placeholder="District" value="{{ $record->district ?? '' }}" optionValue="name" optionLabel="name" />
+                            <div>
+                                <x-instrument-select id="district" label="" icon="map-pin" :options="$districts->merge([(object)['name' => 'Others']])"
+                                    placeholder="District" value="{{ $record->district ?? '' }}" optionValue="name" optionLabel="name" />
+                                <div id="manual_survey_district_container" class="mt-2 hidden">
+                                    <x-instrument-input id="manual_survey_district" name="manual_survey_district" label="" icon="edit-3" placeholder="Specify District" />
+                                </div>
+                            </div>
                             <x-instrument-select id="lga" label="" icon="map" :options="$lgas"
                                 placeholder="LGA" value="{{ $record->lga ?? '' }}" optionValue="name" optionLabel="name" required/>
                         </div>

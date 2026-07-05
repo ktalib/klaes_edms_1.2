@@ -57,6 +57,27 @@
             align-items: center;
             justify-content: center;
             font-size: 10px;
+            overflow: hidden;
+        }
+        .qr-placeholder img {
+            width: 85px;
+            height: 85px;
+            display: block;
+            object-fit: contain;
+        }
+
+        .form-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-top: 40px;
+            padding-top: 12px;
+            border-top: 1px solid #ddd;
+        }
+        .form-footer .footer-logo {
+            max-height: 60px;
+            max-width: 160px;
+            object-fit: contain;
         }
 
         .center-logo {
@@ -216,15 +237,41 @@
         .sig-block {
             width: 45%;
             text-align: center;
-            border-top: 1px solid #000;
-            padding-top: 5px;
             font-size: 14px;
+        }
+        .sig-line {
+            height: 55px;
+            border-bottom: 1px solid #000;
+            margin-bottom: 6px;
         }
 
         @media print {
             .print-bar { display: none !important; }
             body { background-color: white; padding: 0; }
-            .form-container { box-shadow: none; border: none; width: 100%; }
+            /* Force background colours/tints (e.g. the coloured badge) to actually print */
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            .form-container {
+                box-shadow: none;
+                border: none;
+                width: 100%;
+                /* Don't force a full-page height — that pushes the footer onto a 2nd sheet */
+                min-height: 0;
+                padding: 6mm 16mm;
+            }
+            /* Tighten every vertical gap so the whole form + footer fits one A4 sheet */
+            .passport-box-area { margin: 6px 0; }
+            .part-heading { margin: 10px 0 6px 0; }
+            .field-row { margin-bottom: 6px; }
+            .checkbox-row-inline { margin-top: 4px; }
+            .official-box { margin-top: 10px; padding: 12px; }
+            .signature-section { margin-top: 16px; }
+            .sig-line { height: 38px; }
+            .form-footer { margin-top: 10px; padding-top: 8px; }
+            .form-footer .footer-logo { max-height: 48px; }
+            .form-container, .official-box { page-break-inside: avoid; }
             @page { size: A4; margin: 0; }
         }
     </style>
@@ -236,10 +283,17 @@
     </div>
 
     <div class="form-container">
+        @php
+            $qrPayload = trim((string) ($data['op_number'] ?? '')) ?: trim((string) ($data['applicant_name'] ?? ''));
+            $qrPayload = $qrPayload !== '' ? ('OP-VERIFICATION: ' . $qrPayload) : 'OP-VERIFICATION';
+        @endphp
         <div class="header-top">
-            <div class="qr-placeholder">QR CODE</div>
+            <div class="qr-placeholder">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=85x85&data={{ urlencode($qrPayload) }}"
+                     alt="QR Code" onerror="this.parentNode.innerHTML='QR CODE';">
+            </div>
             <div class="center-logo">
-                <img src="{{ asset('assets/logo/logo1.jpg') }}" alt="Coat of Arms" onerror="this.style.display='none'">
+                <img src="{{ asset('assets/logo/Nigerian-Coat-of-Arms.png') }}" alt="Coat of Arms" onerror="this.style.display='none'">
             </div>
             <div class="form-label-top">FORM LN-03A</div>
         </div>
@@ -277,13 +331,18 @@
             Email: <div class="line-input" style="width:250px;">{{ $data['applicant_email'] ?? '' }}</div>
         </div>
         <div class="field-row">
-            4. Means of Identification:
-            @php $idType = $data['id_type'] ?? ''; @endphp
+            4. Means of Identification <span style="font-size:12px;color:#555;">(Photocopy to be attached)</span>:
+            @php
+                $idType = trim((string) ($data['id_type'] ?? ''));
+                // Values must mirror the modal radio options (verification-modal.blade.php).
+                $idOptions = ['National I.D.', 'Voters Card', 'Driving Licence', 'International Passport', 'Others'];
+            @endphp
             <div class="checkbox-row-inline">
-                <div class="checkbox-item"><div class="check-box-sm">{{ $idType === 'NIN' ? '✓' : '' }}</div> NIN</div>
-                <div class="checkbox-item"><div class="check-box-sm">{{ $idType === 'Voters Card' ? '✓' : '' }}</div> Voters Card</div>
-                <div class="checkbox-item"><div class="check-box-sm">{{ $idType === 'Passport' ? '✓' : '' }}</div> Passport</div>
-                <div class="checkbox-item"><div class="check-box-sm">{{ $idType === 'Drivers License' ? '✓' : '' }}</div> Drivers License</div>
+                @foreach($idOptions as $idOption)
+                    <div class="checkbox-item">
+                        <div class="check-box-sm">{{ strcasecmp($idType, $idOption) === 0 ? '✓' : '' }}</div> {{ $idOption }}
+                    </div>
+                @endforeach
             </div>
         </div>
 
@@ -305,10 +364,10 @@
         {{-- OFFICIAL USE ONLY --}}
         <div class="official-box">
             <h3>FOR OFFICIAL USE ONLY</h3>
-            @php $recommendation = $data['recommendation'] ?? ''; @endphp
+            @php $recommendation = trim((string) ($data['recommendation'] ?? '')); @endphp
             <div class="rec-row">
-                <div class="rec-checkbox">{{ $recommendation === 'Recommended' ? '✓' : '' }}</div> Recommended
-                <div class="rec-checkbox" style="margin-left: 30px;">{{ $recommendation === 'Not Recommended' ? '✓' : '' }}</div> Not Recommended
+                <div class="rec-checkbox">{{ strcasecmp($recommendation, 'Recommended') === 0 ? '✓' : '' }}</div> Recommended
+                <div class="rec-checkbox" style="margin-left: 30px;">{{ strcasecmp($recommendation, 'Not Recommended') === 0 ? '✓' : '' }}</div> Not Recommended
             </div>
             <div class="field-row" style="margin-top: 30px;">
                 Chairman: <div class="line-input" style="width:450px;">{{ $data['chairman_name'] ?? '' }}</div>
@@ -316,12 +375,20 @@
 
             <div class="signature-section">
                 <div class="sig-block">
+                    <div class="sig-line"></div>
                     Signature of Chairman
                 </div>
                 <div class="sig-block">
+                    <div class="sig-line"></div>
                     Date
                 </div>
             </div>
+        </div>
+ <br><br> <br><br>
+        {{-- Footer logos --}}
+        <div class="form-footer">
+            <img class="footer-logo" src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Logo" onerror="this.style.display='none'">
+            <img class="footer-logo" src="http://app.klaes.ng/assets/logo/las.jpg" alt="LAS" onerror="this.style.display='none'">
         </div>
     </div>
 </body>

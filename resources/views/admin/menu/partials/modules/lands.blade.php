@@ -7,6 +7,7 @@
     $hasRole('Letter of Grant (RofO)') ||
     $hasRole('Land to Cad/Survey') ||
     $hasRole('Other Applications-Land') ||
+    $hasRole('Generate New FileNo (MLSFileNo)') ||
     $hasRole('EDMS Update')
   )
   <div class="py-1 px-3 mb-0.5 border-t border-slate-100">

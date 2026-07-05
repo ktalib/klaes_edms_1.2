@@ -299,6 +299,9 @@ function renderRows(rows) {
         ${col('lga', `<td class="${standardCellClass}">${escapeHtml(lgaValue)}</td>`)}
         ${col('registry_batch_no', `<td class="${standardCellClass}">${escapeHtml(row.registry_batch_no)}</td>`)}
         ${col('dciv_reason', `<td class="p-3 text-gray-600 max-w-xs whitespace-normal break-words">${Number(row.dciv_status) === 1 && row.dciv_reason ? escapeHtml(row.dciv_reason) : '<span class="text-gray-400">-</span>'}</td>`)}
+        ${col('lat_value', buildLatCell(row))}
+        ${col('lon_value', buildLonCell(row))}
+        ${col('latlon', buildLatLonCell(row))}
         ${col('status', `<td class="p-3 whitespace-nowrap">${statusBadge}</td>`)}
       `;
 
@@ -364,6 +367,32 @@ function buildFileNumberBadge(fileNumber, isTempFallback = false) {
   }
 
   return `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">${escapeHtml(fileNumber)}</span>`;
+}
+
+function buildLatCell(row) {
+  const hasLat = row.latitude !== null && row.latitude !== undefined && row.latitude !== '';
+  const displayText = hasLat ? Number(row.latitude).toFixed(6) : '<span class="text-gray-400">-</span>';
+  return `<td class="p-3 whitespace-nowrap text-sm font-medium text-slate-700 lat-value-cell">${displayText}</td>`;
+}
+
+function buildLonCell(row) {
+  const hasLon = row.longitude !== null && row.longitude !== undefined && row.longitude !== '';
+  const displayText = hasLon ? Number(row.longitude).toFixed(6) : '<span class="text-gray-400">-</span>';
+  return `<td class="p-3 whitespace-nowrap text-sm font-medium text-slate-700 lon-value-cell">${displayText}</td>`;
+}
+
+function buildLatLonCell(row) {
+  return `<td class="p-3 whitespace-nowrap text-gray-600 latlon-cell">
+    <button type="button" class="open-location-map-btn inline-flex items-center gap-2 justify-center rounded-2xl border border-slate-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100 transition"
+      data-id="${row.id}"
+      data-lat="${escapeHtml(row.latitude ?? '')}"
+      data-lon="${escapeHtml(row.longitude ?? '')}"
+      data-file-number="${escapeHtml(row.file_number)}"
+      data-file-title="${escapeHtml(row.file_title)}">
+      <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+      <span>View Map</span>
+    </button>
+  </td>`;
 }
 
 function buildLandUseBadge(landUse) {
@@ -662,6 +691,7 @@ function bindActionHandlers() {
 
   dom.tableBody.addEventListener('click', handleTableBodyClick);
   document.addEventListener('click', handleDocumentClick);
+  document.addEventListener('click', handleLocationModalClick);
   actionHandlersBound = true;
 }
 
@@ -703,6 +733,14 @@ function handleTableBodyClick(event) {
     event.preventDefault();
     event.stopPropagation();
     handlePrintCommissioningSheet(commissionSheetBtn);
+    return;
+  }
+
+  const locationButton = event.target.closest('.open-location-map-btn');
+  if (locationButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    openLocationMapModal(locationButton);
     return;
   }
 
@@ -783,6 +821,286 @@ function handleTableBodyClick(event) {
     const fileNumber = edmsViewBtn.getAttribute('data-file-number');
     const registryFolder = edmsViewBtn.getAttribute('data-registry-folder') || 'Cadastral_Registry';
     openEdmsFilesModal(id, fileNumber, registryFolder);
+  }
+}
+
+// ── Map Modal State ───────────────────────────────────────────────
+let locationMap = null;
+let locationMarker = null;
+let mapTileLayer = null;
+
+function openLocationMapModal(button) {
+  const id = button.getAttribute('data-id');
+  const lat = button.getAttribute('data-lat') || '';
+  const lon = button.getAttribute('data-lon') || '';
+  const fileNumber = button.getAttribute('data-file-number') || 'Unknown';
+  const fileTitle = button.getAttribute('data-file-title') || '-';
+  const modal = document.getElementById('location-map-modal');
+  const title = document.getElementById('location-map-modal-title');
+  const numberEl = document.getElementById('location-map-file-number');
+  const titleEl = document.getElementById('location-map-file-title');
+  const latInput = document.getElementById('location-map-latitude');
+  const lonInput = document.getElementById('location-map-longitude');
+  const saveButton = document.getElementById('location-map-save-btn');
+  const preview = document.getElementById('location-map-preview');
+
+  if (!modal || !latInput || !lonInput || !saveButton || !preview) {
+    return;
+  }
+
+  if (title) {
+    title.textContent = `${fileNumber} — Map Coordinates`;
+  }
+  if (numberEl) {
+    numberEl.textContent = fileNumber;
+  }
+  if (titleEl) {
+    titleEl.textContent = fileTitle || '-';
+  }
+
+  modal.dataset.rowId = id;
+  modal.classList.remove('hidden');
+
+  // Default fallback: Kano, Nigeria
+  const DEFAULT_LAT = 12.0022;
+  const DEFAULT_LON = 8.5922;
+  const hasCoords = lat !== '' && lon !== '';
+
+  if (hasCoords) {
+    latInput.value = lat;
+    lonInput.value = lon;
+    initLeafletMap(preview, parseFloat(lat), parseFloat(lon), latInput, lonInput, saveButton);
+  } else {
+    // No coordinates — attempt geocode from file title / location
+    latInput.value = '';
+    lonInput.value = '';
+    saveButton.disabled = true;
+    saveButton.textContent = 'Geocoding…';
+
+    const geocodeQuery = fileTitle && fileTitle !== '-' ? fileTitle : fileNumber;
+    geocodeLocation(geocodeQuery, preview, latInput, lonInput, saveButton, DEFAULT_LAT, DEFAULT_LON);
+  }
+
+  // Wire up manual coordinate input → marker update
+  latInput.oninput = () => onManualCoordChange(latInput, lonInput, preview);
+  lonInput.oninput = () => onManualCoordChange(latInput, lonInput, preview);
+
+  // Wire up save button
+  saveButton.onclick = async () => {
+    const updatedLat = latInput.value.trim();
+    const updatedLon = lonInput.value.trim();
+    await submitLocationUpdate(id, updatedLat, updatedLon);
+  };
+}
+
+function closeLocationMapModal() {
+  const modal = document.getElementById('location-map-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+  // Destroy Leaflet map to prevent memory leaks
+  if (locationMap) {
+    locationMap.remove();
+    locationMap = null;
+    locationMarker = null;
+    mapTileLayer = null;
+  }
+}
+
+function initLeafletMap(container, lat, lon, latInput, lonInput, saveButton) {
+  // Destroy previous map if any
+  if (locationMap) {
+    locationMap.remove();
+    locationMap = null;
+    locationMarker = null;
+  }
+
+  // Ensure Leaflet is loaded
+  if (typeof L === 'undefined') {
+    container.innerHTML = '<div class="flex h-full min-h-[28rem] items-center justify-center text-sm text-red-500">Leaflet library failed to load. Please refresh the page.</div>';
+    return;
+  }
+
+  container.innerHTML = '';
+  container.style.minHeight = '28rem';
+
+  locationMap = L.map(container, {
+    center: [lat, lon],
+    zoom: 16,
+    zoomControl: true,
+    attributionControl: false,
+  });
+
+  // Satellite tile layer (ArcGIS)
+  mapTileLayer = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: 20, attribution: 'Esri' }
+  ).addTo(locationMap);
+
+  // Custom draggable marker (red themed)
+  const customIcon = L.divIcon({
+    className: 'custom-map-marker',
+    html: `<div style="
+      width: 32px; height: 32px; background: #ef4444; border: 3px solid white;
+      border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+      display: flex; align-items: center; justify-content: center;
+    "><div style="
+      width: 10px; height: 10px; background: white; border-radius: 50%; transform: rotate(45deg);
+    "></div></div>`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32],
+  });
+
+  locationMarker = L.marker([lat, lon], { icon: customIcon, draggable: true }).addTo(locationMap);
+
+  // Update inputs when marker is dragged
+  locationMarker.on('dragend', function () {
+    const pos = locationMarker.getLatLng();
+    latInput.value = pos.lat.toFixed(6);
+    lonInput.value = pos.lng.toFixed(6);
+    saveButton.disabled = false;
+  });
+
+  // Ensure map fills the container
+  setTimeout(() => {
+    if (locationMap) {
+      locationMap.invalidateSize();
+    }
+  }, 100);
+
+  saveButton.disabled = false;
+  saveButton.textContent = 'Save Coordinates';
+}
+
+function onManualCoordChange(latInput, lonInput, preview) {
+  const lat = parseFloat(latInput.value);
+  const lon = parseFloat(lonInput.value);
+  const saveButton = document.getElementById('location-map-save-btn');
+
+  if (!isNaN(lat) && !isNaN(lon) && locationMap && locationMarker) {
+    locationMarker.setLatLng([lat, lon]);
+    locationMap.setView([lat, lon], locationMap.getZoom());
+    saveButton.disabled = false;
+  } else if (locationMap) {
+    saveButton.disabled = true;
+  }
+}
+
+async function geocodeLocation(query, preview, latInput, lonInput, saveButton, fallbackLat, fallbackLon) {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+      { headers: { 'User-Agent': 'KLAES-EDMS/1.0' } }
+    );
+    const results = await response.json();
+    if (results && results.length > 0) {
+      const foundLat = parseFloat(results[0].lat);
+      const foundLon = parseFloat(results[0].lon);
+      latInput.value = foundLat.toFixed(6);
+      lonInput.value = foundLon.toFixed(6);
+      initLeafletMap(preview, foundLat, foundLon, latInput, lonInput, saveButton);
+    } else {
+      // Fallback to Kano default
+      latInput.value = fallbackLat.toFixed(6);
+      lonInput.value = fallbackLon.toFixed(6);
+      initLeafletMap(preview, fallbackLat, fallbackLon, latInput, lonInput, saveButton);
+      saveButton.disabled = false;
+    }
+  } catch (err) {
+    console.warn('Geocoding failed, using default location', err);
+    latInput.value = fallbackLat.toFixed(6);
+    lonInput.value = fallbackLon.toFixed(6);
+    initLeafletMap(preview, fallbackLat, fallbackLon, latInput, lonInput, saveButton);
+    saveButton.disabled = false;
+  }
+}
+
+async function submitLocationUpdate(id, latitude, longitude) {
+  const saveButton = document.getElementById('location-map-save-btn');
+  try {
+    const parsedLat = latitude === '' ? null : Number(latitude);
+    const parsedLon = longitude === '' ? null : Number(longitude);
+
+    if (parsedLat === null || parsedLon === null || Number.isNaN(parsedLat) || Number.isNaN(parsedLon)) {
+      throw new Error('Valid latitude and longitude are required.');
+    }
+
+    const payload = { latitude: parsedLat, longitude: parsedLon };
+    const url = (typeof config.updateCoordinatesUrlTemplate === 'string'
+      ? config.updateCoordinatesUrlTemplate.replace('__ID__', String(id))
+      : `${window.location.origin}/api/indexed-files/${id}/coordinates`);
+
+    saveButton.disabled = true;
+    saveButton.textContent = 'Saving…';
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Unable to save coordinates');
+    }
+
+    const row = getRowFromCache(id);
+    if (row) {
+      row.latitude = data.data.latitude;
+      row.longitude = data.data.longitude;
+      updateLatLonCell(id, row);
+    }
+
+    closeLocationMapModal();
+    window.alert('Coordinates saved successfully.');
+  } catch (error) {
+    console.error(error);
+    window.alert(error.message || 'Failed to save coordinates.');
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = 'Save Coordinates';
+  }
+}
+
+function updateLatLonCell(id, row) {
+  const rowEl = document.querySelector(`tr[data-row-id="${id}"]`);
+  if (!rowEl) {
+    return;
+  }
+  const latCell = rowEl.querySelector('.lat-value-cell');
+  if (latCell) {
+    const hasLat = row.latitude !== null && row.latitude !== undefined && row.latitude !== '';
+    latCell.innerHTML = hasLat ? Number(row.latitude).toFixed(6) : '<span class="text-gray-400">-</span>';
+  }
+
+  const lonCell = rowEl.querySelector('.lon-value-cell');
+  if (lonCell) {
+    const hasLon = row.longitude !== null && row.longitude !== undefined && row.longitude !== '';
+    lonCell.innerHTML = hasLon ? Number(row.longitude).toFixed(6) : '<span class="text-gray-400">-</span>';
+  }
+
+  const cell = rowEl.querySelector('.latlon-cell');
+  if (!cell) {
+    return;
+  }
+
+  cell.innerHTML = `<button type="button" class="open-location-map-btn inline-flex items-center gap-2 justify-center rounded-2xl border border-slate-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100 transition"
+      data-id="${row.id}"
+      data-lat="${escapeHtml(row.latitude ?? '')}"
+      data-lon="${escapeHtml(row.longitude ?? '')}"
+      data-file-number="${escapeHtml(row.file_number)}"
+      data-file-title="${escapeHtml(row.file_title)}">
+      <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+      <span>View Map</span>
+    </button>`;
+  if (window.lucide) {
+    window.lucide.createIcons();
   }
 }
 
@@ -1147,6 +1465,14 @@ function bindRelatedEditHandlers(parentId) {
 function handleDocumentClick(event) {
   if (!event.target.closest('[data-action-menu]')) {
     closeAllActionMenus();
+  }
+}
+
+function handleLocationModalClick(event) {
+  const closeButton = event.target.closest('.location-map-close-btn');
+  if (closeButton) {
+    event.preventDefault();
+    closeLocationMapModal();
   }
 }
 

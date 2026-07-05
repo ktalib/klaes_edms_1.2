@@ -152,11 +152,23 @@
                                         </button>
                                         <div x-show="open" x-transition :style="menuStyle"
                                              class="w-52 bg-white rounded-xl shadow-xl border border-slate-200 py-1 text-sm">
+                                            <button type="button"
+                                                    onclick="viewRecord({{ json_encode($rec) }}, '{{ $rec->rofo_status === \App\Models\SltrRecommendation::ROFO_GENERATED ? route('sltr-rofos.print', $rec->id) : '' }}')"
+                                                    class="flex w-full items-center px-4 py-2.5 text-slate-700 hover:bg-slate-50 transition gap-2">
+                                                <i data-lucide="eye" class="h-4 w-4"></i> View Record
+                                            </button>
+                                            <div class="border-t border-slate-100 my-1"></div>
                                             @if($rec->rofo_status !== \App\Models\SltrRecommendation::ROFO_GENERATED)
                                             <button type="button"
                                                     onclick="openGenerateModal({{ $rec->id }}, '{{ $rec->sltr_number }}')"
                                                     class="flex w-full items-center px-4 py-2.5 text-teal-700 hover:bg-teal-50 transition gap-2 font-bold">
                                                 <i data-lucide="zap" class="h-4 w-4"></i> Generate RofO
+                                            </button>
+                                            @elseif(($rec->rofo_print_count ?? 0) > 0)
+                                            <button type="button"
+                                                    onclick="window.open('{{ route('sltr-rofos.print', $rec->id) }}', '_blank')"
+                                                    class="flex w-full items-center px-4 py-2.5 text-blue-700 hover:bg-blue-50 transition gap-2 font-bold">
+                                                <i data-lucide="eye" class="h-4 w-4"></i> View RofO
                                             </button>
                                             @else
                                             <button type="button"
@@ -257,6 +269,53 @@
 
 @push('scripts')
 <script>
+// Only Supper Admin / Director SLTR may reprint from the view card.
+window.sltrCanApprove = {{ $canApprove ? 'true' : 'false' }};
+
+// Read-only view of an SLTR record's stored fields.
+function viewRecord(data, printUrl) {
+    const esc = (v) => (v === null || v === undefined || v === '') ? '—'
+        : String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const money = (v) => (v === null || v === undefined || v === '') ? '—'
+        : '₦' + Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const appDate = data.application_date ? String(data.application_date).substring(0, 10) : '';
+
+    const rows = [
+        ['File Number', esc(data.sltr_number)],
+        ['Applicant Name', esc(data.applicant_name)],
+        ['Applicant Address', esc(data.applicant_address)],
+        ['Location', esc(data.location)],
+        ['LGA', esc(data.lga)],
+        ['Land Use', esc(data.land_use)],
+        ['Purpose Clause', esc(data.purpose_of_clause)],
+        ['Plot Number', esc(data.plot_number)],
+        ['Term', data.term ? esc(data.term) + ' yrs' : '—'],
+        ['Ground Rent', money(data.ground_rent)],
+        ['Processing Fee', money(data.processing_fee)],
+        ['Application Date', esc(appDate)],
+        ['Status', esc(data.status)],
+        ['RofO Status', esc(data.rofo_status)],
+        ['Security Paper Code', esc(data.sltr_rofo_serial_no)],
+        ['Generated On', esc(data.rofo_generated_at)],
+        ['Notes', esc(data.notes)],
+    ];
+
+    const html = '<div style="text-align:left;font-size:13px;max-height:60vh;overflow-y:auto">'
+        + '<table style="width:100%;border-collapse:collapse">'
+        + rows.map(([k, v]) =>
+            `<tr><td style="padding:6px 10px;font-weight:700;color:#475569;white-space:nowrap;vertical-align:top">${k}</td>`
+            + `<td style="padding:6px 10px;color:#0f172a">${v}</td></tr>`).join('')
+        + '</table></div>';
+
+    Swal.fire({
+        title: 'SLTR RofO Record',
+        html: html,
+        width: 640,
+        confirmButtonText: 'Close',
+        confirmButtonColor: '#0d9488'
+    });
+}
+
 function openGenerateModal(id, sltrNo) {
     document.getElementById('gen-id').value = id;
     document.getElementById('gen-sltr-no').textContent = sltrNo || '#' + id;

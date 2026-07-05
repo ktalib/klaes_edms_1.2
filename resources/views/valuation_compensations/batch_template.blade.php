@@ -101,12 +101,14 @@
 
         .sig-row {
             display: flex;
+            flex-direction: row;
             justify-content: space-between;
-            margin-bottom: 60px;
+            align-items: flex-start;
+            gap: 20px;
         }
 
         .sig-line {
-            width: 250px;
+            flex: 1;
             border-top: 1px solid black;
             padding-top: 8px;
             font-weight: bold;
@@ -144,36 +146,142 @@
             font-style: italic;
         }
 
+        .data-table {
+            /* Nudge the itemized table down so the first sheet's content sits
+               lower and the empty band below it is reduced. Only affects the
+               space before the first row (sheet 1); the header that repeats on
+               later sheets stays flush at the top. */
+            margin-top: 60px;
+            margin-bottom: 0;
+        }
+
+        /* Totals + signatures share the main table as one closing tbody so the
+           column headers repeat above them on whichever sheet they land on.
+           Kept together so the block never splits across two sheets. */
+        .closing-block {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        /* Blank row that leaves signing room above the signature lines. */
+        .sig-spacer td {
+            border: none;
+            height: 45px;
+        }
+
+        .sig-cell {
+            border: none;
+            border-top: 1px solid #000;
+            padding-top: 8px;
+            font-weight: bold;
+            text-align: center;
+            text-transform: uppercase;
+            font-size: 12px;
+            vertical-align: bottom;
+        }
+
+        .sig-gap {
+            border: none;
+        }
+
+        .footer-cell {
+            border: none;
+            vertical-align: middle;
+            padding-top: 20px;
+        }
+
+        .footer-logo {
+            height: 40px;
+            width: auto;
+            max-width: 120px;
+            object-fit: contain;
+        }
+
+        /* Invisible spacer row used to force a page break after a fixed
+           number of rows. Renders as a zero-height, borderless row on
+           screen and triggers a new sheet when printing. */
+        .page-break-row td {
+            border: none !important;
+            padding: 0 !important;
+            height: 0 !important;
+            line-height: 0;
+            font-size: 0;
+        }
+
         /* PRINT SETTINGS */
         @media print {
             @page {
                 size: landscape;
                 margin: 0.5cm;
             }
-            
+
             body {
                 background-color: white;
                 padding: 0;
             }
 
+            /* NOTE: the container must stay a normal block in print.
+               A flex container is treated as one unbreakable box, so
+               page-break rules inside the table would be ignored and
+               nothing would flow onto a second sheet. */
             .container {
                 width: 100%;
                 max-width: none;
                 box-shadow: none;
                 border: 2px solid #00008B;
                 padding: 15px;
-                min-height: 95vh;
-                display: flex;
-                flex-direction: column;
+                display: block;
             }
 
             .footer-wrap {
-                margin-top: auto;
-                padding-top: 20px;
+                padding-top: 10px;
+                page-break-inside: avoid;
+            }
+
+            /* Tighten vertical spacing in print so a short report keeps
+               the table and signatures together on one sheet. */
+            table {
+                margin-bottom: 15px;
+            }
+            .footer-signatures {
+                margin-top: 20px;
+            }
+            .logo-footer {
+                margin-top: 20px;
+                padding-top: 10px;
             }
 
             .no-print {
                 display: none;
+            }
+
+            /* Repeat the column headers at the top of every printed sheet */
+            thead {
+                display: table-header-group;
+            }
+
+            /* Never split a single row across two sheets */
+            tbody tr {
+                page-break-inside: avoid;
+            }
+
+            /* Force a new sheet after the fixed row count */
+            .page-break-row {
+                page-break-after: always;
+                break-after: page;
+            }
+
+            /* Keep group headers with the rows that follow them */
+            .grp-header {
+                page-break-after: avoid;
+            }
+
+            /* Keep the closing totals together on one sheet */
+            .total-row {
+                page-break-inside: avoid;
+            }
+            .grand-total-row {
+                page-break-before: avoid;
             }
         }
 
@@ -262,7 +370,7 @@
         LOCATION SCOPE: <span style="text-decoration: underline;">{{ $projLocation ?: ($records->first()->location ?? 'N/A') }}</span>
     </div>
 
-    <table>
+    <table class="data-table">
         <thead>
             <tr>
                 <th style="width: 4%;">S/N</th>
@@ -271,9 +379,10 @@
                 <th style="width: 6%;">No. of Building</th>
                 <th style="width: 7%;">Area Covered in M<sup>2</sup></th>
                 <th style="width: 8%;">Rate of Cost ₦</th>
-                <th style="width: 15%;">Amount of Compensation ₦</th>
-                <th style="width: 10%;">Account Number</th>
-                <th style="width: 9%;">Phone Number</th>
+                <th style="width: 12%;">Amount of Compensation ₦</th>
+                <th style="width: 9%;">Bank Name</th>
+                <th style="width: 9%;">Account Number</th>
+                <th style="width: 8%;">Phone Number</th>
                 <th style="width: 6%;">Remarks</th>
             </tr>
         </thead>
@@ -292,6 +401,11 @@
                 // Group by sub-project first
                 $recordsBySubProject = $records->groupBy('sub_project_id');
                 $totalValuation = 0;
+
+                // Fixed number of table rows per printed sheet. Change this
+                // one value to fit more/fewer rows on each page.
+                $rowsPerPage   = $rowsPerPage ?? 7;
+                $printRowCount = 0;
             @endphp
 
             @foreach($recordsBySubProject as $subProjectId => $subProjectRecords)
@@ -303,12 +417,13 @@
 
                 <!-- Sub-Project Header Row (only when a sub-project is set) -->
                 @if($subProject)
-                <tr style="border-top: 1px solid #000;">
+                <tr class="grp-header" style="border-top: 1px solid #000;">
                     <td colspan="1" style="font-weight: bold;"></td>
-                    <td colspan="9" style="text-align: left; padding-left: 15px; font-weight: bold; text-transform: uppercase; background-color: #f8fafc;">
+                    <td colspan="10" style="text-align: left; padding-left: 15px; font-weight: bold; text-transform: uppercase; background-color: #f8fafc;">
                         {{ $subProjectName }}
                     </td>
                 </tr>
+                @php $printRowCount++; @endphp
                 @endif
 
                 @php
@@ -330,12 +445,13 @@
                     @endphp
 
                     <!-- Worker Header Row -->
-                    <tr style="border-bottom: 1px solid #000;">
+                    <tr class="grp-header" style="border-bottom: 1px solid #000;">
                         <td colspan="1" style="font-weight: bold; text-align: center;">{{ $workerLetter }}</td>
-                        <td colspan="9" style="text-align: left; padding-left: 15px; font-weight: bold; text-transform: uppercase; font-size: 10px; color: #475569;">
+                        <td colspan="10" style="text-align: left; padding-left: 15px; font-weight: bold; text-transform: uppercase; font-size: 10px; color: #475569;">
                             WORKER: {{ $workerName }} ({{ $workerCode }})
                         </td>
                     </tr>
+                    @php $printRowCount++; @endphp
 
                     @php
                         // Group by owner within this worker
@@ -466,15 +582,15 @@
                                     <td style="font-size: 9px;">{{ $drow['area'] }}</td>
                                     <td style="text-align: right; padding-right: 8px; font-size: 9px;">{{ $drow['rate'] }}</td>
                                     <td style="text-align: right; padding-right: 8px; font-size: 9px;">{{ $drow['amount'] }}</td>
-                                    <td style="font-size: 9px;">
-                                        @if($isFirst)
-                                            <div>{{ $record->account_number }}</div>
-                                            <div style="color: #666;">{{ $record->bank_name }}</div>
-                                        @endif
-                                    </td>
+                                    <td style="text-align: left; padding-left: 8px; font-size: 9px;">{{ $isFirst ? $record->bank_name : '' }}</td>
+                                    <td style="font-size: 9px;">{{ $isFirst ? $record->account_number : '' }}</td>
                                     <td style="font-size: 9px;">{{ $isFirst ? $record->phone_number : '' }}</td>
                                     <td style="font-size: 9px; text-align: left;">{{ $isFirst ? Str::limit($record->remarks, 50) : '' }}</td>
                                 </tr>
+                                @php $printRowCount++; @endphp
+                                @if($printRowCount % $rowsPerPage === 0)
+                                    <tr class="page-break-row"><td colspan="11"></td></tr>
+                                @endif
                             @endforeach
 
                             <!-- Owner Total Row -->
@@ -486,8 +602,12 @@
                                 <td style="text-align: right; padding-right: 8px; border-top: 1px solid #999; font-size: 9px;">
                                     {{ number_format($ownerSubTotal, 2) }}
                                 </td>
-                                <td colspan="3"></td>
+                                <td colspan="4"></td>
                             </tr>
+                            @php $printRowCount++; @endphp
+                            @if($printRowCount % $rowsPerPage === 0)
+                                <tr class="page-break-row"><td colspan="11"></td></tr>
+                            @endif
                             @endif
                         @endforeach
                         
@@ -503,8 +623,12 @@
                         <td style="text-align: right; padding-right: 8px; font-size: 9px; border-bottom: 1px solid #000;">
                             {{ number_format($workerTotal, 2) }}
                         </td>
-                        <td colspan="3"></td>
+                        <td colspan="4"></td>
                     </tr>
+                    @php $printRowCount++; @endphp
+                    @if($printRowCount % $rowsPerPage === 0)
+                        <tr class="page-break-row"><td colspan="11"></td></tr>
+                    @endif
                     @endif
 
                     @php $subProjectTotal += $workerTotal; @endphp
@@ -513,73 +637,87 @@
                 <!-- Sub-Project Sub-total row (only when a sub-project is set) -->
                 @if($subProject)
                 <tr style="border-top: 1px solid #000;">
-                    <td colspan="6" style="text-align: right; padding-right: 15px; height: 35px; text-transform: uppercase; font-size: 11px;">
+                    <td colspan="6" style="text-align: right; padding-right: 15px; font-size: 9px; color: #555; font-weight: normal;">
                         Sub Total {{ $subProjectName }}
                     </td>
-                    <td style="text-align: right; padding-right: 8px; font-size: 9px; border-bottom: 1px solid #000;">
+                    <td style="text-align: right; padding-right: 8px; font-size: 9px; font-weight: normal;">
                         {{ number_format($subProjectTotal, 2) }}
                     </td>
-                    <td colspan="3"></td>
+                    <td colspan="4"></td>
                 </tr>
+                @php $printRowCount++; @endphp
+                @if($printRowCount % $rowsPerPage === 0)
+                    <tr class="page-break-row"><td colspan="11"></td></tr>
+                @endif
                 @endif
 
                 @php $totalValuation += $subProjectTotal; @endphp
             @endforeach
             
             @php
+                // Grand-total maths, computed once all rows have been summed.
                 $percent = $customPercentage ?? ($project->apply_percentage ?? 0);
                 $appliedAmount = ($totalValuation * $percent) / 100;
                 $finalTotal = $totalValuation + $appliedAmount;
             @endphp
-            
-            <tr style="border-top: 1px solid #000;">
-                <td colspan="6" style="text-align: right; padding-right: 15px; font-size: 9px; color: #555; font-weight: normal;">Sub Total</td>
-                <td style="text-align: right; padding-right: 8px; font-size: 9px; font-weight: normal;">
-                    <span style="font-family: 'Segoe UI', Calibri, Tahoma, sans-serif; font-weight: 300;"></span>{{ number_format($totalValuation, 2) }}
-                </td>
-                <td colspan="3"></td>
-            </tr>
 
+            <!-- Sub Total stays in the main tbody so it prints on the same sheet
+                 as the itemized rows (bottom of sheet 1), rather than moving to
+                 the next sheet with the closing block. -->
+            <tr class="total-row" style="border-top: 1px solid #000;">
+                <td colspan="6" style="text-align: right; padding-right: 15px; font-size: 9px; color: #555; font-weight: normal;">Sub Total</td>
+                <td style="text-align: right; padding-right: 8px; font-size: 9px; font-weight: normal;">{{ number_format($totalValuation, 2) }}</td>
+                <td colspan="4"></td>
+            </tr>
+        </tbody>
+
+        <!-- Closing block: percent + Grand Total + signatures live inside the
+             MAIN table (as a second tbody) rather than a separate table, so the
+             column headers (thead, which repeats on every printed sheet) sit
+             above them too. page-break-inside: avoid keeps the block together,
+             so when it can't fit it moves to the next sheet as a unit. -->
+        <tbody class="closing-block">
             @if($percent > 0)
-            <tr style="border-top: 1px solid #000;">
+            <tr class="total-row" style="border-top: 1px solid #000;">
                 <td colspan="6" style="text-align: right; padding-right: 15px; font-size: 9px; color: #555; font-weight: normal;">{{ $percent }}%</td>
-                <td style="text-align: right; padding-right: 8px; font-size: 9px; font-weight: normal;">
-                    <span style="font-family: 'Segoe UI', Calibri, Tahoma, sans-serif; font-weight: 300;"></span>{{ number_format($appliedAmount, 2) }}
-                </td>
-                <td colspan="3"></td>
+                <td style="text-align: right; padding-right: 8px; font-size: 9px; font-weight: normal;">{{ number_format($appliedAmount, 2) }}</td>
+                <td colspan="4"></td>
             </tr>
             @endif
 
-            <tr style="font-weight: 900; border: 2.16px solid #000;">
+            <tr class="total-row grand-total-row" style="font-weight: 900; border: 2.16px solid #000;">
                 <td colspan="6" style="text-align: right; padding-right: 15px; height: 22.5px; font-size: 12px; font-weight: 900;">Grand Total</td>
-                <td style="text-align: right; padding-right: 8px; font-size: 14.48px; font-weight: 900; white-space: nowrap;">
-                    ₦{{ number_format($finalTotal, 2) }}
+                <td style="text-align: right; padding-right: 8px; font-size: 14.48px; font-weight: 900; white-space: nowrap;">₦{{ number_format($finalTotal, 2) }}</td>
+                <td colspan="4"></td>
+            </tr>
+
+            <!-- Signature lines (spacer row leaves room to sign above each line) -->
+            <tr class="sig-spacer"><td colspan="11"></td></tr>
+            <tr>
+                <td colspan="3" class="sig-cell">Head of Valuation</td>
+                <td colspan="1" class="sig-gap"></td>
+                <td colspan="3" class="sig-cell">Director Deeds</td>
+                <td colspan="1" class="sig-gap"></td>
+                <td colspan="3" class="sig-cell">Permanent Secretary</td>
+            </tr>
+
+            <!-- Footer logos + generation info -->
+            <tr>
+                <td colspan="4" class="footer-cell" style="text-align: left;">
+                    <img class="footer-logo" src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Footer Left">
                 </td>
-                <td colspan="3"></td>
+                <td colspan="3" class="footer-cell">
+                    <div class="generation-info">
+                        Generated by {{ Auth::user()->first_name ?? 'Klaes' }} {{ Auth::user()->last_name ?? 'Admin' }}
+                        at {{ now()->format('g:i A') }} & {{ now()->format('d/m/Y') }}
+                    </div>
+                </td>
+                <td colspan="4" class="footer-cell" style="text-align: right;">
+                    <img class="footer-logo" src="http://app.klaes.ng/assets/logo/las.jpg" alt="Footer Right">
+                </td>
             </tr>
         </tbody>
     </table>
-
-    <div class="footer-wrap">
-        <div class="footer-signatures">
-            <div class="sig-row">
-                <div class="sig-line">Head of Valuation</div>
-                <div class="sig-line">Director Deeds</div>
-            </div>
-            <div class="perm-sec-wrap">
-                <div class="sig-line" style="width: 350px;">Permanent Secretary</div>
-            </div>
-        </div>
-
-        <div class="logo-footer">
-            <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Footer Left">
-            <div class="generation-info">
-                Generated by {{ Auth::user()->first_name ?? 'Klaes' }} {{ Auth::user()->last_name ?? 'Admin' }} 
-                at {{ now()->format('g:i A') }} & {{ now()->format('d/m/Y') }}
-            </div>
-            <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="Footer Right">
-        </div>
-    </div>
 </div>
 
 </body>

@@ -169,26 +169,37 @@
 
         .row {
             display: grid;
-            grid-template-columns: 45mm 1fr;
+            grid-template-columns: 52mm 1fr;
             align-items: end;
             margin-bottom: 8mm;
         }
 
         .label {
-            font-size: 4.2mm;
+            font-size: 4.8mm;
             font-weight: 700;
             line-height: 1;
             padding-right: 5mm;
+            white-space: nowrap;
         }
 
         .value-line {
             border-bottom: 0.3mm solid #444444;
-            min-height: 6.5mm;
+            min-height: 7mm;
             display: flex;
             align-items: center;
-            font-size: 4mm;
+            font-size: 4.6mm;
             line-height: 1;
             padding: 0 2mm 1mm;
+        }
+
+        /* Long values (e.g. Reason / sit_reason) wrap onto multiple lines instead of overflowing. */
+        .value-line.wrap {
+            display: block;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            line-height: 1.3;
+            padding: 1.5mm 2mm;
         }
 
         .watermark {
@@ -224,7 +235,7 @@
 
         .sig-label {
             font-size: 4mm;
-            margin-bottom: 10mm;
+            margin-top: 3mm;
         }
 
         .sig-line {
@@ -312,9 +323,15 @@
                     <div class="value-line">{{ $data['related_file_number'] }}</div>
                 </div>
                 @endif
+                @if(!empty($allottee))
+                <div class="row">
+                    <div class="label">Allottee:</div>
+                    <div class="value-line">{{ $allottee }}</div>
+                </div>
+                @endif
                 <div class="row">
                     <div class="label">{{ $isOss ? 'Plot No:' : 'Reason:' }}</div>
-                    <div class="value-line">{{ $reason }}</div>
+                    <div class="value-line{{ $isOss ? '' : ' wrap' }}">{{ $reason }}</div>
                 </div>
                 <div class="row">
                     <div class="label">TP No:</div>
@@ -327,7 +344,7 @@
                 @if($isSit && !empty($sitReason))
                 <div class="row">
                     <div class="label">Reason:</div>
-                    <div class="value-line">{{ $sitReason }}</div>
+                    <div class="value-line wrap">{{ $sitReason }}</div>
                 </div>
                 @endif
                 <div class="row">
@@ -343,20 +360,20 @@
                     <div class="value-line">{{ $commissionedBy }}</div>
                 </div>
             </div>
-
+<br><br>
             <div class="signatures">
                 <div class="sig">
-                    <div class="sig-label">Created by Signature</div>
                     <div class="sig-line"></div>
+                    <div class="sig-label">Created by Signature</div>
                 </div>
                 <div class="sig">
-                    <div class="sig-label">Approved by Signature</div>
                     <div class="sig-line"></div>
+                    <div class="sig-label">Approved by Signature</div>
                 </div>
             </div>
         </div>
         </div>{{-- end .sheet-body --}}
-
+<br><br>
         <div class="sheet-footer">
             <div class="mark">
                 <span class="m-red"></span>

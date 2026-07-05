@@ -187,14 +187,15 @@
                                             ])) }}
                                         </td>
                                         <td class="px-4 py-2.5">
-                                            @php $sc = match($record->status) {
-                                                'approved'   => 'bg-emerald-50 text-emerald-700',
-                                                'pending'    => 'bg-amber-50 text-amber-700',
-                                                'rejected'   => 'bg-red-50 text-red-700',
-                                                'processing' => 'bg-blue-50 text-blue-700',
-                                                default      => 'bg-slate-50 text-slate-600',
+                                            @php $sc = match(strtolower((string) $record->status)) {
+                                                'approved'     => 'bg-emerald-50 text-emerald-700',
+                                                'pending'      => 'bg-amber-50 text-amber-700',
+                                                'rejected'     => 'bg-red-50 text-red-700',
+                                                'processing'   => 'bg-blue-50 text-blue-700',
+                                                'commissioned' => 'bg-indigo-50 text-indigo-700',
+                                                default        => 'bg-slate-50 text-slate-600',
                                             }; @endphp
-                                            <span class="px-2 py-1 text-[11px] font-bold rounded {{ $sc }}">{{ ucfirst($record->status) }}</span>
+                                            <span class="px-2 py-1 text-[11px] font-bold rounded {{ $sc }}">{{ ucfirst((string) $record->status) }}</span>
                                         </td>
                                         <td class="px-4 py-2.5 font-mono text-xs text-slate-500">
                                             {{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('M d, Y') : '-' }}
@@ -336,6 +337,7 @@
                                     <th class="px-4 py-3 text-left">Current Land Use</th>
                                     <th class="px-4 py-3 text-left">New Purpose</th>
                                     <th class="px-4 py-3 text-left">Location</th>
+                                    <th class="px-4 py-3 text-left">Status</th>
                                     <th class="px-4 py-3 text-left">Date</th>
                                     @if(request('mode') !== 'land')
                                     <th class="px-4 py-3 text-center">Actions</th>
@@ -353,6 +355,14 @@
                                             <span class="px-2 py-1 bg-blue-50 text-blue-700 rounded font-semibold">{{ $landUseOptions[strtoupper($record->purpose ?? '')] ?? ($record->purpose ?: '-') }}</span>
                                         </td>
                                         <td class="px-4 py-2.5 text-xs text-slate-500 leading-snug">{{ $record->location ?: '-' }}</td>
+                                        <td class="px-4 py-2.5">
+                                            @php $sc = match(strtolower((string) $record->status)) {
+                                                'approved'     => 'bg-emerald-50 text-emerald-700',
+                                                'commissioned' => 'bg-indigo-50 text-indigo-700',
+                                                default        => 'bg-slate-50 text-slate-600',
+                                            }; @endphp
+                                            <span class="px-2 py-1 text-[11px] font-bold rounded {{ $sc }}">{{ ucfirst((string) $record->status) }}</span>
+                                        </td>
                                         <td class="px-4 py-2.5 font-mono text-xs text-slate-500">
                                             {{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('M d, Y') : '-' }}
                                         </td>
@@ -375,12 +385,12 @@
                                                                 <span>Acknowledgement</span>
                                                             </button>
                                                         </li>
-                                                        <li>
+                                                        {{-- <li>
                                                             <button class="block w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center space-x-2 text-sm text-emerald-600 font-semibold" onclick="copOpenCommission(this)">
                                                                 <i data-lucide="check-square" class="w-4 h-4 text-emerald-500"></i>
                                                                 <span>Commission</span>
                                                             </button>
-                                                        </li>
+                                                        </li> --}}
                                                     </ul>
                                                 </div>
                                         </td>

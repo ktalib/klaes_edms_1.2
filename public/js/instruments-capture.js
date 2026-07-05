@@ -392,12 +392,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const manualSelectConfig = {
         'desc_district': { containerId: 'manual_district_container', inputId: 'manual_district' },
-        'district': { containerId: 'manual_district_container', inputId: 'manual_district' },
+        'district': { containerId: 'manual_survey_district_container', inputId: 'manual_survey_district' },
         'streetName': { containerId: 'manual_street_container', inputId: 'manual_street_name', onChange: updatePropertyDescription },
         'firstPartyStreet': { containerId: 'manual_firstPartyStreet_container', inputId: 'manual_firstPartyStreet' },
         'secondPartyStreet': { containerId: 'manual_secondPartyStreet_container', inputId: 'manual_secondPartyStreet' },
         'firstPartyDistrict': { containerId: 'manual_firstPartyDistrict_container', inputId: 'manual_firstPartyDistrict' },
-        'secondPartyDistrict': { containerId: 'manual_secondPartyDistrict_container', inputId: 'manual_secondPartyDistrict' }
+        'secondPartyDistrict': { containerId: 'manual_secondPartyDistrict_container', inputId: 'manual_secondPartyDistrict' },
+        'coMortgagorDistrict': { containerId: 'manual_coMortgagorDistrict_container', inputId: 'manual_coMortgagorDistrict' },
+        'thirdPartyDistrict': { containerId: 'manual_thirdPartyDistrict_container', inputId: 'manual_thirdPartyDistrict' },
+        'party5District': { containerId: 'manual_party5District_container', inputId: 'manual_party5District' }
     };
 
     function isOtherValue(value) {
@@ -447,6 +450,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 handleManualToggle(id, selectEl.value);
             }
+
+            // Keep Select2 display in sync when the value is set programmatically
+            if (window.jQuery && jQuery.fn.select2 && jQuery(selectEl).hasClass('select2-hidden-accessible')) {
+                jQuery(selectEl).trigger('change.select2');
+            }
         });
     }
 
@@ -454,6 +462,12 @@ document.addEventListener('DOMContentLoaded', function () {
         Object.keys(manualSelectConfig).forEach(id => {
             const selectEl = document.getElementById(id);
             if (!selectEl) return;
+            // Avoid double-binding when re-run for dynamically inserted templates
+            if (selectEl.dataset.manualToggleBound === '1') {
+                handleManualToggle(id, selectEl.value);
+                return;
+            }
+            selectEl.dataset.manualToggleBound = '1';
             selectEl.addEventListener('change', (event) => {
                 handleManualToggle(id, event.target.value);
                 const callback = manualSelectConfig[id]?.onChange;
@@ -619,6 +633,59 @@ document.addEventListener('DOMContentLoaded', function () {
 
     initTpLookupSelect();
 
+    // Enable searchable Select2 dropdowns for District selects.
+    // Select2 fires native `change` events, so existing manual-toggle /
+    // property-description listeners keep working unchanged.
+    function initDistrictSelect2(root) {
+        if (!(window.jQuery && jQuery.fn.select2)) return;
+
+        const districtIds = [
+            'firstPartyDistrict', 'secondPartyDistrict', 'desc_district', 'district',
+            'coMortgagorDistrict', 'thirdPartyDistrict', 'party5District', 'solicitorDistrict'
+        ];
+
+        const scope = root && root.querySelectorAll ? root : document;
+
+        districtIds.forEach(id => {
+            const selectEl = scope.getElementById
+                ? scope.getElementById(id)
+                : scope.querySelector(`#${id}`);
+            if (!selectEl) return;
+
+            const $select = jQuery(selectEl);
+            // Skip if Select2 is already initialised on this element
+            if ($select.hasClass('select2-hidden-accessible')) return;
+
+            $select.select2({
+                width: '100%',
+                placeholder: selectEl.querySelector('option[value=""]')?.textContent?.trim() || 'Select District',
+                allowClear: false,
+                containerCssClass: 'district-select2',
+                dropdownParent: jQuery('#registration-dialog').length
+                    ? jQuery('#registration-dialog')
+                    : jQuery(document.body),
+            });
+
+            // Select2 fires its change event through jQuery, which does NOT reach handlers
+            // registered with native addEventListener (the "Others → specify" toggle,
+            // property-description updater, etc). Re-dispatch a native change event so those
+            // listeners run. A guard flag prevents the re-dispatch from looping back in.
+            $select.on('change', function () {
+                if (selectEl.dataset.select2Syncing === '1') return;
+                selectEl.dataset.select2Syncing = '1';
+                selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+                delete selectEl.dataset.select2Syncing;
+            });
+
+            // Hide the static chevron icon since Select2 renders its own arrow
+            const chevron = selectEl.parentElement?.querySelector('[data-lucide="chevron-down"]');
+            if (chevron) chevron.style.display = 'none';
+        });
+    }
+
+    window.initDistrictSelect2 = initDistrictSelect2;
+    initDistrictSelect2();
+
     // Attach checkbox listeners
     const surveyInfo = document.getElementById('surveyInfo');
     if (surveyInfo) {
@@ -669,6 +736,29 @@ document.addEventListener('DOMContentLoaded', function () {
         updateSolicitorOfficeAddress();
     }
 
+    // When the solicitor's state isn't Kano, its districts aren't in the list, so force
+    // the District to "Other" and reveal the specify field. Revert when Kano is chosen again.
+    function updateSolicitorDistrictMode() {
+        const stateEl = document.getElementById('solicitorState');
+        const districtEl = document.getElementById('solicitorDistrict');
+        if (!stateEl || !districtEl) return;
+
+        if (!isKanoState(stateEl.value)) {
+            districtEl.value = 'Other';
+            districtEl.dataset.forcedOtherForState = '1';
+        } else if (districtEl.dataset.forcedOtherForState === '1') {
+            districtEl.value = '';
+            delete districtEl.dataset.forcedOtherForState;
+        }
+
+        // Keep the Select2 display in sync when the value is set programmatically
+        if (window.jQuery && jQuery.fn.select2 && jQuery(districtEl).hasClass('select2-hidden-accessible')) {
+            jQuery(districtEl).trigger('change.select2');
+        }
+
+        handleSolicitorDistrictChange(districtEl);
+    }
+
     window.handleSolicitorDistrictChange = handleSolicitorDistrictChange;
     window.updateSolicitorOfficeAddress = updateSolicitorOfficeAddress;
 
@@ -709,8 +799,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const sidebarState = document.getElementById('solicitorState');
         if (sidebarState) {
             sidebarState.addEventListener('change', function () {
+                updateSolicitorDistrictMode();
                 fetchLgas(this.value, 'solicitorLga').then(() => updateSolicitorOfficeAddress());
             });
+            // Sync on initial render (e.g. when editing a record with a non-Kano state)
+            updateSolicitorDistrictMode();
         }
 
         const sidebarLga = document.getElementById('solicitorLga');
@@ -816,6 +909,16 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
 
+        // Property State is always Kano (the registry only holds Kano State
+        // lands). It's a readonly field, so restore its default after the clear
+        // loop wipes it rather than leaving it blank.
+        const propertyStateEl = document.getElementById('propertyState');
+        if (propertyStateEl) {
+            propertyStateEl.value = 'Kano';
+            propertyStateEl.dispatchEvent(new Event('input', { bubbles: true }));
+            propertyStateEl.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
         // Clear prop_id hidden field
         const propIdInput = elements.registrationForm?.querySelector('[name="prop_id"]');
         if (propIdInput) {
@@ -877,7 +980,7 @@ document.addEventListener('DOMContentLoaded', function () {
         resetSubmitButton();
     }
 
-    function applySelectedFile(result) {
+    async function applySelectedFile(result) {
         if (!result) return;
 
         // Clear stale inputs first
@@ -900,9 +1003,85 @@ document.addEventListener('DOMContentLoaded', function () {
         else if (system === 'kangis') elements.hiddenKangisFileNo.value = fileNo;
         else if (system === 'newkangis' || system === 'new_kangis') elements.hiddenNewKANGISFileno.value = fileNo;
 
+        // Base-layer backfill: populate the property/location (and grantee for
+        // grant-type instruments) from the file's indexing record. Runs before
+        // checkDuplicate so any richer consent / prior-instrument data can still
+        // overwrite these defaults.
+        await backfillPropertyFromFile(fileNo);
+
         // Trigger duplicate check
         if (typeof checkDuplicate === 'function') {
             checkDuplicate();
+        }
+    }
+
+    /**
+     * Backfill the property/location fields from the selected file's indexing
+     * record (file_indexings) so a freshly selected file no longer starts from a
+     * blank Property Description / Grantee. Sources the canonical property
+     * attributes (plot, TP, LPKN, street, district, LGA, land use, description)
+     * from the same endpoint the PRA form controller uses. For grant-type
+     * instruments (CofO / OP — Kano State Government is the grantor) the file
+     * owner is also prefilled as the Grantee.
+     */
+    async function backfillPropertyFromFile(fileNo) {
+        if (!fileNo) return false;
+        try {
+            const res = await fetch(`/api/pra/v1/records/property-by-file/${encodeURIComponent(fileNo)}`, {
+                headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            });
+            if (!res.ok) return false;
+
+            const payload = await res.json();
+            const d = payload && payload.data ? payload.data : null;
+            if (!d) return false;
+
+            // Suppress description auto-rebuild while the dropdowns are set so the
+            // stored/indexed description isn't clobbered mid-update.
+            window._suppressPropertyDescUpdate = true;
+
+            if (d.plot_no) safeSetValue('plotNumber', d.plot_no);
+            if (d.tp_no) safeSetValue('tp_no', d.tp_no);
+            if (d.lpkn_no) safeSetValue('lpkn_no', d.lpkn_no);
+            if (d.street_name) setSelectOrManual('streetName', d.street_name);
+            if (d.district) {
+                setSelectOrManual('desc_district', d.district);
+                setSelectOrManual('district', d.district);
+            }
+            if (d.lga) {
+                setSelectOrManual('desc_lga', d.lga);
+                setSelectOrManual('lga', d.lga);
+            }
+
+            const desc = d.property_description || d.location;
+            const propDescEl = document.getElementById('propertyDescription');
+            if (propDescEl && desc) {
+                propDescEl.value = String(desc).toUpperCase();
+            }
+
+            window._suppressPropertyDescUpdate = false;
+
+            if (d.land_use) {
+                prefillLandUseAndPurposeFromLookup(d.land_use, '');
+            }
+
+            // Grantee name only for grant-type instruments (Kano State Government
+            // is the grantor, so the file owner is the grantee). Never assume the
+            // owner is the grantee for assignments/mortgages/etc.
+            const typeDef = instrumentTypes[currentInstrumentType];
+            if (typeDef && typeDef.autoSetGrantor && d.owner_name) {
+                const grantee = document.getElementById('secondPartyName');
+                if (grantee && !grantee.value.trim()) {
+                    grantee.value = String(d.owner_name).toUpperCase();
+                }
+            }
+
+            return true;
+        } catch (e) {
+            window._suppressPropertyDescUpdate = false;
+            console.warn('backfillPropertyFromFile failed', e);
+            return false;
         }
     }
 
@@ -1425,11 +1604,9 @@ document.addEventListener('DOMContentLoaded', function () {
             setSelectOrManual('district', descDistrict);
         }
 
-        const resolvedPropertyState = explicitPropertyState || parsedLocationParts.state;
-        console.log('[autoFillFromConsent] resolvedPropertyState:', resolvedPropertyState);
-        if (resolvedPropertyState) {
-            safeSetValue('propertyState', resolvedPropertyState);
-        }
+        // Property State is always Kano — the registry only holds Kano State
+        // lands, so never override this from consent/parsed data.
+        safeSetValue('propertyState', 'Kano');
 
         if (propDescEl && propertyText) {
             // Restore original consent property text after select updates.
@@ -2909,11 +3086,10 @@ document.addEventListener('DOMContentLoaded', function () {
             safeSetValue('solicitorDistrict', data.solicitor_district);
         }
 
-        // Property State & LGA
-        // Default to Kano if not set, as per Blade view
-        const propState = data.property_state || data.state || 'Kano';
-        safeSetValue('propertyState', propState);
-        fetchLgas(propState, 'lga', data.lga);
+        // Property State & LGA — always Kano (the registry only holds Kano State
+        // lands and the field is readonly).
+        safeSetValue('propertyState', 'Kano');
+        fetchLgas('Kano', 'lga', data.lga);
 
         safeSetDateValue('transactionDate', data.transaction_date || data.instrument_date || data.entry_date || data.created_at);
         safeSetDateValue('entryDate', data.created_at || data.entry_date || data.instrument_date || data.transaction_date);
@@ -3004,7 +3180,7 @@ document.addEventListener('DOMContentLoaded', function () {
             el.value = value;
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
-            if (id === 'tp_no' && window.jQuery && jQuery.fn.select2) {
+            if (window.jQuery && jQuery.fn.select2 && jQuery(el).hasClass('select2-hidden-accessible')) {
                 jQuery(el).trigger('change.select2');
             }
 
@@ -3057,11 +3233,30 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    /**
+     * Write a date value to a native date input, syncing flatpickr when present.
+     *
+     * The global header enhancer turns every <input type="date"> into a
+     * flatpickr with a separate VISIBLE altInput (DD/MM/YYYY). Assigning
+     * `el.value` only updates the hidden original, leaving the visible field
+     * blank, so route through flatpickr's setDate() when the instance exists.
+     * An empty value clears the field.
+     */
+    function setDateFieldValue(el, value) {
+        if (!el) return;
+        const ymd = value ? String(value).split('T')[0].split(' ')[0] : '';
+        if (el._flatpickr) {
+            el._flatpickr.setDate(ymd, false);
+        } else {
+            el.value = ymd;
+        }
+    }
+
     function safeSetDateValue(id, value) {
         if (!value) return;
         const el = document.getElementById(id);
         if (el) {
-            el.value = value.split('T')[0].split(' ')[0];
+            setDateFieldValue(el, value);
         }
     }
 
@@ -3163,9 +3358,16 @@ document.addEventListener('DOMContentLoaded', function () {
                             container.classList.remove('hidden');
                         } else {
                             container.classList.add('hidden');
-                            // Only clear if not in edit mode or explicitly changed? 
+                            // Only clear if not in edit mode or explicitly changed?
                             // Usually better to clear when hiding to avoid accidental submission of hidden data.
-                            container.querySelectorAll('input, select, textarea').forEach(input => input.value = '');
+                            container.querySelectorAll('input, select, textarea').forEach(input => {
+                                input.value = '';
+                                // Keep any Select2 dropdown display in sync after clearing
+                                if (input.tagName === 'SELECT' && window.jQuery && jQuery.fn.select2
+                                    && jQuery(input).hasClass('select2-hidden-accessible')) {
+                                    jQuery(input).trigger('change.select2');
+                                }
+                            });
                         }
                     };
 
@@ -3200,6 +3402,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
             attachSolicitorListeners();
             refreshSolicitorVisibility(instrumentType);
+
+            // Wire up "Others → specify" toggles for district selects added by the templates
+            setupManualSelectListeners();
+
+            // Initialise searchable District dropdowns rendered by the form/sidebar templates
+            if (typeof initDistrictSelect2 === 'function') initDistrictSelect2();
 
             if (instrumentType === 'deed-of-assignment') {
                 const sidebarToggle = document.getElementById('includeSolicitorSidebar');
@@ -3400,6 +3608,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const transactionDateHeading = transactionDateInputWrap ? transactionDateInputWrap.previousElementSibling : null;
 
         // Entry Date should be editable on Instrument Capture create page.
+        const todayYmd = new Date().toISOString().split('T')[0];
         if (entryDateInput) {
             if (isInstrumentCaptureCreatePage) {
                 entryDateInput.readOnly = false;
@@ -3408,7 +3617,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 entryDateInput.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
                 entryDateInput.classList.add('bg-white');
                 if (!entryDateInput.value) {
-                    entryDateInput.value = new Date().toISOString().split('T')[0];
+                    setDateFieldValue(entryDateInput, todayYmd);
                 }
             } else {
                 entryDateInput.readOnly = true;
@@ -3417,20 +3626,20 @@ document.addEventListener('DOMContentLoaded', function () {
                 entryDateInput.classList.add('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
                 entryDateInput.classList.remove('bg-white');
                 if (!entryDateInput.value) {
-                    entryDateInput.value = new Date().toISOString().split('T')[0];
+                    setDateFieldValue(entryDateInput, todayYmd);
                 }
             }
         }
 
         // On the Instrument Capture create page, transaction date is hidden and not required.
         if (isInstrumentCaptureCreatePage && transactionDateInput) {
-            transactionDateInput.value = '';
+            setDateFieldValue(transactionDateInput, '');
             if (transactionDateInputWrap) transactionDateInputWrap.classList.add('hidden');
             if (transactionDateHeading) transactionDateHeading.classList.add('hidden');
         } else {
             // Clear stale transaction date from previous modal sessions so
             // it does not auto-prefill into entry date.
-            if (transactionDateInput) transactionDateInput.value = '';
+            if (transactionDateInput) setDateFieldValue(transactionDateInput, '');
             if (transactionDateInputWrap) transactionDateInputWrap.classList.remove('hidden');
             if (transactionDateHeading) transactionDateHeading.classList.remove('hidden');
         }
@@ -3439,7 +3648,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // have values (e.g. edit mode). Do NOT overwrite entry date with
         // an empty or stale transaction date on fresh dialog opens.
         if (entryDateInput && transactionDateInput && transactionDateInput.value && !entryDateInput.value) {
-            entryDateInput.value = transactionDateInput.value;
+            setDateFieldValue(entryDateInput, transactionDateInput.value);
         }
 
         elements.dialogTitle.textContent = `Capture ${type.name} `;
@@ -5523,8 +5732,12 @@ document.addEventListener('DOMContentLoaded', function () {
             { field: 'firstPartyStreet', manual: 'manual_firstPartyStreet' },
             { field: 'secondPartyStreet', manual: 'manual_secondPartyStreet' },
             { field: 'firstPartyDistrict', manual: 'manual_firstPartyDistrict' },
-            { field: 'secondPartyDistrict', manual: 'manual_secondPartyDistrict' }
+            { field: 'secondPartyDistrict', manual: 'manual_secondPartyDistrict' },
+            { field: 'coMortgagorDistrict', manual: 'manual_coMortgagorDistrict' },
+            { field: 'thirdPartyDistrict', manual: 'manual_thirdPartyDistrict' },
+            { field: 'party5District', manual: 'manual_party5District' }
         ].forEach(({ field, manual }) => {
+            if (!document.getElementById(field)) return;
             const resolved = getSelectOrManualValue(field, manual);
             if (resolved) {
                 formData.set(field, resolved);
@@ -5532,6 +5745,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 formData.delete(field);
             }
         });
+
+        // Survey Info district ("Others" → typed value). Only override when a value is chosen
+        // so it doesn't wipe the district resolved from the property-details section.
+        const surveyDistrictSelect = document.getElementById('district');
+        if (surveyDistrictSelect && surveyDistrictSelect.value) {
+            const resolvedSurveyDistrict = getSelectOrManualValue('district', 'manual_survey_district');
+            if (resolvedSurveyDistrict) formData.set('district', resolvedSurveyDistrict);
+        }
 
         // Force _method=PUT if URL indicates update and it's not in formData
         const storeUrlInput = document.getElementById('storeUrl');

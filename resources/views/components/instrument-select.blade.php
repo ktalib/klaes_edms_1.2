@@ -26,7 +26,9 @@
                 // Check if the value exists in options
                 $valueExistsInOptions = false;
                 $optionsArray = [];
-                
+                $seenOther = false; // collapse duplicate "Other"/"Others" into a single option
+                $seenValues = [];
+
                 foreach($options as $option) {
                     if (is_object($option)) {
                         $currentValue = $option->{$optionValue} ?? $option->StateName ?? $option->id ?? '';
@@ -35,9 +37,25 @@
                         $currentValue = $option;
                         $currentLabel = $option;
                     }
-                    
+
+                    $normalized = strtolower(trim((string)$currentValue));
+
+                    // Skip a second "Other"/"Others" entry (keeps the first occurrence)
+                    if (in_array($normalized, ['other', 'others'], true)) {
+                        if ($seenOther) {
+                            continue;
+                        }
+                        $seenOther = true;
+                    }
+
+                    // Skip any exact (case-insensitive) duplicate value
+                    if ($normalized !== '' && isset($seenValues[$normalized])) {
+                        continue;
+                    }
+                    $seenValues[$normalized] = true;
+
                     $optionsArray[] = ['value' => $currentValue, 'label' => $currentLabel];
-                    
+
                     if ((string)$value === (string)$currentValue) {
                         $valueExistsInOptions = true;
                     }

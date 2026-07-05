@@ -58,6 +58,7 @@
 
         .rofo-terms-heading {
             letter-spacing: 0.02em;
+            text-decoration: underline;
         }
 
         .terms-offer-box {
@@ -99,16 +100,16 @@
         }
 
         .original-placeholder {
-            position: absolute;
-            top: 10mm;
-            right: 5mm;
+            position: absolute !important;
+            top: 14mm;
+            right: 14mm;
             left: auto;
             transform: none;
             font-size: 16px;
             font-weight: 700;
             letter-spacing: 0.35em;
             text-align: right;
-            z-index: 2;
+            z-index: 3;
         }
 
         #first-page {
@@ -130,7 +131,7 @@
             position: relative;
             flex: 1;
             margin: 6mm 8mm 10mm 8mm;
-            padding: 0 12mm 3mm 12mm;
+            padding: 12mm 12mm 3mm 12mm;
         }
 
         .st-rofo-green-frame::before {
@@ -138,10 +139,10 @@
             position: absolute;
             inset: 0;
             border: 20px solid transparent;
-            border-image-source: url("http://app.klaes.ng/storage/template_frames/st.png");
+            border-image-source: url("http://app.klaes.ng/storage/template_frames/sltr.jpeg");
             border-image-slice: 160;
             border-image-repeat: round;
-            border-image-width: 20px;
+            border-image-width: 45px;
             pointer-events: none;
             z-index: 0;
             box-sizing: border-box;
@@ -291,7 +292,7 @@
                 position: relative !important;
                 flex: 1 !important;
                 margin: 6mm 8mm 10mm 8mm !important;
-                padding: 0 12mm 3mm 12mm !important;
+                padding: 12mm 12mm 3mm 12mm !important;
             }
 
             .st-rofo-green-frame::before {
@@ -299,10 +300,10 @@
                 position: absolute !important;
                 inset: 0 !important;
                 border: 20px solid transparent !important;
-                border-image-source: url("http://app.klaes.ng/storage/template_frames/st.png") !important;
+                border-image-source: url("http://app.klaes.ng/storage/template_frames/sltr.jpeg") !important;
                 border-image-slice: 160 !important;
                 border-image-repeat: round !important;
-                border-image-width: 20px !important;
+                border-image-width: 45px !important;
                 pointer-events: none !important;
                 z-index: 0 !important;
                 box-sizing: border-box !important;
@@ -422,12 +423,14 @@
             }
 
             .original-placeholder {
-                top: 10mm !important;
-                right: 5mm !important;
+                position: absolute !important;
+                top: 14mm !important;
+                right: 14mm !important;
                 left: auto !important;
                 transform: none !important;
                 font-size: 16px !important;
                 text-align: right !important;
+                z-index: 3 !important;
             }
         }
 
@@ -533,7 +536,7 @@
             <div id="first-page">
               <div class="st-rofo-green-frame">
                 <div class="original-placeholder" style="color: {{ $entryWatermarkColor }};">
-                    @if($entryWatermark !== 'CERTIFIED TRUE COPY'){{ $entryWatermark }}@endif
+                    {{ $entryWatermark }}
                     @if(isset($context['securityCode']))
                         @php
                             $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($context['securityCode']->code);
@@ -565,9 +568,9 @@
                     $qrData = $trackingId ?? $qrData;
                     $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' . urlencode($qrData);
                 @endphp
-                <div style="position: relative; margin-bottom: 4px; margin-top: 10px; min-height: 110px;">
+                <div style="position: relative; margin-bottom: 4px; margin-top: 0; min-height: 90px;">
                     <div style="text-align: center;">
-                        <img src="{{ asset('assets/logo/Nigerian-Coat-of-Arms.png') }}" alt="Nigerian Coat of Arms" style="width: 100px; height: auto; display: inline-block;" />
+                        <img src="{{ asset('assets/logo/Nigerian-Coat-of-Arms.png') }}" alt="Nigerian Coat of Arms" style="width: 90px; height: auto; display: inline-block;" />
                     </div>
                     <img src="{{ $qrUrl }}" alt="QR Code" style="position: absolute; left: 40px; top: 50%; transform: translateY(-50%); width: 55px; height: 55px;" />
                 </div>
@@ -662,7 +665,7 @@
 
                 <!-- Terms of Offer Section -->
                 <div class="terms-offer-box">
-                    <h2 class="text-center text-base font-bold mb-3 rofo-terms-heading">TERMS OF OFFER OF GRANT/CONVEYANCE
+                    <h2 class="text-center text-base font-bold mb-3 rofo-terms-heading underline">TERMS OF OFFER OF GRANT/CONVEYANCE
                         OF APPROVAL</h2>
 
                     <p class="mb-2 font-bold" style="font-size: 11px;">Reference to your application dated <span

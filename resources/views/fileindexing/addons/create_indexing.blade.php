@@ -320,6 +320,10 @@
 
                         <hr class="my-8 border-t border-gray-200">
 
+                        @include('fileindexing.addons.partials.sections.occupancy_permit')
+
+                        <hr class="my-8 border-t border-gray-200">
+
                         @include('fileindexing.addons.partials.sections.rofo_details')
 
                         <hr class="my-8 border-t border-gray-200">

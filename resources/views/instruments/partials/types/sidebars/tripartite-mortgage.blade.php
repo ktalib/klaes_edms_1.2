@@ -12,7 +12,12 @@
     
     <div class="grid grid-cols-2 gap-3">
         <x-instrument-input id="coMortgagorAddress" label="Address" icon="map-pin" placeholder="Enter address" value="{{ $record->party_3_address ?? '' }}" />
-        <x-instrument-select id="coMortgagorDistrict" label="District" icon="map-pin" :options="$districts->merge([(object)['name' => 'Others']])" placeholder="District" value="{{ $record->party_3_district ?? '' }}" optionValue="name" optionLabel="name" />
+        <div>
+            <x-instrument-select id="coMortgagorDistrict" label="District" icon="map-pin" :options="$districts->merge([(object)['name' => 'Others']])" placeholder="District" value="{{ $record->party_3_district ?? '' }}" optionValue="name" optionLabel="name" />
+            <div id="manual_coMortgagorDistrict_container" class="mt-2 hidden">
+                <x-instrument-input id="manual_coMortgagorDistrict" name="manual_coMortgagorDistrict" label="" icon="edit-3" placeholder="Specify District" />
+            </div>
+        </div>
     </div>
 
     <div class="grid grid-cols-2 gap-3">
@@ -36,7 +41,12 @@
     
     <div class="grid grid-cols-2 gap-3">
         <x-instrument-input id="thirdPartyAddress" label="Address" icon="map-pin" placeholder="Enter address" value="{{ $record->party_4_address ?? '' }}" />
-        <x-instrument-select id="thirdPartyDistrict" label="District" icon="map-pin" :options="$districts->merge([(object)['name' => 'Others']])" placeholder="District" value="{{ $record->party_4_district ?? '' }}" optionValue="name" optionLabel="name" />
+        <div>
+            <x-instrument-select id="thirdPartyDistrict" label="District" icon="map-pin" :options="$districts->merge([(object)['name' => 'Others']])" placeholder="District" value="{{ $record->party_4_district ?? '' }}" optionValue="name" optionLabel="name" />
+            <div id="manual_thirdPartyDistrict_container" class="mt-2 hidden">
+                <x-instrument-input id="manual_thirdPartyDistrict" name="manual_thirdPartyDistrict" label="" icon="edit-3" placeholder="Specify District" />
+            </div>
+        </div>
     </div>
 
     <div class="grid grid-cols-2 gap-3">
@@ -60,7 +70,12 @@
     
     <div class="grid grid-cols-2 gap-3">
         <x-instrument-input id="party5Address" label="Address" icon="map-pin" placeholder="Enter address" value="{{ $record->party_5_address ?? '' }}" />
-        <x-instrument-select id="party5District" label="District" icon="map-pin" :options="$districts->merge([(object)['name' => 'Others']])" placeholder="District" value="{{ $record->party_5_district ?? '' }}" optionValue="name" optionLabel="name" />
+        <div>
+            <x-instrument-select id="party5District" label="District" icon="map-pin" :options="$districts->merge([(object)['name' => 'Others']])" placeholder="District" value="{{ $record->party_5_district ?? '' }}" optionValue="name" optionLabel="name" />
+            <div id="manual_party5District_container" class="mt-2 hidden">
+                <x-instrument-input id="manual_party5District" name="manual_party5District" label="" icon="edit-3" placeholder="Specify District" />
+            </div>
+        </div>
     </div>
 
     <div class="grid grid-cols-2 gap-3">

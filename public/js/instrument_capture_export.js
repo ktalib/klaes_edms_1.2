@@ -50,6 +50,7 @@ function getExportColumns(mode) {
     return [
         { key: 'SN', label: 'S/N', preview: true, pdfWidth: 8, noWrap: true },
         { key: 'fileno', label: 'File No', preview: true, pdfWidth: 24, noWrap: true },
+        { key: 'instrument_type', label: 'Instrument Type', preview: true, pdfWidth: 24 },
         { key: 'serialNo', label: 'Serial No', preview: true, pdfWidth: 16 },
         { key: 'pageNo', label: 'Page No', preview: true, pdfWidth: 16 },
         { key: 'volumeNo', label: 'Vol No', preview: true, pdfWidth: 16 },

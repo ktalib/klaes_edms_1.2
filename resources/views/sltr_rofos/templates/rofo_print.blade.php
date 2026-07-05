@@ -141,7 +141,7 @@
         .applicant-address-block { display: flex; border: 1px solid #000; margin-bottom: 15px; min-height: 100px; }
         .left-commissioner { padding: 10px; width: 50%; border-right: 1px solid #000; display: flex; flex-direction: column; justify-content: flex-end; }
         .right-address { padding: 10px; width: 50%; }
-        .address-line-box { height: 20px; border-bottom: 1px dotted #000; display: flex; align-items: center; margin-top: 8px; }
+        .address-line-box { min-height: 20px; border-bottom: 1px dotted #000; display: block; line-height: 1.4; padding-bottom: 3px; margin-top: 8px; font-size: 12px; word-break: break-word; }
 
         .acceptance-box { border: 1.2px solid #000; padding: 15px; margin-top: 10px; }
         .acceptance-title { text-align: center; text-decoration: underline; font-weight: bold; font-size: 13pt; margin-bottom: 10px; }
@@ -272,7 +272,7 @@
                         </div>
                         <div class="row" style="margin-bottom: 8px; align-items: flex-end;">
                             <span style="white-space: nowrap; margin-right: 8px;">LOCATION:</span>
-                            <span class="inline-data" style="flex: 1;">{{ $recommendation->location }}</span>
+                            <span class="inline-data" style="flex: 1;">{{ strtoupper($recommendation->location) }}</span>
                         </div>
                         <div class="row" style="margin-bottom: 8px; align-items: flex-end;">
                             <span style="white-space: nowrap; margin-right: 8px;">LAND USE:</span>
@@ -377,9 +377,7 @@
             </div>
             <div class="right-address">
                 <p style="font-size: 11px; margin-bottom: 5px;"><strong>Applicant's Address:</strong></p>
-                <div class="address-line-box">{{ $recommendation->applicant_address }}</div>
-                <div class="address-line-box">{{ $recommendation->location }}</div>
-                <div class="address-line-box">{{ $recommendation->lga }}</div>
+                <div class="address-line-box">{{ \Illuminate\Support\Str::title(\Illuminate\Support\Str::lower($recommendation->applicant_address)) }}</div>
                 <div style="margin-top: 10px; font-size: 11px;">
                     <strong>Date:</strong>
                     <span class="inline-data" style="width: 150px;">{{ $rofoDate }}</span>

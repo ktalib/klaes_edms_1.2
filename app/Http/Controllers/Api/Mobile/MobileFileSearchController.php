@@ -282,7 +282,25 @@ class MobileFileSearchController extends Controller
 
         // True total for the tab badge (counted before the display limit, so the
         // badge reflects the real history size instead of freezing at the cap).
+        // Computed before the free-text search so the badge stays the full history
+        // size rather than shrinking to the number of matches.
         $total = (clone $query)->count();
+
+        // Free-text search (file no, title, request no, requester, office). Applied
+        // server-side so the panel can find matches beyond the 200 most-recent rows
+        // returned below — client-side filtering alone would miss older requests.
+        if ($search = trim((string) $request->get('q'))) {
+            $query->where(function ($w) use ($search) {
+                $like = '%' . $search . '%';
+                $w->where('file_number', 'like', $like)
+                  ->orWhere('file_title', 'like', $like)
+                  ->orWhere('request_no', 'like', $like)
+                  ->orWhere('receiving_officer', 'like', $like)
+                  ->orWhere('requester_office', 'like', $like)
+                  ->orWhere('requester_department', 'like', $like)
+                  ->orWhere('current_location', 'like', $like);
+            });
+        }
 
         $rows = $query->orderByDesc('is_ofs')->orderByDesc('priority')->orderByDesc('id')->limit(200)->get();
 
@@ -332,7 +350,7 @@ class MobileFileSearchController extends Controller
      * status, and (once the file is retrieved + logged out) whether it has been
      * logged out to them / their office. Used by OFS requesters to track outcomes.
      */
-    public function mine(Request $request): JsonResponse
+    public function mine(Request $request, FileLocationResolver $resolver): JsonResponse
     {
         $userId = $request->user()->id;
 
@@ -352,9 +370,12 @@ class MobileFileSearchController extends Controller
                 ->map(fn ($group) => $group->first());
         }
 
-        $data = $requests->map(function (FileSearchRequest $fr) use ($trackers, $userId) {
+        $data = $requests->map(function (FileSearchRequest $fr) use ($trackers, $userId, $resolver) {
             $t          = $trackers[strtoupper(trim((string) $fr->file_number))] ?? null;
-            $loggedOut  = $t && strtoupper((string) $t->status) === \App\Models\FileTracker::STATUS_ACTIVE;
+            // A file is out to an office for any non-terminal tracker status (ACTIVE plus
+            // the approval-workflow states), not only the literal "ACTIVE" — mirrors the
+            // FileLocationResolver IN_TRANSIT rule so the badge matches the search result.
+            $loggedOut  = $t && ! $resolver->isTerminalTrackerStatus($t->status);
             $office     = $t ? ($t->current_office_name ?: $t->receiving_office_name) : null;
             $toMe       = $t && (int) $t->receiving_officer_id === (int) $userId;
 

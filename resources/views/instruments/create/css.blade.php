@@ -13,6 +13,35 @@
         z-index: 1100010 !important;
     }
 
+    /* Make Select2 (used on District dropdowns) match the native instrument inputs */
+    .district-select2.select2-container .select2-selection--single {
+        height: 42px;
+        border: 1px solid #d1d5db;
+        border-radius: 0.5rem;
+        background-color: #fff;
+        padding-left: 1.75rem;
+        /* leave room for the map-pin icon */
+        display: flex;
+        align-items: center;
+    }
+
+    .district-select2.select2-container .select2-selection--single .select2-selection__rendered {
+        line-height: normal;
+        padding-left: 0;
+        color: #374151;
+        font-size: 0.875rem;
+    }
+
+    .district-select2.select2-container .select2-selection--single .select2-selection__arrow {
+        height: 40px;
+    }
+
+    .district-select2.select2-container--open .select2-selection--single,
+    .district-select2.select2-container--focus .select2-selection--single {
+        border-color: #60a5fa;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    }
+
     /* Card styles */
     .card {
         background-color: white;

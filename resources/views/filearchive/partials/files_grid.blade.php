@@ -12,10 +12,6 @@
                 <span>File in the Registry</span>
             </div>
             <div class="flex items-center gap-2">
-                <span class="inline-flex w-5 h-5 rounded-full bg-amber-600"></span>
-                <span>File out of Registry</span>
-            </div>
-            <div class="flex items-center gap-2">
                 <span class="inline-flex w-5 h-5 rounded-full bg-red-600"></span>
                 <span>File in Transit</span>
             </div>

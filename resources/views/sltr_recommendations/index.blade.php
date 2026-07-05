@@ -141,7 +141,7 @@
                                             if (!this.open) {
                                                 const btn = $event.currentTarget;
                                                 const rect = btn.getBoundingClientRect();
-                                                this.menuStyle = { position: 'fixed', top: (rect.bottom + 4) + 'px', left: (rect.right - 192) + 'px', zIndex: 9999 };
+                                                this.menuStyle = { position: 'fixed', top: (rect.bottom + 4) + 'px', left: (rect.right - 224) + 'px', zIndex: 9999 };
                                             }
                                             this.open = !this.open;
                                         }
@@ -150,29 +150,39 @@
                                             <i data-lucide="more-horizontal" class="h-4 w-4 text-slate-500"></i>
                                         </button>
                                         <div x-show="open" x-transition :style="menuStyle"
-                                             class="w-48 bg-white rounded-xl shadow-xl border border-slate-200 py-1 text-sm">
+                                             class="w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-1 text-sm whitespace-nowrap">
+                                            <button type="button"
+                                                    onclick="viewRecord({{ json_encode($rec) }}, '{{ route('sltr-recommendations.print', $rec->id) }}')"
+                                                    class="flex w-full items-center px-4 py-2.5 text-slate-700 hover:bg-slate-50 transition gap-2">
+                                                <i data-lucide="eye" class="h-4 w-4"></i> View Record
+                                            </button>
                                             <button type="button"
                                                     onclick="openEditModal({{ $rec->id }}, {{ json_encode($rec) }})"
                                                     class="flex w-full items-center px-4 py-2.5 text-slate-700 hover:bg-slate-50 transition gap-2">
                                                 <i data-lucide="pencil" class="h-4 w-4"></i> Edit
                                             </button>
+                                            @if($canApprove)
+                                                @if($rec->status === \App\Models\SltrRecommendation::STATUS_APPROVED)
+                                                <button type="button" disabled
+                                                        class="flex w-full items-center px-4 py-2.5 text-slate-300 cursor-not-allowed gap-2 font-bold">
+                                                    <i data-lucide="check-circle" class="h-4 w-4"></i> Approved
+                                                </button>
+                                                @else
+                                                <button type="button"
+                                                        onclick="approveRecord({{ $rec->id }}, '{{ $rec->sltr_number ?? $rec->applicant_name }}')"
+                                                        class="flex w-full items-center px-4 py-2.5 text-emerald-700 hover:bg-emerald-50 transition gap-2 font-bold">
+                                                    <i data-lucide="check-circle" class="h-4 w-4"></i> Approve
+                                                </button>
+                                                @endif
+                                            @endif
                                             <a href="{{ route('sltr-recommendations.print', $rec->id) }}" target="_blank"
                                                class="flex w-full items-center px-4 py-2.5 text-blue-700 hover:bg-blue-50 transition gap-2 font-medium">
-                                                <i data-lucide="printer" class="h-4 w-4"></i> Print Recommendation
+                                                @if($rec->printed_at)
+                                                    <i data-lucide="file-text" class="h-4 w-4"></i> View Recommendation
+                                                @else
+                                                    <i data-lucide="printer" class="h-4 w-4"></i> Print
+                                                @endif
                                             </a>
-                                            @if($rec->rofo_status === \App\Models\SltrRecommendation::ROFO_GENERATED)
-                                            <a href="{{ route('sltr-recommendations.print', $rec->id) }}" target="_blank"
-                                               class="flex w-full items-center px-4 py-2.5 text-teal-700 hover:bg-teal-50 transition gap-2 font-bold hidden">
-                                                <i data-lucide="file-check" class="h-4 w-4"></i> Print RofO
-                                            </a>
-                                            @endif
-                                            @if($rec->status !== \App\Models\SltrRecommendation::STATUS_APPROVED)
-                                            <button type="button"
-                                                    onclick="approveRecord({{ $rec->id }}, '{{ $rec->sltr_number ?? $rec->applicant_name }}')"
-                                                    class="flex w-full items-center px-4 py-2.5 text-emerald-700 hover:bg-emerald-50 transition gap-2 font-bold">
-                                                <i data-lucide="check-circle" class="h-4 w-4"></i> Approve
-                                            </button>
-                                            @endif
                                             <div class="border-t border-slate-100 my-1"></div>
                                             <button type="button"
                                                     onclick="deleteRecord({{ $rec->id }}, '{{ $rec->sltr_number ?? $rec->applicant_name }}')"
@@ -281,16 +291,22 @@
 
                 <!-- Section 2: Applicant Address Builder -->
                 <div class="pt-6 border-t border-slate-100 space-y-4">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200">
-                            <i data-lucide="home" class="h-5 w-5"></i>
+                    <div class="flex items-center justify-between gap-3 mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                                <i data-lucide="home" class="h-5 w-5"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-sm font-black text-slate-800 uppercase tracking-widest">Applicant Address</h4>
+                                <p class="text-[10px] text-slate-500 font-bold uppercase">Build the full correspondence address</p>
+                            </div>
                         </div>
-                        <div>
-                            <h4 class="text-sm font-black text-slate-800 uppercase tracking-widest">Applicant Address</h4>
-                            <p class="text-[10px] text-slate-500 font-bold uppercase">Build the full correspondence address</p>
-                        </div>
+                        <button type="button" id="addr-edit-btn" onclick="expandAddrBuilder()"
+                            class="hidden inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-xl transition">
+                            <i data-lucide="pencil" class="h-3.5 w-3.5"></i> Edit Address
+                        </button>
                     </div>
-                    <div class="space-y-3 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
+                    <div id="addr-builder" class="space-y-3 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
                         <div class="grid grid-cols-2 gap-3">
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">House No</label>
@@ -313,7 +329,7 @@
                             </div>
                         </div>
                         <div class="grid grid-cols-2 gap-3">
-                            <div>
+                            <div id="addr-district-wrap" class="relative">
                                 <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">District</label>
                                 <select id="addr-district"
                                     class="addr-component w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-teal-500 transition">
@@ -352,7 +368,7 @@
                     <input type="hidden" id="f-applicant_address">
                     <div class="p-3 bg-white rounded-xl border border-dashed border-slate-200 text-xs text-slate-500">
                         <span class="font-bold text-slate-400 uppercase text-[10px] block mb-1">Full Address Preview:</span>
-                        <span id="addr-preview" class="italic">No address built yet...</span>
+                        <span id="addr-preview" class="italic text-black">No address built yet...</span>
                     </div>
                 </div>
 
@@ -378,7 +394,7 @@
                             </div>
 
 
-                            <div>
+                            <div id="prop-district-wrap" class="relative">
                                 <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">District / Area</label>
                                 <select id="prop-district"
                                     class="prop-component w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-indigo-500 transition">
@@ -483,8 +499,8 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Term (Years)</label>
-                            <input type="text" id="f-term" value="99"
-                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition focus:bg-white text-sm font-medium">
+                            <input type="text" id="f-term" value="99" disabled
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed text-sm font-medium">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Ground Rent (₦)</label>
@@ -493,9 +509,17 @@
                                 placeholder="0.00">
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Processing Fee (₦)</label>
-                            <input type="number" step="0.01" id="f-processing_fee"
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Land Use Sub-Type <span class="font-normal normal-case text-slate-400">(sets processing fee)</span></label>
+                            <select id="f-land_use_subtype"
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition focus:bg-white text-sm font-medium"
+                                onchange="applySubTypeFee()" disabled>
+                                <option value="">-- Select Land Use first --</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Processing Fee (₦)</label>
+                            <input type="number" step="0.01" id="f-processing_fee" disabled
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed text-sm font-medium"
                                 placeholder="0.00">
                         </div>
                         <div class="md:col-span-2">
@@ -522,7 +546,31 @@
 
 @include('components.global-fileno-modal')
 
+@push('styles')
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+    /* Make Select2 match the rounded modal inputs on this page */
+    #addr-district-wrap .select2-container--default .select2-selection--single,
+    #prop-district-wrap .select2-container--default .select2-selection--single {
+        height: 42px;
+        display: flex;
+        align-items: center;
+        border-radius: 0.75rem;              /* rounded-xl */
+        border: 1px solid rgb(226 232 240);  /* slate-200 */
+        padding: 0 0.5rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+    #addr-district-wrap .select2-selection__arrow,
+    #prop-district-wrap .select2-selection__arrow {
+        height: 40px !important;
+    }
+    .select2-dropdown { z-index: 60; }
+</style>
+@endpush
+
 @push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script>
 // ── SLTR File Number Selector ────────────────────────────────────────
@@ -563,6 +611,13 @@ function sltrOpenFileSelector() {
                 var nameField = document.getElementById('f-applicant_name');
                 if (nameField && !nameField.value && d.file_name) nameField.value = d.file_name;
 
+                // Backfill applicant address from the file's residence_address.
+                // When present, the address builder collapses to a read-only
+                // preview with an "Edit Address" option; when null it stays open.
+                if (d.residence_address) {
+                    setApplicantAddress(d.residence_address);
+                }
+
                 // Backfill visible prop dropdowns and rebuild preview
                 var propLga = document.getElementById('prop-lga');
                 if (propLga && !propLga.value && d.lga) {
@@ -573,6 +628,7 @@ function sltrOpenFileSelector() {
                     setSelect(propDistrict, d.district);
                     var propDistrictOther = document.getElementById('prop-district-other');
                     if (propDistrictOther) propDistrictOther.classList.toggle('hidden', propDistrict.value !== 'Other');
+                    if (typeof syncDistrictWidgets === 'function') syncDistrictWidgets();
                 }
                 if ((d.lga || d.district) && typeof assembleProp === 'function') assembleProp();
 
@@ -648,6 +704,39 @@ function assembleAddr() {
     const assembled = parts.join(', ');
     document.getElementById('f-applicant_address').value = assembled;
     document.getElementById('addr-preview').textContent = assembled || 'No address built yet...';
+}
+
+// Collapse the address builder (hide the component fields) and reveal the "Edit
+// Address" button. Used when a residence_address is backfilled from the file.
+function collapseAddrBuilder() {
+    const builder = document.getElementById('addr-builder');
+    const editBtn = document.getElementById('addr-edit-btn');
+    if (builder) builder.classList.add('hidden');
+    if (editBtn) editBtn.classList.remove('hidden');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// Expand the address builder (show the component fields) and hide the "Edit
+// Address" button. Used by the Edit button and as the default state.
+function expandAddrBuilder() {
+    const builder = document.getElementById('addr-builder');
+    const editBtn = document.getElementById('addr-edit-btn');
+    if (builder) builder.classList.remove('hidden');
+    if (editBtn) editBtn.classList.add('hidden');
+}
+
+// Set the applicant address directly (from a backfilled residence_address).
+// Collapses the builder when a non-empty address is supplied, otherwise leaves
+// the builder visible for manual entry.
+function setApplicantAddress(addr) {
+    const value = (addr || '').trim();
+    document.getElementById('f-applicant_address').value = value;
+    document.getElementById('addr-preview').textContent = value || 'No address built yet...';
+    if (value) {
+        collapseAddrBuilder();
+    } else {
+        expandAddrBuilder();
+    }
 }
 
 document.querySelectorAll('.addr-component').forEach(el => el.addEventListener('change', assembleAddr));
@@ -726,6 +815,8 @@ function resetAddrBuilder() {
     });
     document.getElementById('f-applicant_address').value = '';
     document.getElementById('addr-preview').textContent = 'No address built yet...';
+    expandAddrBuilder();
+    if (typeof syncDistrictWidgets === 'function') syncDistrictWidgets();
 }
 
 function resetPropBuilder() {
@@ -742,6 +833,7 @@ function resetPropBuilder() {
     document.getElementById('f-location').value = '';
     document.getElementById('f-lga').value = '';
     document.getElementById('prop-preview').textContent = 'No location built yet...';
+    if (typeof syncDistrictWidgets === 'function') syncDistrictWidgets();
 }
 
 // ── Scalar fields (not address-builder) ────────────────────────────
@@ -751,7 +843,103 @@ function syncLandUseText() {
     const hid = document.getElementById('f-land_use');
     if (!sel || !hid) return;
     const opt = sel.options[sel.selectedIndex];
-    hid.value = (opt && opt.value) ? (opt.getAttribute('data-text') || opt.text) : '';
+    const text = (opt && opt.value) ? (opt.getAttribute('data-text') || opt.text) : '';
+    hid.value = text;
+    mapTermFromLandUse(text);
+    populateSubTypes(text);
+}
+
+// Auto-map the lease term (years) based on the selected land use.
+//   Residential  = 99 years
+//   Agricultural = 99 years
+//   Industrial   = 40 years
+//   Commercial   = 40 years
+function mapTermFromLandUse(landUse) {
+    const termEl = document.getElementById('f-term');
+    if (!termEl) return;
+    const lu = (landUse || '').toUpperCase();
+    let term = null;
+    if (lu.includes('RESIDENTIAL') || lu.includes('AGRICULTUR')) {
+        term = 99;
+    } else if (lu.includes('INDUSTRIAL') || lu.includes('COMMERCIAL')) {
+        term = 40;
+    }
+    if (term !== null) termEl.value = term;
+}
+
+// Processing-fee schedule (back of the RofO), keyed by land use, with the
+// sub-type driving the exact amount (₦).
+const LAND_USE_SUBTYPE_FEES = {
+    RESIDENTIAL: [
+        { label: 'Systematic', fee: 5000 },
+        { label: 'On Demand', fee: 20000 },
+    ],
+    COMMERCIAL: [
+        { label: 'Systematic', fee: 10000 },
+        { label: 'On Demand (Within Metro)', fee: 50000 },
+        { label: 'On Demand (Outside Metro)', fee: 40000 },
+    ],
+    INDUSTRIAL: [
+        { label: 'Warehouse', fee: 100000 },
+        { label: 'Above 1 Hectare', fee: 100000 },
+    ],
+    AGRICULTURAL: [
+        { label: 'Farmland', fee: 50000 },
+        { label: 'Above 1 Hectare', fee: 100000 },
+    ],
+};
+
+function subtypeKeyFor(landUse) {
+    const lu = (landUse || '').toUpperCase();
+    if (lu.includes('RESIDENTIAL')) return 'RESIDENTIAL';
+    if (lu.includes('COMMERCIAL'))  return 'COMMERCIAL';
+    if (lu.includes('INDUSTRIAL'))  return 'INDUSTRIAL';
+    if (lu.includes('AGRICULTUR'))  return 'AGRICULTURAL';
+    return null;
+}
+
+// Rebuild the Sub-Type dropdown for the selected land use.
+// When `matchFee` is provided (record edit), the sub-type whose fee equals the
+// stored fee is pre-selected and the stored fee is left untouched. Otherwise
+// the first sub-type is selected and its fee is applied.
+function populateSubTypes(landUse, matchFee) {
+    const sub = document.getElementById('f-land_use_subtype');
+    if (!sub) return;
+    const key = subtypeKeyFor(landUse);
+    const options = key ? LAND_USE_SUBTYPE_FEES[key] : [];
+
+    if (!options.length) {
+        sub.innerHTML = '<option value="">-- Select Land Use first --</option>';
+        sub.disabled = true;
+        return;
+    }
+
+    sub.innerHTML = options.map(o =>
+        `<option value="${o.label}" data-fee="${o.fee}">${o.label} — ₦${o.fee.toLocaleString('en-NG')}</option>`
+    ).join('');
+    sub.disabled = false;
+
+    if (matchFee !== undefined && matchFee !== null && matchFee !== '') {
+        for (let i = 0; i < sub.options.length; i++) {
+            if (Number(sub.options[i].getAttribute('data-fee')) === Number(matchFee)) {
+                sub.selectedIndex = i;
+                break;
+            }
+        }
+        return; // keep the stored fee as-is on edit
+    }
+
+    applySubTypeFee();
+}
+
+// Set the processing fee from the currently selected sub-type.
+function applySubTypeFee() {
+    const sub = document.getElementById('f-land_use_subtype');
+    const feeEl = document.getElementById('f-processing_fee');
+    if (!sub || !feeEl || sub.disabled) return;
+    const opt = sub.options[sub.selectedIndex];
+    const fee = opt ? opt.getAttribute('data-fee') : null;
+    if (fee !== null && fee !== undefined && fee !== '') feeEl.value = fee;
 }
 
 function openCreateModal() {
@@ -777,6 +965,7 @@ function openCreateModal() {
     if (luSel) luSel.selectedIndex = 0;
     const luHid = document.getElementById('f-land_use');
     if (luHid) luHid.value = '';
+    populateSubTypes(''); // reset sub-type dropdown to disabled default
     resetAddrBuilder();
     resetPropBuilder();
     document.getElementById('rec-modal').classList.remove('hidden');
@@ -815,8 +1004,7 @@ function openEditModal(id, data) {
         addrStreetSel.value = 'Other';
         addrStreetOther.value = storedAddr;
         addrStreetOther.classList.remove('hidden');
-        document.getElementById('f-applicant_address').value = storedAddr;
-        document.getElementById('addr-preview').textContent = storedAddr;
+        setApplicantAddress(storedAddr);
     }
 
     const storedLoc = data.location ?? '';
@@ -830,6 +1018,7 @@ function openEditModal(id, data) {
         document.getElementById('f-location').value = storedLoc;
         document.getElementById('f-lga').value = storedLga;
         document.getElementById('prop-preview').textContent = [storedLoc, storedLga].filter(Boolean).join(', ');
+        if (typeof syncDistrictWidgets === 'function') syncDistrictWidgets();
     }
 
     // Restore land use: find option by data-text match
@@ -850,12 +1039,73 @@ function openEditModal(id, data) {
             }
         }
     }
+    // Rebuild sub-type options for the restored land use, pre-selecting the
+    // sub-type that matches the stored processing fee (fee itself is preserved).
+    populateSubTypes(storedLandUse, data.processing_fee);
 
     document.getElementById('rec-modal').classList.remove('hidden');
 }
 
 function closeModal() {
     document.getElementById('rec-modal').classList.add('hidden');
+}
+
+// Only Supper Admin / Director SLTR may reprint from the view card.
+window.sltrCanApprove = {{ $canApprove ? 'true' : 'false' }};
+
+// Read-only view of a recommendation record's stored fields.
+function viewRecord(data, printUrl) {
+    const esc = (v) => (v === null || v === undefined || v === '') ? '—'
+        : String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const money = (v) => (v === null || v === undefined || v === '') ? '—'
+        : '₦' + Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const dateOnly = (v) => v ? String(v).substring(0, 10) : '';
+    const creator = data.creator && data.creator.name ? data.creator.name : null;
+
+    const rows = [
+        ['File Number', esc(data.sltr_number)],
+        ['Applicant Name', esc(data.applicant_name)],
+        ['Applicant Address', esc(data.applicant_address)],
+        ['Location', esc(data.location)],
+        ['LGA', esc(data.lga)],
+        ['Land Use', esc(data.land_use)],
+        ['Purpose Clause', esc(data.purpose_of_clause)],
+        ['Plot Number', esc(data.plot_number)],
+        ['Term', data.term ? esc(data.term) + ' yrs' : '—'],
+        ['Ground Rent', money(data.ground_rent)],
+        ['Processing Fee', money(data.processing_fee)],
+        ['Application Page No', esc(data.page_application)],
+        ['Survey Report Page No', esc(data.page_survey)],
+        ['Planning Page No', esc(data.page_planning)],
+        ['Application Date', esc(dateOnly(data.application_date))],
+        ['Status', esc(data.status)],
+        ['RofO Status', esc(data.rofo_status)],
+        ['Notes', esc(data.notes)],
+        ['Created By', esc(creator)],
+        ['Created On', esc(dateOnly(data.created_at))],
+    ];
+
+    const html = '<div style="text-align:left;font-size:13px;max-height:60vh;overflow-y:auto">'
+        + '<table style="width:100%;border-collapse:collapse">'
+        + rows.map(([k, v]) =>
+            `<tr><td style="padding:6px 10px;font-weight:700;color:#475569;white-space:nowrap;vertical-align:top">${k}</td>`
+            + `<td style="padding:6px 10px;color:#0f172a">${v}</td></tr>`).join('')
+        + '</table></div>';
+
+    Swal.fire({
+        title: 'Recommendation Record',
+        html: html,
+        width: 640,
+        showDenyButton: window.sltrCanApprove && !!printUrl,
+        denyButtonText: 'Reprint',
+        denyButtonColor: '#2563eb',
+        confirmButtonText: 'Close',
+        confirmButtonColor: '#0d9488'
+    }).then((result) => {
+        if (result.isDenied && printUrl) {
+            window.open(printUrl, '_blank');
+        }
+    });
 }
 
 // Modal stays open until the user explicitly closes it (no close on backdrop click).
@@ -977,6 +1227,43 @@ async function deleteRecord(id, label) {
     } else {
         Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Error deleting.' });
     }
+}
+</script>
+<script>
+// ── Make the District dropdowns searchable (Select2) ─────────────────
+$(function () {
+    function initDistrictSelect2(selectId, wrapId) {
+        var $sel = $('#' + selectId);
+        if (!$sel.length || typeof $.fn.select2 === 'undefined') return;
+        if ($sel.hasClass('select2-hidden-accessible')) $sel.select2('destroy');
+        $sel.select2({
+            placeholder: 'Search or select district',
+            allowClear: true,
+            width: '100%',
+            // Anchor the dropdown to the field's own relative wrapper so it opens
+            // directly under the select inside the fixed modal.
+            dropdownParent: $('#' + wrapId)
+        });
+        $sel.on('select2:open', function () {
+            setTimeout(function () {
+                var f = document.querySelector('.select2-search__field');
+                if (f) f.focus();
+            }, 50);
+        });
+    }
+    initDistrictSelect2('addr-district', 'addr-district-wrap');
+    initDistrictSelect2('prop-district', 'prop-district-wrap');
+});
+
+// Sync the Select2 widgets after a district <select> is changed programmatically
+// (reset / prefill / edit). The .select2 namespaced event refreshes the widget
+// display WITHOUT re-firing the native 'change' handlers (assembleAddr/assembleProp),
+// which the callers already invoke themselves.
+function syncDistrictWidgets() {
+    if (typeof $ === 'undefined' || typeof $.fn.select2 === 'undefined') return;
+    $('#addr-district, #prop-district').each(function () {
+        if ($(this).hasClass('select2-hidden-accessible')) $(this).trigger('change.select2');
+    });
 }
 </script>
 @endpush

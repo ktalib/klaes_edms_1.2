@@ -811,6 +811,23 @@ class ApplicationController extends Controller
     }
 
     /**
+     * Build a web-accessible URL for a stored passport photo path.
+     * Tolerates both legacy paths saved with a leading "public/" prefix and
+     * new paths stored relative to the 'public' disk (storage/app/public).
+     */
+    private function ossPassportUrl(?string $path): string
+    {
+        $path = trim((string) $path);
+        if ($path === '') {
+            return '';
+        }
+        if (str_starts_with($path, 'public/')) {
+            $path = substr($path, 7);
+        }
+        return asset('storage/' . ltrim($path, '/'));
+    }
+
+    /**
      * Generate a bill for an OSS application.
      * Saves to the `billing` table with source = OSS_OP_APPLICATION_FEE.
      *
@@ -1196,17 +1213,43 @@ class ApplicationController extends Controller
             ], 422);
         }
 
-        $exists = DB::connection('sqlsrv')
+        $row = DB::connection('sqlsrv')
             ->table('oss_verifications')
             ->where('instrument_capture_id', $recordId)
-            ->exists();
+            ->first();
+
+        if (!$row) {
+            return response()->json([
+                'success' => true,
+                'message' => 'No verification found.',
+                'data' => [
+                    'exists' => false,
+                    'record_id' => $recordId,
+                ],
+            ]);
+        }
+
+        $passportUrl = $this->ossPassportUrl($row->passport_photo ?? '');
 
         return response()->json([
             'success' => true,
             'message' => 'Verification status fetched successfully.',
             'data' => [
-                'exists' => (bool) $exists,
+                'exists' => true,
                 'record_id' => $recordId,
+                'applicant_name' => (string) ($row->applicant_name ?? ''),
+                'applicant_address' => (string) ($row->applicant_address ?? ''),
+                'applicant_phone' => (string) ($row->applicant_phone ?? ''),
+                'applicant_email' => (string) ($row->applicant_email ?? ''),
+                'id_type' => (string) ($row->id_type ?? ''),
+                'original_allottee' => (string) ($row->original_allottee ?? ''),
+                'op_number' => (string) ($row->op_number ?? ''),
+                'plot_no' => (string) ($row->plot_no ?? ''),
+                'plan_no' => (string) ($row->plan_no ?? ''),
+                'location' => (string) ($row->location ?? ''),
+                'recommendation' => (string) ($row->recommendation ?? ''),
+                'chairman_name' => (string) ($row->chairman_name ?? ''),
+                'passport_photo_url' => $passportUrl,
             ],
         ]);
     }
@@ -1404,6 +1447,59 @@ class ApplicationController extends Controller
             'data' => [
                 'exists' => true,
                 'id' => $recommendation->id,
+            ],
+        ]);
+    }
+
+    /**
+     * Return the saved Change of Ownership record for a given OP capture record,
+     * so the modal can backfill on open (mirrors verificationStatus).
+     */
+    public function changeOfOwnershipStatus(Request $request): JsonResponse
+    {
+        $recordId = (int) $request->query('record_id', 0);
+
+        if ($recordId <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Record ID is required.',
+            ], 422);
+        }
+
+        $row = DB::connection('sqlsrv')
+            ->table('oss_change_of_ownership')
+            ->where('instrument_capture_id', $recordId)
+            ->first();
+
+        if (!$row) {
+            return response()->json([
+                'success' => true,
+                'message' => 'No change of ownership found.',
+                'data' => [
+                    'exists' => false,
+                    'record_id' => $recordId,
+                ],
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Change of ownership fetched successfully.',
+            'data' => [
+                'exists' => true,
+                'record_id' => $recordId,
+                'op_number' => (string) ($row->op_number ?? ''),
+                'location' => (string) ($row->location ?? ''),
+                'plot_no' => (string) ($row->plot_no ?? ''),
+                'plan_no' => (string) ($row->plan_no ?? ''),
+                'date_of_issuance' => $row->date_of_issuance ? substr((string) $row->date_of_issuance, 0, 10) : '',
+                'original_name' => (string) ($row->original_name ?? ''),
+                'original_address' => (string) ($row->original_address ?? ''),
+                'original_phone' => (string) ($row->original_phone ?? ''),
+                'current_name' => (string) ($row->current_name ?? ''),
+                'current_address' => (string) ($row->current_address ?? ''),
+                'current_phone' => (string) ($row->current_phone ?? ''),
+                'ownership_method' => (string) ($row->ownership_method ?? ''),
             ],
         ]);
     }
@@ -3089,7 +3185,8 @@ class ApplicationController extends Controller
         if ($request->hasFile('passport_photo')) {
             $file = $request->file('passport_photo');
             $filename = 'ver_' . $recordId . '_' . time() . '.' . $file->getClientOriginalExtension();
-            $passportPath = $file->storeAs('public/oss_verifications/passports', $filename);
+            // Store on the 'public' disk (storage/app/public) so the /storage symlink serves it.
+            $passportPath = $file->storeAs('oss_verifications/passports', $filename, 'public');
         }
 
         $data = [
@@ -3176,15 +3273,22 @@ class ApplicationController extends Controller
             'passport_photo_url' => '',
         ];
 
-        // Look up saved passport photo from DB
-        $recordId = (int) $request->input('record_id', 0);
-        if ($recordId) {
-            $row = DB::connection('sqlsrv')
-                ->table('oss_verifications')
-                ->where('instrument_capture_id', $recordId)
-                ->first();
-            if ($row && !empty($row->passport_photo)) {
-                $data['passport_photo_url'] = asset(str_replace('public/', 'storage/', $row->passport_photo));
+        // Prefer the passport shown in the modal (uploaded preview or saved image URL),
+        // so printing works even when the record hasn't been (re)saved yet.
+        $postedPassport = trim((string) $request->input('passport_photo_url', ''));
+        if ($postedPassport !== '' && preg_match('#^(https?://|data:image/)#i', $postedPassport)) {
+            $data['passport_photo_url'] = $postedPassport;
+        } else {
+            // Fall back to the saved passport photo from the DB.
+            $recordId = (int) $request->input('record_id', 0);
+            if ($recordId) {
+                $row = DB::connection('sqlsrv')
+                    ->table('oss_verifications')
+                    ->where('instrument_capture_id', $recordId)
+                    ->first();
+                if ($row && !empty($row->passport_photo)) {
+                    $data['passport_photo_url'] = $this->ossPassportUrl($row->passport_photo);
+                }
             }
         }
 
@@ -3219,9 +3323,7 @@ class ApplicationController extends Controller
             'passport_photo_url' => '',
         ];
 
-        if (!empty($row->passport_photo)) {
-            $data['passport_photo_url'] = asset(str_replace('public/', 'storage/', (string) $row->passport_photo));
-        }
+        $data['passport_photo_url'] = $this->ossPassportUrl($row->passport_photo ?? '');
 
         return view('lands_one_stop_shop.print.print_verification', compact('data'));
     }

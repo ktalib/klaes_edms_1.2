@@ -2922,7 +2922,7 @@
                 
                 // Populate District if element exists
                 if (document.getElementById('editDistrict')) {
-                    document.getElementById('editDistrict').value = data.district || '';
+                    setDistrictField('editDistrict', 'editDistrictOther', 'editDistrictValue', data.district || '');
                 }
 
                 const customerTypeSelect = document.getElementById('editCustomerType');
@@ -2980,9 +2980,72 @@
         }
     }
 
+    // --- District "Other (specify)" handling for Edit & Direct Allocation modals ---
+    // Populates a district select from a stored value. If the value is not one of the
+    // listed options, selects "Other" and reveals the specify input pre-filled with it.
+    function setDistrictField(selectId, otherInputId, hiddenId, value) {
+        const sel = document.getElementById(selectId);
+        const other = document.getElementById(otherInputId);
+        const hidden = document.getElementById(hiddenId);
+        if (!sel) return;
+        const optionValues = Array.from(sel.options).map(o => o.value);
+        const val = value || '';
+        if (!val) {
+            sel.value = '';
+            if (other) { other.style.display = 'none'; other.value = ''; }
+            if (hidden) hidden.value = '';
+        } else if (optionValues.includes(val) && val !== 'Other') {
+            sel.value = val;
+            if (other) { other.style.display = 'none'; other.value = ''; }
+            if (hidden) hidden.value = val;
+        } else {
+            sel.value = 'Other';
+            if (other) { other.style.display = ''; other.value = val; }
+            if (hidden) hidden.value = val;
+        }
+    }
+
+    function onEditDistrictChange(val) {
+        const other = document.getElementById('editDistrictOther');
+        const hidden = document.getElementById('editDistrictValue');
+        if (val === 'Other') {
+            if (other) { other.style.display = ''; other.focus(); }
+            if (hidden) hidden.value = other ? other.value.trim() : '';
+        } else {
+            if (other) { other.style.display = 'none'; other.value = ''; }
+            if (hidden) hidden.value = val;
+        }
+        updateEditLocation();
+    }
+
+    function onEditDistrictOtherInput(val) {
+        const hidden = document.getElementById('editDistrictValue');
+        if (hidden) hidden.value = val;
+        updateEditLocation();
+    }
+
+    function onDaDistrictChange(val) {
+        const other = document.getElementById('daDistrictOther');
+        const hidden = document.getElementById('daDistrictValue');
+        if (val === 'Other') {
+            if (other) { other.style.display = ''; other.focus(); }
+            if (hidden) hidden.value = other ? other.value.trim() : '';
+        } else {
+            if (other) { other.style.display = 'none'; other.value = ''; }
+            if (hidden) hidden.value = val;
+        }
+        updateDirectAllocationLocation();
+    }
+
+    function onDaDistrictOtherInput(val) {
+        const hidden = document.getElementById('daDistrictValue');
+        if (hidden) hidden.value = val;
+        updateDirectAllocationLocation();
+    }
+
     function updateEditLocation() {
         const plotNo = document.getElementById('editPlotNo')?.value.trim() || '';
-        const district = document.getElementById('editDistrict')?.value.trim() || '';
+        const district = document.getElementById('editDistrictValue')?.value.trim() || '';
         const lga = document.getElementById('editLga')?.value.trim() || '';
         
         let parts = [];
@@ -3096,7 +3159,7 @@
                 
                 // Populate District if element exists
                 if (document.getElementById('daDistrict')) {
-                    document.getElementById('daDistrict').value = data.district || '';
+                    setDistrictField('daDistrict', 'daDistrictOther', 'daDistrictValue', data.district || '');
                 }
 
                 // phone_no might be empty if the column doesn't exist, we will handle that
@@ -3147,7 +3210,7 @@
 
     function updateDirectAllocationLocation() {
         const plotNo = document.getElementById('daPlotNo')?.value.trim() || '';
-        const district = document.getElementById('daDistrict')?.value.trim() || '';
+        const district = document.getElementById('daDistrictValue')?.value.trim() || '';
         const lga = document.getElementById('daLga')?.value.trim() || '';
         
         let parts = [];
@@ -3806,6 +3869,9 @@
                     // Default serial for new forms
                     this.serialNo = '';
 
+                    // Make the District dropdown searchable (Select2)
+                    this.$nextTick(() => this.initDistrictSelect2());
+
                     this.$watch('applicationType', (value) => {
                         console.log('applicationType watched change:', value);
                         if (value === 'new') {
@@ -3980,6 +4046,54 @@
                     this.districtIsOther = true;
                     const otherInput = document.getElementById('generator_district_other');
                     if (otherInput) otherInput.value = districtVal;
+                }
+                // Sync the Select2 widget display without re-firing Alpine's @change
+                if (window.jQuery && $(sel).hasClass('select2-hidden-accessible')) {
+                    $(sel).trigger('change.select2');
+                }
+            },
+
+            initDistrictSelect2() {
+                try {
+                    if (!window.jQuery || typeof $.fn.select2 === 'undefined') return;
+                    const $select = $('#generator_district');
+                    if ($select.length === 0) return;
+
+                    if ($select.hasClass('select2-hidden-accessible')) {
+                        $select.select2('destroy');
+                    }
+
+                    // Anchor the dropdown to the field's own relative wrapper so it
+                    // opens directly under the select (avoids Select2 mis-positioning
+                    // it at the top of the scrollable fixed modal).
+                    const parent = document.getElementById('generatorDistrictWrap')
+                        || document.getElementById('generateModal');
+
+                    $select.select2({
+                        placeholder: 'Search or select district',
+                        allowClear: true,
+                        dropdownParent: $(parent),
+                        width: '100%'
+                    });
+
+                    // Focus the search box when the dropdown opens
+                    $select.on('select2:open', () => {
+                        setTimeout(() => {
+                            const searchField = document.querySelector('.select2-search__field');
+                            if (searchField) searchField.focus();
+                        }, 100);
+                    });
+
+                    // Select2 emits its change through jQuery's .trigger('change'),
+                    // which does NOT invoke Alpine's addEventListener-based @change.
+                    // Bridge it explicitly so selecting "Other" reveals the specify
+                    // field and location rebuilds for normal districts.
+                    const self = this;
+                    $select.on('change', function () {
+                        self.onDistrictChange(this.value);
+                    });
+                } catch (e) {
+                    console.error('Error in initDistrictSelect2():', e);
                 }
             },
 
@@ -6146,20 +6260,37 @@
                 ['Commissioned by:', formData.get('created_by')]
             ];
 
+            const valueMaxWidth = 185 - 72; // width of the value column (line runs 70 -> 185, text starts at 72)
+            const reasonLineHeight = 5;     // vertical spacing between wrapped reason lines (mm)
+
             fields.forEach(([label, value]) => {
                 doc.setFont("helvetica", "bold");
                 doc.text(label, 25, y);
                 doc.setFont("helvetica", "normal");
-                doc.text(String(value || ''), 72, y);
-                doc.line(70, y + 2, 185, y + 2);
-                y += 12;
+
+                const text = String(value || '');
+
+                // Long values (SIT reason, Location) wrap within the value column and grow over as many lines as needed.
+                if (label === 'Reason:' || label === 'Location:') {
+                    const lines = doc.splitTextToSize(text, valueMaxWidth);
+                    lines.forEach((ln, i) => {
+                        doc.text(ln, 72, y + i * reasonLineHeight);
+                    });
+                    const lastY = y + (Math.max(lines.length, 1) - 1) * reasonLineHeight;
+                    doc.line(70, lastY + 2, 185, lastY + 2);
+                    y = lastY + 12;
+                } else {
+                    doc.text(text, 72, y);
+                    doc.line(70, y + 2, 185, y + 2);
+                    y += 12;
+                }
             });
 
-            // Signatures & Footer
+            // Signatures & Footer (line first, caption underneath)
             y += 15;
-            doc.text("Created by Signature", 50, y, { align: "center" });
-            doc.text("Approved by Signature", 150, y, { align: "center" });
-            doc.line(25, y + 10, 75, y + 10); doc.line(125, y + 10, 175, y + 10);
+            doc.line(25, y, 75, y); doc.line(125, y, 175, y);
+            doc.text("Created by Signature", 50, y + 6, { align: "center" });
+            doc.text("Approved by Signature", 150, y + 6, { align: "center" });
 
             if (leftFooterLogoBase64) doc.addImage(leftFooterLogoBase64, 'JPEG', 15, 272, 18, 18);
             if (footerLogoBase64) doc.addImage(footerLogoBase64, 'JPEG', 165, 272, 28, 12);
@@ -6258,21 +6389,38 @@
                     ['Commissioned by:', row.created_by || '']
                 ];
 
+                const valueMaxWidth = 185 - textStartX; // width of the value column
+                const reasonLineHeight = 5;             // vertical spacing between wrapped reason lines (mm)
+
                 fields.forEach(([label, value]) => {
                     doc.setFont('helvetica', 'bold');
                     doc.text(label, leftMargin, y);
                     doc.setFont('helvetica', 'normal');
-                    doc.text(String(value || ''), textStartX, y);
-                    doc.line(70, y + 2, 185, y + 2);
-                    y += 12;
+
+                    const text = String(value || '');
+
+                    // Long values (SIT reason, Location) wrap within the value column and grow over as many lines as needed.
+                    if (label === 'Reason:' || label === 'Location:') {
+                        const lines = doc.splitTextToSize(text, valueMaxWidth);
+                        lines.forEach((ln, idx) => {
+                            doc.text(ln, textStartX, y + idx * reasonLineHeight);
+                        });
+                        const lastY = y + (Math.max(lines.length, 1) - 1) * reasonLineHeight;
+                        doc.line(70, lastY + 2, 185, lastY + 2);
+                        y = lastY + 12;
+                    } else {
+                        doc.text(text, textStartX, y);
+                        doc.line(70, y + 2, 185, y + 2);
+                        y += 12;
+                    }
                 });
 
-                // Signatures
+                // Signatures (line first, caption underneath)
                 y += 15;
-                doc.text('Created by Signature', 50, y, { align: 'center' });
-                doc.text('Approved by Signature', 150, y, { align: 'center' });
-                doc.line(25, y + 10, 75, y + 10);
-                doc.line(125, y + 10, 175, y + 10);
+                doc.line(25, y, 75, y);
+                doc.line(125, y, 175, y);
+                doc.text('Created by Signature', 50, y + 6, { align: 'center' });
+                doc.text('Approved by Signature', 150, y + 6, { align: 'center' });
 
                 // Footer
                 doc.setFontSize(8);

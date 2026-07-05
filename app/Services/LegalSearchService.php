@@ -424,6 +424,14 @@ class LegalSearchService
             }
         }
 
+        // Resolve the commissioning date and, crucially, WHICH file number was
+        // commissioned so the timeline can place the date on the permanent or the
+        // "(T)" temporary row as appropriate.
+        $commissioningInfo = $this->resolveCommissioningInfo(
+            $fileIndexingData->file_number ?? $fileNo,
+            $fileNo
+        );
+
         return [
             'transactions' => $all,
             'under_investigation' => $investigation !== null,
@@ -446,10 +454,8 @@ class LegalSearchService
             'pra_count' => count($praRecords),
             'deed_count' => count($deedRecords),
             'total_count' => count($all),
-            'file_commissioning_date' => $this->resolveCommissioningDate(
-                $fileIndexingData->file_number ?? $fileNo,
-                $fileNo
-            ),
+            'file_commissioning_date' => $commissioningInfo['date'],
+            'file_commissioned_number' => $commissioningInfo['number'],
             'lineage' => $this->resolveFileLineage($conn, $fileNo),
         ];
     }
@@ -588,15 +594,54 @@ class LegalSearchService
             return [];
         }
 
+        // Build the set of file numbers this search is "about": the searched file plus every
+        // file number already resolved into the result set, each expanded to its base/"(T)"
+        // variants. Recertification rows almost always carry an empty prop_id, so they can only
+        // be reached by matching a stored endpoint string — matching against all of the
+        // property's known numbers (not just the raw searched text) widens reach past exact
+        // matches and format drift the file is otherwise known by.
+        $candidateNumbers = [];
+        if ($fileNo !== '') {
+            $candidateNumbers[$fileNo] = true;
+        }
+        foreach ($existingRows as $r) {
+            foreach (['fileno', 'file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno'] as $col) {
+                $v = trim((string) ($r[$col] ?? ''));
+                if ($v !== '') {
+                    $candidateNumbers[$v] = true;
+                }
+            }
+        }
+        $candidates = $this->fileNumberVariants(...array_keys($candidateNumbers));
+
+        if (empty($candidates) && empty($propIds)) {
+            return [];
+        }
+
+        // Normalized set of the searched identifiers (uppercase, whitespace-collapsed, per-segment
+        // leading zeros stripped) — used below to decide which endpoint of each link to display.
+        $norm = function ($v) {
+            $v = strtoupper(trim((string) $v));
+            $v = preg_replace('/\s+/', ' ', $v);
+            return preg_replace('/(?<=\s|-)0+(\d)/', '$1', $v);
+        };
+        $searchedSet = [];
+        foreach ($candidates as $c) {
+            $n = $norm($c);
+            if ($n !== '') {
+                $searchedSet[$n] = true;
+            }
+        }
+
         $query = $conn->table('related_file_number AS rfn')
             ->leftJoin('file_indexings AS fi_rel', function ($j) {
                 $j->on('fi_rel.file_number', '=', 'rfn.related_fileno')
                   ->whereNull('fi_rel.deleted_at');
             })
-            ->where(function ($q) use ($fileNo, $propIds) {
-                if ($fileNo !== '') {
-                    $q->orWhere('rfn.file_number', $fileNo)
-                      ->orWhere('rfn.related_fileno', $fileNo);
+            ->where(function ($q) use ($candidates, $propIds) {
+                if (!empty($candidates)) {
+                    $q->orWhereIn('rfn.file_number', $candidates)
+                      ->orWhereIn('rfn.related_fileno', $candidates);
                 }
                 if (!empty($propIds)) {
                     $q->orWhereIn('rfn.prop_id', $propIds);
@@ -623,11 +668,34 @@ class LegalSearchService
                 } catch (\Exception $e) { /* ignore */ }
             }
 
-            // A single related_file_number row may carry several file numbers (the Manual
+            // Display the endpoint that is NOT the searched file. A link stores two endpoints —
+            // file_number (parent) and related_fileno (counterpart). When the searched file is the
+            // related_fileno side, echoing related_fileno back would show the user their own number;
+            // flip to file_number so the linked parent is shown instead. When matched on the
+            // file_number side (or via prop_id), keep related_fileno (unchanged behavior).
+            $relatedNorm = $norm($row->related_fileno);
+            $parentNorm  = $norm($row->file_number);
+            $displaySource = $row->related_fileno;     // endpoint shown in the orange cell
+            $otherSide     = $row->file_number;         // the linked counterpart (for context)
+            $showParent    = false;
+            if (isset($searchedSet[$relatedNorm]) && !isset($searchedSet[$parentNorm])
+                && trim((string) $row->file_number) !== '') {
+                $displaySource = $row->file_number;
+                $otherSide     = $row->related_fileno;
+                $showParent    = true;
+            }
+
+            // Title/holder of the endpoint being shown: the fi_rel join resolves the related_fileno
+            // side, while file_title on the rfn row is the parent's. Prefer the side we display.
+            $displayTitle = $showParent
+                ? (($row->file_title ?? null) ?: $row->related_file_title ?: $row->related_current_holder ?: '-')
+                : ($row->related_file_title ?: $row->related_current_holder ?: ($row->file_title ?? null) ?: '-');
+
+            // A single related_file_number endpoint may carry several file numbers (the Manual
             // Linkage backfill stores a merger's sources as one CSV string, e.g.
             // "RES-2021-2865, RES-2021-2866, ..."). Emit one synthetic timeline row per
             // file number so each source displays on its own line.
-            $relatedNos = $this->parseRelatedFileno($row->related_fileno);
+            $relatedNos = $this->parseRelatedFileno($displaySource);
             if (empty($relatedNos)) {
                 continue;
             }
@@ -643,15 +711,9 @@ class LegalSearchService
                 'transaction_type'  => $row->transaction_type ?: 'Recertification',
                 'transaction_date'  => $displayDate,
                 'sort_date'         => $sortDate,
-                // Prefer the live file_indexings title/holder; fall back to the title stored on
-                // the related_file_number row itself (rfn.file_title) — needed when the related
-                // file was decommissioned by a merger/subdivision and hard-deleted from
-                // file_indexings, so the join yields nothing. A deprecated_records fallback for
-                // any remaining blanks is applied after the loop.
-                'party_1'           => $row->related_file_title
-                                        ?: $row->related_current_holder
-                                        ?: ($row->file_title ?? null)
-                                        ?: '-',
+                // Title/holder of the endpoint shown in the orange cell (see $displayTitle above).
+                // A deprecated_records fallback for any remaining blanks is applied after the loop.
+                'party_1'           => $displayTitle,
                 'party_2'           => $row->party_2 ?: '-',
                 'party_3'           => '-',
                 'party_4'           => '-',
@@ -680,9 +742,9 @@ class LegalSearchService
                 'reg_time'          => null,
                 'tp_no'             => null,
                 'source_table'      => 'Related Fileno',
-                // Carry through the parent file_number for context (the file
-                // that LISTED this related fileno).
-                'parent_file_number' => $row->file_number,
+                // The linked counterpart endpoint (the file on the other side of this link),
+                // for context and the reciprocal-collapse pass below.
+                'parent_file_number' => $otherSide,
             ];
             }
         }
@@ -1007,48 +1069,57 @@ class LegalSearchService
             'deed_count' => 0,
             'total_count' => 0,
             'file_commissioning_date' => '-',
+            'file_commissioned_number' => null,
         ];
     }
 
     /**
-     * Resolve a file's commissioning date for the default "File Commissioning"
-     * timeline record. Returns a formatted date when the file was commissioned
-     * within KLAES (fileNumber.SOURCE starting with 'MLS_Commissioned'),
-     * otherwise '-'.
+     * Resolve a file's commissioning date for the default "File Commissioning" /
+     * "Temporary File" timeline records. Returns both the formatted date and the
+     * exact file number (fileNumber.mlsfNo) that was commissioned, so the UI can
+     * attach the date to the correct row — a "(T)" temporary file that was
+     * commissioned must show the date on its own row, not on the permanent one.
+     *
+     * Returns ['date' => 'M j, Y'|'-', 'number' => string|null]. The date is only
+     * populated when the file was commissioned within KLAES (fileNumber.SOURCE
+     * starting with 'MLS_Commissioned').
      */
-    private function resolveCommissioningDate(?string $fileNumber, ?string $altFileNo = null): string
+    private function resolveCommissioningInfo(?string $fileNumber, ?string $altFileNo = null): array
     {
-        $fileNumber = trim((string) $fileNumber);
-        $altFileNo = trim((string) $altFileNo);
-        if ($fileNumber === '' && $altFileNo === '') {
-            return '-';
+        $default = ['date' => '-', 'number' => null];
+
+        // Match ALL variants of the file number (base, base(T)), not just the two
+        // exact strings passed in — a temporary file may be commissioned under its
+        // "(T)" number while the search/index number is the base (or vice versa).
+        $candidates = $this->fileNumberVariants($fileNumber, $altFileNo);
+        if (empty($candidates)) {
+            return $default;
         }
 
+        // Filter to commissioning rows IN the query (SOURCE starts with
+        // 'MLS_Commissioned') so a newer non-commissioning row for the same file
+        // number doesn't hide an existing commissioning record.
         $record = DB::connection('sqlsrv')->table('fileNumber')
-            ->where(function ($qq) use ($fileNumber, $altFileNo) {
-                if ($fileNumber !== '') {
-                    $qq->where('mlsfNo', $fileNumber);
-                }
-                if ($altFileNo !== '' && $altFileNo !== $fileNumber) {
-                    $qq->orWhere('mlsfNo', $altFileNo);
-                }
-            })
+            ->whereIn('mlsfNo', $candidates)
+            ->where('SOURCE', 'like', 'MLS_Commissioned%')
             ->orderByDesc('id')
-            ->first(['SOURCE', 'commissioning_date', 'created_at']);
+            ->first(['SOURCE', 'mlsfNo', 'commissioning_date', 'created_at']);
 
-        if (!$record || stripos((string) $record->SOURCE, 'MLS_Commissioned') !== 0) {
-            return '-';
+        if (!$record) {
+            return $default;
         }
 
         $raw = $record->commissioning_date ?: $record->created_at;
         if (!$raw) {
-            return '-';
+            return $default;
         }
 
+        $number = trim((string) $record->mlsfNo) ?: null;
+
         try {
-            return \Carbon\Carbon::parse($raw)->format('M j, Y');
+            return ['date' => \Carbon\Carbon::parse($raw)->format('M j, Y'), 'number' => $number];
         } catch (\Exception $e) {
-            return '-';
+            return $default;
         }
     }
 

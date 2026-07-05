@@ -1015,6 +1015,30 @@
             });
         }
 
+        // Occupancy Permit edit mode population
+        const hasExistingOccupancyPermit = normalizeBooleanFlag(record.has_occupancy_permit);
+        const hasOccupancyPermitToggleEdit = document.getElementById('has-occupancy-permit-toggle');
+        const occupancyPermitDetailsContainerEdit = document.getElementById('occupancy-permit-details-container');
+        if (hasOccupancyPermitToggleEdit) {
+            hasOccupancyPermitToggleEdit.checked = hasExistingOccupancyPermit;
+        }
+        if (hasExistingOccupancyPermit && occupancyPermitDetailsContainerEdit) {
+            occupancyPermitDetailsContainerEdit.classList.remove('hidden');
+            const occupancyPermitFieldMap = {
+                'occupancy-permit-op-type': record.occupancy_permit_op_type,
+                'occupancy-permit-op-serial-number': record.occupancy_permit_op_serial_number,
+                'occupancy-permit-date': record.occupancy_permit_date,
+                'occupancy-permit-file-number': record.occupancy_permit_file_number || record.file_number,
+                'occupancy-permit-land-use': record.occupancy_permit_land_use,
+                'occupancy-permit-grantor': record.occupancy_permit_grantor,
+                'occupancy-permit-grantee': record.occupancy_permit_grantee,
+            };
+            Object.entries(occupancyPermitFieldMap).forEach(([id, value]) => {
+                const el = document.getElementById(id);
+                if (el && value) el.value = value;
+            });
+        }
+
         loadReferenceData()
             .then(() => {
                 applyDistrictFromRecord(record.district, 0);
@@ -4187,6 +4211,17 @@
             rofoDetailsContainerClear.classList.add('hidden');
         }
 
+        // Reset Occupancy Permit state
+        clearOccupancyPermitFields();
+        const hasOccupancyPermitToggleClear = document.getElementById('has-occupancy-permit-toggle');
+        if (hasOccupancyPermitToggleClear) {
+            hasOccupancyPermitToggleClear.checked = false;
+        }
+        const occupancyPermitDetailsContainerClear = document.getElementById('occupancy-permit-details-container');
+        if (occupancyPermitDetailsContainerClear) {
+            occupancyPermitDetailsContainerClear.classList.add('hidden');
+        }
+
         const physicalRegistrySelect = document.getElementById('physical-registry');
         if (physicalRegistrySelect) {
             applyAutofillLock(['physical-registry'], false);
@@ -4336,6 +4371,27 @@
                 } else {
                     rofoDetailsContainer.classList.add('hidden');
                     clearRofoFields();
+                }
+            });
+        }
+
+        // Occupancy Permit toggle
+        const hasOccupancyPermitToggle = document.getElementById('has-occupancy-permit-toggle');
+        const occupancyPermitDetailsContainer = document.getElementById('occupancy-permit-details-container');
+
+        if (hasOccupancyPermitToggle && occupancyPermitDetailsContainer) {
+            hasOccupancyPermitToggle.addEventListener('change', function () {
+                if (this.checked) {
+                    occupancyPermitDetailsContainer.classList.remove('hidden');
+                    // Auto-populate file number from main form
+                    const mainFileNo = document.getElementById('fileno')?.value || document.getElementById('file-number-display')?.value || '';
+                    const opFileNo = document.getElementById('occupancy-permit-file-number');
+                    if (opFileNo && mainFileNo) {
+                        opFileNo.value = mainFileNo;
+                    }
+                } else {
+                    occupancyPermitDetailsContainer.classList.add('hidden');
+                    clearOccupancyPermitFields();
                 }
             });
         }
@@ -4927,6 +4983,40 @@
         }
     }
 
+    function clearOccupancyPermitFields() {
+        const occupancyPermitFields = [
+            'occupancy-permit-op-type',
+            'occupancy-permit-op-serial-number',
+            'occupancy-permit-date',
+            'occupancy-permit-file-number',
+            'occupancy-permit-grantee',
+        ];
+
+        occupancyPermitFields.forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.value = '';
+            }
+        });
+
+        // Restore default grantor (readonly field)
+        const opGrantor = document.getElementById('occupancy-permit-grantor');
+        if (opGrantor) {
+            opGrantor.value = 'KANO STATE GOVERNMENT';
+        }
+
+        // Instrument type is locked to Occupancy Permit
+        const opInstrumentType = document.getElementById('occupancy-permit-instrument-type');
+        if (opInstrumentType) {
+            opInstrumentType.value = 'Occupancy Permit';
+        }
+
+        const opLandUse = document.getElementById('occupancy-permit-land-use');
+        if (opLandUse) {
+            opLandUse.value = '';
+        }
+    }
+
     function clearCofoFields() {
         const cofoFields = [
             'cofo-date',
@@ -5445,6 +5535,16 @@
             rofo_grantor: document.getElementById('rofo-grantor')?.value || '',
             rofo_grantee: document.getElementById('rofo-grantee')?.value || '',
             rofo_status: document.getElementById('rofo-status')?.value || 'Active',
+            has_occupancy_permit: document.getElementById('has-occupancy-permit-toggle')?.checked || false,
+            occupancy_permit_instrument_type: document.getElementById('occupancy-permit-instrument-type')?.value || '',
+            occupancy_permit_op_type: document.getElementById('occupancy-permit-op-type')?.value || '',
+            occupancy_permit_op_serial_number: document.getElementById('occupancy-permit-op-serial-number')?.value || '',
+            occupancy_permit_date: document.getElementById('occupancy-permit-date')?.value || '',
+            occupancy_permit_file_number: document.getElementById('occupancy-permit-file-number')?.value || '',
+            occupancy_permit_land_use: document.getElementById('occupancy-permit-land-use')?.value || '',
+            occupancy_permit_grantor: document.getElementById('occupancy-permit-grantor')?.value || '',
+            occupancy_permit_grantee: document.getElementById('occupancy-permit-grantee')?.value || '',
+            occupancy_permit_status: document.getElementById('occupancy-permit-status')?.value || 'Active',
             main_application_id: document.getElementById('application_id')?.value || null,
             subapplication_id: document.getElementById('sub_application_id')?.value || null,
             source_file_id: resolvedSourceFileId,
@@ -5646,6 +5746,48 @@
                 } else {
                     alert('KANGIS Registry is selected. Please enter the KANGIS FileNo Placeholder (prefix and serial) before submitting.');
                     focusPlaceholder();
+                }
+                return;
+            }
+        }
+
+        // Residential Address is required when SLTR Registry is selected. Every rendered
+        // customer/entity address field must be filled before the file can be saved.
+        const isSltrRegistrySelected = generalRegistryValue.toUpperCase().includes('SLTR');
+        if (isSltrRegistrySelected) {
+            const addressFields = Array.from(
+                document.querySelectorAll('textarea[name^="residence_address["], textarea[name="residence_address[]"]')
+            );
+            const firstEmptyAddress = addressFields.find(el => !(el.value || '').trim());
+            // Fall back to the legacy single field when no repeatable fields are rendered.
+            const legacyAddress = document.getElementById('residence_address');
+            const legacyEmpty = !addressFields.length && legacyAddress && !(legacyAddress.value || '').trim();
+            const target = firstEmptyAddress || (legacyEmpty ? legacyAddress : null);
+
+            if (target) {
+                const focusAddress = () => {
+                    target.focus();
+                    target.classList.add('error-border');
+                    try { target.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { }
+                    const clearError = () => {
+                        target.classList.remove('error-border');
+                        target.removeEventListener('input', clearError);
+                        target.removeEventListener('change', clearError);
+                    };
+                    target.addEventListener('input', clearError);
+                    target.addEventListener('change', clearError);
+                };
+
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        title: 'Residential Address Required',
+                        text: 'SLTR Registry is selected. Please enter the Residential Address before submitting.',
+                        icon: 'warning',
+                        confirmButtonColor: '#f59e0b',
+                    }).then(focusAddress);
+                } else {
+                    alert('SLTR Registry is selected. Please enter the Residential Address before submitting.');
+                    focusAddress();
                 }
                 return;
             }
@@ -6150,6 +6292,16 @@
             rofoDetailsContainerReset.classList.add('hidden');
         }
         clearRofoFields();
+
+        const hasOccupancyPermitToggleReset = document.getElementById('has-occupancy-permit-toggle');
+        const occupancyPermitDetailsContainerReset = document.getElementById('occupancy-permit-details-container');
+        if (hasOccupancyPermitToggleReset) {
+            hasOccupancyPermitToggleReset.checked = false;
+        }
+        if (occupancyPermitDetailsContainerReset) {
+            occupancyPermitDetailsContainerReset.classList.add('hidden');
+        }
+        clearOccupancyPermitFields();
 
         clearEntityCustomerFields({ silent: true });
 

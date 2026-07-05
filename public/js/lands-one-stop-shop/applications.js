@@ -1746,9 +1746,11 @@ function ossUpdateWorkflowButtons(triggerEl) {
             var step = btn.getAttribute('data-wf');
             var enabled = false;
             if (step === 'acknowledgement') {
-                enabled = !!wf.verification_done;
+                // Verification is no longer a prerequisite for Acknowledgement.
+                enabled = true;
             } else if (step === 'land12') {
-                enabled = !!wf.verification_done && !!wf.acknowledgement_done;
+                // Land 12 requires Acknowledgement only (Verification bypassed).
+                enabled = !!wf.acknowledgement_done;
             } else if (step === 'recommendation') {
                 enabled = true;
             }
@@ -1806,52 +1808,323 @@ function _ossAsOpLikeRecord(data) {
     return {
         id: _ossWorkflowRecordId(data),
         file_no: _ossRecordFileNo(data),
-        party_1: 'KANO STATE GOVERNMENT',
+        party_1: _ossFirstFilled(data?.ic_original_holder, data?.source_party_1_name, data?.Grantor, data?.party_1) || 'KANO STATE GOVERNMENT',
         party_2: (data?.applicant_name || '').toString().trim(),
         plot_no: _ossFirstFilled(data?.plot_no, data?.ic_plot_number, data?.pra_plot_no, data?.fi_plot_no, data?.fn_plot_no, data?.plot_number),
         plan_no: _ossFirstFilled(data?.plan_no, data?.ic_plan_no, data?.pra_plan_no, data?.fi_plan_no, data?.fn_plan_no, data?.tp_no, data?.op_serial_number, data?.ic_op_serial_number),
         property_description: _ossFirstFilled(data?.location, data?.ic_location, data?.pra_location, data?.fi_location, data?.fn_location, data?.property_description, data?.district),
         land_use: (data?.application_type || '').toString().trim().toUpperCase(),
-        op_serial_number: (data?.ic_op_serial_number || '').toString().trim(),
+        op_serial_number: _ossFirstFilled(data?.ic_op_serial_number, data?.pra_op_serial_number, data?.op_serial_number),
         date_captured: dateText,
         time_captured: timeText,
         source_instrument_capture_id: _ossWorkflowRecordId(data)
     };
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   Change of Ownership Form (OP) – open / close / save / print
+   Approved template: docs/templates/landsoss/one-stop3.html
+   ═══════════════════════════════════════════════════════════════════════ */
+function ossChangeOfOwnershipRecord(btn) {
+    var data = _ossGetRecord(btn);
+    if (!data) return;
+    var rec = _ossAsOpLikeRecord(data);
+
+    // --- Prefill from the record (fallback layer) ---
+    document.getElementById('coo_op_number').value = rec.op_serial_number || '';
+    document.getElementById('coo_location').value = rec.property_description || '';
+    document.getElementById('coo_plot_no').value = rec.plot_no || '';
+    document.getElementById('coo_plan_no').value = rec.plan_no || '';
+    document.getElementById('coo_record_id').value = rec.id || '';
+
+    document.getElementById('coo_date_of_issuance').value = '';
+    document.getElementById('coo_original_name').value = rec.party_1 || '';
+    _ossPopulateAddressBuilder('coo_orig_addr', 'coo_original_address', '');
+    document.getElementById('coo_original_phone').value = _ossFirstFilled(data.source_party_1_phone, data.oa_phone);
+    document.getElementById('coo_current_name').value = rec.party_2 || '';
+    var currentAddress = _ossFirstFilled(data.address, data.residential_address, data.correspondence_address, data.source_party_2_address);
+    _ossPopulateAddressBuilder('coo_curr_addr', 'coo_current_address', currentAddress);
+    document.getElementById('coo_current_phone').value = _ossFirstFilled(data.phone, data.source_party_2_phone);
+    document.querySelectorAll('input[name="coo_ownership_method"]').forEach(function (r) { r.checked = false; });
+
+    document.getElementById('changeOfOwnershipModal').classList.remove('hidden');
+    var printBtn = document.getElementById('cooPrintBtn');
+    if (printBtn) printBtn.disabled = true;
+    if (window.lucide) window.lucide.createIcons();
+
+    // --- Override with previously-saved change of ownership, if any ---
+    var recordId = (rec.id || '').toString().trim();
+    if (!recordId) return;
+    fetch('/lands-one-stop-shop/applications/change-of-ownership-status?record_id=' + encodeURIComponent(recordId))
+        .then(function (r) { return r.json(); })
+        .then(function (resp) {
+            if (!resp || !resp.success || !resp.data || !resp.data.exists) return;
+            var d = resp.data;
+            if (d.op_number) document.getElementById('coo_op_number').value = d.op_number;
+            if (d.location) document.getElementById('coo_location').value = d.location;
+            if (d.plot_no) document.getElementById('coo_plot_no').value = d.plot_no;
+            if (d.plan_no) document.getElementById('coo_plan_no').value = d.plan_no;
+            document.getElementById('coo_date_of_issuance').value = d.date_of_issuance || '';
+            if (d.original_name) document.getElementById('coo_original_name').value = d.original_name;
+            if (d.original_address) _ossPopulateAddressBuilder('coo_orig_addr', 'coo_original_address', d.original_address);
+            document.getElementById('coo_original_phone').value = d.original_phone || document.getElementById('coo_original_phone').value;
+            if (d.current_name) document.getElementById('coo_current_name').value = d.current_name;
+            if (d.current_address) _ossPopulateAddressBuilder('coo_curr_addr', 'coo_current_address', d.current_address);
+            document.getElementById('coo_current_phone').value = d.current_phone || document.getElementById('coo_current_phone').value;
+            if (d.ownership_method) {
+                document.querySelectorAll('input[name="coo_ownership_method"]').forEach(function (r) {
+                    r.checked = (r.value === d.ownership_method);
+                });
+            }
+            // A saved record exists → allow printing immediately.
+            if (printBtn) printBtn.disabled = false;
+        })
+        .catch(function () { });
+}
+
+function closeChangeOfOwnershipModal() {
+    document.getElementById('changeOfOwnershipModal').classList.add('hidden');
+}
+
+function saveChangeOfOwnership() {
+    var payload = {
+        record_id: document.getElementById('coo_record_id').value,
+        op_number: document.getElementById('coo_op_number').value,
+        location: document.getElementById('coo_location').value,
+        plot_no: document.getElementById('coo_plot_no').value,
+        plan_no: document.getElementById('coo_plan_no').value,
+        date_of_issuance: document.getElementById('coo_date_of_issuance').value,
+        original_name: document.getElementById('coo_original_name').value,
+        original_address: document.getElementById('coo_original_address').value,
+        original_phone: document.getElementById('coo_original_phone').value,
+        current_name: document.getElementById('coo_current_name').value,
+        current_address: document.getElementById('coo_current_address').value,
+        current_phone: document.getElementById('coo_current_phone').value,
+        ownership_method: (document.querySelector('input[name="coo_ownership_method"]:checked') || {}).value || ''
+    };
+    if (!payload.current_name) {
+        Swal.fire({ icon: 'warning', title: 'Required', text: 'Please enter the current owner name.' });
+        return;
+    }
+    fetch('/lands-one-stop-shop/applications/save-change-of-ownership', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': OSS_CSRF, 'Accept': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(function (res) { return res.json(); })
+        .then(function (result) {
+            if (result && result.success) {
+                Swal.fire({ icon: 'success', title: 'Saved', text: result.message || 'Change of ownership saved.', timer: 1800, showConfirmButton: false });
+                var printBtn = document.getElementById('cooPrintBtn');
+                if (printBtn) printBtn.disabled = false;
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: (result && result.message) || 'Could not save change of ownership.' });
+            }
+        })
+        .catch(function () {
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
+        });
+}
+
+function printChangeOfOwnership() {
+    var fields = {
+        file_no: document.getElementById('coo_record_id').value,
+        op_number: document.getElementById('coo_op_number').value,
+        location: document.getElementById('coo_location').value,
+        plot_no: document.getElementById('coo_plot_no').value,
+        plan_no: document.getElementById('coo_plan_no').value,
+        date_of_issuance: document.getElementById('coo_date_of_issuance').value,
+        original_name: document.getElementById('coo_original_name').value,
+        original_address: document.getElementById('coo_original_address').value,
+        original_phone: document.getElementById('coo_original_phone').value,
+        current_name: document.getElementById('coo_current_name').value,
+        current_address: document.getElementById('coo_current_address').value,
+        current_phone: document.getElementById('coo_current_phone').value,
+        ownership_method: (document.querySelector('input[name="coo_ownership_method"]:checked') || {}).value || ''
+    };
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/lands-one-stop-shop/applications/print-change-of-ownership';
+    form.target = '_blank';
+    var csrf = document.createElement('input');
+    csrf.type = 'hidden'; csrf.name = '_token'; csrf.value = OSS_CSRF;
+    form.appendChild(csrf);
+    Object.keys(fields).forEach(function (key) {
+        var input = document.createElement('input');
+        input.type = 'hidden'; input.name = key; input.value = fields[key] || '';
+        form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+}
+
 function ossVerificationRecord(btn) {
     var data = _ossGetRecord(btn);
     if (!data) return;
     var rec = _ossAsOpLikeRecord(data);
-    document.getElementById('ver_applicant_name').value = rec.party_1 || '';
+
+    // --- Prefill from the record (fallback layer) ---
+    document.getElementById('ver_applicant_name').value = rec.party_2 || '';
     document.getElementById('ver_original_allottee').value = rec.party_1 || '';
     document.getElementById('ver_op_no').value = rec.op_serial_number || '';
     document.getElementById('ver_plot_plan').value = (rec.plot_no || '') + ' / ' + (rec.plan_no || '');
     document.getElementById('ver_location').value = rec.property_description || '';
     document.getElementById('ver_record_id').value = rec.id || '';
-    _ossClearSingleAddressBuilder('ver_addr', 'ver_address');
-    document.getElementById('ver_phone').value = '';
+
+    var recordAddress = _ossFirstFilled(data.address, data.residential_address, data.correspondence_address, data.source_party_2_address);
+    _ossPopulateAddressBuilder('ver_addr', 'ver_address', recordAddress);
+    document.getElementById('ver_phone').value = _ossFirstFilled(data.phone, data.oa_phone, data.source_party_2_phone);
     document.getElementById('ver_email').value = '';
     document.getElementById('ver_chairman_name').value = '';
     document.querySelectorAll('input[name="ver_id_type"]').forEach(function (r) { r.checked = false; });
     document.querySelectorAll('input[name="ver_recommendation"]').forEach(function (r) { r.checked = false; });
     verRemovePassport();
+    if (data.passport_photo_url) {
+        _ossSetVerificationPassport(data.passport_photo_url);
+    }
+
     document.getElementById('verificationModal').classList.remove('hidden');
     var printBtn = document.getElementById('verPrintBtn');
     if (printBtn) printBtn.disabled = true;
     if (window.lucide) window.lucide.createIcons();
+
+    // --- Override with previously-saved verification, if any ---
+    var recordId = (rec.id || '').toString().trim();
+    if (!recordId) return;
+    fetch('/lands-one-stop-shop/applications/verification-status?record_id=' + encodeURIComponent(recordId))
+        .then(function (r) { return r.json(); })
+        .then(function (resp) {
+            if (!resp || !resp.success || !resp.data || !resp.data.exists) return;
+            var d = resp.data;
+            if (d.applicant_name) document.getElementById('ver_applicant_name').value = d.applicant_name;
+            if (d.original_allottee) document.getElementById('ver_original_allottee').value = d.original_allottee;
+            if (d.op_number) document.getElementById('ver_op_no').value = d.op_number;
+            if (d.plot_no || d.plan_no) {
+                document.getElementById('ver_plot_plan').value = (d.plot_no || '') + ' / ' + (d.plan_no || '');
+            }
+            if (d.location) document.getElementById('ver_location').value = d.location;
+            if (d.applicant_address) _ossPopulateAddressBuilder('ver_addr', 'ver_address', d.applicant_address);
+            document.getElementById('ver_phone').value = d.applicant_phone || document.getElementById('ver_phone').value;
+            document.getElementById('ver_email').value = d.applicant_email || '';
+            document.getElementById('ver_chairman_name').value = d.chairman_name || '';
+            if (d.id_type) {
+                document.querySelectorAll('input[name="ver_id_type"]').forEach(function (r) {
+                    r.checked = (r.value === d.id_type);
+                });
+            }
+            if (d.recommendation) {
+                document.querySelectorAll('input[name="ver_recommendation"]').forEach(function (r) {
+                    r.checked = (r.value === d.recommendation);
+                });
+            }
+            if (d.passport_photo_url) _ossSetVerificationPassport(d.passport_photo_url);
+            // A saved verification exists → allow printing immediately.
+            if (printBtn) printBtn.disabled = false;
+        })
+        .catch(function () { });
+}
+
+/** Show a passport photo in the verification modal from a URL. */
+function _ossSetVerificationPassport(url) {
+    var verImg = document.getElementById('ver_passport_img');
+    if (!verImg) return;
+    verImg.src = url;
+    verImg.classList.remove('hidden');
+    verImg.onerror = function () { verRemovePassport(); };
+    var ph = document.getElementById('ver_passport_placeholder');
+    var rm = document.getElementById('ver_passport_remove');
+    if (ph) ph.classList.add('hidden');
+    if (rm) rm.classList.remove('hidden');
+}
+
+/**
+ * Best-effort reconstruction of an address-builder from a composed address
+ * string (e.g. "992, N TERMINAL, DAWAKIN TOFA, KANO"). Matches select options
+ * case-insensitively; a leading numeric token becomes the Plot Number and any
+ * unmatched street/district tokens fall back to the "Other" free-text field.
+ * The authoritative composed string is preserved in the output textarea.
+ */
+function _ossPopulateAddressBuilder(prefix, outputId, address) {
+    _ossClearSingleAddressBuilder(prefix, outputId);
+    var raw = (address || '').toString().trim();
+    var outputEl = document.getElementById(outputId);
+    if (!raw) return;
+    if (outputEl) outputEl.value = raw.toUpperCase();
+
+    var tokens = raw.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
+    if (!tokens.length) return;
+
+    var plotEl = document.getElementById(prefix + '_plot');
+    var streetEl = document.getElementById(prefix + '_street');
+    var streetOtherEl = document.getElementById(prefix + '_street_other');
+    var distEl = document.getElementById(prefix + '_district');
+    var distOtherEl = document.getElementById(prefix + '_district_other');
+    var lgaEl = document.getElementById(prefix + '_lga');
+    var stateEl = document.getElementById(prefix + '_state');
+    var dashPrefix = prefix.replace(/_/g, '-');
+
+    function matchOption(sel, val) {
+        if (!sel) return false;
+        var v = (val || '').trim().toLowerCase();
+        if (!v) return false;
+        for (var i = 0; i < sel.options.length; i++) {
+            var ov = (sel.options[i].value || '').trim().toLowerCase();
+            if (ov && ov !== 'other' && ov === v) { sel.selectedIndex = i; return true; }
+        }
+        return false;
+    }
+
+    var remaining = tokens.slice();
+
+    // State: prefer the trailing token.
+    if (stateEl && remaining.length && matchOption(stateEl, remaining[remaining.length - 1])) {
+        remaining.pop();
+    }
+    // LGA: any remaining token that matches an LGA option.
+    if (lgaEl) {
+        for (var i = remaining.length - 1; i >= 0; i--) {
+            if (matchOption(lgaEl, remaining[i])) { remaining.splice(i, 1); break; }
+        }
+    }
+    // District: any remaining token that matches a district option.
+    if (distEl) {
+        for (var j = remaining.length - 1; j >= 0; j--) {
+            if (matchOption(distEl, remaining[j])) { remaining.splice(j, 1); break; }
+        }
+    }
+    // Plot Number: first remaining token containing a digit.
+    if (plotEl) {
+        for (var k = 0; k < remaining.length; k++) {
+            if (/\d/.test(remaining[k])) { plotEl.value = remaining[k]; remaining.splice(k, 1); break; }
+        }
+    }
+    // Street: whatever is left. Match an option or fall back to "Other".
+    if (remaining.length && streetEl) {
+        var streetVal = remaining.join(', ');
+        if (!matchOption(streetEl, streetVal)) {
+            var hasOther = false;
+            for (var m = 0; m < streetEl.options.length; m++) {
+                if ((streetEl.options[m].value || '').trim().toLowerCase() === 'other') {
+                    streetEl.selectedIndex = m; hasOther = true; break;
+                }
+            }
+            if (hasOther && streetOtherEl) {
+                _ossToggleOther(streetEl, dashPrefix + '-street-other-wrapper', streetOtherEl);
+                streetOtherEl.value = streetVal;
+            }
+        }
+    }
+
+    // Keep the original composed address authoritative for display/save.
+    if (outputEl) outputEl.value = raw.toUpperCase();
 }
 
 function ossAcknowledgementRecord(btn) {
     var data = _ossGetRecord(btn);
     if (!data) return;
-    _ossCheckWorkflow(data).then(function (wf) {
-        if (!wf.verification_done) {
-            Swal.fire({ icon: 'warning', title: 'Verification Required', text: 'Please complete Verification before proceeding to Acknowledgement.' });
-            return;
-        }
-        _ossOpenAcknowledgementModal(data);
-    });
+    // Verification is no longer required before Acknowledgement.
+    _ossOpenAcknowledgementModal(data);
 }
 
 function _ossOpenAcknowledgementModal(data) {
@@ -1979,10 +2252,7 @@ function ossLand12Record(btn) {
     var data = _ossGetRecord(btn);
     if (!data) return;
     _ossCheckWorkflow(data).then(function (wf) {
-        if (!wf.verification_done) {
-            Swal.fire({ icon: 'warning', title: 'Verification Required', text: 'Please complete Verification first.' });
-            return;
-        }
+        // Verification bypassed; Acknowledgement remains the prerequisite for Land 12.
         if (!wf.acknowledgement_done) {
             Swal.fire({ icon: 'warning', title: 'Acknowledgement Required', text: 'Please complete Acknowledgement before proceeding to Land 12.' });
             return;
@@ -2217,6 +2487,12 @@ function printVerification() {
         chairman_name: document.getElementById('ver_chairman_name').value,
         record_id: document.getElementById('ver_record_id').value
     };
+    // Print whatever passport is currently shown in the modal (uploaded preview or saved image),
+    // so it works even if the record hasn't been (re)saved yet.
+    var _verImg = document.getElementById('ver_passport_img');
+    if (_verImg && !_verImg.classList.contains('hidden') && _verImg.src) {
+        fields.passport_photo_url = _verImg.src;
+    }
     var form = document.createElement('form');
     form.method = 'POST';
     form.action = '/lands-one-stop-shop/applications/print-verification';

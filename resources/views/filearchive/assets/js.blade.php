@@ -97,13 +97,82 @@
 
         const normalizedFileNumber = normalizeFileNumber(tracker.file_number);
         const derivedStatus = deriveTrackerStatus(tracker);
+        derivedStatus.details = buildTrackerDetails(tracker);
 
         if (normalizedFileNumber && derivedStatus) {
+          const previous = acc[normalizedFileNumber];
+
+          // A re-dispatched file has old Completed trackers alongside the
+          // current ACTIVE one. Ground truth (App\Services\FileLocationResolver):
+          // the file is physically OUT if ANY tracker derives in_transit, so
+          // that derivation must win no matter where it sits in the response —
+          // previously the last tracker overwrote the map and wrongly turned
+          // logged-out-again files green.
+          if (previous) {
+            previous.hasHistory = previous.hasHistory || trackerHasMovementHistory(tracker);
+            if (previous.status !== 'in_transit' && derivedStatus.status === 'in_transit') {
+              derivedStatus.hasHistory = previous.hasHistory;
+              acc[normalizedFileNumber] = derivedStatus;
+            }
+            return acc;
+          }
+
+          derivedStatus.hasHistory = trackerHasMovementHistory(tracker);
           acc[normalizedFileNumber] = derivedStatus;
         }
 
         return acc;
       }, {});
+    }
+
+    // Details shown as label/value rows in the card tooltip.
+    function buildTrackerDetails(tracker) {
+      if (!tracker) {
+        return {};
+      }
+
+      return {
+        registry: String(tracker.origin_office_name || tracker.registry_code || '').trim(),
+        department: String(tracker.department || '').trim(),
+        officer: String(tracker.receiving_officer_name || tracker.current_officer || '').trim(),
+        dateRequested: formatTrackerDate(tracker.date_requested || tracker.date_created || tracker.created_at)
+      };
+    }
+
+    function formatTrackerDate(value) {
+      if (!value) {
+        return '';
+      }
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return '';
+      }
+
+      const pad = function (n) { return String(n).padStart(2, '0'); };
+      let hours = date.getHours();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12;
+
+      return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate())
+        + ' ' + hours + ':' + pad(date.getMinutes()) + ' ' + ampm;
+    }
+
+    function trackerHasMovementHistory(tracker) {
+      if (!tracker) {
+        return false;
+      }
+
+      let movementLog = tracker.movement_log;
+      if (typeof movementLog === 'string') {
+        try {
+          movementLog = JSON.parse(movementLog);
+        } catch (error) {
+          movementLog = [];
+        }
+      }
+
+      return Array.isArray(movementLog) && movementLog.length > 0;
     }
 
     function normalizeFileNumber(value) {
@@ -295,7 +364,43 @@
         const mapping = statusMap[fileNumber];
         updateHeaderColor($header, mapping);
         updateCardTooltip($header, mapping, $card.data('fileNumber'));
+        updatePrintHistoryButton($header, mapping, $card.data('fileNumber'));
       });
+    }
+
+    // Show a print button on files that are out now or were logged out before,
+    // opening the printable File Movement History sheet in a new tab.
+    function updatePrintHistoryButton($header, mapping, fileNumberRaw) {
+      const $existing = $header.find('.print-history-btn');
+
+      if (!mapping || !mapping.hasHistory) {
+        $existing.remove();
+        return;
+      }
+
+      if ($existing.length) {
+        return;
+      }
+
+      const url = '{{ route('filearchive.movement-history.print') }}'
+        + '?file_number=' + encodeURIComponent(fileNumberRaw || '');
+
+      const $button = $(
+        '<button type="button" class="print-history-btn inline-flex items-center justify-center w-5 h-5 rounded bg-white hover:bg-gray-100 text-gray-800 shadow-sm transition-colors" title="Print movement history">'
+        + '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        + '<polyline points="6 9 6 2 18 2 18 9"></polyline>'
+        + '<path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>'
+        + '<rect x="6" y="14" width="12" height="8"></rect>'
+        + '</svg>'
+        + '</button>'
+      );
+
+      $button.on('click', function (event) {
+        event.stopPropagation();
+        window.open(url, '_blank');
+      });
+
+      $header.find('.flex.items-center.space-x-2').first().append($button);
     }
 
     // Rebuild the hover tooltip from authoritative tracker data so an out-of-registry
@@ -314,16 +419,21 @@
 
       let body;
       if (state.status === 'in_transit') {
-        const where = state.location
-          ? `📍 ${esc(state.location)}`
-          : '⏳ File is in transit';
-        const who = state.officer
-          ? `<div class="text-gray-400 mt-1">👤 ${esc(state.officer)}</div>`
-          : '';
+        const details = state.details || {};
+        const rows = [
+          ['Registry', details.registry],
+          ['Department', details.department || state.location],
+          ['Receiving Officer (holder)', details.officer || state.officer],
+          ['Date Requested', details.dateRequested]
+        ].filter(function (pair) { return pair[1]; });
+
+        const rowsHtml = rows.map(function (pair) {
+          return `<div class="tt-row"><span class="tt-label">${esc(pair[0])}</span><span class="tt-value">${esc(pair[1])}</span></div>`;
+        }).join('');
+
         body =
-          `<div class="text-gray-200">File out of the Registry</div>` +
-          `<div class="text-gray-300 mt-1">${where}</div>` +
-          who;
+          `<div class="text-gray-200 mb-1">File out of the Registry</div>` +
+          (rowsHtml || `<div class="text-gray-300 mt-1">⏳ File is in transit</div>`);
       } else {
         body =
           `<div class="text-gray-200">File in the Registry</div>` +

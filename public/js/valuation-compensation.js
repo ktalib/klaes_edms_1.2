@@ -415,6 +415,11 @@ window.VFC = {
         });
 
         $(document).on('input', '#bank_search', function () {
+            // Mirror whatever is typed as the bank name so an unlisted bank can
+            // still be specified manually. Selecting a known bank (below) overrides this.
+            $bankNameHidden.val($(this).val());
+            $bankLogo.html('<i data-lucide="building-2" class="h-4 w-4 text-slate-400"></i>');
+            if (window.lucide) lucide.createIcons();
             self.renderBanks($(this).val());
         });
 
@@ -425,6 +430,25 @@ window.VFC = {
             $bankNameHidden.val(name);
             $bankLogo.html(`<img src="${logo}" alt="${name}" class="w-full h-full object-contain">`);
             $bankDropdown.addClass('hidden');
+        });
+
+        // Use the exact text the user typed as a custom (unlisted) bank name.
+        $(document).on('click', '.bank-option-custom', function () {
+            const name = String($(this).data('name'));
+            $bankSearch.val(name);
+            $bankNameHidden.val(name);
+            $bankLogo.html('<i data-lucide="building-2" class="h-4 w-4 text-slate-400"></i>');
+            if (window.lucide) lucide.createIcons();
+            $bankDropdown.addClass('hidden');
+        });
+
+        // "Other" – clear the field so the user can type a bank name manually.
+        $(document).on('click', '.bank-option-other', function () {
+            $bankSearch.val('').attr('placeholder', 'Type bank name...').focus();
+            $bankNameHidden.val('');
+            $bankLogo.html('<i data-lucide="building-2" class="h-4 w-4 text-slate-400"></i>');
+            if (window.lucide) lucide.createIcons();
+            self.renderBanks('');
         });
 
         $(document).on('click', function (e) {
@@ -493,6 +517,7 @@ window.VFC = {
     },
 
     renderBanks: function (filter = '') {
+        const term = (filter || '').trim();
         const filtered = this.allBanks.filter(b => b.title.toLowerCase().includes(filter.toLowerCase()));
         let html = '';
         filtered.forEach(bank => {
@@ -505,8 +530,33 @@ window.VFC = {
                 </div>
             `;
         });
-        if (!html) html = '<div class="px-4 py-3 text-sm text-slate-400 italic text-center">No banks found...</div>';
+
+        // If what the user typed isn't an exact known bank, let them use it verbatim.
+        const exactMatch = term && this.allBanks.some(b => b.title.toLowerCase() === term.toLowerCase());
+        if (term && !exactMatch) {
+            const safe = term.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            html += `
+                <div class="bank-option-custom flex items-center gap-3 px-4 py-3 hover:bg-blue-50 cursor-pointer transition border-b border-slate-50" data-name="${safe}">
+                    <div class="w-8 h-8 rounded-lg border border-blue-100 bg-blue-50 flex-shrink-0 flex items-center justify-center">
+                        <i data-lucide="plus" class="h-4 w-4 text-blue-500"></i>
+                    </div>
+                    <span class="text-sm font-medium text-slate-700">Use &quot;<span class="font-bold">${safe}</span>&quot; as bank name</span>
+                </div>
+            `;
+        }
+
+        // Always offer an explicit "Other" option for manual entry.
+        html += `
+            <div class="bank-option-other flex items-center gap-3 px-4 py-3 hover:bg-blue-50 cursor-pointer transition">
+                <div class="w-8 h-8 rounded-lg border border-slate-100 bg-slate-50 flex-shrink-0 flex items-center justify-center">
+                    <i data-lucide="pencil" class="h-4 w-4 text-slate-500"></i>
+                </div>
+                <span class="text-sm font-medium text-slate-700">Other (specify manually)</span>
+            </div>
+        `;
+
         $('#bank_dropdown').html(html);
+        if (window.lucide) lucide.createIcons();
     },
 
     initDataTable: function () {
@@ -883,7 +933,7 @@ window.VFC = {
 
         $('#account_name').val(record.account_name);
         $('#account_number').val(record.account_number);
-        $('#bank_name').val(record.bank_name);
+        $('#bank_name_val').val(record.bank_name);
         $('#bank_search').val(record.bank_name);
 
         const bank = this.allBanks.find(b => b.title === record.bank_name);

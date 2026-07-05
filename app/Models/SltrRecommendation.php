@@ -76,6 +76,7 @@ class SltrRecommendation extends Model
         'created_by',
         'updated_by',
         'sltr_rofo_serial_no',
+        'printed_at',
     ];
 
     protected $casts = [
@@ -83,6 +84,7 @@ class SltrRecommendation extends Model
         'approved_at'        => 'datetime',
         'rofo_generated_at'  => 'datetime',
         'rofo_date_generated'=> 'date',
+        'printed_at'         => 'datetime',
         'ground_rent'        => 'decimal:2',
         'processing_fee'     => 'decimal:2',
         'created_at'         => 'datetime',

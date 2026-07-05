@@ -837,6 +837,7 @@ const executeSearchAjax = (filters, searchData) => {
         const _apiIndexFileNumber = data.file_index_number || null;
         const _apiFileSize = data.file_size || null;
         const _apiCommissioningDate = data.file_commissioning_date || null;
+        const _apiCommissionedNumber = data.file_commissioned_number || null;
         const _apiTempFileNumber = data.file_temp_number || null;
         // Stash so the File Information card can show it even when the selected
         // record is a prop_id-expanded row from a different file number.
@@ -844,6 +845,7 @@ const executeSearchAjax = (filters, searchData) => {
         searchResults.forEach(r => {
           if (_apiFileTitle) r._file_title = _apiFileTitle;
           if (_apiCommissioningDate) r._file_commissioning_date = _apiCommissioningDate;
+          if (_apiCommissionedNumber) r._file_commissioned_number = _apiCommissionedNumber;
           if (_apiFileDistrict) r._file_district = _apiFileDistrict;
           if (_apiFileLga) r._file_lga = _apiFileLga;
           if (_apiFileLandUse) r._file_land_use = _apiFileLandUse;
@@ -896,6 +898,7 @@ const executeSearchAjax = (filters, searchData) => {
               _file_index_number: data.file_index_number || null,
               _file_size: data.file_size || null,
               _file_commissioning_date: data.file_commissioning_date || null,
+              _file_commissioned_number: data.file_commissioned_number || null,
               _file_temp_number: data.file_temp_number || null,
               prop_id: '',
             };
@@ -2053,6 +2056,8 @@ const executeSearchAjax = (filters, searchData) => {
         const _ix = data.file_index_number || null;
         const _sz = data.file_size || null;
         const _tf = data.file_temp_number || null;
+        const _cd = data.file_commissioning_date || null;
+        const _cn = data.file_commissioned_number || null;
         window._lsFileTempNumber = _tf;
         searchResults.forEach(function (r) {
           if (_t)  r._file_title          = _t;
@@ -2065,6 +2070,8 @@ const executeSearchAjax = (filters, searchData) => {
           if (_ix) r._file_index_number   = _ix;
           if (_sz) r._file_size           = _sz;
           if (_tf) r._file_temp_number    = _tf;
+          if (_cd) r._file_commissioning_date = _cd;
+          if (_cn) r._file_commissioned_number = _cn;
         });
 
         // Update counts
@@ -2886,6 +2893,15 @@ const executeSearchAjax = (filters, searchData) => {
     // "(T)" number, strip the "(T)" here — the temporary number is shown on its own
     // "Temporary File" row directly below.
     const fileNo = String(rawFileNo).replace(/\s*\(\s*T\s*\)\s*$/i, '').trim() || rawFileNo;
+    // The commissioning date belongs to whichever file number was actually
+    // commissioned (fileNumber.mlsfNo, resolved server-side). It carries a "(T)"
+    // suffix when the temporary file was the commissioned one. Show the date on
+    // this permanent row ONLY when the commissioned number is NOT a "(T)" number
+    // (or when the server reported no commissioned number — legacy responses).
+    const commissionedNo = String((selectedFile && selectedFile._file_commissioned_number) || '').trim();
+    const commissionedIsTemp = /\(\s*T\s*\)\s*$/i.test(commissionedNo);
+    const mainRowDate = (commDate && commDate !== '-' && !commissionedIsTemp)
+      ? commDate : '-';
     // Party 1 is the commissioning authority; Party 2 is the file owner/title
     // (the Ministry commissioned the file for them).
     const ownerName = (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';
@@ -2900,7 +2916,7 @@ const executeSearchAjax = (filters, searchData) => {
       instrument_type: 'File Commissioning',
       party_1: 'Kano State Ministry of Land and Physical Planning', party_2: ownerName, party_3: '-', party_4: '-',
       serial_no: '', page_no: '', volume_no: '',
-      transaction_date: (commDate && commDate !== '-') ? commDate : '-',
+      transaction_date: mainRowDate,
       reg_date: '',
       caveat: 'No',
       is_caveated: 0,
@@ -2934,6 +2950,15 @@ const executeSearchAjax = (filters, searchData) => {
     }
     if (!tempFileNo || tempFileNo === '-') return null;
 
+    // The commissioning date sits on THIS temporary row when the commissioned file
+    // number (fileNumber.mlsfNo, resolved server-side) is a "(T)" number.
+    const commDate = (selectedFile && selectedFile._file_commissioning_date)
+      ? selectedFile._file_commissioning_date : '-';
+    const commissionedNo = String((selectedFile && selectedFile._file_commissioned_number) || '').trim();
+    const commissionedIsTemp = /\(\s*T\s*\)\s*$/i.test(commissionedNo);
+    const tempRowDate = (commDate && commDate !== '-' && commissionedIsTemp)
+      ? commDate : '-';
+
     const ownerName = (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';
     return {
       _is_temporary_file: true,
@@ -2946,7 +2971,7 @@ const executeSearchAjax = (filters, searchData) => {
       instrument_type: 'Temporary File',
       party_1: 'Kano State Ministry of Land and Physical Planning', party_2: ownerName, party_3: '-', party_4: '-',
       serial_no: '', page_no: '', volume_no: '',
-      transaction_date: '-',
+      transaction_date: tempRowDate,
       reg_date: '',
       caveat: 'No',
       is_caveated: 0,

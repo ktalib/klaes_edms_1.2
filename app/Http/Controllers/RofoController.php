@@ -1480,15 +1480,11 @@ class RofoController extends Controller
             $isCTC = request()->query('isCTC', false);
             $requestedWatermark = strtoupper(request()->query('watermark', ''));
 
-            // Determine watermark sequence for this print job
-            if ($isCTC) {
-                // Certified True Copy: single watermark in Red
-                $watermarkSequence = ['CERTIFIED TRUE COPY'];
-            } else {
-                // Every file print always produces all 3 copies at once:
-                // ORIGINAL (Red), DUPLICATE (Blue), TRIPLICATE (Green)
-                $watermarkSequence = $watermarkStages;
-            }
+            // Determine watermark sequence for this print job.
+            // Both normal batch and CTC now produce all 3 copies at once:
+            // ORIGINAL (Red), DUPLICATE (Blue), TRIPLICATE (Green).
+            // (CTC differs only in that it does NOT consume the print_counter below.)
+            $watermarkSequence = $watermarkStages;
 
             $finalWatermarkForView = $watermarkSequence[0];
 

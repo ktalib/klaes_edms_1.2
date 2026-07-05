@@ -1260,14 +1260,32 @@ async function searchFile() {
     if (res && res.success && res.data) {
       const d = res.data;
       const meta = LOC_STATUS_META[d.status] || { label:d.status, color:'#6b7185', icon:'fa-file' };
-      const rowsHtml = [
-        ['Registry', d.registry],
-        ['Current Location (Expected)', d.current_location],
-        ['Rack / Shelf', d.rack_shelf],
-        // In-transit timeline — only populated (and shown) for IN_TRANSIT files.
-        ['Date Requested', d.date_requested],
-        ['Date Collected', d.date_collected],
-      ].filter(r=>r[1]).map(r=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);"><span style="font-size:11px;color:var(--muted);">${esc(r[0])}</span><span style="font-size:13px;font-weight:600;text-align:right;">${esc(r[1])}</span></div>`).join('');
+      // Detail rows mirror the web Quick Search (/create-file-tracker/quick-search):
+      // an in-transit file is physically held by a Receiving Officer in their
+      // department — show the holding Department as the location and label the
+      // holder explicitly. Other statuses keep the expected archive/pool location.
+      let detailRows;
+      if (d.status === 'IN_TRANSIT') {
+        let dept = String(d.receiving_department || '').trim();
+        if (dept && !/department$/i.test(dept)) dept = dept + ' Department';
+        detailRows = [
+          ['Registry', d.registry],
+          ['Department', dept || d.current_location],
+          ['Rack / Shelf', d.rack_shelf],
+          ['Receiving Officer (holder)', d.receiving_officer_name],
+          // In-transit timeline — only populated for IN_TRANSIT files.
+          ['Date Requested', d.date_requested],
+          ['Date Collected', d.date_collected],
+        ];
+      } else {
+        detailRows = [
+          ['Registry', d.registry],
+          ['Current Location (Expected)', d.current_location],
+          ['Rack / Shelf', d.rack_shelf],
+          ['Receiving Officer', d.receiving_officer_name],
+        ];
+      }
+      const rowsHtml = detailRows.filter(r=>r[1]).map(r=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);"><span style="font-size:11px;color:var(--muted);">${esc(r[0])}</span><span style="font-size:13px;font-weight:600;text-align:right;">${esc(r[1])}</span></div>`).join('');
 
       // OFS (ranked officer): raise a prioritised File/Blind Request to the SCB
       // Monitor straight from the locator. Hidden for SCB Monitors (they receive,
@@ -1342,20 +1360,24 @@ async function searchFile() {
       // the file (its last receiving officer) instead of routing it to the SCB Monitor.
       let redirectSend = '';
       if (IS_OFS && d.can_redirect) {
-        const office = d.current_location || 'Current Office';
+        const office = d.receiving_officer_name || d.current_location || 'Current Office';
         const grad   = 'linear-gradient(135deg,#f59e0b,#d97706)';
-        // Button names the office/location (the "where"); the line below names the
-        // Receiving Officer holding it (the "who") and their office when both differ.
-        const officer = d.receiving_officer_name || '';
-        let dept = d.receiving_department || '';
-        if (dept && !/department$/i.test(dept.trim())) dept = dept.trim() + ' Department';
-        let subline = '';
-        if (officer) {
-          const deptPart = (dept && esc(dept) !== esc(officer)) ? ` (${esc(dept)})` : '';
-          subline = `<p style="margin-top:6px;font-size:12px;color:var(--muted);text-align:center;">Receiving Officer: <strong>${esc(officer)}</strong>${deptPart} &middot; currently holding the file.</p>`;
-        } else if (office) {
-          subline = `<p style="margin-top:6px;font-size:12px;color:var(--muted);text-align:center;">This request will be sent to <strong>${esc(office)}</strong>, which currently holds the file.</p>`;
-        }
+        // Button names the receiving officer when available, otherwise the current
+        // file location. The line below still shows the officer + department if set.
+        // Sub-line note below the button ("Receiving Officer: … currently holding
+        // the file.") — hidden for now (mirrors the web Quick Search, which also
+        // hides its equivalent redirectSubline).
+        // const officer = d.receiving_officer_name || '';
+        // let dept = d.receiving_department || '';
+        // if (dept && !/department$/i.test(dept.trim())) dept = dept.trim() + ' Department';
+        // let subline = '';
+        // if (officer) {
+        //   const deptPart = (dept && esc(dept) !== esc(officer)) ? ` (${esc(dept)})` : '';
+        //   subline = `<p style="margin-top:6px;font-size:12px;color:var(--muted);text-align:center;">Receiving Officer: <strong>${esc(officer)}</strong>${deptPart} &middot; currently holding the file.</p>`;
+        // } else if (office) {
+        //   subline = `<p style="margin-top:6px;font-size:12px;color:var(--muted);text-align:center;">This request will be sent to <strong>${esc(office)}</strong>, which currently holds the file.</p>`;
+        // }
+        const subline = '';
         redirectSend = `<button class="btn" style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};" onclick="redirectFromSearch(this)"><i class="fas fa-user-tag"></i> Re-direct Request to ${esc(office)}</button>` + subline;
       }
 
@@ -1465,7 +1487,13 @@ async function searchFile() {
               </div>`;
           };
 
-          const nodes = hist.map((h, i) => buildNode(h, i === 0, i === hist.length - 1)).join('');
+          // A single transaction (e.g. only a CofO grant with no later transfer)
+          // means the same person is both the original AND the current holder.
+          // Render that holder twice — as Original and as Current — mirroring the
+          // flat two-row fallback above, so a Current Holder always shows.
+          const nodes = hist.length === 1
+            ? buildNode(hist[0], true, false) + buildNode(hist[0], false, true)
+            : hist.map((h, i) => buildNode(h, i === 0, i === hist.length - 1)).join('');
           return `
             <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:2px 0 10px;">Ownership</div>
             <div style="padding:0 2px 2px;">${nodes}</div>`;
@@ -1483,7 +1511,10 @@ async function searchFile() {
       // When the file's origin registry is known, the status pill becomes
       // "In {Registry}" tinted with that registry's colour (KANGIS / SLTR / ST /
       // Cadastral); otherwise it shows the resolved location status.
-      const badge = d.origin_registry
+      // Exception: an IN_TRANSIT (logged-out) file is NOT in its registry — it is
+      // out at another office — so it always shows the "In Transit" status pill,
+      // never "In {Registry}" (which would wrongly imply it sits in the registry).
+      const badge = (d.origin_registry && !/^IN_TRANSIT/.test(d.status || ''))
         ? { label: 'In ' + d.origin_registry, color: REGISTRY_THEME[d.origin_registry] || meta.color, icon: 'fa-folder-open' }
         : meta;
 
@@ -2326,11 +2357,20 @@ function updateFrCounts() {
   if (logEl)  logEl.textContent  = frLogTotal  != null ? frLogTotal  : (frLogList  || []).length;
 }
 
-// Re-render whichever tab is active (used by the search box).
+// Re-render whichever tab is active (used by the search box). For FSR History we
+// also refetch from the server (debounced) so matches beyond the 200 most-recent
+// rows are found — client-side filtering alone would miss older requests.
+let frLogSearchTimer = null;
 function onFrSearch() {
   const clearBtn = document.getElementById('frSearchClear');
   if (clearBtn) clearBtn.classList.toggle('show', !!(document.getElementById('frSearch')?.value || '').trim());
-  if (frView === 'log') renderFsrLog(); else renderFileRequests();
+  if (frView === 'log') {
+    renderFsrLog();
+    clearTimeout(frLogSearchTimer);
+    frLogSearchTimer = setTimeout(loadFsrLog, 350);
+  } else {
+    renderFileRequests();
+  }
 }
 function clearFrSearch() {
   const input = document.getElementById('frSearch');
@@ -2345,7 +2385,8 @@ async function loadFsrLog() {
   if (!container) return;
   container.innerHTML = '<div class="card" style="padding:30px;text-align:center;color:var(--faint);"><i class="fas fa-spinner fa-spin fa-lg"></i></div>';
   try {
-    const res = await api(`${MOB_BASE}/file-requests/log`);
+    const q = (document.getElementById('frSearch')?.value || '').trim();
+    const res = await api(`${MOB_BASE}/file-requests/log${q ? ('?q=' + encodeURIComponent(q)) : ''}`);
     frLogList = (res && res.success) ? (res.data || []) : [];
     frLogTotal = (res && res.success && res.total != null) ? res.total : frLogList.length;
     updateFrCounts();

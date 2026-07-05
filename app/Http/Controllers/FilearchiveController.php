@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Services\ScannerService;
 use App\Models\FileIndexing;
+use App\Models\FileTracker;
 use App\Models\PageTyping;
 use App\Models\Scanning;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
@@ -557,6 +559,182 @@ class FilearchiveController extends Controller
             ],
             'pages' => $pages
         ]);
+    }
+
+    /**
+     * Printable File Movement History sheet for a file, populated from the
+     * file tracker module's movement_log (all trackers ever opened for the
+     * file number, so previously logged-out files keep their full history).
+     */
+    public function printMovementHistory(Request $request)
+    {
+        $fileNumber = trim((string) $request->get('file_number', ''));
+        abort_if($fileNumber === '', 404, 'File number is required.');
+
+        $trackers = FileTracker::where('file_number', $fileNumber)
+            ->orderBy('created_at')
+            ->get();
+
+        $fileIndexing = FileIndexing::query()
+            ->select(['id', 'file_number', 'file_title', 'registry', 'shelf_location', 'created_at'])
+            ->where('file_number', $fileNumber)
+            ->first();
+
+        $entries = [];
+        foreach ($trackers as $tracker) {
+            $log = $tracker->movement_log;
+            if (!is_array($log)) {
+                $log = json_decode((string) $log, true) ?: [];
+            }
+            $trackerActive = strtoupper((string) $tracker->status) === FileTracker::STATUS_ACTIVE;
+            foreach ($log as $entry) {
+                if (is_array($entry)) {
+                    $entries[] = [
+                        'entry' => $entry,
+                        'tracker_active' => $trackerActive,
+                        'origin_office' => trim((string) $tracker->origin_office_name),
+                    ];
+                }
+            }
+        }
+
+        usort($entries, fn ($a, $b) => $this->movementEntryTimestamp($a['entry']) <=> $this->movementEntryTimestamp($b['entry']));
+
+        $rows = [];
+        $entryCount = count($entries);
+        foreach ($entries as $index => $item) {
+            $entry = $item['entry'];
+            $login = $this->parseMovementDateTime($entry['log_in_date'] ?? null, $entry['log_in_time'] ?? null);
+            $logout = $this->parseMovementDateTime($entry['log_out_date'] ?? null, $entry['log_out_time'] ?? null);
+            $status = strtolower((string) ($entry['status'] ?? ''));
+
+            // Return-to-registry rows (the manual log-back writes an
+            // action=status_updated entry at the tracker's origin registry)
+            // are the "login" bookend of a movement out; their duration is the
+            // registry stay — from the log-back until the next dispatch.
+            $officeName = trim((string) ($entry['office_name'] ?? ($entry['receiving_office_name'] ?? '')));
+            $isReturn = ($entry['action'] ?? '') === 'status_updated'
+                || in_array($status, ['logged_out', 'logged_in'], true)
+                || ($officeName !== '' && $item['origin_office'] !== '' && strcasecmp($officeName, $item['origin_office']) === 0);
+
+            // Duration per movement runs from the log-out (the dispatch that
+            // took the file out) until the log-in that brought it back: use
+            // the entry's own log-out when it is a real one (some flows stamp
+            // log_out equal to log_in at creation time), otherwise the start
+            // of the next entry — for a completed round trip that is exactly
+            // the registry log-back. Never mix the two clocks: log_in/log_out
+            // are wall-clock local while 'timestamp' is UTC.
+            $isOpen = in_array($status, ['active', 'pending_acceptance', 'in_progress'], true);
+            $duration = '';
+            if ($isReturn) {
+                $startTs = $this->movementEntryTimestamp($entry);
+                $nextTs = $index + 1 < $entryCount ? $this->movementEntryTimestamp($entries[$index + 1]['entry']) : 0;
+                if ($startTs && $nextTs > $startTs) {
+                    $duration = $this->formatDurationMinutes(intdiv($nextTs - $startTs, 60));
+                }
+            } elseif ($login && $logout && $logout->greaterThan($login)) {
+                $duration = $this->formatDurationMinutes((int) abs($logout->diffInMinutes($login)));
+            } else {
+                $startTs = $this->movementEntryTimestamp($entry);
+                $nextTs = $index + 1 < $entryCount ? $this->movementEntryTimestamp($entries[$index + 1]['entry']) : 0;
+                if ($startTs && $nextTs > $startTs) {
+                    $duration = $this->formatDurationMinutes(intdiv($nextTs - $startTs, 60));
+                } elseif ($item['tracker_active'] && $isOpen) {
+                    // Mirrors App\Services\FileLocationResolver ground truth:
+                    // only a movement on an ACTIVE tracker is still in progress.
+                    $duration = 'Ongoing';
+                }
+            }
+
+            $officer = trim((string) ($entry['receiving_officer_name'] ?? ''))
+                ?: trim((string) ($entry['user_name'] ?? ''));
+
+            $remarks = trim((string) ($entry['notes'] ?? ''))
+                ?: trim((string) ($entry['completion_notes'] ?? ''))
+                ?: ucwords(str_replace('_', ' ', $status));
+
+            $rows[] = [
+                'office' => $officeName ?: '—',
+                'officer' => $officer,
+                'date' => $login ? $login->format('d/m/Y') : ($logout ? $logout->format('d/m/Y') : ''),
+                'duration' => $duration,
+                'remarks' => $remarks,
+            ];
+        }
+
+        $latestTracker = $trackers->sortByDesc('updated_at')->first();
+
+        // Default "home location" first row — mirrors the tracker log table:
+        // the file's permanent registry/archive centre with its rack/shelf,
+        // dated from the file's original indexing record.
+        $homeRegistry = trim((string) ($latestTracker->origin_office_name ?? ''))
+            ?: trim((string) ($fileIndexing->registry ?? ''))
+            ?: 'Registry / Archive';
+        $homeShelf = trim((string) ($fileIndexing->shelf_location ?? ''));
+
+        // The archive home row is not a movement out, so like return rows it
+        // carries no duration.
+        array_unshift($rows, [
+            'office' => $homeRegistry . ' — Rack/Shelf ' . ($homeShelf !== '' ? $homeShelf : '-'),
+            'officer' => '',
+            'date' => $fileIndexing && $fileIndexing->created_at ? $fileIndexing->created_at->format('d/m/Y') : '',
+            'duration' => '',
+            'remarks' => 'In Archive',
+        ]);
+
+        return view('filearchive.print.file_movement_history', [
+            'fileNumber' => $fileNumber,
+            'trackingId' => $latestTracker->tracking_id ?? '',
+            'fileTitle' => $fileIndexing->file_title ?? ($latestTracker->file_title ?? ''),
+            'registry' => $fileIndexing->registry ?? ($latestTracker->registry_code ?? ''),
+            'shelf' => $fileIndexing->shelf_location ?? '',
+            'rows' => $rows,
+        ]);
+    }
+
+    private function movementEntryTimestamp(array $entry): int
+    {
+        if (!empty($entry['timestamp'])) {
+            $parsed = strtotime((string) $entry['timestamp']);
+            if ($parsed !== false) {
+                return $parsed;
+            }
+        }
+
+        $dateTime = $this->parseMovementDateTime($entry['log_in_date'] ?? null, $entry['log_in_time'] ?? null)
+            ?: $this->parseMovementDateTime($entry['log_out_date'] ?? null, $entry['log_out_time'] ?? null);
+
+        return $dateTime ? $dateTime->getTimestamp() : 0;
+    }
+
+    private function parseMovementDateTime(?string $date, ?string $time): ?Carbon
+    {
+        if (!$date) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse(trim($date . ' ' . ($time ?: '00:00')));
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    private function formatDurationMinutes(int $minutes): string
+    {
+        if ($minutes < 60) {
+            return max($minutes, 1) . ' min';
+        }
+
+        $hours = intdiv($minutes, 60);
+        if ($hours < 24) {
+            $rest = $minutes % 60;
+            return $hours . ' hr' . ($hours > 1 ? 's' : '') . ($rest ? " {$rest} min" : '');
+        }
+
+        $days = intdiv($hours, 24);
+        $restHours = $hours % 24;
+        return $days . ' day' . ($days > 1 ? 's' : '') . ($restHours ? " {$restHours} hr" . ($restHours > 1 ? 's' : '') : '');
     }
 
     /**

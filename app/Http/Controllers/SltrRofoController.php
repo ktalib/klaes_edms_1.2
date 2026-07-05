@@ -36,7 +36,28 @@ class SltrRofoController extends Controller
 
         $PageTitle = 'SLTR RofO Management';
 
-        return view('sltr_rofos.index', compact('recommendations', 'stats', 'PageTitle'));
+        $canApprove = $this->userCanApprove();
+
+        return view('sltr_rofos.index', compact('recommendations', 'stats', 'PageTitle', 'canApprove'));
+    }
+
+    /**
+     * Only a Supper Admin (assign_role) or a user whose rank is "Director SLTR"
+     * may reprint SLTR records.
+     */
+    private function userCanApprove(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+
+        $roleNames = method_exists($user, 'assignedRoleNames') ? $user->assignedRoleNames() : [];
+        if (\in_array('supper admin', $roleNames, true)) {
+            return true;
+        }
+
+        return strcasecmp(trim((string) ($user->rank ?? '')), 'Director SLTR') === 0;
     }
 
     public function generate(Request $request, $id)

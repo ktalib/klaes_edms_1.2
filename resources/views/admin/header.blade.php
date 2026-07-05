@@ -101,7 +101,7 @@
           <div
             class="w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 flex items-center justify-center bg-gray-100">
             @if(Auth::user()->profile)
-              <img src="{{ asset('storage/app/public/' . auth()->user()->profile) }}" alt="Profile"
+              <img  src="{{ asset('storage') . '/' . auth()->user()->profile }}"
                 class="w-full h-full object-cover">
             @else
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24"
@@ -184,7 +184,7 @@
   class="popup-overlay welcome-popup fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50"
   data-username="{{ Auth::user()->first_name ?? Auth::user()->name ?? Auth::user()->email ?? 'User' }}"
   data-mark-url="{{ route('markWelcomePopupShown') }}"
-  data-should-show="{{ session('show_welcome_popup', true) ? 'true' : 'false' }}" data-force-show="false"
+  data-should-show="{{ session()->pull('show_welcome_popup', false) ? 'true' : 'false' }}" data-force-show="false"
   data-test-enabled="false">
   <div class="popup-content bg-white rounded-xl shadow-2xl w-11/12 max-w-md mx-auto overflow-hidden">
     <!-- Brand Logos Header -->
@@ -262,8 +262,61 @@
   }
 @endphp
 
-@php
-  if (!session()->has('show_welcome_popup')) {
-    session(['show_welcome_popup' => true]);
-  }
-@endphp
+
+<!--
+  Global DD/MM/YYYY date display.
+
+  Native <input type="date"> always renders in the browser/OS locale (e.g. MM/DD/YYYY)
+  and cannot be reformatted with CSS/JS — the previous ::before mask never worked because
+  browsers do not render pseudo-elements on <input> (a replaced element).
+
+  Instead we enhance every native date input with flatpickr:
+    - The VISIBLE field shows DD/MM/YYYY (altFormat).
+    - The ORIGINAL input keeps its Y-m-d value (dateFormat), so form submissions and any
+      JS that reads the value stay unchanged for the backend.
+  Pages that init their own pickers use type="text" inputs, so this only touches type="date".
+-->
+<link rel="stylesheet" href="{{ asset('assets/css/plugins/flatpickr.min.css') }}">
+<script src="{{ asset('assets/js/plugins/flatpickr.min.js') }}"></script>
+<script>
+  (function () {
+    function enhance(input) {
+      if (!window.flatpickr) return;
+      // Skip inputs already turned into a flatpickr instance (avoid double-init).
+      if (input._flatpickr) return;
+
+      window.flatpickr(input, {
+        dateFormat: "Y-m-d", // value kept for the backend / form submit
+        altInput: true,       // show a separate, human-friendly field...
+        altFormat: "d/m/Y",   // ...formatted as DD/MM/YYYY
+        allowInput: true      // let users type the date as well as pick it
+      });
+    }
+
+    function enhanceAll(root) {
+      (root || document).querySelectorAll('input[type="date"]').forEach(enhance);
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      enhanceAll(document);
+
+      // Date inputs added later (modals, AJAX-loaded partials) get enhanced too.
+      if (window.MutationObserver) {
+        new MutationObserver(function (mutations) {
+          for (var m = 0; m < mutations.length; m++) {
+            var nodes = mutations[m].addedNodes;
+            for (var i = 0; i < nodes.length; i++) {
+              var node = nodes[i];
+              if (node.nodeType !== 1) continue; // element nodes only
+              if (node.matches && node.matches('input[type="date"]')) {
+                enhance(node);
+              } else if (node.querySelectorAll) {
+                enhanceAll(node);
+              }
+            }
+          }
+        }).observe(document.body, { childList: true, subtree: true });
+      }
+    });
+  })();
+</script>

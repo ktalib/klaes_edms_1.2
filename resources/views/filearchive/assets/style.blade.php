@@ -22,8 +22,11 @@
        above the top row) and clearly attached to the file the user is hovering. */
     top: calc(100% + 8px);
     bottom: auto;
-    left: 50%;
-    transform: translateX(-50%);
+    /* The card is overflow-hidden, so the tooltip can never extend past its
+       edges — span the card's own width and wrap content instead. */
+    left: 0;
+    right: 0;
+    transform: none;
     background-color: #1f2937;
     color: #fff;
     font-size: 12px;
@@ -31,12 +34,34 @@
     padding: 8px 12px;
     border-radius: 6px;
     white-space: normal;
-    width: max-content;
-    max-width: 260px;
+    width: auto;
+    max-width: none;
     box-shadow: 0 4px 16px rgba(0,0,0,0.18);
     transition: opacity 0.18s ease, visibility 0.18s ease;
     pointer-events: none;
     text-align: left;
+  }
+  /* Label/value rows inside the tooltip (Registry, Department, holder, ...) */
+  .file-card-status-header .status-tooltip .tt-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 5px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+  }
+  .file-card-status-header .status-tooltip .tt-label {
+    color: #9ca3af;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+  .file-card-status-header .status-tooltip .tt-value {
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 11px;
+    text-align: right;
+    min-width: 0;
+    overflow-wrap: break-word;
   }
   .file-card-status-header .status-tooltip::after {
     content: '';

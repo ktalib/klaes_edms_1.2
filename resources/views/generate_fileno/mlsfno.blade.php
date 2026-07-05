@@ -993,10 +993,9 @@
                                             <p class="text-xs text-gray-500 mt-2">Select the main file number to fetch tracking ID and other details</p>
                                         </div>
 
-                                        <!-- Change of Purpose Selection (Change of Purpose or Conversion) -->
-                                        <!-- A Change of Purpose may actually be a conversion file (CON- prefix), so keep this
-                                             selector visible for Conversion too, allowing the CoP application to be linked. -->
-                                        <div id="change-of-purpose-section" x-show="applicationType === 'change_of_purpose' || applicationType === 'conversion'"
+                                        <!-- Change of Purpose Selection -->
+                                        <!-- Only shown when the File Type is Change of Purpose. -->
+                                        <div id="change-of-purpose-section" x-show="applicationType === 'change_of_purpose'"
                                              class="mb-4 border border-blue-200 rounded-lg p-4 bg-blue-50/30 shadow-sm" x-transition x-cloak>
                                             
                                             <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -1879,13 +1878,18 @@
                                     <label for="editDistrict" class="block text-sm font-medium text-gray-700 mb-2">
                                         District
                                     </label>
-                                    <select id="editDistrict" name="district" 
+                                    <select id="editDistrict" onchange="onEditDistrictChange(this.value)"
                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
                                         <option value="">Select District</option>
                                         @foreach($districts as $district)
                                             <option value="{{ $district->name }}">{{ $district->name }}</option>
                                         @endforeach
                                     </select>
+                                    <input type="text" id="editDistrictOther" style="display:none;"
+                                           oninput="onEditDistrictOtherInput(this.value)"
+                                           placeholder="Please specify district..."
+                                           class="w-full mt-2 px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
+                                    <input type="hidden" id="editDistrictValue" name="district">
                                 </div>
                             </div>
 
@@ -2007,13 +2011,18 @@
                                     <label for="daDistrict" class="block text-sm font-medium text-gray-700 mb-2">
                                         District
                                     </label>
-                                    <select id="daDistrict" name="district" 
+                                    <select id="daDistrict" onchange="onDaDistrictChange(this.value)"
                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 uppercase">
                                         <option value="">Select District</option>
                                         @foreach($districts as $district)
                                             <option value="{{ $district->name }}">{{ $district->name }}</option>
                                         @endforeach
                                     </select>
+                                    <input type="text" id="daDistrictOther" style="display:none;"
+                                           oninput="onDaDistrictOtherInput(this.value)"
+                                           placeholder="Please specify district..."
+                                           class="w-full mt-2 px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 uppercase">
+                                    <input type="hidden" id="daDistrictValue" name="district">
                                 </div>
                             </div>
 

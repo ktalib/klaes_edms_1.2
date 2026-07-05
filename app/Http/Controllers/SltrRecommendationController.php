@@ -53,11 +53,32 @@ class SltrRecommendationController extends Controller
         $landUseOptions = LandUse::orderBy('landuse')->get();
         $purposeOptions = Purpose::orderBy('name')->get();
 
+        $canApprove = $this->userCanApprove();
+
         return view('sltr_recommendations.index', compact(
             'recommendations', 'stats', 'PageTitle',
             'states', 'lgas', 'districts', 'streetOptions',
-            'landUseOptions', 'purposeOptions'
+            'landUseOptions', 'purposeOptions', 'canApprove'
         ));
+    }
+
+    /**
+     * Only a Supper Admin (assign_role) or a user whose rank is "Director SLTR"
+     * may approve SLTR recommendations.
+     */
+    private function userCanApprove(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+
+        $roleNames = method_exists($user, 'assignedRoleNames') ? $user->assignedRoleNames() : [];
+        if (\in_array('supper admin', $roleNames, true)) {
+            return true;
+        }
+
+        return strcasecmp(trim((string) ($user->rank ?? '')), 'Director SLTR') === 0;
     }
 
     public function checkFileNumber(Request $request)
@@ -150,6 +171,10 @@ class SltrRecommendationController extends Controller
 
     public function approve(Request $request, $id)
     {
+        if (!$this->userCanApprove()) {
+            return response()->json(['success' => false, 'message' => 'You are not authorized to approve recommendations.'], 403);
+        }
+
         $rec = SltrRecommendation::findOrFail($id);
 
         if ($rec->status === SltrRecommendation::STATUS_APPROVED) {
@@ -179,6 +204,13 @@ class SltrRecommendationController extends Controller
     public function printRecommendation($id)
     {
         $recommendation = SltrRecommendation::findOrFail($id);
+
+        // Mark the recommendation as printed the first time its print view is opened
+        // so the listing can switch the "Print" action to "View Recommendation".
+        if (!$recommendation->printed_at) {
+            $recommendation->update(['printed_at' => now()]);
+        }
+
         return view('sltr_recommendations.templates.recommendation_print', compact('recommendation'));
     }
 }

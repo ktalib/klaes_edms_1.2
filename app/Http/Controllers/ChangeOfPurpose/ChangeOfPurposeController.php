@@ -53,7 +53,7 @@ class ChangeOfPurposeController extends Controller
             })
             ->orderByDesc('created_at');
 
-        // Tab 1: pending / processing applications
+        // Tab 1: pending / processing / rejected applications
         $pendingRecords = (clone $base)
             ->whereIn('status', [
                 ChangeOfPurposeApplication::STATUS_PENDING,
@@ -63,9 +63,13 @@ class ChangeOfPurposeController extends Controller
             ->limit($limit)
             ->get();
 
-        // Tab 2: approved applications waiting for commissioning
+        // Tab 2 (Initiate Change): approved applications waiting for commissioning,
+        // plus the already-commissioned ones so they stay on this tab.
         $approvedRecords = (clone $base)
-            ->where('status', ChangeOfPurposeApplication::STATUS_APPROVED)
+            ->whereIn('status', [
+                ChangeOfPurposeApplication::STATUS_APPROVED,
+                ChangeOfPurposeApplication::STATUS_COMMISSIONED,
+            ])
             ->limit($limit)
             ->get();
 
@@ -427,7 +431,7 @@ class ChangeOfPurposeController extends Controller
         ]);
     }
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Private helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  
 
     /**
      * DEAD-CODE REMOVED: updateFileIndexing() and handlePra() previously duplicated the

@@ -5063,6 +5063,25 @@
                     const statusMeta = resolveStatusDisplay(firstEntry, entryStatus);
                     const isLoginEntry = statusMeta.label === 'Log-in';
 
+                    // Print Log Sheet is a Super Admin–only action (assign_role = Supper Admin).
+                    // Hidden entirely for everyone else.
+                    const printLogButtonHtml = isSupperAdmin
+                        ? ((tracker.workflowType === 'cross_module_request' && (tracker.status || '').toLowerCase() !== 'cross_approved')
+                            ? `
+                                                <button class="w-full flex items-center px-4 py-2 text-sm text-gray-400 bg-gray-50 cursor-not-allowed opacity-60" disabled title="Awaiting cross-registry approval before printing">
+                                                    <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
+                                                    <span>Print Log Sheet</span>
+                                                    <span class="ml-1 text-xs">(Pending)</span>
+                                                </button>
+                                                `
+                            : `
+                                                <button class="${standardItemClass}" data-action="print-log" ${commonDisabledAttr}>
+                                                    <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
+                                                    <span>Print Log Sheet</span>
+                                                </button>
+                                                `)
+                        : '';
+
                     return `
                             <tr class="hover:bg-gray-50">
                                 <td class="px-3 py-3 whitespace-nowrap text-sm font-medium text-center text-gray-500">1</td>
@@ -5095,18 +5114,7 @@
                                                     <i data-lucide="file-down" class="mr-2 h-4 w-4"></i>
                                                     <span>Generate Log Sheet</span>
                                                 </button>
-                                                ${(tracker.workflowType === 'cross_module_request' && (tracker.status || '').toLowerCase() !== 'cross_approved') ? `
-                                                <button class="w-full flex items-center px-4 py-2 text-sm text-gray-400 bg-gray-50 cursor-not-allowed opacity-60" disabled title="Awaiting cross-registry approval before printing">
-                                                    <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
-                                                    <span>Print Log Sheet</span>
-                                                    <span class="ml-1 text-xs">(Pending)</span>
-                                                </button>
-                                                ` : `
-                                                <button class="${standardItemClass}" data-action="print-log" ${commonDisabledAttr}>
-                                                    <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
-                                                    <span>Print Log Sheet</span>
-                                                </button>
-                                                `}
+                                                ${printLogButtonHtml}
                                                  ${canDelete ? `
                                                 <hr class="my-1 border-gray-200">
                                                 <button class="${deleteItemClass}" data-action="delete-log" ${commonDisabledAttr}>
@@ -5178,6 +5186,14 @@
                             <span>Complete Log</span>
                         </button>
                     `;
+                    // Print Log Sheet is a Super Admin–only action (assign_role = Supper Admin).
+                    // Hidden entirely for everyone else.
+                    const printLogButton = isSupperAdmin ? `
+                                            <button class="${actionsDisabled ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-60' : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100'}" data-action="print-log" ${actionsDisabled ? 'data-disabled="true" aria-disabled="true" tabindex="-1"' : ''}>
+                                                <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
+                                                <span>Print Log Sheet</span>
+                                            </button>
+                    ` : '';
                     return `
                         <tr class="hover:bg-gray-50">
                             <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-gray-700">${sanitize(entry.logId)}</td>
@@ -5230,10 +5246,7 @@
                                                 <i data-lucide="file-down" class="mr-2 h-4 w-4"></i>
                                                 <span>Generate Log Sheet</span>
                                             </button>
-                                            <button class="${actionsDisabled ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-60' : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100'}" data-action="print-log" ${actionsDisabled ? 'data-disabled="true" aria-disabled="true" tabindex="-1"' : ''}>
-                                                <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
-                                                <span>Print Log Sheet</span>
-                                            </button>
+                                            ${printLogButton}
                                              ${completeLogButton}
                                             <button class="dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100" data-action="print-complete-log">
                                                 <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
@@ -7090,11 +7103,11 @@
                                         <span class="info-value ${currentOfficeValue === '-' ? 'placeholder' : 'data-value'}">${currentOfficeValue}</span>
                                     </div>
                                     <div class="info-row">
-                                        <span class="info-label">DESTINATION (OFFICE):</span>
+                                        <span class="info-label">DEPARTMENT:</span>
                                         <span class="info-value ${officeNameForPrint === '-' ? 'placeholder' : 'data-value'}">${officeNameForPrint}</span>
                                     </div>
                                     <div class="info-row">
-                                        <span class="info-label">RECEIVING OFFICER:</span>
+                                        <span class="info-label">RECEIVING OFFICER (HOLDER):</span>
                                         <span class="info-value ${receivingOfficerValue === '-' ? 'placeholder' : 'data-value'}">${receivingOfficerValue}</span>
                                     </div>
                                 </div>

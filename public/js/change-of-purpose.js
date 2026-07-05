@@ -980,8 +980,9 @@
         }));
 
         var approvedTable = $('#cop-approved-table').DataTable(Object.assign({}, dtOptions, {
-            order: [[6, 'desc']],
-            columnDefs: [{ orderable: false, targets: [7] }]
+            // Sort by Date (index 7 after the Status column was added), Actions (8) not orderable.
+            order: [[7, 'desc']],
+            columnDefs: [{ orderable: false, targets: [8] }]
         }));
 
         document.getElementById('cop-search')?.addEventListener('input', function () {

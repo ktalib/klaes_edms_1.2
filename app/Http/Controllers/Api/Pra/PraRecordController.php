@@ -162,8 +162,42 @@ class PraRecordController extends Controller
                 'location'             => $row->location ?? null,
                 'land_use'             => $row->land_use_type ?? null,
                 'property_description' => $row->property_description ?? null,
+                // Owner/holder for grant-type instruments (CofO/OP) where the
+                // file owner is the grantee. Holder columns store either a plain
+                // name or a JSON-encoded array (block indexing); fall back to
+                // the file title.
+                'owner_name'           => $this->normalizeHolderName($row->current_holder ?? null)
+                    ?: $this->normalizeHolderName($row->original_holder ?? null)
+                    ?: (trim((string) ($row->file_title ?? '')) ?: null),
             ],
         ]);
+    }
+
+    /**
+     * Normalize a raw holder value from file_indexings for display.
+     *
+     * The current_holder / original_holder columns store either a plain name
+     * string or a JSON-encoded array of names (block indexing). Returns a
+     * comma-joined name string, or null when empty.
+     */
+    private function normalizeHolderName($raw): ?string
+    {
+        if ($raw === null || trim((string) $raw) === '') {
+            return null;
+        }
+
+        $decoded = json_decode($raw, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            if (is_array($decoded)) {
+                $names = array_values(array_filter(array_map('trim', $decoded), fn ($n) => $n !== ''));
+                return $names ? implode(', ', $names) : null;
+            }
+            if (is_string($decoded)) {
+                return trim($decoded) ?: null;
+            }
+        }
+
+        return trim((string) $raw) ?: null;
     }
 
     public function history(Request $request, string $propId): JsonResponse

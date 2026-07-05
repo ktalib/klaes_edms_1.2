@@ -179,6 +179,8 @@ class IndexedFileTableController extends Controller
                 'file_indexings.dciv_status',
                 'file_indexings.dciv_fileno',
                 'file_indexings.dciv_reason',
+                'file_indexings.latitude',
+                'file_indexings.longitude',
             ]);
 
         $isCorrespondingFile = filter_var($request->input('is_corresponding_file', false), FILTER_VALIDATE_BOOLEAN);
@@ -397,6 +399,8 @@ class IndexedFileTableController extends Controller
                     ?? \App\Models\FileIndexing::detectRegistryFromFileNumber($displayFileNo)
                     ?? '-',
                 'physical_registry' => $item->physical_registry ?? '-',
+                'latitude' => $item->latitude !== null ? (float) $item->latitude : null,
+                'longitude' => $item->longitude !== null ? (float) $item->longitude : null,
                 'status' => $status,
                 'batch_generated' => $this->normalizeBoolean($item->batch_generated),
                 'last_batch_id' => $item->last_batch_id ?? null,
@@ -846,6 +850,36 @@ class IndexedFileTableController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update related file.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function updateCoordinates(Request $request, $id): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'latitude' => 'nullable|numeric|between:-90,90',
+                'longitude' => 'nullable|numeric|between:-180,180',
+            ]);
+
+            $fileIndexing = FileIndexing::on('sqlsrv')->findOrFail($id);
+            $fileIndexing->latitude = $validated['latitude'] ?? null;
+            $fileIndexing->longitude = $validated['longitude'] ?? null;
+            $fileIndexing->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Coordinates updated successfully.',
+                'data' => [
+                    'latitude' => $fileIndexing->latitude,
+                    'longitude' => $fileIndexing->longitude,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update coordinates.',
                 'error' => $e->getMessage(),
             ], 500);
         }

@@ -263,6 +263,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/file-details/{id}', [FilearchiveController::class, 'getFileDetails'])->name('filearchive.file-details');
         Route::get('/document-pages/{id}', [FilearchiveController::class, 'getDocumentPages'])->name('filearchive.document-pages');
         Route::get('/search', [FilearchiveController::class, 'search'])->name('filearchive.search');
+        Route::get('/movement-history/print', [FilearchiveController::class, 'printMovementHistory'])->name('filearchive.movement-history.print');
         Route::post('/upload', [FilearchiveController::class, 'upload'])->name('filearchive.upload');
         Route::get('/view/{id}', [FilearchiveController::class, 'view'])->name('filearchive.view');
         Route::delete('/delete/{id}', [FilearchiveController::class, 'delete'])->name('filearchive.delete');
