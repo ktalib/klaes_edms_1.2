@@ -77,6 +77,11 @@ class FilearchiveController extends Controller
             $yearOptions = collect(range($currentYear, 1981));
             $registryOptions = collect([$this->getRegistryFolderName($module)]);
 
+            // Storage-demo folders have no tracker data — everything reads as
+            // "in the registry" for the legend, and the filter is inert.
+            $statusCounts = ['registry' => $completedFiles->total(), 'in_transit' => 0];
+            $activeStatusFilter = null;
+
             return view('filearchive.index', compact(
                 'PageTitle',
                 'PageDescription',
@@ -85,7 +90,9 @@ class FilearchiveController extends Controller
                 'popularPageTypes',
                 'module',
                 'yearOptions',
-                'registryOptions'
+                'registryOptions',
+                'statusCounts',
+                'activeStatusFilter'
             ));
         }
 
@@ -211,6 +218,31 @@ class FilearchiveController extends Controller
             $completedFiles->where('registry', $request->get('registry'));
         }
 
+        // ── Status legend counts + optional filter (across the WHOLE result set,
+        //    not just the current page). Ground truth mirrors the card colours
+        //    and App\Services\FileLocationResolver: a file is physically OUT when
+        //    its LATEST tracker is non-terminal (not logged back / cancelled) and
+        //    carries real movement. Uses a SQL subquery so it scales past SQL
+        //    Server's 2100-parameter limit on large registries.
+        $countsBase = clone $completedFiles;
+        $totalForCounts = (clone $countsBase)->count();
+        $transitCount = (clone $countsBase)
+            ->whereIn('file_number', $this->inTransitFileNumberSubquery())
+            ->count();
+        $statusCounts = [
+            'registry' => max($totalForCounts - $transitCount, 0),
+            'in_transit' => $transitCount,
+        ];
+
+        $activeStatusFilter = in_array($request->get('status_filter'), ['registry', 'in_transit'], true)
+            ? $request->get('status_filter')
+            : null;
+        if ($activeStatusFilter === 'in_transit') {
+            $completedFiles->whereIn('file_number', $this->inTransitFileNumberSubquery());
+        } elseif ($activeStatusFilter === 'registry') {
+            $completedFiles->whereNotIn('file_number', $this->inTransitFileNumberSubquery());
+        }
+
         $completedFiles = $completedFiles->paginate(12)->appends($request->query());
 
         if ($isStorageDemoMode) {
@@ -284,8 +316,38 @@ class FilearchiveController extends Controller
             'module',
             'moduleTheme',
             'yearOptions',
-            'registryOptions'
+            'registryOptions',
+            'statusCounts',
+            'activeStatusFilter'
         ));
+    }
+
+    /**
+     * whereIn subquery selecting the file numbers that are physically OUT of the
+     * registry. Mirrors App\Services\FileLocationResolver: a file is IN_TRANSIT
+     * when its LATEST tracker (highest id) is non-terminal — i.e. not logged back
+     * in (COMPLETED / LOG-IN) or cancelled — and still carries movement entries.
+     * Returned as a closure so it composes into whereIn/whereNotIn as a real SQL
+     * subquery (no PHP array, so no 2100-parameter ceiling).
+     */
+    private function inTransitFileNumberSubquery(): \Closure
+    {
+        return function ($query) {
+            $latest = DB::connection('sqlsrv')->table('file_tracker')
+                ->select('file_number', DB::raw('MAX(id) as max_id'))
+                ->groupBy('file_number');
+
+            $query->select('ft.file_number')
+                ->from('file_tracker as ft')
+                ->joinSub($latest, 'latest', function ($join) {
+                    $join->on('latest.file_number', '=', 'ft.file_number')
+                        ->on('latest.max_id', '=', 'ft.id');
+                })
+                ->whereRaw("UPPER(LTRIM(RTRIM(ft.status))) NOT IN ('COMPLETED','CANCELLED','CANCELED','LOG-IN')")
+                ->whereNotNull('ft.movement_log')
+                // movement_log is ntext; cast so LEN is valid and '[]' (empty) is excluded.
+                ->whereRaw('LEN(CAST(ft.movement_log AS NVARCHAR(MAX))) > 2');
+        };
     }
 
     /**

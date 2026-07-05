@@ -6,15 +6,35 @@
         Pagetyped Digital Files ({{ $completedFiles->total() }} files)
             </p>    
         </div>
-        <div class="flex items-center gap-6 text-sm text-muted-foreground">
-            <div class="flex items-center gap-2">
+        @php
+            $sc = $statusCounts ?? ['registry' => null, 'in_transit' => null];
+            $af = $activeStatusFilter ?? null;
+            $legendBase = request()->query();
+            unset($legendBase['page']); // filtering resets to the first page
+
+            $registryParams = $legendBase;
+            if ($af === 'registry') { unset($registryParams['status_filter']); }
+            else { $registryParams['status_filter'] = 'registry'; }
+
+            $transitParams = $legendBase;
+            if ($af === 'in_transit') { unset($transitParams['status_filter']); }
+            else { $transitParams['status_filter'] = 'in_transit'; }
+        @endphp
+        <div class="flex items-center gap-4 text-sm text-muted-foreground">
+            <a href="{{ route('filearchive.index', $registryParams) }}" class="status-legend no-underline flex items-center gap-2 px-2 py-1 rounded-md transition-colors hover:bg-gray-100" aria-pressed="{{ $af === 'registry' ? 'true' : 'false' }}" title="{{ $af === 'registry' ? 'Clear filter' : 'Show only files in the Registry' }}">
                 <span class="inline-flex w-5 h-5 rounded-full bg-green-600"></span>
                 <span>File in the Registry</span>
-            </div>
-            <div class="flex items-center gap-2">
+                @if(!is_null($sc['registry']))
+                <span class="status-legend-count text-xs font-semibold text-gray-400">({{ $sc['registry'] }})</span>
+                @endif
+            </a>
+            <a href="{{ route('filearchive.index', $transitParams) }}" class="status-legend no-underline flex items-center gap-2 px-2 py-1 rounded-md transition-colors hover:bg-gray-100" aria-pressed="{{ $af === 'in_transit' ? 'true' : 'false' }}" title="{{ $af === 'in_transit' ? 'Clear filter' : 'Show only files in Transit' }}">
                 <span class="inline-flex w-5 h-5 rounded-full bg-red-600"></span>
                 <span>File in Transit</span>
-            </div>
+                @if(!is_null($sc['in_transit']))
+                <span class="status-legend-count text-xs font-semibold text-gray-400">({{ $sc['in_transit'] }})</span>
+                @endif
+            </a>
         </div>
         <div class="flex gap-2">
             <button id="filter-button" class="btn btn-outline btn-sm gap-1">

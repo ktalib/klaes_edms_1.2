@@ -9,6 +9,26 @@
     --ring: #3b82f6;
   }
 
+  /* Clickable status legend (filter toggles) */
+  .status-legend {
+    cursor: pointer;
+    border: 1px solid transparent;
+    text-decoration: none;
+    color: inherit;
+  }
+  .status-legend:hover {
+    text-decoration: none;
+  }
+  .status-legend[aria-pressed="true"] {
+    background-color: #eef2ff;
+    border-color: #c7d2fe;
+    color: #1f2937;
+    font-weight: 600;
+  }
+  .status-legend[aria-pressed="true"] .status-legend-count {
+    color: #4f46e5;
+  }
+
   /* File card hover tooltip */
   .file-card-status-header {
     position: relative;

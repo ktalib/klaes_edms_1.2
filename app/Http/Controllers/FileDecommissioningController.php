@@ -241,8 +241,12 @@ class FileDecommissioningController extends Controller
                 })->filter()->unique()->values()->all()
             );
 
+            // Resolve related file number(s) for the page's rows from the related_file_number
+            // staging table (matched by any of the row's file numbers, or by resolved PropID).
+            $relatedFiles = $this->resolveRelatedFiles($data, $propIds);
+
             // Format for DataTables
-            $formattedData = $data->map(function ($row) use ($propIds) {
+            $formattedData = $data->map(function ($row) use ($propIds, $relatedFiles) {
                 $propId = null;
                 foreach ([trim($row->mlsfNo ?? ''), trim($row->kangisFileNo ?? ''), trim($row->NewKANGISFileNo ?? '')] as $n) {
                     if ($n !== '' && isset($propIds[$n])) {
@@ -255,6 +259,7 @@ class FileDecommissioningController extends Controller
                     'id' => $row->id,
                     'mls_file_no' => trim($row->mlsfNo ?? '') ?: 'N/A',
                     'kangis_file_no' => trim($row->kangisFileNo ?? '') ?: 'N/A',
+                    'related_file' => $this->renderRelatedFile($relatedFiles[$this->relatedFileKey($row)] ?? []),
                     'prop_id' => $propId !== null && trim((string) $propId) !== '' ? trim((string) $propId) : '-',
                     'file_name' => trim($row->FileName ?? '') ?: 'N/A',
                     'commissioning_date' => $row->commissioning_date ? Carbon::parse($row->commissioning_date)->format('d M Y, h:i A') : 'N/A',
@@ -343,6 +348,145 @@ class FileDecommissioningController extends Controller
         }
 
         return $resolved;
+    }
+
+    /**
+     * Stable per-row key used to look up a row's resolved related file number(s).
+     */
+    private function relatedFileKey($row): string
+    {
+        return trim($row->mlsfNo ?? '') . '|' . trim($row->kangisFileNo ?? '') . '|' . trim($row->NewKANGISFileNo ?? '');
+    }
+
+    /**
+     * Resolve the related file number(s) for a page of decommissioned rows.
+     *
+     * Reads the related_file_number staging table once for the whole page and, for each
+     * row, returns the counterpart endpoint(s) of any link that matches one of the row's
+     * file numbers or its resolved PropID. Keyed by relatedFileKey($row).
+     *
+     * @return array<string,string>  key => comma-joined related file numbers ('-' when none)
+     */
+    private function resolveRelatedFiles($data, array $propIds): array
+    {
+        $result = [];
+        if ($data->isEmpty()) {
+            return $result;
+        }
+
+        $norm = function ($v) {
+            $v = strtoupper(trim((string) $v));
+            return preg_replace('/\s+/', ' ', $v);
+        };
+
+        // Collect all file numbers + resolved PropIDs across the page for one batched query.
+        $allNumbers = $data->flatMap(function ($row) {
+            return [trim($row->mlsfNo ?? ''), trim($row->kangisFileNo ?? ''), trim($row->NewKANGISFileNo ?? '')];
+        })->filter()->unique()->values()->all();
+        $allPropIds = array_values(array_unique(array_map(fn ($v) => trim((string) $v), $propIds)));
+
+        if (empty($allNumbers) && empty($allPropIds)) {
+            return $result;
+        }
+
+        try {
+            $rfnRows = \Illuminate\Support\Facades\DB::connection('sqlsrv')
+                ->table('related_file_number')
+                ->where(function ($w) use ($allNumbers, $allPropIds) {
+                    if (!empty($allNumbers)) {
+                        $w->orWhereIn('file_number', $allNumbers)
+                          ->orWhereIn('related_fileno', $allNumbers);
+                    }
+                    if (!empty($allPropIds)) {
+                        $w->orWhereIn('prop_id', $allPropIds);
+                    }
+                })
+                ->select('file_number', 'related_fileno', 'prop_id')
+                ->get();
+        } catch (\Exception $e) {
+            // Staging table missing on this environment — leave every row as '-'.
+            return $result;
+        }
+
+        if ($rfnRows->isEmpty()) {
+            return $result;
+        }
+
+        foreach ($data as $row) {
+            // The row's own identifiers (normalized) — used to pick the counterpart side
+            // and to avoid echoing the row's own number back.
+            $own = [];
+            foreach ([$row->mlsfNo ?? '', $row->kangisFileNo ?? '', $row->NewKANGISFileNo ?? ''] as $n) {
+                $n = $norm($n);
+                if ($n !== '') {
+                    $own[$n] = true;
+                }
+            }
+
+            $rowPropId = null;
+            foreach ([trim($row->mlsfNo ?? ''), trim($row->kangisFileNo ?? ''), trim($row->NewKANGISFileNo ?? '')] as $n) {
+                if ($n !== '' && isset($propIds[$n]) && trim((string) $propIds[$n]) !== '') {
+                    $rowPropId = trim((string) $propIds[$n]);
+                    break;
+                }
+            }
+
+            $related = [];
+            foreach ($rfnRows as $r) {
+                $fn  = trim((string) $r->file_number);
+                $rf  = trim((string) $r->related_fileno);
+                $fnN = $norm($fn);
+                $rfN = $norm($rf);
+
+                $counterpart = null;
+                if ($fnN !== '' && isset($own[$fnN])) {
+                    $counterpart = $rf;
+                } elseif ($rfN !== '' && isset($own[$rfN])) {
+                    $counterpart = $fn;
+                } elseif ($rowPropId !== null && trim((string) $r->prop_id) === $rowPropId) {
+                    // PropID match: show whichever side isn't the row's own number.
+                    $counterpart = (!isset($own[$rfN]) && $rf !== '') ? $rf : $fn;
+                }
+
+                if ($counterpart === null) {
+                    continue;
+                }
+                $counterpart = trim((string) $counterpart);
+                $cN = $norm($counterpart);
+                // Skip blanks, the row's own number, and obvious junk (too short / purely numeric).
+                if ($cN === '' || isset($own[$cN]) || strlen($cN) < 3 || ctype_digit($cN)) {
+                    continue;
+                }
+                $related[$cN] = $counterpart;
+            }
+
+            $result[$this->relatedFileKey($row)] = array_values($related);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Render the Related File cell: show the first number, and when there are more,
+     * a "+N" pill that reveals the rest inline on click (handled in the view).
+     */
+    private function renderRelatedFile(array $items): string
+    {
+        if (empty($items)) {
+            return '-';
+        }
+
+        $first = e($items[0]);
+        $rest = array_slice($items, 1);
+        if (empty($rest)) {
+            return '<span class="text-gray-700">' . $first . '</span>';
+        }
+
+        return '<div class="rel-file-cell flex flex-wrap items-center gap-1">'
+            . '<span class="text-gray-700">' . $first . '</span>'
+            . '<button type="button" class="rel-more inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-200" title="Show all related files">+' . count($rest) . '</button>'
+            . '<span class="rel-rest hidden text-gray-700">, ' . e(implode(', ', $rest)) . '</span>'
+            . '</div>';
     }
 
     /**
