@@ -363,7 +363,7 @@
 
         const mapping = statusMap[fileNumber];
         updateHeaderColor($header, mapping);
-        updateCardTooltip($header, mapping, $card.data('fileNumber'));
+        updateCardTooltip($header, mapping, $card.data('fileNumber'), $card.data('shelfLocation'));
         updatePrintHistoryButton($header, mapping, $card.data('fileNumber'));
       });
     }
@@ -405,7 +405,7 @@
 
     // Rebuild the hover tooltip from authoritative tracker data so an out-of-registry
     // file shows WHERE it currently is (office) and with whom (officer).
-    function updateCardTooltip($header, mapping, fileNumberRaw) {
+    function updateCardTooltip($header, mapping, fileNumberRaw, shelfLocationRaw) {
       const $tooltip = $header.find('.status-tooltip');
       if (!$tooltip.length) {
         return;
@@ -416,12 +416,19 @@
         return $('<div>').text(value == null ? '' : value).html();
       };
       const fileNumber = esc(fileNumberRaw);
+      const shelfLocation = String(shelfLocationRaw || '').trim();
+      const isOut = state.status === 'in_transit';
+      const themeClass = isOut ? 'status-tooltip--out' : 'status-tooltip--in-registry';
+
+      $tooltip.removeClass('status-tooltip--out status-tooltip--in-registry').addClass(themeClass);
 
       let body;
-      if (state.status === 'in_transit') {
+      if (isOut) {
         const details = state.details || {};
+        const shelfRackValue = shelfLocation || details.shelfRack || details.shelf_location || details.shelfLocation || '—';
         const rows = [
           ['Registry', details.registry],
+          ['Shelf/Rack', shelfRackValue],
           ['Department', details.department || state.location],
           ['Receiving Officer (holder)', details.officer || state.officer],
           ['Date Requested', details.dateRequested]
@@ -435,9 +442,17 @@
           `<div class="text-gray-200 mb-1">File out of the Registry</div>` +
           (rowsHtml || `<div class="text-gray-300 mt-1">⏳ File is in transit</div>`);
       } else {
+        const shelfRackValue = shelfLocation || '—';
+        const rows = [
+          ['Shelf/Rack', shelfRackValue]
+        ];
+        const rowsHtml = rows.map(function (pair) {
+          return `<div class="tt-row"><span class="tt-label">${esc(pair[0])}</span><span class="tt-value">${esc(pair[1])}</span></div>`;
+        }).join('');
+
         body =
           `<div class="text-gray-200">File in the Registry</div>` +
-          `<div class="text-gray-300 mt-1">✅ File is in the registry</div>`;
+          (rowsHtml || `<div class="text-gray-300 mt-1">✅ File is in the registry</div>`);
       }
 
       $tooltip.html(`<div class="font-semibold mb-1">${fileNumber}</div>${body}`);

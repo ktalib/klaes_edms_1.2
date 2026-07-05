@@ -105,7 +105,8 @@
                     data-file-number="{{ e($file->file_number) }}"
                     data-file-title="{{ e($file->file_title) }}"
                     data-status="{{ e($currentStatus) }}"
-                    data-location="{{ e($currentLocation) }}">
+                    data-location="{{ e($currentLocation) }}"
+                    data-shelf-location="{{ e($file->shelf_location ?? '') }}">
                     <div class="aspect-[3/4] bg-gray-100 relative">
                             <!-- Document cover with actual cover page preview -->
                             <div class="absolute inset-0 flex flex-col bg-white">
@@ -215,6 +216,9 @@
                                     <div class="status-tooltip">
                                         <div class="font-semibold mb-1">{{ $file->file_number }}</div>
                                         <div class="text-gray-200">{{ $statusLabel }}</div>
+                                        @if(!empty($file->shelf_location))
+                                        <div class="text-gray-300 mt-1">🗂️ Shelf/Rack: {{ e($file->shelf_location) }}</div>
+                                        @endif
                                         @if($isInDocWare && $currentLocation)
                                         <div class="text-gray-300 mt-1">📍 {{ $currentLocation }}</div>
                                         @elseif($currentStatus === 'in_transit')
