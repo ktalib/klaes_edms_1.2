@@ -635,6 +635,16 @@
                         allowOutsideClick: () => !Swal.isLoading()
                     }).then((result) => {
                         if (result.isConfirmed) {
+                            // Stash the token's client details and prefill the editable
+                            // Client Details fields so they print on the report.
+                            window.__lsTokenClient = {
+                                name: response.client_name || '',
+                                address: response.client_address || ''
+                            };
+                            const _cnField = document.getElementById('comment-client_name-text');
+                            const _caField = document.getElementById('comment-client_address-text');
+                            if (_cnField) _cnField.value = response.client_name || '';
+                            if (_caField) _caField.value = response.client_address || '';
                             // Token verified and used, proceed with search
                             executeSearchAjax(filters, searchData);
                         }
@@ -660,6 +670,38 @@
     // Default search execution for other modules
     executeSearchAjax(filters, searchData);
 };
+
+// Prefill the Client Details fields (Name / Address) from the file's most recent
+// legal_search_token. Runs on every flow — including Super Admin bypass and
+// already-used tokens — so it does not depend on the token-verify popup.
+// Only fills empty fields so it never clobbers operator edits or popup prefill.
+function prefillClientDetails(fileNumber) {
+  fileNumber = (fileNumber || '').trim();
+  // The Client Details section only applies to Pay-Per-Search files (those with a
+  // search token). Keep it hidden until a token is confirmed for this file.
+  const section = document.getElementById('client-details-section');
+  const showSection = (show) => { if (section) section.classList.toggle('hidden', !show); };
+  showSection(false);
+  if (!fileNumber) return;
+  const nameField = document.getElementById('comment-client_name-text');
+  const addrField = document.getElementById('comment-client_address-text');
+  if (!nameField && !addrField) return;
+
+  fetch("{{ route('legal-search-tokens.client-details') }}?file_number=" + encodeURIComponent(fileNumber), {
+    headers: { 'Accept': 'application/json' },
+    credentials: 'same-origin'
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (!d || !d.success) return;
+      // A token exists for this file — reveal the Client Details editor.
+      showSection(true);
+      window.__lsTokenClient = { name: d.client_name || '', address: d.client_address || '' };
+      if (nameField && !nameField.value.trim() && d.client_name) nameField.value = d.client_name;
+      if (addrField && !addrField.value.trim() && d.client_address) addrField.value = d.client_address;
+    })
+    .catch(() => { });
+}
 
 // Land-use prefix mapping (see .agent/skills/klaes/SKILL.md §5). Used to derive a
 // file's land use from its file-number prefix when the indexed land_use is missing.
@@ -822,6 +864,10 @@ const executeSearchAjax = (filters, searchData) => {
         // The "Under Investigation" note is already written into each matching
         // row's Comments cell server-side; this flag is kept for any consumers.
         window._underInvestigation = !!data.under_investigation;
+
+        // W/R/C flag — file tagged [WRC] in duplicate_fileno. Drives whether the
+        // W/R/C remark editor is revealed in the comments panel.
+        window._isWrcFile = !!data.is_wrc;
 
         // The API returns a unified chronological array
         searchResults = data.transactions || [];
@@ -1886,6 +1932,9 @@ const executeSearchAjax = (filters, searchData) => {
     // Update file reference in subtitle (with .0 fix)
     let fileRef = mlsDisplay !== '-' ? mlsDisplay : (selectedFile.mlsFNo || selectedFile.MLSFileNo || selectedFile.fileNo || selectedFile.fileno || '-');
     document.getElementById('file-reference').textContent = fileRef;
+
+    // Prefill Client Details from the file's most recent token (any flow, incl. bypass).
+    prefillClientDetails((window.__lsLastSearchedFileNumber || '').trim() || (fileRef !== '-' ? fileRef : ''));
     
     // Update file information fields (with .0 fix and better field mapping)
     document.getElementById('file-number-value').textContent = mlsDisplay;
@@ -1946,10 +1995,12 @@ const executeSearchAjax = (filters, searchData) => {
                          selectedFile.district || selectedFile.districtName || '-';
     document.getElementById('district-value').textContent = districtValue;
     
-    // Land Use - prefer file_indexings, fallback to transaction data
-    const landUseValue = selectedFile._file_land_use || selectedFile.land_use || selectedFile.landUse || 
-                             selectedFile.landUseType || selectedFile.title_type || 
-                             selectedFile.instrument_type || selectedFile.Type || '-';
+    // Land Use - prefer file_indexings, fallback to transaction data, then auto-detect
+    // from the file-number prefix (e.g. legacy files with no indexed land use).
+    const landUseValue = selectedFile._file_land_use || selectedFile.land_use || selectedFile.landUse ||
+                             selectedFile.landUseType || selectedFile.title_type ||
+                             selectedFile.instrument_type || selectedFile.Type ||
+                             deriveLandUseFromFileNumber(selectedFile.mlsFNo || selectedFile.file_number || selectedFile.fileno || window.__lsLastSearchedFileNumber || '') || '-';
     document.getElementById('property-type-value').textContent = landUseValue;
     
     // Last transaction — pick the most recent record (by transaction_date,
@@ -2041,6 +2092,7 @@ const executeSearchAjax = (filters, searchData) => {
 
         // Keep the DCIV investigation flag in sync on silent refresh
         window._underInvestigation = !!data.under_investigation;
+        window._isWrcFile = !!data.is_wrc;
 
         const prevCount = searchResults.length;
         searchResults = data.transactions || [];
@@ -3923,6 +3975,16 @@ const executeSearchAjax = (filters, searchData) => {
         if (litigationInput) {
           litigationInput.value = res.data.litigation?.comment ?? '';
         }
+        // W/R/C and CoFO overrides — only replace the prefilled default text
+        // when this file has a saved override, otherwise keep the editable default.
+        if (res.data.wrc?.comment) {
+          const wrcInput = document.getElementById('comment-wrc-text');
+          if (wrcInput) wrcInput.value = res.data.wrc.comment;
+        }
+        if (res.data.cofo?.comment) {
+          const cofoInput = document.getElementById('comment-cofo-text');
+          if (cofoInput) cofoInput.value = res.data.cofo.comment;
+        }
       } else {
         document.getElementById('comment-ground_rent-amount').value = '';
         document.getElementById('comment-ground_rent-text').value = '';
@@ -3978,6 +4040,11 @@ const executeSearchAjax = (filters, searchData) => {
     document.getElementById('comment-encumbrance-text').value = baseText;
     document.getElementById('comment-no_cofo-text').value = noCofoBase;
 
+    // W/R/C remark editor is only revealed for files tagged [WRC] in
+    // duplicate_fileno (i.e. Withdrawn / Revoked / Cancelled).
+    const wrcSection = document.getElementById('wrc-comment-section');
+    if (wrcSection) wrcSection.classList.toggle('hidden', !window._isWrcFile);
+
     // Both sections are always visible regardless of CofO/caveat state.
     // (Previously conditional; now enabled for all records per user requirement.)
     // DCIV "Under Investigation" is surfaced directly in each row's Comments cell
@@ -4027,6 +4094,49 @@ const executeSearchAjax = (filters, searchData) => {
       });
     });
   });
+
+  // Persist edited Client Details (name/address) onto the file's search token so
+  // they survive a reload and print on the Pay-Per-Search report.
+  const updateClientBtn = document.getElementById('update-client-details-btn');
+  if (updateClientBtn) {
+    updateClientBtn.addEventListener('click', () => {
+      const fileNumber = window._currentFileNumber || document.getElementById('file-number-value')?.textContent?.trim();
+      const statusEl = document.getElementById('update-client-details-status');
+      const setStatus = (msg, ok) => {
+        if (!statusEl) return;
+        statusEl.textContent = msg;
+        statusEl.classList.remove('hidden', 'text-red-600', 'text-green-600');
+        statusEl.classList.add(ok ? 'text-green-600' : 'text-red-600');
+        if (ok) setTimeout(() => statusEl.classList.add('hidden'), 3000);
+      };
+      if (!fileNumber) return setStatus('No file selected.', false);
+
+      const clientName = document.getElementById('comment-client_name-text')?.value || '';
+      const clientAddress = document.getElementById('comment-client_address-text')?.value || '';
+
+      fetch('{{ route('legal-search-tokens.client-details.update') }}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
+        },
+        body: JSON.stringify({
+          file_number: fileNumber,
+          client_name: clientName,
+          client_address: clientAddress
+        })
+      })
+      .then(r => r.json())
+      .then(res => {
+        setStatus(res.success ? 'Client details updated.' : (res.message || 'Failed to update.'), !!res.success);
+        if (res.success) {
+          window.__lsTokenClient = { name: res.client_name || '', address: res.client_address || '' };
+        }
+      })
+      .catch(() => setStatus('Network error.', false));
+    });
+  }
 
   // ================================================================
   // SECTION: Cleanup Mode Logic
@@ -5347,6 +5457,11 @@ const executeSearchAjax = (filters, searchData) => {
         else if (_ov.lga)             q.set('display_district_lga', _ov.lga);
         if (_ov.landUse)              q.set('display_land_use',      _ov.landUse);
         if (_ov.size)                 q.set('display_size',          _ov.size);
+        // Client details: editable fields take precedence, else the verified token values.
+        const _cn = (document.getElementById('comment-client_name-text')?.value || window.__lsTokenClient?.name || '').trim();
+        const _ca = (document.getElementById('comment-client_address-text')?.value || window.__lsTokenClient?.address || '').trim();
+        if (_cn) q.set('client_name', _cn);
+        if (_ca) q.set('client_address', _ca);
         const url = q.toString() ? `${tplUrl}?${q.toString()}` : tplUrl;
 
         // If print-manager doc type is set, open print-manager modal instead
@@ -5426,6 +5541,11 @@ const executeSearchAjax = (filters, searchData) => {
         else if (_ov2.lga)        q.set('display_district_lga', _ov2.lga);
         if (_ov2.landUse)         q.set('display_land_use',      _ov2.landUse);
         if (_ov2.size)            q.set('display_size',          _ov2.size);
+        // Client details: editable fields take precedence, else the verified token values.
+        const _cn2 = (document.getElementById('comment-client_name-text')?.value || window.__lsTokenClient?.name || '').trim();
+        const _ca2 = (document.getElementById('comment-client_address-text')?.value || window.__lsTokenClient?.address || '').trim();
+        if (_cn2) q.set('client_name', _cn2);
+        if (_ca2) q.set('client_address', _ca2);
         const url = q.toString() ? `${tplUrl}?${q.toString()}` : tplUrl;
 
         // If print-manager doc type is set, open print-manager modal instead

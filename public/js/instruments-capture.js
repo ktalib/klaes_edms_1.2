@@ -3260,6 +3260,24 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    /**
+     * Re-sync flatpickr-enhanced date inputs after a native form.reset().
+     *
+     * The global header enhancer turns every <input type="date"> into a flatpickr
+     * with a separate VISIBLE altInput (DD/MM/YYYY). form.reset() restores the
+     * ORIGINAL (now hidden) input but does NOT notify flatpickr, so the visible
+     * altInput is left blank while the underlying value persists. That makes the
+     * guarded "if (!input.value)" re-fill skip, and the date silently disappears
+     * from the card. Push each current value back through flatpickr to repaint.
+     */
+    function resyncFlatpickrInputs(root) {
+        (root || document).querySelectorAll('input[type="date"], input.flatpickr-input').forEach(function (el) {
+            if (el._flatpickr) {
+                el._flatpickr.setDate(el.value || '', false);
+            }
+        });
+    }
+
     // --- Form & UI Logic ---
 
     async function generateRootParticulars() {
@@ -3557,7 +3575,10 @@ document.addEventListener('DOMContentLoaded', function () {
         // closing), reset the form so stale data from the previous type is cleared.
         const dialogAlreadyOpen = elements.registrationDialog && !elements.registrationDialog.classList.contains('hidden');
         if (dialogAlreadyOpen) {
-            if (elements.registrationForm) elements.registrationForm.reset();
+            if (elements.registrationForm) {
+                elements.registrationForm.reset();
+                resyncFlatpickrInputs(elements.registrationForm);
+            }
             resetManualSelectFields();
             elements.hiddenMlsFNo.value = '';
             elements.hiddenKangisFileNo.value = '';
@@ -3988,7 +4009,10 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (resetInstrumentType) currentInstrumentType = null;
-        if (elements.registrationForm) elements.registrationForm.reset();
+        if (elements.registrationForm) {
+            elements.registrationForm.reset();
+            resyncFlatpickrInputs(elements.registrationForm);
+        }
 
         resetManualSelectFields();
 
@@ -4999,7 +5023,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const parts = [];
         // If both house and plot exist, show only plot. Otherwise show whichever is present.
         if (plot) {
-            parts.push(`Plot ${plot}`);
+            parts.push(plot);
         } else if (house) {
             parts.push(`House No ${house}`);
         }

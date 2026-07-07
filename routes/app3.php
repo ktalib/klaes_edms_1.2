@@ -438,6 +438,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [LandsFileNoMatchingController::class, 'index'])->name('index');
         Route::get('/available', [LandsFileNoMatchingController::class, 'getAvailableMls'])->name('available');
         Route::get('/details', [LandsFileNoMatchingController::class, 'getFileDetails'])->name('details');
+        Route::get('/folder-files', [\App\Http\Controllers\Api\CadastralFilesController::class, 'index'])->name('folder-files');
         Route::post('/store', [LandsFileNoMatchingController::class, 'store'])->name('store');
         Route::get('/batch-members/{batchNo}', [LandsFileNoMatchingController::class, 'getBatchMembers'])->name('batch-members');
         Route::get('/{id}/edit', [LandsFileNoMatchingController::class, 'edit'])->name('edit');
@@ -533,6 +534,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [LegalSearchTokenController::class, 'index'])->name('index');
         Route::post('/store', [LegalSearchTokenController::class, 'store'])->name('store');
         Route::post('/check', [LegalSearchTokenController::class, 'checkAvailableToken'])->name('check');
+        Route::get('/client-details', [LegalSearchTokenController::class, 'clientDetails'])->name('client-details');
+        Route::post('/client-details', [LegalSearchTokenController::class, 'updateClientDetails'])->name('client-details.update');
         Route::post('/use', [LegalSearchTokenController::class, 'useToken'])->name('use');
         Route::delete('/{id}', [LegalSearchTokenController::class, 'destroy'])->name('destroy');
     });

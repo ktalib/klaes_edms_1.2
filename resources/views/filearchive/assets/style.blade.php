@@ -93,18 +93,23 @@
     border-bottom-color: #1f2937;
   }
   .file-card-status-header .status-tooltip.status-tooltip--in-registry {
-    background-color: #166534;
-    box-shadow: 0 4px 16px rgba(22, 101, 52, 0.22);
+    background-color: #4ade80;
+    box-shadow: 0 4px 16px rgba(74, 222, 128, 0.22);
   }
   .file-card-status-header .status-tooltip.status-tooltip--in-registry::after {
-    border-bottom-color: #166534;
+    border-bottom-color: #4ade80;
   }
   .file-card-status-header .status-tooltip.status-tooltip--out {
-    background-color: #dc2626;
-    box-shadow: 0 4px 16px rgba(220, 38, 38, 0.22);
+    background-color: #f87171;
+    box-shadow: 0 4px 16px rgba(248, 113, 113, 0.22);
   }
   .file-card-status-header .status-tooltip.status-tooltip--out::after {
-    border-bottom-color: #dc2626;
+    border-bottom-color: #f87171;
+  }
+  /* Keep every line of tooltip text white regardless of inline utility classes. */
+  .file-card-status-header .status-tooltip,
+  .file-card-status-header .status-tooltip * {
+    color: #ffffff !important;
   }
   /* Reveal the location tooltip when hovering anywhere on the file card, not just
      the thin status bar — users naturally hover the cover/body of the file. */

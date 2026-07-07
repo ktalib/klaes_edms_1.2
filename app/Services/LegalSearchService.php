@@ -43,8 +43,22 @@ class LegalSearchService
             return $this->emptyResult();
         }
 
-        $filters = compact('fileNo', 'guarantorName', 'guaranteeName', 'lga', 'district', 'location', 'plotNumber', 'planNumber', 'size', 'caveat');
         $conn = DB::connection('sqlsrv');
+
+        // A KANGIS number (e.g. "MLKN 2455") is an alias of a mother MLS file. Resolve it to
+        // the mother's MLS number up front so the ENTIRE search — SME family detection, prop_id
+        // expansion, and File Information — runs identically to searching the MLS number directly.
+        // Without this, a KANGIS search is diverted into the SME branch, which bypasses prop_id
+        // expansion and therefore never sees the mother's consolidated parcel.
+        // Fail-open: only rewrites a confidently-mapped KANGIS-format input; otherwise unchanged.
+        if ($fileNo !== '') {
+            $canonicalFileNo = $this->resolveKangisCanonical($conn, $fileNo);
+            if (!empty($canonicalFileNo)) {
+                $fileNo = $canonicalFileNo;
+            }
+        }
+
+        $filters = compact('fileNo', 'guarantorName', 'guaranteeName', 'lga', 'district', 'location', 'plotNumber', 'planNumber', 'size', 'caveat');
 
         // Fetch SME allowed file numbers to prevent prop_id conversions/collisions
         $allowedSmeFileNos = $this->getSmeAllowedFileNos($fileNo, $conn);
@@ -117,6 +131,35 @@ class LegalSearchService
             $cofoRecords = array_merge($cofoRecords, $extraCofO);
             $praRecords = array_merge($praRecords, $extraPRA);
             $deedRecords = array_merge($deedRecords, $extraDeed);
+        }
+
+        // --- inherited (mother-file) history expansion ---
+        // A subdivision / change-of-purpose CHILD carries its mother's prop_id in parent_prop_id
+        // (confirmed: CON-COM-2026-430/431 & CON-AG-2026-108/109 all point to parent_prop_id 7530,
+        // which is the mother CON-AG-2014-35's own prop_id). The mother's foundational transactions
+        // (Right of Occupancy, Deed of Mortgage, Certificate of Occupancy) live under HER prop_id,
+        // so a child search must expand the ancestor prop_id(s) to surface them. This runs even in
+        // SME mode, where the block above is bypassed. Because parent_prop_id points strictly upward
+        // and we fetch ONLY by the ancestor's own prop_id, siblings (their own distinct prop_ids)
+        // are never pulled in. The contamination guard below keeps these rows because it already
+        // folds the searched file's parent_prop_id into the allowed set. Fully fail-open.
+        try {
+            if ($fileNo !== '') {
+                $ancestorPropIds = $this->resolveAncestorPropIds(
+                    $conn,
+                    $fileNo,
+                    array_merge($fileHistoryRecords, $cofoRecords, $praRecords, $deedRecords)
+                );
+                if (!empty($ancestorPropIds)) {
+                    $existingIds = $this->buildExistingIdMap($fileHistoryRecords, $cofoRecords, $praRecords, $deedRecords);
+                    $fileHistoryRecords = array_merge($fileHistoryRecords, $this->searchByPropIds($conn, 'file_history_staging', $ancestorPropIds, $existingIds['file_history_staging'] ?? []));
+                    $cofoRecords = array_merge($cofoRecords, $this->searchByPropIds($conn, 'CofO_staging', $ancestorPropIds, $existingIds['CofO_staging'] ?? []));
+                    $praRecords = array_merge($praRecords, $this->searchByPropIds($conn, 'pra', $ancestorPropIds, $existingIds['pra'] ?? []));
+                    $deedRecords = array_merge($deedRecords, $this->searchByPropIds($conn, 'deed_registrations', $ancestorPropIds, $existingIds['deed_registrations'] ?? []));
+                }
+            }
+        } catch (\Throwable $e) {
+            // fail-open: inherited-history expansion must never break the core search
         }
 
         // Merge all and sort chronologically
@@ -303,7 +346,16 @@ class LegalSearchService
         // excluded from this set. Synthetic 'Related Fileno' lineage markers are always preserved.
         if ($fileNo !== '') {
             $decommissioned = $this->getDecommissionedFileNumbers($conn);
-            if (isset($decommissioned[strtoupper($fileNo)])) {
+            // Only redirect (drop the searched file's own rows) for a 1:1 rename-type decommission,
+            // where the successor inherits the SAME prop_id and therefore already carries the full
+            // history (Change of Purpose, Change of Name, recertification, amendment, cancellation).
+            // For a SPLIT/MERGE (Plot Subdivision / Merger / Separation), the successors get NEW
+            // prop_ids, so the searched file's own history (e.g. a subdivided mother's Deed of
+            // Mortgage) is not represented anywhere else — keep it instead of wiping it out.
+            $decomReason = $decommissioned[strtoupper($fileNo)] ?? null;
+            $isSplitOrMerge = $decomReason !== null
+                && preg_match('/subdivision|merg|separation|fragment/i', (string) $decomReason);
+            if ($decomReason !== null && !$isSplitOrMerge) {
                 $all = array_values(array_filter($all, function ($row) use ($fileNo) {
                     if (($row['source_table'] ?? '') === 'Related Fileno') {
                         return true;
@@ -327,6 +379,22 @@ class LegalSearchService
 
         // Apply saved arrangement order if one exists for the common prop_id
         $all = $this->applyArrangementOrder($all);
+
+        // Change of Purpose and Subdivision are Ministry-initiated actions, so Party 1 (the
+        // grantor/authority) is always the Ministry — not the file owner. Normalize it here so
+        // both the on-screen timeline and the printed report (which reads party_1 from these
+        // transactions) are consistent. Party 2 (the owner/beneficiary) is left untouched.
+        // KANGIS Recertification is issued by the Kano Geographic Information Service, so its
+        // Party 1 (grantor/authority) is KANGIS — not the Ministry and not the file owner.
+        foreach ($all as &$_row) {
+            $_type = strtolower((string) ($_row['transaction_type'] ?? ''));
+            if (str_contains($_type, 'recertification')) {
+                $_row['party_1'] = 'Kano Geographic Information Service';
+            } elseif (str_contains($_type, 'change of purpose') || str_contains($_type, 'subdivision')) {
+                $_row['party_1'] = 'Kano State Ministry of Land and Physical Planning';
+            }
+        }
+        unset($_row);
 
         // Look up file info from file_indexings for the primary file number
         $fileIndexingData = null;
@@ -424,17 +492,35 @@ class LegalSearchService
             }
         }
 
+        // Earliest real transaction date on the timeline — the file's true origin. A
+        // commissioning date later than this is a system-entry artifact (e.g. a legacy file
+        // digitized long after its real history), so it is surfaced as '-'.
+        $earliestTxnDate = null;
+        foreach ($all as $r) {
+            $sd = trim((string) ($r['sort_date'] ?? ''));
+            if ($sd !== '' && $sd !== '9999-12-31' && ($earliestTxnDate === null || $sd < $earliestTxnDate)) {
+                $earliestTxnDate = $sd;
+            }
+        }
+
         // Resolve the commissioning date and, crucially, WHICH file number was
         // commissioned so the timeline can place the date on the permanent or the
         // "(T)" temporary row as appropriate.
         $commissioningInfo = $this->resolveCommissioningInfo(
             $fileIndexingData->file_number ?? $fileNo,
-            $fileNo
+            $fileNo,
+            $earliestTxnDate
         );
+
+        // W/R/C flag — file tagged [WRC] in duplicate_fileno (matched by number
+        // variants or prop_id). Used to conditionally reveal the W/R/C remark
+        // editor in the LS comments panel (mirrors the report's own gating).
+        $isWrcFile = $this->resolveIsWrcFile($conn, $fileNo, $all[0]['prop_id'] ?? null);
 
         return [
             'transactions' => $all,
             'under_investigation' => $investigation !== null,
+            'is_wrc' => $isWrcFile,
             'investigation_note' => $investigation['note'] ?? null,
             'investigation_reason' => $investigation['reason'] ?? null,
             'investigation_dciv_file_number' => $investigation['dciv_file_number'] ?? null,
@@ -442,7 +528,9 @@ class LegalSearchService
             'file_location' => $fileIndexingData->location ?? null,
             'file_district' => $fileIndexingData->district ?? null,
             'file_lga' => $fileIndexingData->lga ?? null,
-            'file_land_use' => $fileIndexingData->land_use_type ?? null,
+            'file_land_use' => (trim((string) ($fileIndexingData->land_use_type ?? '')) !== '')
+                ? $fileIndexingData->land_use_type
+                : $this->detectLandUseFromFileNumber($fileIndexingData->file_number ?? $fileNo),
             'file_plot_number' => $fileIndexingData->plot_number ?? null,
             'file_tp_no' => $fileIndexingData->tp_no ?? null,
             'file_size' => $fileSize,
@@ -633,6 +721,44 @@ class LegalSearchService
             }
         }
 
+        // The searched file's OWN identity (all number formats it is known by), as opposed to
+        // $searchedSet which also contains ancestors pulled into the result set via prop_id
+        // expansion. Built from the typed file number plus every number column of the existing
+        // rows that DIRECTLY match it — so a file's MLS+KANGIS aliases are covered, but an
+        // ancestor's numbers are not. Used below to reject sibling links (mother ↔ another
+        // subdivision child) that only matched because the mother is present in the result set.
+        $searchedOwnSet = [];
+        if ($fileNo !== '') {
+            $addOwn = function ($v) use (&$searchedOwnSet, $norm) {
+                foreach ($this->fileNumberVariants($v) as $c) {
+                    $n = $norm($c);
+                    if ($n !== '') {
+                        $searchedOwnSet[$n] = true;
+                    }
+                }
+            };
+            $numCols = ['fileno', 'file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno'];
+            $addOwn($fileNo);
+            foreach ($existingRows as $er) {
+                $isOwn = false;
+                foreach ($numCols as $col) {
+                    $v = trim((string) ($er[$col] ?? ''));
+                    if ($v !== '' && strcasecmp($v, $fileNo) === 0) {
+                        $isOwn = true;
+                        break;
+                    }
+                }
+                if ($isOwn) {
+                    foreach ($numCols as $col) {
+                        $v = trim((string) ($er[$col] ?? ''));
+                        if ($v !== '') {
+                            $addOwn($v);
+                        }
+                    }
+                }
+            }
+        }
+
         $query = $conn->table('related_file_number AS rfn')
             ->leftJoin('file_indexings AS fi_rel', function ($j) {
                 $j->on('fi_rel.file_number', '=', 'rfn.related_fileno')
@@ -655,17 +781,137 @@ class LegalSearchService
 
         $rows = $query->orderBy('rfn.id')->get();
 
+        // Second hop — a recertification of a newly-discovered ancestor. The query above only
+        // matches links whose endpoint is one of the SEARCHED file's own numbers. A
+        // recertification frequently sits one link further out: searching a Change-of-Purpose
+        // child (e.g. CON-COM-2026-430) surfaces its mother (CON-AG-2014-35) through a
+        // Subdivision link, but the KANGIS Recertification belongs to that mother
+        // (CON-AG-2014-35 ↔ MLKN 2455), whose endpoints aren't in the searched candidate set —
+        // so it never appears. Collect the endpoints just discovered that are NOT already
+        // searched candidates (the ancestors), and pull in ONLY their Recertification links.
+        // Restricting the extra hop to recertifications keeps the family's recert visible
+        // without dragging in the ancestor's unrelated subdivisions/mergers.
+        $discovered = [];
+        foreach ($rows as $row) {
+            foreach ([$row->file_number, $row->related_fileno] as $e) {
+                foreach ($this->parseRelatedFileno($e) as $one) {
+                    $one = trim($one);
+                    if ($one !== '' && !isset($searchedSet[$norm($one)])) {
+                        $discovered[$one] = true;
+                    }
+                }
+            }
+        }
+        $discovered = array_keys($discovered);
+        if (!empty($discovered)) {
+            $extraVariants = $this->fileNumberVariants(...$discovered);
+            if (!empty($extraVariants)) {
+                $recertRows = $conn->table('related_file_number AS rfn')
+                    ->leftJoin('file_indexings AS fi_rel', function ($j) {
+                        $j->on('fi_rel.file_number', '=', 'rfn.related_fileno')
+                          ->whereNull('fi_rel.deleted_at');
+                    })
+                    ->where(function ($q) use ($extraVariants) {
+                        $q->whereIn('rfn.file_number', $extraVariants)
+                          ->orWhereIn('rfn.related_fileno', $extraVariants);
+                    })
+                    ->where('rfn.transaction_type', 'like', '%Recertification%')
+                    ->select(
+                        'rfn.*',
+                        'fi_rel.file_title    AS related_file_title',
+                        'fi_rel.current_holder AS related_current_holder'
+                    )
+                    ->orderBy('rfn.id')->get();
+
+                // Merge the recert rows in, de-duping by id against what was already fetched.
+                $seenIds = [];
+                foreach ($rows as $row) { $seenIds[$row->id] = true; }
+                $merged = $rows->all();
+                foreach ($recertRows as $rr) {
+                    if (!isset($seenIds[$rr->id])) {
+                        $seenIds[$rr->id] = true;
+                        $merged[] = $rr;
+                    }
+                }
+                $rows = collect($merged);
+            }
+        }
+
+        // These synthetic rows have no transaction date of their own — related_file_number only
+        // records when the LINK was created. Displaying that link-creation timestamp made every
+        // recently-linked row read as "today" instead of the real transaction date. Borrow the
+        // actual date from the linked file's pra history: gather each endpoint's transaction dates
+        // (keyed by normalized file number) so the loop below can prefer a real event date.
+        $endpointNos = [];
+        foreach ($rows as $row) {
+            foreach ([$row->file_number, $row->related_fileno] as $e) {
+                foreach ($this->parseRelatedFileno($e) as $one) {
+                    $one = trim($one);
+                    if ($one !== '') { $endpointNos[$one] = true; }
+                }
+            }
+        }
+        $endpointNos = array_keys($endpointNos);
+        $praDates = [];
+        if (!empty($endpointNos)) {
+            try {
+                $praRows = $conn->table('pra')
+                    ->where(function ($q) use ($endpointNos) {
+                        $q->whereIn('mlsFNo', $endpointNos)->orWhereIn('fileno', $endpointNos);
+                    })
+                    ->whereNotNull('transaction_date')
+                    ->get(['mlsFNo', 'fileno', 'transaction_type', 'transaction_date']);
+                foreach ($praRows as $pr) {
+                    $d = trim((string) $pr->transaction_date);
+                    if ($d === '') { continue; }
+                    foreach (['mlsFNo', 'fileno'] as $col) {
+                        $k = $norm($pr->$col ?? '');
+                        if ($k === '') { continue; }
+                        $praDates[$k][] = [
+                            'type' => strtoupper(trim((string) $pr->transaction_type)),
+                            'date' => $d,
+                        ];
+                    }
+                }
+            } catch (\Throwable $e) { /* non-fatal: fall back to link-creation date */ }
+        }
+
+        // Family transaction date: the most recent real transaction already on this timeline.
+        // Used as the date for links that have no transaction date of their own AND no per-endpoint
+        // pra date to borrow (e.g. a KANGIS Recertification, whose endpoints are an old KANGIS file
+        // and the searched file) — such a link was established as part of the family's current
+        // transaction, so it should read as that date, not the link-creation timestamp.
+        $familyMaxSort = null;
+        foreach ($existingRows as $er) {
+            $sd = trim((string) ($er['sort_date'] ?? ''));
+            if ($sd !== '' && ($familyMaxSort === null || strcmp($sd, $familyMaxSort) > 0)) {
+                $familyMaxSort = $sd;
+            }
+        }
+
         $out = [];
         foreach ($rows as $row) {
-            $createdAt = $row->created_at ?? null;
-            $sortDate = null;
-            $displayDate = '-';
-            if ($createdAt) {
-                try {
-                    $c = Carbon::parse($createdAt);
-                    $sortDate = $c->toDateString();
-                    $displayDate = $c->format('M j, Y');
-                } catch (\Exception $e) { /* ignore */ }
+
+            // Sibling guard. A specific file was searched, yet this related_file_number link has
+            // BOTH endpoints pointing at OTHER files — it only matched because an ANCESTOR of the
+            // searched file (e.g. the subdivision mother) is present in the result set, dragging in
+            // the mother's links to her OTHER children (the searched file's siblings). Those
+            // siblings are not this file's own relations, so drop the link. Recertification links
+            // are exempt: an ancestor's recertification is surfaced deliberately for context (the
+            // dedicated second hop above exists to reach exactly those).
+            if ($fileNo !== '' && stripos((string) $row->transaction_type, 'RECERT') === false) {
+                $touchesSearched = false;
+                foreach ([$row->file_number, $row->related_fileno] as $e) {
+                    foreach ($this->parseRelatedFileno($e) as $one) {
+                        if (isset($searchedOwnSet[$norm($one)])) {
+                            $touchesSearched = true;
+                            break 2;
+                        }
+                    }
+                }
+                if (!$touchesSearched) {
+                    continue;
+                }
             }
 
             // Display the endpoint that is NOT the searched file. A link stores two endpoints —
@@ -683,6 +929,66 @@ class LegalSearchService
                 $displaySource = $row->file_number;
                 $otherSide     = $row->related_fileno;
                 $showParent    = true;
+            }
+
+            // A KANGIS Recertification records the recertification of a KANGIS-legacy file
+            // (e.g. "MLKN 2455") that also carries an MLS number (e.g. "CON-AG-2014-35"). The
+            // event belongs to the KANGIS file, so the row must display the KANGIS-format
+            // endpoint — never the MLS counterpart — regardless of which side was searched.
+            // The generic flip above can't achieve this: when both endpoints are family numbers
+            // it fires for neither, and the reciprocal-collapse below then prefers the
+            // not-searched endpoint (the MLS number). Pin the displayed side to the KANGIS-format
+            // endpoint here so both stored directions of the pair resolve to the same number.
+            if (stripos((string) $row->transaction_type, 'KANGIS') !== false) {
+                $looksKangis = fn ($v) => (bool) preg_match('/^[A-Z]{2,4}\s?\d{2,6}$/i', trim((string) $v));
+                if ($looksKangis($row->related_fileno) && !$looksKangis($row->file_number)) {
+                    $displaySource = $row->related_fileno;
+                    $otherSide     = $row->file_number;
+                    $showParent    = false;
+                } elseif ($looksKangis($row->file_number) && !$looksKangis($row->related_fileno)) {
+                    $displaySource = $row->file_number;
+                    $otherSide     = $row->related_fileno;
+                    $showParent    = true;
+                }
+            }
+
+            // Prefer the real transaction date of the linked event over the link-creation
+            // timestamp. Match a pra transaction on either endpoint whose type equals this link's
+            // type (e.g. "Subdivision"); for an untyped link, fall back to the endpoints' most
+            // recent real transaction date. Typed links with no pra counterpart (e.g. KANGIS
+            // Recertification, which is not a pra transaction type) keep the link-creation date.
+            $linkType = strtoupper(trim((string) $row->transaction_type));
+            $candDates = [];
+            foreach ([$norm($row->file_number), $norm($row->related_fileno)] as $k) {
+                if ($k !== '' && isset($praDates[$k])) {
+                    foreach ($praDates[$k] as $entry) { $candDates[] = $entry; }
+                }
+            }
+            $chosenDate = null;
+            if (!empty($candDates)) {
+                $typed = array_values(array_filter(
+                    $candDates,
+                    fn ($e) => $linkType !== '' && $e['type'] === $linkType
+                ));
+                if (!empty($typed)) {
+                    usort($typed, fn ($a, $b) => strcmp($a['date'], $b['date'])); // earliest match
+                    $chosenDate = $typed[0]['date'];
+                } elseif ($linkType === '') {
+                    usort($candDates, fn ($a, $b) => strcmp($b['date'], $a['date'])); // most recent
+                    $chosenDate = $candDates[0]['date'];
+                }
+            }
+            // Prefer a real per-endpoint date; otherwise adopt the family's current transaction
+            // date; only if neither exists fall back to the link-creation timestamp.
+            $dateSource = $chosenDate ?: ($familyMaxSort ?: ($row->created_at ?? null));
+            $sortDate = null;
+            $displayDate = '-';
+            if ($dateSource) {
+                try {
+                    $c = Carbon::parse($dateSource);
+                    $sortDate = $c->toDateString();
+                    $displayDate = $c->format('M j, Y');
+                } catch (\Exception $e) { /* ignore */ }
             }
 
             // Title/holder of the endpoint being shown: the fi_rel join resolves the related_fileno
@@ -708,7 +1014,10 @@ class LegalSearchService
                 'fileno'            => $relNo,
                 'kangisFileNo'      => null,
                 'NewKANGISFileno'   => null,
-                'transaction_type'  => $row->transaction_type ?: 'Recertification',
+                // Untyped related_file_number rows (e.g. Change-of-Purpose rename aliases with a
+                // blank transaction_type) must NOT be relabelled "Recertification" — that made
+                // rename/merger links masquerade as KANGIS recerts. Fall back to a neutral label.
+                'transaction_type'  => $row->transaction_type ?: 'Related File',
                 'transaction_date'  => $displayDate,
                 'sort_date'         => $sortDate,
                 // Title/holder of the endpoint shown in the orange cell (see $displayTitle above).
@@ -916,6 +1225,29 @@ class LegalSearchService
             }
         }
 
+        // Collapse rows that are indistinguishable on screen. A single event (e.g. the mother
+        // being subdivided into three children) is stored as three separate related_file_number
+        // links, each flipping to display the same counterpart — producing three identical
+        // "<mother> | Subdivision" rows. The reciprocal-collapse pass above can't merge them
+        // because each is a distinct unordered pair. Since the displayed columns (file number,
+        // type, parties, date) are identical, keep only the first of each visual group.
+        $seenDisplay = [];
+        $deduped = [];
+        foreach ($out as $r) {
+            $key = implode('|', [
+                $normNo($r['fileno'] ?? ''),
+                strtoupper(trim((string) ($r['transaction_type'] ?? ''))),
+                strtoupper(trim((string) ($r['party_1'] ?? ''))),
+                strtoupper(trim((string) ($r['party_2'] ?? ''))),
+            ]);
+            if (isset($seenDisplay[$key])) {
+                continue;
+            }
+            $seenDisplay[$key] = true;
+            $deduped[] = $r;
+        }
+        $out = $deduped;
+
         return $out;
     }
 
@@ -1082,9 +1414,16 @@ class LegalSearchService
      *
      * Returns ['date' => 'M j, Y'|'-', 'number' => string|null]. The date is only
      * populated when the file was commissioned within KLAES (fileNumber.SOURCE
-     * starting with 'MLS_Commissioned').
+     * starting with 'MLS_Commissioned') AND that stored date does not postdate the
+     * file's own transactions. Legacy files digitized into KLAES have no real
+     * commissioning date on record, so they resolve to '-' (unknown) rather than a
+     * misleading system-entry timestamp.
+     *
+     * @param string|null $earliestTxnDate Earliest real transaction date on the
+     *        timeline (any Carbon-parseable form). When the resolved commissioning
+     *        date is later than this, it is treated as a system artifact and blanked.
      */
-    private function resolveCommissioningInfo(?string $fileNumber, ?string $altFileNo = null): array
+    private function resolveCommissioningInfo(?string $fileNumber, ?string $altFileNo = null, ?string $earliestTxnDate = null): array
     {
         $default = ['date' => '-', 'number' => null];
 
@@ -1109,18 +1448,32 @@ class LegalSearchService
             return $default;
         }
 
-        $raw = $record->commissioning_date ?: $record->created_at;
-        if (!$raw) {
-            return $default;
-        }
-
         $number = trim((string) $record->mlsfNo) ?: null;
 
-        try {
-            return ['date' => \Carbon\Carbon::parse($raw)->format('M j, Y'), 'number' => $number];
-        } catch (\Exception $e) {
-            return $default;
+        // Only a genuine, stored commissioning_date is trustworthy. Do NOT fall back to
+        // created_at — for a legacy file digitized into KLAES that is merely the digitization
+        // timestamp, not the date the land was actually commissioned.
+        $raw = $record->commissioning_date;
+        if (!$raw) {
+            return ['date' => '-', 'number' => $number];
         }
+
+        $date = rescue(fn () => \Carbon\Carbon::parse($raw), null, false);
+        if (!$date) {
+            return ['date' => '-', 'number' => $number];
+        }
+
+        // A commissioning cannot postdate the file's own transactions. When it does, the
+        // stored date is a system-entry artifact (not the real commissioning), so surface it
+        // as unknown rather than a misleading date.
+        if ($earliestTxnDate) {
+            $earliest = rescue(fn () => \Carbon\Carbon::parse($earliestTxnDate), null, false);
+            if ($earliest && $date->gt($earliest)) {
+                return ['date' => '-', 'number' => $number];
+            }
+        }
+
+        return ['date' => $date->format('M j, Y'), 'number' => $number];
     }
 
     /**
@@ -1142,6 +1495,37 @@ class LegalSearchService
             }
         }
         return array_values($variants);
+    }
+
+    /**
+     * Whether the searched file is tagged [WRC] (Withdrawn / Revoked / Cancelled)
+     * in duplicate_fileno — matched by its file number variants or prop_id. Mirrors
+     * the gating used when rendering the W/R/C notice on the report.
+     */
+    private function resolveIsWrcFile($conn, ?string $fileNo, $propId = null): bool
+    {
+        $variants = $this->fileNumberVariants($fileNo);
+        if (empty($variants) && !$propId) {
+            return false;
+        }
+
+        $comments = $conn->table('duplicate_fileno')
+            ->where(function ($qq) use ($variants, $propId) {
+                if (!empty($variants)) {
+                    $qq->whereIn('file_number', $variants);
+                }
+                if ($propId) {
+                    $qq->orWhere('prop_id', $propId);
+                }
+            })
+            ->pluck('comment');
+
+        foreach ($comments as $c) {
+            if (str_starts_with(strtoupper(trim((string) $c)), '[WRC]')) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -2400,14 +2784,21 @@ class LegalSearchService
                 });
             }
 
-            $rows = $query->get(['file_no', 'mls_file_no', 'kangis_file_no', 'new_kangis_file_no']);
+            $hasReason = $schema->hasColumn('decommissioned_files', 'decommissioning_reason');
+            $cols = ['file_no', 'mls_file_no', 'kangis_file_no', 'new_kangis_file_no'];
+            $rows = $query->get($hasReason ? array_merge($cols, ['decommissioning_reason']) : $cols);
 
+            // Map each decommissioned file number to its decommissioning_reason (or '' if unknown).
+            // Callers use isset() for presence AND read the reason to distinguish a 1:1 rename
+            // (Change of Purpose / recertification — successor inherits the prop_id) from a
+            // split/merge (Subdivision / Merger — successors get NEW prop_ids).
             $set = [];
             foreach ($rows as $r) {
-                foreach (['file_no', 'mls_file_no', 'kangis_file_no', 'new_kangis_file_no'] as $col) {
+                $reason = $hasReason ? (string) ($r->decommissioning_reason ?? '') : '';
+                foreach ($cols as $col) {
                     $v = trim((string) ($r->$col ?? ''));
                     if ($v !== '') {
-                        $set[strtoupper($v)] = true;
+                        $set[strtoupper($v)] = $reason;
                     }
                 }
             }
@@ -2714,7 +3105,7 @@ class LegalSearchService
      *
      * @param array $q keys: file_number, prop_id, display_file_number, display_file_title,
      *                 display_district_lga, display_land_use, display_size, display_plot_no,
-     *                 display_tpno, timeline_order
+     *                 display_tpno, client_name, client_address, timeline_order
      * @return array{status:int, payload:array}
      */
     public function buildPrintReport(array $q): array
@@ -2729,6 +3120,22 @@ class LegalSearchService
         $displaySize = trim((string) ($q['display_size'] ?? ''));
         $displayPlotNo = trim((string) ($q['display_plot_no'] ?? ''));
         $displayTpno = trim((string) ($q['display_tpno'] ?? ''));
+        // Client details originate from the legal_search_tokens row (Pay-Per-Search)
+        // and are prefilled/editable in the UI, then passed through here for printing.
+        $clientName = trim((string) ($q['client_name'] ?? ''));
+        $clientAddress = trim((string) ($q['client_address'] ?? ''));
+        // Fallback: if the UI did not carry client details (e.g. Super Admin bypass or
+        // an already-used token), resolve them from the latest token for this file.
+        if (($clientName === '' && $clientAddress === '') && $fileNo !== '') {
+            $tokenClient = DB::connection('sqlsrv')->table('legal_search_tokens')
+                ->where('file_number', $fileNo)
+                ->orderByDesc('created_at')
+                ->first(['client_name', 'client_address']);
+            if ($tokenClient) {
+                $clientName = trim((string) ($tokenClient->client_name ?? ''));
+                $clientAddress = trim((string) ($tokenClient->client_address ?? ''));
+            }
+        }
 
         if ($fileNo === '' && $propId === '') {
             return ['status' => 422, 'payload' => ['success' => false, 'message' => 'file_number or prop_id is required']];
@@ -2956,7 +3363,21 @@ class LegalSearchService
                 return null;
             }
 
-            return implode('|', [$transactionType, $party1, $party2, $party3, $party4, $keyDate]);
+            // Include the row's own file number in the weak (no-reg-particulars) key. Without it,
+            // distinct sibling files that share a transaction_type + parties + date collapse into
+            // one — e.g. three subdivision fragments, or two Change-of-Purpose children of the same
+            // mother. A PRA row and its File-History twin carry the SAME file number, so they still
+            // collapse as intended; only genuinely different files are now kept apart.
+            $rowFileNo = '';
+            foreach (['mlsFNo', 'fileno', 'file_number', 'kangisFileNo', 'NewKANGISFileno'] as $fnCol) {
+                $v = $norm($row[$fnCol] ?? '');
+                if ($v !== '') {
+                    $rowFileNo = $v;
+                    break;
+                }
+            }
+
+            return implode('|', [$transactionType, $party1, $party2, $party3, $party4, $keyDate, $rowFileNo]);
         };
 
         if (!empty($transactions)) {
@@ -3204,6 +3625,8 @@ class LegalSearchService
         $fiPlotNo = null;
         $fiTpNo = null;
         $fiLandUse = null;
+        $fiLocation = null;
+        $lonLat = '-';
         if ($fileNumber && $fileNumber !== '-') {
             $fileNumberCandidates = array_values(array_unique(array_filter([$fileNumber, $fileNo])));
             $fiList = DB::connection('sqlsrv')->table('file_indexings')
@@ -3215,7 +3638,7 @@ class LegalSearchService
                             ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
                     }
                 })
-                ->select('file_title', 'plot_number', 'tp_no', 'land_use_type', 'related_fileno', 'file_number', 'has_temp_file', 'temp_file_no')
+                ->select('file_title', 'plot_number', 'tp_no', 'land_use_type', 'related_fileno', 'file_number', 'has_temp_file', 'temp_file_no', 'latitude', 'longitude', 'location')
                 ->get();
 
             $fi = $this->pickBestIndexingRow($fiList, $fileNumberCandidates);
@@ -3225,6 +3648,19 @@ class LegalSearchService
                 $fiPlotNo = $fi->plot_number ?: null;
                 $fiTpNo = $fi->tp_no ?: null;
                 $fiLandUse = $fi->land_use_type ?: null;
+                $fiLocation = trim((string) ($fi->location ?? '')) ?: null;
+
+                // Lon/Lat sourced from the file indexing record (replaces District/LGA
+                // on the report). Formatted "longitude, latitude" to match the label.
+                $lon = trim((string) ($fi->longitude ?? ''));
+                $lat = trim((string) ($fi->latitude ?? ''));
+                if ($lon !== '' && $lat !== '') {
+                    $lonLat = $lon . ', ' . $lat;
+                } elseif ($lon !== '') {
+                    $lonLat = $lon;
+                } elseif ($lat !== '') {
+                    $lonLat = $lat;
+                }
 
                 $relatedMls = $parseRelatedFileno($fi->related_fileno ?? null);
             }
@@ -3297,13 +3733,24 @@ class LegalSearchService
             }
         }
 
-        $landUse = $tc($fiLandUse ?: (($first['land_use'] ?? null) ?: '-'));
+        // Fall back to auto-detecting the land use from the file number prefix (e.g. legacy files
+        // with no indexing row), matching the on-screen File Information behaviour. Transaction
+        // rows carry '-' for an empty land use, so treat that as absent before detecting.
+        $firstLandUse = trim((string) ($first['land_use'] ?? ''));
+        if ($firstLandUse === '-') {
+            $firstLandUse = '';
+        }
+        $landUse = $tc($fiLandUse ?: ($firstLandUse ?: ($this->detectLandUseFromFileNumber($fileNo) ?: '-')));
 
-        $bestLocation = '-';
-        foreach ($transactions as $t) {
-            $loc = $t['location'] ?? '';
-            if ($loc && $loc !== '-' && mb_strlen($loc) > mb_strlen($bestLocation === '-' ? '' : $bestLocation)) {
-                $bestLocation = $loc;
+        // Prefer the location recorded on the file indexing record; fall back to
+        // the longest location string found across the transaction rows.
+        $bestLocation = $fiLocation ?: '-';
+        if ($bestLocation === '-') {
+            foreach ($transactions as $t) {
+                $loc = $t['location'] ?? '';
+                if ($loc && $loc !== '-' && mb_strlen($loc) > mb_strlen($bestLocation === '-' ? '' : $bestLocation)) {
+                    $bestLocation = $loc;
+                }
             }
         }
         $plotDescription = $tc($bestLocation);
@@ -3369,31 +3816,27 @@ class LegalSearchService
 
         // ── Default "File Commissioning" record (always the first timeline row) ──
         // Highest priority (weight 12), so it precedes every other transaction.
-        // Commissioning Date = the file's commissioning/creation date when the file
-        // was commissioned within KLAES (fileNumber.SOURCE starting with
-        // 'MLS_Commissioned'); otherwise it falls back to '-'. Reg particulars are 0/0/0.
-        $commissioningDate = $this->resolveCommissioningDate($fileNumber, $fileNo);
-
-        // When the file was not commissioned within KLAES there is no stored
-        // commissioning date (e.g. historical files). Fall back to the earliest dated
-        // transaction in the timeline (the file's origin — typically the original Right
-        // of Occupancy) so the File Commissioning row still prints a date instead of '-'.
-        if ($commissioningDate === '-' || trim((string) $commissioningDate) === '') {
-            $earliestCommissioning = null;
-            foreach ($rows as $existingRow) {
-                $rd = $existingRow['reg_date'] ?? null;
-                if (!$rd || $rd === '-') {
-                    continue;
-                }
-                $parsed = rescue(fn() => \Carbon\Carbon::parse($rd), null, false);
-                if ($parsed && (!$earliestCommissioning || $parsed->lt($earliestCommissioning))) {
-                    $earliestCommissioning = $parsed;
-                }
+        // Commissioning Date = the file's genuine KLAES commissioning date
+        // (fileNumber.SOURCE starting with 'MLS_Commissioned'), but only when it does not
+        // postdate the file's own transactions. For a legacy file digitized into KLAES the
+        // real commissioning date is unknown, so it prints '-' rather than a misleading
+        // system-entry date or a substituted transaction date. Reg particulars are 0/0/0.
+        $earliestTxnDate = null;
+        foreach ($rows as $existingRow) {
+            $rd = $existingRow['reg_date'] ?? null;
+            if (!$rd || $rd === '-') {
+                continue;
             }
-            if ($earliestCommissioning) {
-                $commissioningDate = $earliestCommissioning->format('M j, Y');
+            $parsed = rescue(fn() => \Carbon\Carbon::parse($rd), null, false);
+            if ($parsed && (!$earliestTxnDate || $parsed->lt($earliestTxnDate))) {
+                $earliestTxnDate = $parsed;
             }
         }
+        $commissioningDate = $this->resolveCommissioningInfo(
+            $fileNumber,
+            $fileNo,
+            $earliestTxnDate ? $earliestTxnDate->toDateString() : null
+        )['date'];
 
         // ── "Temporary File" record — printed directly below File Commissioning ──
         // Present when the searched file has a temporary "(T)" sibling, OR when the searched
@@ -3603,6 +4046,75 @@ class LegalSearchService
             $litigationComment = $litigation->comment;
         }
 
+        // W/R/C and CoFO status from the duplicate_fileno registry.
+        // Mirrors the Caveat note: when the searched file exists in
+        // duplicate_fileno under a [WRC] or [COFO_*] tag, surface a general
+        // notice on the report. Category is carried by the comment tag prefix
+        // (the registry column is not reliable). Match on the searched file's
+        // number variants or its prop_id.
+        //
+        // The notice text can be edited per file from the LS comments panel: a
+        // saved ls_comment_staging row (comment_type 'wrc' / 'cofo') overrides
+        // the default wording. The notice itself is ONLY rendered when the file
+        // genuinely qualifies here, so an override can never fabricate a notice
+        // for a clean title.
+        $wrcComment = null;
+        $cofoComment = null;
+        $isWrcFile = false;
+        $cofoState = null; // 'collected' | 'ready' | null
+        $dupVariants = $this->fileNumberVariants(
+            ...array_filter([$fileNumber, $fileNo], fn ($v) => trim((string) $v) !== '')
+        );
+        if (!empty($dupVariants) || $propId) {
+            $dupComments = DB::connection('sqlsrv')->table('duplicate_fileno')
+                ->where(function ($qq) use ($dupVariants, $propId) {
+                    if (!empty($dupVariants)) {
+                        $qq->whereIn('file_number', $dupVariants);
+                    }
+                    if ($propId) {
+                        $qq->orWhere('prop_id', $propId);
+                    }
+                })
+                ->pluck('comment');
+
+            foreach ($dupComments as $c) {
+                $tag = strtoupper(trim((string) $c));
+                if (str_starts_with($tag, '[WRC]')) {
+                    $isWrcFile = true;
+                } elseif (str_starts_with($tag, '[COFO_COLLECTED]')) {
+                    // Collected is the stronger state — always overrides "ready".
+                    $cofoState = 'collected';
+                } elseif (str_starts_with($tag, '[COFO_READY]') && $cofoState === null) {
+                    $cofoState = 'ready';
+                }
+            }
+        }
+
+        if ($isWrcFile) {
+            $wrcStaged = $comments->get('wrc');
+            $wrcOverride = $wrcStaged ? trim((string) $wrcStaged->comment) : '';
+            $wrcComment = $wrcOverride !== '' ? $wrcOverride : 'N.B. This Application has been Cancelled !!!';
+
+            // A cancelled application must not also carry the reassuring
+            // "free from encumbrances / Letter of Grant" note — that would
+            // contradict the cancellation. Suppress that positive note. Genuine
+            // adverse notes (active caveat / mortgage / investigation) still stand.
+            if (!$caveatedRecord && !$mortgageCaveat && $investigation === null) {
+                $caveatNote = null;
+            }
+        }
+        if ($cofoState !== null) {
+            $cofoStaged = $comments->get('cofo');
+            $cofoOverride = $cofoStaged ? trim((string) $cofoStaged->comment) : '';
+            if ($cofoOverride !== '') {
+                $cofoComment = $cofoOverride;
+            } else {
+                $cofoComment = $cofoState === 'collected'
+                    ? 'The Certificate of Occupancy for this property has been collected.'
+                    : 'The Certificate of Occupancy for this property is ready for collection.';
+            }
+        }
+
         // DCIV investigation flag: when the searched file — or any file number
         // resolved onto the timeline rows — is tied to a DCIV in
         // master_dciv_links (on EITHER side), the property is under investigation.
@@ -3638,11 +4150,14 @@ class LegalSearchService
                     'file_number' => $fileNumberDisplay,
                     'file_title' => $fileTitle,
                     'district_lga' => $districtLga,
+                    'lon_lat' => $lonLat,
                     'land_use' => $landUse,
                     'plot_no' => $plotNo,
                     'size' => $size,
                     'plot_description' => $plotDescription,
                     'tpno' => $tpno,
+                    'client_name' => $clientName !== '' ? $clientName : null,
+                    'client_address' => $clientAddress !== '' ? $clientAddress : null,
                     'rows' => $rows,
                     'remarks' => $remarksTimestamp,
                     'caveat_note' => $caveatNote,
@@ -3653,6 +4168,8 @@ class LegalSearchService
                     'no_cofo_comment' => $noCofoComment,
                     'encumbrance_comment' => $encumbranceComment,
                     'litigation_comment' => $litigationComment,
+                    'wrc_comment' => $wrcComment,
+                    'cofo_comment' => $cofoComment,
                     'generated_by' => $generatedByText,
                     'generated_date' => $now->format('F j, Y'),
                     'full_name' => $generatedBy,
@@ -3782,6 +4299,228 @@ class LegalSearchService
     }
 
     /**
+     * Resolve a KANGIS legacy number (e.g. "MLKN 2455", "KNML 7444", "KNGP 12") to its
+     * mother MLS file number, so a search by the KANGIS alias behaves exactly like a search
+     * by the MLS number. Returns null for anything that is not a confidently-mapped KANGIS
+     * input, so the caller can safely keep the original value (fail-open).
+     *
+     * Mapping sources, in order:
+     *   1. PropID_Master.kangisFileNo → the mother row's mlsFNo / primary_file_number
+     *      (populated when a recertified file has been data-corrected onto the mother parcel).
+     *   2. related_file_number 'KANGIS Recertification' links → the MLS-formatted endpoint
+     *      (covers files not yet data-corrected).
+     * Leading zeros in the numeric part are ignored ("MLKN 02455" == "MLKN 2455").
+     */
+    private function resolveKangisCanonical($conn, string $fileNo): ?string
+    {
+        $fileNo = trim($fileNo);
+        // Only attempt for KANGIS legacy prefixes; normal MLS searches short-circuit here.
+        if ($fileNo === '' || !preg_match('/^(MLKN|KNML|KNGP)\s?\d{1,6}$/i', $fileNo)) {
+            return null;
+        }
+
+        $key = strtoupper(preg_replace('/\s+/', '', $fileNo));                 // "MLKN2455"
+        $keyNoZero = preg_replace('/^([A-Z]+)0*(\d+)$/', '$1$2', $key);         // strip zero-pad
+        $isKangis = fn ($v) => (bool) preg_match('/^(MLKN|KNML|KNGP)\s?\d/i', trim((string) $v));
+
+        $pickMls = function ($candidates) use ($isKangis, $fileNo): ?string {
+            foreach ($candidates as $cand) {
+                $cand = trim((string) $cand);
+                if ($cand !== '' && !$isKangis($cand) && strcasecmp($cand, $fileNo) !== 0) {
+                    return $cand;
+                }
+            }
+            return null;
+        };
+
+        // 1) PropID_Master — mother row carrying this KANGIS alias.
+        try {
+            $pm = $conn->table('PropID_Master')
+                ->whereRaw("UPPER(REPLACE(LTRIM(RTRIM(ISNULL(kangisFileNo,''))),' ','')) IN (?, ?)", [$key, $keyNoZero])
+                ->first(['mlsFNo', 'primary_file_number']);
+            if ($pm) {
+                $mls = $pickMls([$pm->mlsFNo ?? null, $pm->primary_file_number ?? null]);
+                if ($mls !== null) {
+                    return $mls;
+                }
+            }
+        } catch (\Throwable $e) { /* fail-open */ }
+
+        // 2) related_file_number — KANGIS Recertification link (either endpoint).
+        try {
+            $links = $conn->table('related_file_number')
+                ->where('transaction_type', 'like', '%Recertification%')
+                ->where(function ($q) use ($key, $keyNoZero) {
+                    $q->whereRaw("UPPER(REPLACE(LTRIM(RTRIM(ISNULL(file_number,''))),' ','')) IN (?, ?)", [$key, $keyNoZero])
+                      ->orWhereRaw("UPPER(REPLACE(LTRIM(RTRIM(ISNULL(related_fileno,''))),' ','')) IN (?, ?)", [$key, $keyNoZero]);
+                })
+                ->get(['file_number', 'related_fileno']);
+            foreach ($links as $l) {
+                $mls = $pickMls([$l->file_number ?? null, $l->related_fileno ?? null]);
+                if ($mls !== null) {
+                    return $mls;
+                }
+            }
+        } catch (\Throwable $e) { /* fail-open */ }
+
+        return null;
+    }
+
+    /**
+     * Auto-detect the land use from a file number prefix when it is not otherwise recorded
+     * (e.g. a legacy file with no file_indexings row). Follows the KLAES land-use prefix mapping:
+     * handles direct (RES/COM/IND/AG), conversion (CON-RES ...), and recertification (RES-RC ...,
+     * CON-RES-RC ...) forms — the meaningful token is the land-use code, which this extracts by
+     * scanning the '-'/'_'-separated tokens. Returns null when no known code is present.
+     */
+    private function detectLandUseFromFileNumber(?string $fileNo): ?string
+    {
+        $fileNo = strtoupper(trim((string) $fileNo));
+        if ($fileNo === '') {
+            return null;
+        }
+
+        $map = [
+            'RES' => 'Residential',
+            'COM' => 'Commercial',
+            'IND' => 'Industrial',
+            'AG'  => 'Agriculture',
+            'AGR' => 'Agriculture',
+        ];
+
+        foreach (preg_split('/[^A-Z]+/', str_replace(['_', '\\', '/'], '-', $fileNo)) as $token) {
+            if ($token !== '' && isset($map[$token])) {
+                return $map[$token];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Split a comma-separated parent_prop_id value into a clean list of prop_id strings.
+     *
+     * @return string[]
+     */
+    private function splitPropIds($raw): array
+    {
+        $out = [];
+        foreach (explode(',', (string) $raw) as $p) {
+            $p = trim($p);
+            if ($p !== '') {
+                $out[] = $p;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Resolve the ancestor (mother / grandmother) prop_id(s) for a searched file by walking the
+     * parent_prop_id lineage strictly UPWARD. A subdivision / change-of-purpose CHILD stores its
+     * mother's prop_id in parent_prop_id (confirmed: CON-COM-2026-430 -> parent_prop_id 7530, which
+     * is the mother CON-AG-2014-35's own prop_id). Expanding those prop_ids surfaces the mother's
+     * foundational transactions (Right of Occupancy, Deed of Mortgage, Certificate of Occupancy) in
+     * a child search. parent_prop_id never points at siblings, so this cannot re-introduce sibling
+     * contamination. Bounded depth; fully fail-open.
+     *
+     * @param  array  $ownRecords  the searched file's already-fetched transaction rows
+     * @return string[] distinct ancestor prop_ids (excludes the searched file's own prop_ids)
+     */
+    private function resolveAncestorPropIds($conn, string $fileNo, array $ownRecords): array
+    {
+        $fileNo = trim($fileNo);
+        if ($fileNo === '') {
+            return [];
+        }
+
+        // Rows that belong to the searched file itself — used both to seed parent_prop_ids and to
+        // record the file's OWN prop_ids so we never mistake them for ancestors.
+        $ownPropIds = [];
+        $seed = [];
+        $matchesSelf = function (array $row) use ($fileNo): bool {
+            foreach (['fileno', 'file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno'] as $col) {
+                $v = trim((string) ($row[$col] ?? ''));
+                if ($v !== '' && strcasecmp($v, $fileNo) === 0) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        foreach ($ownRecords as $row) {
+            if (!$matchesSelf($row)) {
+                continue;
+            }
+            $pid = trim((string) ($row['prop_id'] ?? ''));
+            if ($pid !== '') {
+                $ownPropIds[$pid] = true;
+            }
+            foreach ($this->splitPropIds($row['parent_prop_id'] ?? '') as $p) {
+                $seed[$p] = true;
+            }
+        }
+
+        // Seed from the authoritative index sources too, so this works even in SME mode (where the
+        // main prop_id expansion — and the active-index lookup — are skipped) and even when the
+        // searched file has no transaction rows of its own yet.
+        try {
+            $fi = $conn->table('file_indexings')
+                ->where('file_number', $fileNo)
+                ->whereNull('deleted_at')
+                ->first(['prop_id', 'parent_prop_id']);
+            if ($fi) {
+                if (!empty($fi->prop_id)) {
+                    $ownPropIds[trim((string) $fi->prop_id)] = true;
+                }
+                foreach ($this->splitPropIds($fi->parent_prop_id ?? '') as $p) {
+                    $seed[$p] = true;
+                }
+            }
+            $fn = $conn->table('fileNumber')->where('mlsfNo', $fileNo)->first(['parent_prop_id']);
+            if ($fn) {
+                foreach ($this->splitPropIds($fn->parent_prop_id ?? '') as $p) {
+                    $seed[$p] = true;
+                }
+            }
+        } catch (\Throwable $e) {
+            // ignore — fall back to whatever the records carry
+        }
+
+        // Walk upward: for each ancestor prop_id, look up the row that OWNS it and fold in ITS
+        // parent_prop_id, so multi-generation lineage (mother -> grandmother) is captured too.
+        $ancestors = [];
+        $queue = array_keys($seed);
+        $depth = 0;
+        while (!empty($queue) && $depth < 6) {
+            $next = [];
+            foreach ($queue as $pid) {
+                $pid = trim((string) $pid);
+                if ($pid === '' || isset($ownPropIds[$pid]) || isset($ancestors[$pid])) {
+                    continue;
+                }
+                $ancestors[$pid] = true;
+                try {
+                    $parent = $conn->table('file_indexings')
+                        ->where('prop_id', $pid)
+                        ->whereNull('deleted_at')
+                        ->value('parent_prop_id');
+                    foreach ($this->splitPropIds($parent) as $p) {
+                        if (!isset($ancestors[$p]) && !isset($ownPropIds[$p])) {
+                            $next[] = $p;
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    // ignore this hop
+                }
+            }
+            $queue = $next;
+            $depth++;
+        }
+
+        // Return as explicit strings so PDO binds them as NVARCHAR (see collectPropIds()).
+        return array_values(array_map('strval', array_keys($ancestors)));
+    }
+
+    /**
      * Retrieve explicitly related file numbers for Subdivision, Merger, and Extension (SME)
      * using the related_fileno identifier array from file_indexings.
      * Bypasses ST (Sectional Titling) files completely.
@@ -3876,6 +4615,54 @@ class LegalSearchService
                         }
                     }
                 }
+            }
+        }
+
+        // Lineage completion. The related_fileno strings that flip on SME mode are frequently
+        // fragmented — a subdivided mother may have no active indexing row, and each child often
+        // references only one sibling. The authoritative family link lives on pra.parent_prop_id.
+        // When SME mode is active, widen the allowed set to (a) the searched file's own-prop_id
+        // aliases (e.g. a Change-of-Purpose rename that inherits the prop_id) and (b) its direct
+        // children (rows whose parent_prop_id references the searched file's prop_id), so the full
+        // subdivision/rename family is fetched instead of only the string-reachable fragment.
+        // Only runs when SME mode is already active; non-SME searches use prop_id expansion instead.
+        if ($isSme) {
+            try {
+                $ownPropIds = $conn->table('pra')
+                    ->where(function ($q) use ($normalizedFileNo) {
+                        $q->whereRaw("UPPER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(mlsFNo, ''))), '/', '-'), '=', '-'), '_', '-')) = ?", [$normalizedFileNo])
+                          ->orWhereRaw("UPPER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(fileno, ''))), '/', '-'), '=', '-'), '_', '-')) = ?", [$normalizedFileNo]);
+                    })
+                    ->whereNotNull('prop_id')
+                    ->pluck('prop_id')
+                    ->map(fn ($v) => trim((string) $v))
+                    ->filter(fn ($v) => $v !== '')
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                if (!empty($ownPropIds)) {
+                    $family = $conn->table('pra')
+                        ->where(function ($q) use ($ownPropIds) {
+                            $q->whereIn('prop_id', $ownPropIds); // same-prop_id aliases (rename)
+                            foreach ($ownPropIds as $pid) {
+                                // parent_prop_id may be a CSV of prop_ids; match as a whole token.
+                                $q->orWhereRaw("',' + REPLACE(LTRIM(RTRIM(ISNULL(parent_prop_id, ''))), ' ', '') + ',' LIKE ?", ['%,' . $pid . ',%']);
+                            }
+                        })
+                        ->get(['mlsFNo', 'fileno']);
+
+                    foreach ($family as $row) {
+                        foreach (['mlsFNo', 'fileno'] as $col) {
+                            $fn = trim((string) ($row->$col ?? ''));
+                            if ($fn !== '') {
+                                $allowed[] = $fn;
+                            }
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Non-fatal: fall back to the related_fileno-derived allowed set.
             }
         }
 

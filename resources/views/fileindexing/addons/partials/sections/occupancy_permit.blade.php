@@ -105,5 +105,45 @@
                     style="text-transform: uppercase;">
             </div>
         </div>
+
+        <div class="grid grid-cols-3 gap-4 mt-4">
+            <div class="form-group">
+                <label for="occupancy-permit-serial-no" class="block text-sm font-medium text-gray-700 mb-2">Serial No</label>
+                <input type="text" inputmode="numeric" pattern="[0-9]*" id="occupancy-permit-serial-no" name="occupancy_permit_serial_no"
+                    oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm"
+                    value="{{ isset($record) ? ($record->occupancy_permit_serial_no ?? '') : '' }}">
+            </div>
+            <div class="form-group">
+                <label for="occupancy-permit-page-no" class="block text-sm font-medium text-gray-700 mb-2">Page No</label>
+                {{-- Page No always mirrors Serial No; kept read-only and populated via JS. --}}
+                <input type="text" inputmode="numeric" pattern="[0-9]*" id="occupancy-permit-page-no" name="occupancy_permit_page_no"
+                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm bg-gray-50"
+                    value="{{ isset($record) ? ($record->occupancy_permit_page_no ?? $record->occupancy_permit_serial_no ?? '') : '' }}"
+                    readonly style="cursor: default;">
+            </div>
+            <div class="form-group">
+                <label for="occupancy-permit-vol-no" class="block text-sm font-medium text-gray-700 mb-2">Vol No</label>
+                <input type="text" inputmode="numeric" pattern="[0-9]*" id="occupancy-permit-vol-no" name="occupancy_permit_vol_no"
+                    oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm"
+                    value="{{ isset($record) ? ($record->occupancy_permit_vol_no ?? '') : '' }}">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mt-4">
+            <div class="form-group">
+                <label for="occupancy-permit-deeds-time" class="block text-sm font-medium text-gray-700 mb-2">Deeds Time</label>
+                <input type="time" id="occupancy-permit-deeds-time" name="occupancy_permit_deeds_time"
+                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm"
+                    value="{{ isset($record) ? ($record->occupancy_permit_deeds_time ?? '') : '' }}">
+            </div>
+            <div class="form-group">
+                <label for="occupancy-permit-deeds-date" class="block text-sm font-medium text-gray-700 mb-2">Deeds Date</label>
+                <input type="date" id="occupancy-permit-deeds-date" name="occupancy_permit_deeds_date"
+                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm"
+                    value="{{ isset($record) ? ($record->occupancy_permit_deeds_date ?? '') : '' }}">
+            </div>
+        </div>
     </div>
 </div>

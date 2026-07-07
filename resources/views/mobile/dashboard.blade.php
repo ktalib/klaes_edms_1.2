@@ -1270,18 +1270,21 @@ async function searchFile() {
         if (dept && !/department$/i.test(dept)) dept = dept + ' Department';
         detailRows = [
           ['Registry', d.registry],
+          // Always show the home shelf label; files without one read "—".
+          ['Rack / Shelf', d.rack_shelf || '—'],
           ['Department', dept || d.current_location],
-          ['Rack / Shelf', d.rack_shelf],
           ['Receiving Officer (holder)', d.receiving_officer_name],
           // In-transit timeline — only populated for IN_TRANSIT files.
           ['Date Requested', d.date_requested],
           ['Date Collected', d.date_collected],
+          // Duration follows the request/collection dates it is derived from.
+          ['Duration with holder', d.duration_with_holder],
         ];
       } else {
         detailRows = [
           ['Registry', d.registry],
+          ['Rack / Shelf', d.rack_shelf || '—'],
           ['Current Location (Expected)', d.current_location],
-          ['Rack / Shelf', d.rack_shelf],
           ['Receiving Officer', d.receiving_officer_name],
         ];
       }

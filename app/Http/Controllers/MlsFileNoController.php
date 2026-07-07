@@ -1689,6 +1689,21 @@ class MlsFileNoController extends Controller
                         $propId = $validated['source_prop_id'] ?? ($oldIndexing->prop_id ?? null);
                     }
 
+                    // Change of Purpose is a rename of the SAME property (same parcel,
+                    // new land use), so the new file must inherit the ORIGINAL file's
+                    // prop_id. The allocator can miss it when the old prop_id lives
+                    // only on the source's PRA row (subdivision children carry prop_id
+                    // in PRA, not file_indexings), so fall back to that lookup.
+                    if (empty($propId)) {
+                        $propId = ($oldIndexing->prop_id ?? null)
+                            ?: DB::connection('sqlsrv')->table('pra')
+                                ->where('mlsFNo', $originalFileNo)
+                                ->whereNotNull('prop_id')
+                                ->orderByDesc('id')
+                                ->value('prop_id')
+                            ?: ($validated['source_prop_id'] ?? null);
+                    }
+
                     // 6. Update indexings to flip related_fileno and set prop_id
                     if ($oldIndexing) {
                         $correspondingMatch = DB::connection('sqlsrv')
@@ -1728,17 +1743,52 @@ class MlsFileNoController extends Controller
                             'updated_at' => now()
                         ]);
 
-                    // 8. Send mapping down into PRA referencing resolved Prop ID
-                    DB::connection('sqlsrv')->table('pra')->insert([
-                        'Prop_id' => $propId,
-                        'temp_fileno' => $fullFileNumber,
-                        'transaction' => 'Change Of Purpose',
-                        'instrument' => 'Change Of Purpose',
-                        'Property_Description_part1' => $oldIndexing ? $oldIndexing->property_description : null,
-                        'Property_Description_part2' => $oldIndexing ? $oldIndexing->property_description : null,
-                        'Entry_Date' => now(),
-                        'Reg_Date' => now()
-                    ]);
+                    // 8. Write the Change of Purpose transaction into PRA via the shared
+                    //    PraRecordService so the correct columns, prop_id allocation and
+                    //    PropID-timeline sync are applied (mirrors the Subdivision/Merger/
+                    //    Extension path). The previous raw insert referenced columns that
+                    //    do not exist (Prop_id / transaction / instrument /
+                    //    Property_Description_part1) and set temp_fileno instead of mlsFNo,
+                    //    so it never produced a findable PRA row for the new file.
+                    try {
+                        $ownerName = (string) (($validated['file_name'] ?? null)
+                            ?: ($oldIndexing->file_title ?? null)
+                            ?: ($oldFileNoRecord->FileName ?? ''));
+
+                        app(\App\Services\Pra\PraRecordService::class)->createRecord([
+                            'mlsFNo' => $fullFileNumber,
+                            'fileno' => $fullFileNumber,
+                            'temp_fileno' => null,
+                            'prop_id' => $propId,
+                            'transaction_type' => 'Change of Purpose',
+                            'instrument_type' => 'Change of Purpose',
+                            'transaction_date' => now()->toDateString(),
+                            'reg_date' => '0/0/0',
+                            'regNo' => '0/0/0',
+                            'serialNo' => '0',
+                            'pageNo' => '0',
+                            'volumeNo' => '0',
+                            'system_source' => 'MLS_CHANGE_OF_PURPOSE',
+                            'land_use' => $landUse,
+                            'plot_no' => (string) (($validated['plot_no'] ?? null) ?: ($oldIndexing->plot_number ?? '')),
+                            'lgsaOrCity' => (string) ($validated['lga'] ?? ''),
+                            'location' => (string) (($validated['location'] ?? null) ?: ($oldIndexing->location ?? '')),
+                            'property_description' => (string) (($validated['location'] ?? null) ?: ($oldIndexing->location ?? '')),
+                            'Grantor' => $ownerName,
+                            'Grantee' => $ownerName,
+                            'party_1' => $ownerName,
+                            'party_2' => $ownerName,
+                            'related_file_number' => $originalFileNo,
+                            'comments' => 'Change of Purpose: ' . $originalFileNo . ' -> ' . $fullFileNumber . ' (' . $landUse . ')',
+                            'remarks' => 'Commissioned via Change of Purpose workflow',
+                        ], Auth::id());
+                    } catch (\Throwable $praError) {
+                        \Illuminate\Support\Facades\Log::error('PRA creation failed for Change of Purpose (non-critical)', [
+                            'error' => $praError->getMessage(),
+                            'old_file' => $originalFileNo,
+                            'new_file' => $fullFileNumber,
+                        ]);
+                    }
 
                     $this->logPlotsWorkflow('info', 'Change of Purpose completed seamlessly', [
                         'old_file' => $originalFileNo,

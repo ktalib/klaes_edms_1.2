@@ -357,7 +357,7 @@
         <tr>
           <td class="bold-lbl-left">File Number:</td>
           <td><strong id="report-file-number">-</strong></td>
-          <td class="bold-lbl-right">District/LGA:</td>
+          <td class="bold-lbl-right">Lon/Lat:</td>
           <td><strong id="report-district-lga">-</strong></td>
         </tr>
         <tr>
@@ -412,6 +412,8 @@
             <span id="report-encumbrance-comment" class="dynamic-comment-inline" style="color:#166534;"></span>
             <span id="report-litigation-comment" class="dynamic-comment-inline" style="color:#be123c;"></span>
             <span id="report-no-cofo-comment" class="dynamic-comment-inline" style="color:#166534;"></span>
+            <span id="report-wrc-comment" class="dynamic-comment-inline" style="color:#dc2626;"></span>
+            <span id="report-cofo-comment" class="dynamic-comment-inline" style="color:#166534;"></span>
 
             <span id="report-caveat-note" class="dynamic-comment"
               style="display:none; margin-bottom:8px; font-size:13px; font-weight:bold;"></span>
@@ -474,7 +476,7 @@
 
           const setText = (id, v) => {
             const el = document.getElementById(id);
-            if (el) el.textContent = v || '-';
+            if (el) el.textContent = (v != null && String(v).trim() !== '') ? v : '-';
           };
 
           // Remarks Data — suppressed ("These details are as at" line removed)
@@ -483,7 +485,7 @@
           setText('report-date-line', d.date_line);
           setText('report-file-number', d.file_number);
           setText('report-file-title', d.file_title);
-          setText('report-district-lga', d.district_lga);
+          setText('report-district-lga', d.lon_lat);
           setText('report-size', d.size);
           setText('report-land-use', d.land_use);
           setText('report-plot-no', d.plot_no);
@@ -536,12 +538,28 @@
             ncEl.style.display = 'inline';
           }
 
-          // Encumbrance comment 
+          // Encumbrance comment
           const ecEl = document.getElementById('report-encumbrance-comment');
           if (ecEl && d.encumbrance_comment) {
             const ecText = d.encumbrance_comment.trim();
             ecEl.textContent = ' ' + (ecText.endsWith('.') ? ecText : ecText + '.');
             ecEl.style.display = 'inline';
+          }
+
+          // W/R/C (Withdrawn / Revoked / Cancelled) notice from duplicate_fileno
+          const wrcEl = document.getElementById('report-wrc-comment');
+          if (wrcEl && d.wrc_comment) {
+            const wrcText = d.wrc_comment.trim();
+            wrcEl.textContent = ' ' + wrcText;
+            wrcEl.style.display = 'inline';
+          }
+
+          // CoFO ready / collected notice from duplicate_fileno
+          const cofoEl = document.getElementById('report-cofo-comment');
+          if (cofoEl && d.cofo_comment) {
+            const cofoText = d.cofo_comment.trim();
+            cofoEl.textContent = ' ' + (cofoText.endsWith('.') ? cofoText : cofoText + '.');
+            cofoEl.style.display = 'inline';
           }
 
           const tbody = document.getElementById('report-transactions-body');

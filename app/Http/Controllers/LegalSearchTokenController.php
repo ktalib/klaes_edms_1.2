@@ -36,6 +36,8 @@ class LegalSearchTokenController extends Controller
         $request->validate([
             'file_number' => 'required|string',
             'applicant_name' => 'required|string',
+            'client_name' => 'nullable|string',
+            'client_address' => 'nullable|string',
             'receipt_number' => 'required|string',
             'date_paid' => 'required|date',
             'payment_reason' => 'required|string',
@@ -45,7 +47,9 @@ class LegalSearchTokenController extends Controller
             'token' => Str::upper(Str::random(12)),
             'file_number' => $request->file_number,
             'applicant_name' => $request->applicant_name,
+            'client_name' => $request->client_name ?? null,
             'property_location' => $request->property_location,
+            'client_address' => $request->client_address ?? null,
             'amount_paid' => $request->amount_paid ?? 0,
             'receipt_number' => $request->receipt_number,
             'date_paid' => $request->date_paid,
@@ -104,7 +108,87 @@ class LegalSearchTokenController extends Controller
             'token' => $token->token,
             'token_preview' => substr($token->token, 0, 4) . '****',
             'applicant_name' => $token->applicant_name,
+            'client_name' => $token->client_name,
+            'client_address' => $token->client_address,
             'property_location' => $token->property_location,
+        ]);
+    }
+
+    /**
+     * Return the client details (name + address) for a file number, drawn from the
+     * most recent token — regardless of whether it has been used. Used to prefill the
+     * Client Details fields on the legal search page across every flow (incl. Super
+     * Admin bypass and already-used tokens).
+     */
+    public function clientDetails(Request $request)
+    {
+        $fileNumber = trim((string) $request->query('file_number', ''));
+
+        if ($fileNumber === '') {
+            return response()->json(['success' => false, 'message' => 'File number is required.']);
+        }
+
+        $token = LegalSearchToken::where('file_number', $fileNumber)
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        if (!$token) {
+            return response()->json(['success' => false, 'client_name' => '', 'client_address' => '']);
+        }
+
+        return response()->json([
+            'success' => true,
+            'client_name' => $token->client_name ?? '',
+            'client_address' => $token->client_address ?? '',
+        ]);
+    }
+
+    /**
+     * Persist edited Client Name / Client Address back onto the file's latest
+     * legal_search_token so they survive a page reload and print correctly on the
+     * Pay-Per-Search report.
+     */
+    public function updateClientDetails(Request $request)
+    {
+        $validated = $request->validate([
+            'file_number' => 'required|string',
+            'client_name' => 'nullable|string',
+            'client_address' => 'nullable|string',
+        ]);
+
+        $fileNumber = trim((string) $validated['file_number']);
+
+        $token = LegalSearchToken::where('file_number', $fileNumber)
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        if (!$token) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No search token exists for this file, so client details cannot be saved.',
+            ]);
+        }
+
+        $before = $token->only(['client_name', 'client_address']);
+
+        $token->client_name = $validated['client_name'] ?? null;
+        $token->client_address = $validated['client_address'] ?? null;
+        $token->save();
+
+        $this->auditService->logAction(
+            'Legal Search Client Details Updated',
+            'LegalSearchToken',
+            $token->id,
+            $before,
+            $token->only(['client_name', 'client_address']),
+            "Client details updated for file number {$token->file_number}"
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Client details updated.',
+            'client_name' => $token->client_name ?? '',
+            'client_address' => $token->client_address ?? '',
         ]);
     }
 

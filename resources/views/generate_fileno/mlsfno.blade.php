@@ -557,12 +557,20 @@
                                                         fileOption = 'normal';
                                                         updateApplicationType();
                                                     } else if (val === 'regrant') {
-                                                        // Re-grant uses the same flow as a normal file
-                                                        applicationType = 'new';
+                                                        // Re-grant uses the same flow as a normal file.
+                                                        // Preserve Conversion; only fall back to Direct
+                                                        // Allocation when leaving Change of Purpose.
+                                                        if (applicationType !== 'conversion') {
+                                                            applicationType = 'new';
+                                                        }
                                                         fileOption = 'normal';
                                                         updateFileOption();
                                                     } else {
-                                                        applicationType = 'new';
+                                                        // Preserve Conversion selection; only reset to
+                                                        // Direct Allocation when not doing a conversion.
+                                                        if (applicationType !== 'conversion') {
+                                                            applicationType = 'new';
+                                                        }
                                                         fileOption = val;
                                                         updateFileOption();
                                                     }

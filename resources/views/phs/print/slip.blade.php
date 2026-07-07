@@ -217,11 +217,18 @@
                 @endforelse
             </div>
 
-            <div class="note hidden" style='display:none'>
-                <strong>Encumbrance note:</strong> {{ $data['caveat_note'] ?? 'No caveat note available.' }}
-                @if(!empty($data['ground_rent']))<br><strong>Ground rent:</strong> {{ $data['ground_rent'] }}@endif
-                @if(!empty($data['encumbrance_comment']))<br><strong>Encumbrance:</strong> {{ $data['encumbrance_comment'] }}@endif
-                @if(!empty($data['litigation_comment']))<br><strong>Litigation:</strong> {{ $data['litigation_comment'] }}@endif
+            @php
+                $adverseCaveat = !empty($data['is_caveated']) || !empty($data['under_investigation']);
+            @endphp
+            <div class="note" style="background:#ffffff;border:1px solid #e5e7eb;color:#111827;margin-top:22px;">
+                <div style="font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:.04em;margin-bottom:6px;color:#374151;">Remarks</div>
+                @if(!empty($data['caveat_note']))<div style="color:{{ $adverseCaveat ? '#b91c1c' : '#166534' }};font-weight:600;">{{ $data['caveat_note'] }}</div>@endif
+                @if(!empty($data['wrc_comment']))<div style="color:#b91c1c;font-weight:600;margin-top:4px;">{{ $data['wrc_comment'] }}</div>@endif
+                @if(!empty($data['cofo_comment']))<div style="color:#166534;font-weight:600;margin-top:4px;">{{ $data['cofo_comment'] }}</div>@endif
+                @if(!empty($data['ground_rent']))<div style="color:#92400e;font-weight:600;margin-top:4px;">{{ $data['ground_rent'] }}</div>@endif
+                @if(!empty($data['litigation_comment']))<div style="color:#b91c1c;font-weight:600;margin-top:4px;">{{ $data['litigation_comment'] }}</div>@endif
+                @if(!empty($data['no_cofo_comment']))<div style="color:#166534;font-weight:600;margin-top:4px;">{{ $data['no_cofo_comment'] }}</div>@endif
+                @if(!empty($data['encumbrance_comment']))<div style="color:#166534;font-weight:600;margin-top:4px;">{{ $data['encumbrance_comment'] }}</div>@endif
             </div>
         </section>
 

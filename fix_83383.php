@@ -26,7 +26,7 @@ if (!$exists) {
     echo "Registering $opPropId in PropID_Master...\n";
     $db->table('PropID_Master')->insert([
         'prop_id' => $opPropId,
-        'temp_fileno' => 'TEMP-15856',
+        'temp_fileno' => 'RES-1993-2714',
         'created_at' => now()
     ]);
 }

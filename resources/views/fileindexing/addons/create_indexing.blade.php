@@ -29,16 +29,29 @@
                         </div>
                     @endif
                     <div class="mb-6">
-                        <div class="flex items-center gap-3 mb-2">
-                            <i data-lucide="{{ isset($record) ? 'edit-3' : 'file-plus' }}"
-                                class="h-5 w-5 text-blue-600"></i>
-                            <h2 class="text-xl font-semibold text-gray-800">
-                                {{ isset($record) ? 'Update File Index' : 'Create New File Index' }}
-                            </h2>
+                        <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-2">
+                            <div>
+                                <div class="flex items-center gap-3 mb-2">
+                                    <i data-lucide="{{ isset($record) ? 'edit-3' : 'file-plus' }}"
+                                        class="h-5 w-5 text-blue-600"></i>
+                                    <h2 class="text-xl font-semibold text-gray-800">
+                                        {{ isset($record) ? 'Update File Index' : 'Create New File Index' }}
+                                    </h2>
+                                </div>
+                                <p class="text-gray-600">
+                                    {{ isset($record) ? 'Update the file indexing details below' : 'Enter the details for the new file to be indexed' }}
+                                </p>
+                            </div>
+
+                            {{-- Opens the Property Transaction Details modal directly (backfills from the
+                                 selected File Number), without creating/updating the file index. --}}
+                            <button type="button"
+                                class="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 border border-emerald-300 text-sm font-medium rounded-lg shadow-sm text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all duration-200"
+                                id="add-property-transaction-btn">
+                                <i data-lucide="file-plus-2" class="h-4 w-4"></i>
+                                Add Property Transaction Details
+                            </button>
                         </div>
-                        <p class="text-gray-600">
-                            {{ isset($record) ? 'Update the file indexing details below' : 'Enter the details for the new file to be indexed' }}
-                        </p>
                         @if(isset($record))
                             <div class="mt-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md">
                                 <p class="text-sm text-blue-800">

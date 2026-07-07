@@ -250,9 +250,10 @@
                 </div>
                 <div class="px-5 py-3">
                     ${row('Registry', d.registry)}
-                    ${row('Current Location', d.current_location)}
                     ${row('Rack / Shelf', d.rack_shelf)}
+                    ${row('Current Location', d.current_location)}
                     ${row('Receiving Officer', d.receiving_officer_name)}
+                    ${row('Duration with holder', d.duration_with_holder)}
                     ${row('Tracking ID', d.tracking_id)}
                     <div class="mt-3 rounded-lg bg-indigo-50 border border-indigo-100 px-4 py-3">
                         <div class="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Next Action</div>

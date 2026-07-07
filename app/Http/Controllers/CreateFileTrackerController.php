@@ -1897,35 +1897,37 @@ HTML;
             ? trim(($fmt($from) ?? '…') . ' – ' . ($fmt($to) ?? '…'))
             : null;
 
-        // "Requests Today" tile — always today, independent of the date-range filter.
-        // Header = requests submitted today. Found / Not Found reflect SCB outcomes
-        // *given today* (by responded_at) regardless of when the file was requested,
-        // so files requested earlier but resolved today are counted. Awaiting =
-        // requests submitted today that have no SCB response yet.
+        // "Requests Today" tile — the desk's activity today, independent of the
+        // date-range filter. Found / Not Found = files the SCB *resolved today* (by
+        // responded_at), so a file raised on an earlier day but found this morning is
+        // counted. Awaiting = files *raised today* that have no SCB response yet.
+        // The header is the sum of the three, so the breakdown always adds up (a file
+        // raised today and found today shows once, under Found).
         $today = now()->toDateString();
 
-        $submittedToday = (int) FileSearchRequest::query()->where($registryScope)
-            ->whereDate('created_at', $today)->count();
+        $todayFound = (int) FileSearchRequest::query()->where($registryScope)
+            ->where('status', FileSearchRequest::STATUS_FOUND)
+            ->whereDate('responded_at', $today)->count();
+
+        $todayNotFound = (int) FileSearchRequest::query()->where($registryScope)
+            ->where('status', FileSearchRequest::STATUS_NOT_FOUND)
+            ->whereDate('responded_at', $today)->count();
 
         $todayAwaiting = (int) FileSearchRequest::query()->where($registryScope)
-            ->whereDate('created_at', $today)
             ->whereIn('status', [FileSearchRequest::STATUS_PENDING, FileSearchRequest::STATUS_SEARCHING])
-            ->count();
+            ->whereDate('created_at', $today)->count();
 
-        // Outcomes responded to today, grouped by status.
-        $todayOutcomes = FileSearchRequest::query()->where($registryScope)
-            ->whereDate('responded_at', $today)
-            ->selectRaw('status, COUNT(*) as c')->groupBy('status')->pluck('c', 'status');
+        $submittedToday = $todayFound + $todayNotFound + $todayAwaiting;
 
         $report = [
             'date'            => now()->format('M j, Y'),
             'range_label'     => $rangeLabel,
-            // a. Requests submitted today
+            // a. Activity today = files resolved today + files still awaiting from today
             'submitted_today' => $submittedToday,
-            // a.1 Today's outcome breakdown — Found / Not Found by response date,
-            //     Awaiting by submission date (today's requests with no response yet).
-            'today_found'     => (int) ($todayOutcomes[FileSearchRequest::STATUS_FOUND] ?? 0),
-            'today_not_found' => (int) ($todayOutcomes[FileSearchRequest::STATUS_NOT_FOUND] ?? 0),
+            // a.1 Breakdown of today's activity — Found / Not Found by response date,
+            //     Awaiting by request date. These three always sum to submitted_today.
+            'today_found'     => $todayFound,
+            'today_not_found' => $todayNotFound,
             'today_awaiting'  => $todayAwaiting,
             // b. Blind / Open requests (everything raised from Quick Search — i.e. not a DFR)
             'blind_open'      => $blindOpenCount,
@@ -2090,6 +2092,10 @@ HTML;
             'zone'             => $result['zone'],
             'current_location' => $result['current_location'],
             'rack_shelf'       => $result['rack_shelf'],
+            // How long the file has been with the current holder (IN_TRANSIT only).
+            'held_since'           => $result['held_since'] ?? null,
+            'days_with_holder'     => $result['days_with_holder'] ?? null,
+            'duration_with_holder' => $result['duration_with_holder'] ?? null,
             'next_action'      => $result['next_action'],
             'slip_variant'     => $result['slip_variant'],
             'can_send_fr'      => (bool) ($result['can_send_fr'] ?? false),

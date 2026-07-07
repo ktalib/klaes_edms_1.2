@@ -718,6 +718,14 @@ class FileIndexingController extends Controller
                 }
             }
 
+            // Enrich record with Occupancy Permit details from PRA table
+            if ($record->has_occupancy_permit ?? false) {
+                $occupancyPermitDetails = $this->prepareOccupancyPermitDetailsForEdit($record);
+                foreach ($occupancyPermitDetails as $key => $value) {
+                    $record->$key = $value;
+                }
+            }
+
             // Fetch dynamic registries
             $registries = \App\Models\Registry::orderBy('name')->get();
             $lgas = \App\Models\Lga::orderBy('name')->pluck('name');
@@ -886,6 +894,46 @@ class FileIndexingController extends Controller
     }
 
     /**
+     * Prepare Occupancy Permit Details for Edit.
+     *
+     * Occupancy Permit rows live in the `pra` instruments table, distinguished by
+     * instrument_type. Read the row back so the indexing form repopulates on edit.
+     */
+    protected function prepareOccupancyPermitDetailsForEdit($fileIndexing): array
+    {
+        $fileNumber = $fileIndexing->file_number ?? null;
+        if (empty($fileNumber)) {
+            return [];
+        }
+
+        $record = DB::connection('sqlsrv')->table('pra')
+            ->where('mlsFNo', $fileNumber)
+            ->where('instrument_type', 'Occupancy Permit')
+            ->first();
+
+        if (!$record) {
+            return [];
+        }
+
+        return [
+            'occupancy_permit_instrument_type' => $record->instrument_type ?? 'Occupancy Permit',
+            'occupancy_permit_op_type' => $record->op_type ?? null,
+            'occupancy_permit_op_serial_number' => $record->op_serial_number ?? null,
+            'occupancy_permit_date' => $this->formatDateForForm($record->transaction_date ?? null),
+            'occupancy_permit_file_number' => $record->mlsFNo ?? $fileNumber,
+            'occupancy_permit_land_use' => $record->land_use ?? null,
+            'occupancy_permit_grantor' => $record->party_1 ?? null,
+            'occupancy_permit_grantee' => $record->party_2 ?? null,
+            'occupancy_permit_status' => $record->status ?? 'Normal',
+            'occupancy_permit_serial_no' => $record->serialNo ?? null,
+            'occupancy_permit_page_no' => $record->pageNo ?? null,
+            'occupancy_permit_vol_no' => $record->volumeNo ?? null,
+            'occupancy_permit_deeds_time' => $this->formatTimeForForm($record->deeds_time ?? null),
+            'occupancy_permit_deeds_date' => $this->formatDateForForm($record->deeds_date ?? null),
+        ];
+    }
+
+    /**
      * Update the specified file indexing record.
      */
     public function update(Request $request, $id)
@@ -1022,6 +1070,11 @@ class FileIndexingController extends Controller
                 'occupancy_permit_grantor' => 'nullable|string|max:255',
                 'occupancy_permit_grantee' => 'nullable|string|max:255',
                 'occupancy_permit_status' => 'nullable|string|max:50',
+                'occupancy_permit_serial_no' => 'nullable|string|max:100',
+                'occupancy_permit_page_no' => 'nullable|string|max:100',
+                'occupancy_permit_vol_no' => 'nullable|string|max:100',
+                'occupancy_permit_deeds_time' => 'nullable|string|max:10',
+                'occupancy_permit_deeds_date' => 'nullable|date',
                 'cofo_status' => 'nullable|string|max:50',
                 'has_temp_file' => 'nullable|boolean',
                 'temp_file_no' => 'nullable|string|max:255',
@@ -1804,6 +1857,7 @@ class FileIndexingController extends Controller
                     'location',
                     'plot_no',
                     'lgsaOrCity',
+                    'status',
                     DB::raw("'file_history_staging' as source_table"),
                 ])
                 ->where(function ($builder) use ($fileNumber) {
@@ -1834,6 +1888,7 @@ class FileIndexingController extends Controller
                     'location',
                     'plot_no',
                     'lgsaOrCity',
+                    'status',
                     DB::raw("'pra' as source_table"),
                 ])
                 ->where(function ($builder) use ($fileNumber) {
@@ -1869,6 +1924,7 @@ class FileIndexingController extends Controller
                         'location' => $row->location,
                         'plot_no' => $row->plot_no,
                         'lgsaOrCity' => $row->lgsaOrCity,
+                        'status' => $row->status ?? 'Normal',
                         'source_table' => $row->source_table ?? 'unknown',
                     ];
                 })
@@ -2439,9 +2495,14 @@ class FileIndexingController extends Controller
                 $responseRecord = array_merge($responseRecord, $rofoDetails);
             }
 
+            // Existing property transactions for this file number, so the
+            // "Add Property Transaction Details" modal can backfill them.
+            $fileTransactions = $this->fetchFileTransactionsForFileNumber($record->file_number);
+
             return response()->json([
                 'exists' => true,
                 'record' => $responseRecord,
+                'file_transactions' => $fileTransactions,
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -3086,6 +3147,11 @@ class FileIndexingController extends Controller
                 'occupancy_permit_grantor' => 'nullable|string|max:255',
                 'occupancy_permit_grantee' => 'nullable|string|max:255',
                 'occupancy_permit_status' => 'nullable|string|max:50',
+                'occupancy_permit_serial_no' => 'nullable|string|max:100',
+                'occupancy_permit_page_no' => 'nullable|string|max:100',
+                'occupancy_permit_vol_no' => 'nullable|string|max:100',
+                'occupancy_permit_deeds_time' => 'nullable|string|max:10',
+                'occupancy_permit_deeds_date' => 'nullable|date',
                 'cofo_status' => 'nullable|string|max:50',
                 'has_temp_file' => 'nullable|boolean',
                 'temp_file_no' => 'nullable|string|max:255',
@@ -4516,6 +4582,11 @@ class FileIndexingController extends Controller
             'party_1' => $this->normalizeValue($request->input('occupancy_permit_grantor')),
             'party_2' => $this->normalizeValue($request->input('occupancy_permit_grantee')),
             'status' => $this->normalizeValue($request->input('occupancy_permit_status')),
+            'serialNo' => $this->normalizeValue($request->input('occupancy_permit_serial_no')),
+            'pageNo' => $this->normalizeValue($request->input('occupancy_permit_page_no')),
+            'volumeNo' => $this->normalizeValue($request->input('occupancy_permit_vol_no')),
+            'deeds_time' => $this->normalizeValue($request->input('occupancy_permit_deeds_time')),
+            'deeds_date' => $this->normalizeValue($request->input('occupancy_permit_deeds_date')),
         ];
 
         $payloadFields = array_filter($permitPayload, static function ($value) {
@@ -4548,6 +4619,11 @@ class FileIndexingController extends Controller
             'party_1' => $permitPayload['party_1'] ?? null,
             'party_2' => $permitPayload['party_2'] ?? null,
             'status' => $permitPayload['status'] ?? 'Active',
+            'serialNo' => $permitPayload['serialNo'] ?? null,
+            'pageNo' => $permitPayload['pageNo'] ?? null,
+            'volumeNo' => $permitPayload['volumeNo'] ?? null,
+            'deeds_time' => $permitPayload['deeds_time'] ?? null,
+            'deeds_date' => $permitPayload['deeds_date'] ?? null,
             'land_use' => $permitPayload['land_use'] ?? $fileIndexing->land_use_type,
             'property_description' => $fileIndexing->location ?? $fileIndexing->district,
             'location' => $fileIndexing->location ?? $fileIndexing->district,

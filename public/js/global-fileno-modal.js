@@ -293,6 +293,16 @@
             }
         },
 
+        // Whether the MLS selector should surface every registry's file numbers
+        // (KANGIS, New KANGIS, SLTR, SIT, DCIV, GKN, …) from the indexing table.
+        // Suppressed when a caller scopes the selector for registry matching so
+        // those lands/ST/SLTR contexts stay MLS/Lands-only.
+        includeAllMlsRegistries: function () {
+            const scoped = !!this.config.exclude_matched
+                || (Array.isArray(this.config.excludePrefixes) && this.config.excludePrefixes.length > 0);
+            return !scoped;
+        },
+
         // Load data for specific tab
         loadTabData: function (tabName) {
             if (['sltr', 'old_mls', 'sit', 'dciv', 'gkn'].includes(tabName)) return; // Only manual entry for these
@@ -324,7 +334,8 @@
                 data: {
                     limit: 20, // Get first 20 records for initial display
                     initial: true,
-                    exclude_matched: this.config.exclude_matched || ''
+                    exclude_matched: this.config.exclude_matched || '',
+                    all_registries: (tabName === 'mls' && this.includeAllMlsRegistries()) ? 1 : 0
                 },
                 headers: {
                     'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content'),
@@ -422,7 +433,8 @@
                                 data: {
                                     search: params.data.term,
                                     limit: 20,
-                                    exclude_matched: GlobalFileNoModal.config.exclude_matched || ''
+                                    exclude_matched: GlobalFileNoModal.config.exclude_matched || '',
+                                    all_registries: (tabName === 'mls' && GlobalFileNoModal.includeAllMlsRegistries()) ? 1 : 0
                                 },
                                 headers: {
                                     'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content'),

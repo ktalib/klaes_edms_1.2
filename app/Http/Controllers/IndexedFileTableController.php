@@ -304,9 +304,23 @@ class IndexedFileTableController extends Controller
                     return $rows->first(); // Take first if multiple
                 });
 
-        // Pre-compute which file_numbers actually have a folder under any of the
+        // Pre-compute which file numbers actually have a folder under any of the
         // EDMS registry roots, so the UI can hide the "View Files" button when empty.
-        $edmsFolderMap = $this->buildEdmsFolderMap($fileNumbers);
+        // Cadastral scans live under Cadastral_Registry1/{corresponding_fileno},
+        // so check both file_number and corresponding_fileno as folder keys.
+        $edmsKeys = $items->flatMap(function ($item) {
+            $keys = [];
+            $fn = trim((string) ($item->file_number ?? ''));
+            if ($fn !== '' && $fn !== '-') {
+                $keys[] = $fn;
+            }
+            $corr = trim((string) ($item->corresponding_fileno ?? ''));
+            if ($corr !== '' && $corr !== '-') {
+                $keys[] = $corr;
+            }
+            return $keys;
+        })->filter()->unique()->values();
+        $edmsFolderMap = $this->buildEdmsFolderMap($edmsKeys);
 
         // Pre-compute which file_numbers are flagged as duplicates (present in
         // duplicate_fileno), so the UI can enable the "Duplicate Call-up" action.
@@ -423,8 +437,15 @@ class IndexedFileTableController extends Controller
             $rowData['kangis_file_no'] = $item->kangis_file_no ?? null;
             $rowData['new_kangis_file_no'] = $item->new_kangis_file_no ?? null;
 
-            // Flags whether scanned files exist in any EDMS registry folder
-            $rowData['has_edms_files'] = (bool) ($edmsFolderMap[$displayFileNo] ?? false);
+            // Flags whether scanned files exist in any EDMS registry folder,
+            // keyed by the display file number or its corresponding file number.
+            $correspondingKey = trim((string) ($item->corresponding_fileno ?? ''));
+            $rowData['has_edms_files'] = (bool) (
+                ($edmsFolderMap[$displayFileNo] ?? false)
+                || ($correspondingKey !== '' && $correspondingKey !== '-'
+                    ? ($edmsFolderMap[$correspondingKey] ?? false)
+                    : false)
+            );
 
             // Flags whether this file number is in duplicate_fileno (enables Call-up)
             $rowData['has_duplicate'] = $duplicateSet->has(trim((string) $displayFileNo));
@@ -1369,7 +1390,7 @@ class IndexedFileTableController extends Controller
         };
 
         // Standard EDMS registry roots
-        $registries = ['Cadastral_Registry', 'SLTR_Registry', 'DCIV_Registry', 'KANGIS_Registry', 'Lands_Registry'];
+        $registries = ['Cadastral_Registry1', 'Cadastral_Registry', 'SLTR_Registry', 'DCIV_Registry', 'KANGIS_Registry', 'Lands_Registry'];
         $registryRoots = [];
         foreach ($registries as $registry) {
             $root = realpath($resolvePath('app/public/EDMS/UPLOAD/' . $registry));
@@ -1416,7 +1437,7 @@ class IndexedFileTableController extends Controller
             $row = DB::connection('sqlsrv')
                 ->table('file_indexings')
                 ->where('id', $fileId)
-                ->select(['id', 'file_number'])
+                ->select(['id', 'file_number', 'corresponding_fileno'])
                 ->first();
 
             if (!$row) {
@@ -1424,14 +1445,24 @@ class IndexedFileTableController extends Controller
             }
 
             $fileNumber = trim((string) ($row->file_number ?? ''));
-            if ($fileNumber === '') {
+            $correspondingFileNo = trim((string) ($row->corresponding_fileno ?? ''));
+
+            // The scanned documents are stored in a folder named after the
+            // corresponding file number (the physical registry file). Prefer it,
+            // then fall back to the file number.
+            $folderCandidates = array_values(array_unique(array_filter([
+                $correspondingFileNo,
+                $fileNumber,
+            ], fn ($v) => $v !== '' && $v !== '-')));
+
+            if (empty($folderCandidates)) {
                 return response()->json(['success' => true, 'has_files' => false, 'files' => [], 'file_number' => null]);
             }
 
             // Allow the caller to specify which registry folder to look in
-            $allowedFolders = ['Cadastral_Registry', 'SLTR_Registry', 'DCIV_Registry', 'KANGIS_Registry', 'Lands_Registry'];
-            $requestedFolder = request()->query('folder', 'Cadastral_Registry');
-            $registryFolder = in_array($requestedFolder, $allowedFolders, true) ? $requestedFolder : 'Cadastral_Registry';
+            $allowedFolders = ['Cadastral_Registry1', 'Cadastral_Registry', 'SLTR_Registry', 'DCIV_Registry', 'KANGIS_Registry', 'Lands_Registry'];
+            $requestedFolder = request()->query('folder', 'Cadastral_Registry1');
+            $registryFolder = in_array($requestedFolder, $allowedFolders, true) ? $requestedFolder : 'Cadastral_Registry1';
 
             // Use file_storage_path() to honour the dedicated STORAGE_PATH (.env)
             // because the storage_path() override in app/Helper/helper.php is

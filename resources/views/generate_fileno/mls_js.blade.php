@@ -6270,8 +6270,8 @@
 
                 const text = String(value || '');
 
-                // Long values (SIT reason, Location) wrap within the value column and grow over as many lines as needed.
-                if (label === 'Reason:' || label === 'Location:') {
+                // Long values (File Name, SIT reason, Location) wrap within the value column and grow over as many lines as needed.
+                if (label === 'File Name:' || label === 'Reason:' || label === 'Location:') {
                     const lines = doc.splitTextToSize(text, valueMaxWidth);
                     lines.forEach((ln, i) => {
                         doc.text(ln, 72, y + i * reasonLineHeight);
@@ -6399,8 +6399,8 @@
 
                     const text = String(value || '');
 
-                    // Long values (SIT reason, Location) wrap within the value column and grow over as many lines as needed.
-                    if (label === 'Reason:' || label === 'Location:') {
+                    // Long values (File Name, SIT reason, Location) wrap within the value column and grow over as many lines as needed.
+                    if (label === 'File Name:' || label === 'Reason:' || label === 'Location:') {
                         const lines = doc.splitTextToSize(text, valueMaxWidth);
                         lines.forEach((ln, idx) => {
                             doc.text(ln, textStartX, y + idx * reasonLineHeight);

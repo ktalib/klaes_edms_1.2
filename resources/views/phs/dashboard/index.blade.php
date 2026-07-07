@@ -1276,6 +1276,8 @@
                   Select a file to view transaction history
                 </div>
               </div>
+              {{-- Report notices (caveat / W-R-C / CoFO / ground rent / litigation / encumbrance) --}}
+              <div id="timeline-notices" class="mt-4 space-y-2"></div>
               </div>{{-- /relative z-10 --}}
             </div>
           </div>

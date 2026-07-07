@@ -44,6 +44,11 @@ class FileLocationResolver
     public const STATUS_PENDING_FILE       = 'PENDING_FILE';
     public const STATUS_BLIND_REQUEST_SENT = 'BLIND_REQUEST_SENT';
 
+    // Generic holding office a KANGIS approval-workflow file parks in after DG
+    // approval. It is not the file's real destination — that is stored on the
+    // tracker's workflow_config (see resolveTransitLocation()).
+    protected const KANGIS_QUEUE_OFFICE = 'Department Queue';
+
     /** Cache of shelf lookups within a single request. */
     protected array $rackShelfCache = [];
 
@@ -89,18 +94,24 @@ class FileLocationResolver
             && !$this->isTerminalTrackerStatus($tracker->status)
             && !empty($tracker->movement_log)   // guard against a stuck tracker whose movements were all deleted
         ) {                                     // (a movement still "pending_acceptance" at its destination is still in transit)
-            $location = $tracker->current_office_name
-                ?: $tracker->receiving_office_name
-                ?: $tracker->destination;
+            $location  = $this->resolveTransitLocation($tracker);
+            $heldSince = $this->holderSince($tracker);
 
             return $this->result($fileNumber, self::STATUS_IN_TRANSIT, [
                 'registry'         => $tracker->origin_office_name,
                 'current_location' => $location,
+                // The file's assigned home shelf still applies while it is out — it is
+                // where the file returns to — so surface it for in-transit files too.
+                'rack_shelf'       => $this->getRackShelf($fileNumber, $indexing),
                 'file_tracker_id'  => $tracker->id,
                 'tracker'          => $tracker,
                 'indexing'         => $indexing,
                 'next_action'      => 'Print Tracking Confirmation Slip',
                 'slip_variant'     => 'tracking_confirmation',
+                // How long the file has been with the current holder.
+                'held_since'           => $heldSince?->format('Y-m-d g:i A'),
+                'days_with_holder'     => $this->daysWithHolder($heldSince),
+                'duration_with_holder' => $this->durationLabel($heldSince),
             ]);
         }
 
@@ -293,6 +304,10 @@ class FileLocationResolver
             'duplicate_flag'   => $this->currentDuplicateFlag,
             'superseded_by'    => null,
             'superseded_reason' => null,
+            // Holder-duration fields — only populated on the IN_TRANSIT outcome.
+            'held_since'           => null,
+            'days_with_holder'     => null,
+            'duration_with_holder' => null,
         ];
 
         $merged = array_merge($base, $extra);
@@ -306,6 +321,16 @@ class FileLocationResolver
                     $merged['current_location'] = $fallback;
                 }
             }
+        }
+
+        // Always surface the file's home Rack/Shelf when one exists, on EVERY
+        // outcome — not just the archive branches that resolve it inline. This is
+        // the assigned shelf, independent of whether the file is currently logged
+        // out (IN_TRANSIT), so the UI can show "Rack/Shelf" right after Registry
+        // for every file number that has one. Cached per request, so cheap.
+        if (empty($merged['rack_shelf'])) {
+            $indexingRow = ($merged['indexing'] ?? null) instanceof FileIndexing ? $merged['indexing'] : null;
+            $merged['rack_shelf'] = $this->getRackShelf($fileNumber, $indexingRow);
         }
 
         return $merged;
@@ -608,8 +633,118 @@ class FileLocationResolver
     }
 
     /**
-     * Physical rack/shelf for the file. Prefers print_label_batch_items, then
-     * falls back to file_indexings.shelf_location.
+     * Human-readable "where is it now" for a logged-out tracker.
+     *
+     * A KANGIS approval-workflow file parks in the generic "Department Queue"
+     * office (current_office_name) after DG approval, but its real destination
+     * (e.g. "Honorable Commissioners Office") lives on the tracker's
+     * workflow_config. Mirror the Create File Tracker page, which resolves the
+     * queue label back to that office, so Quick Search / mobile / PHS show the
+     * same destination instead of the internal "Department Queue" placeholder.
+     */
+    protected function resolveTransitLocation(FileTracker $tracker): ?string
+    {
+        $location = $tracker->current_office_name
+            ?: $tracker->receiving_office_name
+            ?: $tracker->destination;
+
+        if (trim((string) $location) !== self::KANGIS_QUEUE_OFFICE) {
+            return $location;
+        }
+
+        $config = (array) ($tracker->workflow_config ?? []);
+        foreach (['original_destination_office_name', 'destination_office_name'] as $key) {
+            $dest = trim((string) ($config[$key] ?? ''));
+            if ($dest !== '' && $dest !== self::KANGIS_QUEUE_OFFICE) {
+                return $dest;
+            }
+        }
+
+        return $location;
+    }
+
+    /**
+     * When the current holder took possession of the file. Prefers the active
+     * movement's acceptance/log-in time (when they physically collected it), then
+     * the log-out time, and finally the request/creation time as a floor. This is
+     * the anchor for "how long has the file been with this holder".
+     */
+    protected function holderSince(FileTracker $tracker): ?\Carbon\Carbon
+    {
+        $current = method_exists($tracker, 'getCurrentMovement') ? $tracker->getCurrentMovement() : null;
+        if (is_array($current)) {
+            $candidates = [
+                $current['accepted_at'] ?? null,
+                !empty($current['log_in_date'])  ? trim($current['log_in_date']  . ' ' . ($current['log_in_time']  ?? '')) : null,
+                !empty($current['log_out_date']) ? trim($current['log_out_date'] . ' ' . ($current['log_out_time'] ?? '')) : null,
+            ];
+            foreach ($candidates as $raw) {
+                if (!empty($raw)) {
+                    try {
+                        return \Carbon\Carbon::parse($raw);
+                    } catch (\Throwable $e) {
+                        // fall through to the next candidate
+                    }
+                }
+            }
+        }
+
+        $fallback = $tracker->date_requested ?? $tracker->date_created ?? $tracker->created_at;
+        try {
+            return $fallback ? \Carbon\Carbon::parse($fallback) : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Whole calendar days the file has been with the current holder (0 = today).
+     */
+    protected function daysWithHolder(?\Carbon\Carbon $heldSince): ?int
+    {
+        if (!$heldSince) {
+            return null;
+        }
+
+        return (int) $heldSince->copy()->startOfDay()->diffInDays(now()->startOfDay());
+    }
+
+    /**
+     * Human label for the holder duration: "Today", "1 day", "5 days".
+     */
+    protected function durationLabel(?\Carbon\Carbon $heldSince): ?string
+    {
+        $days = $this->daysWithHolder($heldSince);
+        if ($days === null) {
+            return null;
+        }
+
+        return $days === 0 ? 'Today' : $days . ' day' . ($days === 1 ? '' : 's');
+    }
+
+    /**
+     * Per-registry "printed label" tables that carry a file's home shelf. Each
+     * has the same file_number + shelf_location shape. The registry-specific
+     * tables are checked before the generic Lands/MLS table; the first non-empty
+     * shelf wins. A file number lives in exactly one of them, so ordering only
+     * matters for the rare cross-registry duplicate.
+     */
+    protected const LABEL_TABLES = [
+        'kangis_print_label_batch_items',
+        'sltr_print_label_batch_items',
+        'st_print_label_batch_items',
+        'cadastral_print_label_batch_items',
+        'dciv_print_label_batch_items',
+        'print_label_batch_items',
+    ];
+
+    /** Cache of which LABEL_TABLES actually exist on this connection. */
+    protected ?array $existingLabelTables = null;
+
+    /**
+     * Physical rack/shelf for the file. Scans every registry's print-label table
+     * (KANGIS / SLTR / ST / Cadastral / DCIV / Lands), then falls back to
+     * file_indexings.shelf_location.
      */
     protected function getRackShelf(string $fileNumber, ?FileIndexing $indexing): ?string
     {
@@ -621,16 +756,58 @@ class FileLocationResolver
             return $this->rackShelfCache[$key];
         }
 
-        $shelf = DB::connection('sqlsrv')
-            ->table('print_label_batch_items')
-            ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [$key])
-            ->orderByDesc('id')
-            ->value('shelf_location');
+        // Match on the search key plus every alternate number on the indexing row.
+        // A file's shelf label may be stored under its registry-specific number
+        // (e.g. a KANGIS file's shelf is keyed on the KANGIS number) rather than
+        // the number the user searched with, so widen the match to all of them.
+        $keys = [$key];
+        if ($indexing) {
+            foreach ([
+                $indexing->file_number ?? null,
+                $indexing->new_kangis_file_no ?? null,
+                $indexing->kangis_file_no ?? null,
+                $indexing->mls_file_no ?? null,
+                $indexing->st_fillno ?? null,
+            ] as $kn) {
+                $kn = strtoupper(trim((string) $kn));
+                if ($kn !== '') {
+                    $keys[] = $kn;
+                }
+            }
+        }
+        $keys = array_values(array_unique($keys));
+
+        $shelf = null;
+        foreach ($this->labelTables() as $table) {
+            $shelf = DB::connection('sqlsrv')
+                ->table($table)
+                ->whereIn(DB::raw('UPPER(LTRIM(RTRIM(file_number)))'), $keys)
+                ->orderByDesc('id')
+                ->value('shelf_location');
+            if ($shelf) {
+                break;
+            }
+        }
 
         if (!$shelf && $indexing) {
             $shelf = $indexing->shelf_location;
         }
 
         return $this->rackShelfCache[$key] = ($shelf ?: null);
+    }
+
+    /**
+     * The subset of LABEL_TABLES that exist on the connection (resolved once).
+     */
+    protected function labelTables(): array
+    {
+        if ($this->existingLabelTables === null) {
+            $this->existingLabelTables = array_values(array_filter(
+                self::LABEL_TABLES,
+                fn ($table) => Schema::connection('sqlsrv')->hasTable($table)
+            ));
+        }
+
+        return $this->existingLabelTables;
     }
 }

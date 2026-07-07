@@ -294,7 +294,7 @@ GO
 -- 8) Transaction type backfill (Recertification | Subdivision | Change of Purpose)
 -- ---------------------------------------------------------------------------
 UPDATE [dbo].[related_file_number]
-SET    transaction_type = 'Land & Physical Planning Recertification'
+SET    transaction_type = 'Ministry of Land & Physical Planning Recertification'
 WHERE  comment LIKE 'MINISTRY OF LAND AND PHYSICAL%';
 
 UPDATE [dbo].[related_file_number]

@@ -728,6 +728,10 @@ class FileNumberApiController extends Controller
             $limit = (int) max(1, min($request->get('limit', 100), 500));
             $search = $request->get('search');
             $excludeMatched = $request->get('exclude_matched');
+            // When set, the MLS selector surfaces EVERY file number in the indexing
+            // table (KANGIS, New KANGIS, SLTR, SIT, DCIV, GKN, …) instead of the
+            // default MLS/Lands-only scope. Driven by the global file-number modal.
+            $includeAllRegistries = filter_var($request->get('all_registries', false), FILTER_VALIDATE_BOOLEAN);
 
             $query = DB::connection('sqlsrv')
                 ->table('dbo.fileNumber')
@@ -807,42 +811,69 @@ class FileNumberApiController extends Controller
                 'temp_file_no' => $r->temp_file_no ?? null,
             ]);
 
-            // If we haven't reached the limit and have a search term, search in file_indexings too
-            if (!empty($search) && $files->count() < $limit) {
-                $indexingResults = DB::connection('sqlsrv')
+            // Pull additional rows from file_indexings. In the default MLS/Lands-only
+            // scope this only runs for searches (to catch temp numbers). When
+            // all_registries is requested it always runs — including the initial
+            // load — and drops the registry filters so KANGIS, New KANGIS, SLTR,
+            // SIT, DCIV, GKN, etc. all appear in the MLS selector.
+            if (($includeAllRegistries || !empty($search)) && $files->count() < $limit) {
+                $indexingQuery = DB::connection('sqlsrv')
                     ->table('file_indexings')
                     ->select([
                         'id',
                         'file_number',
+                        'mls_file_no',
+                        'kangis_file_no',
+                        'new_kangis_file_no',
                         'temp_file_no',
                         'file_title as FileName',
                         'district as location',
                         'plot_number as plot_no',
                         'tp_no'
-                    ])
-                    ->where(function ($q) use ($search) {
+                    ]);
+
+                if (!empty($search)) {
+                    $indexingQuery->where(function ($q) use ($search) {
                         $q->where('temp_file_no', 'LIKE', "%{$search}%")
-                          ->orWhere('file_number', 'LIKE', "%{$search}%");
-                    })
+                          ->orWhere('file_number', 'LIKE', "%{$search}%")
+                          ->orWhere('mls_file_no', 'LIKE', "%{$search}%")
+                          ->orWhere('kangis_file_no', 'LIKE', "%{$search}%")
+                          ->orWhere('new_kangis_file_no', 'LIKE', "%{$search}%");
+                    });
+                }
+
+                if (!$includeAllRegistries) {
                     // Keep this MLS endpoint MLS/Lands-only: exclude file_indexings rows
                     // that belong to other registries (KANGIS / New KANGIS / SLTR / ST /
                     // SIT / DCIV / Survey) so the MLS selector never surfaces their files.
-                    ->whereRaw("ISNULL(kangis_file_no, '') = ''")
-                    ->whereRaw("ISNULL(new_kangis_file_no, '') = ''")
-                    ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(registry, '')))) NOT IN ('SLTR','DCIV','KANGIS','SURVEY','SIT','ST REGISTRY','CADESTRAL','CADASTRAL')")
-                    ->where(function ($q) {
-                        foreach (['KN%','MLKN%','KNGP%','KNML%','SLTR%','SIT%','ST-%','ST/%','LPCC%','DCIV%','GKN%','LPKN%'] as $prefix) {
-                            $q->whereRaw("UPPER(LTRIM(ISNULL(file_number, ''))) NOT LIKE ?", [$prefix]);
-                        }
-                    })
+                    $indexingQuery
+                        ->whereRaw("ISNULL(kangis_file_no, '') = ''")
+                        ->whereRaw("ISNULL(new_kangis_file_no, '') = ''")
+                        ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(registry, '')))) NOT IN ('SLTR','DCIV','KANGIS','SURVEY','SIT','ST REGISTRY','CADESTRAL','CADASTRAL')")
+                        ->where(function ($q) {
+                            foreach (['KN%','MLKN%','KNGP%','KNML%','SLTR%','SIT%','ST-%','ST/%','LPCC%','DCIV%','GKN%','LPKN%'] as $prefix) {
+                                $q->whereRaw("UPPER(LTRIM(ISNULL(file_number, ''))) NOT LIKE ?", [$prefix]);
+                            }
+                        });
+                }
+
+                $indexingResults = $indexingQuery
+                    ->orderByDesc('id')
                     ->limit($limit - $files->count())
                     ->get();
 
                 foreach ($indexingResults as $r) {
-                    // If a temp_file_no exists and matches the search better or is what was requested, 
-                    // we surface it as a primary option.
-                    $displayNo = $r->temp_file_no ?: $r->file_number;
-                    
+                    // Resolve the file number to display. When surfacing every registry
+                    // we fall back across the registry-specific columns so KANGIS-only
+                    // rows (which may leave file_number blank) still show a number.
+                    $displayNo = $includeAllRegistries
+                        ? ($r->file_number ?: $r->mls_file_no ?: $r->kangis_file_no ?: $r->new_kangis_file_no ?: $r->temp_file_no)
+                        : ($r->temp_file_no ?: $r->file_number);
+
+                    if (empty($displayNo)) {
+                        continue;
+                    }
+
                     // Avoid duplicate entries if already found in fileNumber
                     if ($files->contains('file_number', $displayNo)) {
                         continue;
@@ -895,6 +926,13 @@ class FileNumberApiController extends Controller
                 ->where('kangisFileNo', '!=', '')
                 ->where(function ($q) {
                     $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                })
+                // Only surface genuine KANGIS-family file numbers. The kangisFileNo
+                // column also holds leaked MLS-format values (RES-/COM-/AG-/CON-/IND-/
+                // SLTR-…) which must never appear in the KANGIS selector.
+                ->where(function ($q) {
+                    $q->whereRaw("UPPER(LTRIM(kangisFileNo)) LIKE 'KN%'")
+                      ->orWhereRaw("UPPER(LTRIM(kangisFileNo)) LIKE 'MLKN%'");
                 });
 
             // Exclude matching if requested

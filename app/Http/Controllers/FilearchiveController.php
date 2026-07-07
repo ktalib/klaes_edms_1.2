@@ -97,7 +97,7 @@ class FilearchiveController extends Controller
         }
 
         $completedFiles = FileIndexing::query()
-            ->select(['id', 'file_number', 'file_title', 'land_use_type', 'district', 'updated_at', 'plot_number', 'location', 'registry'])
+            ->select(['id', 'file_number', 'file_title', 'land_use_type', 'district', 'updated_at', 'plot_number', 'location', 'registry', 'shelf_location'])
             ->with([
                 'fileTracking' => function ($query) {
                     $query->select(['id', 'file_indexing_id', 'status', 'assignment_status', 'current_location', 'movement_history']);

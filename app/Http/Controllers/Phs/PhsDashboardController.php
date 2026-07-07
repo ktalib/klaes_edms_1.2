@@ -91,14 +91,33 @@ class PhsDashboardController extends Controller
         $results = $this->searchService->search(['query' => $query]);
         $transactions = $results['transactions'] ?? [];
 
-        // No results → return immediately, no charge.
+        // No real transactions found. A commissioned/indexed file still has a
+        // File Commissioning event (and a Temporary File row for a "(T)"), so
+        // mirror the main Legal Search: show the default file info + synthetic
+        // commissioning rows instead of "No Results Found". buildPrintReport()
+        // renders those rows whenever the file exists, and returns 404 only when
+        // the file is genuinely unknown. No token is charged here — there is no
+        // real transaction history to pay for.
         if (empty($transactions)) {
+            $resolvedFileNo = $results['file_index_number'] ?? $query;
+            $reportData = [];
+            try {
+                $report = $this->searchService->buildPrintReport(['file_number' => $resolvedFileNo]);
+                if (($report['status'] ?? null) === 200 && !empty($report['payload']['data']['rows'])) {
+                    $reportData = $report['payload']['data'];
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
+
+            $defaultRows = $reportData['rows'] ?? [];
+
             PhsSearchLog::create([
                 'phs_institution_id' => $institution->id,
                 'phs_member_id' => $member->id,
                 'query' => Str::limit($query, 250),
-                'file_number' => $results['file_index_number'] ?? $query,
-                'result_count' => 0,
+                'file_number' => $resolvedFileNo,
+                'result_count' => count($defaultRows),
                 'reference_no' => null,
                 'tokens_used' => 0,
             ]);
@@ -107,17 +126,27 @@ class PhsDashboardController extends Controller
                 'success' => true,
                 'reference_no' => null,
                 'token_balance' => $currentBalance,
-                'transactions' => [],
-                'file_title' => $results['file_title'] ?? null,
+                'transactions' => $defaultRows,
+                'file_title' => $results['file_title'] ?? ($reportData['file_title'] ?? null),
                 'file_district' => $results['file_district'] ?? null,
                 'file_lga' => $results['file_lga'] ?? null,
-                'file_land_use' => $results['file_land_use'] ?? null,
-                'file_plot_number' => $results['file_plot_number'] ?? null,
-                'file_tp_no' => $results['file_tp_no'] ?? null,
-                'file_size' => $results['file_size'] ?? null,
-                'file_index_number' => $results['file_index_number'] ?? null,
-                'total_count' => 0,
+                'file_land_use' => $results['file_land_use'] ?? ($reportData['land_use'] ?? null),
+                'file_plot_number' => $results['file_plot_number'] ?? ($reportData['plot_no'] ?? null),
+                'file_tp_no' => $results['file_tp_no'] ?? ($reportData['tpno'] ?? null),
+                'file_size' => $results['file_size'] ?? ($reportData['size'] ?? null),
+                'file_index_number' => $resolvedFileNo,
+                'total_count' => count($defaultRows),
                 'no_charge' => true,
+                // Report notices (parity with the main LS remarks).
+                'caveat_note' => $reportData['caveat_note'] ?? null,
+                'is_caveated' => $reportData['is_caveated'] ?? false,
+                'under_investigation' => $reportData['under_investigation'] ?? false,
+                'ground_rent' => $reportData['ground_rent'] ?? null,
+                'no_cofo_comment' => $reportData['no_cofo_comment'] ?? null,
+                'encumbrance_comment' => $reportData['encumbrance_comment'] ?? null,
+                'litigation_comment' => $reportData['litigation_comment'] ?? null,
+                'wrc_comment' => $reportData['wrc_comment'] ?? null,
+                'cofo_comment' => $reportData['cofo_comment'] ?? null,
             ]);
         }
 
@@ -155,10 +184,14 @@ class PhsDashboardController extends Controller
         // engine can't produce rows for any reason.
         $resolvedFileNo = $results['file_index_number'] ?? $query;
         $timeline = $transactions;
+        $reportData = [];
         try {
             $report = $this->searchService->buildPrintReport(['file_number' => $resolvedFileNo]);
-            if (($report['status'] ?? null) === 200 && !empty($report['payload']['data']['rows'])) {
-                $timeline = $report['payload']['data']['rows'];
+            if (($report['status'] ?? null) === 200 && !empty($report['payload']['data'])) {
+                $reportData = $report['payload']['data'];
+                if (!empty($reportData['rows'])) {
+                    $timeline = $reportData['rows'];
+                }
             }
         } catch (\Throwable $e) {
             report($e);
@@ -188,6 +221,18 @@ class PhsDashboardController extends Controller
             'file_size' => $results['file_size'] ?? null,
             'file_index_number' => $results['file_index_number'] ?? null,
             'total_count' => count($timeline),
+            // Report notices — mirror the main Legal Search remarks so the portal
+            // (and the certified slip) surface the same caveat / W-R-C / CoFO /
+            // ground-rent / litigation / encumbrance information.
+            'caveat_note' => $reportData['caveat_note'] ?? null,
+            'is_caveated' => $reportData['is_caveated'] ?? false,
+            'under_investigation' => $reportData['under_investigation'] ?? false,
+            'ground_rent' => $reportData['ground_rent'] ?? null,
+            'no_cofo_comment' => $reportData['no_cofo_comment'] ?? null,
+            'encumbrance_comment' => $reportData['encumbrance_comment'] ?? null,
+            'litigation_comment' => $reportData['litigation_comment'] ?? null,
+            'wrc_comment' => $reportData['wrc_comment'] ?? null,
+            'cofo_comment' => $reportData['cofo_comment'] ?? null,
         ]);
     }
 }

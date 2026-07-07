@@ -516,6 +516,30 @@
     return '';
   }
 
+  /**
+   * Resolve the displayable unit/SUA file number for a file record.
+   * Prefers a stored file number, otherwise derives one from np_fileno + unit_sequence.
+   * Returns 'N/A' when no file number can be determined (i.e. not commissioned).
+   */
+  function resolveUnitFileNo(fileData) {
+    if (!fileData) return 'N/A';
+
+    // 1. Stored file number (any of the known keys)
+    const stored = fileData.fileno || fileData.unit_fileno || fileData.full_file_number;
+    if (stored && stored.toString().trim() && stored.toString().trim().toUpperCase() !== 'N/A') {
+      return stored.toString().trim();
+    }
+
+    // 2. Derive from the primary file number + unit sequence
+    const primary = fileData.np_fileno || fileData.mls_fileno || fileData.kangis_fileno;
+    const suffix = deriveUnitNumberFromFile(fileData);
+    if (primary && suffix) {
+      return `${primary.toString().trim()}-${suffix}`;
+    }
+
+    return 'N/A';
+  }
+
   function findBuyerForFileNumber(fileData) {
     const buyers = getCachedBuyerDataset();
     if (!buyers.length || !fileData) return null;

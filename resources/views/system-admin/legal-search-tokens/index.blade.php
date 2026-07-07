@@ -87,6 +87,8 @@
                                     <th class="px-6 py-4">Token</th>
                                     <th class="px-6 py-4">File Number</th>
                                     <th class="px-6 py-4">Applicant</th>
+                                    <th class="px-6 py-4">Client Name</th>
+                                    <th class="px-6 py-4">Client Address</th>
                                     <th class="px-6 py-4">Transaction Purpose</th>
                                     <th class="px-6 py-4">Receipt</th>
                                     <th class="px-6 py-4 text-center">Status</th>
@@ -116,6 +118,12 @@
                                             <div class="text-[11px] text-slate-400 truncate max-w-[200px]" title="{{ $token->property_location }}">
                                                 {{ $token->property_location ?: 'No location provided' }}
                                             </div>
+                                        </td>
+                                        <td class="px-6 py-4">
+                                            <span class="text-sm font-medium text-slate-900">{{ $token->client_name ?: '—' }}</span>
+                                        </td>
+                                        <td class="px-6 py-4">
+                                            <span class="text-sm text-slate-600">{{ $token->client_address ?: '—' }}</span>
                                         </td>
                                         <td class="px-6 py-4">
                                             @if($token->payment_reason)
@@ -153,7 +161,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="7" class="px-6 py-12 text-center text-slate-400">
+                                        <td colspan="11" class="px-6 py-12 text-center text-slate-400">
                                             <div class="flex flex-col items-center justify-center gap-2">
                                                 <i data-lucide="search" class="h-8 w-8 opacity-20"></i>
                                                 <p>No tokens generated yet.</p>
@@ -198,6 +206,25 @@
             <form id="token-form" class="p-6 space-y-5">
                 @csrf
                 <div class="space-y-4">
+
+
+                       {{-- Client Information (editable) --}}
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Client Name</label>
+                            <input type="text" id="client_name" name="client_name"
+                                class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
+                                placeholder="Enter client name">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Client Address</label>
+                            <input type="text" id="client_address" name="client_address"
+                                class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
+                                placeholder="Enter client address">
+                        </div>
+                    </div>
+
+                    <hr>
                     {{-- File Selection --}}
                     <div>
                         <label class="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">File Selection</label>
@@ -215,6 +242,8 @@
                         </div>
                     </div>
 
+                  
+
                     {{-- Prefilled Data (Read-only) --}}
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -231,6 +260,9 @@
                             <input type="hidden" id="property_location" name="property_location">
                         </div>
                     </div>
+
+
+                   
 
                     {{-- Payment Details Group --}}
                     <div class="p-5 bg-slate-50/50 rounded-2xl border border-slate-100 space-y-4">
@@ -347,6 +379,7 @@
                     const location = record.location || record.Location || record.ma_location || '';
                     const lga = record.lga || record.LGA || record.fi_lga || '';
                     const locStr = `${location}${lga ? ', ' + lga : ''}`;
+
                     $('#applicant_name').val(applicant);
                     $('#property_location').val(locStr);
                     $('#property_location_display').val(locStr);

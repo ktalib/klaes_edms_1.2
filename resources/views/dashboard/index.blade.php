@@ -527,7 +527,7 @@ System') }}
                             <div class="grid grid-cols-2 gap-2">
                                 <div class="bg-white/10 rounded-lg p-2 text-center">
                                     <div class="text-sm font-bold text-white" id="fs-cadastral-indexed"><span class="loading-shimmer">…</span></div>
-                                    <div class="text-[9px] text-amber-100 mt-0.5">Indexed</div>
+                                    <div class="text-[9px] text-amber-100 mt-0.5">Matched</div>
                                 </div>
                                 <div class="bg-white/10 rounded-lg p-2 text-center">
                                     <div class="text-sm font-bold text-white" id="fs-cadastral-commissioned"><span class="loading-shimmer">…</span></div>
@@ -601,7 +601,7 @@ System') }}
                             <div class="grid grid-cols-2 gap-2">
                                 <div class="bg-cyan-800/25 rounded-lg p-2 text-center">
                                     <div class="text-sm font-bold text-white" id="fs-phy-indexed"><span class="loading-shimmer">…</span></div>
-                                    <div class="text-[9px] text-cyan-100 mt-0.5">Indexed</div>
+                                    <div class="text-[9px] text-cyan-100 mt-0.5">Matched</div>
                                 </div>
                                 <div class="bg-cyan-800/25 rounded-lg p-2 text-center">
                                     <div class="text-sm font-bold text-white" id="fs-phy-commissioned"><span class="loading-shimmer">…</span></div>

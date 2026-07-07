@@ -155,16 +155,16 @@
                         if (plot || street || district || lga) {
                             let parts = [];
                             if (plot) parts.push(plot);
-                            if (street) parts.push('STREET: ' + street);
-                            if (district) parts.push('DISTRICT: ' + district);
-                            if (lga) parts.push('LGA: ' + lga);
-                            parts.push('STATE: KANO');
+                            if (street) parts.push(street);
+                            if (district) parts.push(district);
+                            if (lga) parts.push(lga);
+                            parts.push('KANO STATE');
                             param.location = parts.join(', ').toUpperCase();
                         } else {
                             param.location = '';
                         }
                     "
-                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-gray-50" readonly placeholder="Auto-generated as PLOT, STREET, DISTRICT. LGA, STATE" style="cursor: default; text-transform: uppercase;">
+                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-gray-50" readonly placeholder="Auto-generated as PLOT, STREET, DISTRICT, LGA, KANO STATE" style="cursor: default; text-transform: uppercase;">
 
                 <!-- Apply / Pin on Map -->
                 <button type="button"

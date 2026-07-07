@@ -42,6 +42,7 @@
                 id: 1,
                 recordId: null,
                 transactionType: '',
+                status: 'Normal',
                 transactionDate: '',
                 opType: '',
                 opSerialNumber: '',
@@ -184,6 +185,7 @@
                     id: this.transactions.length + 1,
                     recordId: null,
                     transactionType: '',
+                    status: 'Normal',
                     transactionDate: '',
                     opSerialNumber: '',
                     serialNo: '',
@@ -306,8 +308,55 @@
                 if (this.fileIndexingData.district) parts.push(this.fileIndexingData.district);
                 if (this.fileIndexingData.lga) parts.push(this.fileIndexingData.lga);
                 if (this.fileIndexingData.state || 'KANO') parts.push(this.fileIndexingData.state || 'KANO');
-                
+
                 this.fileIndexingData.property_description = parts.join(', ').toUpperCase();
+            },
+
+            // Open the global File Number selector so a file number can be chosen
+            // directly inside this modal (used when the modal is opened standalone
+            // without a file number pre-selected on the indexing form).
+            selectFileNumber() {
+                const applyResult = (result) => {
+                    const fn = (result && (result.fileNumber || result.file_number))
+                        ? String(result.fileNumber || result.file_number).trim()
+                        : '';
+                    if (!fn) return;
+
+                    this.fileIndexingData.file_number = fn;
+
+                    const rec = (result && result.record) ? result.record : {};
+                    const clean = (v) => (!v || v === 'N/A') ? '' : v;
+
+                    if (result && result.file_title && !clean(this.fileIndexingData.file_title)) {
+                        this.fileIndexingData.file_title = result.file_title;
+                    }
+                    if (!clean(this.fileIndexingData.lga)) this.fileIndexingData.lga = rec.lga || rec.lgsaOrCity || '';
+                    if (!clean(this.fileIndexingData.district)) this.fileIndexingData.district = rec.district || rec.districtName || '';
+                    if (!clean(this.fileIndexingData.plot_no)) this.fileIndexingData.plot_no = rec.plot_number || rec.plot_no || '';
+                    if (!clean(this.fileIndexingData.tp_no)) this.fileIndexingData.tp_no = rec.tp_no || '';
+
+                    this.updatePropertyDescription();
+                    if (typeof this.syncDistrictSelection === 'function') {
+                        this.syncDistrictSelection();
+                    }
+                };
+
+                if (typeof window.GlobalFileNoModal !== 'undefined'
+                    && typeof window.GlobalFileNoModal.open === 'function') {
+                    window.GlobalFileNoModal.open({ callback: applyResult });
+                    return;
+                }
+
+                // Fallback when the global selector isn't present on the page.
+                const manual = window.prompt('Enter File Number');
+                if (manual && manual.trim()) {
+                    applyResult({ fileNumber: manual.trim() });
+                }
+            },
+
+            clearFileNumber() {
+                this.fileIndexingData.file_number = '';
+                this.fileIndexingData.temp_file_no = '';
             },
 
             // Auto-fill first party for government transactions
@@ -466,6 +515,31 @@
                 @csrf
 
                 <div class="space-y-4 py-2 flex-1">
+                    <!-- File Number selector: choose a file number directly in this modal -->
+                    <div class="bg-white border border-gray-200 rounded-lg p-4">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            File Number <span class="text-red-500">*</span>
+                        </label>
+                        <div class="flex gap-2">
+                            <input type="text" readonly
+                                :value="fileIndexingData.file_number || fileIndexingData.temp_file_no || ''"
+                                placeholder="No file number selected — click Select"
+                                class="flex-grow px-3 py-2 text-sm border border-gray-300 rounded-md bg-gray-50 text-gray-700 font-mono">
+                            <button type="button" @click="selectFileNumber()"
+                                class="inline-flex items-center gap-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 whitespace-nowrap">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                                </svg>
+                                Select
+                            </button>
+                            <button type="button" @click="clearFileNumber()"
+                                x-show="fileIndexingData.file_number || fileIndexingData.temp_file_no"
+                                class="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 whitespace-nowrap">
+                                Clear
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Info Box showing file indexing details -->
                     <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                         <div class="flex items-start gap-3">
@@ -609,6 +683,18 @@
                                             :name="'transactions[' + index + '][transaction_date]'"
                                             class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors">
                                     </div>
+                                </div>
+
+                                <!-- Status (applies to all instruments) -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                                    <select x-model="transaction.status"
+                                        :name="'transactions[' + index + '][status]'"
+                                        class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
+                                        <option value="Normal">Normal</option>
+                                        <option value="Normal Cancellation">Normal Cancellation</option>
+                                        <option value="Total Cancellation">Total Cancellation</option>
+                                    </select>
                                 </div>
 
                                 <!-- OP Type (shown only for Occupancy Permit) -->
@@ -1240,6 +1326,7 @@
                                         recordId: record.id || record.record_id || null,
                                         transactionType: normalizedType,
                                         instrumentType: normalizedType,
+                                        status: record.status || 'Normal',
                                         transactionDate: formattedTransactionDate || '',
                                         opType: record.op_type || record.opType || '',
                                         opSerialNumber: record.op_serial_number || record.opSerialNumber || '',
@@ -1287,6 +1374,7 @@
                                     id: 1,
                                     recordId: null,
                                     transactionType: '',
+                                    status: 'Normal',
                                     transactionDate: '',
                                     opSerialNumber: '',
                                     serialNo: '',
@@ -1407,6 +1495,7 @@
             record_id: t.recordId || null,
             transaction_type: t.transactionType || '',
             instrument_type: t.instrumentType || '',
+            status: t.status || 'Normal',
             op_type: t.opType || '',
             transaction_date: t.transactionDate || '',
             op_serial_number: String(t.opSerialNumber || '').trim().replace(/^0+(\d)/, '$1'),

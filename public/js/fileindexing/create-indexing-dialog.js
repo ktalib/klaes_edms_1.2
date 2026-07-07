@@ -1032,6 +1032,11 @@
                 'occupancy-permit-land-use': record.occupancy_permit_land_use,
                 'occupancy-permit-grantor': record.occupancy_permit_grantor,
                 'occupancy-permit-grantee': record.occupancy_permit_grantee,
+                'occupancy-permit-serial-no': record.occupancy_permit_serial_no,
+                'occupancy-permit-page-no': record.occupancy_permit_page_no || record.occupancy_permit_serial_no,
+                'occupancy-permit-vol-no': record.occupancy_permit_vol_no,
+                'occupancy-permit-deeds-time': record.occupancy_permit_deeds_time,
+                'occupancy-permit-deeds-date': record.occupancy_permit_deeds_date,
             };
             Object.entries(occupancyPermitFieldMap).forEach(([id, value]) => {
                 const el = document.getElementById(id);
@@ -4465,6 +4470,20 @@
             }
         }
 
+        // Occupancy Permit Page No always mirrors Serial No (Page No is read-only).
+        const occupancyPermitSerialNoInput = document.getElementById('occupancy-permit-serial-no');
+        const occupancyPermitPageNoInput = document.getElementById('occupancy-permit-page-no');
+
+        if (occupancyPermitSerialNoInput && occupancyPermitPageNoInput) {
+            occupancyPermitSerialNoInput.addEventListener('input', function () {
+                occupancyPermitPageNoInput.value = this.value;
+            });
+
+            if (occupancyPermitSerialNoInput.value) {
+                occupancyPermitPageNoInput.value = occupancyPermitSerialNoInput.value;
+            }
+        }
+
         const refreshArchiveDetailsBtn = document.getElementById('refresh-archive-details-btn');
         if (refreshArchiveDetailsBtn) {
             refreshArchiveDetailsBtn.addEventListener('click', function () {
@@ -4990,6 +5009,11 @@
             'occupancy-permit-date',
             'occupancy-permit-file-number',
             'occupancy-permit-grantee',
+            'occupancy-permit-serial-no',
+            'occupancy-permit-page-no',
+            'occupancy-permit-vol-no',
+            'occupancy-permit-deeds-time',
+            'occupancy-permit-deeds-date',
         ];
 
         occupancyPermitFields.forEach(fieldId => {
@@ -5545,6 +5569,11 @@
             occupancy_permit_grantor: document.getElementById('occupancy-permit-grantor')?.value || '',
             occupancy_permit_grantee: document.getElementById('occupancy-permit-grantee')?.value || '',
             occupancy_permit_status: document.getElementById('occupancy-permit-status')?.value || 'Active',
+            occupancy_permit_serial_no: document.getElementById('occupancy-permit-serial-no')?.value || '',
+            occupancy_permit_page_no: document.getElementById('occupancy-permit-page-no')?.value || '',
+            occupancy_permit_vol_no: document.getElementById('occupancy-permit-vol-no')?.value || '',
+            occupancy_permit_deeds_time: document.getElementById('occupancy-permit-deeds-time')?.value || '',
+            occupancy_permit_deeds_date: document.getElementById('occupancy-permit-deeds-date')?.value || '',
             main_application_id: document.getElementById('application_id')?.value || null,
             subapplication_id: document.getElementById('sub_application_id')?.value || null,
             source_file_id: resolvedSourceFileId,

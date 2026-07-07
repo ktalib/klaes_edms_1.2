@@ -672,6 +672,31 @@
               </div>
             </div>
 
+            {{-- Client Details (Pay-Per-Search) --}}
+            {{-- Prefilled from the file's legal_search_token when a token is verified,
+                 but editable here. These values print in the Property Details block of
+                 the Pay-Per-Search report. --}}
+            <div id="client-details-section" class="p-3 bg-slate-50 border border-slate-200 rounded-lg hidden">
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="text-sm font-semibold text-slate-800">Client Details <span class="font-normal text-slate-500">(prints on the search report)</span></h4>
+                <button type="button" id="update-client-details-btn" class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-slate-700 text-white hover:bg-slate-800">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                  Update
+                </button>
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="flex-1 flex items-center gap-1">
+                  <label class="text-xs font-medium text-gray-700 whitespace-nowrap">Client Name</label>
+                  <input type="text" id="comment-client_name-text" class="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Client name">
+                </div>
+                <div class="flex-1 flex items-center gap-1">
+                  <label class="text-xs font-medium text-gray-700 whitespace-nowrap">Client Address</label>
+                  <input type="text" id="comment-client_address-text" class="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Client address">
+                </div>
+              </div>
+              <p id="update-client-details-status" class="text-xs mt-1 hidden"></p>
+            </div>
+
             {{-- Ground Rent --}}
             <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg">
               <div class="flex items-center justify-between mb-2">
@@ -735,6 +760,21 @@
               </div>
               <input type="text" id="comment-encumbrance-text" class="w-full px-2 py-1 text-xs border border-gray-300 rounded" value="Based on our available records, the title is free from encumbrances.">
               <p class="comment-status text-xs mt-1 hidden" data-type="encumbrance"></p>
+            </div>
+
+            {{-- W/R/C (Withdrawn / Revoked / Cancelled) Remark --}}
+            {{-- Only shown when the searched file is tagged [WRC] in duplicate_fileno.
+                 Leave blank to use the default wording; type here to override it. --}}
+            <div id="wrc-comment-section" class="p-3 bg-red-50 border border-red-200 rounded-lg hidden">
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="text-sm font-semibold text-red-800">W/R/C Remark <span class="font-normal text-red-500">(shown only for Withdrawn / Revoked / Cancelled files)</span></h4>
+                <button class="save-comment-btn inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-600 text-white hover:bg-red-700" data-type="wrc">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                  Save
+                </button>
+              </div>
+              <input type="text" id="comment-wrc-text" class="w-full px-2 py-1 text-xs border border-gray-300 rounded" value="N.B. This Application has been Cancelled !!!">
+              <p class="comment-status text-xs mt-1 hidden" data-type="wrc"></p>
             </div>
 
           </div>

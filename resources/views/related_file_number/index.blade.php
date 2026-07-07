@@ -122,7 +122,7 @@
         if (!t) return '<span class="text-slate-400 text-xs">-</span>';
         const map = {
             'KANGIS Recertification':                    'bg-orange-50 text-orange-700 border-orange-200',
-            'Land & Physical Planning Recertification': 'bg-amber-50 text-amber-700 border-amber-200',
+            'Ministry of Land & Physical Planning Recertification': 'bg-amber-50 text-amber-700 border-amber-200',
             'Merger':                                    'bg-purple-50 text-purple-700 border-purple-200',
             'Subdivision':                               'bg-yellow-50 text-yellow-700 border-yellow-200',
             'Change of Purpose':                         'bg-blue-50 text-blue-700 border-blue-200',

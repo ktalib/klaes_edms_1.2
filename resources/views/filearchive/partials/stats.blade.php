@@ -1,8 +1,8 @@
 <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-    <!-- Total Archived Files -->
-    <div class="card bg-blue-50 border-blue-200 hidden">
+    <!-- Total Page Typed Files -->
+    <div class="card bg-blue-50 border-blue-200">
         <div class="p-4 pb-2">
-            <h3 class="text-sm font-medium text-blue-700">Total Archived Files</h3>
+            <h3 class="text-sm font-medium text-blue-700">Total Page Typed Files</h3>
         </div>
         <div class="p-4 pt-0">
             <div class="text-2xl font-bold text-blue-900">{{ number_format($stats['total_archived'] ?? 0) }}</div>

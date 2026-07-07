@@ -31,9 +31,20 @@ class PlotWorkflowService
 
         foreach ($fileNumbers as $fileNo) {
             try {
-                // 1. Fetch records from all active tables
-                $fileRecord = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fileNo)->first();
-                $indexingRecord = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $fileNo)->first();
+                // 1. Fetch records from all active tables. Match the file's OWN identifiers —
+                //    its MLS number (mlsfNo / file_number) OR its KANGIS number (kangisFileNo /
+                //    kangis_file_no). A KANGIS-only file (MLS = N/A, e.g. "MLKN 2455") stores its
+                //    number in the KANGIS column, so an mlsfNo-only match would miss it and leave
+                //    the live row behind after archiving. (Do NOT match new_kangis_file_no — that
+                //    is a recert pointer to a SUCCESSOR file, not this file's own identity.)
+                $fileRecord = DB::connection('sqlsrv')->table('fileNumber')
+                    ->where(function ($q) use ($fileNo) {
+                        $q->where('mlsfNo', $fileNo)->orWhere('kangisFileNo', $fileNo);
+                    })->first();
+                $indexingRecord = DB::connection('sqlsrv')->table('file_indexings')
+                    ->where(function ($q) use ($fileNo) {
+                        $q->where('file_number', $fileNo)->orWhere('kangis_file_no', $fileNo);
+                    })->first();
 
                 if (!$fileRecord && !$indexingRecord) {
                     $summary['errors'][] = "File $fileNo not found in active records.";
@@ -99,9 +110,17 @@ class PlotWorkflowService
                     ]);
                 }
 
-                // 3. Hard Delete from active tables
-                DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $fileNo)->delete();
-                DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $fileNo)->delete();
+                // 3. Hard Delete from active tables. Mirror the lookup above so a KANGIS-only file
+                //    is removed by its KANGIS number too — otherwise the archive row is written but
+                //    the live fileNumber/file_indexings row survives and keeps surfacing in search.
+                DB::connection('sqlsrv')->table('fileNumber')
+                    ->where(function ($q) use ($fileNo) {
+                        $q->where('mlsfNo', $fileNo)->orWhere('kangisFileNo', $fileNo);
+                    })->delete();
+                DB::connection('sqlsrv')->table('file_indexings')
+                    ->where(function ($q) use ($fileNo) {
+                        $q->where('file_number', $fileNo)->orWhere('kangis_file_no', $fileNo);
+                    })->delete();
                 DB::connection('sqlsrv')->table('entities_staging')->where('file_number', $fileNo)->delete();
                 DB::connection('sqlsrv')->table('customers_staging')->where('file_number', $fileNo)->delete();
 

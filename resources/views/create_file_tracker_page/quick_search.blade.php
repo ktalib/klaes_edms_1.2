@@ -585,6 +585,7 @@
                             </div>
                         </details>
                         ${row('Registry', d.registry)}
+                        ${row('Rack / Shelf', d.rack_shelf || '—')}
                         ${(() => {
                             // In-transit files are physically held by a Receiving Officer in
                             // their department — show the holding Department as the current
@@ -594,14 +595,13 @@
                                 let dept = (d.receiving_department || '').trim();
                                 if (dept && !/department$/i.test(dept)) dept = dept + ' Department';
                                 return row('Department', dept || d.current_location)
-                                     + row('Rack / Shelf', d.rack_shelf)
                                      + row('Receiving Officer (holder)', d.receiving_officer_name);
                             }
                             return row('Current Location (Expected)', d.current_location)
-                                 + row('Rack / Shelf', d.rack_shelf)
                                  + row('Receiving Officer', d.receiving_officer_name);
                         })()}
                         ${row('Logged Out', d.logged_out_at)}
+                        ${row('Duration with holder', d.duration_with_holder)}
                         ${row('Request Sent', d.fr_sent_at ? (d.fr_sent_at + (d.fr_request_no ? ' · ' + d.fr_request_no : '')) : '')}
                         ${isFound ? `
                         <div class="mt-3 rounded-lg bg-green-50 border border-green-200 px-4 py-3">

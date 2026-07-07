@@ -26,34 +26,90 @@ class LandsFileNoMatchingController extends Controller
         $user = Auth::user();
         $search = $request->query('search');
 
-        // Query FileNumber table for matched records using new architecture
-        $query = FileNumber::where('pp_lands_matching', 1);
+        // Matched records now come from TWO sources:
+        //  1. file_indexings (pp_lands_matching = 1) -> Source: "Indexed"
+        //  2. fileNumber (pp_lands_matching = 1) that did NOT originate from an
+        //     indexed file -> Source: "Matched"
+        // We build a UNION of both so the list reflects every matched Land file.
+
+        // Indexed files that have been matched to a Physical Planning file.
+        $indexedSource = DB::connection('sqlsrv')->table('file_indexings')
+            ->where('pp_lands_matching', 1)
+            ->select([
+                'id',
+                'file_number as file_no',
+                'file_title as title',
+                'plot_number as plot_no',
+                'location',
+                'lga',
+                'pp_lands_date_matched as date_matched',
+                'pp_lands_time_matched as time_matched',
+                DB::raw("'Indexed' as source"),
+            ]);
+
+        // Directly matched fileNumber records that were NOT sourced from indexing
+        // (an indexed match mirrors onto fileNumber, so exclude those to avoid dupes).
+        $matchedSource = DB::connection('sqlsrv')->table('fileNumber')
+            ->where('pp_lands_matching', 1)
+            ->whereNotIn('mlsfNo', function ($q) {
+                $q->select('file_number')
+                  ->from('file_indexings')
+                  ->where('pp_lands_matching', 1)
+                  ->whereNotNull('file_number');
+            })
+            ->select([
+                'id',
+                'mlsfNo as file_no',
+                'FileName as title',
+                'plot_no',
+                'location',
+                'lga',
+                'pp_lands_date_matched as date_matched',
+                'pp_lands_time_matched as time_matched',
+                DB::raw("'Matched' as source"),
+            ]);
+
+        $union = $indexedSource->unionAll($matchedSource);
+
+        $query = DB::connection('sqlsrv')->query()->fromSub($union, 'matched');
 
         if ($search) {
-            $query->where(function($q) use ($search) {
-                $q->where('mlsfNo', 'LIKE', "%{$search}%")
-                  ->orWhere('FileName', 'LIKE', "%{$search}%")
-                  ->orWhere('location', 'LIKE', "%{$search}%")
-                  ->orWhere('tracking_id', 'LIKE', "%{$search}%");
+            $query->where(function ($q) use ($search) {
+                $q->where('file_no', 'LIKE', "%{$search}%")
+                  ->orWhere('title', 'LIKE', "%{$search}%")
+                  ->orWhere('location', 'LIKE', "%{$search}%");
             });
         }
 
-        $records = $query->orderBy('id', 'desc')
+        $records = $query->orderByDesc('date_matched')
+            ->orderByDesc('time_matched')
             ->paginate(20)
             ->appends(['search' => $search]);
 
-        $this->enrichMissingLocationFieldsFromIndexing($records, 'mlsfNo');
+        $this->enrichMissingLocationFieldsFromIndexing($records, 'file_no');
 
-        // Calculate Statistics using FileNumber matches
+        // Calculate Statistics across both sources.
+        $indexedStats = fn () => DB::connection('sqlsrv')->table('file_indexings')
+            ->where('pp_lands_matching', 1);
+        $matchedStats = fn () => DB::connection('sqlsrv')->table('fileNumber')
+            ->where('pp_lands_matching', 1)
+            ->whereNotIn('mlsfNo', function ($q) {
+                $q->select('file_number')
+                  ->from('file_indexings')
+                  ->where('pp_lands_matching', 1)
+                  ->whereNotNull('file_number');
+            });
+
         $stats = [
-            'total' => FileNumber::where('pp_lands_matching', 1)->count(),
-            'today' => FileNumber::where('pp_lands_matching', 1)
-                ->whereDate('pp_lands_date_matched', date('Y-m-d'))->count(),
-            'month' => FileNumber::where('pp_lands_matching', 1)
-                ->whereNotNull('pp_lands_date_matched')
-                ->whereMonth('pp_lands_date_matched', date('m'))
-                ->whereRaw('YEAR(pp_lands_date_matched) = ?', [date('Y')])
-                ->count(),
+            'total' => $indexedStats()->count() + $matchedStats()->count(),
+            'today' => $indexedStats()->whereDate('pp_lands_date_matched', date('Y-m-d'))->count()
+                + $matchedStats()->whereDate('pp_lands_date_matched', date('Y-m-d'))->count(),
+            'month' => $indexedStats()->whereNotNull('pp_lands_date_matched')
+                    ->whereMonth('pp_lands_date_matched', date('m'))
+                    ->whereRaw('YEAR(pp_lands_date_matched) = ?', [date('Y')])->count()
+                + $matchedStats()->whereNotNull('pp_lands_date_matched')
+                    ->whereMonth('pp_lands_date_matched', date('m'))
+                    ->whereRaw('YEAR(pp_lands_date_matched) = ?', [date('Y')])->count(),
         ];
 
         return view('lands_file_no_matching.index', compact(

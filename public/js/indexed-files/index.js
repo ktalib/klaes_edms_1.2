@@ -123,7 +123,7 @@ function renderRows(rows) {
               return `<td class="p-3 whitespace-nowrap">
                 ${fileNumberBadge}
                 ${row.has_edms_files ? `<div class="mt-1">
-                  <button type="button" class="edms-view-files-btn inline-flex items-center gap-1 text-[10px] font-bold text-orange-600 hover:text-orange-800 hover:underline transition-colors" data-id="${row.id}" data-file-number="${escapeHtml(row.file_number)}" data-registry-folder="Cadastral_Registry">
+                  <button type="button" class="edms-view-files-btn inline-flex items-center gap-1 text-[10px] font-bold text-orange-600 hover:text-orange-800 hover:underline transition-colors" data-id="${row.id}" data-file-number="${escapeHtml(row.file_number)}" data-registry-folder="Cadastral_Registry1">
                     <i data-lucide="folder-open" class="w-3 h-3"></i>
                     <span>View Files</span>
                   </button>
@@ -299,8 +299,8 @@ function renderRows(rows) {
         ${col('lga', `<td class="${standardCellClass}">${escapeHtml(lgaValue)}</td>`)}
         ${col('registry_batch_no', `<td class="${standardCellClass}">${escapeHtml(row.registry_batch_no)}</td>`)}
         ${col('dciv_reason', `<td class="p-3 text-gray-600 max-w-xs whitespace-normal break-words">${Number(row.dciv_status) === 1 && row.dciv_reason ? escapeHtml(row.dciv_reason) : '<span class="text-gray-400">-</span>'}</td>`)}
-        ${col('lat_value', buildLatCell(row))}
         ${col('lon_value', buildLonCell(row))}
+        ${col('lat_value', buildLatCell(row))}
         ${col('latlon', buildLatLonCell(row))}
         ${col('status', `<td class="p-3 whitespace-nowrap">${statusBadge}</td>`)}
       `;
@@ -1263,7 +1263,7 @@ function openEdmsFilesModal(id, fileNumber, registryFolder) {
           html += `
           <button type="button" data-edms-preview-index="${i}" class="edms-preview-trigger group block w-full text-left rounded-xl border border-slate-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition-all bg-slate-50">
             <div class="aspect-[4/3] bg-slate-100 flex items-center justify-center overflow-hidden">
-              <img src="${f.url}" alt="${escapeHtml(f.name)}" class="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" onerror="this.parentElement.innerHTML='<span class=text-slate-400 text-xs>Preview unavailable</span>'">
+              <img src="${f.url}" alt="${escapeHtml(f.name)}" draggable="false" oncontextmenu="return false" style="-webkit-user-drag:none;user-select:none;" class="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" onerror="this.parentElement.innerHTML='<span class=text-slate-400 text-xs>Preview unavailable</span>'">
             </div>
             <div class="px-2 py-1.5">
               <p class="text-[10px] font-semibold text-slate-600 truncate" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</p>
@@ -1318,25 +1318,53 @@ function openEdmsPreview(list, startIndex) {
   if (!Array.isArray(list) || !list.length) return;
   let index = Math.max(0, Math.min(startIndex || 0, list.length - 1));
 
+  // Zoom/rotate state for the currently displayed item
+  let rotation = 0;
+  let zoom = 1;
+
   let overlay = document.getElementById('edms-preview-overlay');
   if (!overlay) {
     overlay = document.createElement('div');
     overlay.id = 'edms-preview-overlay';
-    overlay.className = 'fixed inset-0 z-[200] hidden items-center justify-center bg-slate-950/85 backdrop-blur-sm';
+    overlay.className = 'fixed inset-0 z-[200] hidden items-center justify-center bg-slate-950/85 backdrop-blur-sm select-none';
     overlay.innerHTML = `
-      <button type="button" id="edms-preview-close" class="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition" aria-label="Close preview">
+      <button type="button" id="edms-preview-close" class="absolute top-4 right-4 z-[220] w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition" aria-label="Close preview">
         <i data-lucide="x" class="w-5 h-5"></i>
       </button>
-      <button type="button" id="edms-preview-prev" class="absolute left-4 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition" aria-label="Previous">
+      <button type="button" id="edms-preview-prev" class="absolute left-4 top-1/2 -translate-y-1/2 z-[220] w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition" aria-label="Previous">
         <i data-lucide="chevron-left" class="w-6 h-6"></i>
       </button>
-      <button type="button" id="edms-preview-next" class="absolute right-4 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition" aria-label="Next">
+      <button type="button" id="edms-preview-next" class="absolute right-4 top-1/2 -translate-y-1/2 z-[220] w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition" aria-label="Next">
         <i data-lucide="chevron-right" class="w-6 h-6"></i>
       </button>
-      <div class="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-white/10 text-white text-xs font-semibold tracking-wide" id="edms-preview-caption">—</div>
+      <div class="absolute top-4 left-1/2 -translate-x-1/2 z-[220] px-4 py-1.5 rounded-full bg-white/10 text-white text-xs font-semibold tracking-wide" id="edms-preview-caption">—</div>
+
+      <!-- Toolbar: rotate / zoom -->
+      <div class="absolute bottom-5 left-1/2 -translate-x-1/2 z-[220] flex items-center gap-1 px-2 py-1.5 rounded-full bg-white/10 backdrop-blur text-white shadow-lg" id="edms-preview-toolbar">
+        <button type="button" id="edms-rotate-left" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/20 transition" title="Rotate left"><i data-lucide="rotate-ccw" class="w-4 h-4"></i></button>
+        <button type="button" id="edms-rotate-right" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/20 transition" title="Rotate right"><i data-lucide="rotate-cw" class="w-4 h-4"></i></button>
+        <span class="w-px h-5 bg-white/20 mx-1"></span>
+        <button type="button" id="edms-zoom-out" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/20 transition" title="Zoom out"><i data-lucide="zoom-out" class="w-4 h-4"></i></button>
+        <button type="button" id="edms-zoom-in" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/20 transition" title="Zoom in"><i data-lucide="zoom-in" class="w-4 h-4"></i></button>
+        <button type="button" id="edms-reset" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/20 transition" title="Reset"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+      </div>
+
       <div class="w-full h-full flex items-center justify-center p-6 sm:p-12" id="edms-preview-stage"></div>
+
+      <!-- Watermark: repeated red "FOR OFFICIAL USE ONLY" overlay (non-interactive) -->
+      <div class="pointer-events-none absolute inset-0 z-[215]" id="edms-preview-watermark"></div>
     `;
     document.body.appendChild(overlay);
+
+    // Tiled diagonal red watermark
+    const wmSvg = `<svg xmlns='http://www.w3.org/2000/svg' width='360' height='230'><text x='24' y='140' fill='rgba(220,38,38,0.30)' font-family='Arial, sans-serif' font-size='24' font-weight='bold' transform='rotate(-30 180 115)'>FOR OFFICIAL USE ONLY</text></svg>`;
+    const wm = overlay.querySelector('#edms-preview-watermark');
+    wm.style.backgroundImage = `url("data:image/svg+xml,${encodeURIComponent(wmSvg)}")`;
+    wm.style.backgroundRepeat = 'repeat';
+
+    // Block right-click / drag-save across the whole viewer
+    overlay.addEventListener('contextmenu', (e) => e.preventDefault());
+    overlay.addEventListener('dragstart', (e) => e.preventDefault());
     if (window.lucide) window.lucide.createIcons();
   }
 
@@ -1345,23 +1373,51 @@ function openEdmsPreview(list, startIndex) {
   const closeBtn = overlay.querySelector('#edms-preview-close');
   const prevBtn = overlay.querySelector('#edms-preview-prev');
   const nextBtn = overlay.querySelector('#edms-preview-next');
+  const toolbar = overlay.querySelector('#edms-preview-toolbar');
+  const rotateLeftBtn = overlay.querySelector('#edms-rotate-left');
+  const rotateRightBtn = overlay.querySelector('#edms-rotate-right');
+  const zoomInBtn = overlay.querySelector('#edms-zoom-in');
+  const zoomOutBtn = overlay.querySelector('#edms-zoom-out');
+  const resetBtn = overlay.querySelector('#edms-reset');
+
+  // Apply the current rotation + zoom to the on-screen image (images only)
+  const applyTransform = () => {
+    const img = stage.querySelector('img');
+    if (!img) return;
+    img.style.transform = `rotate(${rotation}deg) scale(${zoom})`;
+    // Swap max bounds on quarter-turns so a rotated page still fits the viewport
+    if (Math.abs(rotation % 180) === 90) {
+      img.style.maxWidth = '82vh';
+      img.style.maxHeight = '88vw';
+    } else {
+      img.style.maxWidth = '88vw';
+      img.style.maxHeight = '82vh';
+    }
+  };
 
   const render = () => {
     const item = list[index];
     if (!item) return;
+    rotation = 0;
+    zoom = 1;
     caption.textContent = `${item.name}  ·  ${index + 1} / ${list.length}`;
-    if (item.type === 'image') {
+    const isImage = item.type === 'image';
+    // Rotate/zoom only apply to images
+    toolbar.style.display = isImage ? 'flex' : 'none';
+    if (isImage) {
       stage.innerHTML = `
-        <img src="${item.url}" alt="${escapeHtml(item.name)}" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl bg-white">
+        <img src="${item.url}" alt="${escapeHtml(item.name)}" draggable="false"
+             class="object-contain rounded-lg shadow-2xl bg-white transition-transform duration-200"
+             style="max-width:88vw;max-height:82vh;-webkit-user-drag:none;user-select:none;">
       `;
+      applyTransform();
     } else {
-      // PDF: use iframe; provide a fallback link
+      // PDF: toolbar hidden (no download), no "open in new tab" link
       stage.innerHTML = `
         <div class="w-full h-full max-w-5xl flex flex-col bg-white rounded-lg overflow-hidden shadow-2xl">
-          <iframe src="${item.url}#toolbar=1" class="w-full flex-1 border-0" title="${escapeHtml(item.name)}"></iframe>
-          <div class="px-4 py-2 bg-slate-100 border-t border-slate-200 text-xs text-slate-600 flex items-center justify-between">
-            <span class="truncate font-semibold">${escapeHtml(item.name)}</span>
-            <a href="${item.url}" target="_blank" rel="noopener noreferrer" class="text-red-600 hover:underline font-bold">Open in new tab</a>
+          <iframe src="${item.url}#toolbar=0&navpanes=0" class="w-full flex-1 border-0" title="${escapeHtml(item.name)}"></iframe>
+          <div class="px-4 py-2 bg-slate-100 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-center">
+            <span class="truncate font-semibold uppercase tracking-widest text-red-600">For Official Use Only</span>
           </div>
         </div>
       `;
@@ -1378,16 +1434,33 @@ function openEdmsPreview(list, startIndex) {
   };
   const next = () => { index = (index + 1) % list.length; render(); };
   const prev = () => { index = (index - 1 + list.length) % list.length; render(); };
+  const rotateLeft = () => { rotation -= 90; applyTransform(); };
+  const rotateRight = () => { rotation += 90; applyTransform(); };
+  const zoomIn = () => { zoom = Math.min(zoom + 0.25, 4); applyTransform(); };
+  const zoomOut = () => { zoom = Math.max(zoom - 0.25, 0.25); applyTransform(); };
+  const reset = () => { rotation = 0; zoom = 1; applyTransform(); };
   const onKey = (e) => {
     if (e.key === 'Escape') close();
     else if (e.key === 'ArrowRight') next();
     else if (e.key === 'ArrowLeft') prev();
+    else if (e.key === 'r' || e.key === 'R') rotateRight();
   };
 
   // (Re)bind handlers — clone-replace to avoid stacking listeners
-  const newClose = closeBtn.cloneNode(true); closeBtn.replaceWith(newClose); newClose.addEventListener('click', close);
-  const newPrev = prevBtn.cloneNode(true); prevBtn.replaceWith(newPrev); newPrev.addEventListener('click', prev);
-  const newNext = nextBtn.cloneNode(true); nextBtn.replaceWith(newNext); newNext.addEventListener('click', next);
+  const rebind = (el, handler) => {
+    const clone = el.cloneNode(true);
+    el.replaceWith(clone);
+    clone.addEventListener('click', handler);
+    return clone;
+  };
+  rebind(closeBtn, close);
+  rebind(prevBtn, prev);
+  rebind(nextBtn, next);
+  rebind(rotateLeftBtn, rotateLeft);
+  rebind(rotateRightBtn, rotateRight);
+  rebind(zoomInBtn, zoomIn);
+  rebind(zoomOutBtn, zoomOut);
+  rebind(resetBtn, reset);
   overlay.onclick = (e) => { if (e.target === overlay) close(); };
   document.addEventListener('keydown', onKey);
 

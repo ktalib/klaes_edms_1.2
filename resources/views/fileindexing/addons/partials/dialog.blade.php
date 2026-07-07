@@ -9,8 +9,16 @@
                 <i data-lucide="x" class="h-5 w-5"></i>
             </button>
         </div>
-        <div class="dialog-description">
-            Enter the details for the new file to be indexed
+        <div class="dialog-description flex items-center justify-between gap-3">
+            <span>Enter the details for the new file to be indexed</span>
+            {{-- Opens the Property Transaction Details modal directly (backfills from the
+                 selected File Number), without creating/updating the file index. --}}
+            <button type="button"
+                class="shrink-0 inline-flex items-center gap-2 px-4 py-2 border border-emerald-300 text-sm font-medium rounded-lg shadow-sm text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all duration-200"
+                id="add-property-transaction-btn">
+                <i data-lucide="file-plus-2" class="h-4 w-4"></i>
+                Add Property Transaction Details
+            </button>
         </div>
         <div class="dialog-content">
             <form

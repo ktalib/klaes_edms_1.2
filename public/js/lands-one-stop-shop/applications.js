@@ -2139,7 +2139,7 @@ function _ossOpenAcknowledgementModal(data) {
     // Store file_no for DB persistence in saveAcknowledgement
     var ackFileNoEl = document.getElementById('ack_file_no');
     if (ackFileNoEl) ackFileNoEl.value = rec.file_no || '';
-    document.getElementById('ack_sig_applicant_name').value = '';
+    document.getElementById('ack_sig_applicant_name').value = rec.party_2 || rec.party_1 || '';
     document.getElementById('ack_sig_applicant').value = '';
     document.getElementById('ack_sig_chairman_name').value = '';
     document.getElementById('ack_sig_chairman').value = '';

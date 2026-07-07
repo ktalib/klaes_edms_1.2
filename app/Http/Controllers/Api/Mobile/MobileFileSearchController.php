@@ -113,6 +113,10 @@ class MobileFileSearchController extends Controller
                 // In-transit timeline (null for every other outcome).
                 'date_requested'           => $dateRequested,
                 'date_collected'           => $dateCollected,
+                // How long the file has been with the current holder.
+                'held_since'               => $result['held_since'] ?? null,
+                'days_with_holder'         => $result['days_with_holder'] ?? null,
+                'duration_with_holder'     => $result['duration_with_holder'] ?? null,
                 // DCIV investigation flag (from the matched indexing row): 1 when this
                 // file is referenced as a related file by a DCIV record.
                 'dciv_status'              => (int) ($result['indexing']?->dciv_status ?? 0),

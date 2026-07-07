@@ -651,7 +651,7 @@ class LegalSearchController extends Controller
     {
         $request->validate([
             'file_number' => 'required|string|max:100',
-            'comment_type' => 'required|string|in:ground_rent,no_cofo,encumbrance,litigation',
+            'comment_type' => 'required|string|in:ground_rent,no_cofo,encumbrance,litigation,wrc,cofo',
             'amount' => 'nullable|numeric|min:0',
             'comment' => 'nullable|string|max:2000',
         ]);

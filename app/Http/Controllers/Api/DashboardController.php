@@ -222,8 +222,25 @@ class DashboardController extends Controller
                     ->count();
                 $gknCommissioned = 0;
 
+                // 8b. Physical Planning matched files (Shadow File Commissioning).
+                //     Matched = indexed files matched (file_indexings.pp_lands_matching = 1)
+                //     + fileNumber records matched directly (not sourced from indexing)
+                //     + any ST / SLTR shadow-file matches on fileNumber.
+                $phyMatched = $db->table('file_indexings')
+                        ->where('pp_lands_matching', 1)->count()
+                    + $db->table('fileNumber')
+                        ->where('pp_lands_matching', 1)
+                        ->whereNotIn('mlsfNo', function ($q) {
+                            $q->select('file_number')->from('file_indexings')
+                              ->where('pp_lands_matching', 1)->whereNotNull('file_number');
+                        })->count()
+                    + $db->table('fileNumber')->where('pp_st_matching', 1)->count()
+                    + $db->table('fileNumber')->where('pp_sltr_matching', 1)->count();
+
                 // 9. Headline "Total Number of Files" = whole total of all files
                 //    (raw fileNumber registry + every registry's indexed + commissioned)
+                //    Note: $phyIndexed stays 0 here so the headline total is not
+                //    double-counted; the Phy Planning card uses $phyMatched below.
                 $phyIndexed        = 0;
                 $phyCommissioned   = 0;
                 $registryIndexed   = $kangisIndexed + $cadastralIndexed + $stIndexed
@@ -242,7 +259,7 @@ class DashboardController extends Controller
                     'cadastral' => ['indexed' => number_format($cadastralIndexed), 'commissioned' => number_format($cadastralCommissioned)],
                         'st'  => ['indexed' => number_format($stIndexed),   'commissioned' => number_format($stCommissioned)],
                     'dciv'=> ['indexed' => number_format($dcivIndexed), 'commissioned' => number_format($dcivCommissioned)],
-                    'phy_planning' => ['indexed' => number_format(0), 'commissioned' => number_format(0)],
+                    'phy_planning' => ['indexed' => number_format($phyMatched), 'commissioned' => number_format($phyCommissioned)],
                     'sltr'=> ['indexed' => number_format($sltrIndexed), 'commissioned' => number_format($sltrCommissioned)],
                     'gkn' => ['indexed' => number_format($gknIndexed),  'commissioned' => number_format($gknCommissioned)],
                 ];

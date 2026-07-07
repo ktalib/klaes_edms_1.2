@@ -27,15 +27,59 @@
     });
     state.tab = "matching";
     state.showFolderModal = false;
-    state.folderModalUrl = "";
+    state.folderFileNumber = "";
+    state.folderFiles = [];
+    state.folderLoading = false;
+    state.folderError = "";
+    state.folderPreview = null;
+    state.folderFilesUrl = "{{ route('lands-file-no-matching.folder-files') }}";
     state.openFolderModal = function(fileNumber) {
         const safeFileNumber = fileNumber || "";
-        this.folderModalUrl = `http://10.50.1.2:7000/?folder_name=${encodeURIComponent(safeFileNumber)}`;
+        this.folderFileNumber = safeFileNumber;
+        this.folderFiles = [];
+        this.folderError = "";
+        this.folderPreview = null;
         this.showFolderModal = true;
+        this.loadFolderFiles();
+    };
+    state.loadFolderFiles = function() {
+        const safeFileNumber = this.folderFileNumber || "";
+        if (!safeFileNumber) {
+            this.folderError = "No file number provided.";
+            return;
+        }
+        this.folderLoading = true;
+        this.folderError = "";
+        fetch(`${this.folderFilesUrl}?folder_name=${encodeURIComponent(safeFileNumber)}`, {
+            headers: { "Accept": "application/json", "X-Requested-With": "XMLHttpRequest" }
+        })
+        .then(async (res) => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                this.folderFiles = [];
+                this.folderError = data.message || "Unable to load files for this folder.";
+                return;
+            }
+            this.folderFiles = data.files || [];
+            if (this.folderFiles.length === 0) {
+                this.folderError = "This folder does not contain any files.";
+            }
+        })
+        .catch(() => {
+            this.folderFiles = [];
+            this.folderError = "An error occurred while loading files.";
+        })
+        .finally(() => {
+            this.folderLoading = false;
+            this.$nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+        });
     };
     state.closeFolderModal = function() {
         this.showFolderModal = false;
-        this.folderModalUrl = "";
+        this.folderFileNumber = "";
+        this.folderFiles = [];
+        this.folderError = "";
+        this.folderPreview = null;
     };
     return state;
 })()'>
@@ -157,6 +201,7 @@
                                 <th class="px-6 py-4 text-center whitespace-nowrap">Plot No</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Location</th>
                                 <th class="px-6 py-4 whitespace-nowrap">LGA</th>
+                                <th class="px-6 py-4 text-center whitespace-nowrap">Source</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Matched By</th>
                                 <th class="px-6 py-4 text-center whitespace-nowrap">Time Matched</th>
                                 <th class="px-6 py-4 text-center whitespace-nowrap">Date Matched</th>
@@ -168,12 +213,23 @@
                             @forelse($records as $record)
                             <tr class="hover:bg-slate-50/50 transition-colors group">
                                  <td class="px-6 py-4 whitespace-nowrap text-xs">
-                                    <span class="font-mono font-bold text-emerald-600">{{ $record->mlsfNo }}</span>
+                                    <span class="font-mono font-bold text-emerald-600">{{ $record->file_no }}</span>
                                 </td>
-                                <td class="px-6 py-4 font-medium text-slate-700 whitespace-nowrap">{{ Str::limit($record->FileName, 30) }}</td>
+                                <td class="px-6 py-4 font-medium text-slate-700 whitespace-nowrap">{{ Str::limit($record->title, 30) }}</td>
                                 <td class="px-6 py-4 text-center font-mono text-xs whitespace-nowrap">{{ $record->plot_no ?? '—' }}</td>
                                 <td class="px-6 py-4 text-xs text-slate-500 whitespace-nowrap">{{ Str::limit($record->location, 40) }}</td>
                                 <td class="px-6 py-4 text-xs font-bold text-slate-600 whitespace-nowrap">{{ $record->lga ?? '—' }}</td>
+                                <td class="px-6 py-4 text-center whitespace-nowrap">
+                                    @if(($record->source ?? '') === 'Indexed')
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-[9px] font-black bg-blue-50 text-blue-700 border border-blue-100 uppercase tracking-widest shadow-sm">
+                                        Indexed
+                                    </span>
+                                    @else
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-[9px] font-black bg-amber-50 text-amber-700 border border-amber-100 uppercase tracking-widest shadow-sm">
+                                        Matched
+                                    </span>
+                                    @endif
+                                </td>
                                 <td class="px-6 py-4 text-xs whitespace-nowrap">
                                     <div class="flex items-center gap-2">
                                         <div class="w-6 h-6 rounded-lg bg-emerald-50 flex items-center justify-center text-[10px] font-black text-emerald-600 border border-emerald-100">
@@ -183,10 +239,10 @@
                                     </div>
                                 </td>
                                 <td class="px-6 py-4 text-center font-black text-slate-500 text-[11px] whitespace-nowrap">
-                                    <span class="px-2 py-1 bg-slate-100 rounded-md border border-slate-200">{{ $record->pp_lands_time_matched ? \Carbon\Carbon::parse($record->pp_lands_time_matched)->format('H:i:s') : '—' }}</span>
+                                    <span class="px-2 py-1 bg-slate-100 rounded-md border border-slate-200">{{ $record->time_matched ? \Carbon\Carbon::parse($record->time_matched)->format('H:i:s') : '—' }}</span>
                                 </td>
                                 <td class="px-6 py-4 text-center font-black text-emerald-600 text-[11px] whitespace-nowrap">
-                                    <span class="px-2 py-1 bg-emerald-50 rounded-md border border-emerald-100">{{ $record->pp_lands_date_matched ? \Carbon\Carbon::parse($record->pp_lands_date_matched)->format('jS M, Y') : '—' }}</span>
+                                    <span class="px-2 py-1 bg-emerald-50 rounded-md border border-emerald-100">{{ $record->date_matched ? \Carbon\Carbon::parse($record->date_matched)->format('jS M, Y') : '—' }}</span>
                                 </td>
                                 <td class="px-6 py-4 text-center whitespace-nowrap">
                                     <span class="inline-flex items-center px-3 py-1 rounded-full text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase tracking-widest shadow-sm">
@@ -207,7 +263,7 @@
                                                 <i data-lucide="eye" class="h-3.5 w-3.5"></i>
                                                 View
                                             </button>
-                                            <button @click.prevent="openFolderModal('{{ addslashes($record->mlsfNo) }}')" class="w-full px-4 py-2 text-left text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2">
+                                            <button @click.prevent="openFolderModal('{{ addslashes($record->file_no) }}')" class="w-full px-4 py-2 text-left text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2">
                                                 <i data-lucide="folder-open" class="h-3.5 w-3.5"></i>
                                                 Open File
                                             </button>
@@ -217,7 +273,7 @@
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="11" class="px-6 py-12 text-center text-slate-400 italic">No records found. Click "Match Existing FileNo (Lands) " to start.</td>
+                                <td colspan="12" class="px-6 py-12 text-center text-slate-400 italic">No records found. Click "Match Existing FileNo (Lands) " to start.</td>
                             </tr>
                             @endforelse
                         </tbody>
@@ -589,19 +645,93 @@
                 <div class="flex items-center justify-center min-h-screen px-4 py-6">
                     <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" @click="closeFolderModal()"></div>
 
-                    <div class="relative z-10 w-full max-w-6xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                    <div class="relative z-10 w-full max-w-6xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
                         <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-                            <h3 class="text-base font-bold text-slate-800">Open Folder</h3>
+                            <div class="flex items-center gap-3">
+                                <div class="p-2 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
+                                    <i data-lucide="folder-open" class="h-5 w-5"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-base font-bold text-slate-800">File Documents</h3>
+                                    <p class="text-xs text-slate-500 font-mono" x-text="folderFileNumber"></p>
+                                </div>
+                            </div>
                             <button type="button" @click="closeFolderModal()" class="text-slate-400 hover:text-red-500 transition-colors">
                                 <i data-lucide="x" class="h-5 w-5"></i>
                             </button>
                         </div>
 
-                        <div class="p-4">
-                            <iframe :src="folderModalUrl" class="w-full h-[70vh] rounded-xl border border-slate-200 bg-white"></iframe>
-                            <div class="mt-3 text-xs text-slate-500 hidden" x-show="folderModalUrl">
-                                If preview is blocked, <a :href="folderModalUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-700">open folder in a new tab</a>.
+                        <div class="flex-1 overflow-y-auto p-6 bg-slate-50/60">
+                            <!-- Loading -->
+                            <div x-show="folderLoading" class="flex flex-col items-center justify-center py-20 gap-4">
+                                <div class="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+                                <span class="text-sm font-bold text-slate-500 uppercase tracking-widest">Loading files...</span>
                             </div>
+
+                            <!-- Error / Empty -->
+                            <div x-show="!folderLoading && folderError" class="flex flex-col items-center justify-center py-20 gap-3 text-center">
+                                <div class="p-4 bg-slate-100 text-slate-400 rounded-2xl">
+                                    <i data-lucide="folder-x" class="h-10 w-10"></i>
+                                </div>
+                                <p class="text-sm font-bold text-slate-500" x-text="folderError"></p>
+                            </div>
+
+                            <!-- Files grid -->
+                            <div x-show="!folderLoading && !folderError && folderFiles.length > 0"
+                                 class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                <template x-for="file in folderFiles" :key="file.name">
+                                    <div class="group bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all overflow-hidden cursor-pointer"
+                                         @click="folderPreview = file">
+                                        <div class="aspect-square bg-slate-100 flex items-center justify-center overflow-hidden">
+                                            <template x-if="file.is_image">
+                                                <img :src="file.url" :alt="file.name" loading="lazy"
+                                                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+                                            </template>
+                                            <template x-if="!file.is_image">
+                                                <div class="flex flex-col items-center gap-2 text-slate-400">
+                                                    <i :data-lucide="file.is_pdf ? 'file-text' : 'file'" class="h-10 w-10"></i>
+                                                    <span class="text-[10px] font-black uppercase" x-text="file.ext"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                        <div class="px-3 py-2 border-t border-slate-100">
+                                            <p class="text-[11px] font-medium text-slate-600 truncate" :title="file.name" x-text="file.name"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- File preview lightbox -->
+                    <div x-show="folderPreview" x-cloak
+                         class="fixed inset-0 z-[140] flex items-center justify-center p-4"
+                         @keydown.escape.window="folderPreview = null">
+                        <div class="fixed inset-0 bg-black/80 backdrop-blur-sm" @click="folderPreview = null"></div>
+                        <div class="relative z-10 max-w-5xl w-full max-h-[90vh] flex flex-col items-center">
+                            <div class="w-full flex items-center justify-between text-white mb-3">
+                                <span class="text-sm font-mono truncate" x-text="folderPreview?.name"></span>
+                                <div class="flex items-center gap-3">
+                                    <a :href="folderPreview?.url" target="_blank" rel="noopener noreferrer"
+                                       class="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors">
+                                        <i data-lucide="external-link" class="h-3.5 w-3.5"></i> Open
+                                    </a>
+                                    <a :href="folderPreview?.url" :download="folderPreview?.name"
+                                       class="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors">
+                                        <i data-lucide="download" class="h-3.5 w-3.5"></i> Download
+                                    </a>
+                                    <button type="button" @click="folderPreview = null" class="text-white/70 hover:text-white transition-colors">
+                                        <i data-lucide="x" class="h-6 w-6"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <template x-if="folderPreview?.is_image">
+                                <img :src="folderPreview?.url" :alt="folderPreview?.name"
+                                     class="max-w-full max-h-[80vh] rounded-xl shadow-2xl object-contain bg-white">
+                            </template>
+                            <template x-if="folderPreview && !folderPreview.is_image">
+                                <iframe :src="folderPreview?.url" class="w-full h-[80vh] rounded-xl bg-white shadow-2xl"></iframe>
+                            </template>
                         </div>
                     </div>
                 </div>

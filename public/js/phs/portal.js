@@ -200,8 +200,36 @@
       </div>`;
     }).join('') : '<div class="text-center py-8 text-gray-500 text-sm sm:text-base">No timeline rows available</div>';
 
+    renderTimelineNotices(result);
+
     window.scrollTo({ top: $('file-details-section').offsetTop - 80, behavior: 'smooth' });
     window.lucide?.createIcons();
+  }
+
+  // Report notices — mirrors the main Legal Search remarks (caveat / W-R-C /
+  // CoFO / ground rent / litigation / no-CoFO / encumbrance). Adverse flags
+  // (caveat, investigation, W-R-C) render red; positive/neutral notes green.
+  function renderTimelineNotices(result) {
+    const box = $('timeline-notices');
+    if (!box) return;
+
+    const RED = { border: '#fecaca', bg: '#fef2f2', text: '#b91c1c' };
+    const GREEN = { border: '#bbf7d0', bg: '#f0fdf4', text: '#166534' };
+    const AMBER = { border: '#fde68a', bg: '#fffbeb', text: '#92400e' };
+
+    const notices = [];
+    const adverseCaveat = result.is_caveated || result.under_investigation;
+    if (result.caveat_note) notices.push({ text: result.caveat_note, c: adverseCaveat ? RED : GREEN });
+    if (result.wrc_comment) notices.push({ text: result.wrc_comment, c: RED });
+    if (result.cofo_comment) notices.push({ text: result.cofo_comment, c: GREEN });
+    if (result.ground_rent) notices.push({ text: result.ground_rent, c: AMBER });
+    if (result.litigation_comment) notices.push({ text: result.litigation_comment, c: RED });
+    if (result.no_cofo_comment) notices.push({ text: result.no_cofo_comment, c: GREEN });
+    if (result.encumbrance_comment) notices.push({ text: result.encumbrance_comment, c: GREEN });
+
+    box.innerHTML = notices.map(n =>
+      `<div style="border:1px solid ${n.c.border};background:${n.c.bg};color:${n.c.text};border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;line-height:1.5;">${esc(n.text)}</div>`
+    ).join('');
   }
 
   async function performSearch() {

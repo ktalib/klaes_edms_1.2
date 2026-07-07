@@ -3047,6 +3047,10 @@ class PropertyRecordController extends Controller
                         'transaction_type' => $transaction['transaction_type'] ?? null,
                         'instrument_type' => $transaction['instrument_type'] ?? ($transaction['transaction_type'] ?? null),
                         'title_type' => $this->determineTitleType($transaction['transaction_type'] ?? ''),
+                        // Instrument lifecycle status (Normal / Normal Cancellation / Total Cancellation).
+                        // Written to whichever destination table has a `status` column
+                        // (file_history_staging, CofO_staging, pra) via the column filter below.
+                        'status' => trim((string) ($transaction['status'] ?? '')) ?: 'Normal',
                         'transaction_date' => $transaction['transaction_date'] ?? null,
                         'op_serial_number' => $transaction['op_serial_number'] ?? null,
                         'regNo' => $registrationNumber,
