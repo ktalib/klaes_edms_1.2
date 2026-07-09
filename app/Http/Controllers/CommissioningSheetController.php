@@ -121,25 +121,9 @@ class CommissioningSheetController extends Controller
                     ->first();
 
                 if ($mlsRow && !empty($mlsRow->source)) {
-                    $sourceMap = [
-                        'Subdivision'       => 'Subdivision',
-                        'Merger'            => 'Merger',
-                        'Separation'        => 'Separation',
-                        'Extension'         => 'Extension',
-                        'Change of Purpose' => 'Change of Purpose',
-                        'Temporary'         => 'Temporary',
-                    ];
-                    $src = trim($mlsRow->source);
-                    foreach ($sourceMap as $key => $label) {
-                        if (stripos($src, $key) !== false) {
-                            $data['related_file_title'] = $label;
-                            break;
-                        }
-                    }
-                    // If source doesn't match map, store it as-is
-                    if (empty($data['related_file_title'])) {
-                        $data['related_file_title'] = $src;
-                    }
+                    // Source values are already human-readable labels
+                    // (Conversion, Change of Purpose, Subdivision, Merger, ...)
+                    $data['related_file_title'] = trim($mlsRow->source);
                 }
             }
 
@@ -401,25 +385,9 @@ class CommissioningSheetController extends Controller
                     ->first();
 
                 if ($mlsRow && !empty($mlsRow->source)) {
-                    $sourceMap = [
-                        'Subdivision'       => 'Subdivision',
-                        'Merger'            => 'Merger',
-                        'Separation'        => 'Separation',
-                        'Extension'         => 'Extension',
-                        'Change of Purpose' => 'Change of Purpose',
-                        'Temporary'         => 'Temporary',
-                    ];
-                    $src = trim($mlsRow->source);
-                    foreach ($sourceMap as $key => $label) {
-                        if (stripos($src, $key) !== false) {
-                            $data['related_file_title'] = $label;
-                            break;
-                        }
-                    }
-                    // Store raw source value if not in the map
-                    if (empty($data['related_file_title'])) {
-                        $data['related_file_title'] = $src;
-                    }
+                    // Source values are already human-readable labels
+                    // (Conversion, Change of Purpose, Subdivision, Merger, ...)
+                    $data['related_file_title'] = trim($mlsRow->source);
                 }
             }
 

@@ -15,7 +15,7 @@
         <div class="p-6">
 
   <!-- Main Content -->
-
+ 
   <main class="flex-1 p-6">
     @include('legal_search.partials.dashboard')
     @include('legal_search.partials.file-history')

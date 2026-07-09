@@ -480,6 +480,75 @@ class LegalSearchController extends Controller
     }
 
     /**
+     * Update File Information fields on the file_indexings record for the searched file.
+     * Matched by file_number first, then by KANGIS / New KANGIS file number.
+     */
+    public function updateFileIndexing(Request $request)
+    {
+        $validated = $request->validate([
+            'file_number' => 'required|string|max:100',
+            'kangis_file_no' => 'nullable|string|max:100',
+            'new_kangis_file_no' => 'nullable|string|max:100',
+            'file_title' => 'nullable|string|max:255',
+            'plot_no' => 'nullable|string|max:255',
+            'size' => 'nullable|string|max:100',
+            'tp_no' => 'nullable|string|max:100',
+            'district' => 'nullable|string|max:100',
+            'lga' => 'nullable|string|max:100',
+            'land_use' => 'nullable|string|max:100',
+        ]);
+
+        $candidates = array_values(array_filter(array_unique([
+            trim($validated['file_number']),
+            trim((string) ($validated['kangis_file_no'] ?? '')),
+            trim((string) ($validated['new_kangis_file_no'] ?? '')),
+        ]), fn ($v) => $v !== '' && $v !== '-'));
+
+        $record = null;
+        foreach ($candidates as $fileNo) {
+            $record = FileIndexing::where('file_number', $fileNo)
+                ->orWhere('kangis_file_no', $fileNo)
+                ->orWhere('new_kangis_file_no', $fileNo)
+                ->first();
+            if ($record) {
+                break;
+            }
+        }
+
+        if (!$record) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No file indexing record found for this file number.',
+            ], 404);
+        }
+
+        $record->fill([
+            'file_title' => $validated['file_title'] ?? null,
+            'plot_number' => $validated['plot_no'] ?? null,
+            'plot_size' => $validated['size'] ?? null,
+            'tp_no' => $validated['tp_no'] ?? null,
+            'district' => $validated['district'] ?? null,
+            'lga' => $validated['lga'] ?? null,
+            'land_use_type' => $validated['land_use'] ?? null,
+        ]);
+        $record->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'File information updated successfully.',
+            'data' => [
+                'file_title' => $record->file_title,
+                'plot_no' => $record->plot_number,
+                'size' => $record->plot_size,
+                'tp_no' => $record->tp_no,
+                'district' => $record->district,
+                'lga' => $record->lga,
+                'land_use' => $record->land_use_type,
+            ],
+        ]);
+    }
+
+    /**
      * Transfer caveat from a source record to a target record (PRA/CofO only).
      */
     public function transferCaveat(Request $request)
@@ -651,7 +720,7 @@ class LegalSearchController extends Controller
     {
         $request->validate([
             'file_number' => 'required|string|max:100',
-            'comment_type' => 'required|string|in:ground_rent,no_cofo,encumbrance,litigation,wrc,cofo',
+            'comment_type' => 'required|string|in:ground_rent,no_cofo,encumbrance,litigation,wrc,cofo,commencement_date',
             'amount' => 'nullable|numeric|min:0',
             'comment' => 'nullable|string|max:2000',
         ]);

@@ -79,7 +79,11 @@ class FilearchiveController extends Controller
 
             // Storage-demo folders have no tracker data — everything reads as
             // "in the registry" for the legend, and the filter is inert.
-            $statusCounts = ['registry' => $completedFiles->total(), 'in_transit' => 0];
+            $statusCounts = [
+                'registry' => $completedFiles->total(),
+                'in_transit' => 0,
+                'missing' => \App\Models\MissingFile::where('status', '!=', \App\Models\MissingFile::STATUS_FOUND)->count(),
+            ];
             $activeStatusFilter = null;
 
             return view('filearchive.index', compact(
@@ -229,9 +233,11 @@ class FilearchiveController extends Controller
         $transitCount = (clone $countsBase)
             ->whereIn('file_number', $this->inTransitFileNumberSubquery())
             ->count();
+        $missingCount = \App\Models\MissingFile::where('status', '!=', \App\Models\MissingFile::STATUS_FOUND)->count();
         $statusCounts = [
             'registry' => max($totalForCounts - $transitCount, 0),
             'in_transit' => $transitCount,
+            'missing' => $missingCount,
         ];
 
         $activeStatusFilter = in_array($request->get('status_filter'), ['registry', 'in_transit'], true)
@@ -241,6 +247,135 @@ class FilearchiveController extends Controller
             $completedFiles->whereIn('file_number', $this->inTransitFileNumberSubquery());
         } elseif ($activeStatusFilter === 'registry') {
             $completedFiles->whereNotIn('file_number', $this->inTransitFileNumberSubquery());
+        }
+
+        // Apply sorting - default by year ascending (oldest first: 1981, 1982, ...)
+        $sort = $request->get('sort', 'year_asc');
+        
+        // Remove default ordering (orderBy('updated_at', 'desc')) and reapply
+        $completedFiles = $completedFiles->reorder();
+        
+        switch ($sort) {
+            case 'year_asc':
+                // Sort by year ascending (oldest files first: 1981, 1982, ...)
+                $completedFiles->orderByRaw("CASE 
+                    WHEN file_number LIKE '%-1981-%' THEN 1
+                    WHEN file_number LIKE '%-1982-%' THEN 2
+                    WHEN file_number LIKE '%-1983-%' THEN 3
+                    WHEN file_number LIKE '%-1984-%' THEN 4
+                    WHEN file_number LIKE '%-1985-%' THEN 5
+                    WHEN file_number LIKE '%-1986-%' THEN 6
+                    WHEN file_number LIKE '%-1987-%' THEN 7
+                    WHEN file_number LIKE '%-1988-%' THEN 8
+                    WHEN file_number LIKE '%-1989-%' THEN 9
+                    WHEN file_number LIKE '%-1990-%' THEN 10
+                    WHEN file_number LIKE '%-1991-%' THEN 11
+                    WHEN file_number LIKE '%-1992-%' THEN 12
+                    WHEN file_number LIKE '%-1993-%' THEN 13
+                    WHEN file_number LIKE '%-1994-%' THEN 14
+                    WHEN file_number LIKE '%-1995-%' THEN 15
+                    WHEN file_number LIKE '%-1996-%' THEN 16
+                    WHEN file_number LIKE '%-1997-%' THEN 17
+                    WHEN file_number LIKE '%-1998-%' THEN 18
+                    WHEN file_number LIKE '%-1999-%' THEN 19
+                    WHEN file_number LIKE '%-2000-%' THEN 20
+                    WHEN file_number LIKE '%-2001-%' THEN 21
+                    WHEN file_number LIKE '%-2002-%' THEN 22
+                    WHEN file_number LIKE '%-2003-%' THEN 23
+                    WHEN file_number LIKE '%-2004-%' THEN 24
+                    WHEN file_number LIKE '%-2005-%' THEN 25
+                    WHEN file_number LIKE '%-2006-%' THEN 26
+                    WHEN file_number LIKE '%-2007-%' THEN 27
+                    WHEN file_number LIKE '%-2008-%' THEN 28
+                    WHEN file_number LIKE '%-2009-%' THEN 29
+                    WHEN file_number LIKE '%-2010-%' THEN 30
+                    WHEN file_number LIKE '%-2011-%' THEN 31
+                    WHEN file_number LIKE '%-2012-%' THEN 32
+                    WHEN file_number LIKE '%-2013-%' THEN 33
+                    WHEN file_number LIKE '%-2014-%' THEN 34
+                    WHEN file_number LIKE '%-2015-%' THEN 35
+                    WHEN file_number LIKE '%-2016-%' THEN 36
+                    WHEN file_number LIKE '%-2017-%' THEN 37
+                    WHEN file_number LIKE '%-2018-%' THEN 38
+                    WHEN file_number LIKE '%-2019-%' THEN 39
+                    WHEN file_number LIKE '%-2020-%' THEN 40
+                    WHEN file_number LIKE '%-2021-%' THEN 41
+                    WHEN file_number LIKE '%-2022-%' THEN 42
+                    WHEN file_number LIKE '%-2023-%' THEN 43
+                    WHEN file_number LIKE '%-2024-%' THEN 44
+                    WHEN file_number LIKE '%-2025-%' THEN 45
+                    WHEN file_number LIKE '%-2026-%' THEN 46
+                    ELSE 47
+                END ASC, file_number ASC");
+                break;
+            case 'year_desc':
+                // Sort by year descending (newest files first: 2026, 2025, ...)
+                $completedFiles->orderByRaw("CASE 
+                    WHEN file_number LIKE '%-2026-%' THEN 1
+                    WHEN file_number LIKE '%-2025-%' THEN 2
+                    WHEN file_number LIKE '%-2024-%' THEN 3
+                    WHEN file_number LIKE '%-2023-%' THEN 4
+                    WHEN file_number LIKE '%-2022-%' THEN 5
+                    WHEN file_number LIKE '%-2021-%' THEN 6
+                    WHEN file_number LIKE '%-2020-%' THEN 7
+                    WHEN file_number LIKE '%-2019-%' THEN 8
+                    WHEN file_number LIKE '%-2018-%' THEN 9
+                    WHEN file_number LIKE '%-2017-%' THEN 10
+                    WHEN file_number LIKE '%-2016-%' THEN 11
+                    WHEN file_number LIKE '%-2015-%' THEN 12
+                    WHEN file_number LIKE '%-2014-%' THEN 13
+                    WHEN file_number LIKE '%-2013-%' THEN 14
+                    WHEN file_number LIKE '%-2012-%' THEN 15
+                    WHEN file_number LIKE '%-2011-%' THEN 16
+                    WHEN file_number LIKE '%-2010-%' THEN 17
+                    WHEN file_number LIKE '%-2009-%' THEN 18
+                    WHEN file_number LIKE '%-2008-%' THEN 19
+                    WHEN file_number LIKE '%-2007-%' THEN 20
+                    WHEN file_number LIKE '%-2006-%' THEN 21
+                    WHEN file_number LIKE '%-2005-%' THEN 22
+                    WHEN file_number LIKE '%-2004-%' THEN 23
+                    WHEN file_number LIKE '%-2003-%' THEN 24
+                    WHEN file_number LIKE '%-2002-%' THEN 25
+                    WHEN file_number LIKE '%-2001-%' THEN 26
+                    WHEN file_number LIKE '%-2000-%' THEN 27
+                    WHEN file_number LIKE '%-1999-%' THEN 28
+                    WHEN file_number LIKE '%-1998-%' THEN 29
+                    WHEN file_number LIKE '%-1997-%' THEN 30
+                    WHEN file_number LIKE '%-1996-%' THEN 31
+                    WHEN file_number LIKE '%-1995-%' THEN 32
+                    WHEN file_number LIKE '%-1994-%' THEN 33
+                    WHEN file_number LIKE '%-1993-%' THEN 34
+                    WHEN file_number LIKE '%-1992-%' THEN 35
+                    WHEN file_number LIKE '%-1991-%' THEN 36
+                    WHEN file_number LIKE '%-1990-%' THEN 37
+                    WHEN file_number LIKE '%-1989-%' THEN 38
+                    WHEN file_number LIKE '%-1988-%' THEN 39
+                    WHEN file_number LIKE '%-1987-%' THEN 40
+                    WHEN file_number LIKE '%-1986-%' THEN 41
+                    WHEN file_number LIKE '%-1985-%' THEN 42
+                    WHEN file_number LIKE '%-1984-%' THEN 43
+                    WHEN file_number LIKE '%-1983-%' THEN 44
+                    WHEN file_number LIKE '%-1982-%' THEN 45
+                    WHEN file_number LIKE '%-1981-%' THEN 46
+                    ELSE 47
+                END ASC, file_number ASC");
+                break;
+            case 'file_number_asc':
+                $completedFiles->orderBy('file_number', 'asc');
+                break;
+            case 'file_number_desc':
+                $completedFiles->orderBy('file_number', 'desc');
+                break;
+            case 'title_asc':
+                $completedFiles->orderBy('file_title', 'asc');
+                break;
+            case 'title_desc':
+                $completedFiles->orderBy('file_title', 'desc');
+                break;
+            case 'updated_desc':
+            default:
+                $completedFiles->orderBy('updated_at', 'desc');
+                break;
         }
 
         $completedFiles = $completedFiles->paginate(12)->appends($request->query());

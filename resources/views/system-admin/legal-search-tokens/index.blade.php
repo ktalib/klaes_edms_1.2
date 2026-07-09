@@ -91,6 +91,7 @@
                                     <th class="px-6 py-4">Client Address</th>
                                     <th class="px-6 py-4">Transaction Purpose</th>
                                     <th class="px-6 py-4">Receipt</th>
+                                    <th class="px-6 py-4 text-center">Usage</th>
                                     <th class="px-6 py-4 text-center">Status</th>
                                     <th class="px-6 py-4 text-center">Created At</th>
                                     <th class="px-6 py-4 text-right">Actions</th>
@@ -136,9 +137,21 @@
                                             <div class="text-xs font-bold text-slate-700">{{ $token->receipt_number }}</div>
                                         </td>
                                         <td class="px-6 py-4 text-center">
-                                            @if($token->is_used)
+                                            @php $maxUses = \App\Models\LegalSearchToken::MAX_USES; @endphp
+                                            <span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1 text-xs font-bold border border-slate-200 {{ $token->usage_count >= $maxUses ? 'text-rose-600' : 'text-slate-700' }}"
+                                                  title="{{ $token->usage_count }} of {{ $maxUses }} uses spent">
+                                                <i data-lucide="repeat" class="h-3 w-3"></i>
+                                                {{ $token->usage_count }}/{{ $maxUses }}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 text-center">
+                                            @if($token->usage_count >= $maxUses)
                                                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase tracking-widest">
                                                     Used
+                                                </span>
+                                            @elseif($token->usage_count > 0)
+                                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-black bg-blue-50 text-blue-700 border border-blue-100 uppercase tracking-widest">
+                                                    Partial
                                                 </span>
                                             @else
                                                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-black bg-amber-50 text-amber-700 border border-amber-100 uppercase tracking-widest">
@@ -152,16 +165,20 @@
                                             <div class="mt-1 text-[9px] font-bold text-indigo-400 uppercase tracking-tighter">By: {{ $token->creator->name ?? 'System' }}</div>
                                         </td>
                                         <td class="px-6 py-4 text-right">
-                                            @if(!$token->is_used)
-                                                <button onclick="deleteToken({{ $token->id }})" class="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Delete Token">
-                                                    <i data-lucide="trash-2" class="h-4 w-4"></i>
-                                                </button>
-                                            @endif
+                                            <button type="button"
+                                                data-token-id="{{ $token->id }}"
+                                                data-usage="{{ (int) $token->usage_count }}"
+                                                data-file="{{ $token->file_number }}"
+                                                onclick="openTokenActions(event, this)"
+                                                class="inline-flex items-center justify-center p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                                title="Actions">
+                                                <i data-lucide="more-vertical" class="h-4 w-4"></i>
+                                            </button>
                                         </td>
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="11" class="px-6 py-12 text-center text-slate-400">
+                                        <td colspan="12" class="px-6 py-12 text-center text-slate-400">
                                             <div class="flex flex-col items-center justify-center gap-2">
                                                 <i data-lucide="search" class="h-8 w-8 opacity-20"></i>
                                                 <p>No tokens generated yet.</p>
@@ -331,6 +348,86 @@
         </div>
     </div>
 
+    {{-- Row Actions Menu (shared, positioned by JS) --}}
+    <div id="token-actions-menu" class="hidden fixed z-[1000] w-52 bg-white rounded-xl shadow-2xl border border-slate-200 py-1.5 text-sm">
+        <button type="button" data-action="reset"
+            class="w-full text-left px-3 py-2 flex items-center gap-2.5 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+            <i data-lucide="rotate-ccw" class="h-4 w-4 text-indigo-500"></i>
+            Token Reset
+        </button>
+        <div class="my-1 border-t border-slate-100" data-role="delete-divider"></div>
+        <button type="button" data-action="delete"
+            class="w-full text-left px-3 py-2 flex items-center gap-2.5 text-red-600 hover:bg-red-50 transition-colors">
+            <i data-lucide="trash-2" class="h-4 w-4"></i>
+            Delete Token
+        </button>
+    </div>
+
+    {{-- Token Reset Modal --}}
+    <div id="token-reset-modal" class="fixed inset-0 z-[1001] hidden items-center justify-center p-4 sm:p-6">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="closeResetModal()"></div>
+        <div class="relative bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-300">
+            <div class="bg-indigo-600 px-6 py-5 flex items-center justify-between">
+                <div class="flex items-center gap-3 text-white">
+                    <div class="p-2 bg-white/20 rounded-xl">
+                        <i data-lucide="rotate-ccw" class="h-5 w-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold">Token Reset</h3>
+                        <p class="text-indigo-100 text-[11px] font-medium uppercase tracking-wider">Choose a count to reset to</p>
+                    </div>
+                </div>
+                <button onclick="closeResetModal()" class="text-white/70 hover:text-white transition-colors">
+                    <i data-lucide="x" class="h-6 w-6"></i>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-5">
+                {{-- File + current usage summary --}}
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">File Number</p>
+                        <p id="reset-file-number" class="text-sm font-bold text-slate-800 break-words">—</p>
+                    </div>
+                    <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Current Usage</p>
+                        <p id="reset-usage" class="text-sm font-bold text-slate-800">—</p>
+                    </div>
+                </div>
+
+                {{-- Reset options --}}
+                <div class="space-y-2.5">
+                    <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Reset To</p>
+                    <button type="button" data-count="1"
+                        class="reset-option group w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/50 transition-all text-left">
+                        <span class="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-amber-50 text-amber-600 text-sm font-black border border-amber-100">1</span>
+                        <span>
+                            <span class="block text-sm font-bold text-slate-800">1<sup>st</sup> Count</span>
+                            <span class="block text-[11px] text-slate-400">Both uses available (0/{{ \App\Models\LegalSearchToken::MAX_USES }})</span>
+                        </span>
+                        <i data-lucide="chevron-right" class="h-4 w-4 text-slate-300 ml-auto group-hover:text-indigo-500"></i>
+                    </button>
+                    <button type="button" data-count="2"
+                        class="reset-option group w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/50 transition-all text-left">
+                        <span class="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-blue-50 text-blue-600 text-sm font-black border border-blue-100">2</span>
+                        <span>
+                            <span class="block text-sm font-bold text-slate-800">2<sup>nd</sup> Count</span>
+                            <span class="block text-[11px] text-slate-400">One use available (1/{{ \App\Models\LegalSearchToken::MAX_USES }})</span>
+                        </span>
+                        <i data-lucide="chevron-right" class="h-4 w-4 text-slate-300 ml-auto group-hover:text-indigo-500"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 border-t border-slate-100 flex items-center justify-end">
+                <button type="button" onclick="closeResetModal()"
+                    class="px-6 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
     {{-- Global File Number Selector Modal --}}
     @include('components.global-fileno-modal')
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
@@ -422,6 +519,126 @@
             }
         });
     });
+
+    // ---- Row Actions Menu (Token Reset / Delete) ----
+    const MAX_TOKEN_USES = {{ \App\Models\LegalSearchToken::MAX_USES }};
+    let activeTokenId = null;
+    let activeTokenUsage = 0;
+    let activeTokenFile = '';
+
+    function openTokenActions(event, btn) {
+        event.stopPropagation();
+        activeTokenId = parseInt(btn.getAttribute('data-token-id'), 10);
+        activeTokenUsage = parseInt(btn.getAttribute('data-usage'), 10) || 0;
+        activeTokenFile = btn.getAttribute('data-file') || '';
+
+        const menu = document.getElementById('token-actions-menu');
+        const rect = btn.getBoundingClientRect();
+
+        // A fully-exhausted token can no longer be deleted (only reset).
+        const deleteBtn = menu.querySelector('[data-action="delete"]');
+        const deleteDivider = menu.querySelector('[data-role="delete-divider"]');
+        const canDelete = activeTokenUsage < MAX_TOKEN_USES;
+        deleteBtn.classList.toggle('hidden', !canDelete);
+        deleteDivider.classList.toggle('hidden', !canDelete);
+
+        // Show first (to measure), then position anchored to the button's right edge.
+        menu.classList.remove('hidden');
+        const menuWidth = menu.offsetWidth;
+        let left = rect.right - menuWidth;
+        if (left < 8) left = 8;
+        let top = rect.bottom + 6;
+        if (top + menu.offsetHeight > window.innerHeight - 8) {
+            top = rect.top - menu.offsetHeight - 6;
+        }
+        menu.style.left = left + 'px';
+        menu.style.top = top + 'px';
+
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    function closeTokenActions() {
+        document.getElementById('token-actions-menu').classList.add('hidden');
+    }
+
+    // Close the menu on any outside click or scroll.
+    document.addEventListener('click', function(e) {
+        const menu = document.getElementById('token-actions-menu');
+        if (!menu.classList.contains('hidden') && !menu.contains(e.target)) {
+            closeTokenActions();
+        }
+    });
+    window.addEventListener('scroll', closeTokenActions, true);
+
+    // Wire the menu buttons.
+    document.querySelectorAll('#token-actions-menu [data-action]').forEach(function(item) {
+        item.addEventListener('click', function() {
+            const action = this.getAttribute('data-action');
+            closeTokenActions();
+            if (activeTokenId === null) return;
+            if (action === 'delete') {
+                deleteToken(activeTokenId);
+            } else if (action === 'reset') {
+                openResetModal();
+            }
+        });
+    });
+
+    // ---- Token Reset Modal ----
+    function openResetModal() {
+        document.getElementById('reset-file-number').textContent = activeTokenFile || '—';
+        document.getElementById('reset-usage').textContent = activeTokenUsage + '/' + MAX_TOKEN_USES;
+        $('#token-reset-modal').removeClass('hidden').addClass('flex');
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    function closeResetModal() {
+        $('#token-reset-modal').addClass('hidden').removeClass('flex');
+    }
+
+    // Wire the count options inside the reset modal.
+    document.querySelectorAll('#token-reset-modal .reset-option').forEach(function(option) {
+        option.addEventListener('click', function() {
+            const count = parseInt(this.getAttribute('data-count'), 10);
+            closeResetModal();
+            resetToken(activeTokenId, count);
+        });
+    });
+
+    function resetToken(id, count) {
+        const ordinal = count === 1 ? '1st' : '2nd';
+        const remaining = MAX_TOKEN_USES - (count - 1);
+        Swal.fire({
+            title: `Reset to ${ordinal} Count?`,
+            html: `This will position the token at its <b>${ordinal}</b> count, leaving <b>${remaining}</b> use(s) available for this file.`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#4f46e5',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: `Yes, reset`
+        }).then((result) => {
+            if (!result.isConfirmed) return;
+            $.ajax({
+                url: `/legal-search-tokens/${id}/reset`,
+                method: 'POST',
+                data: {
+                    _token: '{{ csrf_token() }}',
+                    count: count
+                },
+                success: function(response) {
+                    if (response.success) {
+                        Swal.fire('Reset!', response.message, 'success').then(() => {
+                            window.location.reload();
+                        });
+                    }
+                },
+                error: function(xhr) {
+                    const message = xhr.responseJSON ? xhr.responseJSON.message : 'Something went wrong';
+                    Swal.fire('Error', message, 'error');
+                }
+            });
+        });
+    }
 
     function deleteToken(id) {
         Swal.fire({

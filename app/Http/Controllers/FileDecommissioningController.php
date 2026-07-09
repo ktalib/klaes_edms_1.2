@@ -255,21 +255,19 @@ class FileDecommissioningController extends Controller
                     }
                 }
 
-                // Some legacy rows store a KANGIS-format number (e.g. "KNML 6992", "MLKN 2455")
-                // in the MLS column with an empty KANGIS column. Route it to the correct column
-                // so KANGIS files are not mislabelled as MLS. Detector matches the app convention
-                // (LegalSearchService::classifyFileNumber).
-                $mlsDisplay = trim($row->mlsfNo ?? '');
-                $kangisDisplay = trim($row->kangisFileNo ?? '');
-                if ($kangisDisplay === '' && $mlsDisplay !== '' && preg_match('/^[A-Z]{4}\s?\d{3,6}$/i', $mlsDisplay)) {
-                    $kangisDisplay = $mlsDisplay;
-                    $mlsDisplay = '';
-                }
+                // Single File No column: list every file number the row carries
+                // (MLS, KANGIS, new KANGIS), deduplicated, one per line.
+                $fileNos = array_values(array_unique(array_filter([
+                    trim($row->mlsfNo ?? ''),
+                    trim($row->kangisFileNo ?? ''),
+                    trim($row->NewKANGISFileNo ?? ''),
+                ], function ($n) {
+                    return $n !== '';
+                })));
 
                 return [
                     'id' => $row->id,
-                    'mls_file_no' => $mlsDisplay ?: 'N/A',
-                    'kangis_file_no' => $kangisDisplay ?: 'N/A',
+                    'file_no' => $fileNos ? implode('<br>', array_map('e', $fileNos)) : 'N/A',
                     'related_file' => $this->renderRelatedFile($relatedFiles[$this->relatedFileKey($row)] ?? []),
                     'prop_id' => $propId !== null && trim((string) $propId) !== '' ? trim((string) $propId) : '-',
                     'file_name' => trim($row->FileName ?? '') ?: 'N/A',

@@ -1533,7 +1533,9 @@ class FileNumberApiController extends Controller
         if ($withJoin) {
             $selects[] = 'ma.land_use as ma_land_use';
             $selects[] = 'ma.property_lga as ma_lga';
-            $selects[] = 'ma.property_district as ma_location';
+            $selects[] = 'ma.property_district as ma_district';
+            $selects[] = 'ma.property_street_name as ma_street_name';
+            $selects[] = 'ma.property_house_no as ma_house_no';
             $selects[] = 'ma.property_plot_no as ma_plot_no';
             $selects[] = 'fi.plot_number as fi_plot_no';
             $selects[] = 'fi.tp_no as fi_tp_no';
@@ -1553,6 +1555,30 @@ class FileNumberApiController extends Controller
     /**
      * Map raw database values into API shape.
      */
+    /**
+     * Resolve a display location for a file number record.
+     *
+     * Prefers an explicit location stored on the fileNumber row, then a location
+     * from the latest file indexing, and finally assembles one from the mother
+     * application's property parts (house no, street, district) so files that are
+     * not yet indexed still backfill a usable location.
+     */
+    private function resolveLocation(array $record): ?string
+    {
+        $explicit = trim((string) ($record['location'] ?? ''));
+        if ($explicit !== '') {
+            return $explicit;
+        }
+
+        $parts = array_values(array_filter([
+            $record['ma_house_no'] ?? null,
+            $record['ma_street_name'] ?? null,
+            $record['ma_district'] ?? null,
+        ], fn ($v) => trim((string) $v) !== ''));
+
+        return !empty($parts) ? implode(', ', $parts) : null;
+    }
+
     private function transformFileNumberRecord(array $record): array
     {
         $indexingStatus = $this->resolveIndexingStatus($record);
@@ -1565,7 +1591,7 @@ class FileNumberApiController extends Controller
             'kangis_file_no' => $record['kangisFileNo'] ?? null,
             'new_kangis_file_no' => $record['NewKANGISFileNo'] ?? null,
             'file_name' => $record['FileName'] ?? $record['fi_file_title'] ?? null,
-            'location' => $record['location'] ?? $record['ma_location'] ?? null,
+            'location' => $this->resolveLocation($record),
             'district' => $record['district'] ?? $record['fi_district'] ?? $record['ma_district'] ?? null,
             'lga'      => $record['lga'] ?? $record['fi_lga'] ?? $record['ma_lga'] ?? null,
             'plot_no'  => $record['plot_no'] ?? $record['fi_plot_no'] ?? $record['ma_plot_no'] ?? null,

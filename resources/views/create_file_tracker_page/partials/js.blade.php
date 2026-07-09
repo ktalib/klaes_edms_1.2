@@ -36,6 +36,24 @@
         displayEl.value = realValue ? _encryptTrackingId(realValue) : '';
     }
 
+    // ── Temporary file support ─────────────────────────────────────────────────
+    // When "Is Temporary File" is checked, the TMP code is appended to the
+    // Tracking ID so the temporary file becomes a standalone file for tracking
+    // purposes only (it never collides with the parent file's tracker).
+    const TEMP_TRACKING_CODE = 'TMP';
+
+    function isTempFileChecked() {
+        const cb = document.getElementById('is-temp-file');
+        return !!(cb && cb.checked);
+    }
+
+    // Strip any existing TMP code, then re-append it when the checkbox is on.
+    function withTempCode(id) {
+        if (!id) return id;
+        const base = String(id).replace(new RegExp('-' + TEMP_TRACKING_CODE + '$', 'i'), '');
+        return isTempFileChecked() ? base + '-' + TEMP_TRACKING_CODE : base;
+    }
+
     // Digital Request module flag — set once from Blade so JS never has to parse strings
     window.isDigitalRequestModule = {{ in_array(strtolower($module ?? ''), ['digital_request','digital-request']) ? 'true' : 'false' }};
 
@@ -93,7 +111,7 @@
         }
 
         if (registryCode && baseId) {
-            const previewId = baseId + '-' + registryCode;
+            const previewId = withTempCode(baseId + '-' + registryCode);
             setTrackingDisplay(previewId);
             showNotification(
                 `Registry "${registryName}" selected — Tracking ID will include code ${registryCode}`,
@@ -101,8 +119,22 @@
             );
             console.log('[Registry Change] preview tracking ID:', previewId);
         } else if (!registryCode && $trackingField.data('base-tracking-id')) {
-            setTrackingDisplay($trackingField.data('base-tracking-id'));
+            setTrackingDisplay(withTempCode($trackingField.data('base-tracking-id')));
         }
+    });
+
+    // "Is Temporary File" toggle → append/strip the TMP code on the Tracking ID.
+    $('#is-temp-file').on('change', function () {
+        const realEl = document.getElementById('tracking-id-real');
+        const current = (realEl && realEl.value || '').trim();
+        if (!current) return;
+        setTrackingDisplay(withTempCode(current));
+        showNotification(
+            this.checked
+                ? `Temporary file — Tracking ID will include the ${TEMP_TRACKING_CODE} code`
+                : 'Temporary file unchecked — Tracking ID restored',
+            'info'
+        );
     });
 
     const destinationOfficeSelect = $('#current-office');
@@ -2308,6 +2340,11 @@
         resolvedWorkflowState = null;
         forceNextMetadataLookup = false;
         currentRackShelfValue = null;
+        // When metadata is reset, also unlock any Quick-Search-backfilled office details
+        // so the user can start fresh with a different file number.
+        if (window._unlockOfficeDetails) {
+            window._unlockOfficeDetails();
+        }
     }
 
     function startMetadataFetch() {
@@ -2363,7 +2400,7 @@
 
         trackingField.removeClass('metadata-loading');
         if (trackingValue !== '') {
-            setTrackingDisplay(trackingValue);
+            setTrackingDisplay(withTempCode(trackingValue));
             trackingField
                 .prop('disabled', true)
                 .addClass('tracking-id-locked')
@@ -2381,7 +2418,7 @@
         const $selectedReg = $('#origin-office option:selected');
         const existingCode = $selectedReg.data('registry-code');
         if (existingCode && trackingValue) {
-            setTrackingDisplay(trackingValue + '-' + existingCode);
+            setTrackingDisplay(withTempCode(trackingValue + '-' + existingCode));
         }
 
         const resolvedName = (data.file_name || data.file_title || '').trim();
@@ -2625,6 +2662,20 @@
         // file's stored registry would overwrite that choice and break the
         // approval chain — skip it.
         if (_crossModuleRequestMode) {
+            return;
+        }
+
+        // Quick Search backfill: the requester/office details were captured on
+        // the file request and must not be overwritten by a metadata response
+        // that arrives after the backfill cascade has already run. Also guard
+        // against late-arriving AJAX responses that fire after _qsBackfillMode
+        // has been cleared — if the office-details card is already locked by
+        // the backfill, skip the overwrite entirely.
+        if (window._qsBackfillMode) {
+            return;
+        }
+        const qsCard = document.getElementById('office-details-card');
+        if (qsCard && qsCard.dataset.qsLocked === '1') {
             return;
         }
 
@@ -3081,19 +3132,26 @@
                     targetFields: ['file_number'], // Target our file number field
                     // Scope the selectable registries to the current module so, e.g., the
                     // Land module never surfaces SLTR/ST/KANGIS files (and vice versa).
-                    // Modules not listed here keep the full set of tabs.
+                    // Modules not listed here keep the full set of tabs. KANGIS and SLTR
+                    // intentionally show the full modal (all tabs) — see initialTab below.
                     allowedTabs: (function () {
                         const m = @json(strtolower($module ?? ''));
-                        // The base Land create-file-tracker page ('' / 'land') shows the
-                        // full set of registry tabs; other modules stay scoped to their
-                        // own registry. Modules not listed here also keep all tabs.
                         const map = {
-                            'kangis': ['kangis'],
-                            'sltr':  ['sltr'],
                             'st':    ['sit'],
                             'dciv':  ['dciv']
                         };
                         return Object.prototype.hasOwnProperty.call(map, m) ? map[m] : null;
+                    })(),
+                    // Open the modal on the tab that matches the current module so the
+                    // user still lands on the right registry, while every other tab
+                    // stays available (full modal, like the base Land page).
+                    initialTab: (function () {
+                        const m = @json(strtolower($module ?? ''));
+                        const map = {
+                            'kangis': 'kangis',
+                            'sltr':  'sltr'
+                        };
+                        return map[m] || 'mls';
                     })(),
                     callback: function (data) {
                         // This callback is executed when user clicks Apply
@@ -3158,6 +3216,12 @@
                 $btn.toggleClass('text-gray-300 cursor-not-allowed', !enabled)
                     .toggleClass('text-gray-500 hover:text-blue-600 hover:bg-blue-50', enabled)
                     .attr('title', enabled ? 'Select from existing file numbers' : 'Files are logged through Quick Search');
+
+                // Office Details stays locked until the override is checked,
+                // since the office fields don't apply until a file has been
+                // manually selected in place of the Quick Search flow.
+                $('#office-details-fieldset').prop('disabled', !enabled)
+                    .toggleClass('opacity-60', !enabled);
             });
         } else {
             console.warn('GlobalFileNoModal not available');
@@ -4602,7 +4666,10 @@
             receiving_officer_name: receivingOfficerName,
             module: window.currentModule || null,
             origin_registry_code: currentTracker.originRegistryCode || null,
-            proposed_tracking_id: currentTracker.trackingId || null
+            proposed_tracking_id: currentTracker.trackingId || null,
+            // Temporary file — the TMP code is already on the proposed tracking ID;
+            // the flag lets the backend re-append it if it must regenerate the ID.
+            is_temporary_file: isTempFileChecked()
         };
 
         // Show loading state
@@ -6989,9 +7056,14 @@
                         @page { size: A4; margin: 0.3in; }
                         body { font-family: Arial, sans-serif; color: #333; line-height: 1.4; background: white; font-size: 12px; }
                         .print-container { max-width: 8.2in; margin: 0 auto; padding: 0.35in; background: white; }
-                        .header { text-align: center; margin-bottom: 1.2rem; padding-bottom: 0.75rem; border-bottom: 3px solid #2563eb; }
+                        .header { margin-bottom: 1.2rem; padding-bottom: 0.75rem; border-bottom: 3px solid #2563eb; }
+                        .header-top { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+                        .header-logo-wrap { flex: 0 0 auto; width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; }
+                        .header-logo-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+                        .header-titles { flex: 1 1 auto; text-align: center; }
                         .header .logo { width: 120px; height: auto; margin: 0 auto 0.75rem auto; display: block; }
                         .header h1 { font-size: 1.25rem; margin-bottom: 0.5rem; color: #1f2937; }
+                        .header .ministry-name { font-size: 0.85rem; font-weight: 700; color: #1f2937; text-transform: uppercase; letter-spacing: 0.03em; margin-top: 0.25rem; }
                         .header-meta { display: grid; grid-template-columns: 1fr auto; gap: 1.25rem; align-items: center; justify-items: start; margin-top: 1rem; font-size: 0.9rem; color: #666; }
                         .header-meta .file-meta { text-align: left; }
                         .header-meta .file-meta div { margin: 0.15rem 0; }
@@ -7041,7 +7113,12 @@
                 <body>
                     <div class="print-container">
                         <div class="header">
-                            <img class="logo" src="/assets/logo/logo.png" alt="Organization Logo">
+                        <div class="header-top">
+                            <div class="header-logo-wrap">
+                                <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Ministry Logo" onerror="this.style.display='none'">
+                            </div>
+                            <div class="header-titles">
+                            <div class="ministry-name">Ministry of Land &amp; Physical Planning</div>
                             ${urlView === 'st'
                                 ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF SECTIONAL TITLING</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
                                 : (urlView === 'dciv'
@@ -7058,6 +7135,11 @@
                                     )
                                 )
                             }
+                            </div>
+                            <div class="header-logo-wrap">
+                                <img src="http://app.klaes.ng/assets/logo/ministry2.png" alt="Ministry Logo" onerror="this.style.display='none'">
+                            </div>
+                        </div>
                             <div class="header-meta">
                                 <div class="file-meta">
                                     <div><strong>File No:</strong> ${fileNoValue}</div>
@@ -7738,6 +7820,8 @@
         updateReceivingOfficerHint(getDefaultReceivingOfficerHint());
         updateReceivingOfficerInfo('');
         document.getElementById('sidebar-file-no').textContent = '-';
+        const tempFileCheckbox = document.getElementById('is-temp-file');
+        if (tempFileCheckbox) tempFileCheckbox.checked = false;
         currentTracker = null;
         clearCrossRequestPreview();
         initializeIds();
@@ -9677,6 +9761,11 @@
         $('#sidebar-file-no').text(fileNo || '-');
 
         if (event.type === 'change') {
+            // If the user changed the file number away from the one that was backfilled
+            // from Quick Search, unlock the office details so they can enter fresh values.
+            if (window._backfilledFileNo && fileNo !== window._backfilledFileNo) {
+                if (window._unlockOfficeDetails) window._unlockOfficeDetails();
+            }
             triggerMetadataLookup(fileNo, { force: forceNextMetadataLookup });
             loadCrossRequestPreview(fileNo, { force: true });
             forceNextMetadataLookup = false;
@@ -9781,24 +9870,49 @@
         const reqOffice      = urlParams.get('req_office');
         const reqOfficeCode  = urlParams.get('req_office_code');
         const reqDepartment  = urlParams.get('req_department');
+        const reqRegistry    = urlParams.get('req_registry');
+        // Log-a-File flow: lock (grey out) the auto-filled office details.
+        const lockOffice     = urlParams.get('lock_office') === '1';
+        // Quick Search marked this as a temporary file → pre-check the toggle so
+        // the TMP code is appended once the tracking ID resolves.
+        const isTempFromQs   = urlParams.get('is_temp') === '1';
 
         if (!returnFileNo && !returnTracking) return;
+
+        if (isTempFromQs) {
+            const tempCb = document.getElementById('is-temp-file');
+            if (tempCb) tempCb.checked = true;
+        }
 
         // Show the open requesters for this file (the "Log File" path), ordered by
         // seniority, so the front desk honors the most senior requester.
         if (returnFileNo) loadFileRequesters(returnFileNo);
 
+        // Store the backfilled file number so the file-no change handler can detect
+        // when the user switches to a different file and unlock the office details.
+        window._backfilledFileNo = returnFileNo || null;
+
         // Clean the URL immediately so a refresh doesn't re-apply
         const cleanUrl = new URL(window.location.href);
-        ['file_number','tracking_id','file_title','req_officer','req_office','req_office_code','req_department']
+        ['file_number','tracking_id','file_title','req_officer','req_office','req_office_code','req_department','req_registry','lock_office','is_temp']
             .forEach(p => cleanUrl.searchParams.delete(p));
         window.history.replaceState({}, '', cleanUrl.toString());
+
+        // ── Quick Search backfill guard ────────────────────────────────────────
+        // When returning from Quick Search (Log File), the requester/office details
+        // from the file request must NOT be overwritten by the metadata lookup that
+        // fires asynchronously below. Set a flag so displayRegistryInformation()
+        // skips the origin-office (and downstream cascade) until backfill completes.
+        window._qsBackfillMode = Boolean(reqOfficer || reqOffice || reqDepartment || reqRegistry);
 
         // Backfill the Destination Office (Departments) → Receiving Office → Receiving
         // Officer from the requester details captured at request time (best-effort,
         // staggered so each cascade level can populate before the next is set).
         function backfillRequesterDetails() {
-            if (!reqOfficer && !reqOffice && !reqDepartment) return;
+            if (!reqOfficer && !reqOffice && !reqDepartment && !reqRegistry) {
+                window._qsBackfillMode = false;
+                return;
+            }
             const setSel = ($el, val, byText) => {
                 if (!$el || !$el.length || !val) return false;
                 let match = null;
@@ -9807,15 +9921,104 @@
                     const candidate = byText ? opt.text().trim() : (opt.attr('value') || '');
                     if (candidate.toLowerCase() === String(val).toLowerCase()) match = opt.attr('value');
                 });
-                if (match !== null) { $el.val(match).trigger('change'); return true; }
+                if (match !== null) {
+                    $el.val(match).trigger('change');
+                    // Select2 integration — if the element uses Select2, also trigger
+                    // change.select2 so the widget re-renders the selected option.
+                    if ($.fn.select2 && $el.data('select2')) {
+                        $el.trigger('change.select2');
+                    }
+                    return true;
+                }
                 return false;
             };
+            // Origin registry — match by value first (registry name), then by visible text.
+            if (reqRegistry) { if (!setSel($('#origin-office'), reqRegistry, false)) setSel($('#origin-office'), reqRegistry, true); }
             if (reqDepartment) setSel($('#current-office'), reqDepartment, false);
             setTimeout(() => {
                 if (reqOfficeCode) { if (!setSel($('#receiving-office'), reqOfficeCode, false)) setSel($('#receiving-office'), reqOffice, true); }
                 else if (reqOffice) setSel($('#receiving-office'), reqOffice, true);
-                setTimeout(() => { if (reqOfficer) setSel($('#receiving-officer'), reqOfficer, true); }, 400);
+                setTimeout(() => {
+                    // Retry the receiving officer backfill up to 3 times with a 1s
+                    // interval — the receiving directory may not have loaded yet.
+                    function trySetOfficer(attempts) {
+                        if (reqOfficer && setSel($('#receiving-officer'), reqOfficer, true)) {
+                            // Officer was set successfully
+                        } else if (reqOfficer && attempts > 0) {
+                            setTimeout(() => trySetOfficer(attempts - 1), 1000);
+                            return;
+                        }
+                        // Grey out the auto-filled office details once every cascade level is set.
+                        // Clear the backfill guard AFTER the lock is applied, so a late-arriving
+                        // metadata AJAX response cannot overwrite the origin-office in between.
+                        if (lockOffice) {
+                            setTimeout(function () {
+                                greyOutOfficeDetails();
+                                window._qsBackfillMode = false;
+                            }, 300);
+                        } else {
+                            window._qsBackfillMode = false;
+                        }
+                    }
+                    trySetOfficer(3);
+                }, 400);
             }, 400);
+        }
+
+        // Lock (grey out) the Office Details when a file is logged from Quick Search:
+        // the requester/office details were captured on the file request and must not be
+        // re-entered here. Fields are locked visually but NOT via `disabled`, so their
+        // auto-filled values still submit with the form (mirrors the cross-module lock).
+        function greyOutOfficeDetails() {
+            const card = document.getElementById('office-details-card');
+            if (!card || card.dataset.qsLocked === '1') return;
+            card.dataset.qsLocked = '1';
+            ['#origin-office', '#current-office', '#receiving-office', '#receiving-officer'].forEach(sel => {
+                const el = document.querySelector(sel);
+                if (!el) return;
+                el.dataset.qsLocked = '1';
+                el.style.pointerEvents = 'none';
+                el.tabIndex = -1;
+                el.setAttribute('aria-disabled', 'true');
+                el.classList.add('cursor-not-allowed', 'bg-gray-100', 'text-gray-700', 'ring-1', 'ring-gray-200');
+                // Block interaction with the Select2 widget rendered alongside the native select.
+                const s2 = el.parentElement && el.parentElement.querySelector('.select2-container');
+                if (s2) { s2.style.pointerEvents = 'none'; s2.style.opacity = '0.75'; }
+            });
+            // Header note so the clerk understands why the fields are locked.
+            const header = card.querySelector('.px-6.py-4');
+            if (header && !header.querySelector('[data-qs-lock-note]')) {
+                const note = document.createElement('p');
+                note.setAttribute('data-qs-lock-note', '');
+                note.className = 'mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600';
+                note.innerHTML = '<i data-lucide="lock" class="h-3.5 w-3.5"></i> Auto-filled from the file request — locked.';
+                header.appendChild(note);
+                if (window.lucide) window.lucide.createIcons();
+            }
+        }
+
+        // Unlock the Office Details when the user changes the file number away from
+        // the backfilled one, so they can enter fresh requester/office details.
+        window._unlockOfficeDetails = function unlockOfficeDetails() {
+            const card = document.getElementById('office-details-card');
+            if (!card) return;
+            delete card.dataset.qsLocked;
+            ['#origin-office', '#current-office', '#receiving-office', '#receiving-officer'].forEach(sel => {
+                const el = document.querySelector(sel);
+                if (!el || el.dataset.qsLocked !== '1') return;
+                delete el.dataset.qsLocked;
+                el.style.pointerEvents = '';
+                el.tabIndex = 0;
+                el.removeAttribute('aria-disabled');
+                el.classList.remove('cursor-not-allowed', 'bg-gray-100', 'text-gray-700', 'ring-1', 'ring-gray-200');
+                // Restore interaction with the Select2 widget rendered alongside the native select.
+                const s2 = el.parentElement && el.parentElement.querySelector('.select2-container');
+                if (s2) { s2.style.pointerEvents = ''; s2.style.opacity = ''; }
+            });
+            // Remove the lock note
+            const note = card.querySelector('[data-qs-lock-note]');
+            if (note) note.remove();
+            window._backfilledFileNo = null;
         }
         setTimeout(backfillRequesterDetails, 800);
 
@@ -9841,9 +10044,9 @@
         $('#sidebar-file-no').text(returnFileNo || '-');
 
         if (returnTracking) {
-            setTrackingDisplay(returnTracking);
+            setTrackingDisplay(withTempCode(returnTracking));
             $('#tracking-id').prop('disabled', true).addClass('tracking-id-locked');
-            $('#sidebar-tracking-id').text(returnTracking);
+            $('#sidebar-tracking-id').text(withTempCode(returnTracking));
         }
 
         if (returnTitle) {
@@ -10266,6 +10469,7 @@
         if (window.lucide) window.lucide.createIcons();
     };
 
+ 
 </script>
 
 

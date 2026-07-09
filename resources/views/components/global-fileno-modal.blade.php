@@ -17,10 +17,17 @@
                         <span id="modal-header-title">File Number Selector</span>
                     </h3>
                 </div>
-                <button type="button" class="p-2 hover:bg-white/20 rounded transition-colors"
-                    id="global-fileno-modal-close" onclick="event.stopPropagation(); GlobalFileNoModal.close();">
-                    <i data-lucide="x" class="w-6 h-6"></i>
-                </button>
+                <div class="flex items-center gap-1">
+                    <button type="button" class="p-2 hover:bg-white/20 rounded transition-colors"
+                        id="global-fileno-modal-refresh" title="Refresh file numbers"
+                        onclick="event.stopPropagation(); GlobalFileNoModal.refresh(this);">
+                        <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+                    </button>
+                    <button type="button" class="p-2 hover:bg-white/20 rounded transition-colors"
+                        id="global-fileno-modal-close" onclick="event.stopPropagation(); GlobalFileNoModal.close();">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -569,6 +576,8 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- SLTR FILE DETAILS UI -->
+                        <div id="sltr-details-container" class="mt-3"></div>
                     </div>
                 </div>
 
@@ -595,6 +604,8 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- OLD MLS FILE DETAILS UI -->
+                        <div id="old_mls-details-container" class="mt-3"></div>
                     </div>
                 </div>
 
@@ -640,6 +651,8 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- SIT FILE DETAILS UI -->
+                        <div id="sit-details-container" class="mt-3"></div>
                     </div>
                 </div>
 
@@ -686,6 +699,8 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- DCIV FILE DETAILS UI -->
+                        <div id="dciv-details-container" class="mt-3"></div>
                     </div>
                 </div>
 
@@ -728,6 +743,8 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- GKN FILE DETAILS UI -->
+                        <div id="gkn-details-container" class="mt-3"></div>
                     </div>
                 </div>
             </div> <!-- End Tab Content Container -->
@@ -741,6 +758,13 @@
             </div>
 
             <div class="flex space-x-3">
+                <button type="button" id="global-fileno-modal-refresh-footer"
+                    class="px-4 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-100 flex items-center space-x-1"
+                    title="Refresh file numbers"
+                    onclick="GlobalFileNoModal.refresh(this)">
+                    <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                    <span>Refresh</span>
+                </button>
                 <button type="button" class="px-4 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-100"
                     onclick="GlobalFileNoModal.close()">
                     Cancel

@@ -1789,16 +1789,42 @@ class InstrumentRegistrationController extends Controller
             $rejectedCount = 0; // No rejected status in this context
             $totalCount = $allInstruments->count();
 
-            // ST Deeds view: registered instruments broken down by application type (PUA / SUA / Primary)
+            // ST Deeds view: registered and pending instruments broken down by application type (PUA / SUA / Primary)
             $registeredByAppType = ['PUA' => 0, 'SUA' => 0, 'Primary' => 0];
+            $pendingByAppType = ['PUA' => 0, 'SUA' => 0, 'Primary' => 0];
+            $pendingByInstrumentType = ['Assignment' => 0, 'Fragmentation' => 0, 'CofO' => 0];
             if ($isStDeeds) {
-                $registeredInstruments = $allInstruments->where('status', 'registered');
-                $registeredByAppType['PUA'] = $registeredInstruments
-                    ->filter(fn($i) => strtoupper(trim($i->application_type ?? '')) === 'PUA')->count();
-                $registeredByAppType['SUA'] = $registeredInstruments
-                    ->filter(fn($i) => strtoupper(trim($i->application_type ?? '')) === 'SUA')->count();
-                $registeredByAppType['Primary'] = $registeredInstruments
-                    ->filter(fn($i) => strtoupper(trim($i->application_type ?? '')) === 'PRIMARY')->count();
+                $countByAppType = function ($instruments) {
+                    $counts = ['PUA' => 0, 'SUA' => 0, 'Primary' => 0];
+                    foreach ($instruments as $i) {
+                        $type = strtoupper(trim($i->application_type ?? ''));
+                        if ($type === 'PUA') {
+                            $counts['PUA']++;
+                        } elseif ($type === 'SUA') {
+                            $counts['SUA']++;
+                        } elseif ($type === 'PRIMARY') {
+                            $counts['Primary']++;
+                        }
+                    }
+                    return $counts;
+                };
+                $registeredByAppType = $countByAppType($allInstruments->where('status', 'registered'));
+                $pendingByAppType = $countByAppType($allInstruments->where('status', 'pending'));
+
+                // Pending broken down by ST instrument type
+                foreach ($allInstruments->where('status', 'pending') as $i) {
+                    switch ($i->instrument_type ?? '') {
+                        case 'ST Assignment (Transfer of Title)':
+                            $pendingByInstrumentType['Assignment']++;
+                            break;
+                        case 'ST Fragmentation':
+                            $pendingByInstrumentType['Fragmentation']++;
+                            break;
+                        case 'Sectional Titling CofO':
+                            $pendingByInstrumentType['CofO']++;
+                            break;
+                    }
+                }
             }
 
             // Process property descriptions and durations
@@ -1921,6 +1947,8 @@ class InstrumentRegistrationController extends Controller
                 'rejectedCount',
                 'totalCount',
                 'registeredByAppType',
+                'pendingByAppType',
+                'pendingByInstrumentType',
                 'instrumentTypes',
                 'fullDataForJs',
                 'isStDeeds',
@@ -1938,6 +1966,8 @@ class InstrumentRegistrationController extends Controller
             $stGroups = collect();
             $pendingCount = $registeredCount = $rejectedCount = $totalCount = 0;
             $registeredByAppType = ['PUA' => 0, 'SUA' => 0, 'Primary' => 0];
+            $pendingByAppType = ['PUA' => 0, 'SUA' => 0, 'Primary' => 0];
+            $pendingByInstrumentType = ['Assignment' => 0, 'Fragmentation' => 0, 'CofO' => 0];
             $instrumentTypes = collect();
 
             return view('instrument_registration.index', compact(
@@ -1949,6 +1979,8 @@ class InstrumentRegistrationController extends Controller
                 'rejectedCount',
                 'totalCount',
                 'registeredByAppType',
+                'pendingByAppType',
+                'pendingByInstrumentType',
                 'instrumentTypes',
                 'fullDataForJs',
                 'isStDeeds',

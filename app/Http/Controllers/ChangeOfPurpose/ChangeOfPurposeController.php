@@ -485,7 +485,7 @@ class ChangeOfPurposeController extends Controller
     {
         $record = ChangeOfPurposeApplication::findOrFail($id);
         $record->update([
-            'application_generated_at' => now(),
+            'created_at' => now(),
             'updated_by' => Auth::id(),
         ]);
         return response()->json(['success' => true, 'message' => 'Application generated.']);

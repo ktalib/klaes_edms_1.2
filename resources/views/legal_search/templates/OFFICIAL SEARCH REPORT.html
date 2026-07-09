@@ -361,6 +361,12 @@
           <td><strong id="report-district-lga">-</strong></td>
         </tr>
         <tr>
+          <td class="bold-lbl-left">Term:</td>
+          <td><strong id="report-term">-</strong></td>
+          <td class="bold-lbl-right"></td>
+          <td></td>
+        </tr>
+        <tr>
           <td class="bold-lbl-left">File Title:</td>
           <td><strong id="report-file-title">-</strong></td>
           <td class="bold-lbl-right">Plot No:</td>
@@ -479,6 +485,15 @@
             if (el) el.textContent = (v != null && String(v).trim() !== '') ? v : '-';
           };
 
+          // Term of the Right of Occupancy, derived from land use:
+          // Residential / Agricultural = 99 years; Commercial / Industrial = 40 years.
+          const termFromLandUse = (landUse) => {
+            const lu = String(landUse || '').toUpperCase();
+            if (lu.includes('RESIDENT') || lu.startsWith('RES') || lu.includes('AGRIC') || lu.startsWith('AG')) return '99 Years';
+            if (lu.includes('COMMERC') || lu.startsWith('COM') || lu.includes('INDUSTR') || lu.startsWith('IND')) return '40 Years';
+            return '';
+          };
+
           // Remarks Data — suppressed ("These details are as at" line removed)
           // if (d.remarks) { ... }
 
@@ -488,6 +503,7 @@
           setText('report-district-lga', d.lon_lat);
           setText('report-size', d.size);
           setText('report-land-use', d.land_use);
+          setText('report-term', termFromLandUse(d.land_use));
           setText('report-plot-no', d.plot_no);
           setText('report-plot-description', d.plot_description);
           setText('report-tpno', d.tpno);

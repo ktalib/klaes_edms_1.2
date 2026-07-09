@@ -451,21 +451,14 @@
                                 </div>
 
                                 <div class="space-y-4">
-                                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    {{-- Fields ordered exactly as they compose the auto-built address:
+                                         PLOT NUMBER → DISTRICT → LGA → STATE. --}}
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div>
-                                            <label for="state" class="form-label-clean">State</label>
-                                            <input type="text" id="state" name="state" value="Kano" class="w-full form-input-clean bg-gray-50" readonly>
-                                        </div>
-                                        <div>
-                                            <label for="lga" class="form-label-clean">LGA</label>
-                                            <select id="lga" name="lga" class="w-full form-input-clean">
-                                                <option value="">Select LGA</option>
-                                                @foreach($lgas as $lgaName)
-                                                    <option value="{{ $lgaName }}" {{ old('lga', $fileIndexing->lga) == $lgaName ? 'selected' : '' }}>
-                                                        {{ $lgaName }}
-                                                    </option>
-                                                @endforeach
-                                            </select>
+                                            <label for="plot_number" class="form-label-clean">Plot Number</label>
+                                            <input type="text" id="plot_number" name="plot_number"
+                                                value="{{ old('plot_number', $fileIndexing->plot_number) }}"
+                                                class="w-full form-input-clean uppercase" placeholder="ENTER PLOT NUMBER">
                                         </div>
                                         <div>
                                             <label for="district" class="form-label-clean">District</label>
@@ -522,6 +515,24 @@
                                         </div>
                                     </div>
 
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label for="lga" class="form-label-clean">LGA</label>
+                                            <select id="lga" name="lga" class="w-full form-input-clean">
+                                                <option value="">Select LGA</option>
+                                                @foreach($lgas as $lgaName)
+                                                    <option value="{{ $lgaName }}" {{ old('lga', $fileIndexing->lga) == $lgaName ? 'selected' : '' }}>
+                                                        {{ $lgaName }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label for="state" class="form-label-clean">State</label>
+                                            <input type="text" id="state" name="state" value="Kano" class="w-full form-input-clean bg-gray-50" readonly>
+                                        </div>
+                                    </div>
+
                                     <div>
                                         <label for="location" class="form-label-clean">
                                             Property Description / Address <span class="text-xs text-gray-400 font-normal">(Auto-built)</span>
@@ -529,6 +540,32 @@
                                         <textarea id="location" name="location" rows="3" class="w-full form-input-clean uppercase bg-gray-100 border-gray-300"
                                             placeholder="DETAILED PROPERTY DESCRIPTION WILL BE BUILT HERE..."
                                             style="text-transform: uppercase;" readonly>{{ old('location', $fileIndexing->location) }}</textarea>
+                                    </div>
+
+                                    {{-- Geocoded coordinates (read-only) + pin action. These submit as
+                                         latitude / longitude and drive the Property Location Map below. --}}
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label for="latitude" class="form-label-clean">Latitude</label>
+                                            <input type="text" id="latitude" name="latitude"
+                                                value="{{ old('latitude', $fileIndexing->latitude) }}"
+                                                class="w-full form-input-clean bg-gray-50" readonly
+                                                placeholder="Pin on map to capture latitude">
+                                        </div>
+                                        <div>
+                                            <label for="longitude" class="form-label-clean">Longitude</label>
+                                            <input type="text" id="longitude" name="longitude"
+                                                value="{{ old('longitude', $fileIndexing->longitude) }}"
+                                                class="w-full form-input-clean bg-gray-50" readonly
+                                                placeholder="Pin on map to capture longitude">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <button type="button" id="apply-pin-btn"
+                                            class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors">
+                                            <i data-lucide="map-pin" class="h-4 w-4"></i>
+                                            Apply &amp; Pin on Map
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -666,13 +703,6 @@
         handleOtherLandUse();
     @endif
 </script>
-
-                                    <div>
-                                        <label for="plot_number" class="form-label-clean">Plot Number</label>
-                                        <input type="text" id="plot_number" name="plot_number"
-                                            value="{{ old('plot_number', $fileIndexing->plot_number) }}"
-                                            class="w-full form-input-clean" placeholder="Enter plot number">
-                                    </div>
 
                                     <div>
                                         <label for="tp_no" class="form-label-clean">TP Number</label>
@@ -817,6 +847,114 @@
                         </div>
 
                 </div>
+
+            <!-- Property Location Map (full-width) -->
+            <div class="form-section-clean mt-6" id="property-map-section">
+                <div class="form-section-header">
+                    <i data-lucide="map" class="h-5 w-5 text-gray-500"></i>
+                    Property Location Map
+                </div>
+
+                <div id="edit-map" style="height: 420px; width: 100%; display: none;"
+                    class="rounded-md overflow-hidden border border-gray-200"></div>
+
+                <div id="edit-map-empty"
+                    class="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-gray-50 text-gray-400"
+                    style="height: 220px;">
+                    <i data-lucide="map-pin" class="h-8 w-8"></i>
+                    <p class="text-sm">No location pinned yet.</p>
+                    <p class="text-xs">Fill in the <strong>Property Location (Address Builder)</strong> above, then click <strong>Apply &amp; Pin on Map</strong>.</p>
+                </div>
+
+                <p id="edit-map-hint" class="mt-2 text-xs text-gray-500" style="display: none;">
+                    <i data-lucide="move" class="inline h-3.5 w-3.5"></i>
+                    Drag the pin or click the map to fine-tune the exact location.
+                </p>
+            </div>
+
+            @php
+                // ---- Related File Number backfill ----
+                // related_fileno column may hold a JSON array, a plain string, or null.
+                $rawRelatedFileno = $fileIndexing->related_fileno ?? null;
+                $relatedFilenoList = [];
+                if (is_array($rawRelatedFileno)) {
+                    $relatedFilenoList = $rawRelatedFileno;
+                } elseif (is_string($rawRelatedFileno) && trim($rawRelatedFileno) !== '') {
+                    $decodedRelatedFileno = json_decode($rawRelatedFileno, true);
+                    $relatedFilenoList = is_array($decodedRelatedFileno) ? $decodedRelatedFileno : [$rawRelatedFileno];
+                }
+                $relatedFilenoList = array_values(array_filter(array_map(function ($v) {
+                    return trim((string) $v);
+                }, $relatedFilenoList), function ($v) {
+                    return $v !== '';
+                }));
+
+                // Existing file_indexing_links details attached by FileIndexingController::edit().
+                $existingRelatedDetails = collect($fileIndexing->related_details ?? [])->values()->all();
+
+                // Older records may have links without the JSON column (or vice versa) —
+                // union both sources so every linked file number gets a row.
+                foreach ($existingRelatedDetails as $existingRelatedDetail) {
+                    $linkedFileNo = trim((string) ($existingRelatedDetail['file_number'] ?? ''));
+                    if ($linkedFileNo !== '' && !in_array($linkedFileNo, $relatedFilenoList, true)) {
+                        $relatedFilenoList[] = $linkedFileNo;
+                    }
+                }
+
+                $hasRelatedFiles = count($relatedFilenoList) > 0;
+                $relatedFilenoRows = $hasRelatedFiles ? $relatedFilenoList : [''];
+            @endphp
+
+            <!-- Related File Number Card -->
+            <div class="form-section-clean mt-6 border-l-4 border-amber-400">
+                <div class="form-section-header flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="link" class="h-5 w-5 text-amber-600"></i>
+                        Related File Number
+                    </div>
+                    <div class="flex items-center gap-2 bg-amber-50 px-3 py-1.5 rounded-full border border-amber-100">
+                        <input type="checkbox" id="has-related-file" name="has_related_file"
+                            class="checkbox-clean" {{ $hasRelatedFiles ? 'checked' : '' }}>
+                        <label for="has-related-file" class="text-xs font-bold text-amber-700 cursor-pointer">Has Related File?</label>
+                    </div>
+                </div>
+
+                <div id="related-files-wrapper" class="{{ $hasRelatedFiles ? '' : 'hidden' }} space-y-4">
+                    @foreach($relatedFilenoRows as $index => $relFileno)
+                        <div class="related-file-row flex gap-2">
+                            <div class="flex-grow">
+                                <input type="text" name="related_fileno[]" value="{{ $relFileno }}"
+                                    class="related-file-input block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-gray-50"
+                                    placeholder="Select related file number" readonly>
+                            </div>
+                            <div class="flex gap-2">
+                                <button type="button" class="select-related-btn inline-flex items-center px-3 py-2 border border-indigo-600 text-indigo-600 rounded-md hover:bg-indigo-50" title="Select File Number">
+                                    <i data-lucide="search" class="h-4 w-4 text-indigo-600"></i>
+                                </button>
+                                <button type="button" class="clear-related-btn inline-flex items-center px-3 py-2 border border-red-600 text-red-600 rounded-md hover:bg-red-50" title="Remove/Clear">
+                                    <i data-lucide="{{ $index === 0 ? 'eraser' : 'trash-2' }}" class="h-4 w-4 text-red-600"></i>
+                                </button>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+
+                <div class="mt-4 flex justify-between items-center">
+                    <button type="button" id="add-related-file-btn" class="{{ $hasRelatedFiles ? '' : 'hidden' }} inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        <i data-lucide="plus" class="h-4 w-4 mr-2 text-gray-700"></i>
+                        Add Another
+                    </button>
+
+                    <button type="button" id="open-related-details-btn" class="{{ $hasRelatedFiles ? '' : 'hidden' }} inline-flex items-center px-3 py-2 border border-blue-600 text-blue-600 font-medium rounded-md hover:bg-blue-50 transition-colors">
+                        <i data-lucide="list-plus" class="h-4 w-4 mr-2 text-blue-600"></i>
+                        Enter Related Details
+                    </button>
+                </div>
+
+                {{-- Hidden related_details[i][field] inputs, kept in sync by JS so the
+                     update endpoint recreates file_indexing_links without losing details. --}}
+                <div id="related-details-hidden" class="hidden"></div>
+            </div>
 
             @php
                 $hasRofoDefault = $fileIndexing->has_rofo ?? 0;
@@ -1022,12 +1160,14 @@
                         const lgaField = document.getElementById('lga');
                         const districtField = document.getElementById('district');
                         const districtSpecifiedField = document.getElementById('district_specified');
+                        const plotField = document.getElementById('plot_number');
                         const locationPreview = document.getElementById('location-preview');
                         const locationTextarea = document.getElementById('location');
 
                         function updateLocationPreview() {
                             const state = stateField ? stateField.value.trim() : 'Kano';
                             const lga = lgaField ? lgaField.value.trim() : '';
+                            const plot = plotField ? plotField.value.trim() : '';
                             let district = districtField ? districtField.value.trim() : '';
 
                             // If "Others" is selected, use the specified value
@@ -1035,9 +1175,11 @@
                                 district = districtSpecifiedField.value.trim();
                             }
 
-                            if (state || lga || district) {
+                            if (plot || state || lga || district) {
                                 let parts = [];
-                                
+
+                                // Address order: PLOT NUMBER, DISTRICT, LGA, STATE
+                                if (plot) parts.push(plot);
                                 if (district) parts.push(district);
                                 if (lga) parts.push(lga);
                                 if (state) parts.push(state);
@@ -1068,6 +1210,7 @@
                         if (lgaField) lgaField.addEventListener('change', updateLocationPreview);
                         if (districtField) districtField.addEventListener('change', updateLocationPreview);
                         if (districtSpecifiedField) districtSpecifiedField.addEventListener('input', updateLocationPreview);
+                        if (plotField) plotField.addEventListener('input', updateLocationPreview);
                         
                         // Initialize on page load
                         updateLocationPreview();
@@ -1120,6 +1263,11 @@
                 </div>
 
 
+
+                <!-- Bill Balance & Ground Rent -->
+                <div class="form-section-clean mt-6">
+                    @include('fileindexing.addons.partials.sections.billing_ground_rent')
+                </div>
 
                 <!-- Form Actions -->
                 <div class="flex items-center justify-between pt-8 mt-8 border-t border-gray-200">
@@ -2217,8 +2365,255 @@
     <!-- Include Property Transaction Modal -->
     @include('fileindexing.partial.property_transaction_modal')
 
+    <!-- Include Related File Details Modal -->
+    @include('fileindexing.addons.partials.sections.related_fileno_details')
+
     <!-- Global File Number Modal JavaScript -->
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+
+    <!-- Related File Number Card Logic -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const wrapper = document.getElementById('related-files-wrapper');
+            const addBtn = document.getElementById('add-related-file-btn');
+            const hasRelatedCheckbox = document.getElementById('has-related-file');
+            const openBtn = document.getElementById('open-related-details-btn');
+            const modal = document.getElementById('related-file-details-modal');
+            const container = document.getElementById('related-file-details-container');
+            const saveBtn = document.getElementById('save-related-details-btn');
+            const cancelBtn = document.getElementById('cancel-related-details-btn');
+            const hiddenContainer = document.getElementById('related-details-hidden');
+
+            if (!wrapper || !hasRelatedCheckbox) return;
+
+            // Fields persisted per related file. The first five are editable in the
+            // details modal; the rest are passed through untouched so the update
+            // endpoint's link re-sync never wipes them.
+            const EDITABLE_FIELDS = ['file_title', 'location', 'plot_number', 'tp_no', 'lpkn_no'];
+            const PASSTHROUGH_FIELDS = ['entity_type', 'entity_name', 'customer_name', 'land_use_type', 'district', 'lga', 'mfile'];
+            const DETAIL_FIELDS = EDITABLE_FIELDS.concat(PASSTHROUGH_FIELDS);
+
+            // Existing link details from file_indexing_links, keyed by file number.
+            const detailsCache = new Map();
+            (@json($existingRelatedDetails ?? [])).forEach(function (detail) {
+                const key = String(detail.file_number || '').trim();
+                if (!key) return;
+                const entry = {};
+                DETAIL_FIELDS.forEach(function (field) {
+                    entry[field] = detail[field] == null ? '' : String(detail[field]);
+                });
+                detailsCache.set(key, entry);
+            });
+
+            function currentFileNos() {
+                return Array.from(wrapper.querySelectorAll('input[name="related_fileno[]"]'))
+                    .map(function (input) { return input.value.trim(); })
+                    .filter(function (value) { return value !== ''; });
+            }
+
+            // Mirror cached details into hidden inputs inside the form, index-aligned
+            // with the non-empty related_fileno rows (the controller filters blanks
+            // the same way, so index and file_number matching both hold).
+            function syncHiddenDetails() {
+                if (!hiddenContainer) return;
+                hiddenContainer.innerHTML = '';
+                currentFileNos().forEach(function (fileNo, index) {
+                    const cached = detailsCache.get(fileNo) || {};
+                    function addHidden(field, value) {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'related_details[' + index + '][' + field + ']';
+                        input.value = value == null ? '' : value;
+                        hiddenContainer.appendChild(input);
+                    }
+                    addHidden('file_number', fileNo);
+                    DETAIL_FIELDS.forEach(function (field) {
+                        addHidden(field, cached[field] || '');
+                    });
+                });
+            }
+
+            function updateOpenBtnVisibility() {
+                if (!openBtn) return;
+                openBtn.classList.toggle('hidden', currentFileNos().length === 0);
+            }
+
+            function refresh() {
+                syncHiddenDetails();
+                updateOpenBtnVisibility();
+            }
+
+            hasRelatedCheckbox.addEventListener('change', function () {
+                wrapper.classList.toggle('hidden', !this.checked);
+                if (addBtn) addBtn.classList.toggle('hidden', !this.checked);
+            });
+
+            function addRelatedFileRow(initialValue) {
+                const rows = wrapper.querySelectorAll('.related-file-row');
+                const template = rows[0];
+                if (!template) return;
+                const newRow = template.cloneNode(true);
+                const input = newRow.querySelector('.related-file-input');
+                if (input) input.value = initialValue || '';
+                const actionIcon = newRow.querySelector('.clear-related-btn i, .clear-related-btn svg');
+                if (actionIcon) actionIcon.setAttribute('data-lucide', 'trash-2');
+                wrapper.appendChild(newRow);
+                if (window.lucide) window.lucide.createIcons();
+                if (!hasRelatedCheckbox.checked) {
+                    hasRelatedCheckbox.checked = true;
+                    hasRelatedCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+
+            if (addBtn) {
+                addBtn.addEventListener('click', function () { addRelatedFileRow(); });
+            }
+
+            // Select / Clear buttons (delegated so cloned rows work too)
+            wrapper.addEventListener('click', function (e) {
+                const target = e.target.closest('button');
+                if (!target) return;
+                const row = target.closest('.related-file-row');
+                if (!row) return;
+                const input = row.querySelector('.related-file-input');
+
+                if (target.classList.contains('select-related-btn')) {
+                    if (typeof GlobalFileNoModal !== 'undefined') {
+                        GlobalFileNoModal.open({
+                            autoPopulateGenericFields: false,
+                            callback: function (data) {
+                                if (data && data.fileNumber && input) {
+                                    input.value = data.fileNumber;
+                                    refresh();
+                                }
+                            }
+                        });
+                    } else {
+                        console.error('GlobalFileNoModal is not defined');
+                    }
+                } else if (target.classList.contains('clear-related-btn')) {
+                    if (wrapper.querySelectorAll('.related-file-row').length > 1) {
+                        row.remove();
+                    } else if (input) {
+                        input.value = '';
+                    }
+                    refresh();
+                }
+            });
+
+            // ---------- Related Details modal ----------
+            function escapeAttribute(value) {
+                return String(value == null ? '' : value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+            }
+
+            // Read the modal's visible fields back into the cache, preserving
+            // passthrough fields that are not shown in the modal.
+            function syncModalToCache() {
+                if (!container) return;
+                container.querySelectorAll('[data-file-no]').forEach(function (section) {
+                    const fileNo = (section.dataset.fileNo || '').trim();
+                    if (!fileNo) return;
+                    const entry = detailsCache.get(fileNo) || {};
+                    EDITABLE_FIELDS.forEach(function (field) {
+                        const input = section.querySelector('input[data-detail-field="' + field + '"]');
+                        if (input) entry[field] = input.value;
+                    });
+                    detailsCache.set(fileNo, entry);
+                });
+            }
+
+            if (openBtn && modal && container && saveBtn && cancelBtn) {
+                openBtn.addEventListener('click', function () {
+                    const fileNos = currentFileNos();
+                    if (fileNos.length === 0) {
+                        alert('Please select at least one related file number first.');
+                        return;
+                    }
+
+                    container.innerHTML = '';
+                    fileNos.forEach(function (fileNo) {
+                        const cached = detailsCache.get(fileNo) || {};
+                        const section = document.createElement('div');
+                        section.className = 'bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden mb-6 last:mb-0';
+                        section.dataset.fileNo = fileNo;
+
+                        const fieldConfigs = [
+                            { field: 'file_title', label: 'File Title <span class="text-gray-400 font-normal">(Current Holder)</span>', required: true },
+                            { field: 'location', label: 'Location', required: true },
+                            { field: 'plot_number', label: 'Plot Number', required: false },
+                            { field: 'tp_no', label: 'TP Number', required: false },
+                            { field: 'lpkn_no', label: 'LPKN Number', required: false }
+                        ];
+
+                        const fieldsHtml = fieldConfigs.map(function (cfg) {
+                            return '<div>'
+                                + '<label class="block text-sm font-medium text-gray-700 mb-1">' + cfg.label
+                                + (cfg.required ? ' <span class="text-red-500">*</span>' : '') + '</label>'
+                                + '<input type="text" data-detail-field="' + cfg.field + '"'
+                                + ' value="' + escapeAttribute(cached[cfg.field] || '') + '"'
+                                + (cfg.required ? ' required' : '')
+                                + ' class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white">'
+                                + '</div>';
+                        }).join('');
+
+                        section.innerHTML =
+                            '<div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center gap-2">'
+                            + '<div class="bg-blue-100 p-1.5 rounded-full"><i data-lucide="file-text" class="w-4 h-4 text-blue-600"></i></div>'
+                            + '<h4 class="font-bold text-gray-800 text-sm">Related File: ' + escapeAttribute(fileNo) + '</h4>'
+                            + '</div>'
+                            + '<div class="p-4 bg-gray-50/50"><div class="grid grid-cols-1 md:grid-cols-2 gap-4">' + fieldsHtml + '</div></div>';
+
+                        container.appendChild(section);
+                    });
+
+                    if (window.lucide) window.lucide.createIcons();
+                    modal.classList.remove('hidden');
+                });
+
+                saveBtn.addEventListener('click', function () {
+                    let isValid = true;
+                    container.querySelectorAll('input[required]').forEach(function (input) {
+                        if (!input.value.trim()) {
+                            isValid = false;
+                            input.classList.add('border-red-500');
+                        } else {
+                            input.classList.remove('border-red-500');
+                        }
+                    });
+                    if (!isValid) {
+                        alert('Please fill in all required fields.');
+                        return;
+                    }
+
+                    syncModalToCache();
+                    syncHiddenDetails();
+                    modal.classList.add('hidden');
+
+                    const originalHtml = openBtn.innerHTML;
+                    openBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4 mr-2"></i> Details Staged';
+                    openBtn.classList.add('bg-green-50', 'text-green-700', 'border-green-300');
+                    if (window.lucide) window.lucide.createIcons();
+                    setTimeout(function () {
+                        openBtn.innerHTML = originalHtml;
+                        openBtn.classList.remove('bg-green-50', 'text-green-700', 'border-green-300');
+                        if (window.lucide) window.lucide.createIcons();
+                    }, 2000);
+                });
+
+                cancelBtn.addEventListener('click', function () {
+                    modal.classList.add('hidden');
+                });
+            }
+
+            // Seed the hidden inputs on load so existing link details survive a save
+            // even if the user never opens the details modal.
+            refresh();
+        });
+    </script>
 
     <!-- Property Transaction Logic for Edit Page -->
     <script>
@@ -2487,12 +2882,148 @@
                 }
 
                 districtSelect.addEventListener('change', toggleDistrictInput);
-                
+
                 // Initial setup
                 toggleDistrictInput();
             }
 
         });
     </script>
+
+    {{-- Property Location Map — geocodes the auto-built address and pins a draggable
+         marker. Coordinates are captured into the readonly latitude/longitude fields. --}}
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const latEl        = document.getElementById('latitude');
+            const lngEl        = document.getElementById('longitude');
+            const applyBtn     = document.getElementById('apply-pin-btn');
+            const locationEl   = document.getElementById('location');
+            const mapEl        = document.getElementById('edit-map');
+            const emptyEl      = document.getElementById('edit-map-empty');
+            const hintEl       = document.getElementById('edit-map-hint');
+            const plotEl       = document.getElementById('plot_number');
+            const districtEl   = document.getElementById('district');
+            const districtSpec = document.getElementById('district_specified');
+            const lgaEl        = document.getElementById('lga');
+            const stateEl      = document.getElementById('state');
+
+            if (!latEl || !lngEl || !mapEl) return;
+
+            let map = null, marker = null;
+
+            const gmapsReady = () => typeof google !== 'undefined' && google.maps;
+            const roundCoord = v => Math.round(parseFloat(v) * 1e7) / 1e7;
+
+            function markerIcon() {
+                const FILL = '#2563eb';
+                const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="42" height="50" viewBox="0 0 42 50">'
+                    + '<path d="M21 0C10 0 1 9 1 20c0 14 20 30 20 30s20-16 20-30C41 9 32 0 21 0z" fill="' + FILL + '" stroke="#ffffff" stroke-width="2"/>'
+                    + '<circle cx="21" cy="20" r="13" fill="#ffffff"/>'
+                    + '<path d="M21 12l-8 7h2.4v8.4h11.2V19H29z" fill="' + FILL + '"/></svg>';
+                return {
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+                    scaledSize: new google.maps.Size(42, 50),
+                    anchor: new google.maps.Point(21, 50),
+                };
+            }
+
+            function setCoords(lat, lng) {
+                latEl.value = roundCoord(lat);
+                lngEl.value = roundCoord(lng);
+            }
+
+            function showMap(lat, lng, recenter) {
+                if (!gmapsReady()) return;
+                const pos = { lat: parseFloat(lat), lng: parseFloat(lng) };
+                if (emptyEl) emptyEl.style.display = 'none';
+                mapEl.style.display = 'block';
+                if (hintEl) hintEl.style.display = '';
+
+                if (!map) {
+                    map = new google.maps.Map(mapEl, {
+                        center: pos, zoom: 17, mapTypeId: 'satellite',
+                        streetViewControl: true, fullscreenControl: true,
+                    });
+                    map.addListener('click', e => {
+                        setCoords(e.latLng.lat(), e.latLng.lng());
+                        if (marker) marker.setPosition(e.latLng);
+                    });
+                } else {
+                    google.maps.event.trigger(map, 'resize');
+                    if (recenter) map.setCenter(pos);
+                }
+
+                if (!marker) {
+                    marker = new google.maps.Marker({
+                        position: pos, map, draggable: true, icon: markerIcon(),
+                        animation: google.maps.Animation.DROP,
+                        title: 'Drag to adjust the exact property location',
+                    });
+                    marker.addListener('dragend', e => setCoords(e.latLng.lat(), e.latLng.lng()));
+                } else {
+                    marker.setPosition(pos);
+                    marker.setMap(map);
+                }
+
+                if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+            }
+
+            function buildAddress() {
+                // Prefer the auto-built Location; otherwise compose from the address parts.
+                const loc = (locationEl && locationEl.value.trim()) || '';
+                if (loc) return loc + ', NIGERIA';
+
+                const parts = [];
+                if (plotEl && plotEl.value.trim()) parts.push(plotEl.value.trim());
+                let dist = districtEl ? districtEl.value.trim() : '';
+                if ((dist.toLowerCase() === 'others' || dist.toLowerCase() === 'other') && districtSpec) {
+                    dist = districtSpec.value.trim();
+                }
+                if (dist) parts.push(dist);
+                if (lgaEl && lgaEl.value.trim()) parts.push(lgaEl.value.trim());
+                parts.push(stateEl ? (stateEl.value.trim() || 'Kano') : 'Kano');
+                parts.push('NIGERIA');
+                return parts.filter(Boolean).join(', ');
+            }
+
+            function geocodeAndPin() {
+                if (!gmapsReady()) {
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({ icon: 'error', title: 'Map not ready', text: 'Google Maps is still loading. Please try again in a moment.' });
+                    }
+                    return;
+                }
+                const address = buildAddress();
+                if (!address) return;
+
+                new google.maps.Geocoder().geocode({ address: address, region: 'NG' }, (results, status) => {
+                    if (status === 'OK' && results[0]) {
+                        const pos = results[0].geometry.location;
+                        setCoords(pos.lat(), pos.lng());
+                        showMap(pos.lat(), pos.lng(), true);
+                    } else if (status === 'ZERO_RESULTS') {
+                        if (typeof Swal !== 'undefined') Swal.fire({ icon: 'warning', title: 'Location not found', text: 'Google could not find: ' + address });
+                    } else {
+                        if (typeof Swal !== 'undefined') Swal.fire({ icon: 'error', title: 'Geocoding failed (' + status + ')', text: 'The map service rejected the request. Check that Billing and the Geocoding API are enabled for the API key.' });
+                    }
+                });
+            }
+
+            if (applyBtn) applyBtn.addEventListener('click', geocodeAndPin);
+
+            // Auto-show an existing (backfilled) pin once Maps is ready.
+            (function initExisting(retries) {
+                const lat = parseFloat(latEl.value), lng = parseFloat(lngEl.value);
+                if (!isFinite(lat) || !isFinite(lng)) return;
+                if (gmapsReady()) { showMap(lat, lng, true); }
+                else if (retries > 0) { setTimeout(() => initExisting(retries - 1), 300); }
+            })(25);
+        });
+    </script>
+
+    @push('scripts')
+        {{-- Google Maps JS — powers the Property Location Map geocoder/pin --}}
+        <script src="https://maps.googleapis.com/maps/api/js?key={{ config('services.google_maps.key') }}" defer></script>
+    @endpush
 
 @endsection

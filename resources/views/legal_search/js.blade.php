@@ -879,6 +879,7 @@ const executeSearchAjax = (filters, searchData) => {
         const _apiFileLandUse = data.file_land_use || null;
         const _apiFilePlotNo = data.file_plot_number || null;
         const _apiFileTpNo = data.file_tp_no || null;
+        const _apiFileLonLat = data.file_lon_lat || null;
         const _apiRelatedFileno = data.file_related_fileno || null;
         const _apiIndexFileNumber = data.file_index_number || null;
         const _apiFileSize = data.file_size || null;
@@ -897,6 +898,7 @@ const executeSearchAjax = (filters, searchData) => {
           if (_apiFileLandUse) r._file_land_use = _apiFileLandUse;
           if (_apiFilePlotNo) r._file_plot_number = _apiFilePlotNo;
           if (_apiFileTpNo) r._file_tp_no = _apiFileTpNo;
+          if (_apiFileLonLat) r._file_lon_lat = _apiFileLonLat;
           if (_apiRelatedFileno) r._file_related_fileno = _apiRelatedFileno;
           if (_apiIndexFileNumber) r._file_index_number = _apiIndexFileNumber;
           if (_apiFileSize) r._file_size = _apiFileSize;
@@ -940,6 +942,7 @@ const executeSearchAjax = (filters, searchData) => {
               _file_land_use: data.file_land_use || null,
               _file_plot_number: data.file_plot_number || null,
               _file_tp_no: data.file_tp_no || null,
+              _file_lon_lat: data.file_lon_lat || null,
               _file_related_fileno: data.file_related_fileno || null,
               _file_index_number: data.file_index_number || null,
               _file_size: data.file_size || null,
@@ -1902,6 +1905,81 @@ const executeSearchAjax = (filters, searchData) => {
     });
   };
 
+  // Term of the Right of Occupancy in years, derived from land use:
+  // Residential / Agricultural = 99 years; Commercial / Industrial = 40 years.
+  // (Same rule as the print templates' termFromLandUse.)
+  const lsTermYearsFromLandUse = (landUse) => {
+    const lu = String(landUse || '').toUpperCase();
+    if (lu.includes('RESIDENT') || lu.startsWith('RES') || lu.includes('AGRIC') || lu.startsWith('AG')) return 99;
+    if (lu.includes('COMMERC') || lu.startsWith('COM') || lu.includes('INDUSTR') || lu.startsWith('IND')) return 40;
+    return null;
+  };
+
+  // Commencement date of the R of O term: the grant row's Transaction Date
+  // (falling back to Reg Date). Earliest dated R of O row wins (= the original
+  // grant). Returns a local "YYYY-MM-DD" string, or '' when no dated R of O exists.
+  const lsFindRofoGrantDate = (transactions) => {
+    let grantTs = null;
+    for (const t of (transactions || [])) {
+      const canon = canonicalWeightingInstrumentType(t.transaction_type || t.instrument_type || t.transactionType || '');
+      if (canon !== 'right of occupancy') continue;
+      for (const cand of [t.transaction_date, t.reg_date, t.deeds_date]) {
+        const ts = parseTimelineDateValue(cand);
+        if (ts !== null) {
+          if (grantTs === null || ts < grantTs) grantTs = ts;
+          break; // Transaction Date wins; only fall through when it is absent.
+        }
+      }
+    }
+    if (grantTs === null || grantTs > Date.now()) return '';
+    const d = new Date(grantTs);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  };
+
+  // "YYYY-MM-DD" → "2nd January, 2002" (matches the printed report).
+  const lsFormatCommencementDate = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d.getTime())) return iso;
+    const day = d.getDate();
+    const suffix = (day % 10 === 1 && day !== 11) ? 'st'
+      : (day % 10 === 2 && day !== 12) ? 'nd'
+      : (day % 10 === 3 && day !== 13) ? 'rd' : 'th';
+    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    return day + suffix + ' ' + months[d.getMonth()] + ', ' + d.getFullYear();
+  };
+
+  // Residual Term = term minus years elapsed since the commencement year.
+  // Returns e.g. "28 Years", or '' when either part is unknown.
+  const lsComputeResidualTerm = (termYears, commencementYear) => {
+    const nowYear = new Date().getFullYear();
+    if (!termYears || !commencementYear || commencementYear > nowYear) return '';
+    return Math.max(termYears - (nowYear - commencementYear), 0) + ' Years';
+  };
+
+  // Recompute the Residual Term input + File Information display from the
+  // current land use and commencement date. A manual residual entry is kept
+  // while it differs from the last auto value.
+  const lsRecomputeResidualTerm = () => {
+    const termYears = lsTermYearsFromLandUse(document.getElementById('property-type-value')?.textContent || '');
+    const dateInput = document.getElementById('comment-commencement_date-text');
+    const isoDate = (dateInput?.value || '').trim();
+    const commencementYear = isoDate ? parseInt(isoDate.slice(0, 4), 10) || null : null;
+    const computed = lsComputeResidualTerm(termYears, commencementYear);
+
+    const input = document.getElementById('residual-term-input');
+    if (input) {
+      if (!input.value || input.value === input.dataset.autoValue) {
+        input.value = computed;
+      }
+      input.dataset.autoValue = computed;
+    }
+    const display = document.getElementById('residual-term-value');
+    if (display) display.textContent = (input?.value || computed || '-');
+    const dateDisplay = document.getElementById('commencement-date-value');
+    if (dateDisplay) dateDisplay.textContent = lsFormatCommencementDate(isoDate) || '-';
+  };
+
   // Render file history (the side-by-side layout shown in the screenshot)
   const renderFileHistory = () => {
     if (!selectedFile) {
@@ -2002,7 +2080,30 @@ const executeSearchAjax = (filters, searchData) => {
                              selectedFile.instrument_type || selectedFile.Type ||
                              deriveLandUseFromFileNumber(selectedFile.mlsFNo || selectedFile.file_number || selectedFile.fileno || window.__lsLastSearchedFileNumber || '') || '-';
     document.getElementById('property-type-value').textContent = landUseValue;
-    
+
+    // Lon/Lat — from the file indexing record (matches the printed report).
+    const lonLatEl = document.getElementById('lon-lat-value');
+    if (lonLatEl) lonLatEl.textContent = selectedFile._file_lon_lat || '-';
+
+    // Term of the R of O, derived from land use (99 res/agric, 40 comm/ind).
+    const termYears = lsTermYearsFromLandUse(landUseValue);
+    const termEl = document.getElementById('term-value');
+    if (termEl) termEl.textContent = termYears ? termYears + ' Years' : '-';
+
+    // Commencement Date — auto-filled with the R of O grant's Transaction Date
+    // (falling back to Reg Date). A user-picked or saved date is kept while it
+    // differs from the last auto value. The Residual Term (editable below the
+    // Timeline) derives from it and prints on the report's Residual Term field.
+    const commencementInput = document.getElementById('comment-commencement_date-text');
+    const grantDate = lsFindRofoGrantDate(getRelatedTransactions(selectedFile) || []);
+    if (commencementInput) {
+      if (!commencementInput.value || commencementInput.value === commencementInput.dataset.autoValue) {
+        commencementInput.value = grantDate;
+      }
+      commencementInput.dataset.autoValue = grantDate;
+    }
+    lsRecomputeResidualTerm();
+
     // Last transaction — pick the most recent record (by transaction_date,
     // falling back to reg_date) from all related transactions and use its
     // transaction_type. Falls back to the selected file's own type if no
@@ -2068,6 +2169,25 @@ const executeSearchAjax = (filters, searchData) => {
   // Expose renderFileHistory globally so IIFEs and external scripts can call it
   window.renderFileHistory = renderFileHistory;
 
+  // Keep the File Information panel's Residual Term in sync while the user
+  // types in the Residual Term editor below the Timeline.
+  document.addEventListener('input', (e) => {
+    if (e.target && e.target.id === 'residual-term-input') {
+      const disp = document.getElementById('residual-term-value');
+      if (disp) disp.textContent = e.target.value.trim() || '-';
+    }
+  });
+
+  // Recompute the Residual Term whenever the user picks a different
+  // Commencement Date.
+  document.getElementById('comment-commencement_date-text')?.addEventListener('change', () => {
+    // The date changed, so the previous auto residual is stale — recompute
+    // from scratch unless the user typed a custom residual.
+    const input = document.getElementById('residual-term-input');
+    if (input && input.value === input.dataset.autoValue) input.value = '';
+    lsRecomputeResidualTerm();
+  });
+
   // ── Silent Refresh ──────────────────────────────────────────────────────────
   // Re-fetches server data using the last search payload without hiding the
   // current file detail view. Only the button shows a loading state.
@@ -2104,6 +2224,7 @@ const executeSearchAjax = (filters, searchData) => {
         const _lu = data.file_land_use || null;
         const _p = data.file_plot_number || null;
         const _tp = data.file_tp_no || null;
+        const _ll = data.file_lon_lat || null;
         const _rf = data.file_related_fileno || null;
         const _ix = data.file_index_number || null;
         const _sz = data.file_size || null;
@@ -2118,6 +2239,7 @@ const executeSearchAjax = (filters, searchData) => {
           if (_lu) r._file_land_use       = _lu;
           if (_p)  r._file_plot_number    = _p;
           if (_tp) r._file_tp_no          = _tp;
+          if (_ll) r._file_lon_lat        = _ll;
           if (_rf) r._file_related_fileno = _rf;
           if (_ix) r._file_index_number   = _ix;
           if (_sz) r._file_size           = _sz;
@@ -2929,6 +3051,20 @@ const executeSearchAjax = (filters, searchData) => {
     return map[label] || '';
   };
 
+  // Legacy files digitized into KLAES (no genuine commissioning date on record)
+  // still encode the year they were originally commissioned in the file number
+  // itself, e.g. "RES-2001-3874" → "2001", "CON-RES-1993-387" → "1993". Matches a
+  // dash-delimited 4-digit segment starting with 19 or 20 so serial numbers of the
+  // same length (e.g. "3874") aren't mistaken for a year.
+  const extractYearFromFileNumber = (fileNo) => {
+    const parts = String(fileNo || '').split('-');
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (/^(?:19|20)\d{2}$/.test(trimmed)) return trimmed;
+    }
+    return null;
+  };
+
   // Build the synthetic "File Commissioning" timeline record. It is always the
   // first row (weight 12). Its Transaction Date is the file's commissioning date
   // (resolved server-side; '-' when the file was not commissioned within KLAES),
@@ -2952,8 +3088,14 @@ const executeSearchAjax = (filters, searchData) => {
     // (or when the server reported no commissioned number — legacy responses).
     const commissionedNo = String((selectedFile && selectedFile._file_commissioned_number) || '').trim();
     const commissionedIsTemp = /\(\s*T\s*\)\s*$/i.test(commissionedNo);
-    const mainRowDate = (commDate && commDate !== '-' && !commissionedIsTemp)
+    let mainRowDate = (commDate && commDate !== '-' && !commissionedIsTemp)
       ? commDate : '-';
+    // Legacy file with no genuine KLAES commissioning date — fall back to the
+    // year embedded in the file number itself rather than leaving it blank.
+    if (mainRowDate === '-') {
+      const yearFromFileNo = extractYearFromFileNumber(fileNo);
+      if (yearFromFileNo) mainRowDate = yearFromFileNo;
+    }
     // Party 1 is the commissioning authority; Party 2 is the file owner/title
     // (the Ministry commissioned the file for them).
     const ownerName = (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';
@@ -3985,6 +4127,14 @@ const executeSearchAjax = (filters, searchData) => {
           const cofoInput = document.getElementById('comment-cofo-text');
           if (cofoInput) cofoInput.value = res.data.cofo.comment;
         }
+        // Saved Commencement Date overrides the auto value from the R of O
+        // grant date; fall back to auto when this file has none saved.
+        const commencementInput = document.getElementById('comment-commencement_date-text');
+        if (commencementInput) {
+          const savedDate = String(res.data.commencement_date?.comment || '').trim();
+          commencementInput.value = savedDate || commencementInput.dataset.autoValue || '';
+          lsRecomputeResidualTerm();
+        }
       } else {
         document.getElementById('comment-ground_rent-amount').value = '';
         document.getElementById('comment-ground_rent-text').value = '';
@@ -4504,10 +4654,22 @@ const executeSearchAjax = (filters, searchData) => {
       { key: 'reg_time', label: 'Reg Time' },
       { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
       { key: 'transaction_date', label: 'Transaction Date', type: 'date' },
+      // Standard parties
       { key: 'party_1', label: 'Party 1' },
       { key: 'party_2', label: 'Party 2' },
       { key: 'party_3', label: 'Party 3' },
       { key: 'party_4', label: 'Party 4' },
+      // Party role fields (mapped from backend EDITABLE_COLUMNS)
+      { key: 'Assignor', label: 'Assignor' },
+      { key: 'Assignee', label: 'Assignee' },
+      { key: 'Mortgagor', label: 'Mortgagor' },
+      { key: 'Mortgagee', label: 'Mortgagee' },
+      { key: 'Grantor', label: 'Grantor' },
+      { key: 'Grantee', label: 'Grantee' },
+      { key: 'Surrenderor', label: 'Surrenderor' },
+      { key: 'Surrenderee', label: 'Surrenderee' },
+      { key: 'Lessor', label: 'Lessor' },
+      { key: 'Lessee', label: 'Lessee' },
       { key: 'land_use', label: 'Land Use', type: 'select', optionSource: 'land_use' },
       { key: 'plot_no', label: 'Plot No' },
       { key: 'plot_size', label: 'Plot Size' },
@@ -4530,10 +4692,20 @@ const executeSearchAjax = (filters, searchData) => {
       { key: 'reg_time', label: 'Reg Time' },
       { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
       { key: 'transaction_date', label: 'Transaction Date', type: 'date' },
+      // Standard parties
       { key: 'Grantor', label: 'Party 1' },
       { key: 'Grantee', label: 'Party 2' },
       { key: 'party_3', label: 'Party 3' },
       { key: 'party_4', label: 'Party 4' },
+      // Party role fields (mapped from backend EDITABLE_COLUMNS)
+      { key: 'Assignor', label: 'Assignor' },
+      { key: 'Assignee', label: 'Assignee' },
+      { key: 'Mortgagor', label: 'Mortgagor' },
+      { key: 'Mortgagee', label: 'Mortgagee' },
+      { key: 'Surrenderor', label: 'Surrenderor' },
+      { key: 'Surrenderee', label: 'Surrenderee' },
+      { key: 'Lessor', label: 'Lessor' },
+      { key: 'Lessee', label: 'Lessee' },
       { key: 'land_use', label: 'Land Use', type: 'select', optionSource: 'land_use' },
       { key: 'plot_no', label: 'Plot No' },
       { key: 'lgsaOrCity', label: 'LGA/City', type: 'select', optionSource: 'lga' },
@@ -4554,8 +4726,24 @@ const executeSearchAjax = (filters, searchData) => {
       { key: 'reg_time', label: 'Reg Time' },
       { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
       { key: 'transaction_date', label: 'Transaction Date', type: 'date' },
+      // Standard parties
       { key: 'party_1', label: 'Party 1' }, { key: 'party_2', label: 'Party 2' },
       { key: 'party_3', label: 'Party 3' }, { key: 'party_4', label: 'Party 4' },
+      // Party role fields (mapped from backend EDITABLE_COLUMNS)
+      { key: 'Assignor', label: 'Assignor' },
+      { key: 'Assignee', label: 'Assignee' },
+      { key: 'Mortgagor', label: 'Mortgagor' },
+      { key: 'Mortgagee', label: 'Mortgagee' },
+      { key: 'Grantor', label: 'Grantor' },
+      { key: 'Grantee', label: 'Grantee' },
+      { key: 'Surrenderor', label: 'Surrenderor' },
+      { key: 'Surrenderee', label: 'Surrenderee' },
+      { key: 'Lessor', label: 'Lessor' },
+      { key: 'Lessee', label: 'Lessee' },
+      { key: 'Donor', label: 'Donor' },
+      { key: 'Donee', label: 'Donee' },
+      { key: 'Vendor', label: 'Vendor' },
+      { key: 'Purchaser', label: 'Purchaser' },
       { key: 'land_use', label: 'Land Use', type: 'select', optionSource: 'land_use' },
       { key: 'plot_no', label: 'Plot No' },
       { key: 'plot_size', label: 'Plot Size' },
@@ -5457,6 +5645,12 @@ const executeSearchAjax = (filters, searchData) => {
         else if (_ov.lga)             q.set('display_district_lga', _ov.lga);
         if (_ov.landUse)              q.set('display_land_use',      _ov.landUse);
         if (_ov.size)                 q.set('display_size',          _ov.size);
+        // Residual Term + Commencement Date — whatever is in the Residual Term
+        // editor (auto-calculated or user-entered) prints on the report.
+        const _rt = (document.getElementById('residual-term-input')?.value || '').trim();
+        if (_rt) q.set('display_residual_term', _rt);
+        const _cd = (document.getElementById('comment-commencement_date-text')?.value || '').trim();
+        if (_cd) q.set('display_commencement_date', _cd);
         // Client details: editable fields take precedence, else the verified token values.
         const _cn = (document.getElementById('comment-client_name-text')?.value || window.__lsTokenClient?.name || '').trim();
         const _ca = (document.getElementById('comment-client_address-text')?.value || window.__lsTokenClient?.address || '').trim();
@@ -5541,6 +5735,11 @@ const executeSearchAjax = (filters, searchData) => {
         else if (_ov2.lga)        q.set('display_district_lga', _ov2.lga);
         if (_ov2.landUse)         q.set('display_land_use',      _ov2.landUse);
         if (_ov2.size)            q.set('display_size',          _ov2.size);
+        // Residual Term + Commencement Date — mirrors the print-report handler above.
+        const _rt2 = (document.getElementById('residual-term-input')?.value || '').trim();
+        if (_rt2) q.set('display_residual_term', _rt2);
+        const _cd2 = (document.getElementById('comment-commencement_date-text')?.value || '').trim();
+        if (_cd2) q.set('display_commencement_date', _cd2);
         // Client details: editable fields take precedence, else the verified token values.
         const _cn2 = (document.getElementById('comment-client_name-text')?.value || window.__lsTokenClient?.name || '').trim();
         const _ca2 = (document.getElementById('comment-client_address-text')?.value || window.__lsTokenClient?.address || '').trim();

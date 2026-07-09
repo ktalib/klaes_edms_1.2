@@ -90,18 +90,19 @@ class LegalSearchTokenController extends Controller
             return response()->json(['success' => false, 'message' => 'File number is required.']);
         }
 
+        // A token is valid while it still has at least one of its MAX_USES left.
         $token = LegalSearchToken::where('file_number', $fileNumber)
-            ->where('is_used', false)
+            ->where('usage_count', '<', LegalSearchToken::MAX_USES)
             ->orderBy('created_at', 'desc')
             ->first();
-            
+
         if (!$token) {
             return response()->json([
                 'success' => false,
                 'message' => "No valid search token found for File No: {$fileNumber}. Please generate a token before proceeding."
             ]);
         }
-        
+
         return response()->json([
             'success' => true,
             'message' => "Valid token found for File No: {$fileNumber}. You may proceed with the search.",
@@ -111,6 +112,8 @@ class LegalSearchTokenController extends Controller
             'client_name' => $token->client_name,
             'client_address' => $token->client_address,
             'property_location' => $token->property_location,
+            'usage_count' => $token->usage_count,
+            'remaining_uses' => $token->remaining_uses,
         ]);
     }
 
@@ -199,18 +202,22 @@ class LegalSearchTokenController extends Controller
 
         $token = LegalSearchToken::where('file_number', $fileNumber)
             ->where('token', $tokenStr)
-            ->where('is_used', false)
+            ->where('usage_count', '<', LegalSearchToken::MAX_USES)
             ->first();
 
         if (!$token) {
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid or expired token.'
+                'message' => 'Invalid or fully-used token.'
             ], 422);
         }
 
+        $before = ['usage_count' => $token->usage_count, 'is_used' => $token->is_used];
+
+        $newCount = (int) $token->usage_count + 1;
         $token->update([
-            'is_used' => true,
+            'usage_count' => $newCount,
+            'is_used' => $newCount >= LegalSearchToken::MAX_USES,
             'used_at' => now(),
         ]);
 
@@ -218,12 +225,59 @@ class LegalSearchTokenController extends Controller
             'Legal Search Token Used',
             'LegalSearchToken',
             $token->id,
-            ['is_used' => false],
-            ['is_used' => true],
-            "Token {$token->token} used for search on file {$token->file_number}"
+            $before,
+            ['usage_count' => $token->usage_count, 'is_used' => $token->is_used],
+            "Token {$token->token} used (count {$newCount}/" . LegalSearchToken::MAX_USES . ") for search on file {$token->file_number}"
         );
 
-        return response()->json(['success' => true]);
+        return response()->json([
+            'success' => true,
+            'usage_count' => $token->usage_count,
+            'remaining_uses' => $token->remaining_uses,
+        ]);
+    }
+
+    /**
+     * Reset a token's usage counter to a specific count so it can be spent again.
+     *
+     * count = 1  → reset to the 1st count (usage_count = 0, both uses available)
+     * count = 2  → reset to the 2nd count (usage_count = 1, one use available)
+     */
+    public function resetToken(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'count' => 'required|integer|min:1|max:' . LegalSearchToken::MAX_USES,
+        ]);
+
+        $token = LegalSearchToken::findOrFail($id);
+
+        $before = ['usage_count' => $token->usage_count, 'is_used' => $token->is_used];
+
+        // "Nth count" means the token is positioned to be spent as its Nth use,
+        // i.e. (N - 1) uses have already been consumed.
+        $newCount = (int) $validated['count'] - 1;
+
+        $token->update([
+            'usage_count' => $newCount,
+            'is_used' => $newCount >= LegalSearchToken::MAX_USES,
+            'used_at' => $newCount > 0 ? $token->used_at : null,
+        ]);
+
+        $this->auditService->logAction(
+            'Legal Search Token Reset',
+            'LegalSearchToken',
+            $token->id,
+            $before,
+            ['usage_count' => $token->usage_count, 'is_used' => $token->is_used],
+            "Token {$token->token} reset to {$validated['count']} count for file {$token->file_number}"
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Token reset successfully!',
+            'usage_count' => $token->usage_count,
+            'remaining_uses' => $token->remaining_uses,
+        ]);
     }
 
     public function destroy($id)

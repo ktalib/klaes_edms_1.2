@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Mobile;
 
 use App\Http\Controllers\Controller;
 use App\Models\FileSearchRequest;
+use App\Models\MissingFile;
 use App\Services\FileLocationResolver;
 use App\Services\TimelineWeightingService;
 use App\Services\UserNotificationService;
@@ -104,6 +105,13 @@ class MobileFileSearchController extends Controller
                 'can_send_fr'      => (bool) ($result['can_send_fr'] ?? false),
                 'can_log'          => (bool) ($result['can_log'] ?? false),
                 'is_blind'         => (bool) ($result['is_blind'] ?? false),
+                // Flag set when this file number exists in the missing_files table.
+                // When true, the "Send Blind Request to SCB Monitor" button changes to
+                // "Send Blind Request to the Original Registry" and saves without SCB.
+                'is_missing_file'  => (bool) ($result['is_missing_file'] ?? false),
+                // Temporary "(T)" file — resolved standalone (never against its stripped
+                // base number); the UI shows an "Is Temporary File" badge.
+                'is_temp_file'     => (bool) ($result['is_temp_file'] ?? false),
                 // In-transit files can be re-directed straight to the office currently
                 // holding them (the last receiving officer) instead of going to the SCB.
                 'can_redirect'           => $result['status'] === FileLocationResolver::STATUS_IN_TRANSIT,
@@ -512,6 +520,59 @@ class MobileFileSearchController extends Controller
             ])->save();
         }
 
+        // Not Found — Missing: record the file on the missing_files list so future
+        // Quick Search requests for it divert to the Original Registry instead of
+        // going back to the SCB. Skipped when an unresolved report already exists.
+        if (!$found && $notFoundType === FileSearchRequest::NOT_FOUND_MISSING) {
+            $alreadyListed = MissingFile::where('file_number', $fr->file_number)
+                ->where('status', '!=', MissingFile::STATUS_FOUND)
+                ->exists();
+
+            if (! $alreadyListed) {
+                $monitor = $request->user();
+
+                // Backfill the file's home location (registry + rack/shelf) — the
+                // same fields the manual Capture Missing File form collects — so the
+                // Missing Files list shows where the file should have been shelved.
+                // Best-effort: a file with no resolvable location leaves them null.
+                $indexing  = $resolved['indexing'] ?? null;
+                // An uncaptured file resolves to PENDING_FILE with no registry, but the
+                // prefix+year range table may still know its home registry — use it.
+                $registry  = $resolved['registry'] ?? null;
+                if ($registry === null) {
+                    $registry = $resolver->matchRange($fr->file_number)['registry'] ?? null;
+                }
+                $fullLabel = strtoupper(trim((string) ($resolved['rack_shelf'] ?? ''))) ?: null;
+                $shelfLocation = $fullLabel !== null
+                    ? (str_replace(['-', ' ', '/', '\\'], '', $fullLabel) ?: null)
+                    : null;
+                $rackPrimary = $shelfNumber = null;
+                if ($shelfLocation && preg_match('/^([A-Z]+)(\d+)$/', $shelfLocation, $m)) {
+                    $rackPrimary = $m[1];
+                    $shelfNumber = $m[2];
+                }
+
+                MissingFile::create([
+                    'file_number'      => $fr->file_number,
+                    'file_title'       => $fr->file_title,
+                    'tracking_id'      => $indexing->tracking_id ?? null,
+                    'archive_registry' => $registry !== null ? mb_substr($registry, 0, 50) : null,
+                    'rack_primary'     => $rackPrimary,
+                    'shelf_number'     => $shelfNumber,
+                    'full_label'       => $fullLabel !== null ? mb_substr($fullLabel, 0, 30) : null,
+                    'shelf_location'   => $shelfLocation !== null ? mb_substr($shelfLocation, 0, 30) : null,
+                    'property_location' => $indexing->property_description ?? null,
+                    'reported_by'      => $monitor->id ?? null,
+                    'reported_by_name' => $monitor ? trim(($monitor->first_name ?? '') . ' ' . ($monitor->last_name ?? '')) : null,
+                    'remarks'          => trim('Reported Not Found (Missing) by the SCB Monitor on ' . $fr->request_no . '.'
+                        . (!empty($validated['note']) ? ' Note: ' . $validated['note'] : '')),
+                    'status'           => MissingFile::STATUS_MISSING,
+                    'source'           => $fr->source ?: FileSearchRequest::SOURCE_QUICK_SEARCH,
+                    'request_no'       => $fr->request_no,
+                ]);
+            }
+        }
+
         // Not-found on a non-indexed (or uncaptured) file → print Missing/Refer slip.
         $slipVariant = $found ? null : 'refer_registry';
 
@@ -565,6 +626,12 @@ class MobileFileSearchController extends Controller
         if ($fr->front_desk_acted_at !== null) {
             return response()->json(['success' => false, 'message' => 'The Front Desk has already acted on this request — it can no longer be reverted.'], 422);
         }
+
+        // Remove the missing-file report auto-created by a Not Found (Missing)
+        // response, so future requests stop diverting to the Original Registry.
+        MissingFile::where('request_no', $fr->request_no)
+            ->where('status', '!=', MissingFile::STATUS_FOUND)
+            ->delete();
 
         // Put the request back in the open queue (clear the response fields).
         $fr->forceFill([

@@ -34,10 +34,16 @@
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden p-6">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold">File Information</h3>
-            <button id="reset-file-info-btn" class="hidden inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300" title="Reset to default file indexing data">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-              Reset
-            </button>
+            <div class="flex items-center gap-2">
+              <button id="edit-file-info-btn" class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 border border-blue-300" title="Edit file information">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                Edit
+              </button>
+              <button id="reset-file-info-btn" class="hidden inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300" title="Reset to default file indexing data">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                Reset
+              </button>
+            </div>
           </div>
           <p class="text-sm text-gray-500 mb-4" id="file-info-subtitle">Details about the selected file</p>
           
@@ -88,7 +94,23 @@
               <span class="form-label">Land Use:</span>
               <span class="form-value" id="property-type-value"></span>
             </div>
-            
+            <div class="form-row">
+              <span class="form-label">Lon/Lat:</span>
+              <span class="form-value" id="lon-lat-value"></span>
+            </div>
+            <div class="form-row">
+              <span class="form-label">Term:</span>
+              <span class="form-value" id="term-value"></span>
+            </div>
+            <div class="form-row">
+              <span class="form-label">Commencement Date:</span>
+              <span class="form-value" id="commencement-date-value"></span>
+            </div>
+            <div class="form-row">
+              <span class="form-label">Residual Term:</span>
+              <span class="form-value" id="residual-term-value"></span>
+            </div>
+
             <div class="form-row">
               <span class="form-label">Last Transaction:</span>
               <span class="form-value" id="last-transaction-value"></span>
@@ -593,7 +615,7 @@
                   <th style="min-width:140px;white-space:nowrap;">File No</th>
                   <th style="min-width:60px;">Source</th>
                   <th style="min-width:70px;">Weight</th>
-                  <th style="min-width:120px;">Instrument/Transaction Type</th>
+                  <th style="min-width:120px;">Instrument/<br>Transaction Type</th>
                   <th style="min-width:110px;white-space:nowrap;">Party 1</th>
                   <th style="min-width:110px;">Party 2</th>
                   <th style="min-width:100px;">Party 3</th>
@@ -695,6 +717,35 @@
                 </div>
               </div>
               <p id="update-client-details-status" class="text-xs mt-1 hidden"></p>
+            </div>
+
+            {{-- Residual Term --}}
+            {{-- Commencement Date is auto-filled with the R of O grant's
+                 Transaction/Reg Date; when no dated grant exists the user picks the
+                 date and saves it (persisted per file in ls_comment_staging).
+                 Residual Term = land-use term minus years elapsed since that date;
+                 both show in the File Information panel and print on the report. --}}
+            <div id="residual-term-section" class="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="text-sm font-semibold text-indigo-800">Residual Term <span class="font-normal text-indigo-500">(prints on the search report)</span></h4>
+                <button class="save-comment-btn inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700" data-type="commencement_date">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                  Save
+                </button>
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="flex items-center gap-1">
+                  <label class="text-xs font-medium text-gray-700 whitespace-nowrap">Commencement Date</label>
+                  <input type="date" id="comment-commencement_date-text" class="w-40 px-2 py-1 text-xs border border-gray-300 rounded"
+                         title="Date the R of O term commenced — auto-filled from the grant's Transaction/Reg Date; pick manually when missing.">
+                </div>
+                <div class="flex items-center gap-1">
+                  <label class="text-xs font-medium text-gray-700 whitespace-nowrap">Residual Term</label>
+                  <input type="text" id="residual-term-input" class="w-36 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="e.g. 28 Years"
+                         title="Auto-calculated from the commencement date; edit to override.">
+                </div>
+              </div>
+              <p class="comment-status text-xs mt-1 hidden" data-type="commencement_date"></p>
             </div>
 
             {{-- Ground Rent --}}
@@ -838,6 +889,204 @@
         </div>
       </div>
     </div>
+
+    {{-- Edit File Information Modal --}}
+    <div id="edit-file-info-modal" class="fixed inset-0 z-[9999] hidden" aria-modal="true" role="dialog">
+      <div class="absolute inset-0 bg-black/50" id="edit-file-info-backdrop"></div>
+      <div class="relative z-10 flex items-center justify-center min-h-screen px-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] overflow-y-auto">
+          <div class="flex items-center justify-between px-6 py-4 border-b">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-900">Edit File Information</h3>
+              <p class="text-xs text-gray-500 mt-0.5">Updates the file indexing record for <span id="edit-file-info-file-number-label" class="font-semibold"></span></p>
+            </div>
+            <button id="edit-file-info-close" type="button" class="text-gray-400 hover:text-gray-600">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+          <form id="edit-file-info-form" class="px-6 py-5 space-y-4" onsubmit="return false;">
+            <input type="hidden" id="edit-file-info-file-number">
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">File Title <span class="text-red-500">*</span></label>
+              <input type="text" id="edit-file-info-title" maxlength="255" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="File title / current holder">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Plot No</label>
+                <input type="text" id="edit-file-info-plot-no" maxlength="255" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Plot number">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Size</label>
+                <input type="text" id="edit-file-info-size" maxlength="100" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="e.g. 0.05 HA">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">TP No</label>
+                <input type="text" id="edit-file-info-tpno" maxlength="100" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="TP number">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Land Use</label>
+                <input type="text" id="edit-file-info-land-use" maxlength="100" list="edit-file-info-land-use-options" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="e.g. Residential">
+                <datalist id="edit-file-info-land-use-options">
+                  @isset($landUseOptions)
+                    @foreach ($landUseOptions as $lu)
+                      <option value="{{ $lu }}"></option>
+                    @endforeach
+                  @endisset
+                </datalist>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">District</label>
+                <input type="text" id="edit-file-info-district" maxlength="100" list="edit-file-info-district-options" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="District">
+                <datalist id="edit-file-info-district-options">
+                  @isset($districtOptions)
+                    @foreach ($districtOptions as $d)
+                      <option value="{{ $d }}"></option>
+                    @endforeach
+                  @endisset
+                </datalist>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">LGA</label>
+                <input type="text" id="edit-file-info-lga" maxlength="100" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Local Government Area">
+              </div>
+            </div>
+            <p id="edit-file-info-error" class="text-xs text-red-600 hidden"></p>
+          </form>
+          <div class="flex justify-end gap-2 px-6 py-4 border-t bg-gray-50 rounded-b-xl">
+            <button id="edit-file-info-cancel" type="button" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+            <button id="edit-file-info-save" type="button" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">Save Changes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        if (window.__lsEditFileInfoBound) return;
+        window.__lsEditFileInfoBound = true;
+
+        function panelValue(id) {
+          var text = (document.getElementById(id)?.textContent || '').trim();
+          return text === '-' ? '' : text;
+        }
+
+        function openEditFileInfoModal() {
+          var modal = document.getElementById('edit-file-info-modal');
+          if (!modal) return;
+
+          var fileNumber = panelValue('file-number-value') || (window.__lsLastSearchedFileNumber || '').trim();
+          if (!fileNumber) {
+            if (typeof Swal !== 'undefined') Swal.fire({ icon: 'warning', title: 'No file selected', text: 'Search for a file before editing its information.' });
+            else alert('Search for a file before editing its information.');
+            return;
+          }
+
+          document.getElementById('edit-file-info-file-number').value = fileNumber;
+          document.getElementById('edit-file-info-file-number-label').textContent = fileNumber;
+          document.getElementById('edit-file-info-title').value = panelValue('file-title-value');
+          document.getElementById('edit-file-info-plot-no').value = panelValue('plot-no-value');
+          document.getElementById('edit-file-info-size').value = panelValue('size-value');
+          document.getElementById('edit-file-info-tpno').value = panelValue('tpno-value');
+          document.getElementById('edit-file-info-district').value = panelValue('district-value');
+          document.getElementById('edit-file-info-lga').value = panelValue('lga-value');
+          document.getElementById('edit-file-info-land-use').value = panelValue('property-type-value');
+
+          var errorEl = document.getElementById('edit-file-info-error');
+          errorEl.textContent = '';
+          errorEl.classList.add('hidden');
+
+          modal.classList.remove('hidden');
+        }
+
+        function closeEditFileInfoModal() {
+          document.getElementById('edit-file-info-modal')?.classList.add('hidden');
+        }
+
+        document.getElementById('edit-file-info-btn')?.addEventListener('click', openEditFileInfoModal);
+        document.getElementById('edit-file-info-close')?.addEventListener('click', closeEditFileInfoModal);
+        document.getElementById('edit-file-info-cancel')?.addEventListener('click', closeEditFileInfoModal);
+        document.getElementById('edit-file-info-backdrop')?.addEventListener('click', closeEditFileInfoModal);
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') closeEditFileInfoModal();
+        });
+
+        document.getElementById('edit-file-info-save')?.addEventListener('click', async function () {
+          var saveBtn = this;
+          var errorEl = document.getElementById('edit-file-info-error');
+          errorEl.textContent = '';
+          errorEl.classList.add('hidden');
+
+          var payload = {
+            file_number: document.getElementById('edit-file-info-file-number').value.trim(),
+            kangis_file_no: panelValue('kangis-file-number-value'),
+            new_kangis_file_no: panelValue('new-kangis-file-number-value'),
+            file_title: document.getElementById('edit-file-info-title').value.trim(),
+            plot_no: document.getElementById('edit-file-info-plot-no').value.trim(),
+            size: document.getElementById('edit-file-info-size').value.trim(),
+            tp_no: document.getElementById('edit-file-info-tpno').value.trim(),
+            district: document.getElementById('edit-file-info-district').value.trim(),
+            lga: document.getElementById('edit-file-info-lga').value.trim(),
+            land_use: document.getElementById('edit-file-info-land-use').value.trim(),
+          };
+
+          if (!payload.file_title) {
+            errorEl.textContent = 'File Title is required.';
+            errorEl.classList.remove('hidden');
+            return;
+          }
+
+          saveBtn.disabled = true;
+          var originalLabel = saveBtn.textContent;
+          saveBtn.textContent = 'Saving…';
+
+          try {
+            var response = await fetch('{{ route("legalsearch.updateFileIndexing") }}', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+              },
+              credentials: 'same-origin',
+              body: JSON.stringify(payload),
+            });
+            var result = await response.json();
+
+            if (response.ok && result.success) {
+              var d = result.data || {};
+              var setPanel = function (id, value) {
+                var el = document.getElementById(id);
+                if (el) el.textContent = (value && String(value).trim()) ? String(value).trim() : '-';
+              };
+              setPanel('file-title-value', d.file_title);
+              setPanel('plot-no-value', d.plot_no);
+              setPanel('size-value', d.size);
+              setPanel('tpno-value', d.tp_no);
+              setPanel('district-value', d.district);
+              setPanel('lga-value', d.lga);
+              setPanel('property-type-value', d.land_use);
+
+              closeEditFileInfoModal();
+              if (typeof Swal !== 'undefined') {
+                Swal.fire({ icon: 'success', title: 'Saved', text: result.message || 'File information updated successfully.', timer: 2500, showConfirmButton: false });
+              }
+            } else {
+              var msg = result.message || (result.errors ? Object.values(result.errors).flat().join(' ') : 'Update failed.');
+              errorEl.textContent = msg;
+              errorEl.classList.remove('hidden');
+            }
+          } catch (err) {
+            console.error('Edit file info error:', err);
+            errorEl.textContent = 'Network error. Please try again.';
+            errorEl.classList.remove('hidden');
+          } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = originalLabel;
+          }
+        });
+      })();
+    </script>
 
     {{-- Record Comment Modal --}}
     <div id="ls-add-comment-modal" class="fixed inset-0 z-[9999] hidden" aria-modal="true" role="dialog">

@@ -91,7 +91,7 @@
                                 <i data-lucide="search" class="w-4 h-4 text-gray-400"></i>
                             </div>
                         </div>
-                        <p class="text-xs text-gray-500 mt-2 text-center">Search by MLS File No, Kangis File No, File Name, or Decommissioning Reason</p>
+                        <p class="text-xs text-gray-500 mt-2 text-center">Search by File No, File Name, or Decommissioning Reason</p>
                     </div>
                 </div>
 
@@ -135,8 +135,7 @@
                                     <tr>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">S/N</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PropID</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MLS File No</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kangis File No</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File No</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Related File</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File Name</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Commissioning Date</th>
@@ -320,8 +319,7 @@
                         return meta.row + meta.settings._iDisplayStart + 1;
                     } },
                     { data: 'prop_id', name: 'prop_id', orderable: false, searchable: false },
-                    { data: 'mls_file_no', name: 'mls_file_no' },
-                    { data: 'kangis_file_no', name: 'kangis_file_no' },
+                    { data: 'file_no', name: 'file_no' },
                     { data: 'related_file', name: 'related_file', orderable: false, searchable: false },
                     { data: 'file_name', name: 'file_name' },
                     { data: 'commissioning_date', name: 'commissioning_date' },
@@ -330,7 +328,7 @@
                     { data: 'decommissioning_reason', name: 'decommissioning_reason' },
                     { data: 'action', name: 'action', orderable: false, searchable: false }
                 ],
-                order: [[7, 'desc']], // Order by decommissioning_date desc
+                order: [[6, 'desc']], // Order by decommissioning_date desc
                 pageLength: 25,
                 responsive: true,
                 drawCallback: function() {

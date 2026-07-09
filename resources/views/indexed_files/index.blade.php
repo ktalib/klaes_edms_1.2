@@ -229,7 +229,7 @@
                                             <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
                                                 Lat</th>
                                             <th class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
-                                                Geocode</th>
+                                                Map</th>
                                             <th
                                                 class="px-4 py-3 text-left font-semibold text-gray-700 text-xs uppercase tracking-wide">
                                                 Status</th>

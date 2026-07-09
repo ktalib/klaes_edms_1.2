@@ -207,6 +207,102 @@
         return `\u003cspan class="file-badge ${badgeClass}"\u003e${fileNumber}\u003c/span\u003e`;
     }
 
+    // Derive a human-readable File Type label from a file number's prefix.
+    // e.g. CON-COM-2026-429 -> "Conversion", RES-2024-12 -> "Residential".
+    // Prefix-based guessing is only a fallback — prefer the record's actual
+    // mls_file_no.source via getCommissioningSourceLabel() whenever available.
+    function getCommissioningFileType(fileNumber) {
+        if (!fileNumber) return '';
+        let up = String(fileNumber).toUpperCase().trim();
+        const isTemporary = up.endsWith('(T)');
+        if (isTemporary) up = up.replace(/\(T\)\s*$/, '').trim();
+
+        let label = '';
+        if (up.startsWith('CON-') || up === 'CON') {
+            label = 'Conversion';
+        } else if (up.startsWith('SLTR')) {
+            label = 'Statutory Right of Occupancy';
+        } else if (up.startsWith('SIT')) {
+            label = 'SIT';
+        } else if (up.startsWith('RES')) {
+            label = 'Residential';
+        } else if (up.startsWith('COM')) {
+            label = 'Commercial';
+        } else if (up.startsWith('IND')) {
+            label = 'Industrial';
+        } else if (up.startsWith('AG')) {
+            label = 'Agricultural';
+        } else if (up.startsWith('KN')) {
+            label = 'Kano Heritage';
+        } else if (up.startsWith('MISC')) {
+            label = 'Miscellaneous';
+        }
+
+        if (isTemporary) {
+            label = label ? `Temporary - ${label}` : 'Temporary File';
+        }
+        return label;
+    }
+
+    // Resolve the label shown after the File No on the commissioning sheet.
+    // The authoritative value is the record's source (mls_file_no.source, e.g.
+    // "Conversion", "Change of Purpose", "OP Resettlement"); the file-number
+    // prefix is only used when no source is stored for the record.
+    function getCommissioningSourceLabel(source, fileNumber) {
+        const src = String(source || '').trim();
+        if (src && src.toUpperCase() !== 'N/A') return src;
+        return getCommissioningFileType(fileNumber);
+    }
+
+    // Fetch the record's source and stamp it on the hidden cs_source input so the
+    // modal badge and Generate & Print flow use the real source, not a prefix guess.
+    async function populateCommissioningSource(fileNumber) {
+        const sourceInput = document.getElementById('cs_source');
+        if (!sourceInput) return;
+
+        const key = String(fileNumber || '').trim();
+        sourceInput.value = '';
+        sourceInput.dataset.fileNo = key.toUpperCase();
+        updateCommissioningFileType();
+        if (!key) return;
+
+        try {
+            const response = await fetch(`{{ route("mls-fileno.show", ":id") }}`.replace(':id', encodeURIComponent(key)));
+            const payload = await response.json();
+            const record = (payload && payload.success && payload.data) ? payload.data : payload;
+            const input = document.getElementById('cs_file_number');
+            const stillSameFile = input && input.value.trim().toUpperCase() === sourceInput.dataset.fileNo;
+            if (record && record.source && stillSameFile) {
+                sourceInput.value = String(record.source).trim();
+                updateCommissioningFileType();
+            }
+        } catch (e) {
+            console.warn('Could not resolve file source for commissioning sheet', e);
+        }
+    }
+
+    // Reflect the detected File Type as a badge next to the File No input in the commissioning modal.
+    function updateCommissioningFileType() {
+        const input = document.getElementById('cs_file_number');
+        const badge = document.getElementById('cs_file_type_badge');
+        if (!input || !badge) return;
+
+        // Drop a stale source when the user edits the file number manually.
+        const sourceInput = document.getElementById('cs_source');
+        if (sourceInput && sourceInput.dataset.fileNo !== input.value.trim().toUpperCase()) {
+            sourceInput.value = '';
+        }
+
+        const label = getCommissioningSourceLabel(sourceInput ? sourceInput.value : '', input.value);
+        if (label) {
+            badge.textContent = label;
+            badge.classList.remove('hidden');
+        } else {
+            badge.textContent = '';
+            badge.classList.add('hidden');
+        }
+    }
+
     function resetTrackingIdDisplay(text = '--') {
         const displayEl = document.getElementById('trackingIdDisplay');
         if (displayEl) {
@@ -3688,6 +3784,7 @@
     function openCommissioningSheet(recordId, fileNo, fileName, plotNo, tpNo, location, lga, trackingId, createdAt, createdBy) {
         // Pre-fill the commissioning sheet modal with available data
         document.getElementById('cs_file_number').value = fileNo || '';
+        populateCommissioningSource(fileNo);
         document.getElementById('cs_file_name').value = fileName || '';
         document.getElementById('cs_name_allottee').value = fileName || '';
         document.getElementById('cs_plot_number').value = (plotNo && plotNo !== 'N/A') ? plotNo : '';
@@ -4119,6 +4216,29 @@
                 this.buildLocation();
             },
 
+            // Push the current Alpine district/lga values into the native <select>
+            // widgets. These selects have no x-model, so assigning this.district /
+            // this.lga during a backfill does not move the dropdowns (and the LGA
+            // select would submit an empty value). Call this after any flow that
+            // backfills location from an existing/related file.
+            syncLocationSelects() {
+                // District: loadDistrictField handles the native select, the
+                // "Other" specify input and the Select2 display in one place.
+                this.loadDistrictField(this.district || '');
+
+                // LGA: plain native select — set its value if the option exists.
+                const lgaSel = document.getElementById('generator_lga');
+                if (lgaSel) {
+                    const lgaVal = this.lga || '';
+                    const hasOption = Array.from(lgaSel.options).some(o => o.value === lgaVal);
+                    lgaSel.value = hasOption ? lgaVal : '';
+                    if (!hasOption) this.lga = '';
+                    if (window.jQuery && $(lgaSel).hasClass('select2-hidden-accessible')) {
+                        $(lgaSel).trigger('change.select2');
+                    }
+                }
+            },
+
             initAllocationSelect2() {
                 const self = this;
                 if (!this.allocatedByFilter) {
@@ -4468,8 +4588,37 @@
                             || ''
                         ).toString().trim();
                         self.relatedFileIndexingId = (data.record && data.record.id) || '';
+
+                        // Inherit the property location from the original/related file
+                        // (e.g. recertification keeps the same property) so District,
+                        // LGA and Location backfill on the card.
+                        self.backfillLocationFromFile(self.relatedFileNo);
                     }
                 });
+            },
+
+            // Pull only the location fields (location, district, lga) for a file from
+            // the centralized lookup and sync the dropdowns. Used when linking a
+            // related/original file where we inherit the property location but keep
+            // the new file's own name, prefix and land use.
+            backfillLocationFromFile(fileNumber) {
+                const clean = (fileNumber || '').toString().replace(/[\s-]+$/, '').trim();
+                if (!clean) return;
+                const self = this;
+                const baseUrl = "{{ route('api.file-numbers.lookup') }}";
+                fetch(`${baseUrl}?file_number=${encodeURIComponent(clean)}`)
+                    .then(r => r.json())
+                    .then(res => {
+                        if (!res || !res.success || !res.data) return;
+                        const m = res.data;
+                        if (m.location) self.location = (m.location || '').toString().toUpperCase();
+                        if (m.lga) self.lga = m.lga;
+                        if (m.district) self.district = m.district;
+                        if (m.location || m.lga || m.district) {
+                            self.$nextTick(() => self.syncLocationSelects());
+                        }
+                    })
+                    .catch(err => console.error('Related file location backfill failed:', err));
             },
 
             clearRelatedFile() {
@@ -4579,14 +4728,16 @@
                                     self.fileName = res.data.file_title || '';
                                     self.plotNo = res.data.plot_no || '';
                                     self.lga = res.data.lga || '';
-                                    
+                                    self.district = res.data.district || '';
+
                                     // Construct location from available components
                                     let locParts = [];
                                     if (res.data.house_no) locParts.push(res.data.house_no);
                                     if (res.data.street_name) locParts.push(res.data.street_name);
                                     if (res.data.district) locParts.push(res.data.district);
                                     self.location = locParts.length > 0 ? locParts.join(', ').toUpperCase() : '';
-                                    
+                                    self.$nextTick(() => self.syncLocationSelects());
+
                                     self.isInherited = true;
 
                                     // Detect full prefix from source file number (e.g. IND-RC from IND-RC-2026-4)
@@ -4726,13 +4877,15 @@
                     self.fileName = data.applicant_name || data.file_title || '';
                     self.plotNo = data.plot_no || '';
                     self.lga = data.lga || '';
-                    
+                    self.district = data.district || '';
+
                     // Construct location from available components
                     let locParts = [];
                     if (data.house_no) locParts.push(data.house_no);
                     if (data.street_name) locParts.push(data.street_name);
                     if (data.district) locParts.push(data.district);
                     self.location = locParts.length > 0 ? locParts.join(', ').toUpperCase() : '';
+                    self.$nextTick(() => self.syncLocationSelects());
                     
                     // Detect full prefix from source file number (e.g. CON-IND from CON-IND-2026-1)
                     let detectedPrefix = '';
@@ -4824,6 +4977,7 @@
                                     self.fileName = res.data.file_title || '';
                                     self.plotNo = res.data.plot_no || '';
                                     self.lga = res.data.lga || '';
+                                    self.district = res.data.district || '';
 
                                     // Construct location from available components
                                     let locParts = [];
@@ -4831,6 +4985,7 @@
                                     if (res.data.street_name) locParts.push(res.data.street_name);
                                     if (res.data.district) locParts.push(res.data.district);
                                     self.location = locParts.length > 0 ? locParts.join(', ').toUpperCase() : '';
+                                    self.$nextTick(() => self.syncLocationSelects());
 
                                     self.isInherited = true;
 
@@ -4973,8 +5128,10 @@
                     this.fileName = data.applicant_name || '';
                     this.plotNo = data.plot_no || '';
                     this.lga = data.lga || '';
+                    this.district = data.district || '';
                     this.location = (data.location || '').toUpperCase();
                     this.isInherited = true;
+                    this.$nextTick(() => this.syncLocationSelects());
 
                     this.updatePreview();
                     
@@ -5856,8 +6013,12 @@
 
                     // Populate fields if they exist in match
                     if (match.file_name) alpineData.fileName = match.file_name;
-                    if (match.location) alpineData.location = match.location;
+                    if (match.location) alpineData.location = (match.location || '').toString().toUpperCase();
                     if (match.lga) alpineData.lga = match.lga;
+                    if (match.district) alpineData.district = match.district;
+                    if ((match.lga || match.district) && typeof alpineData.syncLocationSelects === 'function') {
+                        alpineData.syncLocationSelects();
+                    }
                     if (match.plot_no) alpineData.plotNo = match.plot_no;
                     if (match.tp_no) alpineData.tpNo = match.tp_no;
                     if (match.phone_no) alpineData.phone_no = match.phone_no;
@@ -5994,6 +6155,7 @@
 
         // Pre-fill         the form with fil           e data
         document.getElementById('cs_file_number').value = fileNumber || '';
+        populateCommissioningSource(fileNumber);
         document.getElementById('cs_file_name').value = fileName || '';
         document.getElementById('cs_plot_number').value = plotNo || '';
         document.getElementById('cs_tp_number').value = tpNo || '';
@@ -6248,8 +6410,11 @@
             let y = 85;
             // SIT files carry a reason that should print directly after the Location.
             const isSitFile = String(fileNumberVal || '').toUpperCase().startsWith('SIT-');
+            // Append the record's source after the File No, e.g. "CON-COM-2026-429 (Conversion)".
+            const fileTypeLabel = getCommissioningSourceLabel(formData.get('source'), fileNumberVal);
+            const fileNoDisplay = fileTypeLabel ? `${fileNumberVal} (${fileTypeLabel})` : fileNumberVal;
             const fields = [
-                ['File No:', formData.get('file_number')],
+                ['File No:', fileNoDisplay],
                 ['File Name:', formData.get('file_name')],
                 ['Plot No:', formData.get('plot_number')],
                 ['TP No:', formData.get('tp_number')],
@@ -6270,8 +6435,8 @@
 
                 const text = String(value || '');
 
-                // Long values (File Name, SIT reason, Location) wrap within the value column and grow over as many lines as needed.
-                if (label === 'File Name:' || label === 'Reason:' || label === 'Location:') {
+                // Long values (File No, File Name, SIT reason, Location) wrap within the value column and grow over as many lines as needed.
+                if (label === 'File No:' || label === 'File Name:' || label === 'Reason:' || label === 'Location:') {
                     const lines = doc.splitTextToSize(text, valueMaxWidth);
                     lines.forEach((ln, i) => {
                         doc.text(ln, 72, y + i * reasonLineHeight);
@@ -6377,8 +6542,11 @@
                 const createdAt = row.created_at ? new Date(row.created_at) : new Date();
 
                 const isSitRow = String(rowFileNo || '').toUpperCase().startsWith('SIT-');
+                // Append the record's source after the File No, e.g. "CON-COM-2026-429 (Conversion)".
+                const rowFileTypeLabel = getCommissioningSourceLabel(row.source, rowFileNo);
+                const rowFileNoDisplay = rowFileTypeLabel ? `${rowFileNo} (${rowFileTypeLabel})` : rowFileNo;
                 const fields = [
-                    ['File No:', row.full_file_number || row.mlsf_no || row.file_number || ''],
+                    ['File No:', rowFileNoDisplay],
                     ['File Name:', row.file_name || ''],
                     ['Plot No:', row.plot_no || 'N/A'],
                     ['TP No:', row.tp_no || 'N/A'],
@@ -6399,8 +6567,8 @@
 
                     const text = String(value || '');
 
-                    // Long values (File Name, SIT reason, Location) wrap within the value column and grow over as many lines as needed.
-                    if (label === 'File Name:' || label === 'Reason:' || label === 'Location:') {
+                    // Long values (File No, File Name, SIT reason, Location) wrap within the value column and grow over as many lines as needed.
+                    if (label === 'File No:' || label === 'File Name:' || label === 'Reason:' || label === 'Location:') {
                         const lines = doc.splitTextToSize(text, valueMaxWidth);
                         lines.forEach((ln, idx) => {
                             doc.text(ln, textStartX, y + idx * reasonLineHeight);
@@ -7807,6 +7975,7 @@
                     formData.append('lga', record.lga || '');
                     formData.append('tracking_id', record.tracking_id || '');
                     formData.append('sit_reason', record.sit_reason || '');
+                    formData.append('source', record.source || '');
 
                     // Add current time/date/user
                     const now = new Date();

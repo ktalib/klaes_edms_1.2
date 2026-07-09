@@ -1,12 +1,46 @@
 @extends('layouts.app')
 
 @section('styles')
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <style>
     .transition-all { transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
     .badge-trans { animation: fadeIn 0.3s ease-out; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
     .modal-backdrop { background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(8px); }
     .child-row-enter { animation: fadeIn 0.2s ease-out; }
+    /* Select2 overrides for this form */
+    .select2-container--default .select2-selection--single {
+        height: 40px !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 0.5rem !important;
+        padding: 0.375rem 0.75rem !important;
+        font-size: 0.875rem !important;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        line-height: 26px !important;
+        color: #334155 !important;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 38px !important;
+    }
+    .select2-container--open .select2-dropdown--below {
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 0.5rem !important;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1) !important;
+    }
+    .select2-search--dropdown .select2-search__field {
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 0.375rem !important;
+        padding: 0.375rem 0.5rem !important;
+        font-size: 0.875rem !important;
+    }
+    .select2-results__option--highlighted {
+        background-color: #eef2ff !important;
+        color: #4338ca !important;
+    }
+    .select2-container--default .select2-results__option--selected {
+        background-color: #e0e7ff !important;
+    }
 </style>
 @endsection
  
@@ -405,7 +439,7 @@
                                         </div>
                                         <div>
                                             <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Street Name</label>
-                                            <select name="street_name" id="street_name" onchange="onStreetChange()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                                            <select name="street_name" id="street_name" onchange="onStreetChange()" class="s2-select w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
                                                 <option value="">SELECT STREET</option>
                                                 @foreach($streetNames as $street)
                                                     <option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>
@@ -417,7 +451,7 @@
                                         </div>
                                         <div>
                                             <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">District</label>
-                                            <select name="district" id="district" onchange="onDistrictChange()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                                            <select name="district" id="district" onchange="onDistrictChange()" class="s2-select w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
                                                 <option value="">SELECT DISTRICT</option>
                                                 @foreach($districts as $district)
                                                     <option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>
@@ -529,6 +563,8 @@
 @endsection
 
 @section('footer-scripts')
+{{-- Select2 for searchable dropdowns --}}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script>
 // ─── Global State ───────────────────────────────────────────────────────────
@@ -575,6 +611,33 @@ function toggleOldFiles(id) {
     extras.forEach(el => el.classList.toggle('hidden'));
     const collapsed = extras[0].classList.contains('hidden');
     btn.textContent = collapsed ? ('+' + btn.dataset.count + ' others') : 'Show less';
+}
+
+// ─── Select2 Helper (searchable street / district dropdowns) ─────────────────
+function destroySelect2(container) {
+    if (typeof $ === 'undefined' || !$.fn.select2) return;
+    $(container || document).find('.s2-select').each(function () {
+        if ($(this).data('select2')) {
+            $(this).select2('destroy');
+        }
+    });
+}
+
+function initManualSelect2(container) {
+    if (typeof $ === 'undefined' || !$.fn.select2) return;
+    destroySelect2(container);
+    const $selects = $(container || document).find('.s2-select');
+    $selects.each(function () {
+        const $el = $(this);
+        // Skip "Other" text input siblings that have taken over
+        if ($el.prop('disabled')) return;
+        $el.select2({
+            placeholder: $el.find('option:first').text() || 'Select...',
+            allowClear: true,
+            width: '100%',
+            dropdownAutoWidth: true,
+        });
+    });
 }
 
 // ─── Temporary Holding File ──────────────────────────────────────────────────
@@ -748,6 +811,8 @@ function goBackToStep1() {
     if (streetSelect) streetSelect.setAttribute('name', 'street_name');
     const streetOther = document.getElementById('street_other');
     if (streetOther) { streetOther.classList.add('hidden'); streetOther.disabled = true; streetOther.value = ''; }
+    // Destroy Select2 on all s2-select elements to clean up for next modal open
+    destroySelect2();
     resetHoldingFile();
     renderBadges();
     const form = document.getElementById('linkage-form');
@@ -762,6 +827,7 @@ function selectWorkflow(workflow) {
     tailorLeftForm();
     renderTailoredForm();
     lucide.createIcons();
+    initManualSelect2();
 }
 
 // ─── Tailor Left Side Labels ─────────────────────────────────────────────────
@@ -838,11 +904,11 @@ function manualLocationBlock(title) {
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Street Name</label>
-                    <select name="street_name" id="street_name" onchange="updateManualLocationPreview()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">${manualStreetOptions}</select>
+                    <select name="street_name" id="street_name" onchange="updateManualLocationPreview()" class="s2-select w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">${manualStreetOptions}</select>
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">District</label>
-                    <select name="district" id="district" onchange="updateManualLocationPreview()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">${manualDistrictOptions}</select>
+                    <select name="district" id="district" onchange="updateManualLocationPreview()" class="s2-select w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">${manualDistrictOptions}</select>
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">LGA</label>
@@ -870,17 +936,28 @@ function onDistrictChange() {
     const select  = document.getElementById('district');
     const specify = document.getElementById('district_other');
     if (select && specify) {
+        const $select = $(select);
         const isOther = (select.value || '').trim().toLowerCase() === 'other';
         if (isOther) {
+            // Destroy Select2, hide the select, show the text input
+            if ($select.data('select2')) $select.select2('destroy');
             specify.classList.remove('hidden');
             specify.disabled = false;
-            select.removeAttribute('name');   // avoid submitting the literal "Other"
+            select.removeAttribute('name');
             specify.focus();
         } else {
+            // Hide text input, show the select, re-init Select2
             specify.classList.add('hidden');
             specify.disabled = true;
             specify.value = '';
             select.setAttribute('name', 'district');
+            if ($select.data('select2')) $select.select2('destroy');
+            $select.select2({
+                placeholder: $select.find('option:first').text() || 'Select...',
+                allowClear: true,
+                width: '100%',
+                dropdownAutoWidth: true,
+            });
         }
     }
     updateManualLocationPreview();
@@ -900,8 +977,10 @@ function onStreetChange() {
     const select  = document.getElementById('street_name');
     const specify = document.getElementById('street_other');
     if (select && specify) {
+        const $select = $(select);
         const isOther = (select.value || '').trim().toLowerCase() === 'other';
         if (isOther) {
+            if ($select.data('select2')) $select.select2('destroy');
             specify.classList.remove('hidden');
             specify.disabled = false;
             select.removeAttribute('name');
@@ -911,6 +990,13 @@ function onStreetChange() {
             specify.disabled = true;
             specify.value = '';
             select.setAttribute('name', 'street_name');
+            if ($select.data('select2')) $select.select2('destroy');
+            $select.select2({
+                placeholder: $select.find('option:first').text() || 'Select...',
+                allowClear: true,
+                width: '100%',
+                dropdownAutoWidth: true,
+            });
         }
     }
     updateManualLocationPreview();
@@ -1342,14 +1428,14 @@ function manualMergerLocationCardHTML(index, fileData) {
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Street Name</label>
-                    <select name="location_details[${index}][street_name]" onchange="onMergerCardOther(${index}, 'street_name')" class="merger-select-street_name w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm">${manualStreetOptions}</select>
+                    <select name="location_details[${index}][street_name]" onchange="onMergerCardOther(${index}, 'street_name')" class="s2-select merger-select-street_name w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm">${manualStreetOptions}</select>
                     <input type="text" name="location_details[${index}][street_name]" disabled placeholder="Specify street"
                            class="merger-specify-street_name hidden w-full mt-2 px-4 py-2.5 rounded-xl border border-indigo-300 text-sm"
                            oninput="updateManualMergerLocationPreview(${index})">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 uppercase mb-2">District</label>
-                    <select name="location_details[${index}][district]" onchange="onMergerCardOther(${index}, 'district')" class="merger-select-district w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm">${manualDistrictOptions}</select>
+                    <select name="location_details[${index}][district]" onchange="onMergerCardOther(${index}, 'district')" class="s2-select merger-select-district w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm">${manualDistrictOptions}</select>
                     <input type="text" name="location_details[${index}][district]" disabled placeholder="Specify district"
                            class="merger-specify-district hidden w-full mt-2 px-4 py-2.5 rounded-xl border border-indigo-300 text-sm"
                            oninput="updateManualMergerLocationPreview(${index})">
@@ -1407,6 +1493,7 @@ function generateManualMergerSources() {
             backfillManualMergerCard(i, selectedOldFileDetails[i - 1]);
         }
     }
+    initManualSelect2(locationContainer);
     if (window.lucide) window.lucide.createIcons();
 }
 
@@ -1454,6 +1541,13 @@ function setManualSelectValue(select, value) {
     Array.from(select.options).some(o => {
         if (String(o.value).trim().toUpperCase() === n || String(o.text).trim().toUpperCase() === n) {
             select.value = o.value;
+            // Update Select2 display without firing the native onchange handler (avoid re-init cycle)
+            const $select = $(select);
+            if ($select.data('select2')) {
+                $select.trigger('change.select2');
+            }
+            // Also fire native change for location preview update
+            if (typeof updateManualLocationPreview === 'function') updateManualLocationPreview();
             return true;
         }
     });
@@ -1466,9 +1560,11 @@ function onMergerCardOther(index, field) {
     const select  = card.querySelector(`.merger-select-${field}`);
     const specify = card.querySelector(`.merger-specify-${field}`);
     if (select && specify) {
+        const $select = $(select);
         const fieldName = `location_details[${index}][${field}]`;
         const isOther = (select.value || '').trim().toLowerCase() === 'other';
         if (isOther) {
+            if ($select.data('select2')) $select.select2('destroy');
             specify.classList.remove('hidden');
             specify.disabled = false;
             select.removeAttribute('name');
@@ -1480,6 +1576,13 @@ function onMergerCardOther(index, field) {
             specify.value = '';
             specify.removeAttribute('name');
             select.setAttribute('name', fieldName);
+            if ($select.data('select2')) $select.select2('destroy');
+            $select.select2({
+                placeholder: $select.find('option:first').text() || 'Select...',
+                allowClear: true,
+                width: '100%',
+                dropdownAutoWidth: true,
+            });
         }
     }
     updateManualMergerLocationPreview(index);
@@ -2039,6 +2142,7 @@ function renderTailoredForm() {
 
     fieldsContainer.innerHTML = html;
     if (window.lucide) window.lucide.createIcons();
+    initManualSelect2(fieldsContainer);
 }
 
 // ─── Badge Rendering (shared helper, called by DOMContentLoaded closures) ────
@@ -2055,6 +2159,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // View-only mode (?url=land_view): the modal/form is not rendered — skip all wiring.
     if (!linkageForm) return;
+
+    // ── Initialize Select2 on searchable dropdowns ────────────────────────────
+    initManualSelect2();
 
     // ── Verify Card Detail Elements ───────────────────────────────────────────
     const vTitle         = document.getElementById('v-title');

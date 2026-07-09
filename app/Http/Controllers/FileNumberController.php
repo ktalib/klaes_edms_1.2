@@ -1412,15 +1412,31 @@ class FileNumberController extends Controller
             $record = DB::connection('sqlsrv')
                 ->table('fileNumber')
                 ->leftJoin('mls_file_no', 'fileNumber.mlsfNo', '=', 'mls_file_no.full_file_number')
+                ->leftJoin('mother_applications as ma', 'ma.id', '=', 'fileNumber.application_id')
+                // Latest file indexing record for this file number (for district/lga/plot/tp).
+                ->leftJoinSub(
+                    DB::connection('sqlsrv')->table('file_indexings')
+                        ->select(['file_number', DB::raw('MAX(id) as max_id')])
+                        ->groupBy('file_number'),
+                    'fi_max',
+                    'fi_max.file_number',
+                    '=',
+                    'fileNumber.mlsfNo'
+                )
+                ->leftJoin('file_indexings as fi', 'fi.id', '=', 'fi_max.max_id')
                 ->select([
                     'fileNumber.*',
-                    // Coalesce crucial fields to ensure data availability
-                    DB::raw('COALESCE(fileNumber.lga, mls_file_no.lga) as lga'),
-                    DB::raw('COALESCE(fileNumber.FileName, mls_file_no.file_name) as FileName'),
-                    DB::raw('COALESCE(fileNumber.plot_no, mls_file_no.plot_no) as plot_no'),
-                    DB::raw('COALESCE(fileNumber.tp_no, mls_file_no.tp_no) as tp_no'),
+                    // Coalesce crucial fields across every source so the edit form
+                    // backfills whatever data exists (fileNumber -> mls_file_no ->
+                    // file indexing -> mother application).
+                    DB::raw('COALESCE(fileNumber.lga, mls_file_no.lga, fi.lga, ma.property_lga) as lga'),
+                    DB::raw('COALESCE(fileNumber.FileName, mls_file_no.file_name, fi.file_title) as FileName'),
+                    DB::raw('COALESCE(fileNumber.plot_no, mls_file_no.plot_no, fi.plot_number, ma.property_plot_no) as plot_no'),
+                    DB::raw('COALESCE(fileNumber.tp_no, mls_file_no.tp_no, fi.tp_no) as tp_no'),
                     DB::raw('COALESCE(fileNumber.location, mls_file_no.location) as location'),
-                    DB::raw('COALESCE(fileNumber.district, mls_file_no.district) as district'),
+                    DB::raw('COALESCE(fileNumber.district, mls_file_no.district, fi.district, ma.property_district) as district'),
+                    'ma.property_house_no as ma_house_no',
+                    'ma.property_street_name as ma_street_name',
                     'mls_file_no.customer_type',
                     'mls_file_no.purpose_id'
                 ])
@@ -1435,6 +1451,19 @@ class FileNumberController extends Controller
                     'success' => false,
                     'message' => 'Record not found'
                 ], 404);
+            }
+
+            // If no explicit location was stored, assemble one from the mother
+            // application's property parts so the edit form still shows something.
+            if (empty(trim((string) ($record->location ?? '')))) {
+                $parts = array_values(array_filter([
+                    $record->ma_house_no ?? null,
+                    $record->ma_street_name ?? null,
+                    $record->district ?? null,
+                ], fn ($v) => trim((string) $v) !== ''));
+                if (!empty($parts)) {
+                    $record->location = implode(', ', $parts);
+                }
             }
 
             return response()->json($record);

@@ -7,6 +7,7 @@
 @push('styles')
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 @endpush
+{{-- --}}
 
     <div class="flex-1 overflow-y-auto overflow-x-hidden">
         @include('admin.header')
@@ -200,7 +201,15 @@
                                 <i data-lucide="search" class="h-4 w-4"></i><span>Search</span>
                             </button>
                         </div>
-                        <p class="mt-2 text-xs text-gray-500">Every search returns a clear outcome and next action.</p>
+                        <div class="mt-3 flex items-center justify-between gap-3 flex-wrap">
+                            <p class="text-xs text-gray-500">Every search returns a clear outcome and next action.</p>
+                            <label for="qs-temp-check" class="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 cursor-pointer"
+                                title="Searches the temporary “(T)” copy of the selected file number — resolved as a standalone request, never against the parent file">
+                                <input type="checkbox" id="qs-temp-check" class="h-4 w-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500">
+                                <span class="text-xs font-semibold text-violet-700">Is Temporary File</span>
+                                <span class="hidden sm:inline text-[11px] font-medium text-violet-400">appends “(T)” to the file number</span>
+                            </label>
+                        </div>
                     </div>
 
                     <div id="qs-result" class="hidden"></div>
@@ -305,6 +314,7 @@
             ['IN_POOL_OFFICE', 'In Pool Office'],
             ['FILE_NOT_FOUND', 'File Not Found'],
             ['REFER_TO_ORIGINAL_REGISTRY', 'Refer to Original Registry'],
+            ['MISSING_FILE', 'Missing File'],
         ];
         const STATUS_META = {
             IN_TRANSIT:                 { label: 'In Transit',                 cls: 'bg-amber-100 text-amber-800 border-amber-300',  icon: 'truck' },
@@ -317,6 +327,7 @@
             PENDING_FILE:               { label: 'Pending (Not Indexed)',      cls: 'bg-gray-100 text-gray-800 border-gray-300',    icon: 'help-circle' },
             BLIND_REQUEST_SENT:         { label: 'Blind Request Sent',         cls: 'bg-indigo-100 text-indigo-800 border-indigo-300', icon: 'send' },
             FILE_NOT_FOUND:             { label: 'File Not Found',             cls: 'bg-red-100 text-red-800 border-red-300',       icon: 'alert-triangle' },
+            MISSING_FILE:               { label: 'Missing File',               cls: 'bg-red-100 text-red-800 border-red-300',       icon: 'alert-triangle' },
             REFER_TO_ORIGINAL_REGISTRY: { label: 'Refer to Original Registry', cls: 'bg-gray-100 text-gray-800 border-gray-300',    icon: 'corner-up-right' },
         };
 
@@ -324,6 +335,20 @@
         const btn    = document.getElementById('qs-btn');
         const pickBtn= document.getElementById('qs-pick');
         const result = document.getElementById('qs-result');
+        const tempChk= document.getElementById('qs-temp-check');
+
+        // Temporary "(T)" suffix helpers — a temp file is searched as a standalone
+        // record, so the checkbox appends "(T)" to the selected number (and unticking
+        // strips it back to the parent number).
+        const hasTemp   = v => /\(\s*T\s*\)\s*$/i.test(v);
+        const stripTemp = v => v.replace(/\s*\(\s*T\s*\)\s*$/i, '');
+        const withTemp  = v => hasTemp(v) ? v : v + '(T)';
+        if (tempChk) tempChk.addEventListener('change', () => {
+            const v = input.value.trim();
+            if (!v) return;
+            input.value = tempChk.checked ? withTemp(v) : stripTemp(v);
+            search();
+        });
 
         const esc = v => (v == null ? '' : String(v)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         const row = (l, v) => v ? `<div class="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
@@ -339,8 +364,15 @@
             if (typeof GlobalFileNoModal === 'undefined') { search(); return; }
             GlobalFileNoModal.open({
                 callback: function (data) {
-                    const fileNumber = (data.fileNumber || '').toString().trim();
+                    let fileNumber = (data.fileNumber || '').toString().trim();
                     if (!fileNumber) return;
+                    if (tempChk && tempChk.checked) {
+                        fileNumber = withTemp(fileNumber);
+                    } else if (tempChk && hasTemp(fileNumber)) {
+                        // A "(T)" number picked straight from the selector — keep the
+                        // checkbox in sync so unticking it strips back to the parent.
+                        tempChk.checked = true;
+                    }
                     input.value = fileNumber;
                     search();
                 }
@@ -372,6 +404,12 @@
             if (d.can_log) {
                 out.push(`<button type="button" data-log class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
                     <i data-lucide="file-plus" class="h-4 w-4"></i> Log File</button>`);
+                // Temporary file toggle — carried to Log a File, where the TMP code is
+                // appended to the Tracking ID so the temporary file is tracked standalone.
+                out.push(`<label class="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 cursor-pointer"
+                    title="Appends the TMP code to the Tracking ID">
+                    <input type="checkbox" data-temp-file class="h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
+                    <span class="text-xs font-semibold text-amber-700">Is Temporary File</span></label>`);
             }
             // For In-Transit files the dedicated "Print Tracking Confirmation Slip" button
             // (above) already covers printing, so suppress the generic "Print Slip" button.
@@ -389,6 +427,14 @@
                     // normal SCB workflow below.
                     out.push(`<button type="button" data-redirect-land class="inline-flex items-center gap-2 rounded-lg bg-purple-600 hover:bg-purple-700 px-4 py-2 text-sm font-semibold text-white">
                         <i data-lucide="user-check" class="h-4 w-4"></i> Re-direct To Director Land (Land Department)</button>`);
+                } else if (d.is_missing_file) {
+                    // File exists in missing_files — SCB already searched and could not find it.
+                    // Change button to "Send Blind Request to the Original Registry" instead of
+                    // routing through SCB. The backend saves the request without notifying SCB.
+                    const label = d.is_blind ? 'Send Blind Request to the Original Registry' : 'Send File Search Request to the Original Registry';
+                    const frCls = d.is_blind ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700';
+                    out.push(`<button type="button" data-fr data-missing-file="1" class="inline-flex items-center gap-2 rounded-lg ${frCls} px-4 py-2 text-sm font-semibold text-white">
+                        <i data-lucide="send" class="h-4 w-4"></i> ${label}</button>`);
                 } else {
                     const label = d.is_blind ? 'Send Blind Request to SCB Monitor' : 'Send File Search Request to SCB Monitor';
                     const frCls = d.is_blind ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700';
@@ -460,12 +506,27 @@
             // Land the user on the page that matches the file's registry.
             const mod = registryToModule(d.registry);
             if (mod) params.set('url', mod);
-            // Backfill the requester details captured on the file request into the
-            // Create File Tracker form.
-            if (d.receiving_officer)     params.set('req_officer', d.receiving_officer);
-            if (d.requester_office)      params.set('req_office', d.requester_office);
-            if (d.requester_office_code) params.set('req_office_code', d.requester_office_code);
-            if (d.requester_department)  params.set('req_department', d.requester_department);
+            // Backfill ALL the requester/office details captured on the file request
+            // into the Create File Tracker form. The details are carried on the FOUND
+            // File Search Request (d.fr_found); fall back to any top-level fields.
+            const src = d.fr_found || {};
+            const reqOfficer    = src.receiving_officer    || d.receiving_officer;
+            const reqOffice     = src.requester_office     || d.requester_office;
+            const reqOfficeCode  = src.requester_office_code || d.requester_office_code;
+            const reqDepartment = src.requester_department || d.requester_department;
+            // Origin registry captured on the request (falls back to the file's registry).
+            const reqRegistry   = src.registry || d.registry;
+            if (reqOfficer)    params.set('req_officer', reqOfficer);
+            if (reqOffice)     params.set('req_office', reqOffice);
+            if (reqOfficeCode) params.set('req_office_code', reqOfficeCode);
+            if (reqDepartment) params.set('req_department', reqDepartment);
+            if (reqRegistry)   params.set('req_registry', reqRegistry);
+            // Signal the Log-a-File page to grey out (lock) the auto-filled office details.
+            params.set('lock_office', '1');
+            // Temporary file — Log a File pre-checks its "Is Temporary File" toggle and
+            // appends the TMP code to the Tracking ID (standalone tracking only).
+            const tempCb = result.querySelector('[data-temp-file]');
+            if (tempCb && tempCb.checked) params.set('is_temp', '1');
             window.location = '/create-file-tracker?' + params.toString();
         }
 
@@ -547,6 +608,12 @@
                             <span class="text-sm font-bold" style="color:${d.duplicate_flag.color};">${esc(d.duplicate_flag.label)}</span>
                             ${d.duplicate_flag.comment ? `<span class="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style="color:${d.duplicate_flag.color};background:${d.duplicate_flag.color}1a;">${esc(d.duplicate_flag.comment)}</span>` : ''}
                         </div>` : ''}
+                        ${d.is_temp_file && !(d.duplicate_flag && /temp/i.test(d.duplicate_flag.label || '')) ? `
+                        <div class="mb-3 rounded-lg px-4 py-3 flex items-center gap-2" style="background:#7c3aed14;border:1px solid #7c3aed55;">
+                            <i data-lucide="file-clock" class="h-4 w-4 shrink-0" style="color:#7c3aed;"></i>
+                            <span class="text-sm font-bold" style="color:#7c3aed;">Temporary File</span>
+                            <span class="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style="color:#7c3aed;background:#7c3aed1a;"></span>
+                        </div>` : ''}
                         ${Number(d.dciv_status) === 1 ? `
                         <div class="mb-3 rounded-lg bg-rose-50 border border-rose-200 px-4 py-3">
                             <div class="flex items-center gap-2">
@@ -594,8 +661,8 @@
                             if (d.status === 'IN_TRANSIT') {
                                 let dept = (d.receiving_department || '').trim();
                                 if (dept && !/department$/i.test(dept)) dept = dept + ' Department';
-                                return row('Department', dept || d.current_location)
-                                     + row('Receiving Officer (holder)', d.receiving_officer_name);
+                                return row('Receiving Officer (holder)', d.receiving_officer_name)
+                                     + row('Department', dept || d.current_location);
                             }
                             return row('Current Location (Expected)', d.current_location)
                                  + row('Receiving Officer', d.receiving_officer_name);
@@ -801,6 +868,66 @@
         const OFFICE_OTHER = '__OFFICE_OTHER__';
         const OFFICER_ADD  = '__OFFICER_ADD__';
 
+        // ── Smart Registry (Origin) detection ──────────────────────────────────
+        // Auto-selects the Requester section's Registry (Origin) from the file
+        // number. Config-driven so new registries/patterns are one-line changes.
+        // Land (MLS) numbers resolve Registry 1/2/3 by CON prefix and year — see
+        // docs/guides/Registry Summary.md ("Registry Assignment Rules").
+        const LAND_REGISTRY_RULES = {
+            conRegistry: 'Registry 3 - Land',      // Priority 1: any CON-* file, all years
+            yearRegistries: [
+                { from: 1981, to: 1991, registry: 'Registry 1 - Land' }, // Priority 2
+                { from: 1992, to: 2025, registry: 'Registry 2 - Land' }, // Priority 3
+            ],
+            fallback: 'Registry 2 - Land',
+        };
+        const REGISTRY_DETECT_RULES = [
+            { pattern: /^ST[-\/ ]/,                       registry: 'ST Registry' },
+            { pattern: /^DCIV[-\/ ]/,                     registry: 'DCIV Registry' },
+            { pattern: /^SLTR[-\/ ]/,                     registry: 'SLTR Registry' },
+            { pattern: /^SIT[-\/ ]/,                      registry: 'SIT Registry' },
+            { pattern: /^(GKN|LPKN)[-\/ ]/,               registry: 'Survey Registry' },
+            { pattern: /^(KNML|MLKN|MNKL|KNGP|KN\s*\d)/,  registry: 'KANGIS Registry' },
+            // Land registry (MLS): RES/COM/IND/AG/MISC with optional CON- and -RC parts.
+            { pattern: /^(CON-)?(RES|COM|IND|AG|MISC)(-RC)?[-\/ ]/, registry: detectLandRegistry },
+        ];
+
+        function detectLandRegistry(fno) {
+            if (/^CON-/.test(fno)) return LAND_REGISTRY_RULES.conRegistry;
+            const m = fno.match(/-((?:19|20)\d{2})(?:-|$)/);
+            const year = m ? parseInt(m[1], 10) : null;
+            if (year) {
+                const hit = LAND_REGISTRY_RULES.yearRegistries.find(r => year >= r.from && year <= r.to);
+                if (hit) return hit.registry;
+            }
+            return LAND_REGISTRY_RULES.fallback;
+        }
+
+        function detectRegistryName(fileNumber) {
+            // Normalise: uppercase, trim, strip a temporary-file "(T)" marker.
+            const fno = String(fileNumber || '').toUpperCase().trim().replace(/\s*\(\s*T\s*\)\s*$/, '');
+            if (!fno) return null;
+            for (const rule of REGISTRY_DETECT_RULES) {
+                if (rule.pattern.test(fno)) {
+                    return typeof rule.registry === 'function' ? rule.registry(fno) : rule.registry;
+                }
+            }
+            return null;
+        }
+
+        // Match a registry label to a dropdown <option>. Exact match first, then
+        // "Registry 2" → "Registry 2 - Land", then prefix (so resolver labels
+        // like "Registry 1" still land on the right physical registry).
+        function findRegistryOption(sel, label) {
+            const want = String(label || '').toLowerCase().trim();
+            if (!want) return null;
+            const opts = Array.from(sel.options).filter(o => o.value);
+            return opts.find(o => o.value.toLowerCase().trim() === want)
+                || opts.find(o => o.value.toLowerCase().trim() === want + ' - land')
+                || opts.find(o => o.value.toLowerCase().trim().startsWith(want))
+                || null;
+        }
+
         // Wire the Requester cascade: Department → Office → Officer (mirrors Create File Tracker).
         function initRequesterCascade(fileData = {}) {
             const deptSel    = result.querySelector('[data-fr-dept]');
@@ -883,6 +1010,26 @@
                         registrySel.dispatchEvent(new Event('change'));
                         registrySel.disabled = true;
                         registrySel.classList.add('bg-gray-100', 'cursor-not-allowed');
+                    }
+                }
+
+                // Smart auto-detect (skipped when a module context locked the select):
+                // prefer the registry resolved by the server (file_ranges / indexing),
+                // else detect it from the file number pattern. Stays user-changeable.
+                if (!registrySel.disabled && !registrySel.value) {
+                    const detected = findRegistryOption(registrySel, fileData.registry)
+                        || findRegistryOption(registrySel, detectRegistryName(fileData.file_number));
+                    if (detected) {
+                        registrySel.value = detected.value;
+                        registrySel.dispatchEvent(new Event('change'));
+                        const holder = registrySel.closest('div');
+                        if (holder && !holder.parentElement.querySelector('[data-fr-registry-auto]')) {
+                            holder.insertAdjacentHTML('afterend',
+                                `<p data-fr-registry-auto class="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+                                    <i data-lucide="sparkles" class="h-3 w-3"></i>
+                                    Auto-detected from the file number.</p>`);
+                            if (window.lucide) window.lucide.createIcons();
+                        }
                     }
                 }
             }
@@ -1012,9 +1159,13 @@
                 const json = await res.json();
                 if (json.success) {
                     const reqNo = esc(json.data?.request_no || '');
+                    const isMissing = frBtn.getAttribute('data-missing-file') === '1';
                     frBtn.outerHTML = json.updated
                         ? `<span class="inline-flex items-center gap-2 rounded-lg bg-green-100 px-4 py-2 text-sm font-semibold text-green-800">
                         <i data-lucide="check" class="h-4 w-4"></i> Requester details updated on ${reqNo}</span>`
+                        : isMissing
+                        ? `<span class="inline-flex items-center gap-2 rounded-lg bg-green-100 px-4 py-2 text-sm font-semibold text-green-800">
+                        <i data-lucide="check" class="h-4 w-4"></i> Request ${reqNo} saved — file is in the missing list. Refer to Original Registry.</span>`
                         : `<span class="inline-flex items-center gap-2 rounded-lg bg-green-100 px-4 py-2 text-sm font-semibold text-green-800">
                         <i data-lucide="check" class="h-4 w-4"></i> File Request ${reqNo} sent to SCB Monitors</span>`;
                     loadLog();

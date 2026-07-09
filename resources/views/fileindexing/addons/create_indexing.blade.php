@@ -44,13 +44,16 @@
                             </div>
 
                             {{-- Opens the Property Transaction Details modal directly (backfills from the
-                                 selected File Number), without creating/updating the file index. --}}
+                                 selected File Number), without creating/updating the file index.
+                                 Restricted to Supper Admin users. --}}
+                            @if(str_contains((string) (auth()->user()->assign_role ?? ''), 'Supper Admin'))
                             <button type="button"
                                 class="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 border border-emerald-300 text-sm font-medium rounded-lg shadow-sm text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all duration-200"
                                 id="add-property-transaction-btn">
                                 <i data-lucide="file-plus-2" class="h-4 w-4"></i>
                                 Add Property Transaction Details
                             </button>
+                            @endif
                         </div>
                         @if(isset($record))
                             <div class="mt-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md">
@@ -127,7 +130,7 @@
                                         $parcelOptions = [
                                             'Subdivision'       => ['Plot Subdivision', 'split'],
                                             'Merger'            => ['Plot Merger', 'merge'],
-                                            'Extension'         => ['Plot Extension', 'scaling'],
+                                            'Extension'         => ['Extension', 'scaling'],
                                             'Separation'        => ['Plot Separation', 'scissors'],
                                             'Change of Purpose' => ['Change of Purpose', 'repeat'],
                                             'Change of Name'    => ['Change of Name', 'user-pen'],
@@ -140,6 +143,8 @@
                                             'Amendment/Reconsideration (Application/RofO/CofO)'   => ['Amendment / Reconsideration', 'file-pen'],
                                             'Surrender'                                           => ['Surrender', 'flag'],
                                             'Re-grant'                                            => ['Re-grant', 'refresh-cw'],
+                                            'Resettlement'                                        => ['Resettlement', 'home'],
+                                            'Closed'                                              => ['Closed', 'lock'],
                                         ];
                                     @endphp
                                     <div id="ts-title-type-group">
@@ -198,11 +203,14 @@
                                                         class="ts-title-type-cb peer sr-only">
                                                     <span class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 transition hover:border-emerald-300 hover:bg-emerald-50/40 peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 peer-checked:font-medium peer-focus:ring-2 peer-focus:ring-emerald-200">
                                                         <i data-lucide="{{ $tsMeta[1] }}" class="h-4 w-4 flex-shrink-0"></i>
-                                                        <span class="leading-tight">{{ $tsMeta[0] }}</span>
+                                                        <span class="leading-tight"@if($tsValue === 'Extension') id="ts-extension-label"@endif>{{ $tsMeta[0] }}</span>
                                                     </span>
                                                 </label>
                                             @endforeach
                                         </div>
+                                        {{-- Holds the chosen extension kind (Plot Extension / File Extension),
+                                             selected via popup when the "Extension" option is ticked. --}}
+                                        <input type="hidden" id="ts-extension-kind" value="">
                                     </div>
                                     <p class="text-[11px] text-gray-400 mt-1.5">Select one or more title statuses.</p>
                                 </div>
@@ -267,10 +275,10 @@
                         <div id="ts-status-fields" class="hidden mt-6 rounded-lg border border-teal-200 bg-teal-50/40 p-6 space-y-5">
                            
 
-                            {{-- See (Additional File No.) — Re-grant only --}}
+                            {{-- See (Additional File No.) — Re-grant only (OPTIONAL) --}}
                             <div id="ts-see-row" class="form-group hidden">
                                 <input type="hidden" id="ts-see-fileno">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Initial FileNo</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Initial FileNo <span class="text-xs font-normal text-gray-500">(Optional)</span></label>
                                 <div class="flex items-stretch gap-2">
                                     <input type="text" id="ts-see-fileno-display" readonly
                                         class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm"
@@ -280,7 +288,7 @@
                                     <button type="button" id="ts-see-clear-btn"
                                         class="px-3 py-2 rounded-md border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition">Clear</button>
                                 </div>
-                                <p class="text-[11px] text-gray-400 mt-1">The related file number written as "See ..." on the physical file.</p>
+                                <p class="text-[11px] text-gray-400 mt-1">The related file number written as "See ..." on the physical file. This field is optional.</p>
                             </div>
 
                             {{-- Reason --}}
@@ -1111,6 +1119,8 @@
                 'Extension':                                          'Extension',
                 'Change of Name':                                     'Change of Name',
                 'Separation':                                         'Separation',
+                'Resettlement':                                       'Resettlement',
+                'Closed':                                             'Closed',
             };
 
             const typeGroup    = document.getElementById('ts-title-type-group');
@@ -1120,8 +1130,20 @@
             const seeDisplay   = document.getElementById('ts-see-fileno-display');
             const reasonEl     = document.getElementById('ts-reason');
             const remarkEl     = document.getElementById('ts-remark');
+            const extKindEl    = document.getElementById('ts-extension-kind');
+            const extLabelEl   = document.getElementById('ts-extension-label');
 
             if (!typeGroup) return;
+
+            // Extension sub-kind (Plot Extension / File Extension), chosen via popup.
+            const EXTENSION_KINDS = ['Plot Extension', 'File Extension'];
+            const getExtensionKind = () => (extKindEl?.value || '').trim();
+            const setExtensionKind = (kind) => {
+                if (extKindEl) extKindEl.value = kind || '';
+                if (extLabelEl) extLabelEl.textContent = kind ? kind : 'Extension';
+            };
+            // Resolve the effective title type: a ticked "Extension" reports the chosen kind.
+            const resolveType = (t) => (t === 'Extension' && getExtensionKind()) ? getExtensionKind() : t;
 
             // Checkboxes live in two cards (Parcel Update + Normal in the Indexing Type card,
             // Title Status Update in the General Registry card), so query document-wide.
@@ -1158,7 +1180,9 @@
                 if (isClassificationType(type)) {
                     return `File${fileRef} was marked as ${type} on ${dt}`;
                 }
-                const verb   = TS_TYPE_VERB[type] || type;
+                const verb   = (type === 'Extension')
+                    ? (getExtensionKind() || 'Extension')
+                    : (TS_TYPE_VERB[type] || type);
                 const reason = (reasonEl?.value || '').trim() || '[Reason]';
                 const initiator = initiatedByFor(type);
                 return `${verb}${fileRef} was initiated by ${initiator} on ${dt} due to ${reason}`;
@@ -1181,6 +1205,8 @@
                 const isRegrant = actionable.includes('Re-grant');
                 statusBlock?.classList.toggle('hidden', !hasType);
                 seeRow?.classList.toggle('hidden', !isRegrant);
+                // NOTE: Initial FileNo (see_fileno) is OPTIONAL for Re-grant
+                // Do NOT add required validation on this field
                 if (!isRegrant && seeHidden) { seeHidden.value = ''; if (seeDisplay) seeDisplay.value = ''; }
                 if (typeof lucide !== 'undefined') lucide.createIcons();
             }
@@ -1189,6 +1215,44 @@
             // any other option clears "Normal". Dummy File, Temporary and the actionable title
             // statuses are all freely multi-selectable. Delegated on document since the
             // checkboxes span two separate cards.
+            // Prompt the user to choose the extension kind (Plot / File) when "Extension"
+            // is ticked. Cancelling un-ticks the option. Returns nothing; updates hidden field.
+            function promptExtensionKind(cb) {
+                const finish = () => { toggleStatusFields(); refreshRemark(); };
+
+                if (typeof Swal === 'undefined') {
+                    // Minimal fallback without SweetAlert.
+                    const useFile = window.confirm('Extension type:\n\nOK = Plot Extension\nCancel = File Extension');
+                    setExtensionKind(useFile ? 'Plot Extension' : 'File Extension');
+                    finish();
+                    return;
+                }
+
+                Swal.fire({
+                    title: 'Extension Type',
+                    text: 'Select the type of extension',
+                    icon: 'question',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: 'Plot Extension',
+                    denyButtonText: 'File Extension',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#059669',
+                    denyButtonColor: '#4f46e5',
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        setExtensionKind('Plot Extension');
+                    } else if (result.isDenied) {
+                        setExtensionKind('File Extension');
+                    } else {
+                        // Cancelled → revert the selection.
+                        cb.checked = false;
+                        setExtensionKind('');
+                    }
+                    finish();
+                });
+            }
+
             document.addEventListener('change', function (e) {
                 const cb = e.target;
                 if (!cb || !cb.classList || !cb.classList.contains('ts-title-type-cb')) return;
@@ -1198,6 +1262,16 @@
                     const normal = typeCbs().find(o => o.value === 'Normal');
                     if (normal) normal.checked = false;
                 }
+
+                // "Extension" ticked → ask Plot vs File; unticked → reset the chosen kind.
+                if (cb.value === 'Extension') {
+                    if (cb.checked) {
+                        promptExtensionKind(cb);
+                        return; // popup callback runs toggleStatusFields()/refreshRemark()
+                    }
+                    setExtensionKind('');
+                }
+
                 toggleStatusFields();
                 refreshRemark();
             });
@@ -1248,12 +1322,16 @@
                 });
                 const regrant = types.indexOf('Re-grant');
 
+                // Report the chosen extension kind (Plot/File Extension) in place of the
+                // generic "Extension" type so it is persisted distinctly.
+                const reportedTypes = types.map(resolveType);
+
                 // One request carrying every selected type so the backend records all of them
                 // (one application per type) and writes a combined title-status flag on the file.
                 const payload = {
                     url,
-                    title_type:     types[0],   // kept for validation / backward compatibility
-                    title_types:    types,
+                    title_type:     reportedTypes[0],   // kept for validation / backward compatibility
+                    title_types:    reportedTypes,
                     remarks:        remarks,
                     file_no:        fileNo,
                     see_fileno:     regrant !== -1 ? (seeHidden?.value || '').trim() : '',

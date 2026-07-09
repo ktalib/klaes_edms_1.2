@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="{{ asset('css/create-file-tracker.css') }}">
 
     <div class="flex-1 overflow-y-auto overflow-x-hidden">
-        <!-- Header -->
+        <!-- Header --> 
         @include('admin.header')
         @if(in_array(($module ?? ''), ['kangis', 'new_kangis']))
         <div class="bg-gradient-to-r from-orange-600 via-orange-500 to-orange-700 px-6 py-3 flex items-center gap-3 shadow-sm">
@@ -666,6 +666,16 @@
                                                         <input type="hidden" id="tracking-id-real">
                                                         <p class="text-xs text-gray-500">Auto-fetched from File Indexing
                                                             after selecting a file number</p>
+                                                        {{-- Temporary file toggle — appends the TMP code to the Tracking ID
+                                                             so the temporary file is tracked as a standalone file. --}}
+                                                        <label for="is-temp-file"
+                                                            class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 cursor-pointer">
+                                                            <input type="checkbox" id="is-temp-file"
+                                                                class="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
+                                                            <span class="text-xs text-amber-700">Is Temporary File —
+                                                                appends the <span class="font-mono font-semibold">TMP</span> code to the
+                                                                Tracking ID.</span>
+                                                        </label>
                                                     </div>
                                                     <div class="space-y-2">
                                                         <label for="registry-code"
@@ -893,6 +903,10 @@
                                                 <p class="text-sm text-gray-600 mt-1">Select the current office location</p>
                                             </div>
                                             <div class="p-6 space-y-4">
+                                                {{-- Office Details is locked until the in-transit override checkbox
+                                                     is checked, so an already-out file's office fields can't be
+                                                     edited via a stale/locked file selector. --}}
+                                                <fieldset id="office-details-fieldset" @if($lockFileSelector) disabled @endif class="space-y-4 @if($lockFileSelector) opacity-60 @endif">
                                                 @if(($module ?? '') === 'kangis')
                                                 <!-- Step 1 label -->
                                                 <div class="flex items-center gap-2 -mb-1">
@@ -1328,6 +1342,7 @@
                                                     </div>
                                                 </div>
                                                 @endif
+                                                </fieldset>
 
                                             </div>
                                         </div>
@@ -2532,7 +2547,7 @@
                         <!-- Core JS dependencies -->
                         <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
                         <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-                        <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+                        <script src="{{ asset('js/global-fileno-modal.js') }}?v={{ @filemtime(public_path('js/global-fileno-modal.js')) }}"></script>
                         <script src="{{ asset('js/fileindexing/create-indexing-dialog.js') }}?v={{ @filemtime(public_path('js/fileindexing/create-indexing-dialog.js')) }}"></script>
 
                         <!-- Footer -->

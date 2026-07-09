@@ -100,11 +100,11 @@
     border-bottom-color: #4ade80;
   }
   .file-card-status-header .status-tooltip.status-tooltip--out {
-    background-color: #f87171;
-    box-shadow: 0 4px 16px rgba(248, 113, 113, 0.22);
+    background-color: #fb923c;
+    box-shadow: 0 4px 16px rgba(251, 146, 60, 0.22);
   }
   .file-card-status-header .status-tooltip.status-tooltip--out::after {
-    border-bottom-color: #f87171;
+    border-bottom-color: #fb923c;
   }
   /* Keep every line of tooltip text white regardless of inline utility classes. */
   .file-card-status-header .status-tooltip,

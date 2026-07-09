@@ -15,6 +15,7 @@ use App\Http\Controllers\IndexedFileTableController;
 use App\Http\Controllers\Api\ScanUploadsIndexedFilesController;
 use App\Http\Controllers\Api\Pra\PraRecordController;
 use App\Http\Controllers\TrackFileArchiveController;
+use App\Http\Controllers\MissingFileController;
 use App\Http\Controllers\PageTypeManagementController;
 use App\Http\Controllers\FileSearchController;
 use App\Http\Controllers\RelatedFileNumberController;
@@ -537,6 +538,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/client-details', [LegalSearchTokenController::class, 'clientDetails'])->name('client-details');
         Route::post('/client-details', [LegalSearchTokenController::class, 'updateClientDetails'])->name('client-details.update');
         Route::post('/use', [LegalSearchTokenController::class, 'useToken'])->name('use');
+        Route::post('/{id}/reset', [LegalSearchTokenController::class, 'resetToken'])->name('reset');
         Route::delete('/{id}', [LegalSearchTokenController::class, 'destroy'])->name('destroy');
     });
 
@@ -752,6 +754,15 @@ Route::middleware(['auth'])->group(function () {
 
     // Track File (Archive) Routes
     Route::get('/track-file-archive', [TrackFileArchiveController::class, 'index'])->name('track-file-archive.index');
+
+    // Missing Files capture Routes
+    Route::prefix('missing-files')->name('missing-files.')->group(function () {
+        Route::get('/', [MissingFileController::class, 'index'])->name('index');
+        Route::get('/data', [MissingFileController::class, 'data'])->name('data');
+        Route::post('/', [MissingFileController::class, 'store'])->name('store');
+        Route::patch('/{id}/found', [MissingFileController::class, 'markFound'])->name('found');
+        Route::delete('/{id}', [MissingFileController::class, 'destroy'])->name('destroy');
+    });
 
     // Bill Balance Routes
     Route::prefix('bill-balance')->name('bill-balance.')->group(function () {
@@ -1040,6 +1051,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/cofo-comment', [LegalSearchController::class, 'saveCofoComment'])->name('legalsearch.saveCofoComment');
         Route::post('/transfer-caveat', [LegalSearchController::class, 'transferCaveat'])->name('legalsearch.transferCaveat');
         Route::post('/create-record', [LegalSearchController::class, 'createRecord'])->name('legalsearch.createRecord');
+        Route::post('/update-file-indexing', [LegalSearchController::class, 'updateFileIndexing'])->name('legalsearch.updateFileIndexing');
     });
 
     // On-Premise - Pay-per-Search (shares views with Legal Search)

@@ -7,7 +7,7 @@
             </p>    
         </div>
         @php
-            $sc = $statusCounts ?? ['registry' => null, 'in_transit' => null];
+            $sc = $statusCounts ?? ['registry' => null, 'in_transit' => null, 'missing' => null];
             $af = $activeStatusFilter ?? null;
             $legendBase = request()->query();
             unset($legendBase['page']); // filtering resets to the first page
@@ -28,22 +28,36 @@
                 <span class="status-legend-count text-xs font-semibold text-gray-400">({{ $sc['registry'] }})</span>
                 @endif
             </a>
-            <a href="{{ route('filearchive.index', $transitParams) }}" class="status-legend no-underline flex items-center gap-2 px-2 py-1 rounded-md transition-colors hover:bg-gray-100" aria-pressed="{{ $af === 'in_transit' ? 'true' : 'false' }}" title="{{ $af === 'in_transit' ? 'Clear filter' : 'Show only files in Transit' }}">
-                <span class="inline-flex w-5 h-5 rounded-full bg-red-600"></span>
+            <a href="{{ route('filearchive.index', $transitParams) }}" class="status-legend no-underline flex items-center gap-2 px-2 py-1 rounded-md transition-colors hover:bg-gray-100" aria-pressed="{{ $af === 'in_transit' ? 'true' : 'false' }}" title="{{ $af === 'in_transit' ? 'Clear filter' : 'File checked out of the registry and currently in transit / with a holder' }}">
+                <span class="inline-flex w-5 h-5 rounded-full bg-orange-500"></span>
                 <span>File in Transit</span>
                 @if(!is_null($sc['in_transit']))
                 <span class="status-legend-count text-xs font-semibold text-gray-400">({{ $sc['in_transit'] }})</span>
                 @endif
             </a>
+            <span class="flex items-center gap-2 px-2 py-1" title="Files reported missing">
+                <span class="inline-flex w-5 h-5 rounded-full bg-red-600"></span>
+                <span>Missing Files</span>
+                @if(!is_null($sc['missing'] ?? null))
+                <span class="text-xs font-semibold text-gray-400">({{ $sc['missing'] }})</span>
+                @endif
+            </span>
         </div>
         <div class="flex gap-2">
+            <div class="relative">
+                <select id="sort-select" class="select select-sm pr-8">
+                    <option value="year_asc" {{ request('sort', 'year_asc') == 'year_asc' ? 'selected' : '' }}>Year (Oldest First)</option>
+                    <option value="year_desc" {{ request('sort') == 'year_desc' ? 'selected' : '' }}>Year (Newest First)</option>
+                    <option value="file_number_asc" {{ request('sort') == 'file_number_asc' ? 'selected' : '' }}>File Number (A-Z)</option>
+                    <option value="file_number_desc" {{ request('sort') == 'file_number_desc' ? 'selected' : '' }}>File Number (Z-A)</option>
+                    <option value="title_asc" {{ request('sort') == 'title_asc' ? 'selected' : '' }}>Title (A-Z)</option>
+                    <option value="title_desc" {{ request('sort') == 'title_desc' ? 'selected' : '' }}>Title (Z-A)</option>
+                    <option value="updated_desc" {{ request('sort') == 'updated_desc' ? 'selected' : '' }}>Recently Updated</option>
+                </select>
+            </div>
             <button id="filter-button" class="btn btn-outline btn-sm gap-1">
                 <i data-lucide="filter" class="h-3.5 w-3.5"></i>
                 Filter
-            </button>
-            <button id="sort-button" class="btn btn-outline btn-sm gap-1">
-                <i data-lucide="sort-asc" class="h-3.5 w-3.5"></i>
-                Sort
             </button>
         </div>
     </div>
@@ -201,7 +215,7 @@
                                     */
                                 @endphp
                                 <div 
-                                    class="h-8 flex items-center justify-between px-3 file-card-status-header transition-colors duration-200 {{ $currentStatus === 'in_transit' ? 'bg-red-600' : ($isInDocWare ? 'bg-amber-600' : 'bg-green-600') }}" 
+                                    class="h-8 flex items-center justify-between px-3 file-card-status-header transition-colors duration-200 {{ $currentStatus === 'in_transit' ? 'bg-orange-500' : ($isInDocWare ? 'bg-amber-600' : 'bg-green-600') }}"
                                     data-file-number="{{ $file->file_number }}"
                                     data-status-label="{{ e($statusLabel) }}"
                                 >

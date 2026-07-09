@@ -7,12 +7,21 @@
     const $viewerDialog = $('#document-viewer-dialog');
     console.log('[File Archive] $viewerDialog found:', $viewerDialog.length > 0, 'Element:', $viewerDialog[0]);
     let documentRequestToken = 0;
-    const statusColorClasses = ['bg-green-600', 'bg-red-600', 'bg-amber-600'];
+    const statusColorClasses = ['bg-green-600', 'bg-orange-500', 'bg-amber-600'];
     const defaultHeaderState = buildRegistryState();
 
     $('.dialog-backdrop').hide();
 
     initFileTrackerStatusColors();
+
+    // Handle sort dropdown change
+    $('#sort-select').on('change', function () {
+        const sortValue = $(this).val();
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set('sort', sortValue);
+        currentUrl.searchParams.delete('page'); // Reset to first page
+        window.location.href = currentUrl.toString();
+    });
 
     $('.file-card').on('click', function () {
       const $card = $(this);
@@ -333,7 +342,7 @@
 
     function buildTransitState(location, officer) {
       return {
-        colorClass: 'bg-red-600',
+        colorClass: 'bg-orange-500',
         label: 'File in Transit',
         status: 'in_transit',
         location: location || '',

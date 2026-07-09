@@ -90,7 +90,10 @@
                         <div class="bg-blue-50/50 p-4 rounded-xl border border-blue-100/50 flex gap-3">
                             <i data-lucide="info" class="h-5 w-5 text-blue-500 shrink-0"></i>
                              <p class="text-[11px] text-blue-700 leading-relaxed font-semibold">
-                                <template x-if="isSingleStepType">
+                                <template x-if="isLegalSearchType">
+                                    <span>"Print Original" issues the applicant's copy. "Print File Copy" produces the stamped FILE COPY retained in the file. Each choice sets the watermark on the printed report.</span>
+                                </template>
+                                <template x-if="isSingleStepType && !isLegalSearchType">
                                     <span>"Print Original" generates the Original document. You can print multiple copies if needed. Status will be marked as Complete after the first print, enabling CTC generation.</span>
                                 </template>
                                 <template x-if="!isSingleStepType">
@@ -166,9 +169,27 @@
                     Cancel
                 </button>
                 <div x-show="!isOssMode" class="flex gap-3">
+                    <!-- Legal Search: explicit Original / File Copy choice -->
+                    <template x-if="isLegalSearchType">
+                        <div class="flex gap-3">
+                            <button @click="executeLegalSearchPrint('Original')"
+                                    :disabled="isPrinting"
+                                    class="px-6 py-3 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xl shadow-indigo-200 transition-all flex items-center gap-2 disabled:opacity-50 active:scale-95">
+                                <i data-lucide="printer" class="h-4 w-4"></i>
+                                <span>Print Original</span>
+                            </button>
+                            <button @click="executeLegalSearchPrint('Copy')"
+                                    :disabled="isPrinting"
+                                    class="px-6 py-3 text-sm font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 active:scale-95">
+                                <i data-lucide="copy" class="h-4 w-4"></i>
+                                <span>Print File Copy</span>
+                            </button>
+                        </div>
+                    </template>
+
                     <!-- Batch Print Button -->
-                    <button x-show="!batchCompleted || isSingleStepType" 
-                            @click="executeBatchPrint()" 
+                    <button x-show="(!batchCompleted || isSingleStepType) && !isLegalSearchType"
+                            @click="executeBatchPrint()"
                             :disabled="isPrinting"
                             class="px-6 py-3 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xl shadow-indigo-200 transition-all flex items-center gap-2 disabled:opacity-50 active:scale-95">
                         <template x-if="!isPrinting">
@@ -301,6 +322,12 @@ document.addEventListener('alpine:init', () => {
 
         get isSelfLogging() {
             return ['Legal Search Pay-Per-Search', 'Legal Search Online'].includes(this.docType);
+        },
+
+        // Legal Search doc types get an explicit Original / File Copy choice
+        // instead of the single auto-deciding Print button.
+        get isLegalSearchType() {
+            return ['Legal Search Pay-Per-Search', 'Legal Search Online', 'Legal Search Official'].includes(this.docType);
         },
 
         closeModal() {
@@ -641,6 +668,58 @@ document.addEventListener('alpine:init', () => {
                     });
             } catch (error) {
                 Swal.fire('Error', 'Failed to log print', 'error');
+            } finally {
+                this.isPrinting = false;
+                this.$nextTick(() => lucide.createIcons());
+            }
+        },
+
+        // Explicit Legal Search print: the operator chooses which version to
+        // produce. 'Original' = the applicant's copy; 'Copy' = the stamped
+        // FILE COPY retained in the file. The chosen type is passed to the
+        // template via ?status= so the watermark is forced (no auto-detect).
+        async executeLegalSearchPrint(copyType) {
+            if (this.isPrinting) return;
+            this.isPrinting = true;
+
+            try {
+                const _sepLs = this.printUrl.includes('?') ? '&' : '?';
+                window.open(`${this.printUrl}${_sepLs}status=${copyType}`, '_blank');
+
+                if (this.isSelfLogging) {
+                    // Pay-Per-Search / Online templates log this print via their
+                    // own afterprint handler; just refresh status on return.
+                    this._setupFocusRefresh();
+                } else {
+                    await fetch('{{ route('print-manager.log') }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                        },
+                        body: JSON.stringify({
+                            reference_number: this.refNumber,
+                            document_type: this.docType,
+                            status: copyType,
+                            print_type: 'Individual'
+                        })
+                    });
+                    await this.checkStatus();
+                }
+
+                Swal.fire({
+                    title: copyType === 'Copy' ? 'File Copy Sent to Print' : 'Original Sent to Print',
+                    text: copyType === 'Copy'
+                        ? 'The retained FILE COPY is being generated.'
+                        : 'The original report is being generated.',
+                    icon: 'success',
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 3000
+                });
+            } catch (error) {
+                Swal.fire('Error', 'Failed to start print', 'error');
             } finally {
                 this.isPrinting = false;
                 this.$nextTick(() => lucide.createIcons());

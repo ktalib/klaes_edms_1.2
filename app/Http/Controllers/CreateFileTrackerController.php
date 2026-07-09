@@ -158,11 +158,17 @@ class CreateFileTrackerController extends Controller
             // Fall back to a fresh server-generated ID when none is provided.
             $proposedTrackingId = trim((string) $request->input('proposed_tracking_id', ''));
             $registryCode       = $request->input('origin_registry_code') ?: null;
+            // Temporary file — the TMP code makes the tracker a standalone file for
+            // tracking purposes only, so it never collides with the parent file's tracker.
+            $isTemporaryFile    = filter_var($request->input('is_temporary_file'), FILTER_VALIDATE_BOOLEAN);
 
             if ($proposedTrackingId !== '' && !FileTracker::where('tracking_id', $proposedTrackingId)->exists()) {
                 $trackingId = $proposedTrackingId;
             } else {
                 $trackingId = FileTracker::generateTrackingId($registryCode);
+                if ($isTemporaryFile) {
+                    $trackingId .= '-TMP';
+                }
             }
 
             $rawOfficerId = $request->input('receiving_officer_id');
@@ -1476,6 +1482,7 @@ HTML;
             FileLocationResolver::STATUS_IN_POOL,
             FileLocationResolver::STATUS_NOT_FOUND,
             FileLocationResolver::STATUS_REFER,
+            FileLocationResolver::STATUS_MISSING_FILE,
         ];
 
         $validator = Validator::make($request->all(), [
@@ -1744,6 +1751,12 @@ HTML;
         if ($fr->front_desk_acted_at !== null) {
             return response()->json(['success' => false, 'message' => 'This request has already been acted on — it can no longer be reverted.'], 422);
         }
+
+        // Remove the missing-file report auto-created by a Not Found (Missing)
+        // response, so future requests stop diverting to the Original Registry.
+        \App\Models\MissingFile::where('request_no', $fr->request_no)
+            ->where('status', '!=', \App\Models\MissingFile::STATUS_FOUND)
+            ->delete();
 
         // Send the request back to the open queue (clear the response fields).
         $fr->forceFill([
@@ -2101,6 +2114,13 @@ HTML;
             'can_send_fr'      => (bool) ($result['can_send_fr'] ?? false),
             'can_log'          => (bool) ($result['can_log'] ?? false),
             'is_blind'         => (bool) ($result['is_blind'] ?? false),
+            // Flag set when this file number exists in the missing_files table.
+            // When true, the "Send Blind Request to SCB Monitor" button changes to
+            // "Send Blind Request to the Original Registry" and saves without SCB.
+            'is_missing_file'  => (bool) ($result['is_missing_file'] ?? false),
+            // Temporary "(T)" file — resolved standalone (never against its stripped
+            // base number); the UI shows an "Is Temporary File" badge.
+            'is_temp_file'     => (bool) ($result['is_temp_file'] ?? false),
             // In-transit files can be re-directed straight to the office currently
             // holding them (the last receiving officer) instead of going to the SCB.
             'can_redirect'     => $result['status'] === FileLocationResolver::STATUS_IN_TRANSIT,
@@ -2220,6 +2240,58 @@ HTML;
                     'message'   => 'This file has already been requested and sent to SCB.',
                     'existing'  => $this->frDuplicatePayload($existing),
                 ], 200);
+            }
+
+            // Missing-file shortcut: if the file number is recorded in the missing_files
+            // table (meaning SCB has already searched for it and it was not found), the
+            // request should be saved as "Refer to Original Registry" without notifying
+            // SCB monitors. The front-end button already reads "Send Blind Request to the
+            // Original Registry" in this case; we just skip the SCB notification here.
+            $isMissingFile = false;
+            if (\Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasTable('missing_files')) {
+                $isMissingFile = \App\Models\MissingFile::where('file_number', $request->file_number)
+                    ->where('status', '!=', \App\Models\MissingFile::STATUS_FOUND)
+                    ->exists();
+            }
+
+            if ($isMissingFile) {
+                $receivingOfficer = $request->input('receiving_officer');
+                $officerRank      = $this->resolveOfficerRank($receivingOfficer);
+                $isOfs   = $user && $user->isOfs();
+                $ofsRank = $isOfs ? $user->ofsRank() : null;
+
+                // Saved directly as a closed-out NOT_FOUND (Missing) request: the SCB has
+                // already searched this file, so it must not re-enter the SCB Open inbox,
+                // the Awaiting count, or the SCB Feedback queue. Stamping the response and
+                // front-desk action up-front sends it straight to File Search History.
+                $fr = FileSearchRequest::create([
+                    'request_no'        => FileSearchRequest::generateRequestNo(),
+                    'file_number'       => $request->file_number,
+                    'file_title'        => $request->file_title,
+                    'requester_user_id' => $user->id ?? null,
+                    'status'            => FileSearchRequest::STATUS_NOT_FOUND,
+                    'not_found_type'    => FileSearchRequest::NOT_FOUND_MISSING,
+                    'feedback_note'     => 'File is on the missing files list — referred to the Original Registry.',
+                    'responded_at'      => now(),
+                    'front_desk_acted_at' => now(),
+                    'front_desk_acted_by' => $user->id ?? null,
+                    'resolved_status'   => FileLocationResolver::STATUS_REFER,
+                    'current_location'  => $request->current_location,
+                    'receiving_officer' => $receivingOfficer,
+                    'requester_office'  => $request->input('requester_office'),
+                    'requester_department' => $request->input('requester_department'),
+                    'registry'          => $request->input('registry'),
+                    'registry_code'     => $request->input('registry_code'),
+                    'is_ofs'            => $isOfs,
+                    'ofs_rank'          => $ofsRank,
+                    'priority'          => FileSearchRequest::priorityFor($isOfs ? $ofsRank : ($officerRank ?: $receivingOfficer)),
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'data'    => ['request_no' => $fr->request_no, 'id' => $fr->id],
+                    'message' => 'Blind request saved — file is in the missing list. Refer to Original Registry.',
+                ], 201);
             }
 
             // Seniority is taken from the chosen Receiving Officer (the requester); fall

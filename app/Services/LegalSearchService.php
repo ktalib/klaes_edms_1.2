@@ -416,7 +416,7 @@ class LegalSearchService
                                 ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
                         }
                     })
-                    ->select('file_title', 'district', 'lga', 'land_use_type', 'plot_number', 'tp_no', 'related_fileno', 'file_number', 'location', 'has_temp_file', 'temp_file_no')
+                    ->select('file_title', 'district', 'lga', 'land_use_type', 'plot_number', 'tp_no', 'related_fileno', 'file_number', 'location', 'has_temp_file', 'temp_file_no', 'latitude', 'longitude')
                     ->get();
 
                 $fileIndexingData = $this->pickBestIndexingRow($fileIndexingDataList, $primaryCandidates);
@@ -492,30 +492,29 @@ class LegalSearchService
             }
         }
 
-        // Earliest real transaction date on the timeline — the file's true origin. A
-        // commissioning date later than this is a system-entry artifact (e.g. a legacy file
-        // digitized long after its real history), so it is surfaced as '-'.
-        $earliestTxnDate = null;
-        foreach ($all as $r) {
-            $sd = trim((string) ($r['sort_date'] ?? ''));
-            if ($sd !== '' && $sd !== '9999-12-31' && ($earliestTxnDate === null || $sd < $earliestTxnDate)) {
-                $earliestTxnDate = $sd;
-            }
-        }
-
         // Resolve the commissioning date and, crucially, WHICH file number was
         // commissioned so the timeline can place the date on the permanent or the
         // "(T)" temporary row as appropriate.
         $commissioningInfo = $this->resolveCommissioningInfo(
             $fileIndexingData->file_number ?? $fileNo,
-            $fileNo,
-            $earliestTxnDate
+            $fileNo
         );
 
         // W/R/C flag — file tagged [WRC] in duplicate_fileno (matched by number
         // variants or prop_id). Used to conditionally reveal the W/R/C remark
         // editor in the LS comments panel (mirrors the report's own gating).
         $isWrcFile = $this->resolveIsWrcFile($conn, $fileNo, $all[0]['prop_id'] ?? null);
+
+        // Lon/Lat from the file indexing record, formatted "longitude, latitude"
+        // — mirrors the printed report's Lon/Lat field.
+        $fileLonLat = null;
+        $fiLon = trim((string) ($fileIndexingData->longitude ?? ''));
+        $fiLat = trim((string) ($fileIndexingData->latitude ?? ''));
+        if ($fiLon !== '' && $fiLat !== '') {
+            $fileLonLat = $fiLon . ', ' . $fiLat;
+        } elseif ($fiLon !== '' || $fiLat !== '') {
+            $fileLonLat = $fiLon !== '' ? $fiLon : $fiLat;
+        }
 
         return [
             'transactions' => $all,
@@ -533,6 +532,7 @@ class LegalSearchService
                 : $this->detectLandUseFromFileNumber($fileIndexingData->file_number ?? $fileNo),
             'file_plot_number' => $fileIndexingData->plot_number ?? null,
             'file_tp_no' => $fileIndexingData->tp_no ?? null,
+            'file_lon_lat' => $fileLonLat,
             'file_size' => $fileSize,
             'file_related_fileno' => $fileIndexingData->related_fileno ?? null,
             'file_index_number' => $fileIndexingData->file_number ?? null,
@@ -1392,6 +1392,7 @@ class LegalSearchService
             'file_land_use' => null,
             'file_plot_number' => null,
             'file_tp_no' => null,
+            'file_lon_lat' => null,
             'file_size' => null,
             'file_related_fileno' => null,
             'file_index_number' => null,
@@ -1414,16 +1415,14 @@ class LegalSearchService
      *
      * Returns ['date' => 'M j, Y'|'-', 'number' => string|null]. The date is only
      * populated when the file was commissioned within KLAES (fileNumber.SOURCE
-     * starting with 'MLS_Commissioned') AND that stored date does not postdate the
-     * file's own transactions. Legacy files digitized into KLAES have no real
-     * commissioning date on record, so they resolve to '-' (unknown) rather than a
-     * misleading system-entry timestamp.
-     *
-     * @param string|null $earliestTxnDate Earliest real transaction date on the
-     *        timeline (any Carbon-parseable form). When the resolved commissioning
-     *        date is later than this, it is treated as a system artifact and blanked.
+     * starting with 'MLS_Commissioned') and has a genuine stored commissioning_date.
+     * A KLAES commissioning may legitimately postdate the file's transactions —
+     * old files are recommissioned into the system long after their history — so
+     * the stored date is always trusted. Legacy files digitized into KLAES have no
+     * real commissioning date on record, so they resolve to '-' (unknown); the
+     * caller then falls back to the year embedded in the file number.
      */
-    private function resolveCommissioningInfo(?string $fileNumber, ?string $altFileNo = null, ?string $earliestTxnDate = null): array
+    private function resolveCommissioningInfo(?string $fileNumber, ?string $altFileNo = null): array
     {
         $default = ['date' => '-', 'number' => null];
 
@@ -1463,16 +1462,6 @@ class LegalSearchService
             return ['date' => '-', 'number' => $number];
         }
 
-        // A commissioning cannot postdate the file's own transactions. When it does, the
-        // stored date is a system-entry artifact (not the real commissioning), so surface it
-        // as unknown rather than a misleading date.
-        if ($earliestTxnDate) {
-            $earliest = rescue(fn () => \Carbon\Carbon::parse($earliestTxnDate), null, false);
-            if ($earliest && $date->gt($earliest)) {
-                return ['date' => '-', 'number' => $number];
-            }
-        }
-
         return ['date' => $date->format('M j, Y'), 'number' => $number];
     }
 
@@ -1495,6 +1484,28 @@ class LegalSearchService
             }
         }
         return array_values($variants);
+    }
+
+    /**
+     * Extract the commissioning year embedded in a land file number, e.g.
+     * "RES-2001-3874" → "2001", "CON-RES-1993-387" → "1993". Matches a
+     * dash-delimited 4-digit segment starting with 19 or 20 so serial numbers of
+     * the same length (e.g. "3874") aren't mistaken for a year.
+     */
+    private function extractYearFromFileNumber(?string $fileNo): ?string
+    {
+        if (!$fileNo) {
+            return null;
+        }
+
+        foreach (explode('-', $fileNo) as $part) {
+            $part = trim($part);
+            if (preg_match('/^(?:19|20)\d{2}$/', $part)) {
+                return $part;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -3105,7 +3116,8 @@ class LegalSearchService
      *
      * @param array $q keys: file_number, prop_id, display_file_number, display_file_title,
      *                 display_district_lga, display_land_use, display_size, display_plot_no,
-     *                 display_tpno, client_name, client_address, timeline_order
+     *                 display_tpno, display_residual_term, display_commencement_date,
+     *                 client_name, client_address, timeline_order
      * @return array{status:int, payload:array}
      */
     public function buildPrintReport(array $q): array
@@ -3120,6 +3132,7 @@ class LegalSearchService
         $displaySize = trim((string) ($q['display_size'] ?? ''));
         $displayPlotNo = trim((string) ($q['display_plot_no'] ?? ''));
         $displayTpno = trim((string) ($q['display_tpno'] ?? ''));
+        $displayResidualTerm = trim((string) ($q['display_residual_term'] ?? ''));
         // Client details originate from the legal_search_tokens row (Pay-Per-Search)
         // and are prefilled/editable in the UI, then passed through here for printing.
         $clientName = trim((string) ($q['client_name'] ?? ''));
@@ -3519,6 +3532,13 @@ class LegalSearchService
                 return 9;
             if ($txType === 'right of occupancy')
                 return 8;
+            // Certificate of Occupancy — weight 7
+            if (str_contains($txType, 'certificate of occupanc'))
+                return 7;
+            // KANGIS Recertification / Related Fileno — weight 6
+            $sourceTable = trim((string) ($row['source_table'] ?? ''));
+            if ($sourceTable === 'Related Fileno')
+                return 6;
             return 5;
         };
 
@@ -3666,6 +3686,23 @@ class LegalSearchService
             }
         }
 
+        // If searching by MLS file number and we have KANGIS recert transactions,
+        // extract the KANGIS counterpart from the Related Fileno rows.
+        if (!$isKangis($searchedFileNo) && ($relatedMls === null || $relatedMls === '')) {
+            foreach ($transactions as $tx) {
+                $src = trim((string) ($tx['source_table'] ?? ''));
+                $txType = trim((string) ($tx['transaction_type'] ?? ''));
+                if ($src === 'Related Fileno' && stripos($txType, 'KANGIS') !== false) {
+                    // The Related Fileno row carries both sides — find the KANGIS-format one
+                    $fn = trim((string) ($tx['file_number'] ?? ($tx['fileno'] ?? ($tx['mlsFNo'] ?? ''))));
+                    if ($fn !== '' && preg_match('/^[A-Z]{2,4}\s?\d{2,6}$/i', $fn)) {
+                        $relatedMls = $fn;
+                        break;
+                    }
+                }
+            }
+        }
+
         $fileNumberDisplay = $fileNumber;
         if ($isKangis($searchedFileNo)) {
             if ($relatedMls && strcasecmp(trim($relatedMls), trim($searchedFileNo)) !== 0) {
@@ -3679,6 +3716,13 @@ class LegalSearchService
                 }
             } elseif ($relatedMls && $isKangis($fileNo)) {
                 $fileNumberDisplay = $fileNo . ' (' . $relatedMls . ')';
+            }
+        } else {
+            // Searched with an MLS-format file that has a KANGIS counterpart
+            if ($kangisNumber && strcasecmp(trim($kangisNumber), trim($searchedFileNo)) !== 0) {
+                $fileNumberDisplay .= ' (' . $kangisNumber . ')';
+            } elseif ($relatedMls && strcasecmp(trim($relatedMls), trim($searchedFileNo)) !== 0) {
+                $fileNumberDisplay .= ' (' . $relatedMls . ')';
             }
         }
         if ($fileTitle === '-') {
@@ -3791,6 +3835,18 @@ class LegalSearchService
                 ? $cleanReg($serialNo) . '/' . $cleanReg($pageNoVal) . '/' . $cleanReg($volumeNo)
                 : '0/0/0';
 
+            // Transaction Date — shown in its own report column, distinct from the
+            // registration date. Formatted like reg_date when parseable.
+            $txnDate = trim((string) ($t['transaction_date'] ?? ''));
+            if ($txnDate !== '' && $txnDate !== '-') {
+                $parsedTxn = rescue(fn() => \Carbon\Carbon::parse($txnDate), null, false);
+                if ($parsedTxn) {
+                    $txnDate = $parsedTxn->format('M j, Y');
+                }
+            } else {
+                $txnDate = '-';
+            }
+
             $rowFileNo = (string) ($t['fileno'] ?: ($t['file_number'] ?: ($t['mlsFNo'] ?: '-')));
             $rows[] = [
                 'sn' => $idx + 1,
@@ -3800,6 +3856,7 @@ class LegalSearchService
                 'party_3' => $tc($t['party_3'] ?: '-'),
                 'party_4' => $tc($t['party_4'] ?: '-'),
                 'instrument_type' => $tc($t['transaction_type'] ?: '-'),
+                'transaction_date' => $txnDate,
                 'reg_time' => $regTime,
                 'reg_date' => $regDate,
                 'reg_no' => $regNoDisplay,
@@ -3817,26 +3874,10 @@ class LegalSearchService
         // ── Default "File Commissioning" record (always the first timeline row) ──
         // Highest priority (weight 12), so it precedes every other transaction.
         // Commissioning Date = the file's genuine KLAES commissioning date
-        // (fileNumber.SOURCE starting with 'MLS_Commissioned'), but only when it does not
-        // postdate the file's own transactions. For a legacy file digitized into KLAES the
-        // real commissioning date is unknown, so it prints '-' rather than a misleading
-        // system-entry date or a substituted transaction date. Reg particulars are 0/0/0.
-        $earliestTxnDate = null;
-        foreach ($rows as $existingRow) {
-            $rd = $existingRow['reg_date'] ?? null;
-            if (!$rd || $rd === '-') {
-                continue;
-            }
-            $parsed = rescue(fn() => \Carbon\Carbon::parse($rd), null, false);
-            if ($parsed && (!$earliestTxnDate || $parsed->lt($earliestTxnDate))) {
-                $earliestTxnDate = $parsed;
-            }
-        }
-        $commissioningDate = $this->resolveCommissioningInfo(
-            $fileNumber,
-            $fileNo,
-            $earliestTxnDate ? $earliestTxnDate->toDateString() : null
-        )['date'];
+        // (fileNumber.SOURCE starting with 'MLS_Commissioned'). For a legacy file
+        // digitized into KLAES the real commissioning date is unknown, so it prints the
+        // year embedded in the file number instead. Reg particulars are 0/0/0.
+        $commissioningDate = $this->resolveCommissioningInfo($fileNumber, $fileNo)['date'];
 
         // ── "Temporary File" record — printed directly below File Commissioning ──
         // Present when the searched file has a temporary "(T)" sibling, OR when the searched
@@ -3861,6 +3902,7 @@ class LegalSearchService
                 'party_3' => '-',
                 'party_4' => '-',
                 'instrument_type' => 'Temporary File',
+                'transaction_date' => '-',
                 'reg_time' => '-',
                 'reg_date' => '-',
                 'reg_no' => '0/0/0',
@@ -3879,6 +3921,16 @@ class LegalSearchService
         $commissioningFileNo = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', (string) $fileNumber);
         $commissioningFileNo = trim($commissioningFileNo) !== '' ? trim($commissioningFileNo) : $fileNumber;
 
+        // Legacy files digitized into KLAES (no genuine commissioning_date, so
+        // $commissioningDate is '-') have no real commissioning date on record, but
+        // their file number itself encodes the year they were originally commissioned
+        // (e.g. RES-2001-3874 → 2001, CON-RES-1993-387 → 1993). Surface that year as
+        // the Transaction Date on the row instead of leaving it blank.
+        $commissioningTxnDate = '-';
+        if ($commissioningDate === '-') {
+            $commissioningTxnDate = $this->extractYearFromFileNumber($commissioningFileNo) ?? '-';
+        }
+
         array_unshift($rows, [
             'sn' => 0, // renumbered below
             'file_no' => $commissioningFileNo ?: '-',
@@ -3889,6 +3941,7 @@ class LegalSearchService
             'party_3' => '-',
             'party_4' => '-',
             'instrument_type' => 'File Commissioning',
+            'transaction_date' => $commissioningTxnDate,
             'reg_time' => '-',
             'reg_date' => $commissioningDate,
             'reg_no' => '0/0/0',
@@ -4141,6 +4194,29 @@ class LegalSearchService
         if ($displayTpno !== '')
             $tpno = $displayTpno;
 
+        // Commencement date of the R of O term: the UI-passed date wins, then the
+        // saved per-file date (ls_comment_staging 'commencement_date'), then the
+        // R of O grant's Transaction/Reg Date. Residual Term = the land-use term
+        // minus years elapsed since it, unless the Residual Term editor passed
+        // an explicit value.
+        $displayCommencementDate = trim((string) ($q['display_commencement_date'] ?? ''));
+        $stagedCommencementDate = trim((string) ($comments->get('commencement_date')->comment ?? ''));
+        $commencementDate = null;
+        foreach ([$displayCommencementDate, $stagedCommencementDate] as $cand) {
+            if ($cand !== '' && $cand !== '-') {
+                $commencementDate = rescue(fn() => \Carbon\Carbon::parse($cand), null, false);
+                if ($commencementDate) {
+                    break;
+                }
+            }
+        }
+        if (!$commencementDate) {
+            $commencementDate = $this->rofoGrantDateFromTransactions($transactions);
+        }
+        $residualTerm = $displayResidualTerm !== ''
+            ? $displayResidualTerm
+            : $this->residualTermFromYear($landUse, $commencementDate ? (int) $commencementDate->year : null);
+
         return [
             'status' => 200,
             'payload' => [
@@ -4156,6 +4232,8 @@ class LegalSearchService
                     'size' => $size,
                     'plot_description' => $plotDescription,
                     'tpno' => $tpno,
+                    'residual_term' => $residualTerm,
+                    'commencement_date' => $commencementDate ? $commencementDate->format('jS F, Y') : null,
                     'client_name' => $clientName !== '' ? $clientName : null,
                     'client_address' => $clientAddress !== '' ? $clientAddress : null,
                     'rows' => $rows,
@@ -4173,10 +4251,68 @@ class LegalSearchService
                     'generated_by' => $generatedByText,
                     'generated_date' => $now->format('F j, Y'),
                     'full_name' => $generatedBy,
+                    'rank' => $user ? trim((string) ($user->rank ?? '')) : '',
                     'qr_data' => $qrData,
                 ],
             ],
         ];
+    }
+
+    /**
+     * Commencement date of the R of O term: the grant row's Transaction Date
+     * (falling back to Reg Date). The earliest dated R of O row wins (= the
+     * original grant). Null when no dated R of O row exists.
+     */
+    private function rofoGrantDateFromTransactions(array $transactions): ?\Carbon\Carbon
+    {
+        $grantDate = null;
+        foreach ($transactions as $t) {
+            $type = strtolower(trim((string) ($t['transaction_type'] ?? '')));
+            $compact = preg_replace('/[^a-z0-9]/', '', $type);
+            $isRofo = str_contains($type, 'right of occupanc')
+                || preg_match('/^r\s*of\s*o\b/', $type)
+                || preg_match('/^r[o0]f[o0]/', (string) $compact);
+            if (!$isRofo) {
+                continue;
+            }
+            foreach ([$t['transaction_date'] ?? null, $t['reg_date'] ?? null, $t['deeds_date'] ?? null] as $cand) {
+                $cand = trim((string) $cand);
+                if ($cand === '' || $cand === '-') {
+                    continue;
+                }
+                $parsed = rescue(fn() => \Carbon\Carbon::parse($cand), null, false);
+                if ($parsed && ($grantDate === null || $parsed->lt($grantDate))) {
+                    $grantDate = $parsed;
+                }
+                break; // Transaction Date wins; only fall through when it is absent.
+            }
+        }
+        if ($grantDate === null || $grantDate->isFuture()) {
+            return null;
+        }
+        return $grantDate;
+    }
+
+    /**
+     * Residual Term of the Right of Occupancy: the land-use term (Residential/
+     * Agricultural = 99 years, Commercial/Industrial = 40 years) minus the
+     * years elapsed since the commencement year. Returns e.g. "28 Years", or
+     * null when the land use has no defined term or the year is unusable.
+     */
+    private function residualTermFromYear(?string $landUse, ?int $commencementYear): ?string
+    {
+        $lu = strtoupper(trim((string) $landUse));
+        $termYears = null;
+        if (str_contains($lu, 'RESIDENT') || str_starts_with($lu, 'RES') || str_contains($lu, 'AGRIC') || str_starts_with($lu, 'AG')) {
+            $termYears = 99;
+        } elseif (str_contains($lu, 'COMMERC') || str_starts_with($lu, 'COM') || str_contains($lu, 'INDUSTR') || str_starts_with($lu, 'IND')) {
+            $termYears = 40;
+        }
+        $nowYear = (int) now()->year;
+        if ($termYears === null || $commencementYear === null || $commencementYear <= 1000 || $commencementYear > $nowYear) {
+            return null;
+        }
+        return max($termYears - ($nowYear - $commencementYear), 0) . ' Years';
     }
 
     /**
@@ -4658,6 +4794,37 @@ class LegalSearchService
                             if ($fn !== '') {
                                 $allowed[] = $fn;
                             }
+                        }
+                    }
+
+                    // Same-prop_id aliases in the OTHER staging tables. A KANGIS-legacy
+                    // Certificate of Occupancy (or file-history / deed row) is frequently keyed
+                    // under the KANGIS number (e.g. "MLKN 2455") even though the file's pra
+                    // history was renamed to its MLS number (e.g. "CON-AG-2014-35"). Those rows
+                    // share the mother's own prop_id but a file number that appears NOWHERE in
+                    // pra or related_fileno, so SME mode — which matches by file number and skips
+                    // prop_id expansion — would never surface them. Pull their file numbers into
+                    // the allowed set so the COFO/history reappears once the file is subdivided.
+                    $aliasTables = [
+                        'CofO_staging'         => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
+                        'file_history_staging' => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
+                        'deed_registrations'   => ['fileno'],
+                    ];
+                    foreach ($aliasTables as $aliasTable => $aliasCols) {
+                        try {
+                            $aliasRows = $conn->table($aliasTable)
+                                ->whereIn('prop_id', $ownPropIds)
+                                ->get($aliasCols);
+                            foreach ($aliasRows as $aliasRow) {
+                                foreach ($aliasCols as $col) {
+                                    $fn = trim((string) ($aliasRow->$col ?? ''));
+                                    if ($fn !== '') {
+                                        $allowed[] = $fn;
+                                    }
+                                }
+                            }
+                        } catch (\Throwable $e) {
+                            // Non-fatal: a missing table/column must not break the allowed set.
                         }
                     }
                 }

@@ -582,48 +582,23 @@
                 $preview.removeClass('text-gray-400');
                 this.showSuccess('✓ File number ready');
 
-                // Show UI card details if fileData is present
-                if (fileData) {
-                    const fileName = fileData.FileName || fileData.file_name || fileData.file_title || '—';
-                    const lga = fileData.LGA || fileData.lga || fileData.fi_lga || fileData.ma_lga || '—';
-                    const location = fileData.Location || fileData.location || fileData.ma_location || '—';
-                    const landUse = fileData.LandUse || fileData.land_use || fileData.ma_land_use || '—';
-
-                    const labelColor = tabName === 'mls' ? 'text-blue-600' :
-                        tabName === 'kangis' ? 'text-green-600' : 'text-purple-600';
-                    const borderColor = tabName === 'mls' ? 'border-blue-100' :
-                        tabName === 'kangis' ? 'border-green-100' : 'border-purple-100';
-
-                    const esc = (v) => $('<div>').text(v).html();
-                    const detailsHtml = `
-                    <div class="mt-3 bg-white border ${borderColor} rounded-lg p-4 shadow-sm">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <p class="text-[11px] font-semibold uppercase tracking-wider ${labelColor} mb-1">File Name</p>
-                                <p class="text-sm font-medium text-gray-800 break-words">${esc(fileName)}</p>
-                            </div>
-                            <div>
-                                <p class="text-[11px] font-semibold uppercase tracking-wider ${labelColor} mb-1">LGA</p>
-                                <p class="text-sm font-medium text-gray-800 break-words">${esc(lga)}</p>
-                            </div>
-                            <div>
-                                <p class="text-[11px] font-semibold uppercase tracking-wider ${labelColor} mb-1">Location</p>
-                                <p class="text-sm font-medium text-gray-800 break-words">${esc(location)}</p>
-                            </div>
-                            <div>
-                                <p class="text-[11px] font-semibold uppercase tracking-wider ${labelColor} mb-1">Land Use</p>
-                                <p class="text-sm font-medium text-gray-800 break-words">${esc(landUse)}</p>
-                            </div>
-                        </div>
-                    </div>`;
-                    
-                    $detailsContainer.html(detailsHtml).removeClass('hidden');
-                } else {
-                    $detailsContainer.addClass('hidden').empty();
+                // Render the file-details card. Paint immediately from any
+                // smart-selected data for instant feedback, then enrich from the
+                // lookup API — which returns the complete record (File Name, LGA,
+                // Location, Land Use) — so KANGIS, SLTR and the other registries
+                // display full file details just like the MLS tab.
+                if ($detailsContainer.length) {
+                    if (fileData) {
+                        $detailsContainer.html(this.buildDetailsCard(tabName, fileData)).removeClass('hidden');
+                    }
+                    this.loadFileDetailsCard(tabName, preview, fileData);
                 }
             } else {
                 $preview.html('<span class="text-gray-400 font-normal">-</span>');
-                $detailsContainer.addClass('hidden').empty();
+                if ($detailsContainer.length) {
+                    $detailsContainer.addClass('hidden').empty();
+                }
+                this.cancelDetailsLoad(tabName);
                 $('#validation-message').text('').removeClass('text-green-600 bg-green-50 px-3 py-1 rounded-lg border border-green-200');
             }
 
@@ -638,6 +613,110 @@
                 copyBtn.prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
                 applyBtn.prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
             }
+        },
+
+        // Build the file-details card HTML shared by every registry tab.
+        // Reads both the sparse smart-selector shape (FileName/location) and the
+        // richer lookup-API shape (file_name/lga/land_use) so it renders complete
+        // details regardless of the source.
+        buildDetailsCard: function (tabName, data) {
+            data = data || {};
+            const fileName = data.FileName || data.file_name || data.file_title || '—';
+            const lga = data.LGA || data.lga || data.fi_lga || data.ma_lga || '—';
+            const location = data.Location || data.location || data.ma_location || data.district || '—';
+            const landUse = data.LandUse || data.land_use || data.ma_land_use || '—';
+
+            const labelColors = {
+                mls: 'text-blue-600', kangis: 'text-green-600', newkangis: 'text-purple-600',
+                sltr: 'text-indigo-600', old_mls: 'text-yellow-600', sit: 'text-pink-600',
+                dciv: 'text-teal-600', gkn: 'text-orange-600'
+            };
+            const borderColors = {
+                mls: 'border-blue-100', kangis: 'border-green-100', newkangis: 'border-purple-100',
+                sltr: 'border-indigo-100', old_mls: 'border-yellow-100', sit: 'border-pink-100',
+                dciv: 'border-teal-100', gkn: 'border-orange-100'
+            };
+            const labelColor = labelColors[tabName] || 'text-gray-600';
+            const borderColor = borderColors[tabName] || 'border-gray-100';
+
+            const esc = (v) => $('<div>').text(v == null || v === '' ? '—' : v).html();
+            return `
+            <div class="mt-3 bg-white border ${borderColor} rounded-lg p-4 shadow-sm">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-[11px] font-semibold uppercase tracking-wider ${labelColor} mb-1">File Name</p>
+                        <p class="text-sm font-medium text-gray-800 break-words">${esc(fileName)}</p>
+                    </div>
+                    <div>
+                        <p class="text-[11px] font-semibold uppercase tracking-wider ${labelColor} mb-1">LGA</p>
+                        <p class="text-sm font-medium text-gray-800 break-words">${esc(lga)}</p>
+                    </div>
+                    <div>
+                        <p class="text-[11px] font-semibold uppercase tracking-wider ${labelColor} mb-1">Location</p>
+                        <p class="text-sm font-medium text-gray-800 break-words">${esc(location)}</p>
+                    </div>
+                    <div>
+                        <p class="text-[11px] font-semibold uppercase tracking-wider ${labelColor} mb-1">Land Use</p>
+                        <p class="text-sm font-medium text-gray-800 break-words">${esc(landUse)}</p>
+                    </div>
+                </div>
+            </div>`;
+        },
+
+        // Fetch the complete record for a file number from the lookup API and
+        // (re)render the details card with it. Debounced and sequence-guarded per
+        // tab so rapid typing/selection only paints the latest result. Any fields
+        // missing from the lookup fall back to the smart-selector data.
+        loadFileDetailsCard: function (tabName, fileNumber, fileData) {
+            const $container = $(`#${tabName}-details-container`);
+            if (!$container.length) return;
+
+            fileNumber = (fileNumber || '').toString().trim();
+            if (!fileNumber || fileNumber === '-') return;
+
+            this._detailsTimers = this._detailsTimers || {};
+            this._detailsRequestSeq = this._detailsRequestSeq || {};
+
+            if (this._detailsTimers[tabName]) {
+                clearTimeout(this._detailsTimers[tabName]);
+            }
+
+            const seq = (this._detailsRequestSeq[tabName] || 0) + 1;
+            this._detailsRequestSeq[tabName] = seq;
+
+            this._detailsTimers[tabName] = setTimeout(() => {
+                this.fetchFileDetails(fileNumber, tabName)
+                    .then((record) => {
+                        // Drop stale responses or ones for a tab we've left.
+                        if (this._detailsRequestSeq[tabName] !== seq) return;
+                        if (this.config.currentTab !== tabName) return;
+                        if (!record) return; // keep any card already painted from fileData
+
+                        // Merge: lookup values win, but keep smart-selector values
+                        // for anything the lookup left blank.
+                        const merged = $.extend({}, fileData || {});
+                        Object.keys(record).forEach((k) => {
+                            const v = record[k];
+                            if (v !== null && v !== undefined && v !== '') {
+                                merged[k] = v;
+                            }
+                        });
+
+                        $container.html(this.buildDetailsCard(tabName, merged)).removeClass('hidden');
+                    })
+                    .catch(() => { /* leave any existing card in place on error */ });
+            }, 300);
+        },
+
+        // Cancel a pending details lookup and invalidate its result (used when the
+        // preview is cleared so a late response can't repopulate the card).
+        cancelDetailsLoad: function (tabName) {
+            if (this._detailsTimers && this._detailsTimers[tabName]) {
+                clearTimeout(this._detailsTimers[tabName]);
+                this._detailsTimers[tabName] = null;
+            }
+            this._detailsRequestSeq = this._detailsRequestSeq || {};
+            this._detailsRequestSeq[tabName] = (this._detailsRequestSeq[tabName] || 0) + 1;
         },
 
         // Generate MLS preview
@@ -1217,6 +1296,50 @@
                 console.log("Form reset complete");
             } catch (error) {
                 console.error("Error during form reset:", error);
+            }
+        },
+
+        // Refresh the modal in place: drop cached file lists, rebuild the smart
+        // selectors with fresh server data and reset the form — no page reload.
+        refresh: function (btn) {
+            try {
+                console.log("Refreshing modal...");
+
+                // Spin the refresh icon for visual feedback
+                const $icon = btn ? $(btn).find('i') : $();
+                $icon.addClass('animate-spin');
+
+                // Drop every cached file list so selectors re-fetch fresh data
+                this.cache.mlsFiles = [];
+                this.cache.kangisFiles = [];
+                this.cache.newkangisFiles = [];
+
+                // Tear down existing Select2 instances so they rebuild with new data
+                ['mls', 'kangis', 'newkangis'].forEach((tab) => {
+                    const $sel = $(`#${tab}-smart-selector`);
+                    if ($sel.data('select2')) {
+                        $sel.select2('destroy');
+                    }
+                    $sel.removeData('select2-initialized');
+                });
+
+                // resetForm() clears inputs/previews and reloads the current tab's data
+                this.resetForm();
+
+                // Re-render lucide icons in case markup was swapped during reset
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                    // createIcons replaces the <i>, so re-grab and stop the spin shortly after
+                    const $freshIcon = btn ? $(btn).find('i, svg') : $();
+                    setTimeout(() => $freshIcon.removeClass('animate-spin'), 600);
+                } else {
+                    setTimeout(() => $icon.removeClass('animate-spin'), 600);
+                }
+
+                this.showSuccess('Modal refreshed');
+                console.log("Modal refresh complete");
+            } catch (error) {
+                console.error("Error refreshing modal:", error);
             }
         },
 

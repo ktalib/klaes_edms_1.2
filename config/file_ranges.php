@@ -28,59 +28,64 @@ return [
         // ───────────────── Registry 1 — Digital Archive ─────────────────
         'RES'    => [
             ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 1991],
-            // 1992–2025 lives in the Pool Office (Registry 2) — declared below.
-            ['zone' => 'pool',    'registry' => 'Registry 2', 'from' => 1992, 'to' => 2025],
+            // 1992–2026 lives in the Pool Office (Registry 2) — declared below.
         ],
+
+
+          //SIT REGISTRY 2 
+         
+          
+
         'COM'    => [
-            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2026],
         ],
         'IND'    => [
-            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2026],
         ],
         'AG'     => [
-            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2026],
         ],
         'RES-RC' => [
             ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 1991],
         ],
         'COM-RC' => [
-            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2026],
         ],
         'IND-RC' => [
-            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2026],
         ],
         'AG-RC'  => [
-            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2026],
         ],
 
         // ───────────────── Registry 3 — Digital Archive ─────────────────
         'CON-RES' => [
             ['zone' => 'archive', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2024],
-            // CON-RES 2025 is still in the Pool Office (Registry 3).
-            ['zone' => 'pool',    'registry' => 'Registry 3', 'from' => 2025, 'to' => 2025],
+            // CON-RES 2025–2026 is still in the Pool Office (Registry 3).
+            ['zone' => 'pool',    'registry' => 'Registry 3', 'from' => 2025, 'to' => 2026],
         ],
 
         // ───────────────── Registry 3 — Pool Office ─────────────────
         'CON-COM'    => [
-            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2026],
         ],
         'CON-IND'    => [
-            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2026],
         ],
         'CON-AG'     => [
-            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2026],
         ],
         'CON-RES-RC' => [
-            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2026],
         ],
         'CON-COM-RC' => [
-            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2026],
         ],
         'CON-IND-RC' => [
-            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2026],
         ],
         'CON-AG-RC'  => [
-            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2025],
+            ['zone' => 'pool', 'registry' => 'Registry 3', 'from' => 1981, 'to' => 2026],
         ],
     ],
 

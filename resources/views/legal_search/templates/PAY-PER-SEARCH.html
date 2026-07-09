@@ -103,33 +103,53 @@
       background: #fff;
     }
 
+    /* Four label+value sections laid out on a CSS grid, separated by three
+       EXPLICIT spacer columns (.sp). The spacers are all 1fr, so whatever
+       width is left over is split equally among them — the space between
+       section 1 and 2 is always identical to the space between section 3
+       and 4. Label columns size to their longest label; value columns size
+       to their content up to a cap, then wrap. */
     .prop-details {
       font-size: 12px;
       margin-bottom: 5px;
-      border-collapse: collapse;
       width: 100%;
-      table-layout: fixed;
+      display: grid;
+      grid-template-columns:
+        max-content fit-content(150px) minmax(18px, 1fr)
+        max-content fit-content(160px) minmax(18px, 1fr)
+        max-content fit-content(150px) minmax(18px, 1fr)
+        max-content fit-content(170px);
+      row-gap: 6px;
+      align-items: start;
     }
 
-    .prop-details td {
-      padding: 1px 0;
-      vertical-align: top;
-    }
-
-    .bold-lbl-left {
+    .prop-details .lbl {
       font-weight: bold;
-      width: 125px;
+      white-space: nowrap;
+      /* Guaranteed breathing room between a label and its value. */
+      padding-right: 10px;
     }
 
-    .bold-lbl-right {
-      font-weight: bold;
-      width: 110px;
-      padding-left: 35px;
+    .prop-details .val {
+      min-width: 0;
+      /* Long values (e.g. Lon/Lat) wrap inside their own section instead of
+         spilling into the next label column. */
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+      /* Breathing room before the vertical divider in the next spacer column. */
+      padding-right: 8px;
     }
 
-    .client-lbl {
-      width: 95px;
-      padding-left: 30px;
+    /* Vertical rule down the middle of each spacer column, separating the 4
+       label+value sections. Each row contributes its own .sp segment (one
+       per spacer column per row), so to read as a single continuous line
+       instead of 4 short broken segments, each segment is stretched to its
+       row's full height and extended by half the row-gap on each side to
+       bridge the gap to the segment above/below it. */
+    .prop-details .sp {
+      align-self: stretch;
+      margin: -3px 0;
+      border-left: 0.5px solid #000;
     }
 
     .transaction-table {
@@ -146,6 +166,14 @@
       vertical-align: top;
       border-bottom: 0.5px solid #eee;
       word-wrap: break-word;
+    }
+
+    /* File No column: never break/wrap file numbers */
+    .transaction-table th:nth-child(2),
+    .transaction-table td:nth-child(2) {
+      white-space: nowrap;
+      word-wrap: normal;
+      overflow-wrap: normal;
     }
 
     .transaction-table .header-row th {
@@ -404,61 +432,81 @@
           <div class="title-block">
             <h1>KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</h1>
             <h2>LEGAL SEARCH REPORT</h2>
-            <h3>ON-PREMISE PAY-PER-SEARCH</h3>
+            <h3>On-Premise  Pay-per-Search</h3>
           </div>
           <div id="qr-code" style="margin-right:8px;"></div>
-          <div class="logo-box"><img src="http://app.klaes.ng/assets/logo/ministry2.jpeg" alt="Logo" /></div>
+          <div class="logo-box"><img src="http://app.klaes.ng/assets/logo/ministry2.png" alt="Logo" /></div>
         </div>
         <div class="date-line" id="report-date-line">Date: March 19, 2026</div>
       </header>
 
       <div class="section-label">Property Details</div>
-      <table class="prop-details">
-        <tr>
-          <td class="bold-lbl-left">File Number:</td>
-          <td><strong id="report-file-number">-</strong></td>
-          <td class="bold-lbl-right">Lon/Lat:</td>
-          <td><strong id="report-district-lga">-</strong></td>
-          <td class="bold-lbl-right client-lbl" id="report-client-name-lbl">Client Name:</td>
-          <td><strong id="report-client-name">-</strong></td>
-        </tr>
-        <tr>
-          <td class="bold-lbl-left">File Title:</td>
-          <td><strong id="report-file-title">-</strong></td>
-          <td class="bold-lbl-right">Plot No:</td>
-          <td><strong id="report-plot-no">-</strong></td>
-          <td class="bold-lbl-right client-lbl" id="report-client-address-lbl">Client Address:</td>
-          <td><strong id="report-client-address">-</strong></td>
-        </tr>
-        <tr>
-          <td class="bold-lbl-left">Land Use:</td>
-          <td><strong id="report-land-use">-</strong></td>
-          <td class="bold-lbl-right">Size:</td>
-          <td><strong id="report-size">-</strong></td>
-          <td></td>
-          <td></td>
-        </tr>
-        <tr>
-          <td class="bold-lbl-left">Plot Description:</td>
-          <td><strong id="report-plot-description">-</strong></td>
-          <td class="bold-lbl-right">TP No:</td>
-          <td><strong id="report-tpno">-</strong></td>
-          <td></td>
-          <td></td>
-        </tr>
-      </table>
+      <!-- Property Details grid: 4 sections per row (label + value each),
+           separated by equal-width spacer cells (.sp). 11 cells per row. -->
+      <div class="prop-details">
+        <!-- Row 1 -->
+        <div class="lbl">File Number:</div>
+        <div class="val"><strong id="report-file-number">-</strong></div>
+        <div class="sp"></div>
+        <div class="lbl">Lon/Lat:</div>
+        <div class="val"><strong id="report-district-lga">-</strong></div>
+        <div class="sp"></div>
+        <div class="lbl">Term:</div>
+        <div class="val"><strong id="report-term">-</strong></div>
+        <div class="sp"></div>
+        <div class="lbl" id="report-client-name-lbl">Client Name:</div>
+        <div class="val"><strong id="report-client-name">-</strong></div>
+        <!-- Row 2 -->
+       
+        <div class="lbl">File Title (Current Holder):</div>
+        <div class="val"><strong id="report-file-title">-</strong></div>
+        <div class="sp"></div>
+        <div class="lbl">Plot No:</div>
+        <div class="val"><strong id="report-plot-no">-</strong></div>
+        <div class="sp"></div>
+        <div class="lbl">Commencement <br>Date:</div>
+        <div class="val"><strong id="report-commencement-date">-</strong></div>
+        <div class="sp"></div>
+        <div class="lbl" id="report-client-address-lbl">Client Address:</div>
+        <div class="val"><strong id="report-client-address">-</strong></div>
+        <!-- Row 3 -->
+        <div class="lbl">Land Use:</div>
+        <div class="val"><strong id="report-land-use">-</strong></div>
+        <div class="sp"></div>
+        <div class="lbl">Size:</div>
+        <div class="val"><strong id="report-size">-</strong></div>
+        <div class="sp"></div>
+        <div class="lbl">Residual Term:</div>
+        <div class="val"><strong id="report-rent">-</strong></div>
+        <div class="sp"></div>
+        <div class="lbl"></div>
+        <div class="val"></div>
+        <!-- Row 4 -->
+        <div class="lbl">Plot Description:</div>
+        <div class="val"><strong id="report-plot-description">-</strong></div>
+        <div class="sp"></div>
+        <div class="lbl">TP No:</div>
+        <div class="val"><strong id="report-tpno">-</strong></div>
+        <div class="sp"></div>
+        <div class="lbl"></div>
+        <div class="val"></div>
+        <div class="sp"></div>
+        <div class="lbl"></div>
+        <div class="val"></div>
+      </div>
 
       <div class="section-label">File History</div>
       <table class="transaction-table">
         <thead>
           <tr class="header-row">
             <th style="width: 3%">S/N</th>
-            <th style="width: 9%">File No</th>
-            <th style="width: 15%; white-space: nowrap;">Instrument/Transaction Type</th>
-            <th style="width: 12%">Party 1</th>
-            <th style="width: 12%">Party 2</th>
-            <th style="width: 9%" class="party-3-col">Party 3</th>
-            <th style="width: 9%" class="party-4-col">Party 4</th>
+            <th style="width: 11%">File No</th>
+            <th style="width: 15%; white-space: nowrap;">Instrument/<br>Transaction Type</th>
+            <th style="width: 11%">Party 1</th>
+            <th style="width: 11%">Party 2</th>
+            <th style="width: 8%" class="party-3-col">Party 3</th>
+            <th style="width: 8%" class="party-4-col">Party 4</th>
+            <th style="width: 9%">Transaction Date</th>
             <th style="width: 9%">Reg. Time/Date</th>
             <th style="width: 9%">Particulars</th>
             <th style="width: 5%">Caveat</th>
@@ -491,16 +539,23 @@
       <div class="signature-section">
         <div class="sig-row">
           <div class="sig-box">
+             <br>
             <div>Name: <span id="report-full-name" style="border-bottom: 1px dotted #000; min-width: 200px; display: inline-block; padding: 0 4px;"></span></div>
-            <div>Rank:...............................................</div>
+             <br>
+            <div>Rank: <span id="report-rank" style="border-bottom: 1px dotted #000; min-width: 200px; display: inline-block; padding: 0 4px;"></span></div>
+            <br>
             <div>Sign:............................ Date: <span id="report-sign-date" style="border-bottom: 1px dotted #000; min-width: 90px; display: inline-block; padding: 0 4px;"></span></div>
           </div>
           <div class="sig-box">
+             <br>
             <div>Verified by:.......................................</div>
+            <br>
             <div>Rank:...............................................</div>
+            <br>
             <div>Sign:............................ Date:................</div>
           </div>
           <div class="sig-box">
+             <br>
             <div>Sign:............................ Date:................</div>
             <div style="font-weight:bold">Director Deeds</div>
             <div style="font-size:9px">(for Permanent Secretary/Hon. Commissioner)</div>
@@ -559,6 +614,8 @@
       const displaySize = params.get('display_size') || '';
       const displayPlotNo = params.get('display_plot_no') || '';
       const displayTpno = params.get('display_tpno') || '';
+      const displayResidualTerm = params.get('display_residual_term') || '';
+      const displayCommencementDate = params.get('display_commencement_date') || '';
       const clientName = params.get('client_name') || '';
       const clientAddress = params.get('client_address') || '';
       const timelineOrder = params.get('timeline_order') || '';
@@ -574,6 +631,8 @@
         display_size: displaySize,
         display_plot_no: displayPlotNo,
         display_tpno: displayTpno,
+        display_residual_term: displayResidualTerm,
+        display_commencement_date: displayCommencementDate,
         client_name: clientName,
         client_address: clientAddress,
         timeline_order: timelineOrder,
@@ -593,15 +652,27 @@
           // Convert ALL-CAPS values to Title Case for display (keeps stored data intact).
           const titleCase = (v) => (v || '').toString().toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase());
 
+          // Term of the Right of Occupancy, derived from land use:
+          // Residential / Agricultural = 99 years; Commercial / Industrial = 40 years.
+          const termFromLandUse = (landUse) => {
+            const lu = String(landUse || '').toUpperCase();
+            if (lu.includes('RESIDENT') || lu.startsWith('RES') || lu.includes('AGRIC') || lu.startsWith('AG')) return '99 Years';
+            if (lu.includes('COMMERC') || lu.startsWith('COM') || lu.includes('INDUSTR') || lu.startsWith('IND')) return '40 Years';
+            return '';
+          };
+
           // Remarks Data — suppressed ("These details are as at" line removed)
           // if (d.remarks) { ... }
 
           setText('report-date-line', d.date_line);
           setText('report-file-number', d.file_number);
-          setText('report-file-title', d.file_title);
+          setText('report-file-title', d.file_title ? String(d.file_title).toUpperCase() : d.file_title);
           setText('report-district-lga', d.lon_lat);
           setText('report-size', d.size);
           setText('report-land-use', d.land_use);
+          setText('report-term', termFromLandUse(d.land_use));
+          setText('report-rent', d.residual_term);
+          setText('report-commencement-date', d.commencement_date);
           setText('report-plot-no', d.plot_no);
           setText('report-plot-description', d.plot_description);
           setText('report-tpno', d.tpno);
@@ -612,6 +683,7 @@
           setText('report-client-address', titleCase(d.client_address));
           setText('report-generated-by', d.generated_by);
           setText('report-full-name', d.full_name);
+          setText('report-rank', d.rank);
           // Auto-fill the signing Date with the report generation date.
           setText('report-sign-date', d.generated_date || (d.date_line || '').replace(/^Date:\s*/i, ''));
 
@@ -695,6 +767,7 @@
                   <td>${row.grantee}</td>
                   <td class="party-3-col">${row.party_3 || '-'}</td>
                   <td class="party-4-col">${row.party_4 || '-'}</td>
+                  <td>${row.transaction_date || '-'}</td>
                   <td><strong>${row.reg_time}</strong><br>${row.reg_date}</td>
                   <td>${row.reg_no}</td>
                   <td>${row.caveat}</td>
@@ -754,8 +827,17 @@
       // Watermark decided — clear the other half of the auto-print gate.
       const wmDone = () => { __pprWmReady = true; __pprMaybePrint(); };
 
-      // Check print status
-      if (fileNo) {
+      // Explicit choice from the Print Manager ("Print Original" / "Print File
+      // Copy") forces the watermark; otherwise fall back to auto-detect from
+      // the print history (first print = Original, reprints = FILE COPY).
+      const forcedType = (params.get('status') || '').toLowerCase();
+
+      if (forcedType === 'copy' || forcedType === 'original') {
+        isFileCopy = (forcedType === 'copy');
+        if (isFileCopy) { showFileCopy(); } else { showOriginal(); }
+        wmDone();
+      } else if (fileNo) {
+        // Check print status
         fetch('/print-manager/status?' + new URLSearchParams({
           reference_number: fileNo,
           document_type: docType
@@ -811,9 +893,14 @@
           }
         }
 
-        // After first print, always show FILE COPY (handles same-tab reprints too).
-        isFileCopy = true;
-        showFileCopy();
+        // When the operator explicitly chose "Print Original" / "Print File Copy",
+        // the watermark must stay exactly as chosen — never auto-flip based on a
+        // previous print. Only the auto-detect flow (no forced type) switches to
+        // FILE COPY after the first print.
+        if (!forcedType) {
+          isFileCopy = true;
+          showFileCopy();
+        }
       });
     })();
   </script>

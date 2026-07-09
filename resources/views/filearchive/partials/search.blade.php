@@ -18,6 +18,24 @@
                 </div>
                 <div class="flex flex-col md:flex-row gap-2">
                     <div>
+                        <label for="registry" class="block text-sm font-medium mb-1">Registry</label>
+                        <select id="registry" name="registry" class="select w-full md:w-[180px]">
+                            <option value="all">All Registries</option>
+                            @foreach($registryOptions ?? [] as $reg)
+                                <option value="{{ $reg }}" {{ request('registry') == $reg ? 'selected' : '' }}>{{ $reg }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label for="year" class="block text-sm font-medium mb-1">Year</label>
+                        <select id="year" name="year" class="select w-full md:w-[140px]">
+                            <option value="all">All Years</option>
+                            @foreach($yearOptions ?? [] as $year)
+                                <option value="{{ $year }}" {{ request('year') == $year ? 'selected' : '' }}>{{ $year }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
                         <label for="searchField" class="block text-sm font-medium mb-1">Search In</label>
                         <select id="searchField" name="field" class="select w-full md:w-[180px]">
                             <option value="all" {{ request('field') == 'all' ? 'selected' : '' }}>All Fields</option>
@@ -42,24 +60,6 @@
                             <option value="all" {{ request('cover_type') == 'all' ? 'selected' : '' }}>All Cover Types</option>
                             <option value="front" {{ request('cover_type') == 'front' ? 'selected' : '' }}>Front Cover (FC)</option>
                             <option value="back" {{ request('cover_type') == 'back' ? 'selected' : '' }}>Back Cover (BC)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="year" class="block text-sm font-medium mb-1">Year</label>
-                        <select id="year" name="year" class="select w-full md:w-[140px]">
-                            <option value="all">All Years</option>
-                            @foreach($yearOptions ?? [] as $year)
-                                <option value="{{ $year }}" {{ request('year') == $year ? 'selected' : '' }}>{{ $year }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div>
-                        <label for="registry" class="block text-sm font-medium mb-1">Registry</label>
-                        <select id="registry" name="registry" class="select w-full md:w-[180px]">
-                            <option value="all">All Registries</option>
-                            @foreach($registryOptions ?? [] as $reg)
-                                <option value="{{ $reg }}" {{ request('registry') == $reg ? 'selected' : '' }}>{{ $reg }}</option>
-                            @endforeach
                         </select>
                     </div>
                     <div class="flex items-end gap-2">

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\FileIndexing;
 use App\Models\FileTracker;
+use App\Models\MissingFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -39,6 +40,9 @@ class FileLocationResolver
     public const STATUS_IN_ARCHIVE_NOT_FOUND = 'IN_ARCHIVE_NOT_FOUND';
     public const STATUS_IN_POOL_FOUND        = 'IN_POOL_OFFICE_FOUND';
     public const STATUS_IN_POOL_NOT_FOUND    = 'IN_POOL_OFFICE_NOT_FOUND';
+
+    // File is recorded in missing_files — SCB already searched and confirmed missing.
+    public const STATUS_MISSING_FILE = 'MISSING_FILE';
 
     // Non-indexed files: cannot be located by normal search → blind request to SCB.
     public const STATUS_PENDING_FILE       = 'PENDING_FILE';
@@ -302,6 +306,10 @@ class FileLocationResolver
             'is_blind'         => false,
             'manual'           => false,
             'duplicate_flag'   => $this->currentDuplicateFlag,
+            // Temporary file — the searched number carries the "(T)" suffix. Such a
+            // file is a standalone record (see variants()); the UI badges it.
+            'is_temp_file'     => (bool) preg_match('/\(\s*T\s*\)\s*$/i', trim($fileNumber)),
+            'is_missing_file'  => false,
             'superseded_by'    => null,
             'superseded_reason' => null,
             // Holder-duration fields — only populated on the IN_TRANSIT outcome.
@@ -331,6 +339,35 @@ class FileLocationResolver
         if (empty($merged['rack_shelf'])) {
             $indexingRow = ($merged['indexing'] ?? null) instanceof FileIndexing ? $merged['indexing'] : null;
             $merged['rack_shelf'] = $this->getRackShelf($fileNumber, $indexingRow);
+        }
+
+        // Check if this file number exists in the missing_files table (marked as
+        // missing/not-yet-found). When it does, the status is overridden to MISSING_FILE,
+        // and the "Send Blind Request to SCB Monitor" button changes to
+        // "Send Blind Request to the Original Registry" instead,
+        // and the record saves without sending the request to the SCB.
+        try {
+            if (Schema::connection('sqlsrv')->hasTable('missing_files')) {
+                $merged['is_missing_file'] = DB::connection('sqlsrv')
+                    ->table('missing_files')
+                    ->where('file_number', $fileNumber)
+                    ->where('status', '!=', MissingFile::STATUS_FOUND)
+                    ->exists();
+            }
+        } catch (\Throwable $e) {
+            // Fail open — treat as not in missing_files if the table is missing.
+        }
+
+        // Override status when the file is confirmed missing — SCB already searched and
+        // could not find it. This takes precedence over the resolver's inferred status
+        // (IN_ARCHIVE, FILE_NOT_FOUND, etc.) so the UI shows "Missing File" consistently.
+        if ($merged['is_missing_file']) {
+            $merged['status'] = self::STATUS_MISSING_FILE;
+            // Merge in the action meta for MISSING_FILE so next_action etc. are correct.
+            $meta = $this->actionMetaFor(self::STATUS_MISSING_FILE);
+            foreach ($meta as $k => $v) {
+                $merged[$k] = $v;
+            }
         }
 
         return $merged;
@@ -509,6 +546,11 @@ class FileLocationResolver
             self::STATUS_NOT_FOUND =>
                 ['next_action' => 'Print Missing File Confirmation Slip', 'slip_variant' => 'missing'],
 
+            // File is recorded in missing_files — SCB already searched and confirmed
+            // missing. The next step is to send a request to the Original Registry.
+            self::STATUS_MISSING_FILE =>
+                ['next_action' => 'Request to Original Registry', 'can_send_fr' => true, 'is_blind' => true],
+
             // Indexed but outside any known registry range — send it to the SCB to
             // physically search first. Only if the SCB reports Not Found does the
             // outcome (IN_ARCHIVE_NOT_FOUND) offer the Refer-to-Original-Registry slip.
@@ -543,11 +585,12 @@ class FileLocationResolver
      */
     protected function variants(string $fileNumber): array
     {
-        $stripped   = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $fileNumber);
+        // A temporary "(T)" file is a record in its own right — it has its own
+        // indexing row (matched via temp_file_no), its own trackers and its own
+        // shelf. Never fall back to the stripped base number: doing so made a
+        // "(T)" search inherit the PARENT file's tracker/indexing, showing the
+        // parent's In-Transit holder instead of acting as a standalone request.
         $candidates = [$fileNumber];
-        if ($stripped !== null && $stripped !== '' && $stripped !== $fileNumber) {
-            $candidates[] = $stripped;
-        }
 
         $variants = [];
         foreach ($candidates as $candidate) {

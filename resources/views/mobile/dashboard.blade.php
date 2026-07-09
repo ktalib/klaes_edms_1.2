@@ -741,6 +741,7 @@ const LOC_STATUS_META = {
   PENDING_FILE:               { label:'Pending (Not Indexed)',      color:'#6b7185', icon:'fa-circle-question' },
   BLIND_REQUEST_SENT:         { label:'Blind Request Sent',         color:'#dc2626', icon:'fa-paper-plane' },
   FILE_NOT_FOUND:             { label:'File Not Found',             color:'#ef4444', icon:'fa-triangle-exclamation' },
+  MISSING_FILE:               { label:'Missing File',               color:'#ef4444', icon:'fa-triangle-exclamation' },
   REFER_TO_ORIGINAL_REGISTRY: { label:'Refer to Original Registry', color:'#6b7185', icon:'fa-share-from-square' },
 };
 
@@ -1272,8 +1273,8 @@ async function searchFile() {
           ['Registry', d.registry],
           // Always show the home shelf label; files without one read "—".
           ['Rack / Shelf', d.rack_shelf || '—'],
-          ['Department', dept || d.current_location],
           ['Receiving Officer (holder)', d.receiving_officer_name],
+          ['Department', dept || d.current_location],
           // In-transit timeline — only populated for IN_TRANSIT files.
           ['Date Requested', d.date_requested],
           ['Date Collected', d.date_collected],
@@ -1299,7 +1300,7 @@ async function searchFile() {
       // incl. their Found / Not-Found variants) warrants a physical check — some files
       // were missing from the start of the digitization exercise. The only case it does
       // NOT apply to is a file actively in transit (already being tracked/redirected).
-      const physicalNote = (d.status && !/^IN_TRANSIT/.test(d.status))
+      const physicalNote = (d.status && !/^IN_TRANSIT/.test(d.status) && d.status !== 'MISSING_FILE')
         ? `<p style="margin-top:8px;font-size:13px;font-style:italic;color:#ef4444;line-height:1.6;">The SCBs would have to do a Physical Check to ascertain the availability of the File as some files were missing even from the beginning of the Digitization Exercise</p>`
         : '';
 
@@ -1307,7 +1308,10 @@ async function searchFile() {
       // between the Registry (Origin) selector and the Send button.
       let ofsRegistry = '', ofsButton = '';
       if (IS_OFS && d.can_send_fr) {
-        const label = d.is_blind ? 'Send Blind Request to SCB Monitor' : 'Send File Search Request to SCB Monitor';
+        const isMissing = d.is_missing_file;
+        const label = isMissing
+          ? (d.is_blind ? 'Send Blind Request to the Original Registry' : 'Send File Search Request to the Original Registry')
+          : (d.is_blind ? 'Send Blind Request to SCB Monitor' : 'Send File Search Request to SCB Monitor');
         // Button colour matches the status label (e.g. In Pool Office = sky, In Archive = green).
         const grad  = `linear-gradient(135deg, ${meta.color}, ${shade(meta.color, 0.18)})`;
         // Origin Registry selector (mirrors Create File Tracker). The chosen registry's
@@ -1517,7 +1521,7 @@ async function searchFile() {
       // Exception: an IN_TRANSIT (logged-out) file is NOT in its registry — it is
       // out at another office — so it always shows the "In Transit" status pill,
       // never "In {Registry}" (which would wrongly imply it sits in the registry).
-      const badge = (d.origin_registry && !/^IN_TRANSIT/.test(d.status || ''))
+      const badge = (d.origin_registry && !/^IN_TRANSIT/.test(d.status || '') && d.status !== 'MISSING_FILE')
         ? { label: 'In ' + d.origin_registry, color: REGISTRY_THEME[d.origin_registry] || meta.color, icon: 'fa-folder-open' }
         : meta;
 
@@ -2202,8 +2206,12 @@ async function sendFrFromSearch(btn) {
       }),
     });
     if (res.success) {
-      toast(`${d.is_blind ? 'Blind ' : ''}Request ${res.data?.request_no || ''} sent to SCB`);
-      btn.outerHTML = `<div style="margin-top:12px;text-align:center;font-size:12px;font-weight:700;color:#10b981;"><i class="fas fa-check-circle"></i> Request ${esc(res.data?.request_no || '')} sent to SCB Monitor</div>`;
+      const isMissing = d.is_missing_file;
+      const msg = isMissing
+        ? `Request ${res.data?.request_no || ''} saved — file is in the missing list`
+        : `${d.is_blind ? 'Blind ' : ''}Request ${res.data?.request_no || ''} sent to SCB`;
+      toast(msg);
+      btn.outerHTML = `<div style="margin-top:12px;text-align:center;font-size:12px;font-weight:700;color:#10b981;"><i class="fas fa-check-circle"></i> Request ${esc(res.data?.request_no || '')} ${isMissing ? 'saved (Refer to Original Registry)' : 'sent to SCB Monitor'}</div>`;
       if (IS_OFS && document.getElementById('myReqContainer')) loadMyRequests();
     } else if (res.duplicate) {
       toast(res.message || 'This file already has an open request to SCB', 'error');

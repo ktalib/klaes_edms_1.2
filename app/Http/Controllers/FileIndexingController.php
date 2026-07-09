@@ -733,6 +733,25 @@ class FileIndexingController extends Controller
             $physicalRegistries = \App\Models\PhysicalRegistry::orderBy('name')->get();
             $landUseTypes = \App\Models\LandUseType::orderBy('name')->get()->pluck('name', 'name');
 
+            // Bill Balance & Ground Rent — authoritative multi-row store (file_indexing_bills).
+            // Split by type so the billing section can prefill each repeater. When no multi-row
+            // records exist the section falls back to the primary single columns on the record.
+            $allIndexingBills = \App\Models\FileIndexingBill::on('sqlsrv')
+                ->where('file_indexing_id', $record->id)
+                ->orderBy('id')
+                ->get();
+            // Pass null (not an empty Collection) when a type has no multi-row records, so the
+            // billing section's `!empty(...)` check correctly falls back to the record's single
+            // bill_* / ground_rent_* columns. (empty() on a Collection object is always false.)
+            $billBalances = $allIndexingBills
+                ->where('bill_type', \App\Models\FileIndexingBill::TYPE_BILL_BALANCE)
+                ->values();
+            $billBalances = $billBalances->isNotEmpty() ? $billBalances : null;
+            $grantRents = $allIndexingBills
+                ->where('bill_type', \App\Models\FileIndexingBill::TYPE_GRANT_RENT)
+                ->values();
+            $grantRents = $grantRents->isNotEmpty() ? $grantRents : null;
+
             // Check if property records exist (CofO, PRA, or History).
             // For temp-only records (file_number = null) use temp_file_no as the lookup key.
             $lookupFileNo = trim((string) ($record->file_number ?? ''));
@@ -761,7 +780,9 @@ class FileIndexingController extends Controller
                 'physicalRegistries',
                 'landUseTypes',
                 'cofoDetails',
-                'hasPropertyRecords'
+                'hasPropertyRecords',
+                'billBalances',
+                'grantRents'
             ))->with('fileIndexing', $record);
         } catch (\Throwable $e) {
             return redirect()->route('fileindex.index')->with('error', 'Error loading record: ' . $e->getMessage());
@@ -1244,7 +1265,16 @@ class FileIndexingController extends Controller
                 }
                 $updatePayload = $this->normalizeBillColumns($updatePayload);
 
-                // Explicitly serialize array fields since we're using Query Builder's update() call 
+                // Coordinates are decimal(nullable) columns — coerce empty/non-numeric strings
+                // to null so SQL Server does not reject '' when the map was never pinned.
+                foreach (['latitude', 'longitude'] as $coordKey) {
+                    if (array_key_exists($coordKey, $updatePayload)
+                        && !is_numeric($updatePayload[$coordKey])) {
+                        $updatePayload[$coordKey] = null;
+                    }
+                }
+
+                // Explicitly serialize array fields since we're using Query Builder's update() call
                 // which bypasses Eloquent's $casts.
                 if (isset($updatePayload['current_holder']) && is_array($updatePayload['current_holder'])) {
                     $updatePayload['current_holder'] = json_encode($updatePayload['current_holder']);
@@ -5920,6 +5950,7 @@ class FileIndexingController extends Controller
                 'land_use_type' => $details['land_use_type'] ?? null,
                 'district' => $details['district'] ?? null,
                 'lga' => $details['lga'] ?? null,
+                'mfile' => (isset($details['mfile']) && $details['mfile'] !== '') ? (int) $details['mfile'] : null,
 
                 'dob' => $details['dob'] ?? ($mainRecord->dob ?? null),
                 'nin' => $details['nin'] ?? ($mainRecord->nin ?? null),

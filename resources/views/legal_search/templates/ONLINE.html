@@ -323,6 +323,12 @@
           <td class="val-cell-right"><strong id="report-district-lga">-</strong></td>
         </tr>
         <tr>
+          <td class="bold-lbl-left">Term:</td>
+          <td class="val-cell-left"><strong id="report-term">-</strong></td>
+          <td class="bold-lbl-right"></td>
+          <td class="val-cell-right"></td>
+        </tr>
+        <tr>
           <td class="bold-lbl-left">File Title:</td>
           <td class="val-cell-left"><strong id="report-file-title">AL-HASSAN TRADING CO.</strong></td>
 
@@ -475,12 +481,22 @@
               if (el) el.textContent = (v != null && String(v).trim() !== '') ? v : '-';
             };
 
+            // Term of the Right of Occupancy, derived from land use:
+            // Residential / Agricultural = 99 years; Commercial / Industrial = 40 years.
+            const termFromLandUse = (landUse) => {
+              const lu = String(landUse || '').toUpperCase();
+              if (lu.includes('RESIDENT') || lu.startsWith('RES') || lu.includes('AGRIC') || lu.startsWith('AG')) return '99 Years';
+              if (lu.includes('COMMERC') || lu.startsWith('COM') || lu.includes('INDUSTR') || lu.startsWith('IND')) return '40 Years';
+              return '';
+            };
+
             setText('report-date-line', d.date_line);
             setText('report-file-number', d.file_number);
             setText('report-file-title', d.file_title);
             setText('report-district-lga', d.lon_lat);
             setText('report-size', d.size);
             setText('report-land-use', d.land_use);
+            setText('report-term', termFromLandUse(d.land_use));
             setText('report-plot-no', d.plot_no);
             setText('report-plot-description', d.plot_description);
             setText('report-tpno', d.tpno);
@@ -612,8 +628,16 @@
           if (wmCopy) wmCopy.style.display = 'block';
         }
 
-        // Check print status from print_logs table
-        if (fileNo) {
+        // Explicit choice from the Print Manager ("Print Original" / "Print File
+        // Copy") forces the watermark; otherwise fall back to auto-detect from
+        // the print history (first print = Original, reprints = FILE COPY).
+        const forcedType = (params.get('status') || '').toLowerCase();
+
+        if (forcedType === 'copy' || forcedType === 'original') {
+          isFileCopy = (forcedType === 'copy');
+          if (isFileCopy) { showFileCopy(); } else { showOriginal(); }
+        } else if (fileNo) {
+          // Check print status from print_logs table
           fetch('/print-manager/status?' + new URLSearchParams({
             reference_number: fileNo,
             document_type: docType
@@ -650,9 +674,13 @@
             })
           }).catch(() => {});
 
-          // After first print, always show FILE COPY
-          isFileCopy = true;
-          showFileCopy();
+          // When the operator explicitly chose "Print Original" / "Print File
+          // Copy", keep the watermark exactly as chosen — never auto-flip based
+          // on a previous print. Only the auto-detect flow switches after print.
+          if (!forcedType) {
+            isFileCopy = true;
+            showFileCopy();
+          }
         });
       })();
     </script>

@@ -503,7 +503,8 @@ class MlsFileNoController extends Controller
                     'mls_file_no.purpose_id',
                     'mls_file_no.customer_type',
                     'mls_file_no.batch_no',
-                    'mls_file_no.sit_reason'
+                    'mls_file_no.sit_reason',
+                    'mls_file_no.source as source'
                 ])
                 ->first();
 
@@ -527,6 +528,7 @@ class MlsFileNoController extends Controller
                         'mls_file_no.customer_type as customer_type',
                         'mls_file_no.batch_no as batch_no',
                         'mls_file_no.sit_reason as sit_reason',
+                        'mls_file_no.source as source',
                         'mls_file_no.created_at as created_at',
                         'mls_file_no.updated_at as updated_at',
                         DB::raw("'MLS_Commissioned' as SOURCE"),
@@ -567,6 +569,7 @@ class MlsFileNoController extends Controller
                         'plot_extensions.customer_type as customer_type',
                         DB::raw('NULL as batch_no'),
                         DB::raw('NULL as sit_reason'),
+                        DB::raw("'Plot Extension' as source"),
                         'plot_extensions.created_at as created_at',
                         'plot_extensions.updated_at as updated_at',
                         DB::raw("'Plot Extension' as SOURCE"),

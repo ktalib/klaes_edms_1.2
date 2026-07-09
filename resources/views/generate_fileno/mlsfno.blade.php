@@ -2125,9 +2125,12 @@
                                     <label for="cs_file_number" class="block text-sm font-medium text-gray-700 mb-2">
                                         File No:
                                     </label>
-                                    <input type="text" id="cs_file_number" name="file_number" 
+                                    <input type="text" id="cs_file_number" name="file_number"
                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                           placeholder="Enter file number" >
+                                           placeholder="Enter file number" oninput="updateCommissioningFileType()">
+                                    <!-- Actual record source (mls_file_no.source) shown after the File No on the printed sheet -->
+                                    <input type="hidden" id="cs_source" name="source">
+                                    <span id="cs_file_type_badge" class="hidden mt-1 inline-block px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-800"></span>
                                 </div>
 
                                 <!-- File Name -->
