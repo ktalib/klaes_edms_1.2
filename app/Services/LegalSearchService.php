@@ -1413,14 +1413,20 @@ class LegalSearchService
      * attach the date to the correct row — a "(T)" temporary file that was
      * commissioned must show the date on its own row, not on the permanent one.
      *
-     * Returns ['date' => 'M j, Y'|'-', 'number' => string|null]. The date is only
+     * Returns ['date' => 'M j, Y'|'-', 'number' => string|null]. The date is
      * populated when the file was commissioned within KLAES (fileNumber.SOURCE
      * starting with 'MLS_Commissioned') and has a genuine stored commissioning_date.
      * A KLAES commissioning may legitimately postdate the file's transactions —
      * old files are recommissioned into the system long after their history — so
-     * the stored date is always trusted. Legacy files digitized into KLAES have no
-     * real commissioning date on record, so they resolve to '-' (unknown); the
-     * caller then falls back to the year embedded in the file number.
+     * the stored date is always trusted.
+     *
+     * Files that never went through the MLS commissioning workflow (e.g. files
+     * created directly via File Indexing) have no fileNumber.commissioning_date
+     * on record. For those, fall back to file_indexings.created_at — the date
+     * the file actually entered KLAES — so the timeline shows a real date rather
+     * than nothing. Only when neither a genuine commissioning_date nor a
+     * file_indexings record exists (truly legacy files) does the caller fall
+     * back further to the bare year embedded in the file number.
      */
     private function resolveCommissioningInfo(?string $fileNumber, ?string $altFileNo = null): array
     {
@@ -1443,26 +1449,41 @@ class LegalSearchService
             ->orderByDesc('id')
             ->first(['SOURCE', 'mlsfNo', 'commissioning_date', 'created_at']);
 
-        if (!$record) {
-            return $default;
-        }
-
-        $number = trim((string) $record->mlsfNo) ?: null;
+        $number = $record ? (trim((string) $record->mlsfNo) ?: null) : null;
 
         // Only a genuine, stored commissioning_date is trustworthy. Do NOT fall back to
-        // created_at — for a legacy file digitized into KLAES that is merely the digitization
-        // timestamp, not the date the land was actually commissioned.
-        $raw = $record->commissioning_date;
-        if (!$raw) {
-            return ['date' => '-', 'number' => $number];
+        // fileNumber.created_at — for a legacy file digitized into KLAES that is merely the
+        // digitization timestamp, not the date the land was actually commissioned.
+        $raw = $record->commissioning_date ?? null;
+        if ($raw) {
+            $date = rescue(fn () => \Carbon\Carbon::parse($raw), null, false);
+            if ($date) {
+                return ['date' => $date->format('M j, Y'), 'number' => $number];
+            }
         }
 
-        $date = rescue(fn () => \Carbon\Carbon::parse($raw), null, false);
-        if (!$date) {
-            return ['date' => '-', 'number' => $number];
+        // No genuine MLS commissioning date. Fall back to the date the file was
+        // indexed into KLAES (file_indexings.created_at) so the timeline still
+        // shows a full date instead of collapsing straight to the bare year.
+        $indexedAt = DB::connection('sqlsrv')->table('file_indexings')
+            ->whereNull('deleted_at')
+            ->where(function ($q) use ($candidates) {
+                foreach ($candidates as $candidate) {
+                    $q->orWhere('file_number', $candidate)
+                        ->orWhere('temp_file_no', $candidate);
+                }
+            })
+            ->orderByDesc('id')
+            ->value('created_at');
+
+        if ($indexedAt) {
+            $date = rescue(fn () => \Carbon\Carbon::parse($indexedAt), null, false);
+            if ($date) {
+                return ['date' => $date->format('M j, Y'), 'number' => $number];
+            }
         }
 
-        return ['date' => $date->format('M j, Y'), 'number' => $number];
+        return ['date' => '-', 'number' => $number];
     }
 
     /**
