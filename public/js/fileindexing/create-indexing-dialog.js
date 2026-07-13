@@ -4070,6 +4070,45 @@
             .filter(Boolean);
     }
 
+    /**
+     * Ask the server which Registry (1/2/3) a file number belongs to, per the
+     * prefix+year rules in config/file_ranges.php. Returns null when the file
+     * number is empty, unparseable, or belongs to a different registry family
+     * (ST/SLTR/DCIV/KANGIS/Survey) not covered by that config.
+     */
+    async function detectRegistryForFileNumber(fileNumber) {
+        const trimmed = (fileNumber || '').trim();
+        if (!trimmed) {
+            return null;
+        }
+        try {
+            const response = await fetch(`/api/registry/detect?file_number=${encodeURIComponent(trimmed)}`);
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                return null;
+            }
+            return payload.registry ?? null;
+        } catch (error) {
+            console.error('Registry detection lookup failed', error);
+            return null;
+        }
+    }
+
+    /**
+     * Auto-fill the Registry field, unless an admin has explicitly unlocked it
+     * for a manual override (see registry-admin-unlock-btn) — auto-fill must
+     * never silently clobber a deliberate admin override.
+     */
+    function applyRegistryFieldValue(element, value) {
+        if (!element) {
+            return;
+        }
+        if (element.dataset.adminUnlocked === 'true') {
+            return;
+        }
+        lockArchiveField(element, value);
+    }
+
     function lockArchiveField(element, value) {
         if (!element) {
             return;
@@ -4162,6 +4201,21 @@
 
             unlockArchiveField(element);
             element.value = '';
+
+            // Registry must go back to auto-detect mode on every reset — an admin
+            // override from a previous file number must not silently carry over.
+            if (id === 'registry' && element.dataset) {
+                delete element.dataset.adminUnlocked;
+                element.setAttribute('readonly', 'readonly');
+                element.classList.add('bg-gray-100', 'cursor-not-allowed');
+                const unlockBtn = document.getElementById('registry-admin-unlock-btn');
+                if (unlockBtn) {
+                    unlockBtn.innerHTML = '<i data-lucide="lock" class="h-3 w-3 pointer-events-none"></i>';
+                    if (typeof lucide !== 'undefined') {
+                        lucide.createIcons();
+                    }
+                }
+            }
         });
 
         if (!preserveIndexed) {
@@ -4522,6 +4576,37 @@
             });
         }
 
+        // Admin-only escape hatch: unlock the auto-detected Registry field for a
+        // one-off manual override. Auto-fill (detectRegistryForFileNumber) checks
+        // dataset.adminUnlocked and backs off once this has been clicked, so the
+        // override sticks until the dialog is reset.
+        const registryAdminUnlockBtn = document.getElementById('registry-admin-unlock-btn');
+        if (registryAdminUnlockBtn) {
+            registryAdminUnlockBtn.addEventListener('click', function () {
+                const registryField = document.getElementById('registry');
+                if (!registryField) {
+                    return;
+                }
+                const nowUnlocked = registryField.dataset.adminUnlocked !== 'true';
+                registryField.dataset.adminUnlocked = nowUnlocked ? 'true' : 'false';
+                registryField.readOnly = !nowUnlocked;
+                if (nowUnlocked) {
+                    registryField.removeAttribute('readonly');
+                    registryField.classList.remove('bg-gray-100', 'cursor-not-allowed');
+                    registryField.focus();
+                } else {
+                    registryField.setAttribute('readonly', 'readonly');
+                    registryField.classList.add('bg-gray-100', 'cursor-not-allowed');
+                }
+                this.innerHTML = nowUnlocked
+                    ? '<i data-lucide="unlock" class="h-3 w-3 pointer-events-none"></i>'
+                    : '<i data-lucide="lock" class="h-3 w-3 pointer-events-none"></i>';
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            });
+        }
+
         loadAutoAssignmentPreview();
 
         const refreshAssignmentBtn = document.getElementById('refresh-assignment-btn');
@@ -4793,21 +4878,17 @@
             lockArchiveField(mdcField, mdcBatchValue);
             lockArchiveField(sysBatchField, groupingRecord.sys_batch_no ?? '');
 
-            let registryValue = groupingRecord.registry ?? groupingRecord.registry_name ?? groupingRecord.registry_label ?? '';
-            if (!registryValue) {
-                const registryMapping = {
-                    'COMMERCIAL': 'Registry 1 - Land',
-                    'RESIDENTIAL': 'Registry 2 - Land',
-                    'AGRICULTURAL': 'Registry 3 - Land',
-                    'INDUSTRIAL': 'Registry 1 - Deeds',
-                    'MIXED_USE': 'Registry 2 - Land',
-                    'COMMERCIAL AND RESIDENTIAL': 'Registry 1 - Land',
-                };
-                if (groupingRecord.landuse) {
-                    registryValue = registryMapping[groupingRecord.landuse] || `${groupingRecord.landuse} Registry`;
-                }
+            // The Registry field must always be derived from the file number's
+            // prefix + year via config/file_ranges.php (see RegistryDetector), not
+            // from the grouping record's own (often stale/manually-typed) registry
+            // value or a landuse guess — that's what corrupted historical data.
+            let registryValue = await detectRegistryForFileNumber(awaitingValueResolved || lookupValue);
+            if (registryValue === null) {
+                // Not part of the Registry 1/2/3 (Lands/SIT) family — fall back to
+                // whatever the grouping record itself carries, if anything.
+                registryValue = groupingRecord.registry ?? groupingRecord.registry_name ?? groupingRecord.registry_label ?? '';
             }
-            lockArchiveField(registryField, registryValue);
+            applyRegistryFieldValue(registryField, registryValue);
 
             lockArchiveField(shelfField, groupingRecord.shelf_rack ?? '');
             lockArchiveField(serialField, groupingRecord.number ?? groupingRecord.serial_no ?? '');
@@ -4886,6 +4967,14 @@
             clearArchiveFields({ preserveAwaiting: true, preservePrimary: true });
             resetGroupingState();
             updateCreateButtonState();
+
+            // Even without a grouping match, still try to auto-fill Registry
+            // directly from the file number's prefix + year — it doesn't depend
+            // on the grouping table lookup succeeding.
+            const fallbackRegistry = await detectRegistryForFileNumber(fileNumber);
+            if (fallbackRegistry !== null) {
+                applyRegistryFieldValue(registryField, String(fallbackRegistry));
+            }
 
             if (awaitingField) {
                 awaitingField.classList.add('error-border');

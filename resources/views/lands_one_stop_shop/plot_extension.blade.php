@@ -357,7 +357,7 @@
                                     </div>
                                     <div>
                                         <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Street Name</label>
-                                        <select id="pe-street" name="street_name" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20">
+                                        <select id="pe-street" name="street_name" class="searchable-select w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20">
                                             <option value="">SELECT STREET</option>
                                             @foreach($streetNames as $street)
                                                 <option value="{{ $street->name }}">{{ strtoupper($street->name) }}</option>
@@ -366,7 +366,7 @@
                                     </div>
                                     <div>
                                         <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">District</label>
-                                        <select id="pe-district" name="district" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20">
+                                        <select id="pe-district" name="district" class="searchable-select w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20">
                                             <option value="">SELECT DISTRICT</option>
                                             @foreach($districts as $district)
                                                 <option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>
@@ -533,6 +533,7 @@
 @endsection
 
 @section('footer-scripts')
+@include('components.searchable-select2')
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script>
     const peCsrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
@@ -1148,6 +1149,7 @@
                             if (data.record.lga) document.getElementById('pe-lga').value = data.record.lga;
                             if (data.record.state) document.getElementById('pe-state').value = data.record.state;
 
+                            if (window.syncSearchableSelects) syncSearchableSelects();
                             if (typeof peUpdateLocationPreview === 'function') {
                                 peUpdateLocationPreview();
                             }

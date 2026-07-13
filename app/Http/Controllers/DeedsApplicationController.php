@@ -288,6 +288,57 @@ class DeedsApplicationController extends Controller
         }
     }
 
+    public function resetPrintMaster(Request $request, $id): \Illuminate\Http\JsonResponse
+    {
+        // Enforce role permission Supper Admin
+        $assignRoles = collect(explode(',', (string) (auth()->user()->assign_role ?? '')))
+            ->map(fn($r) => trim($r))
+            ->filter();
+        $isSupperAdmin = $assignRoles->contains(fn($r) => strcasecmp($r, 'Supper Admin') === 0);
+
+        if (!$isSupperAdmin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized action.'
+            ], 403);
+        }
+
+        DB::beginTransaction();
+        try {
+            $application = ConsentApplication::findOrFail($id);
+            $fileNo = $application->file_number;
+            $previousPrintCount = $application->print_count;
+
+            $application->print_count = 0;
+            $application->save();
+
+            // Formally log the action
+            if (class_exists('\App\Services\AuditService')) {
+                app(\App\Services\AuditService::class)->logAction(
+                    'Deeds Master Print Reset',
+                    'consent_applications',
+                    $application->id,
+                    null,
+                    null,
+                    "Reset print count from {$previousPrintCount} to 0 for file: {$fileNo}"
+                );
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Print count reset successfully. Editing is now allowed.'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to reset print count: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function deleteMasterBulk(Request $request): \Illuminate\Http\JsonResponse
     {
         // Enforce role permission Supper Admin

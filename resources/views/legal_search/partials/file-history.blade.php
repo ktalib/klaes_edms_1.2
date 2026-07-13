@@ -104,7 +104,10 @@
             </div>
             <div class="form-row">
               <span class="form-label">Commencement Date:</span>
-              <span class="form-value" id="commencement-date-value"></span>
+              <span class="form-value">
+                <span id="commencement-date-value"></span>
+                <span id="commencement-date-source-badge" class="source-badge" style="display:none; margin-left:0.35rem;"></span>
+              </span>
             </div>
             <div class="form-row">
               <span class="form-label">Residual Term:</span>
@@ -725,7 +728,7 @@
                  date and saves it (persisted per file in ls_comment_staging).
                  Residual Term = land-use term minus years elapsed since that date;
                  both show in the File Information panel and print on the report. --}}
-            <div id="residual-term-section" class="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+            <div id="residual-term-section" class="p-3 bg-indigo-50 border border-indigo-200 rounded-lg hidden">
               <div class="flex items-center justify-between mb-2">
                 <h4 class="text-sm font-semibold text-indigo-800">Residual Term <span class="font-normal text-indigo-500">(prints on the search report)</span></h4>
                 <button class="save-comment-btn inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700" data-type="commencement_date">
@@ -748,26 +751,64 @@
               <p class="comment-status text-xs mt-1 hidden" data-type="commencement_date"></p>
             </div>
 
-            {{-- Ground Rent --}}
-            <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            {{-- Ground Rent Including Land Use Charge --}}
+            {{-- Single card, toggled in js.blade.php between two mutually-exclusive
+                 states: "Last Paid" (auto-filled from file_indexings.ground_rent_amount
+                 / ground_rent_receipt_date, editable in place via the Edit button and
+                 persisted as a 'ground_rent_paid' override) when the file has a
+                 receipted payment on record, or the manual "Not Paid" entry when it
+                 doesn't. --}}
+            <div id="ground-rent-section" class="p-3 rounded-lg border">
               <div class="flex items-center justify-between mb-2">
-                <h4 class="text-sm font-semibold text-amber-800">Ground Rent Including Land Use Charge Not Paid</h4>
-                <button class="save-comment-btn inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-600 text-white hover:bg-amber-700" data-type="ground_rent">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
-                  Save
-                </button>
+                <h4 id="ground-rent-section-title" class="text-sm font-semibold">Ground Rent Including Land Use Charge</h4>
+                <div class="flex items-center gap-2">
+                  <button type="button" id="edit-ground-rent-btn" class="hidden inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-teal-600 text-white hover:bg-teal-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    Edit
+                  </button>
+                  <button type="button" id="save-ground-rent-paid-btn" class="hidden inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-teal-600 text-white hover:bg-teal-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                    Save
+                  </button>
+                  <button type="button" id="save-ground-rent-not-paid-btn" class="save-comment-btn hidden inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-600 text-white hover:bg-amber-700" data-type="ground_rent">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                    Save
+                  </button>
+                </div>
               </div>
-              <div class="flex items-center gap-3">
+
+              {{-- Last Paid: a single Amount input and a single Date input, both
+                   read-only until the Edit button is clicked (toggles the
+                   `readonly` attribute in place rather than swapping elements,
+                   so the Date field can't get stuck out of sync with Amount). --}}
+              <div id="ground-rent-paid-fields" class="hidden items-center gap-6">
                 <div class="flex items-center gap-1">
-                  <label class="text-xs font-medium text-gray-700 whitespace-nowrap">Amounting to ₦</label>
-                  <input type="number" id="comment-ground_rent-amount" step="0.01" min="0" class="w-36 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="0.00">
+                  <label class="text-xs font-medium text-gray-700 whitespace-nowrap">Amount ₦</label>
+                  <input type="number" id="file-ground-rent-amount" step="0.01" min="0" readonly
+                         class="ground-rent-paid-input w-32 px-2 py-1 text-xs font-semibold text-gray-800 rounded border border-transparent bg-transparent">
                 </div>
-                <div class="flex-1 flex items-center gap-1">
-                  <label class="text-xs font-medium text-gray-700">Comment</label>
-                  <input type="text" id="comment-ground_rent-text" class="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Optional comment">
+                <div class="flex items-center gap-1">
+                  <label class="text-xs font-medium text-gray-700 whitespace-nowrap">Date</label>
+                  <input type="text" id="file-ground-rent-date" readonly placeholder="e.g. Mar 23, 2011"
+                         class="ground-rent-paid-input w-36 px-2 py-1 text-xs font-semibold text-gray-800 rounded border border-transparent bg-transparent">
                 </div>
               </div>
-              <p class="comment-status text-xs mt-1 hidden" data-type="ground_rent"></p>
+
+              {{-- Not Paid: always-editable amount + comment. --}}
+              <div id="ground-rent-not-paid-fields" class="hidden">
+                <div class="flex items-center gap-3">
+                  <div class="flex items-center gap-1">
+                    <label class="text-xs font-medium text-gray-700 whitespace-nowrap">Amounting to ₦</label>
+                    <input type="number" id="comment-ground_rent-amount" step="0.01" min="0" class="w-36 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="0.00">
+                  </div>
+                  <div class="flex-1 flex items-center gap-1">
+                    <label class="text-xs font-medium text-gray-700">Comment</label>
+                    <input type="text" id="comment-ground_rent-text" class="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Optional comment">
+                  </div>
+                </div>
+              </div>
+
+              <p id="ground-rent-status" class="comment-status text-xs mt-1 hidden" data-type="ground_rent"></p>
             </div>
 
             {{-- Litigation Comment --}}
@@ -788,7 +829,7 @@
 
             {{-- No CoFO Remark --}}
 
-            <div id="no-cofo-comment-section" class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div id="no-cofo-comment-section" class="p-3 bg-blue-50 border border-blue-200 rounded-lg hidden">
               <div class="flex items-center justify-between mb-2">
                 <h4 class="text-sm font-semibold text-blue-800">No Certificate of Occupancy Remark</h4>
                 <button class="save-comment-btn inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-600 text-white hover:bg-blue-700" data-type="no_cofo">
@@ -801,7 +842,7 @@
             </div>
 
             {{-- Encumbrance / Free Title Remark --}}
-            <div id="encumbrance-comment-section" class="p-3 bg-green-50 border border-green-200 rounded-lg">
+            <div id="encumbrance-comment-section" class="p-3 bg-green-50 border border-green-200 rounded-lg hidden">
               <div class="flex items-center justify-between mb-2">
                 <h4 class="text-sm font-semibold text-green-800">Title Encumbrance Remark</h4>
                 <button class="save-comment-btn inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-600 text-white hover:bg-green-700" data-type="encumbrance">
@@ -974,7 +1015,15 @@
           var modal = document.getElementById('edit-file-info-modal');
           if (!modal) return;
 
-          var fileNumber = panelValue('file-number-value') || (window.__lsLastSearchedFileNumber || '').trim();
+          // The panel's "File Number" display can show a linked/KANGIS identifier that
+          // differs from the file_indexings row the report actually resolves to (a
+          // parcel can have several linked file numbers, each with its own indexing
+          // row). window._currentFileNumber / __lsLastSearchedFileNumber track the
+          // file number actually searched/reported on, so they take priority here —
+          // otherwise Save can silently update a different record than the one shown.
+          var fileNumber = (window._currentFileNumber || '').trim()
+            || (window.__lsLastSearchedFileNumber || '').trim()
+            || panelValue('file-number-value');
           if (!fileNumber) {
             if (typeof Swal !== 'undefined') Swal.fire({ icon: 'warning', title: 'No file selected', text: 'Search for a file before editing its information.' });
             else alert('Search for a file before editing its information.');

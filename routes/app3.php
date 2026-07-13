@@ -787,6 +787,9 @@ Route::middleware(['auth'])->group(function () {
         // Master Delete Endpoints
         Route::delete('/delete-master/{id}', [DeedsApplicationController::class, 'deleteMaster'])->name('delete-master');
         Route::delete('/delete-master-bulk', [DeedsApplicationController::class, 'deleteMasterBulk'])->name('delete-master-bulk');
+
+        // Master Print Reset Endpoint
+        Route::post('/reset-print-master/{id}', [DeedsApplicationController::class, 'resetPrintMaster'])->name('reset-print-master');
         
         Route::get('/{deedsApplication}', [DeedsApplicationController::class, 'show'])->name('show');
         Route::get('/{deedsApplication}/edit', [DeedsApplicationController::class, 'edit'])->name('edit');

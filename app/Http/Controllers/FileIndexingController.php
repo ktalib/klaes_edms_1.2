@@ -191,32 +191,6 @@ class FileIndexingController extends Controller
         return $customText !== '' ? $customText : $districtText;
     }
 
-    protected function deriveRegistryFromGrouping(object $grouping): ?string
-    {
-        $registryLike = $grouping->registry ?? $grouping->registry_name ?? $grouping->registry_label ?? null;
-
-        if ($registryLike) {
-            return $registryLike;
-        }
-
-        if (!$grouping->landuse) {
-            return null;
-        }
-
-        $mapping = [
-            'COMMERCIAL' => 'Registry 1 - Land',
-            'RESIDENTIAL' => 'Registry 2 - Land',
-            'AGRICULTURAL' => 'Registry 3 - Land',
-            'INDUSTRIAL' => 'Registry 1 - Deeds',
-            'MIXED_USE' => 'Registry 2 - Land',
-            'COMMERCIAL AND RESIDENTIAL' => 'Registry 1 - Land',
-        ];
-
-        $landuseKey = strtoupper($grouping->landuse);
-
-        return $mapping[$landuseKey] ?? ($grouping->landuse . ' Registry');
-    }
-
 
 
     protected function buildFileNumberVariants(string $fileNumber): array
@@ -3467,27 +3441,11 @@ class FileIndexingController extends Controller
                 }
             }
 
-            $expectedRegistry = $this->deriveRegistryFromGrouping($grouping);
-            if ($expectedRegistry !== null) {
-                if ($submittedRegistry === null || strcasecmp($submittedRegistry, $expectedRegistry) !== 0) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Registry value must match the derived grouping registry.'
-                    ], 422);
-                }
-            }
-
-            if ($submittedRegistry !== null && $expectedRegistry === null) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Registry value is not defined for the grouping record.'
-                ], 422);
-            }
-
-            // Ensure registry persists as expected value
-            if ($expectedRegistry) {
-                $validated['registry'] = $expectedRegistry;
-            }
+            // NOTE: registry-vs-grouping validation disabled — deriveRegistryFromGrouping()
+            // still guesses off land-use ("COMMERCIAL" => "Registry 1 - Land", etc.), which
+            // disagrees with the file-number-derived value (RegistryDetector) the client now
+            // submits, so it rejected every legitimate submission. $submittedRegistry (already
+            // validated client-side against the file number) is kept as-is.
 
             $trackingId = $grouping->tracking_id ?? ($validated['tracking_id'] ?? null);
 

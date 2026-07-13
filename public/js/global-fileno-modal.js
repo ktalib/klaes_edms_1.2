@@ -28,7 +28,8 @@
         initialTab: null,
         autoPopulateGenericFields: true,
         excludePrefixes: [],  // Array of uppercase file-number prefixes to hide (e.g. ['CON'])
-        allowedTabs: null     // Array of registry tab names to show (e.g. ['mls']); null = show all
+        allowedTabs: null,    // Array of registry tab names to show (e.g. ['mls']); null = show all
+        tempOnly: false       // MLS tab only: restrict the smart selector to temporary "(T)" file numbers
     };
 
     // Main GlobalFileNoModal object
@@ -74,6 +75,15 @@
                     $('#' + tab + '-smart-selector').removeData('select2-initialized');
                 });
             }
+
+            // MLS temp-file toggle: when the "(T)"-only state differs from the previous
+            // open, drop the cached MLS list and force a fresh Select2 build so the
+            // dropdown reloads with (or without) the temp filter applied.
+            if (Boolean(this.config.tempOnly) !== Boolean(this._lastTempOnly)) {
+                this.cache.mlsFiles = [];
+                $('#mls-smart-selector').removeData('select2-initialized');
+            }
+            this._lastTempOnly = Boolean(this.config.tempOnly);
 
             // Restrict which registry tabs are visible when the caller scopes the
             // selector by module/registry (e.g. Land module → MLS only). null/empty
@@ -335,7 +345,9 @@
                     limit: 20, // Get first 20 records for initial display
                     initial: true,
                     exclude_matched: this.config.exclude_matched || '',
-                    all_registries: (tabName === 'mls' && this.includeAllMlsRegistries()) ? 1 : 0
+                    all_registries: (tabName === 'mls' && this.includeAllMlsRegistries()) ? 1 : 0,
+                    // MLS temp-file toggle: restrict initial list to "(T)" files
+                    temp_only: (tabName === 'mls' && this.config.tempOnly) ? 1 : 0
                 },
                 headers: {
                     'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content'),
@@ -434,7 +446,9 @@
                                     search: params.data.term,
                                     limit: 20,
                                     exclude_matched: GlobalFileNoModal.config.exclude_matched || '',
-                                    all_registries: (tabName === 'mls' && GlobalFileNoModal.includeAllMlsRegistries()) ? 1 : 0
+                                    all_registries: (tabName === 'mls' && GlobalFileNoModal.includeAllMlsRegistries()) ? 1 : 0,
+                                    // MLS temp-file toggle: restrict search results to "(T)" files
+                                    temp_only: (tabName === 'mls' && GlobalFileNoModal.config.tempOnly) ? 1 : 0
                                 },
                                 headers: {
                                     'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content'),
@@ -1415,11 +1429,16 @@
                         dataType: 'json',
                         delay: 250,
                         data: function (params) {
-                            return {
+                            const data = {
                                 search: params.term || '',
                                 limit: 40,
                                 exclude_matched: modal.config.exclude_matched || ''
                             };
+                            // MLS temp-file toggle: only surface "(T)" temporary file numbers
+                            if (tabName === 'mls' && modal.config.tempOnly) {
+                                data.temp_only = 1;
+                            }
+                            return data;
                         },
                         processResults: function (data) {
                             const files = Array.isArray(data?.files) ? data.files : [];
@@ -1682,3 +1701,8 @@
     });
 
 })(jQuery);
+
+
+// var cofo = cofo || {};
+// var rofo = rofo || {};
+

@@ -75,7 +75,8 @@ class FilearchiveController extends Controller
 
             $currentYear = (int) date('Y');
             $yearOptions = collect(range($currentYear, 1981));
-            $registryOptions = collect([$this->getRegistryFolderName($module)]);
+            $registryFolderName = $this->getRegistryFolderName($module);
+            $registryOptions = collect([$registryFolderName => $registryFolderName]);
 
             // Storage-demo folders have no tracker data — everything reads as
             // "in the registry" for the legend, and the filter is inert.
@@ -257,8 +258,12 @@ class FilearchiveController extends Controller
         
         switch ($sort) {
             case 'year_asc':
-                // Sort by year ascending (oldest files first: 1981, 1982, ...)
-                $completedFiles->orderByRaw("CASE 
+                // Sort by year ascending (oldest files first: 1981, 1982, ...). Within the
+                // same year, tie-break by registry (1, 2, 3) before falling back to a plain
+                // file_number string sort — otherwise "CON-RES-1981-x" sorts ahead of
+                // "RES-1981-x" (C < R alphabetically), even though Registry 1 (RES/COM/IND/AG)
+                // is the one meant to lead each year, not Registry 3 (CON-*).
+                $completedFiles->orderByRaw("CASE
                     WHEN file_number LIKE '%-1981-%' THEN 1
                     WHEN file_number LIKE '%-1982-%' THEN 2
                     WHEN file_number LIKE '%-1983-%' THEN 3
@@ -306,7 +311,14 @@ class FilearchiveController extends Controller
                     WHEN file_number LIKE '%-2025-%' THEN 45
                     WHEN file_number LIKE '%-2026-%' THEN 46
                     ELSE 47
-                END ASC, file_number ASC");
+                END ASC,
+                CASE registry
+                    WHEN '1' THEN 1
+                    WHEN '2' THEN 2
+                    WHEN '3' THEN 3
+                    ELSE 4
+                END ASC,
+                file_number ASC");
                 break;
             case 'year_desc':
                 // Sort by year descending (newest files first: 2026, 2025, ...)
@@ -358,7 +370,14 @@ class FilearchiveController extends Controller
                     WHEN file_number LIKE '%-1982-%' THEN 45
                     WHEN file_number LIKE '%-1981-%' THEN 46
                     ELSE 47
-                END ASC, file_number ASC");
+                END ASC,
+                CASE registry
+                    WHEN '1' THEN 1
+                    WHEN '2' THEN 2
+                    WHEN '3' THEN 3
+                    ELSE 4
+                END ASC,
+                file_number ASC");
                 break;
             case 'file_number_asc':
                 $completedFiles->orderBy('file_number', 'asc');
@@ -435,12 +454,15 @@ class FilearchiveController extends Controller
         $currentYear = (int) date('Y');
         $yearOptions = collect(range($currentYear, 1981));
 
-        $registryOptions = FileIndexing::select('registry')
-            ->whereNotNull('registry')
-            ->where('registry', '!=', '')
-            ->distinct()
-            ->orderBy('registry')
-            ->pluck('registry');
+        // Registry 1/2/3 are the canonical Land registries derived from the file
+        // number (see App\Services\RegistryDetector / config/file_ranges.php).
+        // Keyed by the numeric value stored in file_indexings.registry, so the
+        // filter below can match directly against that column.
+        $registryOptions = collect([
+            '1' => 'Registry 1 - Land',
+            '2' => 'Registry 2 - Land',
+            '3' => 'Registry 3 - Land',
+        ]);
 
         return view('filearchive.index', compact(
             'PageTitle',
@@ -768,6 +790,96 @@ class FilearchiveController extends Controller
         $fileNumber = trim((string) $request->get('file_number', ''));
         abort_if($fileNumber === '', 404, 'File number is required.');
 
+        $fileIndexing = FileIndexing::query()
+            ->select(['id', 'file_number', 'file_title', 'registry', 'shelf_location', 'created_at'])
+            ->where('file_number', $fileNumber)
+            ->first();
+
+        $latestTracker = FileTracker::where('file_number', $fileNumber)
+            ->orderByDesc('updated_at')
+            ->first();
+
+        // Combined lineage: when this file belongs to a parcel-update / merger group
+        // (Change of Purpose, Subdivision, Merger, Extension, Separation, Temporary File),
+        // stitch every related file's movement log into one continuous timeline. Decommissioned
+        // parents come first — each ending with a File Decommissioning marker — followed by each
+        // surviving child opening with a File Commissioning marker.
+        $group = app(\App\Services\FileMergerService::class)->resolveGroup($fileNumber);
+
+        if (empty($group)) {
+            $rows = $this->buildFileMovementRows($fileNumber);
+        } else {
+            $rows = [];
+            foreach ($group as $member) {
+                $memberFile = trim((string) ($member['file_number'] ?? ''));
+                if ($memberFile === '') {
+                    continue;
+                }
+                $isParent = ($member['role'] ?? '') === \App\Models\FileMerger::ROLE_PARENT;
+
+                if ($isParent) {
+                    $rows = array_merge($rows, $this->buildFileMovementRows($memberFile));
+                    $rows[] = $this->lineageMarkerRow(
+                        'FILE DECOMMISSIONING — ' . $memberFile,
+                        $member['date_decommissioned'] ?? null,
+                        ''
+                    );
+                } else {
+                    $rows[] = $this->lineageMarkerRow(
+                        'FILE COMMISSIONING — ' . $memberFile,
+                        $member['date_commissioned'] ?? null,
+                        'New file commissioned'
+                    );
+                    $rows = array_merge($rows, $this->buildFileMovementRows($memberFile));
+                }
+            }
+        }
+
+        return view('filearchive.print.file_movement_history', [
+            'fileNumber' => $fileNumber,
+            'trackingId' => $latestTracker->tracking_id ?? '',
+            'fileTitle' => $fileIndexing->file_title ?? ($latestTracker->file_title ?? ''),
+            'registry' => $fileIndexing->registry ?? ($latestTracker->registry_code ?? ''),
+            'shelf' => $fileIndexing->shelf_location ?? '',
+            'rows' => $rows,
+        ]);
+    }
+
+    /**
+     * A single synthetic lineage row (File Commissioning / File Decommissioning) inserted
+     * between related files' movement logs on the combined File Movement History sheet.
+     */
+    private function lineageMarkerRow(string $office, $date, string $remarks): array
+    {
+        $formatted = '';
+        if (!empty($date)) {
+            try {
+                $formatted = Carbon::parse($date)->format('d/m/Y');
+            } catch (\Throwable $e) {
+                $formatted = '';
+            }
+        }
+
+        return [
+            'office' => $office,
+            'officer' => '',
+            'date' => $formatted,
+            'duration' => '',
+            'remarks' => $remarks,
+            'request_purpose' => '—',
+            'timeline' => '—',
+            'expected_return_date' => '—',
+            'delay_reason' => '—',
+        ];
+    }
+
+    /**
+     * Build the movement-history rows for a single file: its archive "home" row followed by
+     * every tracker movement, ordered chronologically. Extracted so the combined lineage view
+     * can assemble one continuous timeline across every file in a merger group.
+     */
+    private function buildFileMovementRows(string $fileNumber): array
+    {
         $trackers = FileTracker::where('file_number', $fileNumber)
             ->orderBy('created_at')
             ->get();
@@ -784,12 +896,20 @@ class FilearchiveController extends Controller
                 $log = json_decode((string) $log, true) ?: [];
             }
             $trackerActive = strtoupper((string) $tracker->status) === FileTracker::STATUS_ACTIVE;
+            // Request Purpose / Timeline / Expected Return Date belong to the tracker
+            // (one per tracking cycle), not the individual movement entry — carried
+            // alongside each entry so a re-tracked file's rows reflect the purpose
+            // that was active during that cycle.
             foreach ($log as $entry) {
                 if (is_array($entry)) {
                     $entries[] = [
                         'entry' => $entry,
                         'tracker_active' => $trackerActive,
                         'origin_office' => trim((string) $tracker->origin_office_name),
+                        'request_purpose_name' => trim((string) $tracker->request_purpose_name),
+                        'deadline' => $tracker->deadline,
+                        'days_until_deadline' => $tracker->days_until_deadline,
+                        'timeline_status' => $tracker->timeline_status,
                     ];
                 }
             }
@@ -850,12 +970,18 @@ class FilearchiveController extends Controller
                 ?: trim((string) ($entry['completion_notes'] ?? ''))
                 ?: ucwords(str_replace('_', ' ', $status));
 
+            $delayReason = trim((string) ($entry['delay_reason'] ?? ''));
+
             $rows[] = [
                 'office' => $officeName ?: '—',
                 'officer' => $officer,
                 'date' => $login ? $login->format('d/m/Y') : ($logout ? $logout->format('d/m/Y') : ''),
                 'duration' => $duration,
                 'remarks' => $remarks,
+                'request_purpose' => $item['request_purpose_name'] !== '' ? $item['request_purpose_name'] : '—',
+                'timeline' => $this->formatTimelineForPrint($item['timeline_status'] ?? null, $item['days_until_deadline'] ?? null),
+                'expected_return_date' => $item['deadline'] ? Carbon::parse($item['deadline'])->format('d/m/Y') : '—',
+                'delay_reason' => $delayReason !== '' ? $delayReason : '—',
             ];
         }
 
@@ -877,16 +1003,37 @@ class FilearchiveController extends Controller
             'date' => $fileIndexing && $fileIndexing->created_at ? $fileIndexing->created_at->format('d/m/Y') : '',
             'duration' => '',
             'remarks' => 'In Archive',
+            'request_purpose' => '—',
+            'timeline' => '—',
+            'expected_return_date' => '—',
+            'delay_reason' => '—',
         ]);
 
-        return view('filearchive.print.file_movement_history', [
-            'fileNumber' => $fileNumber,
-            'trackingId' => $latestTracker->tracking_id ?? '',
-            'fileTitle' => $fileIndexing->file_title ?? ($latestTracker->file_title ?? ''),
-            'registry' => $fileIndexing->registry ?? ($latestTracker->registry_code ?? ''),
-            'shelf' => $fileIndexing->shelf_location ?? '',
-            'rows' => $rows,
-        ]);
+        return $rows;
+    }
+
+    /**
+     * Green/Amber/Red timeline label for the print sheet — mirrors
+     * FileTracker::getTimelineStatusAttribute() / the on-screen day-count badge.
+     */
+    private function formatTimelineForPrint(?string $status, $daysUntilDeadline): string
+    {
+        if (!$status) {
+            return '—';
+        }
+
+        if ($daysUntilDeadline === null) {
+            $label = ['green' => 'On Track', 'amber' => 'Due Soon', 'red' => 'Overdue'][$status] ?? ucfirst($status);
+        } elseif ($daysUntilDeadline > 0) {
+            $label = $daysUntilDeadline . ' day' . ($daysUntilDeadline === 1 ? '' : 's') . ' left';
+        } elseif ($daysUntilDeadline === 0) {
+            $label = 'Due today';
+        } else {
+            $abs = abs($daysUntilDeadline);
+            $label = $abs . ' day' . ($abs === 1 ? '' : 's') . ' overdue';
+        }
+
+        return $label;
     }
 
     private function movementEntryTimestamp(array $entry): int

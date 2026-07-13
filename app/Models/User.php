@@ -59,6 +59,13 @@ class User extends Authenticatable implements MustVerifyEmail
         'user_actions',
         'dfr_permissions',
         'fr_permissions',
+        'is_on_leave',
+        'leave_start_date',
+        'leave_end_date',
+        'leave_reason',
+        'deputy_user_id',
+        'out_of_office_from',
+        'out_of_office_to',
     ];
 
     public function sendEmailVerificationNotification()
@@ -78,6 +85,12 @@ class User extends Authenticatable implements MustVerifyEmail
         'workstation_payment_structure_id' => 'integer',
         'is_pc_access' => 'boolean',
         'auto_deactivate' => 'boolean',
+        'is_on_leave' => 'boolean',
+        'leave_start_date' => 'date',
+        'leave_end_date' => 'date',
+        'deputy_user_id' => 'integer',
+        'out_of_office_from' => 'date',
+        'out_of_office_to' => 'date',
     ];
 
     protected $appends = ['name'];
@@ -122,6 +135,30 @@ class User extends Authenticatable implements MustVerifyEmail
     public function paymentStructure()
     {
         return $this->belongsTo(\App\Models\Payroll\WorkstationPaymentStructure::class, 'workstation_payment_structure_id');
+    }
+
+    /**
+     * The colleague designated to receive this user's file/task redirects
+     * while they are on leave/holiday.
+     */
+    public function deputy()
+    {
+        return $this->belongsTo(User::class, 'deputy_user_id');
+    }
+
+    /**
+     * Active users eligible to be selected as a deputy (redirect target)
+     * while someone is on leave/holiday. Excludes the given user id.
+     */
+    public static function deputyOptions(?int $excludeUserId = null): array
+    {
+        return static::where('is_active', 1)
+            ->when($excludeUserId, fn ($query) => $query->where('id', '!=', $excludeUserId))
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get(['id', 'first_name', 'last_name'])
+            ->mapWithKeys(fn ($deputy) => [$deputy->id => trim($deputy->first_name . ' ' . $deputy->last_name)])
+            ->toArray();
     }
 
     public function canImpersonate()

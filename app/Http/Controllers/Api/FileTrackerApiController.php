@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\FileTracker;
 use App\Models\OtherReceivingOfficer;
+use App\Models\RequestPurpose;
 use App\Models\User;
 use App\Services\QuickActionsService;
 use App\Services\UserNotificationService;
@@ -167,6 +168,11 @@ class FileTrackerApiController extends Controller
                 true
             );
 
+            // SLTR "In-process" internal sections (Directors, Deputy Director, Production,
+            // Geometry, Report, Other) have no office/officer records — the section itself
+            // is the receiving point, so there is no real officer to select.
+            $isSltrInternalNoOfficer = filter_var($request->input('sltr_internal_no_officer'), FILTER_VALIDATE_BOOLEAN);
+
             $validator = Validator::make($request->all(), [
                 'file_number' => 'nullable|string|max:255',
                 'file_title' => 'required|string|max:255',
@@ -176,6 +182,8 @@ class FileTrackerApiController extends Controller
                 'department' => 'required|string|max:100',
                 'description' => 'nullable|string',
                 'deadline' => 'nullable|date',
+                'request_purpose_id' => 'nullable|integer|exists:sqlsrv.request_purposes,id',
+                'request_purpose_other' => 'nullable|string|max:255',
                 'movement_log' => 'required|array',
                 'movement_log.*.office_code' => 'required|string',
                 'movement_log.*.office_name' => 'required|string',
@@ -193,7 +201,7 @@ class FileTrackerApiController extends Controller
                 'origin_office_department' => 'nullable|string|max:255',
                 'receiving_office_code' => $isKangisWorkflowSubmission ? 'nullable|string|max:100' : 'required|string|max:100',
                 'receiving_office_name' => $isKangisWorkflowSubmission ? 'nullable|string|max:255' : 'required|string|max:255',
-                'receiving_officer_id' => $isKangisWorkflowSubmission ? 'nullable|string|max:50' : 'required|string|max:50',
+                'receiving_officer_id' => ($isKangisWorkflowSubmission || $isSltrInternalNoOfficer) ? 'nullable|string|max:50' : 'required|string|max:50',
                 'receiving_officer_name' => 'nullable|string|max:255',
             ]);
 
@@ -270,18 +278,20 @@ class FileTrackerApiController extends Controller
                 'is_other' => false,
             ];
 
-            if (!$isKangisWorkflowSubmission) {
+            if (!$isKangisWorkflowSubmission && !$isSltrInternalNoOfficer) {
                 $resolved = $this->resolveReceivingOfficer($request->receiving_officer_id, $request->receiving_officer_name);
             }
 
-            $isOtherOfficer = !$isKangisWorkflowSubmission && $resolved['is_other'];
-            $receivingOfficerId = $isKangisWorkflowSubmission
+            $isOtherOfficer = !$isKangisWorkflowSubmission && !$isSltrInternalNoOfficer && $resolved['is_other'];
+            $receivingOfficerId = ($isKangisWorkflowSubmission || $isSltrInternalNoOfficer)
                 ? null
                 : ($isOtherOfficer ? null : $resolved['numeric_id']);
             $resolvedOfficerName = $isKangisWorkflowSubmission
                 ? ($request->input('receiving_officer_name') ?: $request->input('receiving_office_name') ?: 'Director GIS')
-                : $resolved['name'];
-            $requiresReceivingAcceptance = !$isKangisWorkflowSubmission && !$isOtherOfficer;
+                : ($isSltrInternalNoOfficer
+                    ? ($request->input('receiving_officer_name') ?: $request->input('receiving_office_name'))
+                    : $resolved['name']);
+            $requiresReceivingAcceptance = !$isKangisWorkflowSubmission && !$isSltrInternalNoOfficer && !$isOtherOfficer;
 
             // Determine if this is a KANGIS approval workflow
             $workflowType = $workflowTypeInput;
@@ -315,6 +325,16 @@ class FileTrackerApiController extends Controller
                 ];
             }
 
+            // Request Purpose: a normal purpose resolves request_purpose_name from the
+            // request_purposes lookup; "Other" (request_purpose_id omitted) carries the
+            // free-text request_purpose_other into request_purpose_name instead, keeping
+            // request_purpose_id null since there's no matching row to reference.
+            $requestPurpose = $request->filled('request_purpose_id')
+                ? RequestPurpose::find($request->input('request_purpose_id'))
+                : null;
+            $requestPurposeOther = trim((string) $request->input('request_purpose_other', ''));
+            $requestPurposeName = $requestPurpose?->name ?: ($requestPurposeOther !== '' ? $requestPurposeOther : null);
+
             // Create file tracker
             $tracker = FileTracker::create([
                 'tracking_id' => $trackingId,
@@ -329,6 +349,8 @@ class FileTrackerApiController extends Controller
                 'status' => $workflowStatus,
                 'date_created' => now(),
                 'deadline' => $request->deadline,
+                'request_purpose_id' => $requestPurpose?->id,
+                'request_purpose_name' => $requestPurposeName,
                 'total_offices' => count($request->movement_log),
                 'notes' => $request->notes,
                 'origin_office_code' => $request->origin_office_code,
@@ -616,6 +638,9 @@ class FileTrackerApiController extends Controller
                 ], 422);
             }
 
+            $fileNumberBefore = $tracker->file_number;
+            $fileTitleBefore = $tracker->file_title;
+
             $tracker->update($request->only([
                 'file_number',
                 'file_title',
@@ -631,6 +656,12 @@ class FileTrackerApiController extends Controller
                 'origin_office_department',
             ]));
 
+            // Keep the matching file_indexings row's title in sync — the tracker and the
+            // indexing record are edited from different screens but must show one title.
+            if ($request->filled('file_title') && trim((string) $tracker->file_title) !== trim((string) $fileTitleBefore)) {
+                $this->propagateFileTitleToIndexing($fileNumberBefore, $tracker->file_number, $tracker->file_title);
+            }
+
             // Add computed attributes
             $this->decorateTracker($tracker);
 
@@ -645,6 +676,33 @@ class FileTrackerApiController extends Controller
                 'success' => false,
                 'message' => 'Error updating file tracker: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Keep the file_indexings row's title in sync when a tracker's file_title is edited,
+     * so the two screens never show different titles for the same file number.
+     */
+    private function propagateFileTitleToIndexing(?string $fileNumberBefore, ?string $fileNumberAfter, ?string $newTitle): void
+    {
+        $fileNumbers = array_values(array_unique(array_filter([$fileNumberBefore, $fileNumberAfter])));
+
+        if (empty($fileNumbers) || $newTitle === null || $newTitle === '') {
+            return;
+        }
+
+        try {
+            DB::connection('sqlsrv')->table('file_indexings')
+                ->whereIn('file_number', $fileNumbers)
+                ->update([
+                    'file_title' => $newTitle,
+                    'updated_at' => now(),
+                ]);
+        } catch (Exception $e) {
+            Log::warning('Failed to propagate file_title to file_indexings', [
+                'file_numbers' => $fileNumbers,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -1395,6 +1453,8 @@ class FileTrackerApiController extends Controller
                     'deadline' => $tracker->deadline,
                     'is_overdue' => $tracker->is_overdue,
                     'days_until_deadline' => $tracker->days_until_deadline,
+                    'timeline_status' => $tracker->timeline_status,
+                    'request_purpose_name' => $tracker->request_purpose_name,
                     'completion_percentage' => $tracker->completion_percentage,
                     'movement_history' => $movementLog,
                     'prior_movements' => $this->getPriorMovements($tracker),
@@ -1449,6 +1509,20 @@ class FileTrackerApiController extends Controller
 
                 $priorMovements[] = $entry;
             }
+        }
+
+        // Weave in related files from the same parcel-update / merger group (Change of Purpose,
+        // Subdivision, Merger, Extension, Separation, Temporary File) so the timeline reads as one
+        // continuous lineage: each decommissioned parent's history ends with a File Decommissioning
+        // marker, each surviving child opens with a File Commissioning marker. Non-fatal.
+        try {
+            $groupEntries = app(\App\Services\FileMergerService::class)
+                ->groupMovementEntries($fileNumber, [$fileNumber]);
+            foreach ($groupEntries as $entry) {
+                $priorMovements[] = $entry;
+            }
+        } catch (\Throwable $e) {
+            // Fall back to the single-file history.
         }
 
         usort($priorMovements, function ($a, $b) {

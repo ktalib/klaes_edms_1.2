@@ -874,15 +874,10 @@ function tailorLeftForm() {
 // ─── Shared Helpers for Form HTML ────────────────────────────────────────────
 function approvalFieldsHTML() {
     return `
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border border-slate-200 rounded-2xl p-4 bg-slate-50/40">
+        <div class="border border-slate-200 rounded-2xl p-4 bg-slate-50/40">
             <div>
                 <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Approval / Ref No.</label>
                 <input type="text" name="approval_reference" placeholder="e.g. KAG/MLS/2019/234"
-                    class="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-            </div>
-            <div>
-                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Approval Date</label>
-                <input type="date" name="approval_date"
                     class="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
             </div>
         </div>
@@ -2469,7 +2464,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         const approvalRef  = document.querySelector('input[name="approval_reference"]')?.value?.trim() || '—';
-        const approvalDate = document.querySelector('input[name="approval_date"]')?.value || '—';
 
         // Workflow-specific wording for the confirmation summary
         const wfCopy = {

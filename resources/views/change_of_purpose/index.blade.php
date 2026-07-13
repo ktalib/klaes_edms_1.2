@@ -548,7 +548,7 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Street</label>
-                            <select id="cop-street" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm">
+                            <select id="cop-street" class="searchable-select w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm">
                                 <option value="">- Select Street -</option>
                                 @foreach($streetNames as $street)
                                     <option value="{{ $street->name }}">{{ \Illuminate\Support\Str::upper((string) $street->name) }}</option>
@@ -563,7 +563,7 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">District</label>
-                            <select id="cop-district" name="district" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm">
+                            <select id="cop-district" name="district" class="searchable-select w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm">
                                 <option value="">- Select District -</option>
                                 @foreach($districts as $district)
                                     <option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>
@@ -632,7 +632,7 @@
                             </div>
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">Street Name</label>
-                                <select id="cop_res_addr_street" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500">
+                                <select id="cop_res_addr_street" class="searchable-select w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500">
                                     <option value="">SELECT STREET</option>
                                     @foreach($streetNames as $street)
                                         <option value="{{ $street->name }}">{{ \Illuminate\Support\Str::upper((string) $street->name) }}</option>
@@ -646,7 +646,7 @@
                             </div>
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">District</label>
-                                <select id="cop_res_addr_district" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500">
+                                <select id="cop_res_addr_district" class="searchable-select w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500">
                                     <option value="">SELECT DISTRICT</option>
                                     @foreach($districts as $district)
                                         <option value="{{ $district->name }}">{{ \Illuminate\Support\Str::upper((string) $district->name) }}</option>
@@ -706,8 +706,8 @@
 
                     {{-- Comment --}}
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Comment <span class="text-red-500">*</span></label>
-                        <textarea id="cop-comment" name="comment" rows="2" required
+                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Comment</label>
+                        <textarea id="cop-comment" name="comment" rows="2"
                             class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm resize-none"
                             placeholder="Optional comment..."></textarea>
                     </div>
@@ -773,6 +773,7 @@
 @endsection
 
 @section('footer-scripts')
+@include('components.searchable-select2')
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script src="{{ asset('js/change-of-purpose.js') }}"></script>
 <script>

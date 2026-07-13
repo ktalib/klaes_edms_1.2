@@ -20,6 +20,7 @@ class TitleStatusApplication extends Model
     public const TYPE_AMENDMENT    = 'Amendment/Reconsideration (Application/RofO/CofO)';
     public const TYPE_SURRENDER    = 'Surrender';
     public const TYPE_REGRANT      = 'Re-grant';
+    public const TYPE_RESETTLEMENT = 'Resettlement';
     public const TYPE_SUBDIVISION  = 'Subdivision';
     public const TYPE_MERGER       = 'Merger';
     public const TYPE_PURPOSE      = 'Change of Purpose';
@@ -52,6 +53,7 @@ class TitleStatusApplication extends Model
         self::TYPE_AMENDMENT    => ['Ministry', 'Allottee'],
         self::TYPE_SURRENDER    => ['Applicant'],
         self::TYPE_REGRANT      => ['Ministry'],
+        self::TYPE_RESETTLEMENT => ['Ministry', 'Allottee'],
         self::TYPE_SUBDIVISION  => ['Applicant', 'Ministry'],
         self::TYPE_MERGER       => ['Applicant', 'Ministry'],
         self::TYPE_PURPOSE      => ['Applicant', 'Ministry'],

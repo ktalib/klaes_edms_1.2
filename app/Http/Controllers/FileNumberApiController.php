@@ -732,6 +732,9 @@ class FileNumberApiController extends Controller
             // table (KANGIS, New KANGIS, SLTR, SIT, DCIV, GKN, …) instead of the
             // default MLS/Lands-only scope. Driven by the global file-number modal.
             $includeAllRegistries = filter_var($request->get('all_registries', false), FILTER_VALIDATE_BOOLEAN);
+            // Temporary-file toggle (Create File Tracker "Is Temporary File"): restrict
+            // the selector to temporary "(T)" file numbers only.
+            $tempOnly = filter_var($request->get('temp_only', false), FILTER_VALIDATE_BOOLEAN);
 
             $query = DB::connection('sqlsrv')
                 ->table('dbo.fileNumber')
@@ -750,6 +753,12 @@ class FileNumberApiController extends Controller
                 ->where(function ($q) {
                     $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
                 });
+
+            // Restrict to temporary "(T)" file numbers when requested. In SQL Server
+            // LIKE, parentheses are literal so '%(T)%' matches the "(T)" suffix.
+            if ($tempOnly) {
+                $query->where('mlsfNo', 'LIKE', '%(T)%');
+            }
 
             // Exclude matching if requested
             if (!empty($excludeMatched)) {
@@ -786,12 +795,17 @@ class FileNumberApiController extends Controller
 
             if (!empty($search)) {
                 $this->applyFileNumberSearch($query, 'mlsfNo', $search);
-                
-                // Also search in temp_file_no column of dbo.fileNumber if it matches
-                $query->orWhere(function ($q) use ($search) {
-                    $q->where('temp_file_no', 'LIKE', "%{$search}%")
-                      ->orWhere('temp_fileno', 'LIKE', "%{$search}%");
-                });
+
+                // Also search in temp_file_no column of dbo.fileNumber if it matches.
+                // Skipped in temp-only mode: this loose top-level OR would otherwise
+                // escape the "(T)" AND-constraint and pull in non-temp rows, filling
+                // the limit before the temp-only guard/file_indexings pass runs.
+                if (!$tempOnly) {
+                    $query->orWhere(function ($q) use ($search) {
+                        $q->where('temp_file_no', 'LIKE', "%{$search}%")
+                          ->orWhere('temp_fileno', 'LIKE', "%{$search}%");
+                    });
+                }
             }
 
             $rows = $query
@@ -839,6 +853,17 @@ class FileNumberApiController extends Controller
                           ->orWhere('mls_file_no', 'LIKE', "%{$search}%")
                           ->orWhere('kangis_file_no', 'LIKE', "%{$search}%")
                           ->orWhere('new_kangis_file_no', 'LIKE', "%{$search}%");
+                    });
+                }
+
+                // Temp-only: keep just the rows whose file numbers carry the "(T)" marker.
+                if ($tempOnly) {
+                    $indexingQuery->where(function ($q) {
+                        $q->where('file_number', 'LIKE', '%(T)%')
+                          ->orWhere('temp_file_no', 'LIKE', '%(T)%')
+                          ->orWhere('mls_file_no', 'LIKE', '%(T)%')
+                          ->orWhere('kangis_file_no', 'LIKE', '%(T)%')
+                          ->orWhere('new_kangis_file_no', 'LIKE', '%(T)%');
                     });
                 }
 
@@ -891,6 +916,14 @@ class FileNumberApiController extends Controller
                         'temp_file_no' => $r->temp_file_no,
                     ]);
                 }
+            }
+
+            // Final safety net: guarantee the temp-only selector never surfaces a
+            // display number without the "(T)" marker, regardless of source/column.
+            if ($tempOnly) {
+                $files = $files->filter(function ($f) {
+                    return strpos((string) ($f['file_number'] ?? ''), '(T)') !== false;
+                })->values();
             }
 
             return response()->json([

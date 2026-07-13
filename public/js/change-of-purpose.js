@@ -177,6 +177,11 @@
             if (opt.value.trim().toLowerCase() === target ||
                 opt.textContent.trim().toLowerCase() === target) {
                 selectEl.selectedIndex = i;
+                // Keep the Select2 widget (searchable dropdowns) in sync with
+                // the programmatic selection without firing change handlers.
+                if (window.jQuery && window.jQuery(selectEl).hasClass('select2-hidden-accessible')) {
+                    window.jQuery(selectEl).trigger('change.select2');
+                }
                 return true;
             }
         }
@@ -342,6 +347,8 @@
     function resetForm() {
         var f = document.getElementById('cop-form');
         if (f) f.reset();
+        // form.reset() clears the native selects; re-render their Select2 widgets.
+        if (window.syncSearchableSelects) window.syncSearchableSelects(f);
         document.getElementById('cop-file-indicator')?.classList.add('hidden');
         document.getElementById('cop-file-details')?.classList.add('hidden');
         document.getElementById('cop-land-use').value = '';

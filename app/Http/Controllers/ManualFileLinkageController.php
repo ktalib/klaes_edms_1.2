@@ -423,11 +423,18 @@ class ManualFileLinkageController extends Controller
             // Decommissioning only happens on the FINAL workflow (activation OFF).
             $filesToDecommission = array_values(array_diff($oldFileNumbers, $unindexedFiles));
             $workflowService = app(PlotWorkflowService::class);
+            // The old -> successor lineage pointer stored on decommissioned_files.successor_file_no
+            // (read back by the Decommissioned Files list's Related File column and by Legal
+            // Search's lineage resolver). A batch subdivision retires the mother into several
+            // children at once, so this may be a CSV list.
+            $successorFileNo = $workflowType === 'Subdivision'
+                ? implode(', ', array_column($children, 'new_file_number'))
+                : $newFileNumber;
             $decommReason = $workflowType === 'Subdivision'
-                ? 'Subdivision → ' . implode(', ', array_column($children, 'new_file_number'))
+                ? 'Subdivision → ' . $successorFileNo
                 : "Manual Linkage: {$workflowType} → {$newFileNumber}";
             if (($isFinalizeChain || !$useHoldingFile) && !empty($filesToDecommission)) {
-                $workflowService->decommissionFiles($filesToDecommission, $decommReason, $commissionedBy);
+                $workflowService->decommissionFiles($filesToDecommission, $decommReason, $commissionedBy, $successorFileNo);
             }
 
             $allocationService = app(PropertyIdAllocationService::class);
@@ -581,9 +588,10 @@ class ManualFileLinkageController extends Controller
                         'party_2'              => $childGrantee,
                         'parent_prop_id'       => $parentPropId,
                         'comments'             => $subdivisionComment,
-                        // No historical instrument date for a manual linkage — stamp the
-                        // processing date so the timeline shows when it was recorded.
-                        'transaction_date'     => now(),
+                        // Legacy back-captured transaction — the real instrument date is
+                        // unknown, so leave it blank. Stamping the processing date would
+                        // make a years-old subdivision display as a 2026 transaction.
+                        'transaction_date'     => null,
                         'created_at'           => now(),
                         'updated_at'           => now(),
                     ]);
@@ -801,9 +809,10 @@ class ManualFileLinkageController extends Controller
                     'party_2'              => $destGrantee,
                     'parent_prop_id'       => $parentPropId,
                     'comments'             => $praComment,
-                    // No historical instrument date for a manual linkage — stamp the
-                    // processing date so the timeline shows when the merger was recorded.
-                    'transaction_date'     => now(),
+                    // Legacy back-captured transaction — the real instrument date is
+                    // unknown, so leave it blank. Stamping the processing date would
+                    // make a years-old merger/CoP display as a 2026 transaction.
+                    'transaction_date'     => null,
                     'created_at'           => now(),
                     'updated_at'           => now(),
                 ]);

@@ -41,6 +41,7 @@
             transactions: [{
                 id: 1,
                 recordId: null,
+                source: '',
                 transactionType: '',
                 status: 'Normal',
                 transactionDate: '',
@@ -184,6 +185,7 @@
                 this.transactions.push({
                     id: this.transactions.length + 1,
                     recordId: null,
+                    source: '',
                     transactionType: '',
                     status: 'Normal',
                     transactionDate: '',
@@ -222,6 +224,24 @@
                     first: 'Party 1 / ' + labels.first,
                     second: 'Party 2 / ' + labels.second
                 };
+            },
+
+            // Human-readable label + badge color for the staging table a transaction was
+            // backfilled from, so a mixed-source timeline (file_history_staging, CofO_staging,
+            // pra, deed_registrations) is visually distinguishable in the edit form.
+            sourceLabels: {
+                fh: { label: 'File History', color: 'bg-slate-100 text-slate-700 border-slate-300' },
+                file_history: { label: 'File History', color: 'bg-slate-100 text-slate-700 border-slate-300' },
+                cofo: { label: 'CofO', color: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
+                pra: { label: 'PRA', color: 'bg-amber-100 text-amber-700 border-amber-300' },
+                deeds: { label: 'Deed Registration', color: 'bg-purple-100 text-purple-700 border-purple-300' }
+            },
+
+            getSourceInfo(source) {
+                if (!source) {
+                    return { label: 'New', color: 'bg-blue-100 text-blue-700 border-blue-300' };
+                }
+                return this.sourceLabels[source] || { label: source, color: 'bg-gray-100 text-gray-700 border-gray-300' };
             },
 
             // Check if transaction type is government
@@ -640,8 +660,13 @@
                     <template x-for="(transaction, index) in transactions" :key="transaction.id">
                         <div class="border border-gray-300 rounded-lg p-4 mb-4 bg-white shadow-sm">
                             <div class="flex justify-between items-center mb-3">
-                                <h3 class="text-lg font-semibold text-gray-700">
+                                <h3 class="text-lg font-semibold text-gray-700 flex items-center gap-2">
                                     Transaction <span x-text="index + 1"></span>
+                                    <span x-show="transaction.recordId"
+                                        class="text-xs font-medium px-2 py-0.5 rounded-full border"
+                                        :class="getSourceInfo(transaction.source).color"
+                                        :title="transaction.recordId ? 'Backfilled from ' + getSourceInfo(transaction.source).label + ' (record #' + transaction.recordId + ')' : ''"
+                                        x-text="getSourceInfo(transaction.source).label"></span>
                                 </h3>
                                 <button type="button" @click="removeTransaction(index)" x-show="transactions.length > 1"
                                     class="text-red-500 hover:text-red-700 text-sm">
@@ -1324,6 +1349,11 @@
                                     const transactionPayload = {
                                         id: index + 1,
                                         recordId: record.id || record.record_id || null,
+                                        // Which staging table this record was loaded from (fh/cofo/pra/deeds),
+                                        // set server-side by PropertyRecordController::checkExistingRecords().
+                                        // Sent back on submit so an update lands in the SAME table the row
+                                        // came from, instead of defaulting to file_history_staging.
+                                        source: record._source || record.source || '',
                                         transactionType: normalizedType,
                                         instrumentType: normalizedType,
                                         status: record.status || 'Normal',
@@ -1493,6 +1523,7 @@
         // Convert camelCase field names to snake_case for backend
         const convertedTransactions = transactions.map(t => ({
             record_id: t.recordId || null,
+            _source: t.source || null,
             transaction_type: t.transactionType || '',
             instrument_type: t.instrumentType || '',
             status: t.status || 'Normal',

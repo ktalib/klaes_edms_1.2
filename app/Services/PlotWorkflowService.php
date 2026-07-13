@@ -145,6 +145,26 @@ class PlotWorkflowService
             }
         }
 
+        // Materialise / refresh the parcel-update (merger) group so the File Tracking Sheet and
+        // File Movement History can stitch every related file's movement log into one lineage.
+        // Best-effort only — this must never fail the decommission itself.
+        try {
+            $mergerService = app(\App\Services\FileMergerService::class);
+            $seed = $successorFileNo ?: ($fileNumbers[0] ?? null);
+            if ($seed) {
+                $mergerService->rebuildForFile($seed);
+            }
+            // Also seed from each decommissioned parent so a group is still built when the
+            // successor is not yet linked (e.g. the caller passed no successor file number).
+            foreach ($fileNumbers as $parentFileNo) {
+                $mergerService->rebuildForFile($parentFileNo);
+            }
+        } catch (\Throwable $mergerError) {
+            $this->logPlotsWorkflow('warning', 'File merger group rebuild skipped', [
+                'error' => $mergerError->getMessage(),
+            ]);
+        }
+
         return $summary;
     }
 

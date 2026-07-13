@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class SpaApplication extends Model
 {
@@ -10,7 +11,7 @@ class SpaApplication extends Model
     protected $table      = 'spa_applications';
 
     protected $fillable = [
-        'file_number', 'tracking_id', 'file_indexing_id', 'is_indexed',
+        'file_number', 'tracking_id', 'file_indexing_id', 'is_indexed', 'land_title_type',
         'owner_name', 'phone', 'location', 'district', 'lga',
         'land_use_type', 'existing_use', 'proposed_use',
         'scenario', 'status', 'created_by', 'photos',
@@ -64,5 +65,19 @@ class SpaApplication extends Model
     public function certificate()
     {
         return $this->hasOne(SpaCertificate::class, 'spa_application_id');
+    }
+
+    public static function generateCustomaryFileNumber(): string
+    {
+        $year = now()->format('Y');
+        $last = DB::connection('sqlsrv')
+            ->table('spa_applications')
+            ->where('file_number', 'like', "SPAS-{$year}-%")
+            ->orderByDesc('id')
+            ->value('file_number');
+
+        $seq = $last ? ((int) substr($last, strrpos($last, '-') + 1)) + 1 : 1;
+
+        return "SPAS-{$year}-" . str_pad($seq, 4, '0', STR_PAD_LEFT);
     }
 }

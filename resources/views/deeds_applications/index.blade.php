@@ -198,13 +198,19 @@
   }
 
   .deeds-action-dropdown button {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
     width: 100%;
     text-align: left;
     padding: 0.5rem 1rem;
     font-size: 0.75rem;
     color: rgb(100 116 139);
     transition: all 0.15s;
+  }
+
+  .deeds-action-dropdown button i {
+    flex-shrink: 0;
   }
 
   .deeds-action-dropdown button:hover {
@@ -710,8 +716,18 @@
           }
 
           if (isSupperAdmin) {
+            html += `<div class="h-px bg-slate-100 my-1"></div>`;
+
+            if (app.print_count > 0) {
+              html += `
+                            <button type="button" onclick="confirmResetPrintMaster('${app.id}', '${app.file_number}')" class="flex items-center gap-3 w-full px-4 py-2.5 text-xs text-amber-600 hover:bg-amber-50 transition font-bold cursor-pointer">
+                                <i data-lucide="rotate-ccw" class="h-4 w-4"></i>
+                                <span>Master Reset (Print)</span>
+                            </button>
+                        `;
+            }
+
             html += `
-                          <div class="h-px bg-slate-100 my-1"></div>
                           <button type="button" onclick="confirmSingleDeleteMaster('${app.id}', '${app.file_number}')" class="flex items-center gap-3 w-full px-4 py-2.5 text-xs text-rose-600 hover:bg-rose-50 transition font-bold cursor-pointer">
                               <i data-lucide="trash-2" class="h-4 w-4"></i>
                               <span>Delete Master</span>
@@ -960,6 +976,80 @@
                             });
                         });
                     }
+                });
+            }
+        });
+    };
+
+    window.confirmResetPrintMaster = function(id, fileNo) {
+        if (!id || !fileNo) return;
+
+        // Close actions dropdown first
+        var globalDropdown = document.getElementById('deeds-global-dropdown');
+        if (globalDropdown) globalDropdown.style.visibility = 'hidden';
+
+        Swal.fire({
+            title: 'Master Reset: Are you sure?',
+            html: "You are about to <strong>reset the print count</strong> for application: <br><strong style='color:#d97706;'>" + fileNo + "</strong>.<br><br>" +
+                  "This will allow the application to be edited and printed again.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d97706',
+            cancelButtonColor: '#475569',
+            confirmButtonText: 'Yes, reset it',
+            cancelButtonText: 'Cancel'
+        }).then(function(res) {
+            if (res.isConfirmed) {
+                Swal.fire({
+                    title: 'Resetting...',
+                    html: 'Processing print reset. Please wait.',
+                    allowOutsideClick: false,
+                    didOpen: function() {
+                        Swal.showLoading();
+                    }
+                });
+
+                var csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+                var resetUrl = '/deeds-applications/reset-print-master/' + id;
+
+                fetch(resetUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                })
+                .then(function(res) {
+                    return res.json();
+                })
+                .then(function(result) {
+                    if (result.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Print Reset Complete!',
+                            text: result.message || 'Print count reset successfully.',
+                            timer: 2500,
+                            showConfirmButton: false
+                        }).then(function() {
+                            location.reload();
+                        });
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Failed',
+                            text: result.message || 'Failed to reset print count.'
+                        });
+                    }
+                })
+                .catch(function(err) {
+                    console.error('Reset print master error:', err);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: 'A network error occurred. Please try again.'
+                    });
                 });
             }
         });

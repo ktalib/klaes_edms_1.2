@@ -42,6 +42,11 @@ const TS_TYPE_THEMES = {
         icon:     'refresh-cw',
         label:    'Re-grant',
     },
+    'Resettlement': {
+        gradient: 'linear-gradient(135deg,#4c1d95 0%,#7c3aed 60%,#a78bfa 100%)',
+        icon:     'map-pin',
+        label:    'Resettlement · Existing or New Files',
+    },
 };
 
 /* ── Verbs used in the unified remark template ── */
@@ -53,6 +58,7 @@ const TS_TYPE_VERB = {
     'Amendment/Reconsideration (Application/RofO/CofO)':   'Amendment/Reconsideration',
     'Surrender':                                           'Surrender',
     'Re-grant':                                            'Re-grant',
+    'Resettlement':                                        'Resettlement',
 };
 
 /* ────────────────────────────── Init ────────────────────────────── */

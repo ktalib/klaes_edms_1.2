@@ -11,12 +11,13 @@ class SpaFieldData extends Model
 
     protected $fillable = [
         'spa_application_id', 'file_number', 'surveyor_id',
-        'inspection_date', 'coordinates', 'findings', 'photos',
+        'inspection_date', 'coordinates', 'parcel_geometry', 'findings', 'photos',
         'status', 'created_by',
     ];
 
     protected $casts = [
         'coordinates'     => 'array',
+        'parcel_geometry' => 'array',
         'photos'          => 'array',
         'inspection_date' => 'date',
     ];

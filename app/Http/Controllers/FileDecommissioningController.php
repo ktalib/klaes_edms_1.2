@@ -161,6 +161,13 @@ class FileDecommissioningController extends Controller
 
             $conn = \Illuminate\Support\Facades\DB::connection('sqlsrv');
 
+            // The archive table records the successor file(s) that replaced a decommissioned
+            // file directly (populated by PlotWorkflowService at decommissioning time), which
+            // is more reliable than the related_file_number staging table used below — that
+            // table depends on a separate sync and can lag or miss a row entirely.
+            $hasSuccessorColumn = \Illuminate\Support\Facades\Schema::connection('sqlsrv')
+                ->hasColumn('decommissioned_files', 'successor_file_no');
+
             // Query 1: From the decommissioned_files archive table (hard-deleted via PlotWorkflowService).
             // Exclude "false decommissioning" rows (Title Status updates from File Indexing) —
             // those are surfaced in a separate table.
@@ -179,6 +186,7 @@ class FileDecommissioningController extends Controller
                     'decommissioning_reason',
                     'decommissioned_by',
                     'created_at',
+                    \Illuminate\Support\Facades\DB::raw($hasSuccessorColumn ? 'successor_file_no' : "NULL as successor_file_no"),
                     \Illuminate\Support\Facades\DB::raw("'archive' as _source"),
                 ]);
 
@@ -196,9 +204,16 @@ class FileDecommissioningController extends Controller
                     'FileName',
                     'commissioning_date',
                     'decommissioning_date',
-                    'decommissioning_reason',
+                    // fileNumber.decommissioning_reason is the legacy non-Unicode TEXT type;
+                    // decommissioned_files.decommissioning_reason (the other UNION ALL side) is
+                    // NVARCHAR(MAX). Left uncast, SQL Server's implicit conversion between the two
+                    // mangles non-ASCII characters (e.g. the "→" in "Manual Linkage: ... → FILE-NO"
+                    // silently becomes "?"), so the successor file number can no longer be parsed
+                    // back out of it. Cast explicitly to keep both sides Unicode.
+                    \Illuminate\Support\Facades\DB::raw('CAST(decommissioning_reason AS NVARCHAR(MAX)) as decommissioning_reason'),
                     \Illuminate\Support\Facades\DB::raw("COALESCE(updated_by, created_by, 'System') as decommissioned_by"),
                     'created_at',
+                    \Illuminate\Support\Facades\DB::raw("NULL as successor_file_no"),
                     \Illuminate\Support\Facades\DB::raw("'filenumber' as _source"),
                 ]);
 
@@ -413,12 +428,8 @@ class FileDecommissioningController extends Controller
                 ->select('file_number', 'related_fileno', 'prop_id')
                 ->get();
         } catch (\Exception $e) {
-            // Staging table missing on this environment — leave every row as '-'.
-            return $result;
-        }
-
-        if ($rfnRows->isEmpty()) {
-            return $result;
+            // Staging table missing on this environment — fall back to successor_file_no below.
+            $rfnRows = collect();
         }
 
         foreach ($data as $row) {
@@ -467,6 +478,40 @@ class FileDecommissioningController extends Controller
                     continue;
                 }
                 $related[$cN] = $counterpart;
+            }
+
+            // Fallback / supplement: the archive row's own successor_file_no (set directly
+            // by PlotWorkflowService at decommissioning time) when related_file_number has
+            // no entry for it, or to fill in a successor the staging sync hasn't caught yet.
+            // May be a CSV list (a batch subdivision retires the mother into several children).
+            foreach (explode(',', (string) ($row->successor_file_no ?? '')) as $succ) {
+                $succ = trim($succ);
+                if ($succ === '') {
+                    continue;
+                }
+                $sN = $norm($succ);
+                if ($sN === '' || isset($own[$sN]) || isset($related[$sN])) {
+                    continue;
+                }
+                $related[$sN] = $succ;
+            }
+
+            // Last resort for older rows decommissioned before successor_file_no existed:
+            // Manual Linkage writes a reason like "Manual Linkage: Change of Purpose →
+            // CON-COM-2026-426" — pull the file number(s) after the arrow.
+            if (empty($related) && !empty($row->decommissioning_reason)
+                && preg_match('/\x{2192}\s*(.+)$/u', (string) $row->decommissioning_reason, $m)) {
+                foreach (explode(',', $m[1]) as $succ) {
+                    $succ = trim($succ, " \t\n\r\0\x0B.");
+                    if ($succ === '') {
+                        continue;
+                    }
+                    $sN = $norm($succ);
+                    if ($sN === '' || isset($own[$sN]) || isset($related[$sN]) || strlen($sN) < 3) {
+                        continue;
+                    }
+                    $related[$sN] = $succ;
+                }
             }
 
             $result[$this->relatedFileKey($row)] = array_values($related);

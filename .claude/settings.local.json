@@ -7,7 +7,26 @@
       "Bash(php -l app/Http/Controllers/SltrRofoController.php)",
       "Bash(php -l \"c:/wamp64/www/klaes/app/Services/PlotWorkflowService.php\")",
       "Bash(php -l \"c:/wamp64/www/klaes/app/Services/LegalSearchService.php\")",
-      "Bash(php -l \"c:/wamp64/www/klaes/app/Http/Controllers/CreateFileTrackerController.php\")"
+      "Bash(php -l \"c:/wamp64/www/klaes/app/Http/Controllers/CreateFileTrackerController.php\")",
+      "Bash(php artisan *)",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8000/ --max-time 3)",
+      "Bash(php artisan tinker '--execute= *)",
+      "Bash(chromium-cli --session klaes-backfill)",
+      "Bash(node -e \"require.resolve\\('playwright'\\)\")",
+      "Bash(node -e \"require.resolve\\('playwright-core'\\)\")",
+      "Bash(npm ls *)",
+      "Bash(where.exe chrome.exe msedge.exe)",
+      "Read(//c/Program Files \\\\\\(x86\\\\\\)/Microsoft/Edge/Application/**)",
+      "Read(//c/Program Files/Microsoft/Edge/Application/**)",
+      "Read(//c/Program Files/Google/Chrome/Application/**)",
+      "Bash(npm install *)",
+      "Bash(node verify.mjs)",
+      "Bash(tasklist)",
+      "Bash(php -l app/Http/Controllers/FileIndexingCoordinateBackfillController.php)",
+      "Bash(php -l app/Console/Commands/BackfillFileIndexingCoordinates.php)",
+      "Bash(php -l app/Services/FileIndexingCoordinateBackfillService.php)"
     ]
   }
 }

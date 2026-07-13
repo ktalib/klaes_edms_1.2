@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\LandOfficer;
+use App\Models\User;
 use App\Support\Concerns\ResolvesWorkStations;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -21,12 +22,14 @@ class ProfileController extends Controller
         $user = Auth::user();
         $workStationOptions = $this->workStationOptions();
         $canEditWorkStation = empty($user->work_station);
+        $deputyOptions = User::deputyOptions($user->id);
 
         return view('profile.index', compact(
             'PageTitle',
             'PageDescription',
             'workStationOptions',
-            'canEditWorkStation'
+            'canEditWorkStation',
+            'deputyOptions'
         ));
     }
 
@@ -52,6 +55,12 @@ class ProfileController extends Controller
             'profile' => 'nullable',
             'signature_file' => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
             'work_station' => $workStationRule,
+            'is_on_leave' => 'nullable|boolean',
+            'leave_start_date' => 'nullable|date',
+            'leave_end_date' => 'nullable|date|after_or_equal:leave_start_date',
+            'deputy_user_id' => ['nullable', 'integer', 'exists:sqlsrv.users,id', Rule::notIn([$user->id])],
+            'out_of_office_from' => 'nullable|date',
+            'out_of_office_to' => 'nullable|date|after_or_equal:out_of_office_from',
         ]);
 
         // Handle profile image upload if provided
@@ -113,7 +122,15 @@ class ProfileController extends Controller
         if (empty($user->work_station) && array_key_exists('work_station', $validated)) {
             $user->work_station = $validated['work_station'];
         }
-        
+
+        // Self-service out-of-office status
+        $user->is_on_leave = $request->boolean('is_on_leave');
+        $user->leave_start_date = $validated['leave_start_date'] ?? null;
+        $user->leave_end_date = $validated['leave_end_date'] ?? null;
+        $user->deputy_user_id = $validated['deputy_user_id'] ?? null;
+        $user->out_of_office_from = $validated['out_of_office_from'] ?? null;
+        $user->out_of_office_to = $validated['out_of_office_to'] ?? null;
+
         // Save the updated user
         $user->save();
         

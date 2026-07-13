@@ -458,6 +458,39 @@
                             @if(!in_array($module ?? '', ['dgis', 'dg']))
                             <div id="content-create" class="main-tab-content active p-6">
 
+                                {{-- ── SLTR: External / In-process tracking scope ──────────────── --}}
+                                @if(($module ?? '') === 'sltr')
+                                <div id="sltr-scope-toggle" class="rounded-lg border shadow-sm p-4 mb-6 overflow-hidden transition-all duration-300 border-green-200 bg-gradient-to-br from-green-50 via-emerald-50 to-white">
+                                    <div id="sltr-scope-accent-bar" class="h-1 -mx-4 -mt-4 mb-4 bg-gradient-to-r from-green-600 via-emerald-500 to-green-400 transition-all duration-300"></div>
+                                    <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                                        <div class="flex items-center gap-3 shrink-0">
+                                            <div id="sltr-scope-icon-wrap" class="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center transition-colors">
+                                                <i id="sltr-scope-icon" data-lucide="route" class="h-5 w-5 text-green-600"></i>
+                                            </div>
+                                            <div>
+                                                <label for="sltr-tracking-scope" class="block text-sm font-semibold text-gray-800">Tracking Scope</label>
+                                                <p class="text-xs text-gray-500">Where is this file headed?</p>
+                                            </div>
+                                        </div>
+
+                                        <select id="sltr-tracking-scope" onchange="sltrSetScope(this.value)"
+                                            class="w-full sm:w-52 px-3 py-2 border rounded-md shadow-sm font-medium focus:outline-none focus:ring-2 transition-colors border-green-400 bg-green-50 text-green-800 focus:ring-green-500 focus:border-green-500">
+                                            <option value="External" selected>External</option>
+                                            <option value="Internal">In-process</option>
+                                        </select>
+
+                                        <p id="sltr-external-pill" class="flex items-center gap-1.5 text-xs text-green-700 sm:ml-1">
+                                            <i data-lucide="info" class="h-3.5 w-3.5 text-green-500 shrink-0"></i>
+                                            Standard workflow · file logged out to a destination department
+                                        </p>
+                                        <p id="sltr-internal-pill" class="hidden flex items-center gap-1.5 text-xs text-indigo-700 sm:ml-1">
+                                            <i data-lucide="info" class="h-3.5 w-3.5 text-indigo-500 shrink-0"></i>
+                                            Internal SLTR movement · file routed to an SLTR section
+                                        </p>
+                                    </div>
+                                </div>
+                                @endif
+
                                 {{-- ===== DIGITAL REQUEST: Steps Illustration ===== --}}
                                 @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
 
@@ -631,29 +664,12 @@
                                                                 <i data-lucide="search" class="h-4 w-4"></i>
                                                             </button>
                                                         </div>
-                                                        @if($lockFileSelector)
-                                                        <div class="flex items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
-                                                            <i data-lucide="info" class="h-4 w-4 text-indigo-500 shrink-0 mt-0.5"></i>
-                                                            <p class="text-xs text-indigo-700">Files are logged through
-                                                                <a href="{{ route('create-file-tracker.quick-search') }}" class="font-semibold underline hover:text-indigo-900">Quick Search</a>
-                                                                — the smart selector is disabled here. Search a file in Quick Search and click <span class="font-semibold">Log File</span> to load it.</p>
-                                                        </div>
-                                                        {{-- In-transit override: lets the user re-enable the smart file
-                                                             selector to manually pick a file that is already out (in
-                                                             transit) without going back through Quick Search. --}}
-                                                        <label for="fileno-selector-override"
-                                                            class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 cursor-pointer">
-                                                            <input type="checkbox" id="fileno-selector-override"
-                                                                class="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
-                                                            <span class="text-xs text-amber-700">Override for in-transit file —
-                                                                enable the file number selector.</span>
-                                                        </label>
-                                                        @else
+                                                        @unless($lockFileSelector)
                                                         <p class="text-xs text-gray-500">Use the smart file number selector
                                                             <i data-lucide="search" class="h-3 w-3 inline"></i> to search
                                                             and select
                                                         </p>
-                                                        @endif
+                                                        @endunless
                                                         <p id="file-indexing-status" class="hidden text-xs font-medium"></p>
                                                     </div>
                                                     <div class="space-y-2">
@@ -666,16 +682,6 @@
                                                         <input type="hidden" id="tracking-id-real">
                                                         <p class="text-xs text-gray-500">Auto-fetched from File Indexing
                                                             after selecting a file number</p>
-                                                        {{-- Temporary file toggle — appends the TMP code to the Tracking ID
-                                                             so the temporary file is tracked as a standalone file. --}}
-                                                        <label for="is-temp-file"
-                                                            class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 cursor-pointer">
-                                                            <input type="checkbox" id="is-temp-file"
-                                                                class="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
-                                                            <span class="text-xs text-amber-700">Is Temporary File —
-                                                                appends the <span class="font-mono font-semibold">TMP</span> code to the
-                                                                Tracking ID.</span>
-                                                        </label>
                                                     </div>
                                                     <div class="space-y-2">
                                                         <label for="registry-code"
@@ -691,6 +697,40 @@
                                                     </div>
                                                 </div>
 
+                                                {{-- File No / Tracking ID notices — kept in one shared row so the three
+                                                     columns above stay the same height instead of File No's stacked
+                                                     boxes pushing everything below it out of alignment. --}}
+                                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
+                                                    @if($lockFileSelector)
+                                                    <div class="flex items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
+                                                        <i data-lucide="info" class="h-4 w-4 text-indigo-500 shrink-0 mt-0.5"></i>
+                                                        <p class="text-xs text-indigo-700">Files are logged through
+                                                            <a href="{{ route('create-file-tracker.quick-search') }}" class="font-semibold underline hover:text-indigo-900">Quick Search</a>
+                                                            — the smart selector is disabled here. Search a file in Quick Search and click <span class="font-semibold">Log File</span> to load it.</p>
+                                                    </div>
+                                                    {{-- In-transit override: lets the user re-enable the smart file
+                                                         selector to manually pick a file that is already out (in
+                                                         transit) without going back through Quick Search. --}}
+                                                    <label for="fileno-selector-override"
+                                                        class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 cursor-pointer">
+                                                        <input type="checkbox" id="fileno-selector-override"
+                                                            class="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
+                                                        <span class="text-xs text-amber-700">Override for in-transit file —
+                                                            enable the file number selector.</span>
+                                                    </label>
+                                                    @endif
+                                                    {{-- Temporary file toggle — appends the TMP code to the Tracking ID
+                                                         so the temporary file is tracked as a standalone file. --}}
+                                                    <label for="is-temp-file"
+                                                        class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 cursor-pointer">
+                                                        <input type="checkbox" id="is-temp-file"
+                                                            class="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
+                                                        <span class="text-xs text-amber-700">Is Temporary File —
+                                                            appends the <span class="font-mono font-semibold">TMP</span> code to the
+                                                            Tracking ID.</span>
+                                                    </label>
+                                                </div>
+
                                                 {{-- Logged-out warning — shown by JS when the selected file is already logged out --}}
                                                 <div id="file-logout-warning" class="hidden flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
                                                     <i data-lucide="alert-triangle" class="h-5 w-5 text-amber-500 shrink-0 mt-0.5"></i>
@@ -703,6 +743,21 @@
                                                         <i data-lucide="x" class="h-4 w-4"></i>
                                                     </button>
                                                 </div>
+
+                                                @if(false) {{-- Related Files panel hidden for now (mirrors Tracking Sheet / File Log Table) --}}
+                                                {{-- Related files (parcel-update / merger lineage) — shown by JS when the
+                                                     selected file belongs to a Subdivision / Merger / Change of Purpose /
+                                                     Extension / Separation group. Lets the clerk see every related file
+                                                     (e.g. all source files that fed a merger) at a glance. --}}
+                                                <div id="related-files-panel" class="hidden rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3">
+                                                    <div class="flex items-center gap-2 mb-1">
+                                                        <i data-lucide="git-merge" class="h-4 w-4 text-indigo-500 shrink-0"></i>
+                                                        <p id="related-files-title" class="text-sm font-semibold text-indigo-800">Related Files</p>
+                                                    </div>
+                                                    <p id="related-files-subtitle" class="text-xs text-indigo-600 mb-2">This file is part of a parcel-update lineage.</p>
+                                                    <ul id="related-files-list" class="divide-y divide-indigo-100"></ul>
+                                                </div>
+                                                @endif
 
                                                 <div class="space-y-2">
                                                     <label for="file-name"
@@ -745,14 +800,66 @@
                                                     </div>
                                                 </div>
 
-                                                <div class="space-y-2">
-                                                    <label for="num-pages"
-                                                        class="block text-sm font-medium text-gray-700">Number of Pages <span class="text-red-500">*</span></label>
-                                                    <input type="number" id="num-pages" name="num_pages" min="1" max="99999" required
-                                                        placeholder="Enter total pages…"
-                                                        class="block w-1/2 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                                    <p id="num-pages-hint" class="text-xs text-gray-500">Count the total pages in the physical file before logging out.</p>
-                                                    <p id="num-pages-error" class="hidden text-xs text-red-600">Please enter a valid number of pages (1–99,999).</p>
+                                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    <!-- Request Purpose -->
+                                                    <div class="space-y-2">
+                                                        <label for="request-purpose"
+                                                            class="block text-sm font-medium text-gray-700">Request Purpose <span class="text-red-500">*</span></label>
+                                                        <select id="request-purpose" name="request_purpose_id" required
+                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                            <option value="">Select the reason this file is being requested</option>
+                                                            @isset($requestPurposes)
+                                                                @foreach($requestPurposes as $purpose)
+                                                                    <option value="{{ $purpose->id }}" data-turnaround-days="{{ $purpose->turnaround_days }}">{{ $purpose->name }}</option>
+                                                                @endforeach
+                                                            @endisset
+                                                            <option value="in_transit">In-Transit</option>
+                                                            <option value="other">Other</option>
+                                                        </select>
+                                                        <p class="text-xs text-gray-500">Drives the file's expected turnaround (timeline) and its Green/Amber/Red status. "In-Transit" skips the Timeline/Expected Return Date requirement.</p>
+                                                        <div id="request-purpose-other-wrap" class="hidden">
+                                                            <label for="request-purpose-other" class="sr-only">Specify Purpose</label>
+                                                            <input type="text" id="request-purpose-other" name="request_purpose_other"
+                                                                placeholder="Specify the reason this file is being requested"
+                                                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Timeline (Days) -->
+                                                    <div class="space-y-2" id="request-timeline-days-wrap">
+                                                        <label for="request-timeline-days"
+                                                            class="block text-sm font-medium text-gray-700">Timeline (Days)</label>
+                                                        <input type="number" id="request-timeline-days" min="0" max="365"
+                                                            placeholder="e.g. 5"
+                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                        <p class="text-xs text-gray-500">How many days should this file be with the requesting office before it's due back? Sets the Expected Return Date below.</p>
+                                                        <div class="flex items-center gap-2 flex-wrap">
+                                                            <p id="request-deadline-days" class="hidden text-xs font-medium text-gray-600"></p>
+                                                            <p id="request-timeline-preview" class="hidden inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium"></p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    <!-- Expected Return Date -->
+                                                    <div class="space-y-2" id="request-deadline-wrap">
+                                                        <label for="request-deadline"
+                                                            class="block text-sm font-medium text-gray-700">Expected Return Date <span class="text-red-500">*</span></label>
+                                                        <input type="date" id="request-deadline" name="deadline" disabled
+                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 text-gray-500 cursor-not-allowed">
+                                                        <p class="text-xs text-gray-500">Auto-calculated from the Request Purpose or Timeline (Days) above — not manually editable.</p>
+                                                    </div>
+
+                                                    <!-- Number of Pages -->
+                                                    <div class="space-y-2">
+                                                        <label for="num-pages"
+                                                            class="block text-sm font-medium text-gray-700">Number of Pages <span class="text-red-500">*</span></label>
+                                                        <input type="number" id="num-pages" name="num_pages" min="1" max="99999" required
+                                                            placeholder="Enter total pages…"
+                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                        <p id="num-pages-hint" class="text-xs text-gray-500">Count the total pages in the physical file before logging out.</p>
+                                                        <p id="num-pages-error" class="hidden text-xs text-red-600">Please enter a valid number of pages (1–99,999).</p>
+                                                    </div>
                                                 </div>
 
                                                 <!-- Notes/Remarks Field -->
@@ -960,7 +1067,7 @@
                                                     <div class="space-y-2">
                                                         <label for="current-office"
                                                             class="block text-sm font-medium text-gray-700">Destination
-                                                            Office (Departments) *</label>
+                                                            Office (@if(($module ?? '') === 'sltr') Units @else Departments @endif) *</label>
                                                         @php
                                                             $isDigitalRequestModule = in_array(strtolower($module ?? ''), ['digital_request','digital-request']);
                                                         @endphp
@@ -978,6 +1085,15 @@
                                                             <p class="text-xs text-green-600">Auto-set to your department</p>
                                                         @else
                                                             <p class="text-xs text-gray-500">Select the destination department/office</p>
+                                                        @endif
+                                                        @if(($module ?? '') === 'sltr')
+                                                        {{-- Internal scope: shown when "Other" is picked as the internal SLTR section --}}
+                                                        <div id="sltr-internal-other-wrapper" class="hidden space-y-1">
+                                                            <input type="text" id="sltr-internal-other-name"
+                                                                placeholder="Specify the destination…"
+                                                                class="block w-full px-3 py-2 border border-indigo-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                                                            <p class="text-xs text-indigo-600">Specify where this file is going within SLTR.</p>
+                                                        </div>
                                                         @endif
                                                     </div>
                                                     @if(($module ?? '') === 'kangis')
@@ -1854,6 +1970,12 @@
                                                 File Log Table
                                             </h3>
                                             <p class="text-sm text-gray-600 mt-1">All file trackers with handler assignment status</p>
+                                            <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                                                <span class="font-medium text-gray-600">Status Indicators:</span>
+                                                <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-green-500"></span>Green — still within timeline</span>
+                                                <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-amber-500"></span>Amber — about to timeout</span>
+                                                <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-red-500"></span>Red — overdue</span>
+                                            </div>
                                         </div>
                                         <div class="flex items-center gap-4">
                                             <div class="text-sm text-gray-500">

@@ -16,9 +16,18 @@ class MissingFileController extends Controller
     {
         $module = $request->get('url', '');
 
-        $missingFiles = MissingFile::orderByDesc('id')->limit(200)->get();
+        $perPage = 25;
+        $paginator = MissingFile::orderByDesc('id')->paginate($perPage);
 
-        return view('missing_files.index', compact('module', 'missingFiles'));
+        $missingFiles = $paginator->items();
+        $pagination = [
+            'current_page' => $paginator->currentPage(),
+            'last_page'    => $paginator->lastPage(),
+            'total'        => $paginator->total(),
+            'per_page'     => $paginator->perPage(),
+        ];
+
+        return view('missing_files.index', compact('module', 'missingFiles', 'pagination'));
     }
 
     /**
@@ -40,11 +49,20 @@ class MissingFileController extends Controller
             });
         }
 
-        $records = $query->orderByDesc('id')->limit(500)->get();
+        $perPage = (int) $request->get('per_page', 25);
+        $perPage = $perPage > 0 && $perPage <= 200 ? $perPage : 25;
+
+        $paginator = $query->orderByDesc('id')->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data'    => $records,
+            'data'    => $paginator->items(),
+            'pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page'    => $paginator->lastPage(),
+                'total'        => $paginator->total(),
+                'per_page'     => $paginator->perPage(),
+            ],
         ]);
     }
 

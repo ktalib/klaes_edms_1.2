@@ -59,6 +59,20 @@
                 lastMdcAutoDeactivateValue: {{ json_encode($lastMdcAutoDeactivateInitial) }},
                 pcAccessValue: {{ json_encode((bool) old('is_pc_access', $user->is_pc_access ?? 0)) }},
                 lastMdcPcAccessValue: {{ json_encode((bool) old('is_pc_access', $user->is_pc_access ?? 0)) }},
+                leaveStartDate: {{ json_encode(old('leave_start_date', optional($user->leave_start_date)->format('Y-m-d'))) }},
+                leaveEndDate: {{ json_encode(old('leave_end_date', optional($user->leave_end_date)->format('Y-m-d'))) }},
+
+                get leaveDurationDays() {
+                    if (!this.leaveStartDate || !this.leaveEndDate) {
+                        return null;
+                    }
+                    const start = new Date(this.leaveStartDate);
+                    const end = new Date(this.leaveEndDate);
+                    if (isNaN(start) || isNaN(end) || end < start) {
+                        return null;
+                    }
+                    return Math.round((end - start) / 86400000) + 1;
+                },
 
                 init() {
                     this.$nextTick(() => {
@@ -487,6 +501,78 @@
                                             <span class="text-sm font-medium text-gray-700 leading-5">{{ __('User has PC/computer access') }}</span>
                                         </div>
                                         <p class="mt-1 text-xs text-gray-500">{{ __('Toggle OFF for staff requiring manual attendance.') }}</p>
+                                    </div>
+                                </div>
+
+                                {{-- Holiday/Leave & Deputy Redirection (MLPP staff) --}}
+                                <div class="mb-4 p-4 rounded-lg border border-amber-200 bg-amber-50">
+                                    <h5 class="text-sm font-semibold text-amber-800 mb-1">
+                                        <i class="fas fa-umbrella-beach mr-1"></i>{{ __('Holiday/Leave & Deputy Redirection') }}
+                                    </h5>
+                                    <p class="text-xs text-amber-700 mb-3">{{ __('Applicable to MLPP staff — record leave status and who should receive their file/task redirects while away.') }}</p>
+
+                                    <div class="mb-4">
+                                        {{ Form::label('is_on_leave', __('Currently On Leave/Holiday'), ['class' => 'mb-1 block text-sm font-medium text-gray-700']) }}
+                                        <div class="flex items-start space-x-3">
+                                            {{ Form::checkbox('is_on_leave', 1, old('is_on_leave', $user->is_on_leave ?? false), [
+                                                'class' => 'h-4 w-4 mt-1 rounded border-gray-300 text-amber-600 focus:ring-amber-500'
+                                            ]) }}
+                                            <span class="text-sm text-gray-700 leading-5">{{ __('Mark this staff member as currently on leave/holiday') }}</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="grid gap-4 md:grid-cols-2">
+                                        <div>
+                                            {{ Form::label('leave_start_date', __('Leave Start Date'), ['class' => 'mb-1 block text-sm font-medium text-gray-700']) }}
+                                            {{ Form::date('leave_start_date', old('leave_start_date', optional($user->leave_start_date)->format('Y-m-d')), [
+                                                'class' => 'w-full rounded-md border border-gray-300 p-2 text-sm',
+                                                'x-model' => 'leaveStartDate'
+                                            ]) }}
+                                        </div>
+                                        <div>
+                                            {{ Form::label('leave_end_date', __('Leave End Date'), ['class' => 'mb-1 block text-sm font-medium text-gray-700']) }}
+                                            {{ Form::date('leave_end_date', old('leave_end_date', optional($user->leave_end_date)->format('Y-m-d')), [
+                                                'class' => 'w-full rounded-md border border-gray-300 p-2 text-sm',
+                                                'x-model' => 'leaveEndDate'
+                                            ]) }}
+                                        </div>
+                                    </div>
+                                    <div class="mb-4 mt-1 text-xs font-medium text-amber-700" x-show="leaveDurationDays !== null" x-cloak>
+                                        <i class="fas fa-calendar-day mr-1"></i>
+                                        <span x-text="leaveDurationDays"></span> <span x-text="leaveDurationDays === 1 ? 'day' : 'days'"></span> {{ __('of leave') }}
+                                    </div>
+
+                                    <div class="grid gap-4 md:grid-cols-2">
+                                        <div>
+                                            {{ Form::label('deputy_user_id', __('Deputy (Redirect To)'), ['class' => 'mb-1 block text-sm font-medium text-gray-700']) }}
+                                            {{ Form::select('deputy_user_id', $deputyOptions ?? [], old('deputy_user_id', $user->deputy_user_id ?? null), [
+                                                'class' => 'w-full rounded-md border border-gray-300 p-2 text-sm bg-white',
+                                                'placeholder' => __('Select deputy')
+                                            ]) }}
+                                            <p class="mt-1 text-xs text-gray-500">{{ __('Colleague who receives this user\'s file/task redirects while on leave.') }}</p>
+                                        </div>
+                                        <div>
+                                            {{ Form::label('leave_reason', __('Leave Reason'), ['class' => 'mb-1 block text-sm font-medium text-gray-700']) }}
+                                            {{ Form::text('leave_reason', old('leave_reason', $user->leave_reason ?? null), [
+                                                'class' => 'w-full rounded-md border border-gray-300 p-2 text-sm',
+                                                'placeholder' => __('e.g. Annual Leave, Sick Leave, Study Leave')
+                                            ]) }}
+                                        </div>
+                                    </div>
+
+                                    <div class="grid gap-4 md:grid-cols-2 mt-4">
+                                        <div>
+                                            {{ Form::label('out_of_office_from', __('Out of Office Date From'), ['class' => 'mb-1 block text-sm font-medium text-gray-700']) }}
+                                            {{ Form::date('out_of_office_from', old('out_of_office_from', optional($user->out_of_office_from)->format('Y-m-d')), [
+                                                'class' => 'w-full rounded-md border border-gray-300 p-2 text-sm'
+                                            ]) }}
+                                        </div>
+                                        <div>
+                                            {{ Form::label('out_of_office_to', __('Out of Office Date To'), ['class' => 'mb-1 block text-sm font-medium text-gray-700']) }}
+                                            {{ Form::date('out_of_office_to', old('out_of_office_to', optional($user->out_of_office_to)->format('Y-m-d')), [
+                                                'class' => 'w-full rounded-md border border-gray-300 p-2 text-sm'
+                                            ]) }}
+                                        </div>
                                     </div>
                                 </div>
 

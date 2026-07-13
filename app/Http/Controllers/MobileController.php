@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Office;
+use App\Models\RequestPurpose;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -94,7 +95,12 @@ class MobileController extends Controller
         // hierarchy) who may raise prioritised File/Blind Requests from File Search.
         $isOfs = $user->isOfs();
 
-        return view('mobile.dashboard', compact('offices', 'officers', 'registries', 'departments', 'departmentIds', 'user', 'isScbMonitor', 'isOfs'));
+        // Request Purpose + its default turnaround — captured on the OFS "Send File
+        // Search Request" form so it can carry all the way through to Create File
+        // Tracker once the file is logged, same as the web Quick Search flow.
+        $requestPurposes = RequestPurpose::active()->orderBy('name')->get(['id', 'name', 'turnaround_days']);
+
+        return view('mobile.dashboard', compact('offices', 'officers', 'registries', 'departments', 'departmentIds', 'user', 'isScbMonitor', 'isOfs', 'requestPurposes'));
     }
 
     /**

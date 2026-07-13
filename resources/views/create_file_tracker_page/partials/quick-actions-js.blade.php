@@ -230,8 +230,10 @@
                     const numPagesValid = !isNaN(numPagesInt) && numPagesInt >= 1 && numPagesInt <= 99999;
                     const btn = $('#modal-update-status-btn');
                     const hasFileInfo = !$('#modal-file-preview').hasClass('hidden');
+                    const delayReasonRequired = !$('#modal-delay-reason-section').hasClass('hidden');
+                    const delayReasonValid = !delayReasonRequired || ($('#modal-delay-reason').val() || '').trim().length > 0;
 
-                    if (lookupValue && status && office && hasFileInfo && numPagesValid) {
+                    if (lookupValue && status && office && hasFileInfo && numPagesValid && delayReasonValid) {
                         btn.prop('disabled', false);
                     } else {
                         btn.prop('disabled', true);
@@ -267,6 +269,8 @@
                                 $("#modal-page-count-section").addClass("hidden");
                                 $('#modal-original-pages-notice, #modal-page-discrepancy').addClass('hidden');
                                 $('#modal-num-pages').val('').removeAttr('data-original-pages');
+                                $('#modal-delay-reason-section, #modal-delay-reason-notice, #modal-delay-reason-error').addClass('hidden');
+                                $('#modal-delay-reason').prop('disabled', true).removeAttr('required').val('');
                         checkStatusUpdateModalForm();
                         return;
                     }
@@ -319,6 +323,27 @@
                                 $('#modal-update-status-btn').data('database-id', data.id);
                                 $('#modal-update-status-btn').data('table', data.table || 'file_tracker');
 
+                                // Reason for Delay: required only when the file is Amber (due soon)
+                                // or Red (overdue) at the moment it's being logged back to Registry.
+                                const timelineStatus = data.timeline_status || null;
+                                const $delaySection = $('#modal-delay-reason-section');
+                                const $delayField = $('#modal-delay-reason');
+                                const $delayNotice = $('#modal-delay-reason-notice');
+                                const $delayNoticeText = $('#modal-delay-reason-notice-text');
+                                if (timelineStatus === 'amber' || timelineStatus === 'red') {
+                                    $delaySection.removeClass('hidden');
+                                    $delayField.prop('disabled', false).attr('required', true);
+                                    $delayNoticeText.text(timelineStatus === 'red'
+                                        ? 'This file is past its expected timeline. Please state the reason for the delay.'
+                                        : 'This file is close to its expected timeline. Please state the reason for the delay, if any.');
+                                    $delayNotice.removeClass('hidden');
+                                } else {
+                                    $delaySection.addClass('hidden');
+                                    $delayField.prop('disabled', true).removeAttr('required').val('');
+                                    $('#modal-delay-reason-error').addClass('hidden');
+                                    $delayNotice.addClass('hidden');
+                                }
+
                                 // Original page count recorded when the file was logged out.
                                 const $numInput = $('#modal-num-pages');
                                 const originalPages = data.num_pages;
@@ -353,6 +378,8 @@
                                 $('#preview-file-number, #preview-location, #preview-handler').text('N/A');
                                 $("#modal-status-update, #modal-status-notes, #modal-num-pages, #modal-registry-office").prop("disabled", true);
                                 $("#modal-page-count-section").addClass("hidden");
+                                $('#modal-delay-reason-section, #modal-delay-reason-notice').addClass('hidden');
+                                $('#modal-delay-reason').prop('disabled', true).removeAttr('required').val('');
                                 $('#modal-registry-office').val('');
                             }
                             checkStatusUpdateModalForm();
@@ -362,6 +389,8 @@
                             $('#preview-file-number, #preview-location, #preview-handler').text('N/A');
                                 $("#modal-status-update, #modal-status-notes, #modal-num-pages, #modal-registry-office").prop("disabled", true);
                                 $("#modal-page-count-section").addClass("hidden");
+                                $('#modal-delay-reason-section, #modal-delay-reason-notice').addClass('hidden');
+                                $('#modal-delay-reason').prop('disabled', true).removeAttr('required').val('');
                             $('#modal-registry-office').val('');
                             checkStatusUpdateModalForm();
                         }
@@ -385,6 +414,13 @@
 
                 $('#modal-num-pages').on('input', function () {
                     updatePageDiscrepancyNotice();
+                    checkStatusUpdateModalForm();
+                });
+
+                $('#modal-delay-reason').on('input', function () {
+                    if ($(this).val().trim()) {
+                        $('#modal-delay-reason-error').addClass('hidden');
+                    }
                     checkStatusUpdateModalForm();
                 });
 
@@ -424,6 +460,17 @@
                         return;
                     }
 
+                    const delayReasonRequired = !$('#modal-delay-reason-section').hasClass('hidden');
+                    const delayReason = ($('#modal-delay-reason').val() || '').trim();
+                    if (delayReasonRequired && !delayReason) {
+                        $('#modal-delay-reason-error').removeClass('hidden');
+                        if (typeof showToast === 'function') {
+                            showToast('Please state the reason for the delay before logging this file back.', 'error');
+                        }
+                        return;
+                    }
+                    $('#modal-delay-reason-error').addClass('hidden');
+
                     btn.prop('disabled', true).html('<i data-lucide="loader-2" class="h-4 w-4 mr-2 animate-spin"></i>Logging Back...');
                     lucide.createIcons();
 
@@ -436,6 +483,7 @@
                             registry_office_name: registryOfficeName,
                             notes: notes,
                             num_pages: numPagesInt,
+                            delay_reason: delayReasonRequired ? delayReason : null,
                             table: table,
                             _token: $('meta[name="csrf-token"]').attr('content')
                         },
@@ -463,6 +511,8 @@
                                 $('#modal-num-pages').val('').removeAttr('data-original-pages');
                                 $('#modal-original-pages-notice, #modal-page-discrepancy').addClass('hidden');
                                 $('#modal-page-count-section').addClass('hidden');
+                                $('#modal-delay-reason').val('').prop('disabled', true).removeAttr('required');
+                                $('#modal-delay-reason-section, #modal-delay-reason-notice, #modal-delay-reason-error').addClass('hidden');
                                 $('#modal-file-preview').addClass('hidden');
                                 $('#modal-status-update, #modal-status-notes, #modal-num-pages, #modal-registry-office').prop('disabled', true);
                                 checkStatusUpdateModalForm();
@@ -2181,6 +2231,18 @@
                                 <p class="text-xs text-amber-800" id="modal-page-discrepancy-text"></p>
                             </div>
                             <p id="modal-num-pages-error" class="hidden text-xs text-red-600">Please enter a valid number of pages (1–99,999).</p>
+                        </div>
+
+                        {{-- Reason for Delay: only shown/required when the file's timeline status
+                             is Amber (due soon) or Red (overdue) at the moment it's logged back. --}}
+                        <div id="modal-delay-reason-section" class="hidden space-y-2">
+                            <label for="modal-delay-reason" class="block text-sm font-medium text-gray-700">Reason for Delay <span class="text-red-500">*</span></label>
+                            <div id="modal-delay-reason-notice" class="hidden flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 mb-1">
+                                <i data-lucide="alert-triangle" class="h-4 w-4 text-amber-500 shrink-0 mt-0.5"></i>
+                                <p class="text-xs text-amber-800" id="modal-delay-reason-notice-text"></p>
+                            </div>
+                            <textarea id="modal-delay-reason" rows="2" placeholder="Explain why this file is being returned late / close to its deadline…" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500" disabled></textarea>
+                            <p id="modal-delay-reason-error" class="hidden text-xs text-red-600">Please state the reason for the delay.</p>
                         </div>
 
                         <div class="space-y-2">

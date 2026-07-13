@@ -708,6 +708,7 @@ const REGISTRY_THEME = {
   'ST Registry':            '#2563eb', // blue    (ST)
   'Registry 1 - Cadastral': '#8B4513', // brown   (Cadastral)
   'Registry 2 - Cadastral': '#8B4513',
+  'DCIV Registry':          '#065f46', // green   (DCIV)
 };
 // Requester cascade (mirrors Quick Search): Department → Office → Officer.
 @php
@@ -726,6 +727,8 @@ const REQ_DEPARTMENTS = @json($departments ?? []);
 const REQ_OFFICES     = @json($reqOffices);
 const REQ_OFFICERS    = @json($reqOfficers);
 const REQ_DEPT_NAME_TO_ID = @json($reqDeptNameToId);
+// Request Purpose lookup (id, name, turnaround_days) — mirrors Quick Search.
+const REQUEST_PURPOSES = @json($requestPurposes ?? []);
 const FS_DEPT_OTHER   = '__DEPT_OTHER__';
 const FS_OFFICE_OTHER = '__OFFICE_OTHER__';
 
@@ -1304,14 +1307,20 @@ async function searchFile() {
         ? `<p style="margin-top:8px;font-size:13px;font-style:italic;color:#ef4444;line-height:1.6;">The SCBs would have to do a Physical Check to ascertain the availability of the File as some files were missing even from the beginning of the Digitization Exercise</p>`
         : '';
 
+      // A file under DCIV investigation (own registry = DCIV Registry, or flagged
+      // dciv_status=1) is re-directed to the DCIV Director rather than sent to the
+      // SCB. Derived from the server-computed next_action label (see
+      // FileLocationResolver::actionMetaFor()) instead of re-deriving the rule here.
+      const isDciv = /DCIV Director/.test(d.next_action || '');
+
       // OFS send block is split into two parts so the File Digital Library can sit
       // between the Registry (Origin) selector and the Send button.
       let ofsRegistry = '', ofsButton = '';
-      if (IS_OFS && d.can_send_fr) {
+      if (IS_OFS && d.can_send_fr && !isDciv) {
         const isMissing = d.is_missing_file;
         const label = isMissing
           ? (d.is_blind ? 'Send Blind Request to the Original Registry' : 'Send File Search Request to the Original Registry')
-          : (d.is_blind ? 'Send Blind Request to SCB Monitor' : 'Send File Search Request to SCB Monitor');
+          : (d.next_action || (d.is_blind ? 'Send Blind Request to SCB Monitor' : 'Send File Search Request to SCB Monitor'));
         // Button colour matches the status label (e.g. In Pool Office = sky, In Archive = green).
         const grad  = `linear-gradient(135deg, ${meta.color}, ${shade(meta.color, 0.18)})`;
         // Origin Registry selector (mirrors Create File Tracker). The chosen registry's
@@ -1358,6 +1367,27 @@ async function searchFile() {
               <label style="${fieldLblCss}"><i class="fas fa-user-tie" style="margin-right:5px;color:var(--primary);"></i>Requester Officer <span style="color:#ef4444;">*</span></label>
               <input id="fsOfficer" type="text" readonly value="${esc(CURRENT_USER.name)}" title="The logged-in officer raising this request" style="${fieldSelCss}opacity:.85;cursor:not-allowed;">
             </div>
+          </div>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:12px;">
+            <div>
+              <label style="${fieldLblCss}"><i class="fas fa-clipboard-list" style="margin-right:5px;color:var(--primary);"></i>Request Purpose <span style="color:#ef4444;">*</span></label>
+              <select id="fsPurpose" onchange="onFsPurposeChange()" style="${fieldSelCss}">
+                <option value="">Select the reason this file is being requested</option>
+                ${REQUEST_PURPOSES.map(p => `<option value="${p.id}" data-turnaround-days="${p.turnaround_days}">${esc(p.name)}</option>`).join('')}
+                <option value="in_transit">In-Transit</option>
+                <option value="other">Other</option>
+              </select>
+              <input id="fsPurposeOther" type="text" placeholder="Specify the reason this file is being requested *" style="${fieldInpCss}display:none;">
+            </div>
+            <div id="fsTimelineDaysWrap">
+              <label style="${fieldLblCss}"><i class="fas fa-hourglass-half" style="margin-right:5px;color:var(--primary);"></i>Timeline (Days)</label>
+              <input id="fsTimelineDays" type="number" min="0" max="365" placeholder="e.g. 5" oninput="onFsTimelineDaysInput()" style="${fieldSelCss}">
+            </div>
+            <div id="fsDeadlineWrap">
+              <label style="${fieldLblCss}"><i class="fas fa-calendar-check" style="margin-right:5px;color:var(--primary);"></i>Expected Return Date <span style="color:#ef4444;">*</span></label>
+              <input id="fsDeadline" type="date" oninput="onFsDeadlineInput()" disabled style="${fieldSelCss}opacity:.6;cursor:not-allowed;">
+              <div style="font-size:10px;color:var(--muted);margin-top:4px;">Auto-calculated from Request Purpose or Timeline (Days).</div>
+            </div>
           </div>`;
         // Send button is disabled until an origin Registry is chosen.
         ofsButton = `<button id="fsSendBtn" class="btn" disabled style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};opacity:.5;cursor:not-allowed;" onclick="sendFrFromSearch(this)"><i class="fas fa-paper-plane"></i> ${label}</button>`;
@@ -1386,6 +1416,14 @@ async function searchFile() {
         // }
         const subline = '';
         redirectSend = `<button class="btn" style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};" onclick="redirectFromSearch(this)"><i class="fas fa-user-tag"></i> Re-direct Request to ${esc(office)}</button>` + subline;
+      }
+
+      // A file under DCIV investigation is not blind-searched by the SCB — it is
+      // re-directed to the DCIV Director to resolve.
+      let dcivRedirectSend = '';
+      if (IS_OFS && d.can_send_fr && isDciv) {
+        const grad = 'linear-gradient(to right, #0b3d2e, #065f46, #0b3d2e)';
+        dcivRedirectSend = `<button class="btn" style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};" onclick="redirectDcivFromSearch(this)"><i class="fas fa-shield-halved"></i> Re-direct To DCIV Director (Land Department)</button>`;
       }
 
       const inTransitLookupId = String(d.file_number || d.file_title || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -1543,6 +1581,25 @@ async function searchFile() {
               </div>
               ${d.dciv_reason ? `<div style="font-size:11px;color:#9f1239;margin-top:6px;line-height:1.5;">${esc(d.dciv_reason)}</div>` : ''}
             </div>` : ''}
+            ${(() => {
+              const rf = d.dciv_related_files || [];
+              if (!rf.length) return '';
+              const item = f => `
+                <div style="font-size:11px;color:#065f46;">
+                  <span style="font-weight:700;background:#d1fae5;border:1px solid #a7f3d0;padding:2px 8px;border-radius:30px;white-space:nowrap;">${esc(f.related_file_number)}</span>
+                  ${f.related_file_title ? ` — ${esc(f.related_file_title)}` : ''}
+                </div>`;
+              const list = `<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;">${rf.map(item).join('')}</div>`;
+              return rf.length > 1
+                ? `<details style="margin-bottom:12px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:10px 12px;">
+                    <summary style="cursor:pointer;list-style:none;font-size:13px;font-weight:800;color:#047857;"><i class="fas fa-link" style="margin-right:5px;"></i>Linked Related Files (${rf.length})</summary>
+                    ${list}
+                  </details>`
+                : `<div style="margin-bottom:12px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:10px 12px;">
+                    <span style="font-size:13px;font-weight:800;color:#047857;"><i class="fas fa-link" style="margin-right:5px;"></i>Linked Related Files (${rf.length})</span>
+                    ${list}
+                  </div>`;
+            })()}
             ${d.duplicate_flag ? `
             <div style="margin-bottom:12px;background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <span style="font-size:13px;font-weight:800;color:${d.duplicate_flag.color};"><i class="fas fa-copy" style="margin-right:5px;"></i>${esc(d.duplicate_flag.label)}</span>
@@ -1554,6 +1611,7 @@ async function searchFile() {
             <div id="fsDigital" style="margin-top:12px;"></div>
             ${ofsButton}
             ${redirectSend}
+            ${dcivRedirectSend}
             ${physicalNote}
             ${frShortcut}
             
@@ -1627,12 +1685,22 @@ async function toggleMovementTimeline(fileNumber, detailsEl, originRegistry, rac
         const movementLogs = allLogs.filter(entry => !approvalPurposes.includes(String(entry.purpose || '').toLowerCase()));
         const approvalLogs = allLogs.filter(entry => approvalPurposes.includes(String(entry.purpose || '').toLowerCase()));
 
+        // Request Purpose / Timeline / Expected Return Date belong to the current
+        // tracker (one per tracking cycle), not the individual movement entry —
+        // applied to every row here, mirroring the desktop File Log Table.
+        const trackerMeta = {
+          requestPurposeName: res.data.request_purpose_name || '',
+          timelineStatus: res.data.timeline_status || null,
+          daysUntilDeadline: (res.data.days_until_deadline === null || res.data.days_until_deadline === undefined) ? null : Number(res.data.days_until_deadline),
+          expectedReturnDate: res.data.deadline || null,
+        };
+
         container.innerHTML = `
           <div style="margin-top:12px;font-size:13px;font-weight:700;color:var(--text);">Movement timeline</div>
           ${priorLogs.length ? `<div style="margin-top:8px;padding:10px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);font-size:12px;color:var(--muted);">Tracking cycles for this file.</div>` : ''}
           <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px;">
             ${inArchiveHomeRow}
-            ${movementLogs.length ? movementLogs.map((entry) => renderMovementRow(entry)).join('') : `<div style="padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);font-size:13px;color:var(--muted);">No physical movement entries found. Approval steps may still be present below.</div>`}
+            ${movementLogs.length ? movementLogs.map((entry) => renderMovementRow(entry, trackerMeta)).join('') : `<div style="padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);font-size:13px;color:var(--muted);">No physical movement entries found. Approval steps may still be present below.</div>`}
           </div>
           ${approvalLogs.length ? `
             <div style="margin-top:16px;font-size:13px;font-weight:700;color:var(--text);">Workflow approvals</div>
@@ -1735,7 +1803,41 @@ function resolveMovementStatus(entry) {
   }
 }
 
-function renderMovementRow(entry) {
+// Green/Amber/Red timeline label + colour for a tracker — mirrors
+// FileTracker::getTimelineStatusAttribute() / the desktop day-count badge.
+function formatTimelineMeta(meta) {
+  const byStatus = {
+    green: { color: '#166534', bg: '#d1fae5', border: '#a7f3d0' },
+    amber: { color: '#78350f', bg: '#fef9c3', border: '#fde68a' },
+    red:   { color: '#b91c1c', bg: '#fee2e2', border: '#fecaca' },
+  };
+  if (!meta || !meta.timelineStatus || !byStatus[meta.timelineStatus]) return null;
+
+  const days = meta.daysUntilDeadline;
+  let label;
+  if (days === null || days === undefined) {
+    label = { green: 'On Track', amber: 'Due Soon', red: 'Overdue' }[meta.timelineStatus];
+  } else if (days > 0) {
+    label = `${days} day${days === 1 ? '' : 's'} left`;
+  } else if (days === 0) {
+    label = 'Due today';
+  } else {
+    const abs = Math.abs(days);
+    label = `${abs} day${abs === 1 ? '' : 's'} overdue`;
+  }
+  return { label, ...byStatus[meta.timelineStatus] };
+}
+
+function formatExpectedReturnDate(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return esc(String(value).slice(0, 10));
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+
+function renderMovementRow(entry, trackerMeta) {
   const office = esc(entry.office_name || entry.office || entry.receiving_office_name || 'Unknown');
   const officer = esc(entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-');
   const status = resolveMovementStatus(entry);
@@ -1752,6 +1854,35 @@ function renderMovementRow(entry) {
       ? 'In transit'
       : '-';
   const notes = entry.notes ? `<div style="margin-top:8px;font-size:12px;color:var(--muted);">${esc(entry.notes)}</div>` : '';
+
+  // Request Purpose / Timeline / Expected Return Date (tracker-level, same for
+  // every row) and Delay Reason (per-entry) — Request Purpose always precedes
+  // Timeline, per the desktop File Log Table column order.
+  const timelineMeta = formatTimelineMeta(trackerMeta);
+  const requestPurposeName = trackerMeta && trackerMeta.requestPurposeName ? esc(trackerMeta.requestPurposeName) : '—';
+  const expectedReturnDate = formatExpectedReturnDate(trackerMeta && trackerMeta.expectedReturnDate);
+  const delayReason = entry.delay_reason ? esc(entry.delay_reason) : '—';
+  const requestMetaBlock = `
+        <div style="margin-top:10px;display:grid;gap:9px;">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px;">Request Purpose</div>
+            <div style="font-size:13px;color:var(--text);font-weight:600;">${requestPurposeName}</div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px;">Timeline</div>
+            <div style="font-size:13px;">${timelineMeta
+              ? `<span style="display:inline-block;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${timelineMeta.bg};color:${timelineMeta.color};border:1px solid ${timelineMeta.border};">${esc(timelineMeta.label)}</span>`
+              : `<span style="color:var(--muted);">—</span>`}</div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px;">Expected Return Date</div>
+            <div style="font-size:13px;color:var(--text);font-weight:600;">${expectedReturnDate}</div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px;">Delay Reason</div>
+            <div style="font-size:13px;color:var(--text);font-weight:600;">${delayReason}</div>
+          </div>
+        </div>`;
 
   return `
     <div style="position:relative;padding:0 0 14px 26px;margin-left:2px;">
@@ -1783,6 +1914,7 @@ function renderMovementRow(entry) {
             </div>
           </div>
         </div>
+        ${requestMetaBlock}
         ${notes}
       </div>
     </div>`;
@@ -2148,6 +2280,64 @@ function onFsOfficeChange() {
   }
 }
 
+// Request Purpose → Expected Return Date: pre-fill the date from the selected
+// purpose's default turnaround (mirrors Create File Tracker / Quick Search),
+// staying editable once the user touches the date field directly.
+let fsUserEditedDeadline = false;
+function onFsPurposeChange() {
+  const purposeSel = document.getElementById('fsPurpose');
+  const deadlineInput = document.getElementById('fsDeadline');
+  const purposeOther = document.getElementById('fsPurposeOther');
+  const timelineDaysInput = document.getElementById('fsTimelineDays');
+  if (!purposeSel || !deadlineInput) return;
+  const isOther = purposeSel.value === 'other';
+  if (purposeOther) {
+    purposeOther.style.display = isOther ? 'block' : 'none';
+    if (!isOther) purposeOther.value = '';
+  }
+
+  // "In-Transit" is a purely internal movement (no loan/return expected) —
+  // hide Timeline (Days) / Expected Return Date and clear any stale value
+  // instead of just skipping validation.
+  const isInTransit = purposeSel.value === 'in_transit';
+  const timelineDaysWrap = document.getElementById('fsTimelineDaysWrap');
+  const deadlineWrap = document.getElementById('fsDeadlineWrap');
+  if (timelineDaysWrap) timelineDaysWrap.style.display = isInTransit ? 'none' : '';
+  if (deadlineWrap) deadlineWrap.style.display = isInTransit ? 'none' : '';
+  if (isInTransit) {
+    if (timelineDaysInput) timelineDaysInput.value = '';
+    deadlineInput.value = '';
+    return;
+  }
+
+  const days = parseInt(purposeSel.selectedOptions[0]?.dataset.turnaroundDays || '', 10);
+  if (!isNaN(days)) {
+    if (timelineDaysInput) timelineDaysInput.value = days;
+    if (!fsUserEditedDeadline) {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+      deadlineInput.value = `${y}-${m}-${day}`;
+    }
+  }
+}
+function onFsDeadlineInput() {
+  fsUserEditedDeadline = true;
+}
+function onFsTimelineDaysInput() {
+  const timelineDaysInput = document.getElementById('fsTimelineDays');
+  const deadlineInput = document.getElementById('fsDeadline');
+  if (!timelineDaysInput || !deadlineInput) return;
+  const days = parseInt(timelineDaysInput.value, 10);
+  if (!isNaN(days) && days >= 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+    deadlineInput.value = `${y}-${m}-${day}`;
+    fsUserEditedDeadline = true;
+  }
+}
+
 async function sendFrFromSearch(btn) {
   const d = lastFileSearch;
   if (!d) return;
@@ -2183,10 +2373,38 @@ async function sendFrFromSearch(btn) {
   // Requester Officer is the logged-in user raising the request.
   const receivingOfficer = ((officerSel && officerSel.value.trim()) || CURRENT_USER.name || '').trim();
 
+  const purposeSel = document.getElementById('fsPurpose');
+  const purposeOther = document.getElementById('fsPurposeOther');
+  const deadlineInput = document.getElementById('fsDeadline');
+  const rawPurposeValue = purposeSel ? purposeSel.value : '';
+  const purposeIsOther = rawPurposeValue === 'other';
+  const purposeIsInTransit = rawPurposeValue === 'in_transit';
+  const requestPurposeId = (purposeIsOther || purposeIsInTransit) ? '' : rawPurposeValue;
+  const requestPurposeOther = purposeIsOther ? (purposeOther ? purposeOther.value.trim() : '') : (purposeIsInTransit ? 'In-Transit' : '');
+  const expectedReturnDate = deadlineInput ? deadlineInput.value : '';
+
   if (deptSel && !requesterDept)   { toast('Please select the requester department.', 'error'); (deptIsOther ? deptOther : deptSel).focus(); return; }
   if (officeIsOther && !requesterOffice) { toast('Please specify the requester office.', 'error'); officeOther.focus(); return; }
   if (officeSel && !requesterOffice) { toast('Please select the requester office.', 'error'); officeSel.focus(); return; }
   if (!receivingOfficer) { toast('Could not determine the requester officer (logged-in user).', 'error'); return; }
+  if (purposeSel && !rawPurposeValue) { toast('Please select the Request Purpose.', 'error'); purposeSel.focus(); return; }
+  if (purposeIsOther && !requestPurposeOther) { toast('Please specify the Request Purpose.', 'error'); purposeOther.focus(); return; }
+  // "In-Transit" is a purely internal movement (no loan/return expected), so
+  // Timeline (Days) and Expected Return Date are not required or validated.
+  const timelineDaysInput = document.getElementById('fsTimelineDays');
+  if (!purposeIsInTransit && timelineDaysInput && timelineDaysInput.value.trim() !== '') {
+    const timelineDaysNum = Number(timelineDaysInput.value);
+    if (!Number.isInteger(timelineDaysNum) || timelineDaysNum < 0 || timelineDaysNum > 365) {
+      toast('Timeline (Days) must be a whole number between 0 and 365.', 'error');
+      timelineDaysInput.focus();
+      return;
+    }
+  }
+  if (!purposeIsInTransit && deadlineInput && !expectedReturnDate) {
+    toast('Expected Return Date could not be calculated — select a Request Purpose or enter Timeline (Days).', 'error');
+    timelineDaysInput?.focus();
+    return;
+  }
   const original = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…';
   try {
@@ -2203,6 +2421,9 @@ async function sendFrFromSearch(btn) {
         requester_office:      requesterOffice || null,
         requester_office_code: requesterOfficeCode || null,
         receiving_officer:     receivingOfficer || null,
+        request_purpose_id:    requestPurposeId || null,
+        request_purpose_other: requestPurposeOther || null,
+        expected_return_date:  expectedReturnDate || null,
       }),
     });
     if (res.success) {
@@ -2257,6 +2478,32 @@ async function redirectFromSearch(btn) {
       btn.disabled = false; btn.innerHTML = original;
     } else {
       toast(res.message || 'Could not re-direct request', 'error');
+      btn.disabled = false; btn.innerHTML = original;
+    }
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+    btn.disabled = false; btn.innerHTML = original;
+  }
+}
+
+// OFS: re-direct a file under DCIV investigation straight to the DCIV Director
+// instead of raising a File Search Request to the SCB. Mirrors redirectFromSearch().
+async function redirectDcivFromSearch(btn) {
+  const d = lastFileSearch;
+  if (!d) return;
+  const original = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Re-directing…';
+  try {
+    const res = await api(`{{ route('create-file-tracker.quick-search.redirect-dciv-director') }}`, {
+      method: 'POST',
+      body: JSON.stringify({ file_number: d.file_number, file_title: d.file_title || null }),
+    });
+    if (res.success) {
+      toast(res.message || `Request ${res.request_no || ''} re-directed to DCIV Director`);
+      btn.outerHTML = `<div style="margin-top:12px;text-align:center;font-size:12px;font-weight:700;color:#10b981;"><i class="fas fa-check-circle"></i> Request ${esc(res.request_no || '')} re-directed to DCIV Director</div>`;
+      if (IS_OFS && document.getElementById('myReqContainer')) loadMyRequests();
+    } else {
+      toast(res.message || 'Could not re-direct to DCIV Director', 'error');
       btn.disabled = false; btn.innerHTML = original;
     }
   } catch(e) {
@@ -2506,6 +2753,29 @@ async function loadFileRequests() {
   }
 }
 
+// Collapsible "Request Details" block — Request Purpose, Timeline, Expected
+// Return Date, Delay Reason — tucked away by default so the inbox card stays
+// scannable; reuses the same timeline/date helpers as the File Search timeline.
+function frDetailsSection(fr) {
+  const purpose = fr.request_purpose_name ? esc(fr.request_purpose_name) : '—';
+  const timelineMeta = formatTimelineMeta({ timelineStatus: fr.timeline_status, daysUntilDeadline: fr.days_until_deadline });
+  const timelineHtml = timelineMeta
+    ? `<span style="display:inline-block;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${timelineMeta.bg};color:${timelineMeta.color};border:1px solid ${timelineMeta.border};">${esc(timelineMeta.label)}</span>`
+    : '<span style="color:var(--muted);">—</span>';
+  const expectedReturnDate = formatExpectedReturnDate(fr.expected_return_date);
+  const delayReason = fr.delay_reason ? esc(fr.delay_reason) : '—';
+  return `
+    <details style="margin-top:10px;">
+      <summary style="cursor:pointer;font-size:11.5px;font-weight:700;color:var(--primary);">Request Details</summary>
+      <div style="margin-top:8px;padding:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;gap:7px;">
+        <div><span style="font-size:10.5px;font-weight:700;color:var(--muted);">Request Purpose:</span> <span style="font-size:12px;color:var(--text);">${purpose}</span></div>
+        <div><span style="font-size:10.5px;font-weight:700;color:var(--muted);">Timeline:</span> ${timelineHtml}</div>
+        <div><span style="font-size:10.5px;font-weight:700;color:var(--muted);">Expected Return Date:</span> <span style="font-size:12px;color:var(--text);">${expectedReturnDate}</span></div>
+        <div><span style="font-size:10.5px;font-weight:700;color:var(--muted);">Delay Reason:</span> <span style="font-size:12px;color:var(--text);">${delayReason}</span></div>
+      </div>
+    </details>`;
+}
+
 // Compact "who is asking" block — the requester details selected in Quick Search.
 function frRequesterDetails(fr) {
   const rows = [
@@ -2545,6 +2815,7 @@ function renderFileRequests() {
           ) : ''}
           ${frRequesterDetails(fr)}
           ${fr.created_at ? `<div style="font-size:12px;color:var(--text);margin-top:6px;"><i class="fas fa-clock" style="margin-right:4px;color:var(--primary);"></i>Sent ${esc(fr.created_at)}</div>` : ''}
+          ${frDetailsSection(fr)}
           <div style="display:flex;gap:8px;margin-top:14px;align-items:stretch;">
             <button class="btn" style="flex:1;width:auto;min-width:0;padding:12px;font-size:13px;box-shadow:none;background:linear-gradient(135deg,#10b981,#059669);" onclick="respondFr(${fr.id}, 'found', this)"><i class="fas fa-check"></i> Found</button>
             <button class="btn ghost-btn" style="flex:1;width:auto;min-width:0;padding:12px;font-size:13px;box-shadow:none;" onclick="respondFr(${fr.id}, 'not_found', this)"><i class="fas fa-xmark"></i> Not&nbsp;Found</button>

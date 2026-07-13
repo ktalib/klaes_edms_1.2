@@ -121,7 +121,7 @@ class FileLocationResolver
 
         // ── 0. Manual override set from the File Quick Search interface ──
         if ($indexing && !empty($indexing->location_status_manual) && !empty($indexing->tracking_status)) {
-            $meta = $this->actionMetaFor($indexing->tracking_status);
+            $meta = $this->actionMetaFor($indexing->tracking_status, $this->indexingRegistry($indexing), $this->isDcivFile($indexing));
             return $this->result($fileNumber, $indexing->tracking_status, array_merge([
                 'current_location' => $indexing->current_location,
                 'file_tracker_id'  => $indexing->file_tracker_id,
@@ -146,7 +146,7 @@ class FileLocationResolver
                 'file_tracker_id'  => $tracker->id,
                 'tracker'          => $tracker,
                 'indexing'         => $indexing,
-            ], $this->actionMetaFor(self::STATUS_IN_ARCHIVE)));
+            ], $this->actionMetaFor(self::STATUS_IN_ARCHIVE, $registry, $this->isDcivFile($indexing))));
         }
 
         // ── 3. Not indexed at all -> Pending File (blind request) ──
@@ -180,7 +180,7 @@ class FileLocationResolver
                 'indexing'         => $indexing,
                 'registry'         => $registryFallback,
                 'current_location' => $registryFallback,
-            ], $this->actionMetaFor(self::STATUS_REFER)));
+            ], $this->actionMetaFor(self::STATUS_REFER, $registryFallback, $this->isDcivFile($indexing))));
         }
 
         $registryName = $range['registry'] ?? $this->indexingRegistry($indexing);
@@ -193,7 +193,7 @@ class FileLocationResolver
                 'current_location' => $this->archiveLocation($registryName, $rackShelf),
                 'rack_shelf'       => $rackShelf,
                 'indexing'         => $indexing,
-            ], $this->actionMetaFor(self::STATUS_IN_ARCHIVE)));
+            ], $this->actionMetaFor(self::STATUS_IN_ARCHIVE, $registryName, $this->isDcivFile($indexing))));
         }
 
         // zone = pool
@@ -202,7 +202,7 @@ class FileLocationResolver
             'zone'             => 'pool',
             'current_location' => ($registryName ?: 'Pool Office') . ' — Pool Office',
             'indexing'         => $indexing,
-        ], $this->actionMetaFor(self::STATUS_IN_POOL)));
+        ], $this->actionMetaFor(self::STATUS_IN_POOL, $registryName, $this->isDcivFile($indexing))));
     }
 
     /**
@@ -448,6 +448,62 @@ class FileLocationResolver
     }
 
     /**
+     * True when the file is flagged as under DCIV investigation (dciv_status=1)
+     * — i.e. it was linked as a related file on a DCIV record via
+     * master_dciv_links (see DcivGenerationController::store()).
+     */
+    protected function isDcivFile(?FileIndexing $indexing): bool
+    {
+        return (bool) $indexing && (int) ($indexing->dciv_status ?? 0) === 1;
+    }
+
+    /**
+     * Full "Under Investigation" payload for the Quick Search / mobile File
+     * Search result card. A file is under DCIV investigation two ways:
+     *   (a) it's a related file flagged dciv_status=1 on its own indexing row
+     *       (linked to a DCIV master via master_dciv_links), or
+     *   (b) it IS the DCIV master record itself — either its own registry is
+     *       the DCIV Registry, or it has related files linked to it. The
+     *       master's own indexing row is never stamped with dciv_status/
+     *       dciv_reason (only the related files are), so its reason is looked
+     *       up from dciv_file_no instead.
+     * Shared by web Quick Search and mobile File Search so both show the same
+     * red badge + reason for the same file.
+     *
+     * @return array{status:bool, fileno:?string, reason:?string, related_files:array}
+     */
+    public function dcivInfoFor(string $fileNumber, ?FileIndexing $indexing, ?string $registry): array
+    {
+        $relatedFiles = \App\Models\MasterDcivLink::whereRaw(
+                'UPPER(LTRIM(RTRIM(dciv_file_number))) = ?', [strtoupper(trim($fileNumber))]
+            )
+            ->orderBy('id')
+            ->get(['related_file_number', 'related_file_title', 'related_file_type', 'dciv_reason']);
+
+        $flaggedAsRelated = $this->isDcivFile($indexing);
+        $isMaster = $relatedFiles->isNotEmpty() || (is_string($registry) && stripos($registry, 'DCIV') !== false);
+
+        $reason = $indexing?->dciv_reason
+            ?: optional($relatedFiles->first())?->dciv_reason
+            ?: ($isMaster
+                ? \App\Models\DcivFileNo::whereRaw(
+                    'UPPER(LTRIM(RTRIM(full_file_number))) = ?', [strtoupper(trim($fileNumber))]
+                )->where(function ($q) {
+                    $q->where('is_deleted', 0)->orWhereNull('is_deleted');
+                })->value('dciv_reason')
+                : null);
+
+        return [
+            'status'        => $flaggedAsRelated || $isMaster,
+            'fileno'        => $indexing?->dciv_fileno,
+            'reason'        => $reason,
+            'related_files' => $relatedFiles
+                ->map(fn ($r) => $r->only(['related_file_number', 'related_file_title', 'related_file_type']))
+                ->toArray(),
+        ];
+    }
+
+    /**
      * Look up the file in duplicate_fileno and, if present, return a normalized
      * badge payload (category + display label + colour). Surfaced on every Quick
      * Search / mobile File Search result so the front desk can see at a glance
@@ -513,21 +569,28 @@ class FileLocationResolver
      * actions (send FSR, log file, blind request). Used for manual/SCB-driven
      * statuses and by callers.
      *
+     * A file routed to the DCIV Registry — either because that IS its own
+     * registry, or because it is flagged dciv_status=1 (linked as a related
+     * file on a DCIV investigation via master_dciv_links) — is searched by the
+     * DCIV Director rather than the generic SCB Monitor pool, so the action
+     * label reflects that instead.
+     *
      * @return array{next_action:string, slip_variant:?string, can_send_fr:bool, can_log:bool, is_blind:bool}
      */
-    public function actionMetaFor(string $status): array
+    public function actionMetaFor(string $status, ?string $registry = null, bool $isDciv = false): array
     {
         $base = ['next_action' => '', 'slip_variant' => null, 'can_send_fr' => false, 'can_log' => false, 'is_blind' => false];
+
+        $isDciv = $isDciv || (is_string($registry) && stripos($registry, 'DCIV') !== false);
+        $searcher = $isDciv ? 'DCIV Director' : 'SCB Monitor';
 
         return array_merge($base, match ($status) {
             self::STATUS_IN_TRANSIT =>
                 ['next_action' => 'Print Tracking Confirmation Slip', 'slip_variant' => 'tracking_confirmation'],
 
-            // Archive / Pool both require an SCB physical confirmation before logging.
-            self::STATUS_IN_ARCHIVE =>
-                ['next_action' => 'Send File Search Request to SCB Monitor', 'can_send_fr' => true],
-            self::STATUS_IN_POOL =>
-                ['next_action' => 'Send File Search Request to SCB Monitor', 'can_send_fr' => true],
+            // Archive / Pool both require a physical confirmation before logging.
+            self::STATUS_IN_ARCHIVE, self::STATUS_IN_POOL =>
+                ['next_action' => "Send File Search Request to {$searcher}", 'can_send_fr' => true],
 
             // SCB replied FOUND -> log the file (no slip yet; not logged out).
             self::STATUS_IN_ARCHIVE_FOUND, self::STATUS_IN_POOL_FOUND =>
@@ -537,9 +600,9 @@ class FileLocationResolver
             self::STATUS_IN_ARCHIVE_NOT_FOUND, self::STATUS_IN_POOL_NOT_FOUND =>
                 ['next_action' => 'Refer to Original Registry', 'slip_variant' => 'refer_registry'],
 
-            // Non-indexed file -> blind request to SCB.
+            // Non-indexed file -> blind request.
             self::STATUS_PENDING_FILE =>
-                ['next_action' => 'Send Blind Request to SCB Monitor', 'can_send_fr' => true, 'is_blind' => true],
+                ['next_action' => "Send Blind Request to {$searcher}", 'can_send_fr' => true, 'is_blind' => true],
             self::STATUS_BLIND_REQUEST_SENT =>
                 ['next_action' => 'Awaiting SCB feedback', 'is_blind' => true],
 
@@ -551,11 +614,11 @@ class FileLocationResolver
             self::STATUS_MISSING_FILE =>
                 ['next_action' => 'Request to Original Registry', 'can_send_fr' => true, 'is_blind' => true],
 
-            // Indexed but outside any known registry range — send it to the SCB to
-            // physically search first. Only if the SCB reports Not Found does the
+            // Indexed but outside any known registry range — send it to be
+            // physically searched first. Only if reported Not Found does the
             // outcome (IN_ARCHIVE_NOT_FOUND) offer the Refer-to-Original-Registry slip.
             self::STATUS_REFER =>
-                ['next_action' => 'Send File Search Request to SCB Monitor', 'can_send_fr' => true],
+                ['next_action' => "Send File Search Request to {$searcher}", 'can_send_fr' => true],
 
             default => [],
         });

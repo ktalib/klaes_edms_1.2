@@ -883,12 +883,20 @@ const executeSearchAjax = (filters, searchData) => {
         const _apiRelatedFileno = data.file_related_fileno || null;
         const _apiIndexFileNumber = data.file_index_number || null;
         const _apiFileSize = data.file_size || null;
+        const _apiFileGroundRentAmount = data.file_ground_rent_amount || null;
+        const _apiFileGroundRentDate = data.file_ground_rent_date || null;
         const _apiCommissioningDate = data.file_commissioning_date || null;
         const _apiCommissionedNumber = data.file_commissioned_number || null;
         const _apiTempFileNumber = data.file_temp_number || null;
+        // "SEARCHED (LINKED)" combined file number — e.g. "CON-AG-2014-35 (MLKN 2455)" —
+        // resolved server-side so it matches the printable report / Pay-Per-Search template.
+        const _apiFileNumberDisplay = data.file_number_display || null;
         // Stash so the File Information card can show it even when the selected
         // record is a prop_id-expanded row from a different file number.
         window._lsFileTempNumber = _apiTempFileNumber;
+        // Lineage (previous/successor files + their commissioning info) — used by the
+        // timeline to render the full commissioning chain (mother → split/CoP → child).
+        window._lsLineage = data.lineage || null;
         searchResults.forEach(r => {
           if (_apiFileTitle) r._file_title = _apiFileTitle;
           if (_apiCommissioningDate) r._file_commissioning_date = _apiCommissioningDate;
@@ -902,7 +910,10 @@ const executeSearchAjax = (filters, searchData) => {
           if (_apiRelatedFileno) r._file_related_fileno = _apiRelatedFileno;
           if (_apiIndexFileNumber) r._file_index_number = _apiIndexFileNumber;
           if (_apiFileSize) r._file_size = _apiFileSize;
+          if (_apiFileGroundRentAmount) r._file_ground_rent_amount = _apiFileGroundRentAmount;
+          if (_apiFileGroundRentDate) r._file_ground_rent_date = _apiFileGroundRentDate;
           if (_apiTempFileNumber) r._file_temp_number = _apiTempFileNumber;
+          if (_apiFileNumberDisplay) r._file_number_display = _apiFileNumberDisplay;
         });
 
         console.log('=== STAGING TABLE SEARCH RESULTS ===');
@@ -949,6 +960,7 @@ const executeSearchAjax = (filters, searchData) => {
               _file_commissioning_date: data.file_commissioning_date || null,
               _file_commissioned_number: data.file_commissioned_number || null,
               _file_temp_number: data.file_temp_number || null,
+              _file_number_display: data.file_number_display || null,
               prop_id: '',
             };
             // Set only the selected file — leave searchResults empty so getRelatedTransactions()
@@ -1915,25 +1927,43 @@ const executeSearchAjax = (filters, searchData) => {
     return null;
   };
 
-  // Commencement date of the R of O term: the grant row's Transaction Date
-  // (falling back to Reg Date). Earliest dated R of O row wins (= the original
-  // grant). Returns a local "YYYY-MM-DD" string, or '' when no dated R of O exists.
-  const lsFindRofoGrantDate = (transactions) => {
-    let grantTs = null;
-    for (const t of (transactions || [])) {
-      const canon = canonicalWeightingInstrumentType(t.transaction_type || t.instrument_type || t.transactionType || '');
-      if (canon !== 'right of occupancy') continue;
-      for (const cand of [t.transaction_date, t.reg_date, t.deeds_date]) {
-        const ts = parseTimelineDateValue(cand);
-        if (ts !== null) {
-          if (grantTs === null || ts < grantTs) grantTs = ts;
-          break; // Transaction Date wins; only fall through when it is absent.
+  // Commencement date of the R of O term. Two possible sources, checked in
+  // priority order:
+  //   1. Certificate of Occupancy — earliest dated row's transaction_date,
+  //      from CofO_staging.
+  //   2. Right of Occupancy — earliest dated row's Transaction Date (falling
+  //      back to Reg Date), from the pra table — used only when no dated
+  //      CofO exists.
+  // Returns { date: "YYYY-MM-DD", source: 'RofO'|'CofO' }, or null when
+  // neither source has a usable date.
+  const lsFindCommencementSource = (transactions) => {
+    const earliestTsFor = (canonType) => {
+      let ts = null;
+      for (const t of (transactions || [])) {
+        const canon = canonicalWeightingInstrumentType(t.transaction_type || t.instrument_type || t.transactionType || '');
+        if (canon !== canonType) continue;
+        for (const cand of [t.transaction_date, t.reg_date, t.deeds_date]) {
+          const cts = parseTimelineDateValue(cand);
+          if (cts !== null) {
+            if (ts === null || cts < ts) ts = cts;
+            break; // Transaction Date wins; only fall through when it is absent.
+          }
         }
       }
-    }
-    if (grantTs === null || grantTs > Date.now()) return '';
-    const d = new Date(grantTs);
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      return (ts !== null && ts <= Date.now()) ? ts : null;
+    };
+    const toIsoDate = (ts) => {
+      const d = new Date(ts);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    };
+
+    const cofoTs = earliestTsFor('certificate of occupancy');
+    if (cofoTs !== null) return { date: toIsoDate(cofoTs), source: 'CofO' };
+
+    const rofoTs = earliestTsFor('right of occupancy');
+    if (rofoTs !== null) return { date: toIsoDate(rofoTs), source: 'RofO' };
+
+    return null;
   };
 
   // "YYYY-MM-DD" → "2nd January, 2002" (matches the printed report).
@@ -1960,7 +1990,12 @@ const executeSearchAjax = (filters, searchData) => {
   // Recompute the Residual Term input + File Information display from the
   // current land use and commencement date. A manual residual entry is kept
   // while it differs from the last auto value.
-  const lsRecomputeResidualTerm = () => {
+  //
+  // autoHide=false is used right after the operator edits the Commencement
+  // Date themselves: recomputing immediately hides the card (see below) before
+  // they get a chance to click Save, so the card must stay open until the
+  // value is actually persisted (or a different file is loaded).
+  const lsRecomputeResidualTerm = (autoHide = true) => {
     const termYears = lsTermYearsFromLandUse(document.getElementById('property-type-value')?.textContent || '');
     const dateInput = document.getElementById('comment-commencement_date-text');
     const isoDate = (dateInput?.value || '').trim();
@@ -1978,6 +2013,92 @@ const executeSearchAjax = (filters, searchData) => {
     if (display) display.textContent = (input?.value || computed || '-');
     const dateDisplay = document.getElementById('commencement-date-value');
     if (dateDisplay) dateDisplay.textContent = lsFormatCommencementDate(isoDate) || '-';
+
+    // Source badge: shows which record supplied the Commencement Date — RofO
+    // (pra) or CofO (CofO_staging) when it's the untouched auto value, or
+    // nothing once the operator has overridden it with their own date.
+    const sourceBadge = document.getElementById('commencement-date-source-badge');
+    if (sourceBadge) {
+      const isAutoValue = !!isoDate && isoDate === (dateInput?.dataset.autoValue || '');
+      const sourceLabel = isAutoValue ? (dateInput?.dataset.autoSource || '') : '';
+      if (sourceLabel) {
+        sourceBadge.textContent = sourceLabel;
+        sourceBadge.className = 'source-badge ' + (sourceLabel === 'CofO' ? 'source-badge-cofo' : 'source-badge-pra');
+        sourceBadge.style.display = 'inline-block';
+      } else {
+        sourceBadge.textContent = '';
+        sourceBadge.style.display = 'none';
+      }
+    }
+
+    // The editable Residual Term card is only needed when the term is unknown
+    // (no auto-computed value) so the operator can fill it in manually — once
+    // a value exists (auto or saved), the card is no longer actionable.
+    if (autoHide) {
+      const section = document.getElementById('residual-term-section');
+      if (section) section.classList.toggle('hidden', !!(input?.value || '').trim());
+    }
+  };
+
+  // Ground Rent Including Land Use Charge — helpers for the single card that
+  // toggles between the receipted "Last Paid" record and the manual
+  // "Not Paid" entry (see #ground-rent-section in file-history.blade.php).
+  // The Amount/Date fields are real <input> elements toggled via the
+  // `readonly` attribute (not swapped with separate display spans/inputs) so
+  // Edit can never leave one field out of sync with the other.
+  // Plain text, not a native <input type="date"> — that control silently
+  // discards any value it doesn't consider strict "YYYY-MM-DD" and just
+  // renders blank, which is exactly what was happening here. Text always
+  // shows something: a nicely formatted date when the raw value parses, the
+  // raw value itself (unchanged) when it doesn't, matching how this field
+  // displayed before it became editable.
+  const lsGroundRentDateDisplayValue = (raw) => {
+    if (!raw) return '';
+    const s = String(raw).trim();
+    try {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      }
+    } catch (e) { /* fall through */ }
+    return s;
+  };
+  const lsSetGroundRentPaidReadOnly = (readOnly) => {
+    document.querySelectorAll('.ground-rent-paid-input').forEach((el) => {
+      el.readOnly = readOnly;
+      el.classList.toggle('border-transparent', readOnly);
+      el.classList.toggle('bg-transparent', readOnly);
+      el.classList.toggle('border-gray-300', !readOnly);
+      el.classList.toggle('bg-white', !readOnly);
+    });
+    document.getElementById('edit-ground-rent-btn')?.classList.toggle('hidden', !readOnly);
+    document.getElementById('save-ground-rent-paid-btn')?.classList.toggle('hidden', readOnly);
+  };
+  const lsSetGroundRentMode = (hasLastPaid) => {
+    const section = document.getElementById('ground-rent-section');
+    const title = document.getElementById('ground-rent-section-title');
+    const paidFields = document.getElementById('ground-rent-paid-fields');
+    const notPaidFields = document.getElementById('ground-rent-not-paid-fields');
+    if (!section) return;
+    section.classList.remove('bg-teal-50', 'border-teal-200', 'bg-amber-50', 'border-amber-200');
+    if (hasLastPaid) {
+      section.classList.add('bg-teal-50', 'border-teal-200');
+      if (title) { title.textContent = 'Ground Rent Including Land Use Charge — Last Paid'; title.className = 'text-sm font-semibold text-teal-800'; }
+      paidFields?.classList.remove('hidden');
+      paidFields?.classList.add('flex');
+      notPaidFields?.classList.add('hidden');
+      document.getElementById('save-ground-rent-not-paid-btn')?.classList.add('hidden');
+      lsSetGroundRentPaidReadOnly(true);
+    } else {
+      section.classList.add('bg-amber-50', 'border-amber-200');
+      if (title) { title.textContent = 'Ground Rent Including Land Use Charge Not Paid'; title.className = 'text-sm font-semibold text-amber-800'; }
+      paidFields?.classList.add('hidden');
+      paidFields?.classList.remove('flex');
+      notPaidFields?.classList.remove('hidden');
+      document.getElementById('edit-ground-rent-btn')?.classList.add('hidden');
+      document.getElementById('save-ground-rent-paid-btn')?.classList.add('hidden');
+      document.getElementById('save-ground-rent-not-paid-btn')?.classList.remove('hidden');
+    }
   };
 
   // Render file history (the side-by-side layout shown in the screenshot)
@@ -2014,8 +2135,11 @@ const executeSearchAjax = (filters, searchData) => {
     // Prefill Client Details from the file's most recent token (any flow, incl. bypass).
     prefillClientDetails((window.__lsLastSearchedFileNumber || '').trim() || (fileRef !== '-' ? fileRef : ''));
     
-    // Update file information fields (with .0 fix and better field mapping)
-    document.getElementById('file-number-value').textContent = mlsDisplay;
+    // Update file information fields (with .0 fix and better field mapping).
+    // Prefer the server-resolved "SEARCHED (LINKED)" combined display (e.g.
+    // "CON-AG-2014-35 (MLKN 2455)") — same format used by the printable report and
+    // Pay-Per-Search template — falling back to the plain number when none was resolved.
+    document.getElementById('file-number-value').textContent = selectedFile._file_number_display || mlsDisplay;
 
     // Label the primary file number by what is actually displayed — legacy
     // files are searched by their KANGIS number, which lands in this slot.
@@ -2085,22 +2209,51 @@ const executeSearchAjax = (filters, searchData) => {
     const lonLatEl = document.getElementById('lon-lat-value');
     if (lonLatEl) lonLatEl.textContent = selectedFile._file_lon_lat || '-';
 
+    // Ground Rent Including Land Use Charge — single card, toggled between
+    // "Last Paid" (from file_indexings.ground_rent_amount /
+    // ground_rent_receipt_date, editable in place) and the manual "Not Paid"
+    // entry, based on whether a receipted payment is on file. A saved edit
+    // overrides the auto value via the 'ground_rent_paid' comment type
+    // (applied in loadComments()).
+    const groundRentSection = document.getElementById('ground-rent-section');
+    const groundRentAmount = selectedFile._file_ground_rent_amount || '';
+    const groundRentDate = selectedFile._file_ground_rent_date || '';
+    if (groundRentSection) {
+      groundRentSection.dataset.autoAmount = groundRentAmount;
+      groundRentSection.dataset.autoDate = groundRentDate;
+      delete groundRentSection.dataset.overrideAmount;
+      delete groundRentSection.dataset.overrideDate;
+      const hasLastPaid = !!(groundRentAmount && groundRentDate);
+      lsSetGroundRentMode(hasLastPaid);
+      if (hasLastPaid) {
+        const amtEl = document.getElementById('file-ground-rent-amount');
+        const dateEl = document.getElementById('file-ground-rent-date');
+        if (amtEl) amtEl.value = Number(groundRentAmount).toFixed(2);
+        if (dateEl) dateEl.value = lsGroundRentDateDisplayValue(groundRentDate);
+      }
+    }
+
     // Term of the R of O, derived from land use (99 res/agric, 40 comm/ind).
     const termYears = lsTermYearsFromLandUse(landUseValue);
     const termEl = document.getElementById('term-value');
     if (termEl) termEl.textContent = termYears ? termYears + ' Years' : '-';
 
-    // Commencement Date — auto-filled with the R of O grant's Transaction Date
-    // (falling back to Reg Date). A user-picked or saved date is kept while it
-    // differs from the last auto value. The Residual Term (editable below the
-    // Timeline) derives from it and prints on the report's Residual Term field.
+    // Commencement Date — auto-filled from the R of O grant's Transaction Date,
+    // falling back to the CofO's transaction_date when no dated R of O exists
+    // (see lsFindCommencementSource). A user-picked or saved date is kept
+    // while it differs from the last auto value. The Residual Term (editable
+    // below the Timeline) derives from it and prints on the report's Residual
+    // Term field. The source badge next to the File Information value is
+    // driven by dataset.autoSource in lsRecomputeResidualTerm.
     const commencementInput = document.getElementById('comment-commencement_date-text');
-    const grantDate = lsFindRofoGrantDate(getRelatedTransactions(selectedFile) || []);
+    const commencementSource = lsFindCommencementSource(getRelatedTransactions(selectedFile) || []);
+    const grantDate = commencementSource?.date || '';
     if (commencementInput) {
       if (!commencementInput.value || commencementInput.value === commencementInput.dataset.autoValue) {
         commencementInput.value = grantDate;
       }
       commencementInput.dataset.autoValue = grantDate;
+      commencementInput.dataset.autoSource = commencementSource?.source || '';
     }
     lsRecomputeResidualTerm();
 
@@ -2182,10 +2335,12 @@ const executeSearchAjax = (filters, searchData) => {
   // Commencement Date.
   document.getElementById('comment-commencement_date-text')?.addEventListener('change', () => {
     // The date changed, so the previous auto residual is stale — recompute
-    // from scratch unless the user typed a custom residual.
+    // from scratch unless the user typed a custom residual. Keep the card
+    // open (autoHide=false) so the operator can still see and click Save —
+    // otherwise the card disappears the instant a residual auto-computes.
     const input = document.getElementById('residual-term-input');
     if (input && input.value === input.dataset.autoValue) input.value = '';
-    lsRecomputeResidualTerm();
+    lsRecomputeResidualTerm(false);
   });
 
   // ── Silent Refresh ──────────────────────────────────────────────────────────
@@ -2228,10 +2383,14 @@ const executeSearchAjax = (filters, searchData) => {
         const _rf = data.file_related_fileno || null;
         const _ix = data.file_index_number || null;
         const _sz = data.file_size || null;
+        const _gra = data.file_ground_rent_amount || null;
+        const _grd = data.file_ground_rent_date || null;
         const _tf = data.file_temp_number || null;
         const _cd = data.file_commissioning_date || null;
         const _cn = data.file_commissioned_number || null;
+        const _fnd = data.file_number_display || null;
         window._lsFileTempNumber = _tf;
+        window._lsLineage = data.lineage || null;
         searchResults.forEach(function (r) {
           if (_t)  r._file_title          = _t;
           if (_d)  r._file_district       = _d;
@@ -2243,9 +2402,12 @@ const executeSearchAjax = (filters, searchData) => {
           if (_rf) r._file_related_fileno = _rf;
           if (_ix) r._file_index_number   = _ix;
           if (_sz) r._file_size           = _sz;
+          if (_gra) r._file_ground_rent_amount = _gra;
+          if (_grd) r._file_ground_rent_date   = _grd;
           if (_tf) r._file_temp_number    = _tf;
           if (_cd) r._file_commissioning_date = _cd;
           if (_cn) r._file_commissioned_number = _cn;
+          if (_fnd) r._file_number_display = _fnd;
         });
 
         // Update counts
@@ -3118,6 +3280,105 @@ const executeSearchAjax = (filters, searchData) => {
     };
   };
 
+  // A transaction row that creates/retires files (subdivision, merger, change of
+  // purpose, extension, separation, generic parcel update). Used to anchor where
+  // lineage commissioning rows sit in the timeline.
+  const isParcelUpdateRow = (item) => {
+    const t = String(item?.transaction_type || item?.instrument_type || '').toLowerCase();
+    if (item?._is_commissioning || item?._is_temporary_file) return false;
+    return /subdivision|merger|change of purpose|plot extension|separation|parcel update/.test(t);
+  };
+
+  // Build a "File Commissioning" row for a successor "child" lineage file.
+  // Mirrors buildCommissioningTimelineRow but for a file other than the searched
+  // one: date comes from the server-resolved lineage commissioning info, falling
+  // back to the year embedded in the number.
+  const buildLineageCommissioningRow = (fileNo, commissioningDate, fileTitle, idSuffix) => {
+    const no = String(fileNo || '').replace(/\s*\(\s*T\s*\)\s*$/i, '').trim();
+    if (!no) return null;
+    let date = (commissioningDate && commissioningDate !== '-') ? commissioningDate : '-';
+    if (date === '-') date = extractYearFromFileNumber(no) || '-';
+    return {
+      _is_commissioning: true,
+      _is_lineage_commissioning: true,
+      id: 'commissioning-' + idSuffix + '-' + no,
+      source_table: 'File Commissioning',
+      fileno: no,
+      file_number: no,
+      mlsFNo: no,
+      transaction_type: 'File Commissioning',
+      instrument_type: 'File Commissioning',
+      party_1: 'Kano State Ministry of Land and Physical Planning',
+      party_2: fileTitle || '-', party_3: '-', party_4: '-',
+      serial_no: '', page_no: '', volume_no: '',
+      transaction_date: date,
+      reg_date: '',
+      caveat: 'No',
+      is_caveated: 0,
+      prop_id: '',
+    };
+  };
+
+  // Commissioning rows for the searched file's successor(s) (when the searched
+  // file was itself superseded by a subdivision/merger/CoP). A batch subdivision
+  // retires the mother into SEVERAL children at once (successor_file_no is a CSV
+  // list), so one row is built per successor. They sit after the parcel-update
+  // transaction that retired the searched file.
+  const buildSuccessorCommissioningRows = () => {
+    const lineage = window._lsLineage || {};
+    const succFiles = Array.isArray(lineage.successor_files) && lineage.successor_files.length
+      ? lineage.successor_files
+      // Fallback for a response without the resolved list: split the raw CSV.
+      : String(lineage.successor_file_no || '').split(',')
+          .map(s => ({ file_no: s.trim(), commissioning_date: '-', file_title: '' }))
+          .filter(s => s.file_no);
+    return succFiles
+      .map(s => buildLineageCommissioningRow(s.file_no, s.commissioning_date, s.file_title, 'next'))
+      .filter(Boolean);
+  };
+
+  // Build the synthetic "File Decommissioning" row for the SEARCHED file when it
+  // has itself been decommissioned (superseded by a subdivision / merger / change of
+  // purpose / etc.). The original file's own transaction history ends at this event,
+  // so the row is placed immediately after the file's last own transaction and before
+  // the parcel-update row that retired it (see renderTimeline). Returns null when the
+  // searched file is still active.
+  const buildDecommissioningTimelineRow = () => {
+    const lineage = window._lsLineage || {};
+    if (!lineage.is_superseded) return null;
+    const rawFileNo = (lineage.decommission_file_no && String(lineage.decommission_file_no).trim())
+      || (userSelectedFileNumber && String(userSelectedFileNumber).trim())
+      || window._currentFileNumber
+      || (selectedFile && (selectedFile.mlsFNo || selectedFile.fileno || selectedFile.fileNo))
+      || '-';
+    const fileNo = String(rawFileNo).replace(/\s*\(\s*T\s*\)\s*$/i, '').trim() || rawFileNo;
+    const date = (lineage.decommission_date && lineage.decommission_date !== '-')
+      ? lineage.decommission_date : '-';
+    // Holder resolved server-side from the decommission archive; fall back to the
+    // searched file's title.
+    const ownerName = (lineage.decommission_holder && String(lineage.decommission_holder).trim())
+      || (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';
+    return {
+      _is_decommissioning: true,
+      id: 'decommissioning',
+      source_table: 'File Decommissioning',
+      fileno: fileNo,
+      file_number: fileNo,
+      mlsFNo: fileNo,
+      transaction_type: 'File Decommissioning',
+      instrument_type: 'File Decommissioning',
+      party_1: 'Kano State Ministry of Land and Physical Planning',
+      party_2: ownerName, party_3: '-', party_4: '-',
+      serial_no: '', page_no: '', volume_no: '',
+      transaction_date: date,
+      reg_date: '',
+      caveat: 'No',
+      is_caveated: 0,
+      prop_id: (selectedFile && (selectedFile.prop_id || selectedFile.propId)) || '',
+      comments: lineage.decommission_reason || '-',
+    };
+  };
+
   // Build the synthetic "Temporary File" timeline record. It appears directly
   // below File Commissioning (weight 11) only when the searched file has a
   // temporary "(T)" sibling. Its File No is the "(T)" number.
@@ -3182,16 +3443,56 @@ const executeSearchAjax = (filters, searchData) => {
     // Timeline view must be chronological by Transaction Date.
     transactions = sortTimelineChronologically(transactions);
 
-    // Default "File Commissioning" record — always the first row in the timeline
-    // (weight 12). Commissioning Date = the file's commissioning date when it was
-    // commissioned within KLAES (resolved server-side), otherwise '-'. Reg
-    // particulars are 0/0/0.
+    // Synthetic "File Commissioning" rows. Only the SEARCHED file gets a
+    // commissioning row (weight 12) at the top — predecessor "mother" files show
+    // through their real transactions (CofO, recertification, parcel-update rows)
+    // but never as a synthetic commissioning row. Successor commissioning rows
+    // follow the parcel-update row that retired the searched file.
     const commissioningRow = buildCommissioningTimelineRow();
     // "Temporary File" row sits directly below File Commissioning when present.
     const temporaryFileRow = buildTemporaryFileTimelineRow();
-    transactions = temporaryFileRow
-      ? [commissioningRow, temporaryFileRow, ...transactions]
-      : [commissioningRow, ...transactions];
+    const searchedPair = temporaryFileRow ? [commissioningRow, temporaryFileRow] : [commissioningRow];
+
+    const normalizeNo = (v) => String(v || '').toUpperCase().replace(/\s+/g, '').replace(/\(T\)$/, '');
+    const searchedNoKey = normalizeNo(commissioningRow.fileno);
+
+    transactions = [...searchedPair, ...transactions];
+
+    // "File Decommissioning" row — when the searched file has itself been decommissioned,
+    // its own history ends at the decommission. Insert the row immediately BEFORE the first
+    // parcel-update row (the Subdivision / CoP / Merger event that retired it), i.e. right
+    // after the file's last own transaction. The successor commissioning rows below then land
+    // after that parcel-update row, giving: history → File Decommissioning → parcel-update →
+    // child File Commissioning(s).
+    const decommissioningRow = buildDecommissioningTimelineRow();
+    if (decommissioningRow) {
+      let firstParcelIdx = -1;
+      for (let i = 0; i < transactions.length; i++) {
+        if (isParcelUpdateRow(transactions[i])) { firstParcelIdx = i; break; }
+      }
+      if (firstParcelIdx >= 0) {
+        transactions.splice(firstParcelIdx, 0, decommissioningRow);
+      } else {
+        transactions.push(decommissioningRow);
+      }
+    }
+
+    // Successor commissioning rows — the searched file was superseded, so each
+    // successor's commissioning appears after the parcel-update transaction that
+    // retired the searched file (the last one on the timeline), else at the end.
+    const successorRows = buildSuccessorCommissioningRows()
+      .filter(r => normalizeNo(r.fileno) !== searchedNoKey);
+    if (successorRows.length) {
+      let retiredIdx = -1;
+      for (let i = transactions.length - 1; i >= 0; i--) {
+        if (isParcelUpdateRow(transactions[i])) { retiredIdx = i; break; }
+      }
+      if (retiredIdx >= 0) {
+        transactions.splice(retiredIdx + 1, 0, ...successorRows);
+      } else {
+        transactions.push(...successorRows);
+      }
+    }
 
     const timelineTotalCount = document.getElementById('timeline-total-count');
     if (timelineTotalCount) {
@@ -3266,7 +3567,7 @@ const executeSearchAjax = (filters, searchData) => {
       const weightColorClass = 'text-gray-500';
       
       row.innerHTML = `
-        <td class="cleanup-col hidden text-center"><input type="checkbox" class="row-checkbox" data-id="${item.id}" data-table="${timelineSourceToDbTable(item.source_table)}" data-prop-id="${item.prop_id || ''}"></td>
+        <td class="cleanup-col text-center${cleanupModeActive ? '' : ' hidden'}"><input type="checkbox" class="row-checkbox" data-id="${item.id}" data-table="${timelineSourceToDbTable(item.source_table)}" data-prop-id="${item.prop_id || ''}"></td>
         <td class="arrange-col hidden text-center font-mono text-xs text-gray-400">${idx + 1}</td>
         <td class="text-center text-xs text-gray-500">${idx + 1}</td>
         <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(item, 'fileNumber')}</td>
@@ -4107,6 +4408,28 @@ const executeSearchAjax = (filters, searchData) => {
         document.getElementById('comment-ground_rent-amount').value = gr?.amount ?? '';
         document.getElementById('comment-ground_rent-text').value = gr?.comment ?? '';
 
+        // Last Paid override — a manual correction to the file_indexings
+        // Amount/Date shown in the "Last Paid" card. Only applied while that
+        // card is actually the active mode (i.e. the file has a receipted
+        // payment on record); the toggle itself always follows file_indexings.
+        const grPaid = res.data.ground_rent_paid;
+        const grSection = document.getElementById('ground-rent-section');
+        if (grSection) {
+          if (grPaid && grPaid.amount && grPaid.comment) {
+            grSection.dataset.overrideAmount = grPaid.amount;
+            grSection.dataset.overrideDate = grPaid.comment;
+            if (grSection.dataset.autoAmount && grSection.dataset.autoDate) {
+              const amtEl = document.getElementById('file-ground-rent-amount');
+              const dateEl = document.getElementById('file-ground-rent-date');
+              if (amtEl) amtEl.value = Number(grPaid.amount).toFixed(2);
+              if (dateEl) dateEl.value = lsGroundRentDateDisplayValue(grPaid.comment);
+            }
+          } else {
+            delete grSection.dataset.overrideAmount;
+            delete grSection.dataset.overrideDate;
+          }
+        }
+
         if (res.data.no_cofo?.comment) {
           document.getElementById('comment-no_cofo-text').value = res.data.no_cofo.comment;
         }
@@ -4138,6 +4461,11 @@ const executeSearchAjax = (filters, searchData) => {
       } else {
         document.getElementById('comment-ground_rent-amount').value = '';
         document.getElementById('comment-ground_rent-text').value = '';
+        const grSection = document.getElementById('ground-rent-section');
+        if (grSection) {
+          delete grSection.dataset.overrideAmount;
+          delete grSection.dataset.overrideDate;
+        }
         const litigationInput = document.getElementById('comment-litigation-text');
         if (litigationInput) litigationInput.value = '';
       }
@@ -4157,6 +4485,14 @@ const executeSearchAjax = (filters, searchData) => {
     const mortgageCaveat = hasMortgage && !hasRelease;
     const isClear = hasCofo && !hasCaveat && !mortgageCaveat;
 
+    // A record flagged via Title Status Update (title_status = 1, e.g. an
+    // initiated Withdrawal/Cancellation/Revocation) means the title is NOT
+    // free from encumbrances, regardless of caveat/mortgage state — its
+    // title_status_remark (surfaced by the backend in normalizeRow()) takes
+    // precedence over the default "free from encumbrances" wording.
+    const flaggedTxn = transactions.find(t => Number(t.title_status) === 1);
+    const flaggedRemark = flaggedTxn ? String(flaggedTxn.title_status_remark || '').trim() : '';
+
     let baseText = 'Based on our available records, the title is free from encumbrances.';
     if (hasCaveat && mortgageCaveat) {
         baseText = 'This Property is Under an Active Mortgage and Caveat!!!';
@@ -4164,6 +4500,9 @@ const executeSearchAjax = (filters, searchData) => {
         baseText = 'N.B. This Property is Under an Active Caveat!!!';
     } else if (mortgageCaveat) {
         baseText = 'This Property is Under an Active Mortgage !!!';
+    }
+    if (flaggedTxn) {
+        baseText = flaggedRemark || 'N.B. This title is not free from encumbrances.';
     }
 
     let noCofoBase = 'Based on our available records, the subject title is currently at the Letter of Grant stage, hence Certificate of Occupancy is yet to be issued. However the title is free from encumbrances.';
@@ -4173,6 +4512,9 @@ const executeSearchAjax = (filters, searchData) => {
         noCofoBase = 'Based on our available records, the subject title is currently at the Letter of Grant stage. N.B. This Property is Under an Active Caveat!!!';
     } else if (mortgageCaveat) {
         noCofoBase = 'Based on our available records, the subject title is currently at the Letter of Grant stage. This Property is Under an Active Mortgage !!!';
+    }
+    if (flaggedTxn) {
+        noCofoBase = flaggedRemark || 'Based on our available records, the subject title is currently at the Letter of Grant stage. N.B. This title is not free from encumbrances.';
     }
 
     if (window._underInvestigation) {
@@ -4190,13 +4532,23 @@ const executeSearchAjax = (filters, searchData) => {
     document.getElementById('comment-encumbrance-text').value = baseText;
     document.getElementById('comment-no_cofo-text').value = noCofoBase;
 
+    // No CoFO Remark only applies while the title is still at the Letter of
+    // Grant stage — once a Certificate of Occupancy transaction exists on the
+    // file, this card no longer applies.
+    const noCofoSection = document.getElementById('no-cofo-comment-section');
+    if (noCofoSection) noCofoSection.classList.toggle('hidden', hasCofo);
+
     // W/R/C remark editor is only revealed for files tagged [WRC] in
     // duplicate_fileno (i.e. Withdrawn / Revoked / Cancelled).
     const wrcSection = document.getElementById('wrc-comment-section');
     if (wrcSection) wrcSection.classList.toggle('hidden', !window._isWrcFile);
 
-    // Both sections are always visible regardless of CofO/caveat state.
-    // (Previously conditional; now enabled for all records per user requirement.)
+    // Encumbrance Remark section: hidden when the title is clear (no caveat,
+    // no unresolved mortgage, no flagged title status) — nothing to remark on.
+    const hasEncumbrance = hasCaveat || mortgageCaveat || !!flaggedTxn;
+    const encSection = document.getElementById('encumbrance-comment-section');
+    if (encSection) encSection.classList.toggle('hidden', !hasEncumbrance);
+
     // DCIV "Under Investigation" is surfaced directly in each row's Comments cell
     // (set server-side), so no separate banner is rendered here.
   };
@@ -4243,6 +4595,60 @@ const executeSearchAjax = (filters, searchData) => {
         }
       });
     });
+  });
+
+  // Ground Rent "Last Paid" — Edit removes `readonly` from the existing
+  // Amount/Date inputs in place; Save persists the correction as a
+  // 'ground_rent_paid' comment override and restores read-only display.
+  document.getElementById('edit-ground-rent-btn')?.addEventListener('click', () => {
+    lsSetGroundRentPaidReadOnly(false);
+    document.getElementById('file-ground-rent-amount')?.focus();
+  });
+
+  document.getElementById('save-ground-rent-paid-btn')?.addEventListener('click', () => {
+    const fileNumber = window._currentFileNumber || document.getElementById('file-number-value')?.textContent?.trim();
+    const statusEl = document.getElementById('ground-rent-status');
+    const setStatus = (msg, ok) => {
+      if (!statusEl) return;
+      statusEl.textContent = msg;
+      statusEl.classList.remove('hidden', 'text-red-600', 'text-green-600');
+      statusEl.classList.add(ok ? 'text-green-600' : 'text-red-600');
+      if (ok) setTimeout(() => statusEl.classList.add('hidden'), 3000);
+    };
+    if (!fileNumber) return setStatus('No file selected.', false);
+
+    const amount = document.getElementById('file-ground-rent-amount')?.value || '';
+    const dateVal = document.getElementById('file-ground-rent-date')?.value || '';
+    if (!amount || !dateVal) return setStatus('Amount and date are required.', false);
+
+    fetch('/legal_search/comments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
+      },
+      body: JSON.stringify({
+        file_number: fileNumber,
+        prop_id: window._currentPropId || '',
+        comment_type: 'ground_rent_paid',
+        amount: amount,
+        comment: dateVal
+      })
+    })
+    .then(r => r.json())
+    .then(res => {
+      if (res.success) {
+        const section = document.getElementById('ground-rent-section');
+        if (section) {
+          section.dataset.overrideAmount = amount;
+          section.dataset.overrideDate = dateVal;
+        }
+        lsSetGroundRentPaidReadOnly(true);
+      }
+      setStatus(res.success ? 'Saved successfully.' : (res.message || 'Failed to save.'), !!res.success);
+    })
+    .catch(() => setStatus('Network error.', false));
   });
 
   // Persist edited Client Details (name/address) onto the file's search token so
@@ -4688,8 +5094,8 @@ const executeSearchAjax = (filters, searchData) => {
       { key: 'pageNo', label: 'Page No', type: 'particular' },
       { key: 'volumeNo', label: 'Volume No', type: 'particular' },
       { key: 'regNo', label: 'Reg No', readonly: true, sectionEnd: true },
-      { key: 'reg_date', label: 'Reg Date', type: 'date' },
-      { key: 'reg_time', label: 'Reg Time' },
+      // CofO_staging has no reg_date column; its "Reg Time" is stored in transaction_time.
+      { key: 'transaction_time', label: 'Reg Time' },
       { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
       { key: 'transaction_date', label: 'Transaction Date', type: 'date' },
       // Standard parties
@@ -4722,8 +5128,10 @@ const executeSearchAjax = (filters, searchData) => {
       { key: 'pageNo', label: 'Page No', type: 'particular' },
       { key: 'volumeNo', label: 'Volume No', type: 'particular' },
       { key: 'regNo', label: 'Reg No', readonly: true, sectionEnd: true },
-      { key: 'reg_date', label: 'Reg Date', type: 'date' },
-      { key: 'reg_time', label: 'Reg Time' },
+      // pra has no reg_date/reg_time columns; its registration date/time is
+      // tracked as deeds_date/deeds_time instead.
+      { key: 'deeds_date', label: 'Deeds Date', type: 'date' },
+      { key: 'deeds_time', label: 'Deeds Time' },
       { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
       { key: 'transaction_date', label: 'Transaction Date', type: 'date' },
       // Standard parties
@@ -5649,8 +6057,14 @@ const executeSearchAjax = (filters, searchData) => {
         // editor (auto-calculated or user-entered) prints on the report.
         const _rt = (document.getElementById('residual-term-input')?.value || '').trim();
         if (_rt) q.set('display_residual_term', _rt);
-        const _cd = (document.getElementById('comment-commencement_date-text')?.value || '').trim();
+        const _cdInput = document.getElementById('comment-commencement_date-text');
+        const _cd = (_cdInput?.value || '').trim();
         if (_cd) q.set('display_commencement_date', _cd);
+        // Only label the source when this is the untouched auto-filled value —
+        // once the operator overrides it manually, the source no longer applies.
+        if (_cd && _cd === (_cdInput?.dataset.autoValue || '') && _cdInput?.dataset.autoSource) {
+          q.set('display_commencement_source', _cdInput.dataset.autoSource);
+        }
         // Client details: editable fields take precedence, else the verified token values.
         const _cn = (document.getElementById('comment-client_name-text')?.value || window.__lsTokenClient?.name || '').trim();
         const _ca = (document.getElementById('comment-client_address-text')?.value || window.__lsTokenClient?.address || '').trim();
@@ -5738,8 +6152,12 @@ const executeSearchAjax = (filters, searchData) => {
         // Residual Term + Commencement Date — mirrors the print-report handler above.
         const _rt2 = (document.getElementById('residual-term-input')?.value || '').trim();
         if (_rt2) q.set('display_residual_term', _rt2);
-        const _cd2 = (document.getElementById('comment-commencement_date-text')?.value || '').trim();
+        const _cdInput2 = document.getElementById('comment-commencement_date-text');
+        const _cd2 = (_cdInput2?.value || '').trim();
         if (_cd2) q.set('display_commencement_date', _cd2);
+        if (_cd2 && _cd2 === (_cdInput2?.dataset.autoValue || '') && _cdInput2?.dataset.autoSource) {
+          q.set('display_commencement_source', _cdInput2.dataset.autoSource);
+        }
         // Client details: editable fields take precedence, else the verified token values.
         const _cn2 = (document.getElementById('comment-client_name-text')?.value || window.__lsTokenClient?.name || '').trim();
         const _ca2 = (document.getElementById('comment-client_address-text')?.value || window.__lsTokenClient?.address || '').trim();

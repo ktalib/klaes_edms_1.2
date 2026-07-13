@@ -37,6 +37,8 @@ class MobileFileSearchController extends Controller
         $result = $resolver->resolve($q);
         $resolver->persist($result);
 
+        $dcivInfo = $resolver->dcivInfoFor($result['file_number'], $result['indexing'] ?? null, $result['registry'] ?? null);
+
         $fileTitle = $result['tracker']->file_title
             ?? $result['indexing']->file_title
             ?? null;
@@ -125,11 +127,16 @@ class MobileFileSearchController extends Controller
                 'held_since'               => $result['held_since'] ?? null,
                 'days_with_holder'         => $result['days_with_holder'] ?? null,
                 'duration_with_holder'     => $result['duration_with_holder'] ?? null,
-                // DCIV investigation flag (from the matched indexing row): 1 when this
-                // file is referenced as a related file by a DCIV record.
-                'dciv_status'              => (int) ($result['indexing']?->dciv_status ?? 0),
-                'dciv_fileno'              => $result['indexing']?->dciv_fileno,
-                'dciv_reason'              => $result['indexing']?->dciv_reason,
+                // DCIV investigation flag: true when this file is either flagged
+                // dciv_status=1 (a related file linked to a DCIV master) OR is itself
+                // the DCIV master record (own registry is the DCIV Registry, or it has
+                // related files linked to it). See FileLocationResolver::dcivInfoFor().
+                'dciv_status'              => (int) $dcivInfo['status'],
+                'dciv_fileno'              => $dcivInfo['fileno'],
+                'dciv_reason'              => $dcivInfo['reason'],
+                // The reverse case: the searched number IS a DCIV master file itself —
+                // every related file linked to it via master_dciv_links.
+                'dciv_related_files'       => $dcivInfo['related_files'],
                 // Duplicate-registry flag (CofO collected/ready, duplicate, temp, W/C/R) when
                 // the file number is registered in duplicate_fileno — null otherwise.
                 'duplicate_flag'           => $result['duplicate_flag'] ?? null,
@@ -228,7 +235,7 @@ class MobileFileSearchController extends Controller
             ->orderByDesc('priority')
             ->orderByDesc('id')
             ->limit(100)
-            ->get(['id', 'request_no', 'file_number', 'file_title', 'current_location', 'status', 'resolved_status', 'source', 'requester_user_id', 'receiving_officer', 'requester_office', 'requester_department', 'is_ofs', 'ofs_rank', 'priority', 'created_at']);
+            ->get(['id', 'request_no', 'file_number', 'file_title', 'current_location', 'status', 'resolved_status', 'source', 'requester_user_id', 'receiving_officer', 'requester_office', 'requester_department', 'is_ofs', 'ofs_rank', 'priority', 'created_at', 'request_purpose_name', 'expected_return_date']);
 
         $data = $requests->map(function (FileSearchRequest $fr) {
             $req = $fr->requester;
@@ -246,6 +253,11 @@ class MobileFileSearchController extends Controller
                 'is_ofs'              => (bool) $fr->is_ofs,
                 'ofs_rank'            => $fr->ofs_rank,
                 'created_at'          => optional($fr->created_at)->format('Y-m-d g:i A'),
+                'request_purpose_name'  => $fr->request_purpose_name,
+                'expected_return_date'  => optional($fr->expected_return_date)->format('Y-m-d'),
+                'timeline_status'       => $fr->timeline_status,
+                'days_until_deadline'   => $fr->days_until_deadline,
+                'delay_reason'          => null,
             ], $this->requestTypeMeta($fr));
         });
 

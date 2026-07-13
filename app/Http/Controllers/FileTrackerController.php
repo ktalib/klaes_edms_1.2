@@ -947,6 +947,7 @@ class FileTrackerController extends Controller
                 'registry_office_name' => 'required|string|max:255',
                 'notes' => 'nullable|string|max:500',
                 'num_pages' => 'nullable|integer|min:1|max:99999', // Pages returned to registry
+                'delay_reason' => 'nullable|string|max:500', // Required client-side when Amber/Red at return time
                 'table' => 'nullable|string|in:file_tracker,file_trackings' // Added to identify source table
             ]);
 
@@ -1023,6 +1024,7 @@ class FileTrackerController extends Controller
                 $fileTracker->save();
 
                 // Add to movement log (mirrors UI expectations)
+                $delayReason = trim((string) ($validatedData['delay_reason'] ?? ''));
                 $movementLogEntry = [
                     'log_id' => $logId,
                     'action' => 'status_updated',
@@ -1033,7 +1035,9 @@ class FileTrackerController extends Controller
                     'log_out_time' => null,
                     'log_out_date' => null,
                     'notes' => trim(($validatedData['notes'] ?? 'File logged back to Registry (Origin)')
-                        . ($pageDiscrepancyNote ? ' | ' . $pageDiscrepancyNote : '')),
+                        . ($pageDiscrepancyNote ? ' | ' . $pageDiscrepancyNote : '')
+                        . ($delayReason !== '' ? ' | Delay reason: ' . $delayReason : '')),
+                    'delay_reason' => $delayReason !== '' ? $delayReason : null,
                     'status' => $movementStatus,
                     'old_status' => $oldStatus,
                     'new_status' => $validatedData['status'],
@@ -1244,6 +1248,10 @@ class FileTrackerController extends Controller
                     'current_status' => $fileTracker->status ?: 'N/A',
                     'date_received' => $fileTracker->date_created ? $fileTracker->date_created->format('Y-m-d H:i:s') : 'N/A',
                     'due_date' => $fileTracker->deadline ? $fileTracker->deadline->format('Y-m-d H:i:s') : 'N/A',
+                    // Green/Amber/Red — drives whether the "Log File Back to Registry" modal
+                    // requires a Reason for Delay. See FileTracker::getTimelineStatusAttribute().
+                    'timeline_status' => $fileTracker->timeline_status,
+                    'request_purpose_name' => $fileTracker->request_purpose_name,
                     'origin_registry' => $fileTracker->origin_office_name ?: 'N/A',
                     'origin_office_name' => $fileTracker->origin_office_name ?: 'N/A',
                     'origin_office_code' => $fileTracker->origin_office_code ?: '',

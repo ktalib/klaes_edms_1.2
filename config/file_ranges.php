@@ -28,14 +28,9 @@ return [
         // ───────────────── Registry 1 — Digital Archive ─────────────────
         'RES'    => [
             ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 1991],
-            // 1992–2026 lives in the Pool Office (Registry 2) — declared below.
+            // 1992–2026 lives in the Pool Office (Registry 2).
+            ['zone' => 'pool',    'registry' => 'Registry 2', 'from' => 1992, 'to' => 2026],
         ],
-
-
-          //SIT REGISTRY 2 
-         
-          
-
         'COM'    => [
             ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2026],
         ],
@@ -46,7 +41,7 @@ return [
             ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2026],
         ],
         'RES-RC' => [
-            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 1991],
+            ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2026],
         ],
         'COM-RC' => [
             ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2026],
@@ -56,6 +51,11 @@ return [
         ],
         'AG-RC'  => [
             ['zone' => 'archive', 'registry' => 'Registry 1', 'from' => 1981, 'to' => 2026],
+        ],
+
+        // ───────────────── Registry 2 — Pool Office ─────────────────
+        'SIT'    => [
+            ['zone' => 'pool', 'registry' => 'Registry 2', 'from' => 1981, 'to' => 2026],
         ],
 
         // ───────────────── Registry 3 — Digital Archive ─────────────────

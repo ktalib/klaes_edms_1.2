@@ -21,8 +21,8 @@
                         <label for="registry" class="block text-sm font-medium mb-1">Registry</label>
                         <select id="registry" name="registry" class="select w-full md:w-[180px]">
                             <option value="all">All Registries</option>
-                            @foreach($registryOptions ?? [] as $reg)
-                                <option value="{{ $reg }}" {{ request('registry') == $reg ? 'selected' : '' }}>{{ $reg }}</option>
+                            @foreach($registryOptions ?? [] as $value => $label)
+                                <option value="{{ $value }}" {{ (string) request('registry') === (string) $value ? 'selected' : '' }}>{{ $label }}</option>
                             @endforeach
                         </select>
                     </div>

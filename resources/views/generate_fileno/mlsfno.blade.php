@@ -1882,7 +1882,7 @@
                                 </div>
 
                                 <!-- District Dropdown -->
-                                <div>
+                                <div id="editDistrictWrap" class="relative">
                                     <label for="editDistrict" class="block text-sm font-medium text-gray-700 mb-2">
                                         District
                                     </label>
@@ -2015,7 +2015,7 @@
                                 </div>
 
                                 <!-- District Dropdown -->
-                                <div>
+                                <div id="daDistrictWrap" class="relative">
                                     <label for="daDistrict" class="block text-sm font-medium text-gray-700 mb-2">
                                         District
                                     </label>

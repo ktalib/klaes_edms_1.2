@@ -105,6 +105,8 @@ class UserController extends Controller
             // Officer ranks (seniority) for file-request prioritisation.
             $ranks = config('file_request_priority.options', []);
 
+            $deputyOptions = $this->deputyOptions();
+
             return view('user.create', compact(
                 'departments',
                 'userTypes',
@@ -113,7 +115,8 @@ class UserController extends Controller
                 'attendanceShifts',
                 'staffTypeOptions',
                 'paymentStructures',
-                'ranks'
+                'ranks',
+                'deputyOptions'
             ));
         } catch (\Exception $e) {
             \Log::error('Error in UserController@create', [
@@ -260,6 +263,13 @@ class UserController extends Controller
                         'auto_deactivate' => 'nullable|boolean',
                         'payment_structure_id' => 'nullable|integer|exists:sqlsrv.workstation_payment_structures,id',
                         'base_salary_override' => 'nullable|numeric|min:0',
+                        'is_on_leave' => 'nullable|boolean',
+                        'leave_start_date' => 'nullable|date',
+                        'leave_end_date' => 'nullable|date|after_or_equal:leave_start_date',
+                        'leave_reason' => 'nullable|string|max:255',
+                        'deputy_user_id' => 'nullable|integer|exists:sqlsrv.users,id',
+                        'out_of_office_from' => 'nullable|date',
+                        'out_of_office_to' => 'nullable|date|after_or_equal:out_of_office_from',
                     ]
                 );
                 if ($validator->fails()) {
@@ -343,6 +353,13 @@ class UserController extends Controller
                 $user->lang = 'english';
                 $user->parent_id = parentId();
                 $user->rank = $request->filled('rank') ? $request->rank : null; // seniority for file-request priority
+                $user->is_on_leave = $request->boolean('is_on_leave');
+                $user->leave_start_date = $request->filled('leave_start_date') ? $request->leave_start_date : null;
+                $user->leave_end_date = $request->filled('leave_end_date') ? $request->leave_end_date : null;
+                $user->leave_reason = $request->filled('leave_reason') ? $request->leave_reason : null;
+                $user->deputy_user_id = $request->filled('deputy_user_id') ? (int) $request->deputy_user_id : null;
+                $user->out_of_office_from = $request->filled('out_of_office_from') ? $request->out_of_office_from : null;
+                $user->out_of_office_to = $request->filled('out_of_office_to') ? $request->out_of_office_to : null;
                 $user->assign_role = isset($request->user_role) ? implode(',', $request->user_role) : null;
                 $user->user_actions = isset($request->user_actions) ? implode(',', $request->user_actions) : null;
                 $user->dfr_permissions = isset($request->dfr_permissions) ? implode(',', $request->dfr_permissions) : null;
@@ -413,6 +430,8 @@ class UserController extends Controller
         // Officer ranks (seniority) for file-request prioritisation.
         $ranks = config('file_request_priority.options', []);
 
+        $deputyOptions = $this->deputyOptions($user->id);
+
         return view('user.edit', compact(
             'user',
             'departments',
@@ -422,7 +441,8 @@ class UserController extends Controller
             'attendanceShifts',
             'staffTypeOptions',
             'paymentStructures',
-            'ranks'
+            'ranks',
+            'deputyOptions'
         ));
     }
 
@@ -483,6 +503,13 @@ class UserController extends Controller
                         'auto_deactivate' => 'nullable|boolean',
                         'payment_structure_id' => 'nullable|integer|exists:sqlsrv.workstation_payment_structures,id',
                         'base_salary_override' => 'nullable|numeric|min:0',
+                        'is_on_leave' => 'nullable|boolean',
+                        'leave_start_date' => 'nullable|date',
+                        'leave_end_date' => 'nullable|date|after_or_equal:leave_start_date',
+                        'leave_reason' => 'nullable|string|max:255',
+                        'deputy_user_id' => ['nullable', 'integer', 'exists:sqlsrv.users,id', Rule::notIn([$id])],
+                        'out_of_office_from' => 'nullable|date',
+                        'out_of_office_to' => 'nullable|date|after_or_equal:out_of_office_from',
                         'password' => 'nullable|min:6',
                     ]
                 );
@@ -519,6 +546,27 @@ class UserController extends Controller
                         : null;
                 }
                 $user->staff_type_category = $request->staff_type_category;
+                if ($request->has('is_on_leave')) {
+                    $user->is_on_leave = $request->boolean('is_on_leave');
+                }
+                if ($request->has('leave_start_date')) {
+                    $user->leave_start_date = $request->filled('leave_start_date') ? $request->leave_start_date : null;
+                }
+                if ($request->has('leave_end_date')) {
+                    $user->leave_end_date = $request->filled('leave_end_date') ? $request->leave_end_date : null;
+                }
+                if ($request->has('leave_reason')) {
+                    $user->leave_reason = $request->filled('leave_reason') ? $request->leave_reason : null;
+                }
+                if ($request->has('deputy_user_id')) {
+                    $user->deputy_user_id = $request->filled('deputy_user_id') ? (int) $request->deputy_user_id : null;
+                }
+                if ($request->has('out_of_office_from')) {
+                    $user->out_of_office_from = $request->filled('out_of_office_from') ? $request->out_of_office_from : null;
+                }
+                if ($request->has('out_of_office_to')) {
+                    $user->out_of_office_to = $request->filled('out_of_office_to') ? $request->out_of_office_to : null;
+                }
                 $normalizedStaffType = strtoupper(trim($request->staff_type_category ?? ''));
                 $shouldForceAccessEnabled = in_array($normalizedStaffType, ['MLPP', 'MDCM'], true);
                 if ($request->has('shift_code')) {
@@ -598,6 +646,15 @@ class UserController extends Controller
         $user->delete();
 
         return redirect()->route('users.index')->with('success', __('User successfully deleted.'));
+    }
+
+    /**
+     * Users eligible to be selected as a deputy (redirect target) while an
+     * MLPP staff member is on leave/holiday. Excludes the given user id.
+     */
+    protected function deputyOptions(?int $excludeUserId = null): array
+    {
+        return User::deputyOptions($excludeUserId);
     }
 
     protected function defaultShiftCode(): ?string

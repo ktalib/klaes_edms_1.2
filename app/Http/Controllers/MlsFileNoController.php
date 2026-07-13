@@ -899,11 +899,47 @@ class MlsFileNoController extends Controller
                 'purpose_id' => 'nullable|integer'
             ]);
 
-            $updated = DB::connection('sqlsrv')
-                ->table('fileNumber')
+            $db = DB::connection('sqlsrv');
+            $confirmTransactionChange = $request->boolean('confirm_transaction_change');
+
+            $fileRecord = $db->table('fileNumber')->where('id', $id)->first();
+            if (!$fileRecord) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File number not found'
+                ], 404);
+            }
+
+            $newFileName = $validatedData['FileName'];
+            $nameChanged = trim((string) $fileRecord->FileName) !== trim($newFileName);
+
+            // File number identifiers used to match related tables (customers, entities, file indexing)
+            $fileNoCandidates = array_values(array_unique(array_filter([
+                $fileRecord->mlsfNo ?? null,
+                $fileRecord->kangisFileNo ?? null,
+                $fileRecord->NewKANGISFileNo ?? null,
+            ])));
+
+            // If the name is changing, warn the user when the file already has recorded transactions
+            if ($nameChanged && !empty($fileNoCandidates) && !$confirmTransactionChange) {
+                $hasTransaction = $db->table('file_indexings')
+                    ->whereIn('file_number', $fileNoCandidates)
+                    ->where('has_transaction', 1)
+                    ->exists();
+
+                if ($hasTransaction) {
+                    return response()->json([
+                        'success' => false,
+                        'requires_confirmation' => true,
+                        'message' => 'This file has recorded transactions. Changing the name will also update the name on the linked customer, entity and file indexing records. Do you want to continue?'
+                    ], 409);
+                }
+            }
+
+            $updated = $db->table('fileNumber')
                 ->where('id', $id)
                 ->update([
-                    'FileName' => $validatedData['FileName'],
+                    'FileName' => $newFileName,
                     'location' => $validatedData['location'] ?? null,
                     'commissioning_date' => $validatedData['commissioning_date'] ?? null,
                     'purpose_id' => $validatedData['purpose_id'] ?? null,
@@ -912,9 +948,8 @@ class MlsFileNoController extends Controller
                 ]);
 
             // Also update the mls_file_no table if tracking_id exists
-            $fileRecord = DB::connection('sqlsrv')->table('fileNumber')->where('id', $id)->first();
-            if ($fileRecord && !empty($fileRecord->tracking_id)) {
-                DB::connection('sqlsrv')->table('mls_file_no')
+            if (!empty($fileRecord->tracking_id)) {
+                $db->table('mls_file_no')
                     ->where('tracking_id', $fileRecord->tracking_id)
                     ->update([
                         'customer_type' => $validatedData['customer_type'] ?? null,
@@ -923,10 +958,17 @@ class MlsFileNoController extends Controller
                     ]);
             }
 
+            // Keep the name in sync across customers, entities and file indexing records
+            if ($nameChanged && !empty($fileNoCandidates)) {
+                $this->propagateFileNameChange($fileNoCandidates, $newFileName);
+            }
+
             if ($updated) {
                 return response()->json([
                     'success' => true,
-                    'message' => 'File number updated successfully'
+                    'message' => $nameChanged
+                        ? 'File number updated successfully. Name changes applied across related customer, entity and file indexing records.'
+                        : 'File number updated successfully'
                 ]);
             } else {
                 return response()->json([
@@ -945,6 +987,44 @@ class MlsFileNoController extends Controller
                 'success' => false,
                 'message' => 'Error updating file number: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Propagate a file name change to the related customer, entity and file
+     * indexing records so the holder name stays consistent everywhere it appears.
+     */
+    private function propagateFileNameChange(array $fileNoCandidates, string $newName): void
+    {
+        $db = DB::connection('sqlsrv');
+        $updatedBy = Auth::user() ? (Auth::user()->first_name . ' ' . Auth::user()->last_name) : null;
+
+        try {
+            $db->table('file_indexings')
+                ->whereIn('file_number', $fileNoCandidates)
+                ->update([
+                    'current_holder' => $newName,
+                    'updated_by' => $updatedBy,
+                    'updated_at' => now(),
+                ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to propagate file name change to file_indexings', ['error' => $e->getMessage()]);
+        }
+
+        try {
+            $db->table('customers_staging')
+                ->whereIn('file_number', $fileNoCandidates)
+                ->update(['customer_name' => $newName]);
+        } catch (\Throwable $e) {
+            // Table or column may not exist — skip gracefully
+        }
+
+        try {
+            $db->table('entities_staging')
+                ->whereIn('file_number', $fileNoCandidates)
+                ->update(['entity_name' => $newName]);
+        } catch (\Throwable $e) {
+            // Table or column may not exist — skip gracefully
         }
     }
 
@@ -1376,6 +1456,10 @@ class MlsFileNoController extends Controller
             return 'Merger';
         }
 
+        if ($applicationType === 'separation') {
+            return 'Separation';
+        }
+
         if ($applicationType === 'extension') {
             return 'Extension';
         }
@@ -1402,6 +1486,10 @@ class MlsFileNoController extends Controller
 
         if ($fileOption === 'merger') {
             return 'Merger';
+        }
+
+        if ($fileOption === 'separation') {
+            return 'Separation';
         }
 
         if ($fileOption === 'extension') {
@@ -1629,13 +1717,21 @@ class MlsFileNoController extends Controller
 
                     $oldIndexing = DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $originalFileNo)->first();
 
+                    // The OLD file's real commissioning date — preserved on the archive row so the
+                    // Legal Search timeline can still show when the predecessor was commissioned.
+                    // Stamping now() here would falsely date a years-old file to the CoP day.
+                    $oldCommissioningDate = \App\Models\MlsFileNo::where('full_file_number', $originalFileNo)
+                        ->orderByDesc('id')
+                        ->value('commissioning_date')
+                        ?? ($oldFileNoRecord->commissioning_date ?? null);
+
                     // 3. Decommission old file into decommissioned_files
                     $copDecommissionRow = [
                         'file_number_id' => $oldFileNoRecord->id ?? 0,
                         'file_no' => $originalFileNo,
                         'mls_file_no' => $originalFileNo,
                         'file_name' => $validated['file_name'] ?? $oldFileNoRecord->FileName ?? 'Change of Purpose generated',
-                        'commissioning_date' => now(),
+                        'commissioning_date' => $oldCommissioningDate,
                         'decommissioning_date' => now(),
                         'decommissioning_reason' => 'Change of Purpose to ' . $landUse,
                         'decommissioned_by' => $commissionedBy,
@@ -1664,13 +1760,17 @@ class MlsFileNoController extends Controller
                             'updated_at' => now()
                         ]);
 
-                    // Update mls_file_no model if present
+                    // Update mls_file_no model if present. The new number begins its own lifecycle,
+                    // so its commissioning date is the CoP date — leaving the old file's
+                    // commissioning_date on the renamed row would make the successor's
+                    // "File Commissioning" timeline entry predate the Change of Purpose itself.
                     \App\Models\MlsFileNo::where('full_file_number', $originalFileNo)->update([
                         'full_file_number' => $fullFileNumber,
                         'land_use' => $landUse,
                         'year' => $year,
                         'serial_number' => $serial,
-                        'tracking_id' => $trackingId ?? $oldFileNoRecord->tracking_id
+                        'tracking_id' => $trackingId ?? $oldFileNoRecord->tracking_id,
+                        'commissioning_date' => now(),
                     ]);
 
                     // 5. Resolve or Allocate Property ID across staging tables to ensure historical linkage
@@ -2373,13 +2473,14 @@ class MlsFileNoController extends Controller
                                 'file_number' => $fullFileNumber,
                             ]);
                         }
-                    } elseif (!$skipAutoPra && in_array($sourceValue, ['Subdivision', 'Merger', 'Extension'])) {
-                        // Create PRA transaction records for Subdivision/Merger/Extension
+                    } elseif (!$skipAutoPra && in_array($sourceValue, ['Subdivision', 'Merger', 'Extension', 'Separation'])) {
+                        // Create PRA transaction records for Subdivision/Merger/Extension/Separation
                         try {
-                            $plotTransactionType = $sourceValue === 'Extension' ? 'Plot Extension' : $sourceValue;
+                            $plotTransactionType = $sourceValue === 'Extension' ? 'Plot Extension'
+                                : ($sourceValue === 'Separation' ? 'Plot Separation' : $sourceValue);
                             $fileName = (string) ($validated['file_name'] ?? '');
                             $grantee = $fileName;
-                            $grantor = ($sourceValue === 'Subdivision' || $sourceValue === 'Merger' || $sourceValue === 'Extension') ? ($motherOwner ?: $fileName) : $fileName;
+                            $grantor = ($sourceValue === 'Subdivision' || $sourceValue === 'Merger' || $sourceValue === 'Extension' || $sourceValue === 'Separation') ? ($motherOwner ?: $fileName) : $fileName;
 
                             $propId = app(\App\Services\PropertyIdAllocationService::class)->allocateOrRetrievePropId(
                                 $fullFileNumber,
@@ -2439,6 +2540,9 @@ class MlsFileNoController extends Controller
                                 'prop_id' => $propId,
                                 'parent_prop_id' => $parentPropId,
                                 'tracking_id' => $trackingId,
+                                'related_file_number' => $relatedFileNumbers
+                                    ? implode(', ', (array) (json_decode($relatedFileNumbers, true) ?: []))
+                                    : null,
                                 'comments' => $praComment,
                                 'remarks' => "Commissioned via " . $sourceValue . " workflow",
                             ], Auth::id());
@@ -3709,32 +3813,12 @@ class MlsFileNoController extends Controller
                     $propIdService = app(\App\Services\PropertyIdAllocationService::class);
                     $opPraMetadata = $this->resolveOpPraMetadata((string) $sourceValue);
 
-                    $parentPropId = null;
-                    if (!empty($validated['merger_app_id'])) {
-                        $mergerApp = \App\Models\PlotMergerApplication::find($validated['merger_app_id']);
-                        if ($mergerApp) {
-                            $sourceFiles = $mergerApp->plotSizes()->whereIn('type', ['source', 'merger_source'])->pluck('source_file_no')->toArray();
-                            if (!empty($sourceFiles)) {
-                                $parentPropId = DB::connection('sqlsrv')->table('file_indexings')
-                                    ->whereIn('file_number', $sourceFiles)
-                                    ->whereNotNull('prop_id')
-                                    ->pluck('prop_id')
-                                    ->unique()
-                                    ->implode(',');
-                            }
-                        }
-                    } elseif (!empty($validated['subdivision_app_id'])) {
-                        $subdivisionApp = \App\Models\PlotSubdivisionApplication::find($validated['subdivision_app_id']);
-                        if ($subdivisionApp) {
-                            $parentPropId = DB::connection('sqlsrv')->table('file_indexings')
-                                ->where('file_number', $subdivisionApp->file_no)
-                                ->value('prop_id');
-                        }
-                    } elseif (($validated['file_option'] ?? '') === 'extension' && !empty($validated['existing_file_no'])) {
-                        $parentPropId = DB::connection('sqlsrv')->table('file_indexings')
-                            ->where('file_number', $validated['existing_file_no'])
-                            ->value('prop_id');
-                    }
+                    // $parentPropId / $relatedFileNumbers / $motherOwner were already resolved in the
+                    // lineage block above, including the PropertyIdAllocationService fallback for
+                    // mothers whose file_indexings row carries no prop_id (subdivision children keep
+                    // prop_id on their PRA row, not on file_indexings). Re-resolving here with a bare
+                    // ->value('prop_id') lookup silently dropped that fallback and left
+                    // pra.parent_prop_id empty on every batch-commissioned child.
 
                     if ($opPraMetadata !== null) {
                         foreach ($validated['location_entries'] as $index => $entry) {
@@ -3799,7 +3883,8 @@ class MlsFileNoController extends Controller
                         ]);
                     } else if (in_array($sourceValue, ['Subdivision', 'Merger', 'Extension', 'Separation'])) {
                         // Create PRA transaction records for Subdivision/Merger/Extension/Separation
-                        $plotTransactionType = $sourceValue === 'Extension' ? 'Plot Extension' : $sourceValue;
+                        $plotTransactionType = $sourceValue === 'Extension' ? 'Plot Extension'
+                            : ($sourceValue === 'Separation' ? 'Plot Separation' : $sourceValue);
                         $globalFileName = (string) ($validated['file_name'] ?? '');
 
                         // Note: $motherOwner, $parentPropId, and $relatedFileNumbers were resolved above
@@ -3867,7 +3952,11 @@ class MlsFileNoController extends Controller
                                 'prop_id' => $propId,
                                 'parent_prop_id' => $parentPropId,
                                 'tracking_id' => $batchTrackingId,
-                                'related_fileno' => $relatedFileNumbers,
+                                // PraRecordService only persists 'related_file_number'; a bare
+                                // 'related_fileno' key is dropped by prepareRecordPayload().
+                                'related_file_number' => $relatedFileNumbers
+                                    ? implode(', ', (array) (json_decode($relatedFileNumbers, true) ?: []))
+                                    : null,
                                 'comments' => $praComment,
                                 'remarks' => "Batch commissioned via " . $sourceValue . " workflow",
                             ], Auth::id());
@@ -3905,6 +3994,7 @@ class MlsFileNoController extends Controller
                 );
 
                 $workflowService = app(PlotWorkflowService::class);
+                $parcelNotifier = app(ParcelUpdateNotificationService::class);
                 $decommissionSummary = [
                     'archived' => [],
                     'history_updated' => 0
@@ -3946,7 +4036,9 @@ class MlsFileNoController extends Controller
                                 ->toArray();
 
                             // 2. Decommission
-                            $res = $workflowService->decommissionFiles($sourceFiles, "Plot Merger to batch of " . count($allFileNumbers) . " files", $commissionedBy, ($allFileNumbers[0] ?? null));
+                            // Pass every new file as the successor (CSV) so the Decommissioned Files
+                            // list's Related File column shows all batch-generated files, not just the first.
+                            $res = $workflowService->decommissionFiles($sourceFiles, "Plot Merger to batch of " . count($allFileNumbers) . " files", $commissionedBy, (!empty($allFileNumbers) ? implode(',', $allFileNumbers) : null));
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
 
                             $this->logPlotsWorkflow('info', 'Merger decommission result', [
@@ -4008,7 +4100,9 @@ class MlsFileNoController extends Controller
                             || DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->exists();
 
                         if ($motherExists) {
-                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Subdivision into batch of " . count($allFileNumbers) . " fragments", $commissionedBy, ($allFileNumbers[0] ?? null));
+                            // Pass every new fragment as the successor (CSV) so the Decommissioned Files
+                            // list's Related File column shows all fragments, not just the first.
+                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Subdivision into batch of " . count($allFileNumbers) . " fragments", $commissionedBy, (!empty($allFileNumbers) ? implode(',', $allFileNumbers) : null));
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
                         }
 
@@ -4048,7 +4142,9 @@ class MlsFileNoController extends Controller
                             || DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->exists();
 
                         if ($motherExists) {
-                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Separation into batch of " . count($allFileNumbers) . " fragments", $commissionedBy, ($allFileNumbers[0] ?? null));
+                            // Pass every new fragment as the successor (CSV) so the Decommissioned Files
+                            // list's Related File column shows all fragments, not just the first.
+                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Separation into batch of " . count($allFileNumbers) . " fragments", $commissionedBy, (!empty($allFileNumbers) ? implode(',', $allFileNumbers) : null));
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
                         }
 

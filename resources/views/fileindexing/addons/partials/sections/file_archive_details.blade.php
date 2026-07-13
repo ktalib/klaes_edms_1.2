@@ -69,10 +69,25 @@
             </select>
         </div>
         <div class="form-group">
-            <label for="registry" class="block text-sm font-medium text-gray-700 mb-2">Registry</label>
-            <input type="text" id="registry"
+            @php
+                $registryAssignRole = strtolower((string) (auth()->user()->assign_role ?? ''));
+                $canOverrideRegistry = in_array($registryAssignRole, ['super admin', 'supper admin', 'administrator', 'admin', 'editor'], true);
+            @endphp
+            <label for="registry" class="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                Registry
+                <span class="text-xs text-gray-400" title="Auto-detected from the file number prefix + year">(auto)</span>
+                @if($canOverrideRegistry)
+                    <button type="button" id="registry-admin-unlock-btn" title="Admin override: unlock to set manually"
+                        class="text-gray-400 hover:text-indigo-600 focus:outline-none">
+                        <i data-lucide="lock" class="h-3 w-3 pointer-events-none"></i>
+                    </button>
+                @endif
+            </label>
+            <input type="text" id="registry" name="registry"
                 class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm bg-gray-100 cursor-not-allowed"
-                readonly data-permanent-readonly="true">
+                readonly
+                @if(!$canOverrideRegistry) data-permanent-readonly="true" @endif
+                data-admin-overridable="{{ $canOverrideRegistry ? 'true' : 'false' }}">
         </div>
         <div class="form-group">
             <label for="shelf-rack-no" class="block text-sm font-medium text-gray-700 mb-2">Shelf/Rack No</label>

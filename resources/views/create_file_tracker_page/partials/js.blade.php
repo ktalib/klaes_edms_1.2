@@ -1629,6 +1629,182 @@
         }
     })();
 
+    // Request Purpose → Expected Return Date: pre-fill the deadline from the
+    // selected purpose's default turnaround, and preview the Green/Amber/Red
+    // status that date would produce (mirrors FileTracker::getTimelineStatusAttribute
+    // — 20% of the window remaining = amber, past the date = red).
+    (function () {
+        const purposeSelect = document.getElementById('request-purpose');
+        const deadlineField = document.getElementById('request-deadline');
+        const preview = document.getElementById('request-timeline-preview');
+        const daysLabel = document.getElementById('request-deadline-days');
+        const otherWrap = document.getElementById('request-purpose-other-wrap');
+        const otherInput = document.getElementById('request-purpose-other');
+        const timelineDaysInput = document.getElementById('request-timeline-days');
+        if (!purposeSelect || !deadlineField || !preview || !daysLabel) return;
+
+        let userEditedDeadline = false;
+
+        function toDateInputValue(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        // admin/header.blade.php globally converts every input[type=date] into a flatpickr
+        // instance (altInput:true, for DD/MM/YYYY display): the ORIGINAL <input> is hidden
+        // and keeps the Y-m-d value for submission, while a separate visible text field
+        // (altInput) is what the user actually sees/edits. Setting deadlineField.value
+        // directly only updates the hidden original — flatpickr never finds out, so the
+        // visible altInput stays blank even though the preview badge below (which reads
+        // the same hidden value) looks correct. Driving flatpickr's own setDate() keeps
+        // the visible field, the hidden value, and this preview all in sync.
+        function setDeadlineValue(dateStr) {
+            const fp = deadlineField._flatpickr;
+            if (fp) {
+                fp.setDate(dateStr, true);
+            } else {
+                deadlineField.value = dateStr;
+            }
+        }
+
+        // Whole-day count from today to the chosen date, based on calendar days
+        // (not a raw ms/24h division), so "today" reads as 0 and "tomorrow" as 1
+        // regardless of the current time of day.
+        function daysFromToday(dateStr) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const target = new Date(dateStr + 'T00:00:00');
+            return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        }
+
+        function updatePreview() {
+            if (!deadlineField.value) {
+                preview.classList.add('hidden');
+                daysLabel.classList.add('hidden');
+                return;
+            }
+
+            const dayCount = daysFromToday(deadlineField.value);
+            daysLabel.textContent = dayCount === 0
+                ? 'Due today'
+                : (dayCount > 0 ? `${dayCount} day${dayCount === 1 ? '' : 's'} from today` : `${Math.abs(dayCount)} day${Math.abs(dayCount) === 1 ? '' : 's'} ago`);
+            daysLabel.classList.remove('hidden');
+
+            const start = new Date();
+            const deadline = new Date(deadlineField.value + 'T23:59:59');
+            const totalWindowMs = deadline.getTime() - start.getTime();
+            let status;
+            if (start.getTime() > deadline.getTime()) {
+                status = 'red';
+            } else if (totalWindowMs <= 0) {
+                status = 'red';
+            } else {
+                // Elapsed-since-"now" is ~0 at selection time, so this previews the
+                // status the file would have *today* — it naturally drifts toward
+                // amber/red as the actual deadline approaches after saving.
+                status = (totalWindowMs / (1000 * 60 * 60 * 24)) <= 1 ? 'amber' : 'green';
+            }
+            const byStatus = {
+                green: { label: 'On Track', cls: 'bg-green-100 text-green-800 border border-green-200' },
+                amber: { label: 'Due Soon', cls: 'bg-amber-100 text-amber-800 border border-amber-200' },
+                red:   { label: 'Overdue',  cls: 'bg-red-100 text-red-800 border border-red-200' },
+            };
+            const meta = byStatus[status];
+            preview.textContent = `Timeline: ${meta.label}`;
+            preview.className = `inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${meta.cls}`;
+        }
+
+        const timelineDaysWrap = document.getElementById('request-timeline-days-wrap');
+        const deadlineWrap = document.getElementById('request-deadline-wrap');
+
+        // "In-Transit" is a purely internal movement (no loan/return expected) —
+        // Timeline (Days) and Expected Return Date don't apply, so hide both and
+        // clear any stale value instead of just skipping their validation.
+        function applyInTransitVisibility() {
+            const isInTransit = purposeSelect.value === 'in_transit';
+            if (timelineDaysWrap) timelineDaysWrap.classList.toggle('hidden', isInTransit);
+            if (deadlineWrap) deadlineWrap.classList.toggle('hidden', isInTransit);
+            if (isInTransit) {
+                if (timelineDaysInput) timelineDaysInput.value = '';
+                const fp = deadlineField._flatpickr;
+                if (fp) { fp.clear(); } else { deadlineField.value = ''; }
+                preview.classList.add('hidden');
+                daysLabel.classList.add('hidden');
+            }
+            return isInTransit;
+        }
+
+        purposeSelect.addEventListener('change', function () {
+            const isOther = purposeSelect.value === 'other';
+            if (otherWrap) otherWrap.classList.toggle('hidden', !isOther);
+            if (!isOther && otherInput) otherInput.value = '';
+
+            if (applyInTransitVisibility()) return;
+
+            const turnaroundDays = parseInt(purposeSelect.selectedOptions?.[0]?.dataset?.turnaroundDays || '', 10);
+            if (!isNaN(turnaroundDays)) {
+                if (timelineDaysInput) timelineDaysInput.value = turnaroundDays;
+                if (!userEditedDeadline) {
+                    const d = new Date();
+                    d.setDate(d.getDate() + turnaroundDays);
+                    setDeadlineValue(toDateInputValue(d));
+                }
+            }
+            updatePreview();
+        });
+
+        deadlineField.addEventListener('input', function () {
+            userEditedDeadline = true;
+            updatePreview();
+        });
+
+        // Once flatpickr has enhanced the field (it runs on DOMContentLoaded, registered by
+        // admin/header.blade.php before this script — see setDeadlineValue() above), also
+        // hook its own onChange so a date picked directly via the visible altInput/calendar
+        // is recognised as a manual edit, same as the native 'input' listener above covers
+        // for the pre-enhancement window.
+        function hookFlatpickrOnChange() {
+            const fp = deadlineField._flatpickr;
+            if (fp && Array.isArray(fp.config?.onChange)) {
+                fp.config.onChange.push(function () {
+                    userEditedDeadline = true;
+                    updatePreview();
+                });
+            }
+        }
+        if (deadlineField._flatpickr) {
+            hookFlatpickrOnChange();
+        } else {
+            document.addEventListener('DOMContentLoaded', hookFlatpickrOnChange);
+        }
+
+        if (timelineDaysInput) {
+            timelineDaysInput.addEventListener('input', function () {
+                const days = parseInt(timelineDaysInput.value, 10);
+                if (!isNaN(days) && days >= 0) {
+                    const d = new Date();
+                    d.setDate(d.getDate() + days);
+                    setDeadlineValue(toDateInputValue(d));
+                    userEditedDeadline = true;
+                    updatePreview();
+                }
+            });
+        }
+
+        window._resetRequestTimelineField = function () {
+            userEditedDeadline = false;
+            preview.classList.add('hidden');
+            daysLabel.classList.add('hidden');
+            if (otherWrap) otherWrap.classList.add('hidden');
+            if (otherInput) otherInput.value = '';
+            if (timelineDaysInput) timelineDaysInput.value = '';
+            if (timelineDaysWrap) timelineDaysWrap.classList.remove('hidden');
+            if (deadlineWrap) deadlineWrap.classList.remove('hidden');
+        };
+    })();
+
     if (updateLogOfficerSelect && updateLogOfficerSelect.length) {
         updateLogOfficerSelect.on('change', function () {
             const value = $(this).val();
@@ -2388,6 +2564,85 @@
         });
     }
 
+    // Show the related files in this file's parcel-update / merger lineage. When the selected
+    // file belongs to a Subdivision / Merger / Change of Purpose / Extension / Separation group,
+    // every related file is listed — decommissioned parents (e.g. all source files of a merger)
+    // and the current/surviving children — so the clerk sees the full lineage at a glance.
+    function loadRelatedFilesPanel(fileNumber) {
+        // Hidden for now — mirrors the Related Files section removed from the
+        // Tracking Sheet / File Log Table. Panel markup is disabled server-side
+        // in index.blade.php, so bail before any DOM/AJAX work.
+        return;
+        const panel = document.getElementById('related-files-panel');
+        const list = document.getElementById('related-files-list');
+        const subtitle = document.getElementById('related-files-subtitle');
+        if (!panel || !list) return;
+
+        const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+
+        if (!fileNumber) { panel.classList.add('hidden'); list.innerHTML = ''; return; }
+
+        $.ajax({
+            url: '/create-file-tracker/merger-group',
+            method: 'GET',
+            data: { file_number: fileNumber },
+            success: function (data) {
+                if (!data || !data.in_group || !Array.isArray(data.members) || data.members.length === 0) {
+                    panel.classList.add('hidden');
+                    list.innerHTML = '';
+                    return;
+                }
+
+                // Only surface related files that have actually been logged out / tracked. If no
+                // related file (other than the one loaded) has movement, there is nothing to warn
+                // about — keep the panel hidden.
+                const relatedActive = data.members.filter(m => !m.is_self && m.logged_out);
+                if (relatedActive.length === 0) {
+                    panel.classList.add('hidden');
+                    list.innerHTML = '';
+                    return;
+                }
+
+                const toRender = data.members.filter(m => m.logged_out || m.is_self);
+
+                if (subtitle) {
+                    subtitle.textContent = `${relatedActive.length} related file(s) in this lineage have been logged out / are in movement.`;
+                }
+
+                list.innerHTML = toRender.map(function (m) {
+                    const isParent = m.role === 'parent';
+                    const badge = isParent
+                        ? '<span class="shrink-0 inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">Decommissioned</span>'
+                        : '<span class="shrink-0 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Current</span>';
+                    const selfMark = m.is_self
+                        ? ' <span class="text-[10px] font-semibold text-blue-600">(this file)</span>'
+                        : '';
+                    const dateText = isParent
+                        ? (m.date_decommissioned ? 'Decommissioned ' + m.date_decommissioned : '')
+                        : (m.date_commissioned ? 'Commissioned ' + m.date_commissioned : '');
+                    const meta = [m.file_title || '—', m.location].filter(Boolean).map(esc).join(' · ');
+                    return `<li class="flex items-start justify-between gap-2 py-1.5">
+                        <div class="min-w-0">
+                            <p class="text-sm font-medium text-gray-900 truncate">${esc(m.file_number)}${selfMark}</p>
+                            <p class="text-xs text-gray-500 truncate">${meta}</p>
+                            ${dateText ? `<p class="text-[11px] text-gray-400">${esc(dateText)}</p>` : ''}
+                        </div>
+                        ${badge}
+                    </li>`;
+                }).join('');
+
+                panel.classList.remove('hidden');
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            },
+            error: function (xhr) {
+                panel.classList.add('hidden');
+                console.warn('[related-files] failed', xhr.status);
+            },
+        });
+    }
+
     function applyMetadataResult(data, context = {}) {
         const trackingField = $('#tracking-id');
         const fileNameField = $('#file-name');
@@ -2461,6 +2716,7 @@
         }
 
         checkFileLogoutStatus(resolvedFileNumber || '');
+        loadRelatedFilesPanel(resolvedFileNumber || '');
 
         $('#sidebar-tracking-id').text(data.tracking_id || '-');
 
@@ -3128,8 +3384,13 @@
                 console.log('Before open - Modal classes:', modal.attr('class'));
                 console.log('Before open - Modal display:', modal.css('display'));
 
+                // When "Is Temporary File" is checked, restrict the MLS smart
+                // selector to temporary "(T)" file numbers only.
+                const tempOnly = !!document.getElementById('is-temp-file')?.checked;
+
                 const result = GlobalFileNoModal.open({
                     targetFields: ['file_number'], // Target our file number field
+                    tempOnly: tempOnly,
                     // Scope the selectable registries to the current module so, e.g., the
                     // Land module never surfaces SLTR/ST/KANGIS files (and vice versa).
                     // Modules not listed here keep the full set of tabs. KANGIS and SLTR
@@ -3421,6 +3682,23 @@
         }
     }
 
+    // Green/Amber/Red timeline badge for a tracker's Request Purpose deadline.
+    // The colour itself is computed server-side (FileTracker::getTimelineStatusAttribute,
+    // exposed as tracker.timelineStatus) — this just maps that value to display bits so
+    // the on-screen listing and the printed File Tracking Sheet render it identically.
+    function getTimelineBadge(tracker) {
+        const status = (tracker && tracker.timelineStatus) || null;
+        if (!status) return null;
+
+        const byStatus = {
+            green: { label: 'On Track', badgeClass: 'bg-green-100 text-green-800 border border-green-200', dot: '#16a34a' },
+            amber: { label: 'Due Soon', badgeClass: 'bg-amber-100 text-amber-800 border border-amber-200', dot: '#d97706' },
+            red:   { label: 'Overdue',  badgeClass: 'bg-red-100 text-red-800 border border-red-200',       dot: '#dc2626' },
+        };
+
+        return byStatus[status] || null;
+    }
+
     // Paginate the printed File Tracking Sheet: at most 5 movement-history rows per
     // page, and the Signatures block always travels with the final row on the last
     // page (so it is never stranded on a page of its own). Operates on the print
@@ -3524,7 +3802,10 @@
             acceptedByName: log.accepted_by_name ?? log.acceptedByName ?? null,
             rejectedById: normalizeId(log.rejected_by ?? log.rejectedBy ?? null),
             rejectedByName: log.rejected_by_name ?? log.rejectedByName ?? null,
-            purpose: log.purpose ?? null
+            purpose: log.purpose ?? null,
+            // Reason for delay entered when logging the file back to Registry while
+            // its timeline status was Amber/Red — see FileTrackerController::updateStatus().
+            delayReason: log.delay_reason ?? log.delayReason ?? null
         };
     }
 
@@ -3756,6 +4037,19 @@
             printed: tracker.printed ?? false,
             numPages: tracker.num_pages ?? tracker.numPages ?? null,
             inDigitalArchive: tracker.in_digital_archive ?? tracker.inDigitalArchive ?? false,
+            // Counterpart file locations, when logged out or in the Archive: a "(T)"
+            // file carries its mother's location, a mother carries its "(T)" file's.
+            // See getMotherFileLocation() / getTempFileLocation() server-side.
+            motherFileLocation: tracker.mother_file_location ?? tracker.motherFileLocation ?? null,
+            tempFileLocation: tracker.temp_file_location ?? tracker.tempFileLocation ?? null,
+            // Request Purpose + timeline (Green/Amber/Red), computed server-side from
+            // date_created/deadline in FileTracker::getTimelineStatusAttribute().
+            requestPurposeId: tracker.request_purpose_id ?? tracker.requestPurposeId ?? null,
+            requestPurposeName: tracker.request_purpose_name ?? tracker.requestPurposeName ?? null,
+            deadline: tracker.deadline ?? null,
+            isOverdue: tracker.is_overdue ?? tracker.isOverdue ?? false,
+            daysUntilDeadline: tracker.days_until_deadline ?? tracker.daysUntilDeadline ?? null,
+            timelineStatus: tracker.timeline_status ?? tracker.timelineStatus ?? null,
         };
     }
 
@@ -3931,7 +4225,8 @@
     // Handle office selection (Legacy Destination / Current Office)
     if (destinationOfficeSelectElement) {
         destinationOfficeSelectElement.addEventListener('change', function () {
-            // ... (rest of logic for destination/current office if still needed for display)
+            // SLTR Internal scope: show the "specify" field when Other is picked
+            sltrToggleInternalOtherField();
         });
     }
 
@@ -3960,14 +4255,41 @@
         const originOfficeName = originOfficeId;
 
         // Destination (Department)
-        const destinationSelection = document.getElementById('current-office').value;
+        let destinationSelection = document.getElementById('current-office').value;
+
+        // ── SLTR Internal scope: destination is an internal SLTR section ──
+        const sltrInternal = isSltrInternalScope();
+        if (sltrInternal && destinationSelection === 'Other') {
+            const sltrOtherLabel = document.getElementById('sltr-internal-other-name')?.value?.trim() || '';
+            if (!sltrOtherLabel) {
+                Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Please specify the internal destination within SLTR.' });
+                document.getElementById('sltr-internal-other-name')?.focus();
+                return;
+            }
+            destinationSelection = sltrOtherLabel;
+        }
 
         // Receiving Office
         const receivingOfficeCode = document.getElementById('receiving-office').value;
         const receivingOfficeName = $('#receiving-office').find('option:selected').data('name') || $('#receiving-office').find('option:selected').text();
 
         const priority = document.getElementById('file-priority').value;
-        const notes = document.getElementById('office-notes').value;
+        const requestPurposeSelect = document.getElementById('request-purpose');
+        const requestPurposeId = requestPurposeSelect?.value || '';
+        const isOtherRequestPurpose = requestPurposeId === 'other';
+        const isInTransitRequestPurpose = requestPurposeId === 'in_transit';
+        const requestPurposeOtherInput = document.getElementById('request-purpose-other');
+        const requestPurposeOther = requestPurposeOtherInput?.value?.trim() || '';
+        const requestPurposeName = isOtherRequestPurpose
+            ? requestPurposeOther
+            : (requestPurposeSelect?.selectedOptions?.[0]?.text || '');
+        const requestDeadlineField = document.getElementById('request-deadline');
+        const requestDeadline = requestDeadlineField?.value || '';
+        let notes = document.getElementById('office-notes').value;
+        // Tag Internal SLTR movements so the scope stays visible in logs/prints
+        if (sltrInternal) {
+            notes = notes.trim() ? '[Internal] ' + notes.trim() : '[Internal]';
+        }
         const numPages = document.getElementById('num-pages')?.value?.trim() || '';
         const inDigitalArchive = false;
 
@@ -3987,7 +4309,9 @@
             : destinationSelection;
         const finalDestinationName = destinationSelection === CUSTOM_DESTINATION_OPTION_VALUE
             ? (customDestinationOfficeDetails?.name || customDestinationInput?.value?.trim() || '')
-            : (selectedDestinationOption.data('name') || selectedDestinationOption.text() || destinationSelection);
+            : (sltrInternal
+                ? destinationSelection
+                : (selectedDestinationOption.data('name') || selectedDestinationOption.text() || destinationSelection));
 
         let effectiveReceivingOfficeCode = receivingOfficeCode;
         let effectiveReceivingOfficeName = receivingOfficeName;
@@ -4025,6 +4349,17 @@
             effectiveReceivingOfficeName = KANGIS_APPROVAL_ROUTE.officeName;
             effectiveReceivingOfficerId = null;
             effectiveReceivingOfficerName = KANGIS_APPROVAL_ROUTE.officeName;
+        } else if (sltrInternal && destinationSelection && destinationSelection !== 'Other Departments') {
+            // Internal SLTR movement — internal sections have no office/officer
+            // records, so the section itself is stored as both the receiving
+            // office and the receiving officer.
+            // Exception: "Other Departments" routes to a real office/officer,
+            // picked via the normal Receiving Office/Officer fields, so leave
+            // effectiveReceivingOfficeCode/Name as read from those selects.
+            effectiveReceivingOfficeCode = destinationSelection;
+            effectiveReceivingOfficeName = destinationSelection;
+            effectiveReceivingOfficerId = null;
+            effectiveReceivingOfficerName = destinationSelection;
         }
 
         const rackShelfLookupKey = normalizeFileNumberForLookup(fileNo);
@@ -4054,7 +4389,12 @@
             return;
         }
 
-        if (!workflowSubmissionMode && !_crossModuleRequestMode && !_isDigitalRequest && !receivingOfficerKey) {
+        // Internal SLTR sections (other than "Other Departments") have no office/officer
+        // records — the destination section itself is the receiving point, so the
+        // Receiving Officer field is hidden and must not be required here.
+        const sltrInternalNoOfficer = sltrInternal && destinationSelection !== 'Other Departments';
+
+        if (!workflowSubmissionMode && !_crossModuleRequestMode && !_isDigitalRequest && !sltrInternalNoOfficer && !receivingOfficerKey) {
             Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Select the receiving officer.' }); return;
             return;
         }
@@ -4091,6 +4431,36 @@
         if (numPagesHint) numPagesHint.classList.remove('hidden');
         if (numPagesError) numPagesError.classList.add('hidden');
         if (numPagesField) numPagesField.classList.remove('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+
+        if (!requestPurposeId) {
+            Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Please select the Request Purpose.' });
+            requestPurposeSelect?.focus();
+            return;
+        }
+
+        if (isOtherRequestPurpose && !requestPurposeOther) {
+            Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Please specify the Request Purpose.' });
+            requestPurposeOtherInput?.focus();
+            return;
+        }
+
+        // "In-Transit" is a purely internal movement (no loan/return expected),
+        // so Timeline (Days) and Expected Return Date are not required or validated.
+        const timelineDaysField = document.getElementById('request-timeline-days');
+        if (!isInTransitRequestPurpose && timelineDaysField && timelineDaysField.value.trim() !== '') {
+            const timelineDaysNum = Number(timelineDaysField.value);
+            if (!Number.isInteger(timelineDaysNum) || timelineDaysNum < 0 || timelineDaysNum > 365) {
+                Swal.fire({ icon: 'warning', title: 'Invalid Timeline', text: 'Timeline (Days) must be a whole number between 0 and 365.' });
+                timelineDaysField.focus();
+                return;
+            }
+        }
+
+        if (!isInTransitRequestPurpose && !requestDeadline) {
+            Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Expected Return Date could not be calculated — select a Request Purpose or enter Timeline (Days) above.' });
+            document.getElementById('request-timeline-days')?.focus();
+            return;
+        }
 
         // Officer Construction from DOM
         const receivingOfficer = {
@@ -4143,6 +4513,7 @@
             workflowType: resolvedWorkflowState?.type ?? null,
             existingTrackerId: resolvedWorkflowState?.trackerId ?? null,
             destinationDepartment: destinationSelection,
+            sltrInternalNoOfficer: sltrInternalNoOfficer,
             receivingOfficer: {
                 id: receivingOfficerId,
                 name: receivingOfficerNameResolved,
@@ -4178,6 +4549,10 @@
                 receiving_office_code: effectiveReceivingOfficeCode,
                 receiving_office_name: effectiveReceivingOfficeName
             }],
+            requestPurposeId: (requestPurposeId && !isOtherRequestPurpose && !isInTransitRequestPurpose) ? parseInt(requestPurposeId, 10) : null,
+            requestPurposeName: requestPurposeName || null,
+            requestPurposeOther: isOtherRequestPurpose ? requestPurposeOther : (isInTransitRequestPurpose ? 'In-Transit' : null),
+            deadline: requestDeadline || null,
             notes,
             createdAt: now.toISOString()
         };
@@ -4634,8 +5009,13 @@
             file_type: 'Application', // Can be made dynamic later
             priority: currentTracker.priority,
             department: department,
+            request_purpose_id: currentTracker.requestPurposeId || null,
+            request_purpose_other: currentTracker.requestPurposeOther || null,
             description: `File tracked in ${office.name || currentTracker.currentOffice || 'Unknown Office'}`,
-            deadline: null, // Can be added later
+            // Expected Return Date chosen on the form (pre-filled from the Request
+            // Purpose's default turnaround, editable). Server falls back to the
+            // purpose's turnaround only if this is somehow empty.
+            deadline: currentTracker.deadline || null,
             movement_log: [{
                 office_code: currentTracker.currentOfficeId,
                 office_name: office.name || currentTracker.currentOffice || 'Unknown Office',
@@ -4665,6 +5045,7 @@
             receiving_officer_id: receivingOfficerId,
             receiving_officer_name: receivingOfficerName,
             module: window.currentModule || null,
+            sltr_internal_no_officer: !!currentTracker.sltrInternalNoOfficer,
             origin_registry_code: currentTracker.originRegistryCode || null,
             proposed_tracking_id: currentTracker.trackingId || null,
             // Temporary file — the TMP code is already on the proposed tracking ID;
@@ -4968,6 +5349,17 @@
                 .replace(/>/g, '&gt;');
         };
 
+        // Display-only date formatter (DD/MM/YYYY) for the Expected Return Date
+        // column — independent of the flatpickr altFormat used on the form inputs.
+        const formatDeadlineDisplay = (value) => {
+            if (!value) return '';
+            const d = new Date(value);
+            if (isNaN(d.getTime())) return String(value).slice(0, 10);
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            return `${dd}/${mm}/${d.getFullYear()}`;
+        };
+
         const cards = paginatedTrackers.map(tracker => {
             const trackerKey = getTrackerKey(tracker);
             const isExpanded = trackerKey ? expandedTrackerHistory.has(trackerKey) : false;
@@ -4981,6 +5373,30 @@
                 MEDIUM: 'bg-amber-100 text-amber-800 border border-amber-200',
                 HIGH: 'bg-red-100 text-red-800 border border-red-200'
             }[priority] || 'bg-amber-100 text-amber-800 border border-amber-200';
+            const timelineBadge = getTimelineBadge(tracker);
+            const requestPurposeName = tracker.requestPurposeName || '';
+            const safeRequestPurposeName = requestPurposeName ? sanitize(requestPurposeName) : '';
+
+            // Timeline / Request Purpose / Expected Return Date column cells (File Log Table).
+            // These are per-tracker (not per movement-log entry), so the same value is
+            // repeated on every row of this tracker's table — mirrors the Delay Reason
+            // column's layout so the row stays scannable at a glance.
+            const daysUntilDeadline = tracker.daysUntilDeadline;
+            const timelineDaysLabel = (daysUntilDeadline === null || daysUntilDeadline === undefined)
+                ? null
+                : (daysUntilDeadline > 0
+                    ? `${daysUntilDeadline} day${daysUntilDeadline === 1 ? '' : 's'} left`
+                    : (daysUntilDeadline === 0 ? 'Due today' : `${Math.abs(daysUntilDeadline)} day${Math.abs(daysUntilDeadline) === 1 ? '' : 's'} overdue`));
+            const timelineCellHtml = timelineBadge
+                ? `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${timelineBadge.badgeClass}">
+                        <span class="inline-flex h-1.5 w-1.5 rounded-full" style="background:${timelineBadge.dot}"></span>
+                        ${sanitize(timelineDaysLabel || timelineBadge.label)}
+                   </span>`
+                : '<span class="text-gray-400">—</span>';
+            const requestPurposeCellHtml = safeRequestPurposeName || '<span class="text-gray-400">—</span>';
+            const expectedReturnDateCellHtml = tracker.deadline
+                ? sanitize(formatDeadlineDisplay(tracker.deadline))
+                : '<span class="text-gray-400">—</span>';
             const receivingOfficerName = tracker.receivingOfficer?.name || tracker.receivingOfficerName || '';
             const safeReceivingOfficerName = receivingOfficerName ? sanitize(receivingOfficerName) : '';
             const originOfficeName = tracker.originOffice?.name || tracker.originOfficeName || tracker.originRegistry || '';
@@ -5228,6 +5644,8 @@
                         || entry.officeId
                         || '—';
                     const safeNotes = sanitize(entry.notes);
+                    const safeDelayReason = entry.delayReason ? sanitize(entry.delayReason) : '';
+                    const clockedInLine = entry.acceptedByName ? `<div class="text-xs text-gray-500">Clocked in by ${sanitize(entry.acceptedByName)}</div>` : '';
                     // Update is available for any movement row while the file is still out.
                     // Once it is logged back in (or this is a Log-in row) every action —
                     // Update included — is disabled, leaving only Print Complete Log Sheet.
@@ -5283,6 +5701,7 @@
                                 ${(isLoginEntry || entryStatusLabel === 'Completed') ? `
                                 <div>${sanitize(entry.logInDate || '—')}</div>
                                 <div class="text-xs text-gray-500">${sanitize(entry.logInTime || '—')}</div>
+                                ${clockedInLine}
                                 ` : '<div class="text-gray-400">—</div>'}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
@@ -5295,8 +5714,14 @@
                                     ${entryStatusLabel}
                                 </span>
                             </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">${requestPurposeCellHtml}</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm">${timelineCellHtml}</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">${expectedReturnDateCellHtml}</td>
                             <td class="px-4 py-3 text-sm text-gray-600">
                                 ${safeNotes ? '<span class="line-clamp-2" title="' + safeNotes + '">' + safeNotes + '</span>' : '—'}
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-600">
+                                ${safeDelayReason ? '<span class="line-clamp-2 text-amber-700" title="' + safeDelayReason + '">' + safeDelayReason + '</span>' : '—'}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-right text-sm">
                                 <div class="relative inline-block text-left">
@@ -5338,7 +5763,7 @@
                 }).join(''))
                 : `
                         <tr>
-                            <td colspan="${isKangisView ? ((_kangisUrlParam === 'dgis' || _kangisUrlParam === 'dg') ? 6 : 7) : 8}" class="px-6 py-6 text-center text-sm text-gray-600">
+                            <td colspan="${isKangisView ? ((_kangisUrlParam === 'dgis' || _kangisUrlParam === 'dg') ? 6 : 7) : 9}" class="px-6 py-6 text-center text-sm text-gray-600">
                                 No office movements recorded for this tracker yet.
                             </td>
                     </tr>
@@ -5395,6 +5820,10 @@
                                     In Archive
                                 </span>
                             </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
+                            <td class="px-4 py-3 text-sm text-gray-400">—</td>
                             <td class="px-4 py-3 text-sm text-gray-400">—</td>
                             <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-400">—</td>
                         </tr>
@@ -5422,6 +5851,8 @@
                 const officerId = entry.receivingOfficerId ?? null;
                 const displayName = officerName ? sanitize(officerName) : 'N/A';
                 const officerBadge = officerId ? sanitize(String(officerId)) : null;
+                const safeDelayReason = entry.delayReason ? sanitize(entry.delayReason) : '';
+                const clockedInLine = entry.acceptedByName ? `<div class="text-xs text-gray-400">Clocked in by ${sanitize(entry.acceptedByName)}</div>` : '';
                 return `
                         <tr class="bg-gray-50/60" title="Earlier tracking cycle for this file (read-only)">
                             <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-gray-500">
@@ -5443,6 +5874,7 @@
                                 ${(isLoginEntry || entryStatusLabel === 'Completed') ? `
                                 <div>${sanitize(entry.logInDate || '—')}</div>
                                 <div class="text-xs text-gray-400">${sanitize(entry.logInTime || '—')}</div>
+                                ${clockedInLine}
                                 ` : '<div class="text-gray-400">—</div>'}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
@@ -5455,8 +5887,14 @@
                                     ${entryStatusLabel}
                                 </span>
                             </td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">${requestPurposeCellHtml}</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm">${timelineCellHtml}</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">${expectedReturnDateCellHtml}</td>
                             <td class="px-4 py-3 text-sm text-gray-500">
                                 ${safeNotes ? `<span class="line-clamp-2" title="${safeNotes}">${safeNotes}</span>` : '—'}
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-500">
+                                ${safeDelayReason ? `<span class="line-clamp-2 text-amber-700" title="${safeDelayReason}">${safeDelayReason}</span>` : '—'}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-400">—</td>
                         </tr>
@@ -5646,10 +6084,18 @@
                                             ${safeReceivingOfficerName || '—'}
                                         </span>
                                     </div>
+                                    ${safeRequestPurposeName ? `
+                                        <span class="text-xs text-gray-400">|</span>
+                                        <div class="flex items-center gap-1">
+                                            <i data-lucide="clipboard-list" class="h-3 w-3 text-gray-400"></i>
+                                            <span class="text-sm text-gray-600">${safeRequestPurposeName}</span>
+                                        </div>
+                                    ` : ''}
                                 </div>
                             </div>
                             <div class="flex items-center gap-2 flex-wrap">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${priorityBadge}">${priorityLabel}</span>
+                                ${timelineBadge ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${timelineBadge.badgeClass}" title="Timeline status">${timelineBadge.label}</span>` : ''}
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">${sanitize(currentOfficeCode)}</span>
                                 ${(showAssignmentActions && !window.isDigitalRequestModule) ? `
                                     <button type="button" class="tracker-card-action-accept inline-flex items-center px-3 py-1.5 border border-green-300 rounded-md text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 transition-colors" data-assignment-action="accept" data-tracking-id="${tracker.id || ''}">
@@ -5754,7 +6200,11 @@
                                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Log In</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Log Out</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Request Purpose</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Timeline</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Expected Return Date</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Notes</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Delay Reason</th>
                                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Actions</th>
                                         `}
                                     </tr>
@@ -7011,6 +7461,40 @@
         }
     }
 
+    // Two-line strip for a counterpart file (mother or temp "(T)") on the Tracking
+    // Sheet. Line 1 always shows the home archive details (registry + rack/shelf);
+    // line 2 appears only while the file is logged out: current location, the
+    // receiving officer (holder) and the duration with them.
+    function relatedFileLocationHtml(loc) {
+        if (!loc) return '';
+        const inTransit = loc.status === 'IN_TRANSIT';
+        // Home archive registry (where the file belongs) and its assigned shelf/rack,
+        // shown as separate segments so the shelf/rack is always labelled.
+        const registry = loc.registry || loc.home_location || '-';
+        const shelfRack = loc.rack_shelf || '-';
+        let html = `
+            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+                <span style="font-weight:600; color:#059669;">Log-in</span>
+                <span style="color:#6b7280;">&mdash;</span>
+                <span style="font-weight:600; color:#4f46e5;">In Archive</span>
+                <span style="color:#6b7280;">&mdash;</span>
+                <span style="color:#111827;">${escapeHtml(registry)}</span>
+                <span style="color:#6b7280;">&mdash;</span>
+                <span style="color:#111827;">Shelf/Rack: ${escapeHtml(shelfRack)}</span>
+            </div>`;
+        if (inTransit) {
+            html += `
+            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+                <span style="font-weight:600; color:#d97706;">Logged Out</span>
+                <span style="color:#6b7280;">&mdash;</span>
+                <span style="color:#111827;">${escapeHtml(loc.current_location || '-')}</span>
+                ${loc.holder ? `<span style="color:#6b7280;">&mdash;</span><span style="color:#111827; font-weight:600;">${escapeHtml(loc.holder)}</span>` : ''}
+                ${loc.duration_with_holder ? `<span style="color:#6b7280; font-size:0.9em;">(Duration: ${escapeHtml(loc.duration_with_holder)})</span>` : ''}
+            </div>`;
+        }
+        return html;
+    }
+
     // Print tracker details - routes to KANGIS landscape version for ?url=kangis and ?url=new_kangis, otherwise uses general portrait format
     function printFileTrackerDetails(tracker) {
         const urlView = new URLSearchParams(window.location.search).get('url');
@@ -7043,6 +7527,26 @@
         const receivingOfficerValue = escapeHtml(tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name || tracker.handler || '-');
         const originRegistryValue = escapeHtml(originOfficeName || '-');
         const rackShelfValue = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '-');
+        const requestPurposeValue = escapeHtml(tracker.requestPurposeName || '-');
+        const timelineBadgeForPrint = getTimelineBadge(tracker);
+
+        // Timeline / Request Purpose / Expected Return Date cells for the Movement
+        // History table — mirrors the on-screen File Log Table's per-row columns.
+        const daysUntilDeadlineForPrint = tracker.daysUntilDeadline;
+        const timelineDaysLabelForPrint = (daysUntilDeadlineForPrint === null || daysUntilDeadlineForPrint === undefined)
+            ? null
+            : (daysUntilDeadlineForPrint > 0
+                ? `${daysUntilDeadlineForPrint} day${daysUntilDeadlineForPrint === 1 ? '' : 's'} left`
+                : (daysUntilDeadlineForPrint === 0 ? 'Due today' : `${Math.abs(daysUntilDeadlineForPrint)} day${Math.abs(daysUntilDeadlineForPrint) === 1 ? '' : 's'} overdue`));
+        const timelineCellForPrint = timelineBadgeForPrint
+            ? `<span style="color:${timelineBadgeForPrint.dot};font-weight:600;">${escapeHtml(timelineDaysLabelForPrint || timelineBadgeForPrint.label)}</span>`
+            : '-';
+        const expectedReturnDateForPrint = tracker.deadline
+            ? escapeHtml((() => {
+                const d = new Date(tracker.deadline);
+                return Number.isNaN(d.getTime()) ? String(tracker.deadline).slice(0, 10) : d.toLocaleDateString();
+            })())
+            : '-';
 
         const printContent = `
                 <!DOCTYPE html>
@@ -7053,9 +7557,9 @@
                     <title>${(urlView && ['digital_request','digital-request'].includes(urlView.toLowerCase())) ? 'File Request Sheet' : 'File Tracking Sheet'} - ${tracker.trackingId}</title>
                     <style>
                         * { margin: 0; padding: 0; box-sizing: border-box; }
-                        @page { size: A4; margin: 0.3in; }
+                        @page { size: A4 landscape; margin: 0.3in; }
                         body { font-family: Arial, sans-serif; color: #333; line-height: 1.4; background: white; font-size: 12px; }
-                        .print-container { max-width: 8.2in; margin: 0 auto; padding: 0.35in; background: white; }
+                        .print-container { max-width: 11in; margin: 0 auto; padding: 0.35in; background: white; }
                         .header { margin-bottom: 1.2rem; padding-bottom: 0.75rem; border-bottom: 3px solid #2563eb; }
                         .header-top { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
                         .header-logo-wrap { flex: 0 0 auto; width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; }
@@ -7104,9 +7608,18 @@
                         .signatory .line { margin-top: 2.5rem; border-top: 1px solid #999; padding-top: 0.35rem; font-weight: 600; }
                         @media print {
                             body { margin: 0; padding: 0; font-size: 10px; }
-                            .print-container { max-width: 100%; margin: 0; padding: 0.5in; }
-                            table th, table td { padding: 0.3rem; }
-                            .footer { position: relative; }
+                            .print-container { max-width: 100%; margin: 0; padding: 0.1in; }
+                            .header { margin-bottom: 0.5rem; padding-bottom: 0.35rem; }
+                            .header-logo-wrap { width: 55px; height: 55px; }
+                            .header-meta { margin-top: 0.4rem; }
+                            .qr-wrapper img { width: 48px; height: 48px; }
+                            .section { margin-bottom: 0.5rem; }
+                            .section-title { padding: 0.25rem; margin-bottom: 0.4rem; }
+                            table th, table td { padding: 0.2rem 0.3rem; }
+                            .footer { position: relative; margin-top: 0.4rem; padding-top: 0.4rem; }
+                            .signatories { margin-top: 0.5rem; gap: 1rem; }
+                            .signatory .line { margin-top: 1.2rem; }
+                            .footer .generated-meta { margin-top: 0.15rem; }
                         }
                     </style>
                 </head>
@@ -7192,15 +7705,37 @@
                                         <span class="info-label">RECEIVING OFFICER (HOLDER):</span>
                                         <span class="info-value ${receivingOfficerValue === '-' ? 'placeholder' : 'data-value'}">${receivingOfficerValue}</span>
                                     </div>
+                                    <div class="info-row">
+                                        <span class="info-label">REQUEST PURPOSE:</span>
+                                        <span class="info-value ${requestPurposeValue === '-' ? 'placeholder' : 'data-value'}">${requestPurposeValue}</span>
+                                    </div>
                                 </div>
                             </div>
-                            <div style="display: flex; justify-content: center; align-items: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+                            <div style="display: flex; justify-content: center; align-items: center; gap: 2rem; margin-top: 0.4rem; padding-top: 0.4rem; border-top: 1px solid #e5e7eb;">
                                 <div class="info-row" style="display: flex; justify-content: center; align-items: center; gap: 1rem;">
                                     <span class="info-label" style="color: #6b7280;">PRIORITY:</span>
                                     <span class="info-value ${priorityValue === '-' ? 'placeholder' : 'data-value'} priority-${tracker.priority}" style="font-weight: 700; font-size: 1.1em;">${priorityText}</span>
                                 </div>
                             </div>
                         </div>
+
+                        ${tracker.motherFileLocation ? `
+                        <div class="section" style="page-break-inside: avoid;">
+                            <div class="section-title" style="border-left-color:#7c3aed;">Mother File Location</div>
+                            <div style="display:flex; flex-direction:column; gap:0.35rem; padding:0.5rem 0.4rem; background:#f5f3ff; border:1px solid #ddd6fe; border-radius:4px; font-size:0.85rem;">
+                                ${relatedFileLocationHtml(tracker.motherFileLocation)}
+                            </div>
+                        </div>
+                        ` : ''}
+
+                        ${tracker.tempFileLocation ? `
+                        <div class="section" style="page-break-inside: avoid;">
+                            <div class="section-title" style="border-left-color:#7c3aed;">Temp File Location</div>
+                            <div style="display:flex; flex-direction:column; gap:0.35rem; padding:0.5rem 0.4rem; background:#f5f3ff; border:1px solid #ddd6fe; border-radius:4px; font-size:0.85rem;">
+                                ${relatedFileLocationHtml(tracker.tempFileLocation)}
+                            </div>
+                        </div>
+                        ` : ''}
 
                         <div class="section table-section">
                             <div class="section-title">Movement History</div>
@@ -7213,7 +7748,11 @@
                                         <th>Log Out</th>
                                         <th>Log In</th>
                                         <th>Status</th>
+                                        <th>Request Purpose</th>
+                                        <th>Timeline</th>
+                                        <th>Expected Return Date</th>
                                         <th>Notes</th>
+                                        <th>Delay Reason</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -7236,7 +7775,11 @@
                                             + '<td>-</td>'
                                             + '<td>' + homeCreated + '</td>'
                                             + '<td><span class="status-archive">In Archive</span></td>'
+                                            + '<td>-</td>'
+                                            + '<td>-</td>'
+                                            + '<td>-</td>'
                                             + '<td>' + (homeShelf ? ('Shelf/Rack: ' + homeShelf) : 'Shelf/Rack -') + '</td>'
+                                            + '<td>-</td>'
                                             + '</tr>';
                                     })()}
                                     ${(tracker.priorLogEntries && tracker.priorLogEntries.length > 0) ? tracker.priorLogEntries.map(entry => {
@@ -7262,14 +7805,20 @@
                                         const statusMeta = resolveStatusDisplay(entry, entry.status || 'completed');
                                         const statusLabel = statusMeta.label;
                                         const statusClass = sheetStatusClass(statusLabel);
+                                        const logInCell = ((statusLabel === 'Log-in' || statusLabel === 'Completed') ? logIn : '-')
+                                            + (entry.acceptedByName ? ('<br><span style="font-size:0.7rem;color:#6b7280;">Clocked in by ' + entry.acceptedByName + '</span>') : '');
                                         return '<tr>'
                                             + '<td>' + dateTime + '</td>'
                                             + '<td>' + (entry.officeName || '-') + '</td>'
                                             + '<td>' + (entry.receivingOfficerName || 'N/A') + '</td>'
                                             + '<td>' + logOut + '</td>'
-                                            + '<td>' + ((statusLabel === 'Log-in' || statusLabel === 'Completed') ? logIn : '-') + '</td>'
+                                            + '<td>' + logInCell + '</td>'
                                             + '<td><span class="' + statusClass + '">' + statusLabel + '</span></td>'
+                                            + '<td>' + requestPurposeValue + '</td>'
+                                            + '<td>' + timelineCellForPrint + '</td>'
+                                            + '<td>' + expectedReturnDateForPrint + '</td>'
                                             + '<td>' + (entry.notes || '-') + '</td>'
+                                            + '<td>' + (entry.delayReason || '-') + '</td>'
                                             + '</tr>';
                                     }).join('') : ''}
                                     ${tracker.logEntries && tracker.logEntries.length > 0 ? [...tracker.logEntries].sort((a, b) => {
@@ -7298,16 +7847,22 @@
                                         const statusMeta = resolveStatusDisplay(entry, entry.status || 'completed');
                                         const statusLabel = statusMeta.label;
                                         const statusClass = sheetStatusClass(statusLabel);
+                                        const logInCell = ((statusLabel === 'Log-in' || statusLabel === 'Completed') ? logIn : '-')
+                                            + (entry.acceptedByName ? ('<br><span style="font-size:0.7rem;color:#6b7280;">Clocked in by ' + entry.acceptedByName + '</span>') : '');
                                         return '<tr>'
                                             + '<td>' + dateTime + '</td>'
                                             + '<td>' + (entry.officeName || '-') + '</td>'
                                             + '<td>' + (entry.receivingOfficerName || tracker.receivingOfficer?.name || 'N/A') + '</td>'
                                             + '<td>' + logOut + '</td>'
-                                            + '<td>' + ((statusLabel === 'Log-in' || statusLabel === 'Completed') ? logIn : '-') + '</td>'
+                                            + '<td>' + logInCell + '</td>'
                                             + '<td><span class="' + statusClass + '">' + statusLabel + '</span></td>'
+                                            + '<td>' + requestPurposeValue + '</td>'
+                                            + '<td>' + timelineCellForPrint + '</td>'
+                                            + '<td>' + expectedReturnDateForPrint + '</td>'
                                             + '<td>' + (entry.notes || '-') + '</td>'
+                                            + '<td>' + (entry.delayReason || '-') + '</td>'
                                             + '</tr>';
-                                    }).join('') : '<tr><td colspan="7" style="text-align:center;">No movement history available</td></tr>'}
+                                    }).join('') : '<tr><td colspan="11" style="text-align:center;">No movement history available</td></tr>'}
                                 </tbody>
                             </table>
                         </div>
@@ -7318,8 +7873,16 @@
                                 <div class="signatory"><div class="line">Permanent Secretary</div></div>
                                 <div class="signatory"><div class="line">Honorable Commissioner</div></div>
                             </div>
-                            <p style="font-style: italic; margin-top: 0.5rem;">This file is now being tracked!</p>
-                            <p class="generated-meta">Generated on ${generatedDateSafe} by ${generatedBySafe}</p>
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-top: 0.25rem; align-items: start;">
+                                <div></div>
+                                <div style="text-align: center;">
+                                    <p style="font-style: italic;">This file is now being tracked!</p>
+                                    <p class="generated-meta">Generated on ${generatedDateSafe} by ${generatedBySafe}</p>
+                                </div>
+                                <div style="text-align: center;">
+                                    <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="Logo" style="height: 32px;" onerror="this.style.display='none'">
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </body>
@@ -7516,6 +8079,24 @@
                             </div>
                         </div>
 
+                        ${tracker.motherFileLocation ? `
+                        <div style="display:flex; align-items:flex-start; gap:0.5rem; padding:0.35rem 0.5rem; margin-bottom:0.6rem; background:#f5f3ff; border:1px solid #ddd6fe; border-radius:4px; font-size:0.78rem;">
+                            <span style="font-weight:700; color:#5b21b6; text-transform:uppercase; letter-spacing:0.03em; font-size:0.68rem;">Mother File:</span>
+                            <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                ${relatedFileLocationHtml(tracker.motherFileLocation)}
+                            </div>
+                        </div>
+                        ` : ''}
+
+                        ${tracker.tempFileLocation ? `
+                        <div style="display:flex; align-items:flex-start; gap:0.5rem; padding:0.35rem 0.5rem; margin-bottom:0.6rem; background:#f5f3ff; border:1px solid #ddd6fe; border-radius:4px; font-size:0.78rem;">
+                            <span style="font-weight:700; color:#5b21b6; text-transform:uppercase; letter-spacing:0.03em; font-size:0.68rem;">Temp File:</span>
+                            <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                ${relatedFileLocationHtml(tracker.tempFileLocation)}
+                            </div>
+                        </div>
+                        ` : ''}
+
                         <!-- Movement history — single aggregated row -->
                         <div class="section-title">
                             Movement History &mdash; <span style="font-weight:600;">(PRIORITY: <span class="priority-${escapeHtml(tracker.priority || '')}">${priorityText}</span>)</span>
@@ -7584,7 +8165,7 @@
                         <!-- Footer -->
                         <div class="footer">
                             <img class="footer-logo" src="${baseUrl}/assets/logo/klaes.png" alt="KLAES" onerror="this.style.display='none'">
-                            <span class="footer-center">KLAES — Kano Land Administration Enterprise System<br><span style="font-size:0.62rem;">Generated on ${generatedDateSafe} by ${generatedBySafe}</span></span>
+                            <span class="footer-center">KLAES — Kano Land Administration Enterprise System<br><span style="font-size:0.62rem;">Generated on ${generatedDateSafe} by ${generatedBySafe}</span><br><img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="Logo" style="height: 43px; margin-top: 0.2rem;" onerror="this.style.display='none'"></span>
                             <img class="footer-logo footer-logo-las" src="${baseUrl}/assets/logo/las.jpg" alt="LAS" style="margin-left:auto;" onerror="this.style.display='none'">
                         </div>
                     </div>
@@ -7792,9 +8373,36 @@
             destinationOfficeIdInput.value = '';
         }
         document.getElementById('office-notes').value = '';
+        const requestPurposeReset = document.getElementById('request-purpose');
+        if (requestPurposeReset) requestPurposeReset.value = '';
+        const requestPurposeOtherWrapReset = document.getElementById('request-purpose-other-wrap');
+        if (requestPurposeOtherWrapReset) requestPurposeOtherWrapReset.classList.add('hidden');
+        const requestPurposeOtherReset = document.getElementById('request-purpose-other');
+        if (requestPurposeOtherReset) requestPurposeOtherReset.value = '';
+        const requestTimelineDaysReset = document.getElementById('request-timeline-days');
+        if (requestTimelineDaysReset) requestTimelineDaysReset.value = '';
+        const requestDeadlineReset = document.getElementById('request-deadline');
+        if (requestDeadlineReset) {
+            // Clearing .value directly leaves flatpickr's visible altInput showing the
+            // stale date (see setDeadlineValue() in the IIFE above) — go through its own
+            // API when the field has been enhanced.
+            if (requestDeadlineReset._flatpickr) {
+                requestDeadlineReset._flatpickr.clear();
+            } else {
+                requestDeadlineReset.value = '';
+            }
+        }
+        const requestTimelinePreviewReset = document.getElementById('request-timeline-preview');
+        if (requestTimelinePreviewReset) requestTimelinePreviewReset.classList.add('hidden');
+        if (typeof window._resetRequestTimelineField === 'function') window._resetRequestTimelineField();
         if (destinationOfficeInfoPanel) {
             destinationOfficeInfoPanel.classList.add('hidden');
         }
+        // SLTR Internal: collapse the "specify" field (scope itself is preserved)
+        const sltrOtherWrapper = document.getElementById('sltr-internal-other-wrapper');
+        if (sltrOtherWrapper) sltrOtherWrapper.classList.add('hidden');
+        const sltrOtherInput = document.getElementById('sltr-internal-other-name');
+        if (sltrOtherInput) sltrOtherInput.value = '';
         disableCustomDestinationMode();
         if (originOfficeSelect && originOfficeSelect.length) {
             storeOriginOfficeCode(null);
@@ -9716,11 +10324,16 @@
             let hasVisible = false;
             let firstVisible = null;
 
+            // "Other Departments" is a synthetic SLTR-internal catch-all, not a real
+            // department name from the offices table — no office row's data-department
+            // will ever match it, so show every office unfiltered instead of none.
+            const showAll = departmentName === 'Other Departments';
+
             options.forEach(option => {
                 if (!option.value) return; // Skip placeholder
 
                 const officeDept = option.getAttribute('data-department');
-                if (departmentName && officeDept === departmentName) {
+                if (showAll || (departmentName && officeDept === departmentName)) {
                     option.style.display = '';
                     option.disabled = false;
                     hasVisible = true;
@@ -9739,15 +10352,157 @@
         }
 
         // Initial run
-        filterReceivingOffices(destinationOfficeSelect.value);
+        if (!isSltrInternalScope()) {
+            filterReceivingOffices(destinationOfficeSelect.value);
+        }
 
         // Listener
         destinationOfficeSelect.addEventListener('change', function () {
+            // SLTR Internal scope: receiving office is hidden and derived from the section,
+            // except "Other Departments" which still routes to a real office/officer and
+            // needs the select populated once its group is revealed.
+            if (isSltrInternalScope() && this.value !== 'Other Departments') return;
             filterReceivingOffices(this.value);
             receivingOfficeSelect.value = ''; // Reset selection on department change
 
             // Cross-module request mode is controlled only by the Request File button.
         });
+    }
+
+    // ── SLTR: External / In-process (Internal) tracking scope ───────────────
+    // External is the standard workflow (unchanged). In-process swaps the
+    // Destination Office (Units) options for the fixed list of SLTR sections
+    // and hides the Receiving Office and Receiving Officer fields (internal
+    // sections have no office records; the section itself becomes the
+    // receiving point).
+    const SLTR_INTERNAL_SECTIONS = ['Directors', 'Deputy Director', 'Production', 'Geometry', 'Report', 'Other', 'Other Departments'];
+    let sltrOriginalDestinationOptionsHTML = null;
+
+    function isSltrInternalScope() {
+        return (window.currentModule || '').toLowerCase() === 'sltr'
+            && document.getElementById('sltr-tracking-scope')?.value === 'Internal';
+    }
+
+    function sltrToggleInternalOtherField() {
+        const wrapper = document.getElementById('sltr-internal-other-wrapper');
+        const internal = isSltrInternalScope();
+        const sectionValue = destinationOfficeSelectElement?.value;
+        const showFreeText = internal && sectionValue === 'Other';
+        const showOfficeFields = internal && sectionValue === 'Other Departments';
+
+        if (wrapper) {
+            wrapper.classList.toggle('hidden', !showFreeText);
+            if (!showFreeText) {
+                const input = document.getElementById('sltr-internal-other-name');
+                if (input) input.value = '';
+            }
+        }
+
+        // "Other Departments" within an Internal section still routes to a real
+        // office/officer (unlike the other internal sections, which have no
+        // office records) — so reveal the normal Receiving Office/Officer
+        // fields instead of the free-text destination box.
+        if (internal) {
+            const receivingOfficeGroup = document.getElementById('receiving-office-group');
+            const receivingOfficerGroup = document.getElementById('receiving-officer-group');
+            if (receivingOfficeGroup) receivingOfficeGroup.classList.toggle('hidden', !showOfficeFields);
+            if (receivingOfficerGroup) receivingOfficerGroup.classList.toggle('hidden', !showOfficeFields);
+            if (!showOfficeFields) {
+                if (receivingOfficeSelectElement) receivingOfficeSelectElement.value = '';
+                if (receivingOfficerSelect && receivingOfficerSelect.length) {
+                    receivingOfficerSelect.val('').trigger('change');
+                }
+            }
+        }
+    }
+
+    window.sltrSetScope = function (scope) {
+        const scopeSelect = document.getElementById('sltr-tracking-scope');
+        if (!scopeSelect || !destinationOfficeSelectElement) return;
+
+        const isInternal = scope === 'Internal';
+        scopeSelect.value = isInternal ? 'Internal' : 'External';
+
+        // Color-code the select itself so the active scope is obvious at a glance:
+        // green for External (standard workflow), indigo for In-process (internal).
+        scopeSelect.classList.toggle('border-green-400', !isInternal);
+        scopeSelect.classList.toggle('bg-green-50', !isInternal);
+        scopeSelect.classList.toggle('text-green-800', !isInternal);
+        scopeSelect.classList.toggle('focus:ring-green-500', !isInternal);
+        scopeSelect.classList.toggle('focus:border-green-500', !isInternal);
+        scopeSelect.classList.toggle('border-indigo-400', isInternal);
+        scopeSelect.classList.toggle('bg-indigo-50', isInternal);
+        scopeSelect.classList.toggle('text-indigo-800', isInternal);
+        scopeSelect.classList.toggle('focus:ring-indigo-500', isInternal);
+        scopeSelect.classList.toggle('focus:border-indigo-500', isInternal);
+
+        // Card + accent bar: swap the whole panel's colour so the active scope is
+        // unmistakable at a glance, not just a small badge.
+        const card = document.getElementById('sltr-scope-toggle');
+        if (card) {
+            card.className = isInternal
+                ? 'rounded-lg border shadow-sm p-4 mb-6 overflow-hidden transition-all duration-300 border-indigo-200 bg-gradient-to-br from-indigo-50 via-violet-50 to-white'
+                : 'rounded-lg border shadow-sm p-4 mb-6 overflow-hidden transition-all duration-300 border-green-200 bg-gradient-to-br from-green-50 via-emerald-50 to-white';
+        }
+        const accentBar = document.getElementById('sltr-scope-accent-bar');
+        if (accentBar) {
+            accentBar.className = isInternal
+                ? 'h-1 -mx-4 -mt-4 mb-4 bg-gradient-to-r from-indigo-600 via-violet-500 to-indigo-400 transition-all duration-300'
+                : 'h-1 -mx-4 -mt-4 mb-4 bg-gradient-to-r from-green-600 via-emerald-500 to-green-400 transition-all duration-300';
+        }
+
+        // Swap the icon badge colour/icon to match the active scope
+        const scopeIconWrap = document.getElementById('sltr-scope-icon-wrap');
+        const scopeIcon = document.getElementById('sltr-scope-icon');
+        if (scopeIconWrap) {
+            scopeIconWrap.classList.toggle('bg-green-100', !isInternal);
+            scopeIconWrap.classList.toggle('bg-indigo-100', isInternal);
+        }
+        if (scopeIcon) {
+            scopeIcon.classList.toggle('text-green-600', !isInternal);
+            scopeIcon.classList.toggle('text-indigo-600', isInternal);
+            scopeIcon.setAttribute('data-lucide', isInternal ? 'landmark' : 'route');
+            if (window.lucide) window.lucide.createIcons();
+        }
+
+        document.getElementById('sltr-external-pill')?.classList.toggle('hidden', isInternal);
+        document.getElementById('sltr-internal-pill')?.classList.toggle('hidden', !isInternal);
+
+        // Swap the Destination Office (Units) options
+        if (isInternal) {
+            if (sltrOriginalDestinationOptionsHTML === null) {
+                sltrOriginalDestinationOptionsHTML = destinationOfficeSelectElement.innerHTML;
+            }
+            destinationOfficeSelectElement.innerHTML =
+                '<option value="">Select SLTR section</option>'
+                + SLTR_INTERNAL_SECTIONS.map(s => `<option value="${s}">${s}</option>`).join('');
+        } else if (sltrOriginalDestinationOptionsHTML !== null) {
+            destinationOfficeSelectElement.innerHTML = sltrOriginalDestinationOptionsHTML;
+            destinationOfficeSelectElement.value = '';
+            filterReceivingOfficesForScope();
+        }
+
+        // In-process (Internal) mode: the destination section itself is the
+        // receiving point, so hide both Receiving Office and Receiving Officer
+        // and clear any stale picks.
+        const receivingOfficeGroup = document.getElementById('receiving-office-group');
+        const receivingOfficerGroup = document.getElementById('receiving-officer-group');
+        if (receivingOfficeGroup) receivingOfficeGroup.classList.toggle('hidden', isInternal);
+        if (receivingOfficerGroup) receivingOfficerGroup.classList.toggle('hidden', isInternal);
+        if (receivingOfficeSelectElement) receivingOfficeSelectElement.value = '';
+        if (isInternal && receivingOfficerSelect && receivingOfficerSelect.length) {
+            receivingOfficerSelect.val('').trigger('change');
+        }
+
+        sltrToggleInternalOtherField();
+    };
+
+    // Re-run the department → receiving office cascade after restoring External
+    // scope (the select's own change listener is bypassed while Internal).
+    function filterReceivingOfficesForScope() {
+        if (destinationOfficeSelectElement) {
+            destinationOfficeSelectElement.dispatchEvent(new Event('change'));
+        }
     }
 
     window.showTrackerDetails = showTrackerDetails;
@@ -9876,12 +10631,40 @@
         // Quick Search marked this as a temporary file → pre-check the toggle so
         // the TMP code is appended once the tracking ID resolves.
         const isTempFromQs   = urlParams.get('is_temp') === '1';
+        // Request Purpose + Expected Return Date, captured on Quick Search's
+        // "Log File" prompt (promptForRequestPurposeAndDeadline in quick_search.blade.php).
+        const reqPurposeId   = urlParams.get('req_purpose_id');
+        const reqDeadline    = urlParams.get('req_deadline');
 
         if (!returnFileNo && !returnTracking) return;
 
         if (isTempFromQs) {
             const tempCb = document.getElementById('is-temp-file');
             if (tempCb) tempCb.checked = true;
+        }
+
+        if (reqPurposeId || reqDeadline) {
+            const purposeSelect = document.getElementById('request-purpose');
+            const deadlineField = document.getElementById('request-deadline');
+            if (reqPurposeId && purposeSelect) {
+                purposeSelect.value = reqPurposeId;
+            }
+            if (reqDeadline && deadlineField) {
+                // Set through flatpickr's own API when the field has been enhanced
+                // (see setDeadlineValue() in the IIFE near the top of this file) —
+                // assigning .value directly only updates the hidden original input,
+                // leaving the visible altInput blank.
+                if (deadlineField._flatpickr) {
+                    deadlineField._flatpickr.setDate(reqDeadline, true);
+                } else {
+                    deadlineField.value = reqDeadline;
+                }
+                // Mark the deadline as already user-set so the purpose-change
+                // auto-fill (wired in the IIFE near the top of this file) doesn't
+                // clobber the date carried over from Quick Search.
+                deadlineField.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            if (purposeSelect) purposeSelect.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         // Show the open requesters for this file (the "Log File" path), ordered by
@@ -9894,7 +10677,7 @@
 
         // Clean the URL immediately so a refresh doesn't re-apply
         const cleanUrl = new URL(window.location.href);
-        ['file_number','tracking_id','file_title','req_officer','req_office','req_office_code','req_department','req_registry','lock_office','is_temp']
+        ['file_number','tracking_id','file_title','req_officer','req_office','req_office_code','req_department','req_registry','lock_office','is_temp','req_purpose_id','req_deadline']
             .forEach(p => cleanUrl.searchParams.delete(p));
         window.history.replaceState({}, '', cleanUrl.toString());
 

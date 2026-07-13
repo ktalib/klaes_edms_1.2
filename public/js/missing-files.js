@@ -11,12 +11,18 @@
     const routes = cfg.routes || {};
     const CSRF = cfg.csrf || (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
 
+    const state = {
+        page: (cfg.initialPagination && cfg.initialPagination.current_page) || 1,
+        search: '',
+    };
+
     document.addEventListener('DOMContentLoaded', function () {
         initTabs();
         initFileNoModal();
         initFullLabelSync();
         bindActions();
         renderRows(Array.isArray(cfg.initial) ? cfg.initial : []);
+        renderPagination(cfg.initialPagination || null);
         refreshIcons();
     });
 
@@ -115,12 +121,18 @@
     function bindActions() {
         on('mf-submit-btn', 'click', submitMissingFile);
         on('mf-reset-btn', 'click', resetForm);
-        on('mf-refresh-btn', 'click', function () { reloadTable(); });
+        on('mf-refresh-btn', 'click', function () { reloadTable(state.search, state.page); });
+        on('mf-prev-btn', 'click', function () {
+            if (state.page > 1) reloadTable(state.search, state.page - 1);
+        });
+        on('mf-next-btn', 'click', function () {
+            reloadTable(state.search, state.page + 1);
+        });
 
         const search = document.getElementById('mf-search');
         if (search) {
             search.addEventListener('input', debounce(function () {
-                reloadTable(search.value.trim());
+                reloadTable(search.value.trim(), 1);
             }, 300));
         }
 
@@ -166,7 +178,7 @@
                 if (res && res.success) {
                     toast(res.message || 'File recorded as missing.', 'success');
                     resetForm();
-                    reloadTable();
+                    reloadTable(state.search, 1);
                     switchTab('list');
                 } else {
                     toast((res && res.message) || 'Failed to record the missing file.', 'error');
@@ -190,7 +202,7 @@
             .then(function (res) {
                 if (res && res.success) {
                     toast(res.message || 'File marked as found.', 'success');
-                    reloadTable();
+                    reloadTable(state.search, state.page);
                 } else {
                     toast((res && res.message) || 'Action failed.', 'error');
                 }
@@ -209,7 +221,7 @@
             .then(function (res) {
                 if (res && res.success) {
                     toast(res.message || 'Record deleted.', 'success');
-                    reloadTable();
+                    reloadTable(state.search, state.page);
                 } else {
                     toast((res && res.message) || 'Delete failed.', 'error');
                 }
@@ -217,13 +229,21 @@
             .catch(function () { toast('Delete failed.', 'error'); });
     }
 
-    function reloadTable(search) {
+    function reloadTable(search, page) {
+        state.search = search || '';
+        state.page = page || 1;
+
         const url = new URL(routes.data, window.location.origin);
-        if (search) url.searchParams.set('search', search);
+        if (state.search) url.searchParams.set('search', state.search);
+        url.searchParams.set('page', state.page);
+
         fetch(url.toString(), { headers: { 'Accept': 'application/json' } })
             .then(parseJson)
             .then(function (res) {
-                if (res && res.success) renderRows(res.data || []);
+                if (res && res.success) {
+                    renderRows(res.data || []);
+                    renderPagination(res.pagination || null);
+                }
             })
             .catch(function () { /* keep existing table */ });
     }
@@ -232,12 +252,7 @@
 
     function renderRows(rows) {
         const body = document.getElementById('mf-table-body');
-        const countEl = document.getElementById('mf-count');
-        const tabCountEl = document.getElementById('mf-tab-count');
         if (!body) return;
-
-        if (countEl) countEl.textContent = rows.length;
-        if (tabCountEl) tabCountEl.textContent = rows.length;
 
         if (!rows.length) {
             body.innerHTML = '<tr id="mf-empty-row"><td colspan="9" class="px-4 py-10 text-center text-gray-400">' +
@@ -272,6 +287,34 @@
                     '<i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>' +
                 '</td>' +
             '</tr>';
+    }
+
+    function renderPagination(pagination) {
+        const countEl = document.getElementById('mf-count');
+        const tabCountEl = document.getElementById('mf-tab-count');
+        const fromEl = document.getElementById('mf-page-from');
+        const toEl = document.getElementById('mf-page-to');
+        const totalEl = document.getElementById('mf-page-total');
+        const currentEl = document.getElementById('mf-page-current');
+        const lastEl = document.getElementById('mf-page-last');
+        const prevBtn = document.getElementById('mf-prev-btn');
+        const nextBtn = document.getElementById('mf-next-btn');
+
+        const p = pagination || { current_page: 1, last_page: 1, total: 0, per_page: 25 };
+        state.page = p.current_page || 1;
+
+        const from = p.total === 0 ? 0 : ((p.current_page - 1) * p.per_page) + 1;
+        const to = Math.min(p.current_page * p.per_page, p.total);
+
+        if (countEl) countEl.textContent = p.total;
+        if (tabCountEl) tabCountEl.textContent = p.total;
+        if (fromEl) fromEl.textContent = from;
+        if (toEl) toEl.textContent = to;
+        if (totalEl) totalEl.textContent = p.total;
+        if (currentEl) currentEl.textContent = p.current_page;
+        if (lastEl) lastEl.textContent = p.last_page;
+        if (prevBtn) prevBtn.disabled = p.current_page <= 1;
+        if (nextBtn) nextBtn.disabled = p.current_page >= p.last_page;
     }
 
     function statusBadge(status) {

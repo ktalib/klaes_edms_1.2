@@ -184,9 +184,13 @@
 
         .movement-table .col-sn { width: 10mm; text-align: center; }
         .movement-table .col-history { width: auto; }
-        .movement-table .col-date { width: 32mm; text-align: center; }
-        .movement-table .col-duration { width: 32mm; text-align: center; }
-        .movement-table .col-remarks { width: 65mm; }
+        .movement-table .col-date { width: 26mm; text-align: center; }
+        .movement-table .col-duration { width: 24mm; text-align: center; }
+        .movement-table .col-purpose { width: 32mm; }
+        .movement-table .col-timeline { width: 24mm; text-align: center; }
+        .movement-table .col-return-date { width: 26mm; text-align: center; }
+        .movement-table .col-remarks { width: 40mm; }
+        .movement-table .col-delay { width: 30mm; }
 
         .col-note {
             display: block;
@@ -282,7 +286,11 @@
                         </th>
                         <th class="col-date">Date</th>
                         <th class="col-duration">Duration</th>
+                        <th class="col-purpose">Request Purpose</th>
+                        <th class="col-timeline">Timeline</th>
+                        <th class="col-return-date">Expected Return Date</th>
                         <th class="col-remarks">Remarks</th>
+                        <th class="col-delay">Delay Reason</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -298,7 +306,11 @@
                         </td>
                         <td class="col-date">{{ $row['date'] }}</td>
                         <td class="col-duration">{{ $row['duration'] }}</td>
+                        <td class="col-purpose">{{ $row['request_purpose'] ?? '—' }}</td>
+                        <td class="col-timeline">{{ $row['timeline'] ?? '—' }}</td>
+                        <td class="col-return-date">{{ $row['expected_return_date'] ?? '—' }}</td>
                         <td class="col-remarks">{{ $row['remarks'] }}</td>
+                        <td class="col-delay">{{ $row['delay_reason'] ?? '—' }}</td>
                     </tr>
                     @endforeach
                 </tbody>

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -52,6 +53,9 @@ class FileSearchRequest extends Model
         'registry_code',
         'is_ofs',
         'ofs_rank',
+        'request_purpose_id',
+        'request_purpose_name',
+        'expected_return_date',
     ];
 
     protected $casts = [
@@ -60,6 +64,7 @@ class FileSearchRequest extends Model
         'created_at'          => 'datetime',
         'updated_at'          => 'datetime',
         'is_ofs'              => 'boolean',
+        'expected_return_date' => 'date',
     ];
 
     public function requester(): BelongsTo
@@ -91,6 +96,49 @@ class FileSearchRequest extends Model
         $next = $last ? (int) substr($last, strlen($prefix)) + 1 : 1;
 
         return $prefix . str_pad($next, 5, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Days until the Expected Return Date (signed — negative once overdue).
+     * Null when no Request Purpose/Timeline was captured for this request.
+     */
+    public function getDaysUntilDeadlineAttribute()
+    {
+        if (!$this->expected_return_date) {
+            return null;
+        }
+
+        return Carbon::now()->diffInDays(Carbon::parse($this->expected_return_date), false);
+    }
+
+    /**
+     * Green/Amber/Red timeline status, mirroring FileTracker::getTimelineStatusAttribute()
+     * — 'red' once the Expected Return Date has passed, 'amber' once less than 20% of the
+     * window (created_at → expected_return_date) remains, otherwise 'green'.
+     */
+    public function getTimelineStatusAttribute()
+    {
+        if (!$this->expected_return_date || !$this->created_at) {
+            return null;
+        }
+
+        $start = Carbon::parse($this->created_at);
+        $deadline = Carbon::parse($this->expected_return_date)->endOfDay();
+        $now = Carbon::now();
+
+        if ($now->greaterThan($deadline)) {
+            return 'red';
+        }
+
+        $totalWindow = $start->diffInSeconds($deadline);
+        if ($totalWindow <= 0) {
+            return $now->greaterThanOrEqualTo($deadline) ? 'red' : 'green';
+        }
+
+        $elapsed = $start->diffInSeconds($now);
+        $remainingRatio = 1 - ($elapsed / $totalWindow);
+
+        return $remainingRatio <= 0.2 ? 'amber' : 'green';
     }
 
     public function scopePending($q)   { return $q->where('status', self::STATUS_PENDING); }

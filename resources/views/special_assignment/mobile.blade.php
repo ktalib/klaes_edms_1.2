@@ -9,6 +9,8 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
     <style>
         :root {
             --bg:           #0b0e14;
@@ -212,6 +214,7 @@
             font-size: 13px; font-weight: 500; outline: none; transition: all .2s;
         }
         .inp:focus { border-color: var(--accent); background: var(--bg); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .inp:disabled { opacity: .55; cursor: not-allowed; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
         .inp-ro { background: rgba(255,255,255,.03); color: var(--text-muted); cursor: default; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
         select.inp { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; }
         select.inp option { background: var(--surface2); }
@@ -395,6 +398,17 @@
             <input type="hidden" name="is_indexed"       id="h-is_indexed" value="0">
             <input type="hidden" name="location"         id="h-location">
             <input type="hidden" name="lga"              id="h-lga">
+            <input type="hidden" name="land_title_type"  id="m-land-title-type" value="statutory">
+
+            <div class="field">
+                <label>Land Title Type <span class="req">*</span></label>
+                <div id="m-ltt-toggle" style="display:flex;gap:8px;">
+                    <button type="button" class="ltt-btn active" data-type="statutory"
+                        style="flex:1;padding:10px;border-radius:var(--radius-sm);border:1.5px solid var(--accent);background:var(--accent-dim);color:var(--accent);font-size:11px;font-weight:800;letter-spacing:.04em;cursor:pointer;">STATUTORY</button>
+                    <button type="button" class="ltt-btn" data-type="customary"
+                        style="flex:1;padding:10px;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text-muted);font-size:11px;font-weight:800;letter-spacing:.04em;cursor:pointer;">CUSTOMARY</button>
+                </div>
+            </div>
 
             <div class="field" style="margin-bottom:2px;position:relative;">
                 <label>File Number <span class="req">*</span></label>
@@ -485,13 +499,16 @@
         <form id="form-log-inspect" enctype="multipart/form-data">
             @csrf
 
-            <div class="field">
+            <div class="field" style="position:relative;">
                 <label>Linked Application <span class="req">*</span></label>
-                <input type="search" id="m-app-search" class="inp" placeholder="Type file no or owner to search…" style="text-transform:none;margin-bottom:6px;" autocomplete="off">
-                <select name="spa_application_id" id="m-app-select" required class="inp" size="1">
-                    <option value="">Select application…</option>
-                </select>
-                <input type="hidden" name="file_number" id="m-insp-fileno">
+                <input type="search" id="m-app-search" class="inp" placeholder="Type file no or owner to search…" style="text-transform:none;" autocomplete="off">
+                <input type="hidden" name="spa_application_id" id="m-app-id">
+                <input type="hidden" name="file_number"        id="m-insp-fileno">
+                <!-- Dropdown list -->
+                <div id="app-dropdown" style="display:none;position:absolute;left:0;right:0;z-index:999;
+                    background:var(--surface2);border:1.5px solid var(--accent);border-radius:var(--radius-sm);
+                    max-height:220px;overflow-y:auto;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,.5);">
+                </div>
             </div>
 
             <div class="field">
@@ -508,7 +525,9 @@
                     </button>
                 </div>
                 <input type="hidden" name="coordinates" id="m-coords-hidden">
+                <input type="hidden" name="parcel_geometry" id="m-geometry">
                 <div id="mini-map"></div>
+                <div style="font-size:10px;color:var(--text-dim);margin-top:4px;">Tap the map to drop a pin, or use the polygon tool to trace the plot boundary.</div>
             </div>
 
             <div class="field">
@@ -557,6 +576,7 @@ const URLS  = {
     searchFiles: '{{ route("special-assignment.search-files") }}',
     storeRec:    '{{ route("special-assignment.land-records.store") }}',
     storeField:  '{{ route("special-assignment.field-data.store") }}',
+    nextCustomaryFileNo: '{{ route("special-assignment.next-customary-fileno") }}',
 };
 
 // ── state ────────────────────────────────────────────────────────────────────
@@ -565,7 +585,7 @@ let allRecords  = [];
 let allInspects = [];
 let appMap      = {};
 let leafMap     = null, leafMarkers = [];
-let miniMap     = null, miniMarker  = null;
+let miniMap     = null, miniMarker  = null, miniDrawnItems = null, miniDrawing = false;
 let mapInited   = false;
 
 const LU_COLORS = { RESIDENTIAL:'#0f766e', COMMERCIAL:'#0e7490', AGRICULTURAL:'#b45309', INDUSTRIAL:'#7e22ce' };
@@ -626,11 +646,11 @@ document.getElementById('btn-secondary').addEventListener('click', () => {
     else if (currentTab === 'map' && leafMap) leafMap.setView([12.0, 8.52], 11);
 });
 document.getElementById('btn-primary').addEventListener('click', () => {
-    if (currentTab === 'records') openSheet('sheet-add-record');
+    if (currentTab === 'records') { resetLandTitleToggle(); openSheet('sheet-add-record'); }
     else if (currentTab === 'verify') {
         // Reset search and reload apps when opening
-        document.getElementById('m-app-search').value = '';
-        renderAppOptions('');
+        resetAppField();
+        if (miniMap) resetMiniMap();
         openSheet('sheet-log-inspect');
     }
     else if (currentTab === 'map') toggleMapFilterBar();
@@ -682,7 +702,7 @@ function renderRecords(data) {
             </div>
         </div>`;
         lucide.createIcons();
-        list.querySelector('.action-card').addEventListener('click', () => openSheet('sheet-add-record'));
+        list.querySelector('.action-card').addEventListener('click', () => { resetLandTitleToggle(); openSheet('sheet-add-record'); });
         return;
     }
     const statusLabel = { open:'Open', in_progress:'In Progress', approved:'Approved', certificate_issued:'Cert. Issued', closed:'Closed', not_added:'Not Added' };
@@ -716,7 +736,7 @@ function renderRecords(data) {
     lucide.createIcons();
 
     // Action card click
-    list.querySelector('.action-card').addEventListener('click', () => openSheet('sheet-add-record'));
+    list.querySelector('.action-card').addEventListener('click', () => { resetLandTitleToggle(); openSheet('sheet-add-record'); });
 
     // Add buttons on Not Added cards
     list.querySelectorAll('.add-record-btn').forEach(btn => {
@@ -724,6 +744,8 @@ function renderRecords(data) {
             e.stopPropagation();
             const fileNo = this.dataset.fileno;
             const card = this.closest('.rec-card');
+
+            resetLandTitleToggle();
 
             // Extract data from card
             const owner = card.querySelector('.rec-card-body .rec-row:first-child .rec-val')?.textContent?.trim() || '';
@@ -785,8 +807,8 @@ function renderInspections(data) {
         </div>`;
         lucide.createIcons();
         list.querySelector('.action-card').addEventListener('click', () => {
-            document.getElementById('m-app-search').value = '';
-            renderAppOptions('');
+            resetAppField();
+            if (miniMap) resetMiniMap();
             openSheet('sheet-log-inspect');
         });
         return;
@@ -834,8 +856,8 @@ function renderInspections(data) {
     list.innerHTML = html;
     lucide.createIcons();
     list.querySelector('.action-card').addEventListener('click', () => {
-        document.getElementById('m-app-search').value = '';
-        renderAppOptions('');
+        resetAppField();
+        if (miniMap) resetMiniMap();
         openSheet('sheet-log-inspect');
     });
 }
@@ -857,37 +879,67 @@ async function loadAppsForSelect() {
         appMap = {};
         allAppsCache = d.data || [];
         allAppsCache.forEach(a => { appMap[a.id] = a; });
-        renderAppOptions('');
     } catch(e) {}
 }
 
-function renderAppOptions(query) {
-    const sel = document.getElementById('m-app-select');
-    const q   = (query || '').toLowerCase();
+// ── Linked Application — searchable combobox (matches the File Number field's pattern) ──
+function renderAppDropdown(query) {
+    const dropdown = document.getElementById('app-dropdown');
+    const q = (query || '').toLowerCase().trim();
+    if (!allAppsCache.length) {
+        dropdown.innerHTML = `<div class="fileno-item"><span class="fi-title">No uninspected applications</span></div>`;
+        dropdown.style.display = 'block';
+        return;
+    }
     const filtered = q
         ? allAppsCache.filter(a => (a.file_number + ' ' + a.owner_name).toLowerCase().includes(q))
         : allAppsCache;
     const shown = filtered.slice(0, 20);
-    sel.innerHTML = `<option value="">Select application… (${filtered.length} found)</option>`;
-    shown.forEach(a => {
-        const label = [a.file_number, a.owner_name].filter(v => v && v !== '—').join(' – ');
-        sel.innerHTML += `<option value="${a.id}">${label}</option>`;
-    });
-    if (filtered.length > 20) {
-        sel.innerHTML += `<option disabled>… ${filtered.length - 20} more — refine your search</option>`;
+    if (!shown.length) {
+        dropdown.innerHTML = `<div class="fileno-item"><span class="fi-title">No results for "${query}"</span></div>`;
+    } else {
+        dropdown.innerHTML = shown.map(a => `
+            <div class="fileno-item" data-id="${a.id}">
+                <span class="fi-num">${a.file_number}</span>
+                <span class="fi-title">${a.owner_name && a.owner_name !== '—' ? a.owner_name : ''}</span>
+            </div>`).join('')
+            + (filtered.length > 20 ? `<div class="fileno-item"><span class="fi-title">… ${filtered.length - 20} more — refine your search</span></div>` : '');
+        dropdown.querySelectorAll('.fileno-item[data-id]').forEach(item => {
+            item.addEventListener('click', function() { selectApp(this.dataset.id); });
+        });
     }
-    if (!allAppsCache.length) sel.innerHTML = '<option value="">No uninspected applications</option>';
+    dropdown.style.display = 'block';
+}
+
+function selectApp(id) {
+    const app = appMap[id];
+    document.getElementById('m-app-id').value      = id;
+    document.getElementById('m-app-search').value  = app ? [app.file_number, app.owner_name].filter(v => v && v !== '—').join(' – ') : '';
+    document.getElementById('m-insp-fileno').value = app && app.file_number !== '—' ? app.file_number : '';
+    document.getElementById('app-dropdown').style.display = 'none';
+}
+
+function resetAppField() {
+    document.getElementById('m-app-search').value  = '';
+    document.getElementById('m-app-id').value       = '';
+    document.getElementById('m-insp-fileno').value  = '';
+    const dropdown = document.getElementById('app-dropdown');
+    dropdown.style.display = 'none';
+    dropdown.innerHTML = '';
 }
 
 document.getElementById('m-app-search').addEventListener('input', function() {
-    renderAppOptions(this.value);
-    document.getElementById('m-app-select').value = '';
+    document.getElementById('m-app-id').value      = '';
     document.getElementById('m-insp-fileno').value = '';
+    renderAppDropdown(this.value);
 });
-
-document.getElementById('m-app-select').addEventListener('change', function() {
-    const app = appMap[this.value];
-    document.getElementById('m-insp-fileno').value = app ? (app.file_number !== '—' ? app.file_number : '') : '';
+document.getElementById('m-app-search').addEventListener('focus', function() {
+    renderAppDropdown(this.value);
+});
+document.addEventListener('click', e => {
+    const dropdown = document.getElementById('app-dropdown');
+    const inp      = document.getElementById('m-app-search');
+    if (!inp.contains(e.target) && !dropdown.contains(e.target)) dropdown.style.display = 'none';
 });
 
 // ── file number lookup ────────────────────────────────────────────────────────
@@ -969,6 +1021,81 @@ document.getElementById('m-app-select').addEventListener('change', function() {
     });
 })();
 
+// ── Land Title Type toggle (Statutory / Customary) ─────────────────────────────
+// Statutory: file number is picked from an existing indexed file (default).
+// Customary: no existing file — a temporary "SPAS-YYYY-####" number is
+// generated server-side and the owner/applicant name is typed manually.
+function setMobileLandTitleType(type) {
+    const fileInput  = document.getElementById('m-file-no-input');
+    const ownerInput = document.getElementById('m-owner');
+    const msg        = document.getElementById('lookup-msg');
+    const dropdown   = document.getElementById('fileno-dropdown');
+
+    document.getElementById('h-file_number').value      = '';
+    document.getElementById('h-file_indexing_id').value = '';
+    document.getElementById('h-tracking_id').value      = '';
+    document.getElementById('h-location').value         = '';
+    document.getElementById('h-lga').value               = '';
+    document.getElementById('m-land-use').value          = '';
+    document.getElementById('m-location-badge').style.display = 'none';
+    msg.style.display = 'none';
+    dropdown.style.display = 'none';
+    fileInput.value  = '';
+    ownerInput.value = '';
+
+    if (type === 'customary') {
+        fileInput.disabled = true;
+        fileInput.placeholder = 'Generating…';
+        ownerInput.readOnly = false;
+        ownerInput.classList.remove('inp-ro');
+        ownerInput.placeholder = "Enter applicant's name";
+        document.getElementById('h-is_indexed').value = '0';
+
+        fetch(URLS.nextCustomaryFileNo, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json())
+            .then(d => {
+                fileInput.value = d.file_number;
+                document.getElementById('h-file_number').value = d.file_number;
+            })
+            .catch(() => { fileInput.placeholder = 'Could not generate — try again'; });
+    } else {
+        fileInput.disabled = false;
+        fileInput.placeholder = 'Type to search file number…';
+        ownerInput.readOnly = true;
+        ownerInput.classList.add('inp-ro');
+        ownerInput.placeholder = 'Auto-filled after lookup';
+    }
+}
+
+function resetLandTitleToggle() {
+    document.querySelectorAll('.ltt-btn').forEach(b => {
+        const isStatutory = b.dataset.type === 'statutory';
+        b.classList.toggle('active', isStatutory);
+        b.style.background  = isStatutory ? 'var(--accent-dim)' : 'var(--surface2)';
+        b.style.borderColor = isStatutory ? 'var(--accent)'     : 'var(--border)';
+        b.style.color       = isStatutory ? 'var(--accent)'     : 'var(--text-muted)';
+    });
+    document.getElementById('m-land-title-type').value = 'statutory';
+    setMobileLandTitleType('statutory');
+}
+
+document.querySelectorAll('.ltt-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.ltt-btn').forEach(b => {
+            b.classList.remove('active');
+            b.style.background  = 'var(--surface2)';
+            b.style.borderColor = 'var(--border)';
+            b.style.color       = 'var(--text-muted)';
+        });
+        this.classList.add('active');
+        this.style.background  = 'var(--accent-dim)';
+        this.style.borderColor = 'var(--accent)';
+        this.style.color       = 'var(--accent)';
+        document.getElementById('m-land-title-type').value = this.dataset.type;
+        setMobileLandTitleType(this.dataset.type);
+    });
+});
+
 // ── GPS ───────────────────────────────────────────────────────────────────────
 document.getElementById('btn-gps').addEventListener('click', function() {
     if (!navigator.geolocation) { toast('GPS not supported on this device.', 'error'); return; }
@@ -997,10 +1124,42 @@ function setCoords(lat, lng) {
 }
 
 // ── mini map (inspect sheet) ──────────────────────────────────────────────────
+function miniSyncGeometryField() {
+    const layer = miniDrawnItems && miniDrawnItems.getLayers()[0];
+    document.getElementById('m-geometry').value = layer ? JSON.stringify(layer.toGeoJSON().geometry) : '';
+}
+
+function resetMiniMap() {
+    if (miniMarker)    { miniMap.removeLayer(miniMarker); miniMarker = null; }
+    if (miniDrawnItems) miniDrawnItems.clearLayers();
+    document.getElementById('m-geometry').value = '';
+}
+
 function initMiniMap() {
     miniMap = L.map('mini-map', { zoomControl: false }).setView([12.0, 8.52], 11);
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution:'© Esri', maxZoom:19 }).addTo(miniMap);
-    miniMap.on('click', e => setCoords(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6)));
+    // Tap anywhere to drop / move the pin — suppressed while the polygon draw tool is active.
+    miniMap.on('click', e => { if (!miniDrawing) setCoords(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6)); });
+
+    // Polygon boundary tracing (Leaflet.draw) — one plot boundary at a time.
+    miniDrawnItems = new L.FeatureGroup().addTo(miniMap);
+    miniMap.addControl(new L.Control.Draw({
+        position: 'topright',
+        edit: { featureGroup: miniDrawnItems, remove: true },
+        draw: {
+            polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: 'rgb(186,191,12)', weight: 3 } },
+            marker: false, circlemarker: false, circle: false, polyline: false, rectangle: false,
+        },
+    }));
+    miniMap.on(L.Draw.Event.DRAWSTART, () => { miniDrawing = true; });
+    miniMap.on(L.Draw.Event.DRAWSTOP,  () => { miniDrawing = false; });
+    miniMap.on(L.Draw.Event.CREATED, e => {
+        miniDrawnItems.clearLayers(); // only one boundary per inspection
+        miniDrawnItems.addLayer(e.layer);
+        miniSyncGeometryField();
+    });
+    miniMap.on(L.Draw.Event.EDITED,  miniSyncGeometryField);
+    miniMap.on(L.Draw.Event.DELETED, miniSyncGeometryField);
 }
 
 // ── Leaflet field map ─────────────────────────────────────────────────────────
@@ -1078,7 +1237,11 @@ function initForms() {
     // Save record
     document.getElementById('form-add-record').addEventListener('submit', async function(e) {
         e.preventDefault();
-        if (!document.getElementById('h-file_number').value.trim()) { toast('Select a file number first.', 'error'); return; }
+        const isCustomary = document.getElementById('m-land-title-type').value === 'customary';
+        if (!document.getElementById('h-file_number').value.trim()) {
+            toast(isCustomary ? 'Temporary file number still generating — try again.' : 'Select a file number first.', 'error');
+            return;
+        }
         const btn = document.getElementById('btn-save-record');
         btn.disabled = true; btn.innerHTML = '<i data-lucide="loader" style="width:15px;animation:spin 1s linear infinite;"></i> Saving…'; lucide.createIcons();
         try {
@@ -1119,11 +1282,15 @@ function initForms() {
 
     // Clear photo preview on form reset
     const origReset = document.getElementById('form-add-record').reset.bind(document.getElementById('form-add-record'));
-    document.getElementById('form-add-record').reset = function() { origReset(); document.getElementById('m-photo-preview').innerHTML = ''; document.getElementById('m-contravening-badge').style.display = 'none'; };
+    document.getElementById('form-add-record').reset = function() { origReset(); document.getElementById('m-photo-preview').innerHTML = ''; document.getElementById('m-contravening-badge').style.display = 'none'; resetLandTitleToggle(); };
 
     // Save inspection
     document.getElementById('form-log-inspect').addEventListener('submit', async function(e) {
         e.preventDefault();
+        if (!document.getElementById('m-app-id').value) {
+            toast('Search and select a linked application first.', 'error');
+            return;
+        }
         const btn = document.getElementById('btn-save-inspect');
         btn.disabled = true; btn.innerHTML = '<i data-lucide="loader" style="width:15px;animation:spin 1s linear infinite;"></i> Saving…'; lucide.createIcons();
         const fd = new FormData(this);
@@ -1140,7 +1307,8 @@ function initForms() {
                 closeSheet('sheet-log-inspect'); this.reset();
                 document.getElementById('m-coords-display').value = '';
                 document.getElementById('m-coords-hidden').value  = '';
-                if (miniMarker) { leafMap && leafMap.removeLayer(miniMarker); miniMarker = null; }
+                resetAppField();
+                if (miniMap) resetMiniMap();
                 toast('Inspection logged.', 'success');
                 loadInspections();
                 loadAppsForSelect();

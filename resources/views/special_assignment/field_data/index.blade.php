@@ -154,19 +154,18 @@
 </div>
 
 {{-- Log Inspection Modal --}}
-<div id="modal-log-inspection" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl mx-4 overflow-hidden">
-        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+<div id="modal-log-inspection" class="fixed inset-0 z-[1100] hidden items-center justify-center bg-black/40 p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl mx-auto overflow-hidden max-h-[92vh] flex flex-col">
+        <div class="flex items-center justify-between px-6 py-3 border-b border-gray-100 flex-shrink-0">
             <h3 class="text-base font-semibold text-gray-800">Log Field Inspection</h3>
             <button class="modal-close text-gray-400 hover:text-gray-600"><i data-lucide="x" class="h-5 w-5"></i></button>
         </div>
 
         {{-- Land record details (read-only) --}}
-        <div id="li-details" class="px-6 pt-4 pb-3 bg-gray-50 border-b border-gray-100 space-y-2">
-            <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+        <div id="li-details" class="px-6 pt-3 pb-2 bg-gray-50 border-b border-gray-100 flex-shrink-0">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-sm">
                 <div><span class="text-xs text-gray-500 block">File Number</span><span id="li-file" class="font-semibold text-gray-800">—</span></div>
                 <div><span class="text-xs text-gray-500 block">Owner</span><span id="li-owner" class="font-semibold text-gray-800">—</span></div>
-                <div class="col-span-2"><span class="text-xs text-gray-500 block">Location</span><span id="li-location" class="text-gray-700">—</span></div>
                 <div>
                     <span class="text-xs text-gray-500 block">Approved Land Use</span>
                     <span id="li-applied" class="font-medium text-gray-800">—</span>
@@ -175,51 +174,58 @@
                     <span class="text-xs text-gray-500 block">Prevailing Land Use</span>
                     <span id="li-prevailing" class="font-medium text-gray-800">—</span>
                 </div>
-                <div class="col-span-2 pt-1">
+                <div class="col-span-2 sm:col-span-3"><span class="text-xs text-gray-500 block">Location</span><span id="li-location" class="text-gray-700">—</span></div>
+                <div class="col-span-2 sm:col-span-1 flex sm:justify-end items-start">
                     <span id="li-contravening-badge"></span>
                 </div>
             </div>
             {{-- Property photos --}}
-            <div id="li-photos-wrap" class="hidden pt-1">
-                <p class="text-xs text-gray-500 mb-1.5">Property Photos</p>
+            <div id="li-photos-wrap" class="hidden pt-1.5 pb-1">
+                <p class="text-xs text-gray-500 mb-1">Property Photos</p>
                 <div id="li-photos" class="flex flex-wrap gap-2"></div>
             </div>
         </div>
 
-        <form id="form-log-inspection" enctype="multipart/form-data" class="p-6 space-y-4">
+        <form id="form-log-inspection" enctype="multipart/form-data" class="p-6 flex-1 overflow-y-auto min-h-0">
             @csrf
             <input type="hidden" name="spa_application_id" id="li-app-id">
             <input type="hidden" name="file_number"        id="li-file-no">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Inspection Date <span class="text-red-500">*</span></label>
-                    <input type="date" name="inspection_date" required class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+            <input type="hidden" name="parcel_geometry"    id="f-geometry">
+
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                {{-- Left: form fields --}}
+                <div class="lg:col-span-2 space-y-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Inspection Date <span class="text-red-500">*</span></label>
+                        <input type="date" name="inspection_date" required class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Coordinates (lat, lng) <span class="text-red-500">*</span></label>
+                        <input type="text" name="coordinates" id="f-coords" required placeholder="e.g. 12.0022, 8.5919"
+                            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Findings <span class="text-red-500">*</span></label>
+                        <textarea name="findings" rows="7" required
+                            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none resize-none focus:border-[rgb(186,191,12)]"
+                            placeholder="Describe on-site observations…"></textarea>
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Coordinates (lat, lng) <span class="text-red-500">*</span></label>
-                    <input type="text" name="coordinates" id="f-coords" required placeholder="e.g. 12.0022, 8.5919"
-                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+
+                {{-- Right: map picker — click/drag the pin for a point, or trace the plot boundary --}}
+                <div class="lg:col-span-3">
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block text-xs font-medium text-gray-600">Pin Location &amp; Trace Boundary</label>
+                        <button type="button" id="li-locate" class="inline-flex items-center gap-1 text-xs text-[rgb(140,144,8)] hover:underline">
+                            <i data-lucide="locate-fixed" class="h-3.5 w-3.5"></i> Use my location
+                        </button>
+                    </div>
+                    <div id="li-map" class="rounded-lg overflow-hidden border border-gray-200" style="height:340px;width:100%;"></div>
+                    <p id="li-map-status" class="text-[11px] text-gray-400 mt-1">Click the map or drag the pin to set coordinates. Use the polygon tool (top-right) to trace the plot boundary.</p>
                 </div>
             </div>
 
-            {{-- Map picker — click the map or drag the pin to capture coordinates --}}
-            <div>
-                <div class="flex items-center justify-between mb-1">
-                    <label class="block text-xs font-medium text-gray-600">Pin Location on Map</label>
-                    <button type="button" id="li-locate" class="inline-flex items-center gap-1 text-xs text-[rgb(140,144,8)] hover:underline">
-                        <i data-lucide="locate-fixed" class="h-3.5 w-3.5"></i> Use my location
-                    </button>
-                </div>
-                <div id="li-map" class="rounded-lg overflow-hidden border border-gray-200" style="height:260px;width:100%;"></div>
-                <p id="li-map-status" class="text-[11px] text-gray-400 mt-1">Click the map or drag the pin to set coordinates. You can also type them above.</p>
-            </div>
-            <div>
-                <label class="block text-xs font-medium text-gray-600 mb-1">Findings <span class="text-red-500">*</span></label>
-                <textarea name="findings" rows="3" required
-                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none resize-none focus:border-[rgb(186,191,12)]"
-                    placeholder="Describe on-site observations…"></textarea>
-            </div>
-            <div class="flex justify-end gap-3 pt-2">
+            <div class="flex justify-end gap-3 pt-5">
                 <button type="button" class="modal-close px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
                 <button type="submit" id="btn-save-inspection" class="px-5 py-2 text-sm text-white bg-[rgb(186,191,12)] rounded-lg hover:opacity-90">Save Inspection</button>
             </div>
@@ -228,7 +234,7 @@
 </div>
 
 {{-- View Field Inspection Modal --}}
-<div id="modal-view-field" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+<div id="modal-view-field" class="fixed inset-0 z-[1100] hidden items-center justify-center bg-black/40">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl mx-4 overflow-hidden">
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <h3 class="text-base font-semibold text-gray-800">Field Inspection Details</h3>
@@ -265,7 +271,7 @@
 </div>
 
 {{-- Add Record (Add to SPA) Modal --}}
-<div id="modal-add-record" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+<div id="modal-add-record" class="fixed inset-0 z-[1100] hidden items-center justify-center bg-black/40">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 overflow-hidden">
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <h3 class="text-base font-semibold text-gray-800">Add Land Record</h3>
@@ -274,6 +280,23 @@
         <form id="form-add-record" class="p-6 space-y-4" enctype="multipart/form-data">
             @csrf
 
+            {{-- Land Title Type --}}
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1.5">Land Title Type <span class="text-red-500">*</span></label>
+                <div class="flex gap-5">
+                    <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                        <input type="radio" name="land_title_type" id="ltt-statutory" value="statutory" checked
+                            class="text-[rgb(186,191,12)] focus:ring-[rgb(186,191,12)]">
+                        Statutory Title
+                    </label>
+                    <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                        <input type="radio" name="land_title_type" id="ltt-customary" value="customary"
+                            class="text-[rgb(186,191,12)] focus:ring-[rgb(186,191,12)]">
+                        Customary Title
+                    </label>
+                </div>
+            </div>
+
             {{-- File Number picker --}}
             <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">File Number <span class="text-red-500">*</span></label>
@@ -281,14 +304,14 @@
                     <input type="text" id="display-file-number" readonly placeholder="No file number selected"
                         class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 cursor-default outline-none">
                     <button type="button" id="btn-pick-fileno"
-                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-[rgb(186,191,12)] hover:opacity-90 text-white text-sm font-medium rounded-lg transition-opacity">
+                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-[rgb(186,191,12)] hover:opacity-90 text-white text-sm font-medium rounded-lg transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
                         <i data-lucide="search" class="h-4 w-4"></i> Select
                     </button>
                 </div>
                 <p id="lookup-msg" class="text-xs mt-1 hidden"></p>
             </div>
 
-            {{-- Owner / File Title – readonly, filled from file_title --}}
+            {{-- Owner / File Title – readonly, filled from file_title (editable for customary) --}}
             <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">Owner / File Title <span class="text-red-500">*</span></label>
                 <input type="text" name="owner_name" id="f-owner_name" readonly required
@@ -402,6 +425,9 @@
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{{-- Leaflet.draw — lets the surveyor trace the plot boundary on the inspection map --}}
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 {{-- Google Maps JS — used only to geocode the file location for the inspection map pin (same key as File Indexing). --}}
 <script src="https://maps.googleapis.com/maps/api/js?key={{ config('services.google_maps.key') }}" defer></script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
@@ -705,8 +731,14 @@ $(document).ready(function () {
     let _currentApp = null;
 
     // ── Inspection map picker (Leaflet) ────────────────────────────────────
-    let liMap = null, liMarker = null;
+    let liMap = null, liMarker = null, liDrawnItems = null, liDrawing = false;
     const LI_CENTER = KANO_CENTER, LI_ZOOM = 12;
+
+    // Reflect the traced boundary (if any) into the hidden geometry field.
+    function liSyncGeometryField() {
+        const layer = liDrawnItems && liDrawnItems.getLayers()[0];
+        document.getElementById('f-geometry').value = layer ? JSON.stringify(layer.toGeoJSON().geometry) : '';
+    }
 
     function liPinIcon() {
         return L.divIcon({
@@ -777,14 +809,36 @@ $(document).ready(function () {
             liMap = L.map('li-map', { zoomControl: true }).setView(LI_CENTER, LI_ZOOM);
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                 { attribution: '© Esri', maxZoom: 19 }).addTo(liMap);
-            // Click anywhere to drop / move the pin.
-            liMap.on('click', e => liPlaceMarker(e.latlng.lat, e.latlng.lng, false));
+            // Click anywhere to drop / move the pin — suppressed while the polygon draw tool is active.
+            liMap.on('click', e => { if (!liDrawing) liPlaceMarker(e.latlng.lat, e.latlng.lng, false); });
+
+            // Polygon boundary tracing (Leaflet.draw) — one plot boundary at a time.
+            liDrawnItems = new L.FeatureGroup().addTo(liMap);
+            liMap.addControl(new L.Control.Draw({
+                position: 'topright',
+                edit: { featureGroup: liDrawnItems, remove: true },
+                draw: {
+                    polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: 'rgb(186,191,12)', weight: 3 } },
+                    marker: false, circlemarker: false, circle: false, polyline: false, rectangle: false,
+                },
+            }));
+            liMap.on(L.Draw.Event.DRAWSTART, () => { liDrawing = true; });
+            liMap.on(L.Draw.Event.DRAWSTOP,  () => { liDrawing = false; });
+            liMap.on(L.Draw.Event.CREATED, e => {
+                liDrawnItems.clearLayers(); // only one boundary per inspection
+                liDrawnItems.addLayer(e.layer);
+                liSyncGeometryField();
+            });
+            liMap.on(L.Draw.Event.EDITED,  liSyncGeometryField);
+            liMap.on(L.Draw.Event.DELETED, liSyncGeometryField);
         }
         // Container was display:none while the modal was hidden — recalc size & reset,
         // then attempt to auto-pin from the file's location.
         setTimeout(() => {
             liMap.invalidateSize();
             if (liMarker) { liMap.removeLayer(liMarker); liMarker = null; }
+            liDrawnItems.clearLayers();
+            document.getElementById('f-geometry').value = '';
             liMap.setView(LI_CENTER, LI_ZOOM);
             geocodeInspectionLocation(location);
         }, 150);
@@ -910,6 +964,7 @@ $(document).ready(function () {
 <script>
 const LR_STORE = '{{ route("special-assignment.land-records.store") }}';
 const LR_LOOKUP = '{{ route("special-assignment.check-file") }}';
+const NEXT_CUSTOMARY_URL = '{{ route("special-assignment.next-customary-fileno") }}';
 
 $(document).ready(function () {
     const spaModal = document.getElementById('modal-add-record');
@@ -931,6 +986,57 @@ $(document).ready(function () {
         if (el) el.addEventListener('click', closeSpaModal);
     });
 
+    // ── Land Title Type toggle ──────────────────────────────────────────────
+    // Statutory: file number is picked from an existing indexed file.
+    // Customary: no existing file — a temporary "SPAS-YYYY-####" number is
+    // generated server-side and the owner/applicant name is typed manually.
+    function setLandTitleType(type) {
+        const selectBtn  = document.getElementById('btn-pick-fileno');
+        const fileInput  = document.getElementById('display-file-number');
+        const ownerInput = document.getElementById('f-owner_name');
+        const msg        = document.getElementById('lookup-msg');
+
+        document.getElementById('h-file_number').value      = '';
+        document.getElementById('h-file_indexing_id').value = '';
+        document.getElementById('h-tracking_id').value      = '';
+        document.getElementById('h-location').value         = '';
+        document.getElementById('h-lga').value               = '';
+        document.getElementById('f-land_use_type').value    = '';
+        document.getElementById('location-badge-wrap').classList.add('hidden');
+        document.getElementById('dciv-banner-wrap').classList.add('hidden');
+        msg.classList.add('hidden');
+        ownerInput.value = '';
+        fileInput.value  = '';
+
+        if (type === 'customary') {
+            selectBtn.disabled = true;
+            fileInput.placeholder = 'Generating…';
+            ownerInput.readOnly = false;
+            ownerInput.classList.remove('bg-gray-50', 'text-gray-700', 'cursor-default');
+            ownerInput.placeholder = "Enter applicant's name";
+            document.getElementById('h-is_indexed').value = '0';
+
+            fetch(NEXT_CUSTOMARY_URL, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(r => r.json())
+                .then(d => {
+                    fileInput.value = d.file_number;
+                    document.getElementById('h-file_number').value = d.file_number;
+                })
+                .catch(() => {
+                    fileInput.placeholder = 'Could not generate — try again';
+                });
+        } else {
+            selectBtn.disabled = false;
+            fileInput.placeholder = 'No file number selected';
+            ownerInput.readOnly = true;
+            ownerInput.classList.add('bg-gray-50', 'text-gray-700', 'cursor-default');
+            ownerInput.placeholder = 'Auto-filled from file number';
+        }
+    }
+    document.querySelectorAll('input[name="land_title_type"]').forEach(r => {
+        r.addEventListener('change', () => setLandTitleType(r.value));
+    });
+
     // Reset the form to a clean state before showing the picker
     function resetSpaForm() {
         document.getElementById('form-add-record').reset();
@@ -949,6 +1055,8 @@ $(document).ready(function () {
         document.getElementById('lookup-msg').classList.add('hidden');
         document.getElementById('location-badge-wrap').classList.add('hidden');
         document.getElementById('dciv-banner-wrap').classList.add('hidden');
+        document.getElementById('ltt-statutory').checked = true;
+        setLandTitleType('statutory');
     }
 
     // Pull details from file indexing and pre-fill the modal
@@ -1072,8 +1180,15 @@ $(document).ready(function () {
     document.getElementById('form-add-record').addEventListener('submit', async function (e) {
         e.preventDefault();
 
+        const isCustomary = document.getElementById('ltt-customary').checked;
         if (!document.getElementById('h-file_number').value.trim()) {
-            Swal.fire({ icon:'warning', title:'Required', text:'Please select a file number first.' });
+            Swal.fire({
+                icon: 'warning',
+                title: 'Required',
+                text: isCustomary
+                    ? 'The temporary file number is still generating — please wait a moment and try again.'
+                    : 'Please select a file number first.',
+            });
             return;
         }
 

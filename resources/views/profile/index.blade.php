@@ -91,6 +91,33 @@
                                 <h4 class="text-sm font-medium text-gray-500">Work Station</h4>
                                 <p class="mt-1 text-base">{{ auth()->user()->work_station ?? 'Not assigned' }}</p>
                             </div>
+                            <div class="md:col-span-2">
+                                <h4 class="text-sm font-medium text-gray-500">Out of Office</h4>
+                                <p class="mt-1 text-base">
+                                    @if(auth()->user()->is_on_leave)
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Currently out of office</span>
+                                        @if(auth()->user()->leave_start_date && auth()->user()->leave_end_date)
+                                            <span class="ml-2 text-sm text-gray-600">{{ auth()->user()->leave_start_date->format('M d, Y') }} &ndash; {{ auth()->user()->leave_end_date->format('M d, Y') }}</span>
+                                        @endif
+                                    @else
+                                        <span class="text-gray-500">Not set</span>
+                                    @endif
+                                </p>
+                            </div>
+                            <div class="md:col-span-2">
+                                <h4 class="text-sm font-medium text-gray-500">Deputy (Redirect To)</h4>
+                                <p class="mt-1 text-base">{{ optional(auth()->user()->deputy)->name ?? 'Not assigned' }}</p>
+                            </div>
+                            <div class="md:col-span-2">
+                                <h4 class="text-sm font-medium text-gray-500">Out of Office Date</h4>
+                                <p class="mt-1 text-base">
+                                    @if(auth()->user()->out_of_office_from && auth()->user()->out_of_office_to)
+                                        {{ auth()->user()->out_of_office_from->format('M d, Y') }} &ndash; {{ auth()->user()->out_of_office_to->format('M d, Y') }}
+                                    @else
+                                        Not set
+                                    @endif
+                                </p>
+                            </div>
                             {{-- <div>
                                 <h4 class="text-sm font-medium text-gray-500">Role</h4>
                                 <p class="mt-1 text-base">{{ auth()->user()->role ?? 'User' }}</p>
@@ -218,6 +245,53 @@
                         </div>
                          
                         
+                        <div class="md:col-span-2 p-3 rounded-lg border border-amber-200 bg-amber-50">
+                            <label class="flex items-center gap-2 text-sm font-medium text-gray-700">
+                                <input type="checkbox" name="is_on_leave" value="1" id="is_on_leave" {{ old('is_on_leave', auth()->user()->is_on_leave ?? false) ? 'checked' : '' }} class="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
+                                Currently Out of Office
+                            </label>
+                            <div class="grid grid-cols-2 gap-4 mt-2">
+                                <div>
+                                    <label for="leave_start_date" class="block text-xs font-medium text-gray-700">Leave Start Date</label>
+                                    <input type="date" name="leave_start_date" id="leave_start_date"
+                                        value="{{ old('leave_start_date', optional(auth()->user()->leave_start_date)->format('Y-m-d')) }}"
+                                        class="w-full border rounded p-1 text-xs" oninput="updateOooDuration()">
+                                </div>
+                                <div>
+                                    <label for="leave_end_date" class="block text-xs font-medium text-gray-700">Leave End Date</label>
+                                    <input type="date" name="leave_end_date" id="leave_end_date"
+                                        value="{{ old('leave_end_date', optional(auth()->user()->leave_end_date)->format('Y-m-d')) }}"
+                                        class="w-full border rounded p-1 text-xs" oninput="updateOooDuration()">
+                                </div>
+                            </div>
+                            <p id="oooDuration" class="text-xs font-medium text-amber-700 mt-1 hidden"></p>
+                            <div class="mt-2">
+                                @php($selectedDeputy = old('deputy_user_id', auth()->user()->deputy_user_id))
+                                <label for="deputy_user_id" class="block text-xs font-medium text-gray-700">Deputy (Redirect To)</label>
+                                <select name="deputy_user_id" id="deputy_user_id" class="w-full border rounded p-1 text-xs bg-white">
+                                    <option value="">Select deputy</option>
+                                    @foreach($deputyOptions as $value => $label)
+                                        <option value="{{ $value }}" {{ (string) $selectedDeputy === (string) $value ? 'selected' : '' }}>{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="text-[11px] text-gray-500 mt-1">Colleague who receives your file/task redirects while you're out of office.</p>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4 mt-2">
+                                <div>
+                                    <label for="out_of_office_from" class="block text-xs font-medium text-gray-700">Out of Office Date From</label>
+                                    <input type="date" name="out_of_office_from" id="out_of_office_from"
+                                        value="{{ old('out_of_office_from', optional(auth()->user()->out_of_office_from)->format('Y-m-d')) }}"
+                                        class="w-full border rounded p-1 text-xs">
+                                </div>
+                                <div>
+                                    <label for="out_of_office_to" class="block text-xs font-medium text-gray-700">Out of Office Date To</label>
+                                    <input type="date" name="out_of_office_to" id="out_of_office_to"
+                                        value="{{ old('out_of_office_to', optional(auth()->user()->out_of_office_to)->format('Y-m-d')) }}"
+                                        class="w-full border rounded p-1 text-xs">
+                                </div>
+                            </div>
+                        </div>
+
                         <div>
                             <label for="password" class="block text-sm font-medium text-gray-700">New Password</label>
                             <input type="password" name="password" id="password" placeholder="Leave blank to keep current"  class="w-full border rounded p-1 text-xs">
@@ -267,14 +341,36 @@
         
         closeBtn.addEventListener('click', closeModal);
         cancelBtn.addEventListener('click', closeModal);
-        
+
         // Close modal when clicking outside of it
         modal.addEventListener('click', function(e) {
             if (e.target === modal) {
                 closeModal();
             }
         });
+
+        updateOooDuration();
     });
+
+    function updateOooDuration() {
+        const startInput = document.getElementById('leave_start_date');
+        const endInput = document.getElementById('leave_end_date');
+        const label = document.getElementById('oooDuration');
+        if (!startInput || !endInput || !label) return;
+
+        const start = new Date(startInput.value);
+        const end = new Date(endInput.value);
+
+        if (!startInput.value || !endInput.value || isNaN(start) || isNaN(end) || end < start) {
+            label.classList.add('hidden');
+            label.textContent = '';
+            return;
+        }
+
+        const days = Math.round((end - start) / 86400000) + 1;
+        label.textContent = days + (days === 1 ? ' day' : ' days') + ' of leave';
+        label.classList.remove('hidden');
+    }
     
     function previewImage(input) {
         if (input.files && input.files[0]) {

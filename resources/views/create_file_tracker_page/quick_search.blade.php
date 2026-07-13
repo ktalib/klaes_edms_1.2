@@ -286,6 +286,7 @@
         const FR_URL      = "{{ route('create-file-tracker.file-request') }}";
         const UPDATE_URL  = "{{ route('create-file-tracker.quick-search.update-status') }}";
         const REDIRECT_LAND_URL = "{{ route('create-file-tracker.quick-search.redirect-director-land') }}";
+        const REDIRECT_DCIV_URL = "{{ route('create-file-tracker.quick-search.redirect-dciv-director') }}";
         const FEEDBACK_URL= "{{ route('create-file-tracker.quick-search.scb-feedback') }}";
         // Module context (?url=kangis|sltr|cadastral|st|…) scopes the report, SCB
         // Feedback queue and File Search History to that registry's files only.
@@ -306,6 +307,9 @@
         const REQ_OFFICERS    = @json($reqOfficers);
         const REQ_DEPT_NAME_TO_ID = @json($reqDeptNameToId);
         const REGISTRIES      = @json($registries ?? []);
+        // Request Purpose lookup (id, name, turnaround_days) — used to build the
+        // Request Purpose / Expected Return Date prompt shown before "Log File".
+        const REQUEST_PURPOSES = @json($requestPurposes ?? []);
         const ADD_OFFICER_URL = "{{ route('create-file-tracker.receiving-officers.store') }}";
 
         const STATUS_OPTIONS = [
@@ -359,10 +363,19 @@
         // category carries a duplication to resolve (Duplicate / CofO / W-C-R). Temporary
         // files are flagged for the badge only and still use the normal SCB workflow.
         const directsToLand = d => !!(d.duplicate_flag && d.duplicate_flag.directs_to_land);
+        // A file under DCIV investigation (own registry = DCIV Registry, or flagged
+        // dciv_status=1) is re-directed to the DCIV Director rather than sent to the
+        // SCB — mirrors directsToLand(). Derived from the server-computed next_action
+        // label (see FileLocationResolver::actionMetaFor()) instead of re-deriving the
+        // DCIV rule client-side.
+        const isDciv = d => /DCIV Director/.test(d.next_action || '');
 
         function pickFileNumber() {
             if (typeof GlobalFileNoModal === 'undefined') { search(); return; }
             GlobalFileNoModal.open({
+                // When "Is Temporary File" is checked, restrict the MLS smart selector
+                // to temporary "(T)" file numbers only.
+                tempOnly: !!(tempChk && tempChk.checked),
                 callback: function (data) {
                     let fileNumber = (data.fileNumber || '').toString().trim();
                     if (!fileNumber) return;
@@ -427,6 +440,11 @@
                     // normal SCB workflow below.
                     out.push(`<button type="button" data-redirect-land class="inline-flex items-center gap-2 rounded-lg bg-purple-600 hover:bg-purple-700 px-4 py-2 text-sm font-semibold text-white">
                         <i data-lucide="user-check" class="h-4 w-4"></i> Re-direct To Director Land (Land Department)</button>`);
+                } else if (isDciv(d)) {
+                    // A file under DCIV investigation is not blind-searched by the SCB —
+                    // it is re-directed to the DCIV Director to resolve.
+                    out.push(`<button type="button" data-redirect-dciv style="background: linear-gradient(to right, #0b3d2e, #065f46, #0b3d2e);" class="inline-flex items-center gap-2 rounded-lg hover:opacity-90 px-4 py-2 text-sm font-semibold text-white">
+                        <i data-lucide="shield-alert" class="h-4 w-4"></i> Re-direct To DCIV Director (Land Department)</button>`);
                 } else if (d.is_missing_file) {
                     // File exists in missing_files — SCB already searched and could not find it.
                     // Change button to "Send Blind Request to the Original Registry" instead of
@@ -436,7 +454,7 @@
                     out.push(`<button type="button" data-fr data-missing-file="1" class="inline-flex items-center gap-2 rounded-lg ${frCls} px-4 py-2 text-sm font-semibold text-white">
                         <i data-lucide="send" class="h-4 w-4"></i> ${label}</button>`);
                 } else {
-                    const label = d.is_blind ? 'Send Blind Request to SCB Monitor' : 'Send File Search Request to SCB Monitor';
+                    const label = d.next_action || (d.is_blind ? 'Send Blind Request to SCB Monitor' : 'Send File Search Request to SCB Monitor');
                     const frCls = d.is_blind ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700';
                     out.push(`<button type="button" data-fr class="inline-flex items-center gap-2 rounded-lg ${frCls} px-4 py-2 text-sm font-semibold text-white">
                         <i data-lucide="send" class="h-4 w-4"></i> ${label}</button>`);
@@ -527,7 +545,93 @@
             // appends the TMP code to the Tracking ID (standalone tracking only).
             const tempCb = result.querySelector('[data-temp-file]');
             if (tempCb && tempCb.checked) params.set('is_temp', '1');
+            // Request Purpose + Expected Return Date, captured via promptForRequestPurposeAndDeadline()
+            // just before this call — backfilled straight into #request-purpose / #request-deadline.
+            if (d.request_purpose_id) params.set('req_purpose_id', d.request_purpose_id);
+            if (d.request_deadline)   params.set('req_deadline', d.request_deadline);
             window.location = '/create-file-tracker?' + params.toString();
+        }
+
+        // Ask for the Request Purpose + Expected Return Date before handing off to
+        // logFile(). Shared by both "Log File" entry points (the main search result
+        // and each SCB Feedback row) so the values always carry over to the Create
+        // File Tracker form instead of being re-entered there.
+        function promptForRequestPurposeAndDeadline(d) {
+            const purposeOptions = REQUEST_PURPOSES.map(p =>
+                `<option value="${p.id}" data-turnaround-days="${p.turnaround_days}">${esc(p.name)}</option>`
+            ).join('');
+
+            Swal.fire({
+                title: 'Request Purpose & Timeline',
+                html: `
+                    <div class="text-left space-y-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Request Purpose *</label>
+                            <select id="qs-log-purpose" class="swal2-select" style="display:block;width:100%;margin:0;">
+                                <option value="">Select the reason this file is being requested</option>
+                                ${purposeOptions}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Expected Return Date *</label>
+                            <input type="date" id="qs-log-deadline" class="swal2-input" style="margin:0;width:100%;">
+                        </div>
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Continue to Log File',
+                confirmButtonColor: '#059669',
+                focusConfirm: false,
+                didOpen: () => {
+                    const purposeSel = document.getElementById('qs-log-purpose');
+                    const deadlineInput = document.getElementById('qs-log-deadline');
+                    let userEditedDeadline = false;
+                    purposeSel.addEventListener('change', () => {
+                        const days = parseInt(purposeSel.selectedOptions[0]?.dataset.turnaroundDays || '', 10);
+                        if (!userEditedDeadline && !isNaN(days)) {
+                            const dt = new Date();
+                            dt.setDate(dt.getDate() + days);
+                            const y = dt.getFullYear(), m = String(dt.getMonth() + 1).padStart(2, '0'), day = String(dt.getDate()).padStart(2, '0');
+                            deadlineInput.value = `${y}-${m}-${day}`;
+                        }
+                    });
+                    deadlineInput.addEventListener('input', () => { userEditedDeadline = true; });
+                },
+                preConfirm: () => {
+                    const purposeSel = document.getElementById('qs-log-purpose');
+                    const purposeId = purposeSel.value;
+                    const purposeName = purposeSel.selectedOptions[0]?.text || '';
+                    const deadline = document.getElementById('qs-log-deadline').value;
+                    if (!purposeId || !deadline) {
+                        Swal.showValidationMessage('Please select a Request Purpose and Expected Return Date.');
+                        return false;
+                    }
+                    return { purposeId, purposeName, deadline };
+                }
+            }).then(result => {
+                if (!result.isConfirmed) return;
+                d.request_purpose_id = result.value.purposeId;
+                d.request_purpose_name = result.value.purposeName;
+                d.request_deadline = result.value.deadline;
+                logFile(d);
+            });
+        }
+
+        // Entry point for both "Log File" buttons. Request Purpose + Expected Return
+        // Date are normally already captured on the Requester form when the File
+        // Search Request was raised (carried on `purpose`/`deadline`) — in that case
+        // skip straight to logFile(). Only prompt as a fallback (e.g. legacy/blind
+        // requests raised before this existed, or a file logged with no prior FR).
+        function handleLogFileClick(d, purpose) {
+            const src = purpose || {};
+            if (src.request_purpose_id && src.expected_return_date) {
+                d.request_purpose_id = src.request_purpose_id;
+                d.request_purpose_name = src.request_purpose_name || '';
+                d.request_deadline = src.expected_return_date;
+                logFile(d);
+                return;
+            }
+            promptForRequestPurposeAndDeadline(d);
         }
 
         function render(d) {
@@ -602,6 +706,11 @@
 </span>
                     </div>
                     <div class="px-6 py-3">
+                        ${(d.status === 'MISSING_FILE' && d.is_indexed) ? `
+                        <div class="mb-3 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 flex items-center gap-2">
+                            <i data-lucide="info" class="h-4 w-4 text-blue-600 shrink-0"></i>
+                            <span class="text-sm font-semibold text-blue-800">This file was indexed and returned to the Original Registry.</span>
+                        </div>` : ''}
                         ${d.duplicate_flag ? `
                         <div class="mb-3 rounded-lg px-4 py-3 flex items-center gap-2" style="background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;">
                             <i data-lucide="copy" class="h-4 w-4 shrink-0" style="color:${d.duplicate_flag.color};"></i>
@@ -623,6 +732,30 @@
                             </div>
                             ${d.dciv_reason ? `<div class="text-xs text-rose-700 mt-1.5">${esc(d.dciv_reason)}</div>` : ''}
                         </div>` : ''}
+                        ${(() => {
+                            const rf = d.dciv_related_files || [];
+                            if (!rf.length) return '';
+                            const item = f => `
+                                <div class="flex items-center gap-2 text-xs">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 whitespace-nowrap">${esc(f.related_file_number)}</span>
+                                    ${f.related_file_title ? `<span class="text-emerald-700">— ${esc(f.related_file_title)}</span>` : ''}
+                                </div>`;
+                            const list = `<div class="mt-2 space-y-1">${rf.map(item).join('')}</div>`;
+                            return rf.length > 1 ? `
+                            <details class="mb-3 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+                                <summary class="cursor-pointer select-none flex items-center gap-2 text-sm font-bold text-emerald-800">
+                                    <i data-lucide="link" class="h-4 w-4 text-emerald-700 shrink-0"></i> Linked Related Files (${rf.length})
+                                </summary>
+                                ${list}
+                            </details>` : `
+                            <div class="mb-3 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="link" class="h-4 w-4 text-emerald-700 shrink-0"></i>
+                                    <span class="text-sm font-bold text-emerald-800">Linked Related Files (${rf.length})</span>
+                                </div>
+                                ${list}
+                            </div>`;
+                        })()}
                         <details class="mb-3 rounded-lg border border-gray-200">
                             <summary class="cursor-pointer select-none px-4 py-2 text-xs font-semibold text-gray-600 flex items-center gap-2">
                                 <i data-lucide="users" class="h-3.5 w-3.5"></i> Holder &amp; Bill Details
@@ -736,7 +869,7 @@
                             </div>
                         </details>
                     </div>
-                    ${(d.can_send_fr && CAN_SEND_FR && !directsToLand(d)) ? `
+                    ${(d.can_send_fr && CAN_SEND_FR && !directsToLand(d) && !isDciv(d)) ? `
                     <div class="px-6 pt-4 border-t border-gray-100">
                         <div class="text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">Requester</div>
                         <div class="mb-3">
@@ -774,6 +907,28 @@
                             </div>
                         </div>
 
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <div>
+                                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Request Purpose <span class="text-red-500">*</span></label>
+                                <select data-fr-purpose class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
+                                    <option value="">— Select the reason this file is being requested —</option>
+                                    ${REQUEST_PURPOSES.map(p => `<option value="${p.id}" data-turnaround-days="${p.turnaround_days}">${esc(p.name)}</option>`).join('')}
+                                    <option value="in_transit">In-Transit</option>
+                                    <option value="other">Other</option>
+                                </select>
+                                <input data-fr-purpose-other type="text" placeholder="Specify the reason this file is being requested *" class="hidden mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                            <div data-fr-timeline-days-wrap>
+                                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Timeline (Days)</label>
+                                <input data-fr-timeline-days type="number" min="0" max="365" placeholder="e.g. 5" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                            <div data-fr-deadline-wrap>
+                                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Expected Return Date <span class="text-red-500">*</span></label>
+                                <input data-fr-deadline type="date" disabled class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-gray-100 text-gray-500 cursor-not-allowed">
+                                <p class="text-[10px] text-gray-400 mt-1">Auto-calculated from Request Purpose or Timeline (Days).</p>
+                            </div>
+                        </div>
+
                         <!-- Add Receiving Officer card (shown when the office/officer is not listed) -->
                         <div data-fr-addcard class="hidden mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
                             <div class="flex items-center gap-2 text-amber-800 mb-2">
@@ -800,7 +955,7 @@
                 </div>`;
             result.classList.remove('hidden');
 
-            if (d.can_send_fr && !directsToLand(d)) initRequesterCascade(d);
+            if (d.can_send_fr && !directsToLand(d) && !isDciv(d)) initRequesterCascade(d);
 
             const frBtn = result.querySelector('[data-fr]');
             if (frBtn) frBtn.addEventListener('click', () => sendFR(d, frBtn));
@@ -808,8 +963,10 @@
             if (redirectBtn) redirectBtn.addEventListener('click', () => sendRedirect(d, redirectBtn));
             const redirectLandBtn = result.querySelector('[data-redirect-land]');
             if (redirectLandBtn) redirectLandBtn.addEventListener('click', () => sendRedirectToDirectorLand(d, redirectLandBtn));
+            const redirectDcivBtn = result.querySelector('[data-redirect-dciv]');
+            if (redirectDcivBtn) redirectDcivBtn.addEventListener('click', () => sendRedirectToDcivDirector(d, redirectDcivBtn));
             const logBtn = result.querySelector('[data-log]');
-            if (logBtn) logBtn.addEventListener('click', () => logFile(d));
+            if (logBtn) logBtn.addEventListener('click', () => handleLogFileClick(d, d.fr_found));
             const saveBtn = result.querySelector('[data-us-save]');
             if (saveBtn) saveBtn.addEventListener('click', () => updateStatus(d, result.querySelector('[data-us-status]').value, result.querySelector('[data-us-loc]').value, saveBtn));
             if (window.lucide) window.lucide.createIcons();
@@ -938,6 +1095,92 @@
 
             const deptOther   = result.querySelector('[data-fr-dept-other]');
             const officeOther = result.querySelector('[data-fr-office-other]');
+
+            // Request Purpose → Expected Return Date: pre-fill the date from the
+            // selected purpose's default turnaround (mirrors Create File Tracker),
+            // staying editable once the user touches the date field directly.
+            const purposeSel      = result.querySelector('[data-fr-purpose]');
+            const purposeOther    = result.querySelector('[data-fr-purpose-other]');
+            const deadlineInput   = result.querySelector('[data-fr-deadline]');
+            const timelineDaysInput = result.querySelector('[data-fr-timeline-days]');
+            if (purposeSel && deadlineInput) {
+                let userEditedDeadline = false;
+
+                // admin/header.blade.php globally converts every input[type=date] into a
+                // flatpickr instance (altInput:true, DD/MM/YYYY display): the ORIGINAL
+                // <input> is hidden and keeps the Y-m-d value for submission, while a
+                // separate visible text field (altInput) is what the user actually sees.
+                // Setting .value directly only updates the hidden original, leaving the
+                // visible altInput blank — go through flatpickr's own API when present.
+                // This form is injected via innerHTML at runtime, so the header's
+                // MutationObserver enhances it asynchronously; fall back to plain .value
+                // for the brief window before that runs.
+                const setDeadlineValue = (dateStr) => {
+                    const fp = deadlineInput._flatpickr;
+                    if (fp) { fp.setDate(dateStr, true); } else { deadlineInput.value = dateStr; }
+                };
+
+                const timelineDaysWrap = result.querySelector('[data-fr-timeline-days-wrap]');
+                const deadlineWrap = result.querySelector('[data-fr-deadline-wrap]');
+
+                purposeSel.addEventListener('change', () => {
+                    const isOther = purposeSel.value === 'other';
+                    if (purposeOther) {
+                        purposeOther.classList.toggle('hidden', !isOther);
+                        if (!isOther) purposeOther.value = '';
+                    }
+
+                    // "In-Transit" is a purely internal movement (no loan/return
+                    // expected) — hide Timeline (Days) / Expected Return Date and
+                    // clear any stale value instead of just skipping validation.
+                    const isInTransit = purposeSel.value === 'in_transit';
+                    if (timelineDaysWrap) timelineDaysWrap.classList.toggle('hidden', isInTransit);
+                    if (deadlineWrap) deadlineWrap.classList.toggle('hidden', isInTransit);
+                    if (isInTransit) {
+                        if (timelineDaysInput) timelineDaysInput.value = '';
+                        const fp = deadlineInput._flatpickr;
+                        if (fp) { fp.clear(); } else { deadlineInput.value = ''; }
+                        return;
+                    }
+
+                    const days = parseInt(purposeSel.selectedOptions[0]?.dataset.turnaroundDays || '', 10);
+                    if (!isNaN(days)) {
+                        if (timelineDaysInput) timelineDaysInput.value = days;
+                        if (!userEditedDeadline) {
+                            const dt = new Date();
+                            dt.setDate(dt.getDate() + days);
+                            const y = dt.getFullYear(), m = String(dt.getMonth() + 1).padStart(2, '0'), day = String(dt.getDate()).padStart(2, '0');
+                            setDeadlineValue(`${y}-${m}-${day}`);
+                        }
+                    }
+                });
+                deadlineInput.addEventListener('input', () => { userEditedDeadline = true; });
+                // This form is injected via innerHTML long after DOMContentLoaded has
+                // already fired, so the header's MutationObserver enhances the date field
+                // asynchronously (microtask) right after insertion — a DOMContentLoaded
+                // fallback would never fire here. A deferred check picks it up instead.
+                function hookFlatpickrOnChange() {
+                    const fp = deadlineInput._flatpickr;
+                    if (fp && Array.isArray(fp.config?.onChange)) {
+                        fp.config.onChange.push(() => { userEditedDeadline = true; });
+                    }
+                }
+                if (deadlineInput._flatpickr) { hookFlatpickrOnChange(); }
+                else { setTimeout(hookFlatpickrOnChange, 0); }
+
+                if (timelineDaysInput) {
+                    timelineDaysInput.addEventListener('input', () => {
+                        const days = parseInt(timelineDaysInput.value, 10);
+                        if (!isNaN(days) && days >= 0) {
+                            const dt = new Date();
+                            dt.setDate(dt.getDate() + days);
+                            const y = dt.getFullYear(), m = String(dt.getMonth() + 1).padStart(2, '0'), day = String(dt.getDate()).padStart(2, '0');
+                            setDeadlineValue(`${y}-${m}-${day}`);
+                            userEditedDeadline = true;
+                        }
+                    });
+                }
+            }
 
             deptSel.addEventListener('change', () => {
                 const dept = deptSel.value;
@@ -1098,7 +1341,7 @@
             // The file already has an open request — block a duplicate by disabling the
             // SCB button. Use "Update Requester Details" to amend the existing request, or
             // Cancel to re-enable the button.
-            frBtn.innerHTML = '<i data-lucide="send" class="h-4 w-4"></i> Send File Search Request to SCB Monitor';
+            frBtn.innerHTML = '<i data-lucide="send" class="h-4 w-4"></i> ' + esc(d.next_action || 'Send File Search Request to SCB Monitor');
             const disableFr = () => { frBtn.disabled = true; frBtn.classList.add('opacity-50', 'cursor-not-allowed'); };
             const enableFr  = () => { frBtn.disabled = false; frBtn.classList.remove('opacity-50', 'cursor-not-allowed'); };
             disableFr();
@@ -1137,13 +1380,45 @@
             const registry     = registrySel ? registrySel.value.trim() : '';
             const registryCode = registrySel && registrySel.selectedOptions[0] ? (registrySel.selectedOptions[0].dataset.code || '') : '';
 
+            // Request Purpose + Expected Return Date — captured once here so they carry
+            // through automatically to Create File Tracker's "Log File" step.
+            const purposeSel    = result.querySelector('[data-fr-purpose]');
+            const purposeOther  = result.querySelector('[data-fr-purpose-other]');
+            const deadlineInput = result.querySelector('[data-fr-deadline]');
+            const rawPurposeValue  = purposeSel ? purposeSel.value : '';
+            const purposeIsOther   = rawPurposeValue === 'other';
+            const purposeIsInTransit = rawPurposeValue === 'in_transit';
+            const requestPurposeId = (purposeIsOther || purposeIsInTransit) ? '' : rawPurposeValue;
+            const requestPurposeOther = purposeIsOther ? (purposeOther ? purposeOther.value.trim() : '') : (purposeIsInTransit ? 'In-Transit' : '');
+            const expectedReturnDate = deadlineInput ? deadlineInput.value : '';
+
             const flag = (el) => { if (el) { el.classList.add('ring-2','ring-red-400','border-red-400'); } };
             const unflag = (el) => { if (el) el.classList.remove('ring-2','ring-red-400','border-red-400'); };
-            [deptSel, officeSel, officerSel, deptOther, officeOther, registrySel].forEach(unflag);
+            [deptSel, officeSel, officerSel, deptOther, officeOther, registrySel, purposeSel, purposeOther, deadlineInput].forEach(unflag);
             if (deptIsOther && !requesterDept) { flag(deptOther); deptOther.focus(); return; }
             if (officeIsOther && !requesterOffice) { flag(officeOther); officeOther.focus(); return; }
             if (officerSel && !receivingOfficer) { flag(officerSel); officerSel.focus(); return; }
             if (registrySel && !registry) { flag(registrySel); registrySel.focus(); return; }
+            if (purposeSel && !rawPurposeValue) { flag(purposeSel); purposeSel.focus(); return; }
+            if (purposeIsOther && !requestPurposeOther) { flag(purposeOther); purposeOther.focus(); return; }
+            // "In-Transit" is a purely internal movement (no loan/return expected),
+            // so Timeline (Days) and Expected Return Date are not required or validated.
+            const timelineDaysInput = result.querySelector('[data-fr-timeline-days]');
+            if (!purposeIsInTransit && timelineDaysInput && timelineDaysInput.value.trim() !== '') {
+                const timelineDaysNum = Number(timelineDaysInput.value);
+                if (!Number.isInteger(timelineDaysNum) || timelineDaysNum < 0 || timelineDaysNum > 365) {
+                    flag(timelineDaysInput);
+                    timelineDaysInput.focus();
+                    Swal.fire({ icon: 'warning', title: 'Invalid Timeline', text: 'Timeline (Days) must be a whole number between 0 and 365.' });
+                    return;
+                }
+            }
+            if (!purposeIsInTransit && deadlineInput && !expectedReturnDate) {
+                flag(deadlineInput);
+                timelineDaysInput?.focus();
+                Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Expected Return Date could not be calculated — select a Request Purpose or enter Timeline (Days).' });
+                return;
+            }
 
             frBtn.disabled = true;
             frBtn.innerHTML = updateId
@@ -1154,7 +1429,7 @@
                 const res = await fetch(FR_URL, {
                     method:'POST',
                     headers:{ 'Content-Type':'application/json', 'X-CSRF-TOKEN':CSRF, 'Accept':'application/json' },
-                    body: JSON.stringify({ file_number:d.file_number, file_title:d.file_title, current_location:d.current_location, resolved_status:d.status, receiving_officer: receivingOfficer, requester_department: requesterDept, requester_office: requesterOffice, requester_office_code: requesterOfficeCode, registry: registry || null, registry_code: registryCode || null, force: force ? 1 : 0, update_existing_id: updateId || null }),
+                    body: JSON.stringify({ file_number:d.file_number, file_title:d.file_title, current_location:d.current_location, resolved_status:d.status, receiving_officer: receivingOfficer, requester_department: requesterDept, requester_office: requesterOffice, requester_office_code: requesterOfficeCode, registry: registry || null, registry_code: registryCode || null, force: force ? 1 : 0, update_existing_id: updateId || null, request_purpose_id: requestPurposeId || null, request_purpose_other: requestPurposeOther || null, expected_return_date: expectedReturnDate || null }),
                 });
                 const json = await res.json();
                 if (json.success) {
@@ -1595,6 +1870,39 @@
             }
         }
 
+        // Re-direct a file under DCIV investigation to the DCIV Director instead of
+        // raising a File Search Request to the SCB. Mirrors sendRedirectToDirectorLand().
+        async function sendRedirectToDcivDirector(d, btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader" class="h-4 w-4 animate-spin"></i> Re-directing…';
+            if (window.lucide) window.lucide.createIcons();
+            try {
+                const res = await fetch(REDIRECT_DCIV_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type':'application/json', 'X-CSRF-TOKEN':CSRF, 'Accept':'application/json' },
+                    body: JSON.stringify({ file_number: d.file_number, file_title: d.file_title }),
+                });
+                const json = await res.json();
+                if (json.success) {
+                    btn.disabled = true;
+                    btn.className = 'inline-flex items-center gap-2 rounded-lg bg-gray-300 px-4 py-2 text-sm font-semibold text-white cursor-not-allowed opacity-60';
+                    btn.removeAttribute('style');
+                    btn.innerHTML = '<i data-lucide="check" class="h-4 w-4"></i> Re-directed To DCIV Director (Land Department)';
+                    if (window.Swal) Swal.fire(json.message || 'Re-directed to DCIV Director (Land Department).', '', 'success');
+                    loadLog();
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i data-lucide="shield-alert" class="h-4 w-4"></i> Re-direct To DCIV Director (Land Department)';
+                    alert(json.message || 'Could not re-direct to DCIV Director.');
+                }
+                if (window.lucide) window.lucide.createIcons();
+            } catch (e) {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="shield-alert" class="h-4 w-4"></i> Re-direct To DCIV Director (Land Department)';
+                alert('Network error — please try again.');
+            }
+        }
+
         // ── File Request Log + SCB Feedback ──
         const LOG_URL    = "{{ route('create-file-tracker.quick-search.file-request-log') }}";
         const ACTED_BASE = "{{ url('create-file-tracker/quick-search/file-request') }}";
@@ -1640,6 +1948,7 @@
             const fno = btn.dataset.fno, title = btn.dataset.title || '', officer = btn.dataset.officer || '';
             const office = btn.dataset.office || '', dept = btn.dataset.dept || '';
             const registry = btn.dataset.registry || '';
+            const purposeId = btn.dataset.purposeId || '', purposeName = btn.dataset.purposeName || '', deadline = btn.dataset.deadline || '';
             btn.disabled = true;
             try {
                 await fetch(`${ACTED_BASE}/${id}/front-desk-acted`, {
@@ -1649,7 +1958,10 @@
             } catch (e) { /* non-fatal — still let the Front Desk proceed */ }
 
             if (kind === 'log') {
-                logFile({ file_number: fno, file_title: title, receiving_officer: officer, requester_office: office, requester_department: dept, registry: registry });   // navigates to Create File Tracker (?url=… by registry)
+                handleLogFileClick(
+                    { file_number: fno, file_title: title, receiving_officer: officer, requester_office: office, requester_department: dept, registry: registry },   // navigates to Create File Tracker (?url=… by registry)
+                    { request_purpose_id: purposeId, request_purpose_name: purposeName, expected_return_date: deadline }
+                );
             } else {
                 window.open(`${SLIP_URL}?file_number=${encodeURIComponent(fno)}&variant=refer_registry`, '_blank');
                 loadScbFeedback();
@@ -1750,7 +2062,7 @@
                             const sentDt = splitDT(r.requested_at);
                             const dt     = splitDT(r.responded_at);
                             const action = r.found
-                                ? `<button type="button" data-fb-act="log" data-id="${r.id}" data-fno="${esc(r.file_number)}" data-title="${esc(r.file_title || '')}" data-officer="${esc(r.receiving_officer || '')}" data-office="${esc(r.requester_office || '')}" data-dept="${esc(r.requester_department || '')}" data-registry="${esc(r.registry || '')}" class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"><i data-lucide="file-plus" class="h-3.5 w-3.5"></i> Log File</button>`
+                                ? `<button type="button" data-fb-act="log" data-id="${r.id}" data-fno="${esc(r.file_number)}" data-title="${esc(r.file_title || '')}" data-officer="${esc(r.receiving_officer || '')}" data-office="${esc(r.requester_office || '')}" data-dept="${esc(r.requester_department || '')}" data-registry="${esc(r.registry || '')}" data-purpose-id="${esc(r.request_purpose_id || '')}" data-purpose-name="${esc(r.request_purpose_name || '')}" data-deadline="${esc(r.expected_return_date || '')}" class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"><i data-lucide="file-plus" class="h-3.5 w-3.5"></i> Log File</button>`
                                 : (r.not_found
                                     ? `<button type="button" data-fb-act="refer" data-id="${r.id}" data-fno="${esc(r.file_number)}" class="inline-flex items-center gap-1 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"><i data-lucide="printer" class="h-3.5 w-3.5"></i> Print</button>`
                                     : `<span class="text-[11px] text-gray-400 italic">Awaiting SCB…</span>`);

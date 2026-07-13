@@ -1490,6 +1490,9 @@ Route::get('/debug-api', function () {
 })->middleware(['auth']);
 
 Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'fileindexing'], function () {
+    Route::get('/backfill-coordinates', [App\Http\Controllers\FileIndexingCoordinateBackfillController::class, 'index'])->name('fileindexing.backfill-coordinates');
+    Route::post('/backfill-coordinates/run', [App\Http\Controllers\FileIndexingCoordinateBackfillController::class, 'run'])->name('fileindexing.backfill-coordinates.run');
+
     Route::get('/', [App\Http\Controllers\FileIndexController::class, 'index'])->name('fileindexing.index');
     Route::get('/create', App\Http\Controllers\FileIndexCreatePageController::class)->name('fileindexing.create');
     Route::get('/activity-log', [App\Http\Controllers\FileIndexingActivityLogController::class, 'index'])->name('fileindexing.activity-log');
@@ -1612,6 +1615,7 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'create-file-tracker'
     Route::get('/quick-search/resolve', [App\Http\Controllers\CreateFileTrackerController::class, 'quickSearchResolve'])->name('create-file-tracker.quick-search.resolve');
     Route::post('/quick-search/update-status', [App\Http\Controllers\CreateFileTrackerController::class, 'updateLocationStatus'])->name('create-file-tracker.quick-search.update-status');
     Route::post('/quick-search/redirect-director-land', [App\Http\Controllers\CreateFileTrackerController::class, 'redirectToDirectorLand'])->name('create-file-tracker.quick-search.redirect-director-land');
+    Route::post('/quick-search/redirect-dciv-director', [App\Http\Controllers\CreateFileTrackerController::class, 'redirectToDcivDirector'])->name('create-file-tracker.quick-search.redirect-dciv-director');
     Route::get('/quick-search/scb-feedback', [App\Http\Controllers\CreateFileTrackerController::class, 'scbFeedback'])->name('create-file-tracker.quick-search.scb-feedback');
     Route::get('/quick-search/file-request-log', [App\Http\Controllers\CreateFileTrackerController::class, 'fileRequestLog'])->name('create-file-tracker.quick-search.file-request-log');
     Route::post('/quick-search/file-request/{id}/front-desk-acted', [App\Http\Controllers\CreateFileTrackerController::class, 'markFrontDeskActed'])->name('create-file-tracker.quick-search.front-desk-acted');
@@ -1622,6 +1626,7 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'create-file-tracker'
     Route::get('/file-requesters', [App\Http\Controllers\CreateFileTrackerController::class, 'fileRequesters'])->name('create-file-tracker.file-requesters');
 
     Route::get('/check-logout-status', [App\Http\Controllers\CreateFileTrackerController::class, 'checkFileLogoutStatus'])->name('create-file-tracker.check-logout-status');
+    Route::get('/merger-group', [App\Http\Controllers\CreateFileTrackerController::class, 'mergerGroup'])->name('create-file-tracker.merger-group');
     Route::get('/kangis-checkout', [App\Http\Controllers\CreateFileTrackerController::class, 'kangisCheckoutList'])->name('create-file-tracker.kangis-checkout.list');
     Route::post('/kangis-checkout/request', [App\Http\Controllers\CreateFileTrackerController::class, 'kangisCheckoutRequest'])->name('create-file-tracker.kangis-checkout.request');
     Route::post('/kangis-checkout/{id}/approve', [App\Http\Controllers\CreateFileTrackerController::class, 'kangisCheckoutApprove'])->name('create-file-tracker.kangis-checkout.approve');
@@ -1632,6 +1637,14 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'create-file-tracker'
     Route::get('/workflow-progress/{id}', [App\Http\Controllers\CreateFileTrackerController::class, 'workflowProgress'])->name('create-file-tracker.workflow-progress');
     Route::post('/{id}/mark-printed', [App\Http\Controllers\CreateFileTrackerController::class, 'markAsPrinted'])->name('create-file-tracker.mark-printed');
     Route::get('/{id}/request-sheet', [App\Http\Controllers\CreateFileTrackerController::class, 'requestSheet'])->name('create-file-tracker.request-sheet');
+});
+
+// File Merger management — curate the files that will be merged / function as a single unit.
+Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'file-merger'], function () {
+    Route::get('/', [App\Http\Controllers\FileMergerController::class, 'index'])->name('file-merger.index');
+    Route::post('/', [App\Http\Controllers\FileMergerController::class, 'store'])->name('file-merger.store');
+    Route::get('/lookup', [App\Http\Controllers\FileMergerController::class, 'lookup'])->name('file-merger.lookup');
+    Route::delete('/{mergerId}', [App\Http\Controllers\FileMergerController::class, 'destroy'])->name('file-merger.destroy');
 });
 
 // ── Digital File Request Module ───────────────────────────────────────────────

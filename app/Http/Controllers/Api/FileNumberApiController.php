@@ -30,7 +30,7 @@ class FileNumberApiController extends Controller
             // Cache key based on search term and exclusion
             $normalizedSearch = $this->normalizeSearch($search);
             $cacheKey = 'mls_files_' . md5($normalizedSearch . $limit . $excludeMatched);
-            
+
             $files = Cache::remember($cacheKey, 300, function () use ($search, $normalizedSearch, $limit, $excludeMatched) {
                 $query = DB::connection('sqlsrv')
                     ->table('fileNumber')
@@ -46,7 +46,7 @@ class FileNumberApiController extends Controller
                     ])
                     ->whereNotNull('mlsfNo')
                     ->where('mlsfNo', '!=', '');
-                
+
                 // Exclude matches if requested
                 if (!empty($excludeMatched)) {
                     switch (strtolower($excludeMatched)) {

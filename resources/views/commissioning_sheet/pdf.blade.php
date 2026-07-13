@@ -175,11 +175,12 @@
         }
 
         .label {
-            font-size: 4.8mm;
+            font-size: 4.2mm;
             font-weight: 700;
             line-height: 1;
             padding-right: 5mm;
             white-space: nowrap;
+            text-align: left;
         }
 
         .value-line {
@@ -309,7 +310,7 @@
                     @endif
             <div class="fields">
                 <div class="row">
-                    <div class="label">File No:</div>
+                    <div class="label">File No/(File Type):</div>
                     <div class="value-line">
                         {{ $fileNumber }}
                         @if(!empty($data['related_file_title']))

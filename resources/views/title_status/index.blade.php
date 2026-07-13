@@ -272,6 +272,16 @@
                             <p class="text-xs text-slate-500 mt-0.5">Links to an additional file</p>
                         </div>
                     </button>
+                    <button type="button" onclick="tsSelectType('Resettlement')"
+                        class="ts-type-card text-left flex items-start gap-4 p-4 rounded-xl border-2 border-slate-100 hover:border-violet-400 hover:bg-violet-50/40 transition group">
+                        <div class="w-11 h-11 shrink-0 rounded-xl bg-violet-100 flex items-center justify-center group-hover:bg-violet-200 transition">
+                            <i data-lucide="map-pin" class="w-5 h-5 text-violet-600"></i>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-slate-800 text-sm">Resettlement</p>
+                            <p class="text-xs text-slate-500 mt-0.5">Existing or New Files</p>
+                        </div>
+                    </button>
                 </div>
             </div>
         </div>

@@ -213,6 +213,24 @@
                         </tbody>
                     </table>
                 </div>
+
+                {{-- Pagination --}}
+                <div class="px-6 py-3 border-t border-gray-200 flex items-center justify-between flex-wrap gap-3">
+                    <p class="text-sm text-gray-600">
+                        Showing <span id="mf-page-from">0</span>–<span id="mf-page-to">0</span> of <span id="mf-page-total">0</span>
+                    </p>
+                    <div class="flex items-center gap-2">
+                        <button type="button" id="mf-prev-btn"
+                            class="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i data-lucide="chevron-left" class="h-4 w-4"></i>
+                        </button>
+                        <span class="text-sm text-gray-600">Page <span id="mf-page-current">1</span> of <span id="mf-page-last">1</span></span>
+                        <button type="button" id="mf-next-btn"
+                            class="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i data-lucide="chevron-right" class="h-4 w-4"></i>
+                        </button>
+                    </div>
+                </div>
             </div>
             </div>{{-- end list panel --}}
 
@@ -236,6 +254,7 @@
         },
         csrf: "{{ csrf_token() }}",
         initial: @json($missingFiles),
+        initialPagination: @json($pagination),
     };
 </script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>

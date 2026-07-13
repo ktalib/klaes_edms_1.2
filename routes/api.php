@@ -369,6 +369,10 @@ Route::prefix('grouping-analytics')->controller(GroupingAnalyticsController::cla
     Route::delete('/cache', 'clearCache')->name('api.grouping-analytics.clear-cache');
 });
 
+// Registry auto-detection for File Indexing create/edit forms (config/file_ranges.php rules)
+Route::get('/registry/detect', [\App\Http\Controllers\Api\RegistryDetectionApiController::class, 'detect'])
+    ->name('api.registry.detect');
+
 // Grouping API Routes - Comprehensive Global API with PERFORMANCE OPTIMIZATIONS
 Route::prefix('grouping')->controller(\App\Http\Controllers\Api\GroupingApiController::class)->group(function () {
     // Statistics and totals

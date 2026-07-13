@@ -616,6 +616,7 @@
       const displayTpno = params.get('display_tpno') || '';
       const displayResidualTerm = params.get('display_residual_term') || '';
       const displayCommencementDate = params.get('display_commencement_date') || '';
+      const displayCommencementSource = params.get('display_commencement_source') || '';
       const clientName = params.get('client_name') || '';
       const clientAddress = params.get('client_address') || '';
       const timelineOrder = params.get('timeline_order') || '';
@@ -633,6 +634,7 @@
         display_tpno: displayTpno,
         display_residual_term: displayResidualTerm,
         display_commencement_date: displayCommencementDate,
+        display_commencement_source: displayCommencementSource,
         client_name: clientName,
         client_address: clientAddress,
         timeline_order: timelineOrder,
@@ -672,7 +674,10 @@
           setText('report-land-use', d.land_use);
           setText('report-term', termFromLandUse(d.land_use));
           setText('report-rent', d.residual_term);
-          setText('report-commencement-date', d.commencement_date);
+          const commencementText = (d.commencement_date && d.commencement_source)
+            ? `${d.commencement_date} (${d.commencement_source})`
+            : d.commencement_date;
+          setText('report-commencement-date', commencementText);
           setText('report-plot-no', d.plot_no);
           setText('report-plot-description', d.plot_description);
           setText('report-tpno', d.tpno);
@@ -700,7 +705,7 @@
           if (caveatEl && d.caveat_note) {
             caveatEl.textContent = d.caveat_note;
             caveatEl.style.display = 'block';
-            if (d.under_investigation || d.is_caveated) {
+            if (d.under_investigation || d.is_caveated || d.is_flagged) {
               caveatEl.style.color = '#dc2626';
             } else {
               caveatEl.style.color = '#166534';

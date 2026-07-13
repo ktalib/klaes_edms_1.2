@@ -416,6 +416,7 @@ Route::middleware(['auth'])->group(function () {
         // AJAX / actions
         Route::get ('/check-file',               [\App\Http\Controllers\SpecialAssignmentController::class, 'checkFileIndexed'])->name('check-file');
         Route::get ('/search-files',             [\App\Http\Controllers\SpecialAssignmentController::class, 'searchFileIndexings'])->name('search-files');
+        Route::get ('/next-customary-fileno',    [\App\Http\Controllers\SpecialAssignmentController::class, 'nextCustomaryFileNumber'])->name('next-customary-fileno');
         Route::post  ('/land-records/store',         [\App\Http\Controllers\SpecialAssignmentController::class, 'storeLandRecord'])->name('land-records.store');
         Route::post  ('/land-records/{id}/update',   [\App\Http\Controllers\SpecialAssignmentController::class, 'updateLandRecord'])->name('land-records.update');
         Route::post  ('/land-records/{id}/delete',   [\App\Http\Controllers\SpecialAssignmentController::class, 'deleteLandRecord'])->name('land-records.delete');

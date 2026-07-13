@@ -11,7 +11,8 @@ class IndexKangisRelatedLandFiles extends Command
     protected $signature = 'kangis:index-related-land
         {--chunk=200 : Rows per insert chunk}
         {--purge : Delete all rows previously created by this backfill, then exit}
-        {--dry-run : List what would be indexed/deleted without writing}';
+        {--dry-run : List what would be indexed/deleted without writing}
+        {--user-full-name= : Full name of the user running this backfill}';
 
     protected $description = 'Index land files referenced by KANGIS-registry indexing records (general_registry LIKE KANGIS% AND related_fileno IS NOT NULL). Idempotent — skips land files that are already indexed.';
 

@@ -3099,6 +3099,72 @@
             if (other) { other.style.display = ''; other.value = val; }
             if (hidden) hidden.value = val;
         }
+        // Sync the Select2 widget display without re-firing its bridged change handler
+        if (window.jQuery && $(sel).hasClass('select2-hidden-accessible')) {
+            $(sel).trigger('change.select2');
+        }
+    }
+
+    // Make the Edit / Direct Allocation District dropdowns searchable (Select2),
+    // mirroring initDistrictSelect2() used for the file-number generator form.
+    function initEditDistrictSelect2() {
+        try {
+            if (!window.jQuery || typeof $.fn.select2 === 'undefined') return;
+            const $select = $('#editDistrict');
+            if ($select.length === 0) return;
+            if ($select.hasClass('select2-hidden-accessible')) {
+                $select.select2('destroy');
+            }
+            const parent = document.getElementById('editDistrictWrap')
+                || document.getElementById('editModal');
+            $select.select2({
+                placeholder: 'Search or select district',
+                allowClear: true,
+                dropdownParent: $(parent),
+                width: '100%'
+            });
+            $select.on('select2:open', () => {
+                setTimeout(() => {
+                    const searchField = document.querySelector('.select2-search__field');
+                    if (searchField) searchField.focus();
+                }, 100);
+            });
+            $select.on('change', function () {
+                onEditDistrictChange(this.value);
+            });
+        } catch (e) {
+            console.error('Error in initEditDistrictSelect2():', e);
+        }
+    }
+
+    function initDaDistrictSelect2() {
+        try {
+            if (!window.jQuery || typeof $.fn.select2 === 'undefined') return;
+            const $select = $('#daDistrict');
+            if ($select.length === 0) return;
+            if ($select.hasClass('select2-hidden-accessible')) {
+                $select.select2('destroy');
+            }
+            const parent = document.getElementById('daDistrictWrap')
+                || document.getElementById('directAllocationModal');
+            $select.select2({
+                placeholder: 'Search or select district',
+                allowClear: true,
+                dropdownParent: $(parent),
+                width: '100%'
+            });
+            $select.on('select2:open', () => {
+                setTimeout(() => {
+                    const searchField = document.querySelector('.select2-search__field');
+                    if (searchField) searchField.focus();
+                }, 100);
+            });
+            $select.on('change', function () {
+                onDaDistrictChange(this.value);
+            });
+        } catch (e) {
+            console.error('Error in initDaDistrictSelect2():', e);
+        }
     }
 
     function onEditDistrictChange(val) {
@@ -3170,9 +3236,12 @@
         $(document).on('input change', '#editPlotNo, #editLga, #editDistrict', function() {
             updateEditLocation();
         });
+        // Make the Edit / Direct Allocation District dropdowns searchable
+        initEditDistrictSelect2();
+        initDaDistrictSelect2();
     });
 
-    function submitEditForm(event) {
+    function submitEditForm(event, confirmTransactionChange = false) {
         event.preventDefault();
 
         const submitBtn = event.target.querySelector('button[type="submit"]');
@@ -3186,6 +3255,9 @@
 
         const id = document.getElementById('editId').value;
         const formData = new FormData(document.getElementById('editForm'));
+        if (confirmTransactionChange) {
+            formData.set('confirm_transaction_change', '1');
+        }
 
         fetch(`{{ route("file-numbers.update", ":id") }}`.replace(':id', id), {
             method: 'POST',
@@ -3194,8 +3266,8 @@
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             }
         })
-            .then(response => response.json())
-            .then(data => {
+            .then(response => response.json().then(data => ({ status: response.status, data })))
+            .then(({ status, data }) => {
                 hideGlobalLoading();
                 if (submitBtn) {
                     hideLoadingButton(submitBtn, originalText);
@@ -3216,6 +3288,22 @@
 
                     closeEditModal();
                     table.ajax.reload();
+                } else if (status === 409 && data.requires_confirmation) {
+                    // File has recorded transactions — ask the user to confirm before propagating the name change
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Transactions Found',
+                        text: data.message,
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, update everywhere',
+                        cancelButtonText: 'Cancel',
+                        confirmButtonColor: '#f59e0b',
+                        cancelButtonColor: '#6b7280'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            submitEditForm(event, true);
+                        }
+                    });
                 } else {
                     Swal.fire({
                         icon: 'error',
@@ -6414,7 +6502,7 @@
             const fileTypeLabel = getCommissioningSourceLabel(formData.get('source'), fileNumberVal);
             const fileNoDisplay = fileTypeLabel ? `${fileNumberVal} (${fileTypeLabel})` : fileNumberVal;
             const fields = [
-                ['File No:', fileNoDisplay],
+                ['File No/(File Type):', fileNoDisplay],
                 ['File Name:', formData.get('file_name')],
                 ['Plot No:', formData.get('plot_number')],
                 ['TP No:', formData.get('tp_number')],
@@ -6436,7 +6524,7 @@
                 const text = String(value || '');
 
                 // Long values (File No, File Name, SIT reason, Location) wrap within the value column and grow over as many lines as needed.
-                if (label === 'File No:' || label === 'File Name:' || label === 'Reason:' || label === 'Location:') {
+                if (label === 'File No/(File Type):' || label === 'File Name:' || label === 'Reason:' || label === 'Location:') {
                     const lines = doc.splitTextToSize(text, valueMaxWidth);
                     lines.forEach((ln, i) => {
                         doc.text(ln, 72, y + i * reasonLineHeight);
@@ -6546,7 +6634,7 @@
                 const rowFileTypeLabel = getCommissioningSourceLabel(row.source, rowFileNo);
                 const rowFileNoDisplay = rowFileTypeLabel ? `${rowFileNo} (${rowFileTypeLabel})` : rowFileNo;
                 const fields = [
-                    ['File No:', rowFileNoDisplay],
+                    ['File No/(File Type):', rowFileNoDisplay],
                     ['File Name:', row.file_name || ''],
                     ['Plot No:', row.plot_no || 'N/A'],
                     ['TP No:', row.tp_no || 'N/A'],
@@ -6568,7 +6656,7 @@
                     const text = String(value || '');
 
                     // Long values (File No, File Name, SIT reason, Location) wrap within the value column and grow over as many lines as needed.
-                    if (label === 'File No:' || label === 'File Name:' || label === 'Reason:' || label === 'Location:') {
+                    if (label === 'File No/(File Type):' || label === 'File Name:' || label === 'Reason:' || label === 'Location:') {
                         const lines = doc.splitTextToSize(text, valueMaxWidth);
                         lines.forEach((ln, idx) => {
                             doc.text(ln, textStartX, y + idx * reasonLineHeight);

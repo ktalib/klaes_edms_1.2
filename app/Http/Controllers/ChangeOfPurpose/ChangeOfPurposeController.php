@@ -542,7 +542,7 @@ class ChangeOfPurposeController extends Controller
             'plan_no' => 'nullable|string|max:100',
             'phone' => 'nullable|string|max:50',
             'residential_address' => 'nullable|string|max:2000',
-            'comment' => 'required|string|max:2000',
+            'comment' => 'nullable|string|max:2000',
             'knupda_fee' => 'nullable|numeric',
             'land_size' => 'nullable|numeric',
             'site_plan' => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',

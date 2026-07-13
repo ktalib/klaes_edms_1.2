@@ -39,6 +39,11 @@ return [
         // Used by the File Indexing "Apply & Pin on Map" geocoder. Override in
         // .env with GOOGLE_MAPS_API_KEY once billing/API-restrictions are set up.
         'key' => env('GOOGLE_MAPS_API_KEY', 'AIzaSyCFb7XF_3_LCPlK-O5Yp4IZEO1w0ccgQJM'),
+
+        // Server-side key for the Geocoding HTTP API (fileindexing:backfill-coordinates).
+        // Must NOT have an HTTP-referrer restriction — Google rejects referrer-restricted
+        // keys on server-to-server API calls. Restrict by IP or API instead.
+        'geocoding_key' => env('GOOGLE_GEOCODING_API_KEY'),
     ],
 
     'paystack' => [

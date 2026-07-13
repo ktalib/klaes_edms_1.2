@@ -693,16 +693,31 @@ class SpecialAssignmentController extends Controller
         ]);
     }
 
+    public function nextCustomaryFileNumber(Request $request)
+    {
+        return response()->json(['file_number' => SpaApplication::generateCustomaryFileNumber()]);
+    }
+
     public function storeLandRecord(Request $request)
     {
         $request->validate([
-            'file_number'  => 'required|string|max:255',
-            'owner_name'   => 'required|string|max:255',
-            'phone'        => 'nullable|string|max:20',
-            'proposed_use' => 'required|string|max:255',
-            'existing_use' => 'required|string|max:255',
-            'photos.*'     => 'nullable|image|max:5120',
+            'land_title_type' => 'required|in:statutory,customary',
+            'file_number'     => 'required_if:land_title_type,statutory|string|max:255',
+            'owner_name'      => 'required|string|max:255',
+            'phone'           => 'nullable|string|max:20',
+            'proposed_use'    => 'required|string|max:255',
+            'existing_use'    => 'required|string|max:255',
+            'photos.*'        => 'nullable|image|max:5120',
         ]);
+
+        $isCustomary = $request->land_title_type === 'customary';
+
+        // Customary titles have no existing indexed file to pick — the temporary
+        // file number is generated server-side (not trusted from the client) to
+        // keep the sequence authoritative and collision-free.
+        $fileNumber = $isCustomary
+            ? SpaApplication::generateCustomaryFileNumber()
+            : $request->file_number;
 
         $photos = [];
         if ($request->hasFile('photos')) {
@@ -712,10 +727,11 @@ class SpecialAssignmentController extends Controller
         }
 
         $app = SpaApplication::create([
-            'file_number'     => $request->file_number,
-            'tracking_id'     => $request->tracking_id,
-            'file_indexing_id'=> $request->file_indexing_id ?: null,
-            'is_indexed'      => (bool) $request->is_indexed,
+            'file_number'     => $fileNumber,
+            'tracking_id'     => $isCustomary ? null : $request->tracking_id,
+            'file_indexing_id'=> $isCustomary ? null : ($request->file_indexing_id ?: null),
+            'is_indexed'      => $isCustomary ? false : (bool) $request->is_indexed,
+            'land_title_type' => $request->land_title_type,
             'owner_name'      => $request->owner_name,
             'phone'           => $request->phone,
             'location'        => $request->location,
@@ -729,7 +745,7 @@ class SpecialAssignmentController extends Controller
             'created_by'      => auth()->user()->name ?? auth()->id(),
         ]);
 
-        return response()->json(['success' => true, 'id' => $app->id, 'message' => 'Land record saved.']);
+        return response()->json(['success' => true, 'id' => $app->id, 'file_number' => $fileNumber, 'message' => 'Land record saved.']);
     }
 
     public function updateLandRecord(Request $request, int $id)
@@ -788,7 +804,8 @@ class SpecialAssignmentController extends Controller
             }
         }
 
-        $coordinates = $request->coordinates ? json_decode($request->coordinates, true) : null;
+        $coordinates    = $request->coordinates ? json_decode($request->coordinates, true) : null;
+        $parcelGeometry = $request->parcel_geometry ? json_decode($request->parcel_geometry, true) : null;
 
         $data = SpaFieldData::create([
             'spa_application_id' => $request->spa_application_id,
@@ -796,6 +813,7 @@ class SpecialAssignmentController extends Controller
             'surveyor_id'        => auth()->id(),
             'inspection_date'    => $request->inspection_date,
             'coordinates'        => $coordinates,
+            'parcel_geometry'    => $parcelGeometry,
             'findings'           => $request->findings,
             'photos'             => $photos ?: null,
             'status'             => 'active',

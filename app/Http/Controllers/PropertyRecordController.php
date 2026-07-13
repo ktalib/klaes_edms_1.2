@@ -25,6 +25,7 @@ class PropertyRecordController extends Controller
         'SLTR Certificate of Occupancy',
     ];
     private const PRA_TABLE = 'pra';
+    private const DEED_TABLE = 'deed_registrations';
     private PropertyIdAllocationService $propertyIdAllocationService;
     private TimelineWeightingService $timelineService;
 
@@ -3106,13 +3107,75 @@ class PropertyRecordController extends Controller
 
                     $isOP = self::isOccupancyPermit($transactionType);
 
+                    // Which staging table this transaction was originally loaded from
+                    // (set by checkExistingRecords()'s `_source`: fh|cofo|pra|deeds).
+                    // For an update (recordId present), the id only makes sense against
+                    // that ORIGINAL table — a "Certificate of Occupancy" row backfilled from
+                    // file_history_staging must still be updated there, not in CofO_staging,
+                    // even though its transaction_type matches the CofO type list.
+                    $source = $transaction['_source'] ?? null;
+                    $isCofOUpdateTarget = $isCofO && ($source === null || $source === 'cofo');
+                    $isOPUpdateTarget = $isOP && ($source === null || $source === 'pra');
+                    $isDeedUpdateTarget = $recordId && $source === 'deeds';
+
                     \Log::info('Transaction routing decision', [
                         'transaction_type' => $transactionType,
                         'is_cofo' => $isCofO,
                         'is_op' => $isOP,
+                        'source' => $source,
                         'record_id' => $recordId,
-                        'target_table' => $isCofO ? self::COFO_TABLE : ($isOP ? self::PRA_TABLE : self::PROPERTY_TABLE),
+                        'target_table' => $isDeedUpdateTarget ? self::DEED_TABLE : ($isCofOUpdateTarget || ($isCofO && !$recordId) ? self::COFO_TABLE : (($isOPUpdateTarget || ($isOP && !$recordId)) ? self::PRA_TABLE : self::PROPERTY_TABLE)),
                     ]);
+
+                    if ($isDeedUpdateTarget) {
+                        static $deedTableColumns = null;
+                        if ($deedTableColumns === null) {
+                            $deedTableColumns = Schema::connection('sqlsrv')->getColumnListing(self::DEED_TABLE);
+                        }
+
+                        // deed_registrations uses its own column naming (snake_case
+                        // grantor/grantee/deeds_date), distinct from the camelCase
+                        // serialNo/pageNo/volumeNo used by file_history_staging/CofO_staging/pra.
+                        // Build the update payload from the raw transaction fields rather than
+                        // the already-filtered $propertyData, which was filtered against
+                        // file_history_staging's column set and would silently drop these.
+                        $deedData = [
+                            'transaction_type' => $transaction['transaction_type'] ?? null,
+                            'instrument_type' => $transaction['instrument_type'] ?? ($transaction['transaction_type'] ?? null),
+                            'grantor' => $transaction['first_party'] ?? null,
+                            'grantee' => $transaction['second_party'] ?? null,
+                            'deeds_date' => $transaction['transaction_date'] ?? null,
+                            'deeds_time' => $transaction['reg_time'] ?? null,
+                            'serial_no' => $transaction['serial_no'] ?? null,
+                            'page_no' => $transaction['page_no'] ?? null,
+                            'volume_no' => $transaction['volume_no'] ?? null,
+                            'registration_number' => $registrationNumber,
+                            'land_use' => $transaction['land_use'] ?? null,
+                            'period' => $transaction['period'] ?? null,
+                            'period_unit' => $transaction['period_unit'] ?? null,
+                            'comments' => $transaction['comments'] ?? null,
+                            'updated_by' => Auth::id(),
+                            'updated_at' => now(),
+                        ];
+
+                        $deedData = array_filter($deedData, function ($key) use ($deedTableColumns) {
+                            return in_array($key, $deedTableColumns, true);
+                        }, ARRAY_FILTER_USE_KEY);
+
+                        DB::connection('sqlsrv')->table(self::DEED_TABLE)
+                            ->where('id', $recordId)
+                            ->update($deedData);
+
+                        $persistedRecords['updated'][] = $recordId;
+
+                        \Log::info('Updated Deed Registration record from indexing', [
+                            'id' => $recordId,
+                            'transaction_type' => $transactionType,
+                            'table' => self::DEED_TABLE,
+                        ]);
+
+                        continue;
+                    }
 
                     if ($isCofO && !$recordId) {
                         // Lazy-load CofO columns once
@@ -3157,7 +3220,7 @@ class PropertyRecordController extends Controller
                     }
 
                     // Update existing CofO record in CofO_staging table
-                    if ($isCofO && $recordId) {
+                    if ($isCofOUpdateTarget && $recordId) {
                         // Lazy-load CofO columns once
                         if ($cofoTableColumns === null) {
                             $cofoTableColumns = Schema::connection('sqlsrv')->getColumnListing(self::COFO_TABLE);
@@ -3282,7 +3345,7 @@ class PropertyRecordController extends Controller
                     }
 
                     // Update existing OP record in pra table
-                    if ($isOP && $recordId) {
+                    if ($isOPUpdateTarget && $recordId) {
                         static $praTableColumnsUpdate = null;
                         if ($praTableColumnsUpdate === null) {
                             $praTableColumnsUpdate = Schema::connection('sqlsrv')->getColumnListing(self::PRA_TABLE);
@@ -3335,15 +3398,19 @@ class PropertyRecordController extends Controller
                     }
 
                     if ($recordId) {
-                        // Final check: if this record came from PRA or CofO but wasn't caught by specific blocks above,
-                        // we should try to update it in the correct table if possible, or default to propertyTable.
-                        $source = $transaction['_source'] ?? 'file_history';
+                        // Reached when the transaction_type coincidentally matches a CofO/OP
+                        // pattern but the row's recorded origin says otherwise (source mismatch
+                        // caught above), or for any other historical row with no specific
+                        // handler. Route strictly by the row's own origin (_source), defaulting
+                        // to file_history_staging when the origin is unknown/unset.
                         $targetTable = $propertyTable;
 
-                        if ($source === 'pra' || $isOP) {
+                        if ($source === 'pra') {
                             $targetTable = self::PRA_TABLE;
-                        } elseif ($source === 'cofo' || $isCofO) {
+                        } elseif ($source === 'cofo') {
                             $targetTable = self::COFO_TABLE;
+                        } elseif ($source === 'deeds') {
+                            $targetTable = self::DEED_TABLE;
                         }
 
                         DB::connection('sqlsrv')->table($targetTable)

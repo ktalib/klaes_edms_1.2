@@ -23,6 +23,8 @@ class FileTracker extends Model
         'created_by_name',
         'department',
         'destination',
+        'request_purpose_id',
+        'request_purpose_name',
         'description',
         'status',
         'date_created',
@@ -311,6 +313,37 @@ class FileTracker extends Model
     }
 
     /**
+     * Timeline status derived from date_created/deadline: 'red' once the deadline
+     * has passed, 'amber' once less than 20% of the allotted turnaround remains,
+     * otherwise 'green'. Null when no deadline has been set (e.g. no Request
+     * Purpose turnaround configured).
+     */
+    public function getTimelineStatusAttribute()
+    {
+        if (!$this->deadline || !$this->date_created) {
+            return null;
+        }
+
+        $start = Carbon::parse($this->date_created);
+        $deadline = Carbon::parse($this->deadline);
+        $now = Carbon::now();
+
+        if ($now->greaterThan($deadline)) {
+            return 'red';
+        }
+
+        $totalWindow = $start->diffInSeconds($deadline);
+        if ($totalWindow <= 0) {
+            return $now->greaterThanOrEqualTo($deadline) ? 'red' : 'green';
+        }
+
+        $elapsed = $start->diffInSeconds($now);
+        $remainingRatio = 1 - ($elapsed / $totalWindow);
+
+        return $remainingRatio <= 0.2 ? 'amber' : 'green';
+    }
+
+    /**
      * Get completion percentage
      */
     public function getCompletionPercentageAttribute()
@@ -377,6 +410,14 @@ class FileTracker extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(\App\Models\User::class, 'created_by');
+    }
+
+    /**
+     * Get the Request Purpose this file was logged out for
+     */
+    public function requestPurpose(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\RequestPurpose::class, 'request_purpose_id');
     }
 
     public function getCanEditAttribute(): bool

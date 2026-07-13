@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\FileIndexing;
 use App\Models\FileSearchRequest;
 use App\Models\FileTracker;
+use App\Models\RequestPurpose;
 use App\Models\User;
 use App\Mail\FileSearchRequestIssued;
 use App\Models\OtherReceivingOfficer;
@@ -54,6 +55,7 @@ class CreateFileTrackerController extends Controller
             ->orderBy('department')
             ->get();
         $offices = DB::connection('sqlsrv')->table('offices')->where('is_active', 1)->get();
+        $requestPurposes = RequestPurpose::active()->orderBy('name')->get();
         $receivingOfficers = DB::connection('sqlsrv')
             ->table('users')
             ->where('is_active', 1)
@@ -104,7 +106,7 @@ class CreateFileTrackerController extends Controller
 
         return view('create_file_tracker_page.index', compact(
             'PageTitle', 'PageDescription', 'registries', 'departments', 'offices',
-            'receivingOfficers', 'currentUserPayload', 'assignmentPermissionsPayload',
+            'requestPurposes', 'receivingOfficers', 'currentUserPayload', 'assignmentPermissionsPayload',
             'module', 'userOffice', 'userDepartmentName', 'userDepartmentOffices'
         ));
     }
@@ -123,6 +125,8 @@ class CreateFileTrackerController extends Controller
                 'status' => 'required|in:Log-in,Canceled',
                 'department' => 'required|string|max:100', // This is still used as "Origin Office" in some contexts? Or should we remove if replaced? Left for now.
                 'destination' => 'required|string|max:255', // New Destination from Departments
+                'request_purpose_id' => 'nullable|integer|exists:sqlsrv.request_purposes,id',
+                'request_purpose_other' => 'nullable|string|max:255',
                 'description' => 'nullable|string',
                 'deadline' => 'nullable|date',
                 'movement_log' => 'required|array',
@@ -264,6 +268,22 @@ class CreateFileTrackerController extends Controller
                 $storedModule = 'kangis';
             }
 
+            // Request Purpose drives the default deadline (date_created + turnaround_days),
+            // which in turn feeds the Green/Amber/Red timeline badge. An explicit deadline
+            // from the client (the Expected Return Date field) always wins, so this only
+            // fills the gap when none was sent.
+            $requestPurpose = $request->filled('request_purpose_id')
+                ? RequestPurpose::find($request->input('request_purpose_id'))
+                : null;
+            $requestPurposeOther = trim((string) $request->input('request_purpose_other', ''));
+            $requestPurposeName = $requestPurpose?->name ?: ($requestPurposeOther !== '' ? $requestPurposeOther : null);
+            // A date-only value (from the <input type="date">) means "by the end of that
+            // day" — parsed literally it's midnight, which would read as overdue from the
+            // first second of the due date. endOfDay() keeps the whole due date "on time".
+            $deadline = $request->deadline
+                ? \Carbon\Carbon::parse($request->deadline)->endOfDay()
+                : ($requestPurpose ? now()->addDays($requestPurpose->turnaround_days) : null);
+
             // Create file tracker
             $tracker = FileTracker::create([
                 'tracking_id' => $trackingId,
@@ -275,11 +295,13 @@ class CreateFileTrackerController extends Controller
                 'created_by_name' => Auth::user()->name ?? 'System User',
                 'department' => $request->department,
                 'destination' => $request->destination,
+                'request_purpose_id' => $requestPurpose?->id,
+                'request_purpose_name' => $requestPurposeName,
                 'description' => $request->description,
                 'status' => $workflowStatus,
                 'date_created' => now(),
                 'date_requested' => now(),
-                'deadline' => $request->deadline,
+                'deadline' => $deadline,
                 'total_offices' => count($request->movement_log),
                 'notes' => $request->notes,
                 'receiving_office_code' => $receivingOfficeCode,
@@ -1424,8 +1446,12 @@ HTML;
             ->orderBy('name')
             ->get(['name', 'registry_code']);
 
+        // Request Purpose + its default turnaround — captured here so it can be
+        // backfilled straight into the Create File Tracker form on "Log File".
+        $requestPurposes = RequestPurpose::active()->orderBy('name')->get(['id', 'name', 'turnaround_days']);
+
         return view('create_file_tracker_page.quick_search', compact(
-            'PageTitle', 'PageDescription', 'receivingOfficers', 'offices', 'departments', 'departmentIds', 'registries'
+            'PageTitle', 'PageDescription', 'receivingOfficers', 'offices', 'departments', 'departmentIds', 'registries', 'requestPurposes'
         ));
     }
 
@@ -1608,6 +1634,91 @@ HTML;
     }
 
     /**
+     * Re-direct a file under DCIV investigation (registry = DCIV Registry, or
+     * flagged dciv_status=1 via master_dciv_links) to the DCIV Director instead of
+     * raising a File Search Request to the SCB. Mirrors redirectToDirectorLand().
+     * POST /create-file-tracker/quick-search/redirect-dciv-director
+     */
+    public function redirectToDcivDirector(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'file_number' => 'required|string|max:255',
+            'file_title'  => 'nullable|string|max:255',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        $fileNumber = trim((string) $request->input('file_number'));
+        $fileTitle  = $request->input('file_title');
+
+        // Recipient: the active user whose rank (or work station) is "DCIV Director".
+        $director = User::where('is_active', 1)
+            ->where(function ($q) {
+                $q->where('rank', 'DCIV Director')->orWhere('work_station', 'DCIV Director');
+            })
+            ->first();
+
+        if (! $director) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active user with the rank “DCIV Director” was found. Set a DCIV Director in user management first.',
+            ], 422);
+        }
+
+        $directorName = trim(($director->first_name ?? '') . ' ' . ($director->last_name ?? ''));
+        $user = Auth::user();
+
+        // Don't raise a second open re-direct for the same file to the DCIV Director.
+        $existing = \App\Models\DigitalFileRequest::where('file_no', $fileNumber)
+            ->where('is_redirected', true)
+            ->where('receiving_officer', $directorName)
+            ->where('request_status', \App\Models\DigitalFileRequest::STATUS_PENDING)
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'success'    => true,
+                'request_no' => $existing->request_no,
+                'message'    => "Already re-directed to DCIV Director ({$existing->request_no}).",
+            ]);
+        }
+
+        $req = \App\Models\DigitalFileRequest::create([
+            'request_no'              => \App\Models\DigitalFileRequest::generateRequestNo(),
+            'request_type'            => \App\Models\DigitalFileRequest::TYPE_PHYSICAL,
+            'file_no'                 => $fileNumber,
+            'file_title'              => $fileTitle,
+            'requester_user_id'       => $user->id,
+            'sending_officer'         => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')),
+            'receiving_officer'       => $directorName,
+            'destination_office_name' => 'DCIV Registry',
+            'current_file_location'   => 'DCIV Registry',
+            'is_redirected'           => true,
+            'request_status'          => \App\Models\DigitalFileRequest::STATUS_PENDING,
+            'remarks'                 => 'File under DCIV investigation — re-directed to DCIV Director for resolution.',
+            'requested_at'            => now(),
+        ]);
+
+        // Notify the DCIV Director in-app.
+        $this->notificationService->create(
+            $director->id,
+            'digital_request',
+            "File Re-directed: {$req->request_no}",
+            "{$req->sending_officer} re-directed file {$fileNumber} to you (DCIV Director) for resolution.",
+            ['request_id' => $req->id, 'file_no' => $fileNumber],
+            ['module' => 'digital_request']
+        );
+
+        return response()->json([
+            'success'    => true,
+            'request_no' => $req->request_no,
+            'message'    => "Re-directed to DCIV Director ({$directorName}).",
+        ]);
+    }
+
+    /**
      * SCB Feedback queue: File Search Requests the current Front Desk user raised
      * that the SCB has responded to (Found / Not Found) but the Front Desk has NOT
      * acted on yet. Once the Front Desk logs/refers the file it leaves this queue
@@ -1696,6 +1807,9 @@ HTML;
                     'requester_department' => $r->requester_department,
                     'registry'         => $r->registry,
                     'registry_code'    => $r->registry_code,
+                    'request_purpose_id'   => $r->request_purpose_id,
+                    'request_purpose_name' => $r->request_purpose_name,
+                    'expected_return_date' => optional($r->expected_return_date)?->format('Y-m-d'),
                     'requested_at'     => optional($r->created_at)->format('Y-m-d g:i A'),
                     'responded_at'     => optional($r->responded_at)->format('Y-m-d g:i A'),
                     // Raw timestamps (epoch ms) so the client can sort reliably.
@@ -1997,6 +2111,9 @@ HTML;
                     'requester_department' => $r->requester_department,
                     'registry'         => $r->registry,
                     'registry_code'    => $r->registry_code,
+                    'request_purpose_id'   => $r->request_purpose_id,
+                    'request_purpose_name' => $r->request_purpose_name,
+                    'expected_return_date' => optional($r->expected_return_date)?->format('Y-m-d'),
                     'requested_at'     => optional($r->created_at)->format('Y-m-d g:i A'),
                     'responded_at'     => optional($r->responded_at)->format('Y-m-d g:i A'),
                 ];
@@ -2067,6 +2184,8 @@ HTML;
                 ->value('department');
         }
 
+        $dcivInfo = app(FileLocationResolver::class)->dcivInfoFor($result['file_number'], $indexing, $result['registry'] ?? null);
+
         return [
             'logged_out_at'    => $loggedOutAt,
             'fr_sent_at'       => optional($openFr?->created_at)?->format('Y-m-d g:i A'),
@@ -2083,6 +2202,9 @@ HTML;
                 'requester_office'     => $foundFr->requester_office,
                 'requester_department' => $foundFr->requester_department,
                 'registry'             => $foundFr->registry,
+                'request_purpose_id'   => $foundFr->request_purpose_id,
+                'request_purpose_name' => $foundFr->request_purpose_name,
+                'expected_return_date' => optional($foundFr->expected_return_date)?->format('Y-m-d'),
             ] : null,
             // Details of the FR that was responded to as Not Found (for the "File Not Found" panel).
             'fr_not_found'     => $notFoundFr ? [
@@ -2118,6 +2240,12 @@ HTML;
             // When true, the "Send Blind Request to SCB Monitor" button changes to
             // "Send Blind Request to the Original Registry" and saves without SCB.
             'is_missing_file'  => (bool) ($result['is_missing_file'] ?? false),
+            // True when a FileIndexing row exists for this file number. Combined with
+            // is_missing_file above, this flags a stale missing_files report — the file
+            // has since been indexed (i.e. physically returned and filed), so the UI can
+            // surface a note under the Missing File badge instead of treating it as still
+            // missing.
+            'is_indexed'       => (bool) $indexing,
             // Temporary "(T)" file — resolved standalone (never against its stripped
             // base number); the UI shows an "Is Temporary File" badge.
             'is_temp_file'     => (bool) ($result['is_temp_file'] ?? false),
@@ -2133,11 +2261,17 @@ HTML;
             'receiving_officer_name' => $tracker->receiving_officer_name ?? null,
             'receiving_department'   => $receivingDepartment,
             'tracking_id'      => $tracker->tracking_id ?? null,
-            // DCIV investigation flag (from the matched indexing row): 1 when this
-            // file is referenced as a related file by a DCIV record.
-            'dciv_status'      => (int) ($indexing?->dciv_status ?? 0),
-            'dciv_fileno'      => $indexing?->dciv_fileno,
-            'dciv_reason'      => $indexing?->dciv_reason,
+            // DCIV investigation flag: true when this file is either flagged
+            // dciv_status=1 (a related file linked to a DCIV master) OR is itself the
+            // DCIV master record (own registry is the DCIV Registry, or it has related
+            // files linked to it). See FileLocationResolver::dcivInfoFor().
+            'dciv_status'      => (int) $dcivInfo['status'],
+            'dciv_fileno'      => $dcivInfo['fileno'],
+            'dciv_reason'      => $dcivInfo['reason'],
+            // The reverse case: the searched number IS a DCIV master file itself —
+            // every related file linked to it via master_dciv_links, so the front
+            // desk can see what it is investigating.
+            'dciv_related_files' => $dcivInfo['related_files'],
             // Ownership history — the chronological holder chain from the cross-table
             // property timeline (file_history/CofO/pra/deeds), rendered as a timeline.
             // Only surfaced for indexed files: a file with no indexing row (Pending /
@@ -2172,6 +2306,9 @@ HTML;
             'registry'          => 'nullable|string|max:255',
             'registry_code'     => 'nullable|string|max:20',
             'update_existing_id' => 'nullable|integer',
+            'request_purpose_id' => 'nullable|integer|exists:sqlsrv.request_purposes,id',
+            'request_purpose_other' => 'nullable|string|max:255',
+            'expected_return_date' => 'nullable|date',
         ]);
 
         if ($validator->fails()) {
@@ -2184,6 +2321,13 @@ HTML;
 
         try {
             $user = Auth::user();
+
+            $requestPurposeId = $request->input('request_purpose_id');
+            $requestPurposeOther = trim((string) $request->input('request_purpose_other', ''));
+            $requestPurposeName = $requestPurposeId
+                ? optional(RequestPurpose::find($requestPurposeId))->name
+                : ($requestPurposeOther !== '' ? $requestPurposeOther : null);
+            $expectedReturnDate = $request->input('expected_return_date');
 
             // Update-existing mode: the user chose to refresh the requester details on
             // an existing active request rather than raise a duplicate. No new row and no
@@ -2214,6 +2358,9 @@ HTML;
                     'is_ofs'               => $isOfs,
                     'ofs_rank'             => $ofsRank,
                     'priority'             => FileSearchRequest::priorityFor($isOfs ? $ofsRank : ($officerRank ?: $receivingOfficer)),
+                    'request_purpose_id'   => $requestPurposeId,
+                    'request_purpose_name' => $requestPurposeName,
+                    'expected_return_date' => $expectedReturnDate,
                 ]);
 
                 return response()->json([
@@ -2320,6 +2467,9 @@ HTML;
                 'registry_code'     => $request->input('registry_code'),
                 'is_ofs'            => $isOfs,
                 'ofs_rank'          => $ofsRank,
+                'request_purpose_id'   => $requestPurposeId,
+                'request_purpose_name' => $requestPurposeName,
+                'expected_return_date' => $expectedReturnDate,
                 'priority'          => FileSearchRequest::priorityFor($isOfs ? $ofsRank : ($officerRank ?: $receivingOfficer)),
             ]);
 
@@ -2525,6 +2675,7 @@ HTML;
         // Trigger accessor evaluation so the properties are included in JSON responses.
         $tracker->setAttribute('is_overdue', $tracker->is_overdue);
         $tracker->setAttribute('days_until_deadline', $tracker->days_until_deadline);
+        $tracker->setAttribute('timeline_status', $tracker->timeline_status);
         $tracker->setAttribute('completion_percentage', $tracker->completion_percentage);
         $tracker->setAttribute('current_movement', $tracker->getCurrentMovement());
 
@@ -2546,7 +2697,104 @@ HTML;
             $tracker->setAttribute('next_step', $tracker->getNextStepDefinition());
         }
 
+        // Temporary "(T)" files are tracked as standalone records, so the Tracking
+        // Sheet needs to separately surface where the file's counterpart currently
+        // sits — logged out with a holder (IN_TRANSIT) or sitting in the Archive.
+        // Both directions: a "(T)" sheet shows the mother (base) file, and a mother
+        // sheet shows its temporary "(T)" file when one exists.
+        $tracker->setAttribute('mother_file_location', $this->getMotherFileLocation($tracker->file_number));
+        $tracker->setAttribute('temp_file_location', $this->getTempFileLocation($tracker->file_number));
+
         return $tracker;
+    }
+
+    /**
+     * For a temporary "(T)" file number, resolve the current location of the
+     * stripped base ("mother") file — only when it is logged out (IN_TRANSIT)
+     * or sitting in the Archive. Returns null for non-temp files or when the
+     * mother file has no resolvable location.
+     */
+    protected function getMotherFileLocation(?string $fileNumber): ?array
+    {
+        $fileNumber = trim((string) $fileNumber);
+        if ($fileNumber === '' || !preg_match('/\(\s*T\s*\)\s*$/i', $fileNumber)) {
+            return null;
+        }
+
+        $motherFileNumber = trim(preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $fileNumber));
+        if ($motherFileNumber === '') {
+            return null;
+        }
+
+        return $this->resolveRelatedFileLocation($motherFileNumber);
+    }
+
+    /**
+     * Reciprocal of getMotherFileLocation(): for a mother (non-temp) file number,
+     * resolve the current location of its temporary "(T)" counterpart — only when
+     * that temp file actually exists and is logged out (IN_TRANSIT) or in the
+     * Archive. A never-indexed "(T)" number resolves to PENDING_FILE and is
+     * filtered out, so mother sheets without a temp file show nothing extra.
+     */
+    protected function getTempFileLocation(?string $fileNumber): ?array
+    {
+        $fileNumber = trim((string) $fileNumber);
+        if ($fileNumber === '' || preg_match('/\(\s*T\s*\)\s*$/i', $fileNumber)) {
+            return null;
+        }
+
+        // Temp numbers appear both with and without a space before the "(T)".
+        return $this->resolveRelatedFileLocation($fileNumber . '(T)')
+            ?? $this->resolveRelatedFileLocation($fileNumber . ' (T)');
+    }
+
+    /**
+     * Resolve a counterpart file number (mother or temp) into the compact payload
+     * the Tracking Sheet strip renders: home archive details (always shown as the
+     * first line) plus, when logged out, the current location / holder / duration.
+     */
+    protected function resolveRelatedFileLocation(string $relatedFileNumber): ?array
+    {
+        try {
+            $resolver = app(FileLocationResolver::class);
+            $result   = $resolver->resolve($relatedFileNumber);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        if (!in_array($result['status'], [FileLocationResolver::STATUS_IN_TRANSIT, FileLocationResolver::STATUS_IN_ARCHIVE], true)) {
+            return null;
+        }
+
+        // Receiving officer (holder) while the file is logged out — taken from the
+        // active movement, falling back to the tracker header.
+        $holder = null;
+        $relatedTracker = $result['tracker'] ?? null;
+        if ($relatedTracker instanceof FileTracker) {
+            $movement = $relatedTracker->getCurrentMovement();
+            $holder = (is_array($movement) ? trim((string) ($movement['receiving_officer_name'] ?? '')) : '')
+                ?: trim((string) ($relatedTracker->receiving_officer_name ?? ''));
+            $holder = $holder !== '' ? $holder : null;
+        }
+
+        // Home archive details — registry + assigned rack/shelf. This is where the
+        // file belongs (and returns to) even while it is logged out.
+        $range     = $resolver->matchRange($relatedFileNumber);
+        $registry  = ($range['registry'] ?? null) ?: ($result['registry'] ?? null);
+        $rackShelf = $result['rack_shelf'] ?? null;
+        $homeParts = array_filter([$registry, $rackShelf ? 'Rack/Shelf ' . $rackShelf : null]);
+
+        return [
+            'file_number'      => $relatedFileNumber,
+            'status'           => $result['status'],
+            'current_location' => $result['current_location'],
+            'holder'           => $holder,
+            'registry'         => $registry,
+            'rack_shelf'       => $rackShelf,
+            'home_location'    => $homeParts ? implode(' — ', $homeParts) : null,
+            'held_since'       => $result['held_since'] ?? null,
+            'duration_with_holder' => $result['duration_with_holder'] ?? null,
+        ];
     }
 
     protected function notifyReceivingOfficer(FileTracker $tracker, array $context = []): void
@@ -3197,6 +3445,73 @@ HTML;
         }
     }
 
+    /**
+     * Related files in the selected file's parcel-update / merger group (Change of Purpose,
+     * Subdivision, Merger, Extension, Separation, Temporary File). Powers the small "Related
+     * Files" panel on the File Details form so a clerk logging a child file (or logging one out)
+     * can see every file in the lineage — e.g. all source files that fed a merger.
+     */
+    public function mergerGroup(Request $request)
+    {
+        $fileNumber = trim((string) $request->query('file_number', ''));
+        if ($fileNumber === '') {
+            return response()->json(['in_group' => false, 'members' => []]);
+        }
+
+        $group = app(\App\Services\FileMergerService::class)->resolveGroup($fileNumber);
+        if (empty($group)) {
+            return response()->json(['in_group' => false, 'members' => []]);
+        }
+
+        $selfNorm = mb_strtoupper($fileNumber);
+        $fmt = function ($date) {
+            if (empty($date)) {
+                return null;
+            }
+            try {
+                return \Illuminate\Support\Carbon::parse($date)->format('M j, Y');
+            } catch (\Throwable $e) {
+                return null;
+            }
+        };
+
+        // Which related files have actually been through file tracking (were logged out at some
+        // point). Decommissioned parents that were never tracked carry no movement, so the panel
+        // has no reason to list them — only files with real tracking activity are shown.
+        $memberNorms = array_map(fn ($m) => mb_strtoupper(trim((string) $m['file_number'])), $group);
+        $activeSet = [];
+        foreach (FileTracker::query()
+            ->whereIn(DB::raw('UPPER(LTRIM(RTRIM(file_number)))'), $memberNorms)
+            ->get(['file_number', 'movement_log']) as $t) {
+            $log = is_array($t->movement_log) ? $t->movement_log : json_decode((string) ($t->movement_log ?? '[]'), true);
+            if (is_array($log) && count($log) > 0) {
+                $activeSet[mb_strtoupper(trim((string) $t->file_number))] = true;
+            }
+        }
+
+        $members = array_map(function ($m) use ($selfNorm, $fmt, $activeSet) {
+            $norm = mb_strtoupper(trim((string) $m['file_number']));
+            return [
+                'file_number' => $m['file_number'],
+                'role' => $m['role'],
+                'file_title' => $m['file_title'],
+                'location' => $m['location'],
+                'date_commissioned' => $fmt($m['date_commissioned'] ?? null),
+                'date_decommissioned' => $fmt($m['date_decommissioned'] ?? null),
+                'is_self' => $norm === $selfNorm,
+                'logged_out' => isset($activeSet[$norm]),
+            ];
+        }, $group);
+
+        return response()->json([
+            'in_group' => true,
+            'merger_id' => $group[0]['merger_id'] ?? null,
+            'parent_count' => count(array_filter($group, fn ($m) => ($m['role'] ?? '') === 'parent')),
+            'child_count' => count(array_filter($group, fn ($m) => ($m['role'] ?? '') !== 'parent')),
+            'members' => $members,
+        ]);
+    }
+
     protected function getPriorMovements(FileTracker $tracker): array
     {
         $fileNumber = trim((string) $tracker->file_number);
@@ -3244,6 +3559,20 @@ HTML;
                     $priorMovements[] = $entry;
                 }
             }
+        }
+
+        // Weave in related files from the same parcel-update / merger group (Change of Purpose,
+        // Subdivision, Merger, Extension, Separation, Temporary File) so the timeline reads as one
+        // continuous lineage: each decommissioned parent's history ends with a File Decommissioning
+        // marker, each surviving child opens with a File Commissioning marker. Non-fatal.
+        try {
+            $groupEntries = app(\App\Services\FileMergerService::class)
+                ->groupMovementEntries($fileNumber, [$fileNumber]);
+            foreach ($groupEntries as $entry) {
+                $priorMovements[] = $entry;
+            }
+        } catch (\Throwable $e) {
+            // Fall back to the single-file history.
         }
 
         // Order the merged history chronologically so the timeline reads correctly

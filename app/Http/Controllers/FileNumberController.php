@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Yajra\DataTables\Facades\DataTables;
 use App\Models\FileNumber;
 use App\Models\LandUse;
@@ -1624,6 +1625,36 @@ class FileNumberController extends Controller
                         ->table('mls_file_no')
                         ->where('full_file_number', $record->mlsfNo)
                         ->update($mlsUpdateData);
+                }
+            }
+
+            // Keep the matching file_indexings row's title in sync — it's edited from a
+            // different screen but must show the same title as fileNumber.FileName.
+            if (isset($updateData['FileName'])) {
+                $fileNoCandidates = array_values(array_unique(array_filter([
+                    $record->mlsfNo ?? null,
+                    $record->kangisFileNo ?? null,
+                    $record->NewKANGISFileNo ?? null,
+                    $updateData['kangisFileNo'] ?? null,
+                    $updateData['NewKANGISFileNo'] ?? null,
+                ])));
+
+                if (!empty($fileNoCandidates)) {
+                    try {
+                        DB::connection('sqlsrv')->table('file_indexings')
+                            ->whereIn('file_number', $fileNoCandidates)
+                            ->update([
+                                'file_title' => $updateData['FileName'],
+                                'current_holder' => $updateData['FileName'],
+                                'updated_by' => $updateData['updated_by'],
+                                'updated_at' => now(),
+                            ]);
+                    } catch (\Exception $e) {
+                        Log::warning('Failed to propagate FileName to file_indexings', [
+                            'fileNumber_id' => $id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
                 }
             }
 

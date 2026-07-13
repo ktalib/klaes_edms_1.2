@@ -218,7 +218,7 @@
             </div>
 
             @php
-                $adverseCaveat = !empty($data['is_caveated']) || !empty($data['under_investigation']);
+                $adverseCaveat = !empty($data['is_caveated']) || !empty($data['under_investigation']) || !empty($data['is_flagged']);
             @endphp
             <div class="note" style="background:#ffffff;border:1px solid #e5e7eb;color:#111827;margin-top:22px;">
                 <div style="font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:.04em;margin-bottom:6px;color:#374151;">Remarks</div>
